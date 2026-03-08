@@ -199,7 +199,7 @@ const Learn = () => {
                 className="group relative w-full overflow-hidden rounded-2xl text-left transition-transform hover:scale-[1.005]"
               >
                 <div className="relative h-48 sm:h-56">
-                  <img src={cohort.bannerImage || courseCinematography} alt={cohort.title} className="h-full w-full object-cover" />
+                  <img src={cohort.thumbnail} alt={cohort.title} className="h-full w-full object-cover" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent" />
                   <div className="absolute top-3 left-3">
                     <Badge className="bg-primary text-primary-foreground text-[10px] font-bold">
