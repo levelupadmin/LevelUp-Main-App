@@ -6,8 +6,16 @@ import {
   featuredCreators,
   featuredBanner,
 } from "@/data/mockData";
+import heroBanner from "@/assets/hero-banner.jpg";
 import {
   ArrowRight,
+  ChevronRight,
+  Calendar,
+  MapPin,
+  MessageSquare,
+  Play,
+  ExternalLink,
+} from "lucide-react";
   ChevronRight,
   Calendar,
   MapPin,
