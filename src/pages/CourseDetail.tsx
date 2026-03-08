@@ -1,6 +1,6 @@
 import AppShell from "@/components/layout/AppShell";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { useCourse, useCourseModules, useCourseLessons } from "@/hooks/useCourseData";
+import { useCourse, useCourseModules, useCourseLessons, useEnrollment, useEnrollInCourse } from "@/hooks/useCourseData";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Star, Clock, Users, Play, Lock, CheckCircle2, Calendar, Bell, BookOpen, Award, Shield, ChevronDown } from "lucide-react";
