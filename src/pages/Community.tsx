@@ -1,67 +1,316 @@
 import AppShell from "@/components/layout/AppShell";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { GraduationCap, Compass, Users, ChevronRight, MapPin, Sparkles } from "lucide-react";
-import { cohortCommunities } from "@/data/communityData";
-import { cityCommunities, skillCommunities } from "@/data/communityData";
-import { directoryCreators } from "@/data/communityData";
+import {
+  ArrowLeft, GraduationCap, Compass, Users, Rss,
+  MapPin, Sparkles, Heart, MessageCircle, Send, Image,
+  Search, Filter, ExternalLink, X, ChevronDown, TrendingUp,
+  UserPlus,
+} from "lucide-react";
+import {
+  cohortCommunities,
+  cityCommunities,
+  skillCommunities,
+  directoryCreators,
+  directoryFilters,
+  feedPosts,
+  trendingPosts,
+  type FeedPost,
+  type DirectoryCreator,
+} from "@/data/communityData";
 
-type Tab = "cohorts" | "explore" | "directory";
+type Section = "feed" | "spaces" | "discover" | "creators";
+
+const sidebarItems: { id: Section; label: string; icon: typeof Rss }[] = [
+  { id: "feed", label: "Feed", icon: Rss },
+  { id: "spaces", label: "My Spaces", icon: GraduationCap },
+  { id: "discover", label: "Discover", icon: Compass },
+  { id: "creators", label: "Meet Creators", icon: Users },
+];
 
 const Community = () => {
-  const [activeTab, setActiveTab] = useState<Tab>("cohorts");
+  const [activeSection, setActiveSection] = useState<Section>("feed");
   const navigate = useNavigate();
-
-  const tabs: { id: Tab; label: string; icon: typeof GraduationCap }[] = [
-    { id: "cohorts", label: "My Cohorts", icon: GraduationCap },
-    { id: "explore", label: "Discover", icon: Compass },
-    { id: "directory", label: "Meet Creators", icon: Users },
-  ];
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-4xl px-4 py-6 lg:px-6">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Community</h1>
-          <p className="text-sm text-muted-foreground">Your creative network — cohorts, communities, and creators</p>
-        </div>
-
-        {/* Top tabs */}
-        <div className="mb-6 flex gap-1 rounded-xl bg-muted p-1">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
+      <div className="flex min-h-[calc(100vh-4rem)]">
+        {/* ── Desktop inner sidebar ── */}
+        <aside className="hidden lg:flex w-56 shrink-0 flex-col border-r border-border bg-card/50 p-3 gap-1">
+          <button
+            onClick={() => navigate("/home")}
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mb-2"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to app
+          </button>
+          <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Community</p>
+          {sidebarItems.map((item) => {
+            const Icon = item.icon;
+            const active = activeSection === item.id;
             return (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                  active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                key={item.id}
+                onClick={() => setActiveSection(item.id)}
+                className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
                 }`}
               >
                 <Icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{tab.label}</span>
-                <span className="sm:hidden">{tab.label.split(" ").pop()}</span>
+                {item.label}
               </button>
             );
           })}
-        </div>
+        </aside>
 
-        {/* Tab content */}
-        {activeTab === "cohorts" && <MyCohorts navigate={navigate} />}
-        {activeTab === "explore" && <ExploreCommunities navigate={navigate} />}
-        {activeTab === "directory" && <DirectoryPreview navigate={navigate} />}
+        {/* ── Main content ── */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Mobile top tabs */}
+          <div className="sticky top-0 z-10 flex gap-1 border-b border-border bg-background/95 backdrop-blur px-3 py-2 lg:hidden">
+            {sidebarItems.map((item) => {
+              const Icon = item.icon;
+              const active = activeSection === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveSection(item.id)}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-medium transition-colors ${
+                    active ? "bg-accent text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mx-auto max-w-2xl px-4 py-6 lg:px-6">
+            {activeSection === "feed" && <FeedView />}
+            {activeSection === "spaces" && <MySpacesView navigate={navigate} />}
+            {activeSection === "discover" && <DiscoverView navigate={navigate} />}
+            {activeSection === "creators" && <MeetCreatorsView navigate={navigate} />}
+          </div>
+        </div>
       </div>
     </AppShell>
   );
 };
 
-// ── My Cohorts — Banner Cards ──
-function MyCohorts({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
+/* ═══════════════════════════════════════════
+   FEED VIEW
+   ═══════════════════════════════════════════ */
+function FeedView() {
+  const [newPost, setNewPost] = useState("");
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
+
+  const toggleLike = (id: string) => {
+    setLikedPosts((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleComments = (id: string) => {
+    setExpandedComments((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Composer */}
+      <div className="rounded-xl border border-border bg-card p-4">
+        {!composerOpen ? (
+          <button
+            onClick={() => setComposerOpen(true)}
+            className="flex w-full items-center gap-3 text-left"
+          >
+            <div className="h-9 w-9 rounded-full bg-accent" />
+            <span className="flex-1 text-sm text-muted-foreground">What's on your mind?</span>
+          </button>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex gap-3">
+              <div className="h-9 w-9 shrink-0 rounded-full bg-accent" />
+              <textarea
+                value={newPost}
+                onChange={(e) => setNewPost(e.target.value)}
+                placeholder="Share your work, ask a question, or start a discussion..."
+                className="flex-1 resize-none rounded-lg border-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none min-h-[80px]"
+                autoFocus
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <button className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+                <Image className="h-3.5 w-3.5" /> Photo
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setComposerOpen(false); setNewPost(""); }}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={!newPost.trim()}
+                  className="rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
+                >
+                  Post
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Trending banner */}
+      {trendingPosts.length > 0 && (
+        <div className="flex items-center gap-2 rounded-lg bg-accent/60 px-3 py-2">
+          <TrendingUp className="h-3.5 w-3.5 text-[hsl(var(--highlight))]" />
+          <p className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">Trending:</span>{" "}
+            {trendingPosts[0].content.slice(0, 60)}…
+          </p>
+        </div>
+      )}
+
+      {/* Feed posts */}
+      {feedPosts.map((post) => (
+        <FeedPostCard
+          key={post.id}
+          post={post}
+          liked={likedPosts.has(post.id)}
+          commentsExpanded={expandedComments.has(post.id)}
+          onLike={() => toggleLike(post.id)}
+          onToggleComments={() => toggleComments(post.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function FeedPostCard({
+  post,
+  liked,
+  commentsExpanded,
+  onLike,
+  onToggleComments,
+}: {
+  post: FeedPost;
+  liked: boolean;
+  commentsExpanded: boolean;
+  onLike: () => void;
+  onToggleComments: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="p-4">
+        {/* Author */}
+        <div className="flex items-center gap-3 mb-3">
+          <img src={post.avatar} alt={post.author} className="h-10 w-10 rounded-full object-cover" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-foreground truncate">{post.author}</p>
+              {post.isBatchmate && (
+                <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Batchmate</span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">{post.role} · {post.timeAgo}</p>
+          </div>
+        </div>
+
+        {/* Content */}
+        <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-line">{post.content}</p>
+
+        {/* Tags */}
+        {post.tags && post.tags.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {post.tags.map((tag) => (
+              <span key={tag} className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground">#{tag}</span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Image */}
+      {post.image && (
+        <img src={post.image} alt="" className="w-full max-h-80 object-cover" />
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center gap-1 border-t border-border px-4 py-2">
+        <button
+          onClick={onLike}
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+            liked ? "text-[hsl(var(--destructive))]" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Heart className={`h-3.5 w-3.5 ${liked ? "fill-current" : ""}`} />
+          {post.likes + (liked ? 1 : 0)}
+        </button>
+        <button
+          onClick={onToggleComments}
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <MessageCircle className="h-3.5 w-3.5" />
+          {post.comments}
+        </button>
+        <button className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors ml-auto">
+          <Send className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Expanded comments */}
+      {commentsExpanded && post.commentsData.length > 0 && (
+        <div className="border-t border-border bg-background/50 px-4 py-3 space-y-3">
+          {post.commentsData.map((c) => (
+            <div key={c.id} className="flex gap-2.5">
+              <img src={c.avatar} alt={c.author} className="h-7 w-7 rounded-full object-cover mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs">
+                  <span className="font-semibold text-foreground">{c.author}</span>
+                  <span className="text-muted-foreground ml-2">{c.timeAgo}</span>
+                </p>
+                <p className="text-xs text-foreground/80 mt-0.5">{c.content}</p>
+                <button className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground">
+                  <Heart className="h-3 w-3" /> {c.likes}
+                </button>
+              </div>
+            </div>
+          ))}
+          {/* Reply input */}
+          <div className="flex gap-2 pt-1">
+            <div className="h-7 w-7 shrink-0 rounded-full bg-accent" />
+            <input
+              placeholder="Write a comment..."
+              className="flex-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   MY SPACES VIEW
+   ═══════════════════════════════════════════ */
+function MySpacesView({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
   const enrolled = cohortCommunities;
   return (
     <div className="space-y-4">
+      <div className="mb-2">
+        <h2 className="text-lg font-bold text-foreground">My Spaces</h2>
+        <p className="text-xs text-muted-foreground">Your enrolled cohort communities</p>
+      </div>
       {enrolled.length > 0 ? (
         enrolled.map((cc) => {
           const totalUnread = cc.channels.reduce((sum, c) => sum + (c.unread || 0), 0);
@@ -71,33 +320,20 @@ function MyCohorts({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
               onClick={() => navigate(`/community/cohort/${cc.cohortId}`)}
               className="group relative w-full overflow-hidden rounded-2xl text-left transition-transform hover:scale-[1.01]"
             >
-              {/* Banner image */}
               <div className="relative h-44 sm:h-52">
-                <img
-                  src={cc.image}
-                  alt={cc.title}
-                  className="h-full w-full object-cover"
-                />
-                {/* Gradient overlay */}
+                <img src={cc.image} alt={cc.title} className="h-full w-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-
-                {/* Unread badge */}
                 {totalUnread > 0 && (
                   <div className="absolute top-3 right-3 flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-2 text-xs font-bold text-primary-foreground">
                     {totalUnread} new
                   </div>
                 )}
-
-                {/* Bottom text overlay */}
                 <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5">
                   <h3 className="text-lg sm:text-xl font-bold text-white leading-tight">{cc.title}</h3>
                   <div className="mt-1.5 flex items-center gap-3 text-white/70 text-xs sm:text-sm">
                     <span>{cc.batchLabel}</span>
                     <span className="h-1 w-1 rounded-full bg-white/40" />
-                    <span className="flex items-center gap-1">
-                      <Users className="h-3.5 w-3.5" />
-                      {cc.memberCount} members
-                    </span>
+                    <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{cc.memberCount} members</span>
                   </div>
                 </div>
               </div>
@@ -121,13 +357,19 @@ function MyCohorts({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
   );
 }
 
-// ── Explore Communities — Image Cards ──
-function ExploreCommunities({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
+/* ═══════════════════════════════════════════
+   DISCOVER VIEW
+   ═══════════════════════════════════════════ */
+function DiscoverView({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
   const [exploreMode, setExploreMode] = useState<"city" | "skill">("city");
 
   return (
     <div className="space-y-5">
-      {/* Toggle */}
+      <div className="mb-2">
+        <h2 className="text-lg font-bold text-foreground">Discover Communities</h2>
+        <p className="text-xs text-muted-foreground">Find your tribe by city or skill</p>
+      </div>
+
       <div className="flex gap-2">
         <button
           onClick={() => setExploreMode("city")}
@@ -135,8 +377,7 @@ function ExploreCommunities({ navigate }: { navigate: ReturnType<typeof useNavig
             exploreMode === "city" ? "bg-foreground text-background" : "bg-accent text-secondary-foreground hover:text-foreground"
           }`}
         >
-          <MapPin className="h-3.5 w-3.5" />
-          By City
+          <MapPin className="h-3.5 w-3.5" /> By City
         </button>
         <button
           onClick={() => setExploreMode("skill")}
@@ -144,16 +385,14 @@ function ExploreCommunities({ navigate }: { navigate: ReturnType<typeof useNavig
             exploreMode === "skill" ? "bg-foreground text-background" : "bg-accent text-secondary-foreground hover:text-foreground"
           }`}
         >
-          <Sparkles className="h-3.5 w-3.5" />
-          By Skill
+          <Sparkles className="h-3.5 w-3.5" /> By Skill
         </button>
       </div>
 
-      {/* City communities */}
       {exploreMode === "city" && (
         <>
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Cities</p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {cityCommunities.map((city) => (
               <button
                 key={city.id}
@@ -161,11 +400,7 @@ function ExploreCommunities({ navigate }: { navigate: ReturnType<typeof useNavig
                 className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]"
               >
                 <div className="relative aspect-[4/5]">
-                  <img
-                    src={city.image}
-                    alt={city.name}
-                    className="h-full w-full object-cover"
-                  />
+                  <img src={city.image} alt={city.name} className="h-full w-full object-cover" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                   <div className="absolute bottom-0 left-0 right-0 p-3">
                     <p className="text-sm font-bold text-white">{city.name}</p>
@@ -178,11 +413,10 @@ function ExploreCommunities({ navigate }: { navigate: ReturnType<typeof useNavig
         </>
       )}
 
-      {/* Skill communities */}
       {exploreMode === "skill" && (
         <>
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Skills</p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {skillCommunities.map((skill) => (
               <button
                 key={skill.id}
@@ -190,11 +424,7 @@ function ExploreCommunities({ navigate }: { navigate: ReturnType<typeof useNavig
                 className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]"
               >
                 <div className="relative aspect-[4/5]">
-                  <img
-                    src={skill.image}
-                    alt={skill.name}
-                    className="h-full w-full object-cover"
-                  />
+                  <img src={skill.image} alt={skill.name} className="h-full w-full object-cover" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                   <div className="absolute bottom-0 left-0 right-0 p-3">
                     <p className="text-sm font-bold text-white">{skill.name}</p>
@@ -210,53 +440,166 @@ function ExploreCommunities({ navigate }: { navigate: ReturnType<typeof useNavig
   );
 }
 
-// ── Directory Preview ──
-function DirectoryPreview({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
-  const preview = directoryCreators.slice(0, 4);
+/* ═══════════════════════════════════════════
+   MEET CREATORS VIEW (full directory inline)
+   ═══════════════════════════════════════════ */
+function MeetCreatorsView({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
+  const [search, setSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedCity, setSelectedCity] = useState("");
+  const [selectedSkill, setSelectedSkill] = useState("");
+  const [selectedRole, setSelectedRole] = useState("");
+  const [selectedExp, setSelectedExp] = useState("");
+  const [selectedAvail, setSelectedAvail] = useState("");
+
+  const hasFilters = selectedCity || selectedSkill || selectedRole || selectedExp || selectedAvail;
+
+  const filtered = useMemo(() => {
+    return directoryCreators.filter((c) => {
+      if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !c.role.toLowerCase().includes(search.toLowerCase()) && !c.skills.some((s) => s.toLowerCase().includes(search.toLowerCase()))) return false;
+      if (selectedCity && c.city !== selectedCity) return false;
+      if (selectedSkill && !c.skills.some((s) => s.toLowerCase().includes(selectedSkill.toLowerCase()))) return false;
+      if (selectedRole && c.role !== selectedRole) return false;
+      if (selectedExp && c.experienceLevel !== selectedExp) return false;
+      if (selectedAvail === "Available" && !c.available) return false;
+      if (selectedAvail === "Not Available" && c.available) return false;
+      return true;
+    });
+  }, [search, selectedCity, selectedSkill, selectedRole, selectedExp, selectedAvail]);
+
+  const clearFilters = () => {
+    setSelectedCity(""); setSelectedSkill(""); setSelectedRole(""); setSelectedExp(""); setSelectedAvail("");
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Discover creators by skill, city, and availability</p>
+      <div className="mb-2">
+        <h2 className="text-lg font-bold text-foreground">Meet Creators</h2>
+        <p className="text-xs text-muted-foreground">Discover creators by skill, city, and availability</p>
+      </div>
+
+      {/* Search + Filter */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, role, or skill..."
+            className="w-full rounded-xl border border-border bg-card py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-muted-foreground/40"
+          />
+        </div>
         <button
-          onClick={() => navigate("/community/directory")}
-          className="text-xs font-semibold text-foreground hover:underline"
+          onClick={() => setShowFilters(!showFilters)}
+          className={`flex items-center gap-1.5 rounded-xl border border-border px-3.5 py-2.5 text-sm font-medium transition-colors ${
+            showFilters || hasFilters ? "bg-foreground text-background border-foreground" : "bg-card text-muted-foreground hover:text-foreground"
+          }`}
         >
-          View All →
+          <Filter className="h-4 w-4" />
+          <span className="hidden sm:inline">Filters</span>
+          {hasFilters && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-background text-[10px] font-bold text-foreground">{[selectedCity, selectedSkill, selectedRole, selectedExp, selectedAvail].filter(Boolean).length}</span>}
         </button>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {preview.map((creator) => (
-          <div
-            key={creator.id}
-            className="rounded-xl border border-border bg-card p-4 transition-colors hover:border-muted-foreground/30"
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <img src={creator.avatar} alt={creator.name} className="h-10 w-10 rounded-full object-cover" />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">{creator.name}</p>
-                <p className="text-xs text-muted-foreground">{creator.role} · {creator.city}</p>
-              </div>
-              {creator.available && (
-                <span className="ml-auto shrink-0 rounded-full bg-[hsl(var(--success))] px-2 py-0.5 text-[10px] font-semibold text-background">
-                  Available
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-secondary-foreground line-clamp-2 mb-2">{creator.description}</p>
-            <div className="flex flex-wrap gap-1">
-              {creator.skills.slice(0, 3).map((s) => (
-                <span key={s} className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground">{s}</span>
-              ))}
-            </div>
+
+      {showFilters && (
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Filters</p>
+            {hasFilters && (
+              <button onClick={clearFilters} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                <X className="h-3 w-3" /> Clear all
+              </button>
+            )}
           </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <FilterSelect label="City" value={selectedCity} onChange={setSelectedCity} options={directoryFilters.cities} />
+            <FilterSelect label="Skill" value={selectedSkill} onChange={setSelectedSkill} options={directoryFilters.skills} />
+            <FilterSelect label="Role" value={selectedRole} onChange={setSelectedRole} options={directoryFilters.roles} />
+            <FilterSelect label="Experience" value={selectedExp} onChange={setSelectedExp} options={[...directoryFilters.experienceLevels]} />
+            <FilterSelect label="Availability" value={selectedAvail} onChange={setSelectedAvail} options={[...directoryFilters.availability]} />
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">{filtered.length} creator{filtered.length !== 1 ? "s" : ""} found</p>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {filtered.map((creator) => (
+          <CreatorCard key={creator.id} creator={creator} />
         ))}
       </div>
-      <button
-        onClick={() => navigate("/community/directory")}
-        className="w-full rounded-xl border border-border bg-card py-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
-      >
-        Browse Full Directory
-      </button>
+
+      {filtered.length === 0 && (
+        <div className="rounded-xl border border-border bg-card py-12 text-center">
+          <p className="text-sm text-muted-foreground">No creators match your filters</p>
+          <button onClick={clearFilters} className="mt-2 text-xs font-semibold text-foreground hover:underline">Clear filters</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Shared helpers ── */
+function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full appearance-none rounded-lg border border-border bg-background py-2 pl-3 pr-8 text-sm text-foreground outline-none focus:border-muted-foreground/40"
+        >
+          <option value="">All</option>
+          {options.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+        <ChevronDown className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+      </div>
+    </div>
+  );
+}
+
+function CreatorCard({ creator }: { creator: DirectoryCreator }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 transition-colors hover:border-muted-foreground/30">
+      <div className="flex items-start gap-3 mb-3">
+        <img src={creator.avatar} alt={creator.name} className="h-11 w-11 rounded-full object-cover" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-foreground truncate">{creator.name}</p>
+          <p className="text-xs text-muted-foreground">{creator.role} · {creator.city}</p>
+          <p className="text-xs text-muted-foreground">{creator.experience}</p>
+        </div>
+        {creator.available ? (
+          <span className="shrink-0 rounded-full bg-[hsl(var(--success))] px-2 py-0.5 text-[10px] font-semibold text-background">Available</span>
+        ) : (
+          <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Unavailable</span>
+        )}
+      </div>
+      <p className="text-xs text-secondary-foreground leading-relaxed line-clamp-2 mb-2">{creator.description}</p>
+      {creator.notableWork && (
+        <p className="text-[10px] font-medium text-[hsl(var(--highlight))] mb-2">🏆 {creator.notableWork}</p>
+      )}
+      <div className="flex flex-wrap gap-1 mb-3">
+        {creator.skills.slice(0, 4).map((s) => (
+          <span key={s} className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground">{s}</span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        {creator.portfolioUrl && (
+          <button
+            onClick={() => window.open(creator.portfolioUrl, "_blank")}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            <ExternalLink className="h-3 w-3" /> Portfolio
+          </button>
+        )}
+        <button className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors">
+          <UserPlus className="h-3 w-3" /> Connect
+        </button>
+      </div>
     </div>
   );
 }
