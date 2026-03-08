@@ -4,12 +4,11 @@ import { getLessonById, getCourseById, getCourseLessons } from "@/data/learningD
 import {
   Play, Pause, CheckCircle2, ChevronLeft, ChevronRight, Share2,
   FileText, Send, Upload, BarChart3, MessageSquare, Download,
-  SkipBack, SkipForward, Volume2, Maximize, Settings,
+  SkipBack, SkipForward, Volume2, Maximize, Settings, Zap,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 
@@ -28,6 +27,7 @@ const LessonDetail = () => {
   const [activitySubmitted, setActivitySubmitted] = useState(lesson?.microActivity.submitted || false);
   const [activityAnswer, setActivityAnswer] = useState("");
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [isCompleted, setIsCompleted] = useState(lesson?.state === "completed");
 
   if (!lesson || !course) {
     return (
@@ -40,14 +40,12 @@ const LessonDetail = () => {
   }
 
   const canComplete = videoProgress >= 80 && activitySubmitted;
-  const isCompleted = lesson.state === "completed";
   const prevLesson = currentIndex > 0 ? courseLessons[currentIndex - 1] : null;
   const nextLesson = currentIndex < courseLessons.length - 1 ? courseLessons[currentIndex + 1] : null;
 
   const handlePlayToggle = () => {
     setIsPlaying(!isPlaying);
     if (!isPlaying && videoProgress < 100) {
-      // Simulate progress
       setVideoProgress(Math.min(videoProgress + 25, 100));
     }
   };
@@ -69,10 +67,18 @@ const LessonDetail = () => {
   };
 
   const handleMarkComplete = () => {
-    toast({ title: "Lesson completed!", description: `You've completed "${lesson.title}"` });
-    if (nextLesson) {
-      navigate(`/learn/lesson/${nextLesson.id}`);
-    }
+    setIsCompleted(true);
+    // +10 XP toast
+    toast({
+      title: "+10 XP 🎉",
+      description: `Lesson "${lesson.title}" completed!`,
+    });
+    // Navigate after a short delay
+    setTimeout(() => {
+      if (nextLesson) {
+        navigate(`/learn/lesson/${nextLesson.id}`);
+      }
+    }, 1200);
   };
 
   return (
@@ -108,7 +114,9 @@ const LessonDetail = () => {
                 <Play className="h-7 w-7 text-foreground ml-1" />
               )}
             </button>
-            <p className="text-xs text-muted-foreground">Click to simulate video progress</p>
+            <p className="text-xs text-muted-foreground text-center px-4">
+              Video player — VdoCipher integration pending
+            </p>
           </div>
 
           {/* Video controls bar */}
@@ -142,7 +150,9 @@ const LessonDetail = () => {
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-lg font-bold text-foreground lg:text-xl">{lesson.title}</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">{course.instructor} · {lesson.duration}</p>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Lesson {currentIndex + 1} of {courseLessons.length} · {lesson.duration}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               {isCompleted && (
@@ -172,13 +182,21 @@ const LessonDetail = () => {
 
         {/* Content tabs */}
         <div className="px-4 py-4 lg:px-6">
-          <Tabs defaultValue="activity" className="space-y-4">
+          <Tabs defaultValue="notes" className="space-y-4">
             <TabsList className="bg-secondary/50 border border-border">
-              <TabsTrigger value="activity">Activity</TabsTrigger>
               <TabsTrigger value="notes">Notes</TabsTrigger>
-              <TabsTrigger value="downloads">Downloads</TabsTrigger>
+              <TabsTrigger value="activity">Activity</TabsTrigger>
             </TabsList>
 
+            {/* Tab 1 — Notes */}
+            <TabsContent value="notes">
+              <div className="rounded-lg border border-border bg-card p-5">
+                <h3 className="text-sm font-semibold text-foreground mb-2">Lesson Notes</h3>
+                <pre className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed font-body">{lesson.notes}</pre>
+              </div>
+            </TabsContent>
+
+            {/* Tab 2 — Activity */}
             <TabsContent value="activity" className="space-y-4">
               <div className="rounded-lg border border-border bg-card p-5">
                 <div className="flex items-center gap-2 mb-3">
@@ -197,7 +215,7 @@ const LessonDetail = () => {
                     <p className="text-xs text-muted-foreground mt-1">Great work on this lesson</p>
                     <Button variant="outline" size="sm" onClick={handleShare} className="mt-3 gap-1.5">
                       <Share2 className="h-3.5 w-3.5" />
-                      Share this result to community
+                      Share to community?
                     </Button>
                   </div>
                 ) : (
@@ -222,47 +240,33 @@ const LessonDetail = () => {
                       )}
 
                     {(lesson.microActivity.type === "reflection" || lesson.microActivity.type === "upload") && (
-                      <textarea
-                        value={activityAnswer}
-                        onChange={(e) => setActivityAnswer(e.target.value)}
-                        placeholder={
-                          lesson.microActivity.type === "reflection"
-                            ? "Write your reflection..."
-                            : "Describe your upload or paste a link..."
-                        }
-                        rows={3}
-                        className="mb-4 w-full rounded-lg border border-border bg-secondary/20 p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-foreground/30 focus:outline-none resize-none"
-                      />
+                      <>
+                        <textarea
+                          value={activityAnswer}
+                          onChange={(e) => setActivityAnswer(e.target.value)}
+                          placeholder={
+                            lesson.microActivity.type === "reflection"
+                              ? "Write your reflection..."
+                              : "Describe your upload or paste a link..."
+                          }
+                          rows={3}
+                          className="mb-2 w-full rounded-lg border border-border bg-secondary/20 p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-foreground/30 focus:outline-none resize-none"
+                        />
+                        {lesson.microActivity.type === "upload" && (
+                          <div className="mb-4 rounded-lg border border-dashed border-border p-4 text-center">
+                            <Upload className="h-6 w-6 text-muted-foreground/40 mx-auto mb-1" />
+                            <p className="text-xs text-muted-foreground">File upload — coming soon</p>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     <Button onClick={handleSubmitActivity} className="gap-2">
                       <Send className="h-4 w-4" />
-                      Submit
+                      Submit Activity
                     </Button>
                   </>
                 )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="notes">
-              <div className="rounded-lg border border-border bg-card p-5">
-                <h3 className="text-sm font-semibold text-foreground mb-2">Lesson Notes</h3>
-                <pre className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed font-body">{lesson.notes}</pre>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="downloads">
-              <div className="rounded-lg border border-dashed border-border bg-card/50 p-6 text-center">
-                <Download className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Download this lesson for offline viewing</p>
-                <div className="flex justify-center gap-2 mt-3">
-                  {["720p", "1080p", "Audio"].map((q) => (
-                    <Badge key={q} variant="secondary" className="text-[10px] cursor-pointer hover:bg-secondary/80">
-                      {q}
-                    </Badge>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground mt-3 italic">Coming soon</p>
               </div>
             </TabsContent>
           </Tabs>
@@ -279,21 +283,29 @@ const LessonDetail = () => {
               className="gap-1.5"
             >
               <ChevronLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">Previous</span>
+              <span className="hidden sm:inline">Previous Lesson</span>
             </Button>
 
             {canComplete && !isCompleted ? (
               <Button onClick={handleMarkComplete} className="gap-2">
-                <CheckCircle2 className="h-4 w-4" />
-                Complete & Continue
+                <Zap className="h-4 w-4" />
+                Mark Complete (+10 XP)
+              </Button>
+            ) : isCompleted ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!nextLesson}
+                onClick={() => nextLesson && navigate(`/learn/lesson/${nextLesson.id}`)}
+                className="gap-2"
+              >
+                Next Lesson <ChevronRight className="h-4 w-4" />
               </Button>
             ) : (
               <div className="text-center">
-                {!canComplete && !isCompleted && (
-                  <p className="text-xs text-muted-foreground">
-                    {videoProgress < 80 ? "Watch 80%+ video" : "Complete the activity"} to unlock
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  {videoProgress < 80 ? "Watch 80%+ video" : "Complete the activity"} to unlock
+                </p>
               </div>
             )}
 
@@ -304,7 +316,7 @@ const LessonDetail = () => {
               onClick={() => nextLesson && navigate(`/learn/lesson/${nextLesson.id}`)}
               className="gap-1.5"
             >
-              <span className="hidden sm:inline">Next</span>
+              <span className="hidden sm:inline">Next Lesson</span>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

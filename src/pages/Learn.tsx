@@ -1,62 +1,24 @@
 import AppShell from "@/components/layout/AppShell";
-import { detailedCourses, type CourseDetailed, type Difficulty } from "@/data/learningData";
+import { detailedCourses, workshopsList, type CourseDetailed } from "@/data/learningData";
 import { cohorts } from "@/data/cohortData";
 import { categories } from "@/data/mockData";
-import { Star, Clock, Users, Search, SlidersHorizontal, BookOpen, ArrowRight, Play, CheckCircle2, Sparkles, UsersRound, CalendarDays, GraduationCap, Award } from "lucide-react";
+import { Star, Clock, Users, Search, Play, ArrowRight, ChevronRight, BookOpen, GraduationCap } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
-type Tab = "catalog" | "my-learning";
-type SortOption = "newest" | "popular" | "rated";
-type DurationFilter = "all" | "short" | "medium" | "long";
-type CourseFormat = "Masterclass" | "Cohort" | "Workshop";
-
-const FORMAT_ORDER: CourseFormat[] = ["Masterclass", "Cohort", "Workshop"];
-
-const FORMAT_META: Record<CourseFormat, { label: string; description: string; cta: string; icon: React.ReactNode }> = {
-  Masterclass: {
-    label: "Masterclasses",
-    description: "Self-paced deep dives by India's top creators",
-    cta: "Subscribe Now",
-    icon: <Sparkles className="h-4 w-4" />,
-  },
-  Cohort: {
-    label: "Cohorts",
-    description: "Live, group-based learning with mentorship",
-    cta: "Request Your Invite",
-    icon: <UsersRound className="h-4 w-4" />,
-  },
-  Workshop: {
-    label: "Workshops",
-    description: "Hands-on, focused sessions to build real skills",
-    cta: "Enroll Now",
-    icon: <CalendarDays className="h-4 w-4" />,
-  },
-};
 
 const Learn = () => {
-  const [activeTab, setActiveTab] = useState<Tab>("catalog");
-  const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty | "all">("all");
-  const [selectedDuration, setSelectedDuration] = useState<DurationFilter>("all");
-  const [sortBy, setSortBy] = useState<SortOption>("popular");
-  const [showFilters, setShowFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
+
+  const inProgressCourses = detailedCourses.filter((c) => c.progress > 0 && c.progress < 100);
+  const upcomingWorkshops = workshopsList.filter((w) => !w.isPast).slice(0, 3);
+  const activeCohorts = cohorts.filter((c) => c.isApplicationOpen);
 
   const filteredCourses = useMemo(() => {
     let result = [...detailedCourses];
-
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(
@@ -66,469 +28,268 @@ const Learn = () => {
           c.category.toLowerCase().includes(q)
       );
     }
-
     if (selectedCategory !== "all") {
       result = result.filter((c) => c.category.toLowerCase() === selectedCategory);
     }
-
-    if (selectedDifficulty !== "all") {
-      result = result.filter((c) => c.difficulty === selectedDifficulty);
-    }
-
-    if (selectedDuration !== "all") {
-      const getDurationMinutes = (d: string) => {
-        const h = parseInt(d.match(/(\d+)h/)?.[1] || "0");
-        const m = parseInt(d.match(/(\d+)m/)?.[1] || "0");
-        return h * 60 + m;
-      };
-      result = result.filter((c) => {
-        const mins = getDurationMinutes(c.duration);
-        if (selectedDuration === "short") return mins < 180;
-        if (selectedDuration === "medium") return mins >= 180 && mins <= 360;
-        return mins > 360;
-      });
-    }
-
-    if (sortBy === "popular") result.sort((a, b) => b.students - a.students);
-    else if (sortBy === "rated") result.sort((a, b) => b.rating - a.rating);
-
     return result;
-  }, [searchQuery, selectedCategory, selectedDifficulty, selectedDuration, sortBy]);
-
-  const instructors = useMemo(
-    () => [...new Set(detailedCourses.map((c) => c.instructor))],
-    []
-  );
-  const [selectedInstructor, setSelectedInstructor] = useState<string>("all");
-
-  const finalCourses = useMemo(() => {
-    if (selectedInstructor === "all") return filteredCourses;
-    return filteredCourses.filter((c) => c.instructor === selectedInstructor);
-  }, [filteredCourses, selectedInstructor]);
-
-  const groupedByFormat = useMemo(() => {
-    const groups: Record<CourseFormat, CourseDetailed[]> = {
-      Masterclass: [],
-      Cohort: [],
-      Workshop: [],
-    };
-    finalCourses.forEach((c) => {
-      if (groups[c.format]) groups[c.format].push(c);
-    });
-    return groups;
-  }, [finalCourses]);
-
-  // Filter cohorts by selected category
-  const filteredCohorts = useMemo(() => {
-    let result = [...cohorts];
-    if (selectedCategory !== "all") {
-      result = result.filter((c) => c.category.toLowerCase() === selectedCategory);
-    }
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (c) => c.title.toLowerCase().includes(q) || c.category.toLowerCase().includes(q) || c.mentors.some((m) => m.name.toLowerCase().includes(q))
-      );
-    }
-    return result;
-  }, [selectedCategory, searchQuery]);
-
-  const inProgressCourses = detailedCourses.filter((c) => c.progress > 0 && c.progress < 100);
-  const completedCourses = detailedCourses.filter((c) => c.progress === 100);
+  }, [searchQuery, selectedCategory]);
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-5xl space-y-5 p-4 lg:p-6">
+      <div className="mx-auto max-w-5xl space-y-8 p-4 py-6 lg:p-6">
         {/* Header */}
-        <div className="flex items-end justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground lg:text-3xl">Learn</h1>
-            <p className="text-sm text-muted-foreground">Master your craft with India's best creators</p>
-          </div>
+        <div>
+          <h1 className="text-2xl font-bold text-foreground lg:text-3xl">Learn</h1>
+          <p className="text-sm text-muted-foreground">Master your craft with India's best creators</p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex items-center gap-6 border-b border-border">
-          {([
-            { key: "catalog" as Tab, label: "All Courses" },
-            { key: "my-learning" as Tab, label: "My Learning" },
-          ]).map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`border-b-2 pb-3 text-sm font-semibold transition-colors ${
-                activeTab === tab.key
-                  ? "border-foreground text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === "catalog" && (
-          <>
-            {/* Search + Filter toggle */}
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Search courses, instructors..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-border bg-card pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-foreground/30 focus:outline-none"
-                />
-              </div>
-              <Button
-                variant="outline"
-                size="default"
-                onClick={() => setShowFilters(!showFilters)}
-                className="gap-2"
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-                <span className="hidden sm:inline">Filters</span>
-              </Button>
-              <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
-                <SelectTrigger className="w-[140px] hidden sm:flex">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="popular">Most Popular</SelectItem>
-                  <SelectItem value="rated">Highest Rated</SelectItem>
-                  <SelectItem value="newest">Newest</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Filters panel */}
-            {showFilters && (
-              <div className="flex flex-wrap gap-3 rounded-lg border border-border bg-card p-4">
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue placeholder="Category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {categories.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.icon} {c.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={selectedDifficulty} onValueChange={(v) => setSelectedDifficulty(v as Difficulty | "all")}>
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Difficulty" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Levels</SelectItem>
-                    <SelectItem value="Beginner">Beginner</SelectItem>
-                    <SelectItem value="Intermediate">Intermediate</SelectItem>
-                    <SelectItem value="Advanced">Advanced</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select value={selectedDuration} onValueChange={(v) => setSelectedDuration(v as DurationFilter)}>
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Duration" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Any Duration</SelectItem>
-                    <SelectItem value="short">Under 3h</SelectItem>
-                    <SelectItem value="medium">3–6h</SelectItem>
-                    <SelectItem value="long">Over 6h</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select value={selectedInstructor} onValueChange={setSelectedInstructor}>
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue placeholder="Instructor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Instructors</SelectItem>
-                    {instructors.map((i) => (
-                      <SelectItem key={i} value={i}>{i}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Categories */}
-            <div className="flex gap-2 overflow-x-auto hide-scrollbar">
-              <button
-                onClick={() => setSelectedCategory("all")}
-                className={`flex min-w-fit items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                  selectedCategory === "all"
-                    ? "border-foreground/30 bg-foreground/5 text-foreground"
-                    : "border-border bg-card text-foreground hover:border-foreground/20"
-                }`}
-              >
-                All
+        {/* ── Section 1: Continue Learning ── */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-foreground">Continue Learning</h2>
+            {inProgressCourses.length > 0 && (
+              <button onClick={() => navigate("/learn/my-learning")} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
+                View all →
               </button>
-              {categories.map((cat) => (
+            )}
+          </div>
+          {inProgressCourses.length > 0 ? (
+            <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
+              {inProgressCourses.map((course) => (
                 <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(selectedCategory === cat.id ? "all" : cat.id)}
-                  className={`flex min-w-fit items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                    selectedCategory === cat.id
-                      ? "border-foreground/30 bg-foreground/5 text-foreground"
-                      : "border-border bg-card text-foreground hover:border-foreground/20"
-                  }`}
+                  key={course.id}
+                  onClick={() => navigate(course.lastLessonId ? `/learn/lesson/${course.lastLessonId}` : `/learn/course/${course.id}`)}
+                  className="group min-w-[280px] max-w-[320px] shrink-0 rounded-xl border border-border bg-card overflow-hidden text-left transition-colors hover:border-muted-foreground/30"
                 >
-                  <span>{cat.icon}</span>
-                  <span>{cat.label}</span>
+                  <div className="relative">
+                    <img src={course.thumbnail} alt={course.title} className="h-36 w-full object-cover" />
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-muted">
+                      <div className="h-full bg-primary transition-all" style={{ width: `${course.progress}%` }} />
+                    </div>
+                  </div>
+                  <div className="p-3.5 space-y-2">
+                    <p className="text-sm font-semibold text-foreground line-clamp-2 leading-tight">{course.title}</p>
+                    <div className="flex items-center gap-2">
+                      <img src={course.instructorImage} alt={course.instructor} className="h-5 w-5 rounded-full object-cover" />
+                      <span className="text-xs text-muted-foreground">{course.instructor}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground font-mono">{course.progress}% complete</span>
+                      <span className="flex items-center gap-1 text-xs font-semibold text-foreground">
+                        Resume <Play className="h-3 w-3" />
+                      </span>
+                    </div>
+                  </div>
                 </button>
               ))}
             </div>
-
-            {/* Results count */}
-            <p className="text-xs text-muted-foreground">{finalCourses.length} course{finalCourses.length !== 1 ? "s" : ""} found</p>
-
-            {/* Grouped course sections */}
-            <div className="space-y-8">
-              {FORMAT_ORDER.map((format) => {
-                const meta = FORMAT_META[format];
-
-                // For Cohort format, render cohort cards from cohortData
-                if (format === "Cohort") {
-                  if (filteredCohorts.length === 0) return null;
-                  return (
-                    <section key={format} className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">{meta.icon}</span>
-                        <div>
-                          <h2 className="text-lg font-bold text-foreground">{meta.label}</h2>
-                          <p className="text-xs text-muted-foreground">{meta.description}</p>
-                        </div>
-                      </div>
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {filteredCohorts.map((cohort) => (
-                          <CohortCard key={cohort.id} cohort={cohort} onClick={() => navigate(`/learn/cohort/${cohort.id}`)} />
-                        ))}
-                      </div>
-                    </section>
-                  );
-                }
-
-                // For Masterclass / Workshop, render course cards
-                const courses = groupedByFormat[format];
-                if (courses.length === 0) return null;
-                return (
-                  <section key={format} className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">{meta.icon}</span>
-                      <div>
-                        <h2 className="text-lg font-bold text-foreground">{meta.label}</h2>
-                        <p className="text-xs text-muted-foreground">{meta.description}</p>
-                      </div>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {courses.map((course) => (
-                        <CourseCard
-                          key={course.id}
-                          course={course}
-                          ctaLabel={meta.cta}
-                          onClick={() => navigate(`/learn/course/${course.id}`)}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                );
-              })}
+          ) : (
+            <div className="rounded-xl border border-dashed border-border bg-card/50 p-8 text-center">
+              <BookOpen className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+              <p className="text-sm font-medium text-foreground">Start your first course below</p>
+              <p className="text-xs text-muted-foreground mt-1">Browse our catalog and begin learning</p>
             </div>
+          )}
+        </section>
 
-            {finalCourses.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <Search className="h-10 w-10 text-muted-foreground/30 mb-3" />
-                <p className="text-sm font-medium text-foreground">No courses found</p>
-                <p className="text-xs text-muted-foreground mt-1">Try adjusting your filters or search query</p>
-              </div>
-            )}
-          </>
+        {/* ── Section 2: Upcoming Workshops ── */}
+        {upcomingWorkshops.length > 0 && (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-foreground">Upcoming Workshops</h2>
+              <button onClick={() => navigate("/learn/workshops")} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
+                See all →
+              </button>
+            </div>
+            <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
+              {upcomingWorkshops.map((w) => (
+                <button
+                  key={w.id}
+                  onClick={() => navigate(`/workshops/${w.id}`)}
+                  className="group min-w-[260px] max-w-[300px] shrink-0 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground/30"
+                >
+                  <Badge variant="secondary" className="text-[10px] mb-2.5">{w.date} · {w.time}</Badge>
+                  <p className="text-sm font-semibold text-foreground line-clamp-2 leading-tight mb-2">{w.title}</p>
+                  <div className="flex items-center gap-2 mb-3">
+                    <img src={w.instructorImage} alt={w.instructor} className="h-5 w-5 rounded-full object-cover" />
+                    <span className="text-xs text-muted-foreground">{w.instructor}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-foreground">₹{w.price}</span>
+                    <span className="text-[10px] text-muted-foreground">{w.seatsRemaining}/{w.seatsTotal} seats left</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
         )}
 
-        {activeTab === "my-learning" && (
-          <div className="space-y-8">
-            {inProgressCourses.length > 0 && (
-              <div className="space-y-4">
-                <h2 className="text-lg font-bold text-foreground">In Progress</h2>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {inProgressCourses.map((course) => (
-                    <div
-                      key={course.id}
-                      onClick={() => navigate(`/learn/course/${course.id}`)}
-                      className="group cursor-pointer rounded-lg border border-border bg-card overflow-hidden transition-colors hover:border-foreground/20"
-                    >
-                      <div className="flex gap-4 p-4">
-                        <img src={course.thumbnail} alt={course.title} className="h-20 w-28 rounded-md object-cover" />
-                        <div className="flex-1 min-w-0">
-                          <Badge variant="secondary" className="text-[10px] mb-1">{course.category}</Badge>
-                          <h3 className="text-sm font-bold text-foreground truncate">{course.title}</h3>
-                          <p className="text-xs text-muted-foreground">{course.instructor}</p>
-                          <div className="mt-2 flex items-center gap-2">
-                            <Progress value={course.progress} className="h-1.5 flex-1" />
-                            <span className="text-xs font-mono text-muted-foreground">{course.progress}%</span>
-                          </div>
-                        </div>
-                      </div>
-                      {course.lastLessonId && (
-                        <div className="flex items-center gap-2 border-t border-border px-4 py-2.5 bg-secondary/20">
-                          <Play className="h-3 w-3 text-foreground" />
-                          <span className="text-xs text-muted-foreground">Continue where you left off</span>
-                          <ArrowRight className="h-3 w-3 ml-auto text-muted-foreground" />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+        {/* ── Section 3: Explore Courses ── */}
+        <section className="space-y-4">
+          <h2 className="text-lg font-bold text-foreground">Explore Courses</h2>
 
-            {completedCourses.length > 0 && (
-              <div className="space-y-4">
-                <h2 className="text-lg font-bold text-foreground">Completed</h2>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {completedCourses.map((course) => (
-                    <div
-                      key={course.id}
-                      onClick={() => navigate(`/learn/course/${course.id}`)}
-                      className="group cursor-pointer rounded-lg border border-border bg-card p-4 transition-colors hover:border-foreground/20"
-                    >
-                      <div className="flex gap-4">
-                        <img src={course.thumbnail} alt={course.title} className="h-16 w-24 rounded-md object-cover" />
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-bold text-foreground truncate">{course.title}</h3>
-                          <p className="text-xs text-muted-foreground">{course.instructor}</p>
-                          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                            <CheckCircle2 className="h-3.5 w-3.5 text-[hsl(var(--success))]" />
-                            <span>Completed</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {inProgressCourses.length === 0 && completedCourses.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <BookOpen className="h-10 w-10 text-muted-foreground/30 mb-3" />
-                <p className="text-sm font-medium text-foreground">No courses yet</p>
-                <p className="text-xs text-muted-foreground mt-1 mb-4">Start your learning journey today</p>
-                <Button size="sm" onClick={() => setActiveTab("catalog")}>Browse courses</Button>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <h2 className="text-lg font-bold text-foreground">Downloads</h2>
-              <div className="rounded-lg border border-dashed border-border bg-card/50 p-8 text-center">
-                <p className="text-sm text-muted-foreground">Offline downloads coming soon</p>
-                <p className="text-xs text-muted-foreground mt-1">Download lessons for offline viewing</p>
-              </div>
-            </div>
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search courses, instructors..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-10 w-full rounded-lg border border-border bg-card pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-foreground/30 focus:outline-none"
+            />
           </div>
+
+          {/* Category chips */}
+          <div className="flex gap-2 overflow-x-auto hide-scrollbar">
+            <button
+              onClick={() => setSelectedCategory("all")}
+              className={`flex min-w-fit items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                selectedCategory === "all"
+                  ? "border-foreground/30 bg-foreground/5 text-foreground"
+                  : "border-border bg-card text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              All
+            </button>
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategory(selectedCategory === cat.id ? "all" : cat.id)}
+                className={`flex min-w-fit items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                  selectedCategory === cat.id
+                    ? "border-foreground/30 bg-foreground/5 text-foreground"
+                    : "border-border bg-card text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>{cat.icon}</span>
+                <span>{cat.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Course list */}
+          <div className="space-y-3">
+            {filteredCourses.map((course) => (
+              <CourseCard key={course.id} course={course} onClick={() => navigate(`/learn/course/${course.id}`)} />
+            ))}
+            {filteredCourses.length === 0 && (
+              <div className="text-center py-12">
+                <Search className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-sm font-medium text-foreground">No courses found</p>
+                <p className="text-xs text-muted-foreground mt-1">Try a different search or category</p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ── Section 4: Cohort Programs ── */}
+        {activeCohorts.length > 0 && (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-foreground">Cohort Programs</h2>
+              <button onClick={() => navigate("/learn")} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
+                Learn more →
+              </button>
+            </div>
+            {activeCohorts.slice(0, 1).map((cohort) => (
+              <button
+                key={cohort.id}
+                onClick={() => navigate(`/learn/cohort/${cohort.id}`)}
+                className="group relative w-full overflow-hidden rounded-2xl text-left transition-transform hover:scale-[1.005]"
+              >
+                <div className="relative h-48 sm:h-56">
+                  <img src={cohort.thumbnail} alt={cohort.title} className="h-full w-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent" />
+                  <div className="absolute top-3 left-3">
+                    <Badge className="bg-primary text-primary-foreground text-[10px] font-bold">
+                      <GraduationCap className="h-3 w-3 mr-1" />
+                      Cohort Program
+                    </Badge>
+                  </div>
+                  <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5">
+                    <p className="text-xs text-white/60 mb-1">{cohort.category} · {cohort.duration}</p>
+                    <h3 className="text-lg sm:text-xl font-bold text-white leading-tight">{cohort.title}</h3>
+                    <p className="text-sm text-white/70 mt-1 line-clamp-1">{cohort.subtitle}</p>
+                    <div className="flex items-center gap-4 mt-3">
+                      <div className="flex items-center gap-1.5 text-white/70 text-xs">
+                        <Users className="h-3.5 w-3.5" />
+                        {cohort.totalSeats - cohort.filledSeats}/{cohort.totalSeats} seats
+                      </div>
+                      <span className="text-xs font-semibold text-white flex items-center gap-1">
+                        Learn more <ChevronRight className="h-3 w-3" />
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </section>
         )}
       </div>
     </AppShell>
   );
 };
 
-const CourseCard = ({ course, ctaLabel, onClick }: { course: CourseDetailed; ctaLabel: string; onClick: () => void }) => (
-  <div
-    onClick={onClick}
-    className="group cursor-pointer overflow-hidden rounded-lg border border-border bg-card transition-all hover:border-foreground/20 hover:shadow-elevated"
-  >
-    <div className="relative">
-      <img src={course.thumbnail} alt={course.title} className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
-      <div className="absolute inset-0 bg-gradient-to-t from-card/60 to-transparent" />
-      {course.isSubscription && (
-        <Badge className="absolute right-3 top-3 bg-foreground text-background text-[10px] font-bold">PRO</Badge>
-      )}
-      {course.progress > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-secondary">
-          <div className="h-full bg-foreground transition-all" style={{ width: `${course.progress}%` }} />
-        </div>
-      )}
-      <Badge variant="secondary" className="absolute left-3 top-3 text-[10px]">{course.difficulty}</Badge>
-    </div>
-    <div className="p-4">
-      <div className="mb-2 flex items-center gap-2">
-        <img src={course.instructorImage} alt={course.instructor} className="h-5 w-5 rounded-full object-cover" />
-        <span className="text-xs text-muted-foreground">{course.instructor}</span>
-      </div>
-      <h3 className="text-sm font-bold text-foreground leading-snug group-hover:text-foreground/80 transition-colors line-clamp-2">{course.title}</h3>
-      <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1">
-          <Star className="h-3 w-3 text-[hsl(var(--highlight))]" /> {course.rating}
-        </span>
-        <span className="flex items-center gap-1">
-          <Users className="h-3 w-3" /> {course.students.toLocaleString()}
-        </span>
-        <span className="flex items-center gap-1">
-          <Clock className="h-3 w-3" /> {course.duration}
-        </span>
-      </div>
-      <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-        <span className="font-bold text-foreground">₹{course.price.toLocaleString()}</span>
-        <Button size="sm" variant="default" className="h-7 text-xs px-3" onClick={(e) => { e.stopPropagation(); onClick(); }}>
-          {ctaLabel}
-        </Button>
-      </div>
-    </div>
-  </div>
-);
+// ── Course Card Component ──
+function CourseCard({ course, onClick }: { course: CourseDetailed; onClick: () => void }) {
+  const isEnrolled = course.purchased || course.progress > 0;
 
-import type { Cohort } from "@/data/cohortData";
-
-const CohortCard = ({ cohort, onClick }: { cohort: Cohort; onClick: () => void }) => {
-  const seatsLeft = cohort.totalSeats - cohort.filledSeats;
   return (
-    <div
+    <button
       onClick={onClick}
-      className="group cursor-pointer overflow-hidden rounded-lg border border-border bg-card transition-all hover:border-foreground/20 hover:shadow-elevated"
+      className="group flex w-full gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-muted-foreground/30 sm:gap-4"
     >
-      <div className="relative">
-        <img src={cohort.thumbnail} alt={cohort.title} className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
-        <div className="absolute inset-0 bg-gradient-to-t from-card/80 to-transparent" />
-        <Badge variant="secondary" className="absolute left-3 top-3 text-[10px]">{cohort.category}</Badge>
-        {cohort.isApplicationOpen ? (
-          <Badge className="absolute right-3 top-3 bg-[hsl(var(--success))]/15 text-[hsl(var(--success))] border-[hsl(var(--success))]/30 text-[10px]">Open</Badge>
-        ) : (
-          <Badge variant="destructive" className="absolute right-3 top-3 text-[10px]">Closed</Badge>
+      {/* Thumbnail */}
+      <div className="relative h-24 w-36 shrink-0 overflow-hidden rounded-lg sm:h-28 sm:w-44">
+        <img src={course.thumbnail} alt={course.title} className="h-full w-full object-cover" />
+        {isEnrolled && course.progress > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-muted">
+            <div className="h-full bg-primary" style={{ width: `${course.progress}%` }} />
+          </div>
+        )}
+        {!isEnrolled && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Play className="h-8 w-8 text-white" />
+          </div>
         )}
       </div>
-      <div className="p-4 space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="flex -space-x-1.5">
-            {cohort.mentors.slice(0, 2).map((m) => (
-              <img key={m.id} src={m.image} alt={m.name} className="h-5 w-5 rounded-full border border-card object-cover" />
-            ))}
+
+      {/* Info */}
+      <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+        <div>
+          <p className="text-sm font-semibold text-foreground line-clamp-2 leading-tight">{course.title}</p>
+          <div className="mt-1.5 flex items-center gap-2">
+            <img src={course.instructorImage} alt={course.instructor} className="h-4 w-4 rounded-full object-cover" />
+            <span className="text-xs text-muted-foreground truncate">{course.instructor}</span>
           </div>
-          <span className="text-xs text-muted-foreground truncate">{cohort.mentors.map((m) => m.name).join(", ")}</span>
         </div>
-        <h3 className="text-sm font-bold text-foreground leading-snug group-hover:text-foreground/80 transition-colors line-clamp-2">{cohort.title}</h3>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {cohort.duration}</span>
-          <span className="flex items-center gap-1"><Users className="h-3 w-3" /> {seatsLeft > 0 ? `${seatsLeft} seats left` : "Full"}</span>
-        </div>
-        <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
-          <Award className="h-3 w-3 text-[hsl(var(--highlight))] mt-0.5 shrink-0" />
-          <span className="line-clamp-1">{cohort.outcome}</span>
-        </div>
-        <div className="flex items-center justify-between border-t border-border pt-3 mt-1">
-          <span className="font-bold text-foreground">₹{cohort.price.toLocaleString()}</span>
-          <Button size="sm" variant="default" className="h-7 text-xs px-3" onClick={(e) => { e.stopPropagation(); onClick(); }}>
-            {cohort.isApplicationOpen ? "Request Your Invite" : "Join Waitlist"}
-          </Button>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Star className="h-3 w-3 text-[hsl(var(--highlight))] fill-[hsl(var(--highlight))]" />
+            <span className="font-semibold text-foreground">{course.rating}</span>
+            <span>({course.ratingsCount})</span>
+          </span>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            {course.duration}
+          </span>
+          {isEnrolled ? (
+            <Badge variant="secondary" className="text-[9px]">
+              {course.progress === 100 ? "Completed" : `${course.progress}%`}
+            </Badge>
+          ) : course.isSubscription ? (
+            <Badge variant="secondary" className="text-[9px]">Included in subscription</Badge>
+          ) : (
+            <span className="text-xs font-bold text-foreground">₹{course.price.toLocaleString()}</span>
+          )}
         </div>
       </div>
-    </div>
+      <ChevronRight className="h-4 w-4 text-muted-foreground mt-1 shrink-0 hidden sm:block" />
+    </button>
   );
-};
+}
+
+import courseCinematography from "@/assets/course-cinematography.jpg";
 
 export default Learn;
