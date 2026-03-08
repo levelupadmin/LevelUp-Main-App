@@ -405,6 +405,7 @@ const AdminCourses = () => {
           {/* Detail Tabs */}
           <Tabs value={activeDetailTab} onValueChange={setActiveDetailTab}>
             <TabsList className="bg-secondary/50 border border-border">
+              <TabsTrigger value="details" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" />Details</TabsTrigger>
               <TabsTrigger value="content" className="gap-1.5 text-xs"><BookOpen className="h-3.5 w-3.5" />Content</TabsTrigger>
               {(courseType === "workshop" || courseType === "cohort") && (
                 <TabsTrigger value="schedule" className="gap-1.5 text-xs"><Calendar className="h-3.5 w-3.5" />Schedule</TabsTrigger>
@@ -412,6 +413,152 @@ const AdminCourses = () => {
               <TabsTrigger value="pricing" className="gap-1.5 text-xs"><Tag className="h-3.5 w-3.5" />Pricing</TabsTrigger>
               <TabsTrigger value="settings" className="gap-1.5 text-xs"><Settings2 className="h-3.5 w-3.5" />Settings</TabsTrigger>
             </TabsList>
+
+            {/* ── DETAILS TAB ── */}
+            <TabsContent value="details" className="space-y-4 mt-4">
+              {/* Basic Info */}
+              <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+                <h4 className="text-sm font-semibold text-foreground">Basic Information</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Title</label>
+                    <Input defaultValue={selectedCourse.title} onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, title: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Slug</label>
+                    <Input defaultValue={selectedCourse.slug} onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, slug: e.target.value })} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Short Description</label>
+                  <Input defaultValue={selectedCourse.short_description || ""} onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, short_description: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Full Description</label>
+                  <Textarea defaultValue={selectedCourse.description || ""} onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, description: e.target.value })} className="min-h-[100px]" />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Instructor Name</label>
+                    <Input defaultValue={selectedCourse.instructor_name} onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, instructor_name: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Category</label>
+                    <Select defaultValue={selectedCourse.category} onValueChange={(v) => updateCourse.mutate({ id: selectedCourse.id, category: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>{CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Duration</label>
+                    <Input defaultValue={selectedCourse.estimated_duration || ""} onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, estimated_duration: e.target.value })} placeholder="e.g. 12 hours" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Images */}
+              <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+                <h4 className="text-sm font-semibold text-foreground">Images</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Thumbnail */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground block">Thumbnail</label>
+                    <div className="aspect-video rounded-lg overflow-hidden bg-secondary border border-border">
+                      {selectedCourse.thumbnail_url ? (
+                        <img src={selectedCourse.thumbnail_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center"><Upload className="h-5 w-5 text-muted-foreground/40" /></div>
+                      )}
+                    </div>
+                    <label className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+                      <Upload className="h-3 w-3" /> {selectedCourse.thumbnail_url ? "Change" : "Upload"}
+                      <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                        const file = e.target.files?.[0]; if (!file) return;
+                        const path = `thumbnails/${selectedCourse.id}-thumb.${file.name.split(".").pop()}`;
+                        const { error: err } = await supabase.storage.from("course-content").upload(path, file, { upsert: true });
+                        if (err) { toast({ title: "Upload failed", description: err.message, variant: "destructive" }); return; }
+                        const { data: u } = supabase.storage.from("course-content").getPublicUrl(path);
+                        updateCourse.mutate({ id: selectedCourse.id, thumbnail_url: u.publicUrl });
+                      }} />
+                    </label>
+                  </div>
+
+                  {/* Instructor Image */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground block">Instructor Photo</label>
+                    <div className="aspect-[3/4] rounded-lg overflow-hidden bg-secondary border border-border">
+                      {(selectedCourse as any).instructor_image_url ? (
+                        <img src={(selectedCourse as any).instructor_image_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center"><Upload className="h-5 w-5 text-muted-foreground/40" /></div>
+                      )}
+                    </div>
+                    <label className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+                      <Upload className="h-3 w-3" /> {(selectedCourse as any).instructor_image_url ? "Change" : "Upload"}
+                      <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                        const file = e.target.files?.[0]; if (!file) return;
+                        const path = `instructors/${selectedCourse.id}-instructor.${file.name.split(".").pop()}`;
+                        const { error: err } = await supabase.storage.from("course-content").upload(path, file, { upsert: true });
+                        if (err) { toast({ title: "Upload failed", description: err.message, variant: "destructive" }); return; }
+                        const { data: u } = supabase.storage.from("course-content").getPublicUrl(path);
+                        updateCourse.mutate({ id: selectedCourse.id, instructor_image_url: u.publicUrl } as any);
+                      }} />
+                    </label>
+                  </div>
+
+                  {/* Banner (for cohort/workshop) */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground block">Banner / Hero Image</label>
+                    <div className="aspect-video rounded-lg overflow-hidden bg-secondary border border-border">
+                      {(selectedCourse as any).banner_url ? (
+                        <img src={(selectedCourse as any).banner_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center"><Upload className="h-5 w-5 text-muted-foreground/40" /></div>
+                      )}
+                    </div>
+                    <label className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+                      <Upload className="h-3 w-3" /> {(selectedCourse as any).banner_url ? "Change" : "Upload"}
+                      <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                        const file = e.target.files?.[0]; if (!file) return;
+                        const path = `banners/${selectedCourse.id}-banner.${file.name.split(".").pop()}`;
+                        const { error: err } = await supabase.storage.from("course-content").upload(path, file, { upsert: true });
+                        if (err) { toast({ title: "Upload failed", description: err.message, variant: "destructive" }); return; }
+                        const { data: u } = supabase.storage.from("course-content").getPublicUrl(path);
+                        updateCourse.mutate({ id: selectedCourse.id, banner_url: u.publicUrl } as any);
+                      }} />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tags */}
+              <div className="rounded-lg border border-border bg-card p-5 space-y-3">
+                <h4 className="text-sm font-semibold text-foreground">Tags (what students will learn)</h4>
+                <div className="flex flex-wrap gap-2">
+                  {(selectedCourse.tags || []).map((tag, i) => (
+                    <Badge key={i} variant="secondary" className="gap-1">
+                      {tag}
+                      <button onClick={() => {
+                        const newTags = [...(selectedCourse.tags || [])];
+                        newTags.splice(i, 1);
+                        updateCourse.mutate({ id: selectedCourse.id, tags: newTags });
+                      }} className="hover:text-destructive"><X className="h-3 w-3" /></button>
+                    </Badge>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input placeholder="Add a tag..." id="new-tag-input" onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const input = e.target as HTMLInputElement;
+                      if (input.value.trim()) {
+                        updateCourse.mutate({ id: selectedCourse.id, tags: [...(selectedCourse.tags || []), input.value.trim()] });
+                        input.value = "";
+                      }
+                    }
+                  }} />
+                </div>
+              </div>
+            </TabsContent>
 
             {/* ── CONTENT TAB ── */}
             <TabsContent value="content" className="space-y-3 mt-4">
