@@ -1,7 +1,7 @@
 import AppShell from "@/components/layout/AppShell";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GraduationCap, Compass, Users, ChevronRight, MapPin, Sparkles, Lock } from "lucide-react";
+import { GraduationCap, Compass, Users, ChevronRight, MapPin, Sparkles } from "lucide-react";
 import { cohortCommunities } from "@/data/communityData";
 import { cityCommunities, skillCommunities } from "@/data/communityData";
 import { directoryCreators } from "@/data/communityData";
@@ -57,35 +57,53 @@ const Community = () => {
   );
 };
 
-// ── My Cohorts ──
+// ── My Cohorts — Banner Cards ──
 function MyCohorts({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
   const enrolled = cohortCommunities;
   return (
     <div className="space-y-4">
       {enrolled.length > 0 ? (
-        enrolled.map((cc) => (
-          <button
-            key={cc.id}
-            onClick={() => navigate(`/community/cohort/${cc.cohortId}`)}
-            className="flex w-full items-center gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground/30"
-          >
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent">
-              <Lock className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-foreground truncate">{cc.title}</p>
-              <p className="text-xs text-muted-foreground">{cc.batchLabel} · {cc.memberCount} members</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {cc.channels.filter((c) => c.unread).reduce((sum, c) => sum + (c.unread || 0), 0) > 0 && (
-                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-foreground px-1.5 text-[10px] font-bold text-background">
-                  {cc.channels.filter((c) => c.unread).reduce((sum, c) => sum + (c.unread || 0), 0)}
-                </span>
-              )}
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </button>
-        ))
+        enrolled.map((cc) => {
+          const totalUnread = cc.channels.reduce((sum, c) => sum + (c.unread || 0), 0);
+          return (
+            <button
+              key={cc.id}
+              onClick={() => navigate(`/community/cohort/${cc.cohortId}`)}
+              className="group relative w-full overflow-hidden rounded-2xl text-left transition-transform hover:scale-[1.01]"
+            >
+              {/* Banner image */}
+              <div className="relative h-44 sm:h-52">
+                <img
+                  src={cc.image}
+                  alt={cc.title}
+                  className="h-full w-full object-cover"
+                />
+                {/* Gradient overlay */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+
+                {/* Unread badge */}
+                {totalUnread > 0 && (
+                  <div className="absolute top-3 right-3 flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-2 text-xs font-bold text-primary-foreground">
+                    {totalUnread} new
+                  </div>
+                )}
+
+                {/* Bottom text overlay */}
+                <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5">
+                  <h3 className="text-lg sm:text-xl font-bold text-white leading-tight">{cc.title}</h3>
+                  <div className="mt-1.5 flex items-center gap-3 text-white/70 text-xs sm:text-sm">
+                    <span>{cc.batchLabel}</span>
+                    <span className="h-1 w-1 rounded-full bg-white/40" />
+                    <span className="flex items-center gap-1">
+                      <Users className="h-3.5 w-3.5" />
+                      {cc.memberCount} members
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </button>
+          );
+        })
       ) : (
         <div className="rounded-xl border border-border bg-card p-8 text-center">
           <GraduationCap className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
@@ -103,7 +121,7 @@ function MyCohorts({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
   );
 }
 
-// ── Explore Communities ──
+// ── Explore Communities — Image Cards ──
 function ExploreCommunities({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
   const [exploreMode, setExploreMode] = useState<"city" | "skill">("city");
 
@@ -133,46 +151,60 @@ function ExploreCommunities({ navigate }: { navigate: ReturnType<typeof useNavig
 
       {/* City communities */}
       {exploreMode === "city" && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {cityCommunities.map((city) => (
-            <button
-              key={city.id}
-              onClick={() => navigate(`/community/city/${city.slug}`)}
-              className="flex items-center gap-3.5 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground/30"
-            >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-lg">
-                📍
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground">{city.name}</p>
-                <p className="text-xs text-muted-foreground">{city.memberCount} creators</p>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </button>
-          ))}
-        </div>
+        <>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Cities</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {cityCommunities.map((city) => (
+              <button
+                key={city.id}
+                onClick={() => navigate(`/community/city/${city.slug}`)}
+                className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]"
+              >
+                <div className="relative aspect-[4/5]">
+                  <img
+                    src={city.image}
+                    alt={city.name}
+                    className="h-full w-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 p-3">
+                    <p className="text-sm font-bold text-white">{city.name}</p>
+                    <p className="text-[10px] text-white/60">{city.memberCount} creators</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       {/* Skill communities */}
       {exploreMode === "skill" && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {skillCommunities.map((skill) => (
-            <button
-              key={skill.id}
-              onClick={() => navigate(`/community/skill/${skill.slug}`)}
-              className="flex items-center gap-3.5 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground/30"
-            >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-lg">
-                ✨
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground">{skill.name}</p>
-                <p className="text-xs text-muted-foreground">{skill.memberCount} creators</p>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </button>
-          ))}
-        </div>
+        <>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Skills</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {skillCommunities.map((skill) => (
+              <button
+                key={skill.id}
+                onClick={() => navigate(`/community/skill/${skill.slug}`)}
+                className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]"
+              >
+                <div className="relative aspect-[4/5]">
+                  <img
+                    src={skill.image}
+                    alt={skill.name}
+                    className="h-full w-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 p-3">
+                    <p className="text-sm font-bold text-white">{skill.name}</p>
+                    <p className="text-[10px] text-white/60">{skill.memberCount} creators</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

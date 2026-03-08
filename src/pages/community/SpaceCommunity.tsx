@@ -31,54 +31,10 @@ const SpaceCommunity = ({ type }: SpaceCommunityProps) => {
   const channel = activeChannel ? community.channels.find((c) => c.id === activeChannel) : null;
   const messages = activeChannel ? (mockChannelMessages[activeChannel] || mockChannelMessages["discussions"] || []) : [];
 
-  // Channel detail view
-  if (activeChannel && channel) {
-    return (
-      <AppShell>
-        <div className="flex h-[calc(100vh-3.5rem)] flex-col">
-          <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-            <button onClick={() => setActiveChannel(null)} className="rounded-lg p-1 text-muted-foreground hover:text-foreground">
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <span className="text-lg">{channel.icon}</span>
-            <div>
-              <p className="text-sm font-semibold text-foreground">{channel.label}</p>
-              <p className="text-xs text-muted-foreground">{community.name} Community</p>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {messages.map((msg) => (
-              <MessageCard key={msg.id} message={msg} />
-            ))}
-            {messages.length === 0 && (
-              <div className="text-center py-12">
-                <p className="text-sm text-muted-foreground">No messages yet</p>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-border p-3">
-            <div className="flex items-center gap-2 rounded-xl bg-accent px-4 py-3">
-              <input
-                type="text"
-                placeholder={`Message #${channel.label.toLowerCase()}...`}
-                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
-                readOnly
-              />
-              <button className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">Send</button>
-            </div>
-          </div>
-        </div>
-      </AppShell>
-    );
-  }
-
-  // Channel list view
   return (
     <AppShell>
       <div className="flex h-[calc(100vh-3.5rem)]">
-        {/* Desktop sidebar */}
+        {/* Desktop sidebar — always visible */}
         <aside className="hidden w-64 shrink-0 border-r border-border bg-sidebar lg:block overflow-y-auto">
           <div className="p-4">
             <button onClick={() => navigate("/community")} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4">
@@ -116,54 +72,99 @@ const SpaceCommunity = ({ type }: SpaceCommunityProps) => {
           </div>
         </aside>
 
-        {/* Mobile */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="lg:hidden px-4 pt-4">
-            <button onClick={() => navigate("/community")} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4">
-              <ArrowLeft className="h-3.5 w-3.5" /> Back
-            </button>
-            <h1 className="text-lg font-bold text-foreground mb-0.5">{community.name}</h1>
-            <p className="text-xs text-muted-foreground mb-1">{community.description}</p>
-            <p className="text-xs text-muted-foreground mb-5">{community.memberCount} creators</p>
-          </div>
-
-          <div className="px-4 pb-6 lg:hidden">
-            <div className="space-y-1">
-              {community.channels.map((ch) => (
-                <button
-                  key={ch.id}
-                  onClick={() => setActiveChannel(ch.id)}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-accent"
-                >
-                  <span className="text-base">{ch.icon}</span>
-                  <span className="flex-1 text-sm font-medium text-foreground">{ch.label}</span>
-                  {ch.unread && ch.unread > 0 && (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-foreground px-1.5 text-[10px] font-bold text-background">
-                      {ch.unread}
-                    </span>
-                  )}
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        {/* Main content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {!activeChannel ? (
+            <div className="flex-1 overflow-y-auto">
+              {/* Mobile */}
+              <div className="lg:hidden px-4 pt-4">
+                <button onClick={() => navigate("/community")} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4">
+                  <ArrowLeft className="h-3.5 w-3.5" /> Back
                 </button>
-              ))}
-            </div>
-            <div className="mt-4 border-t border-border pt-4">
-              <button
-                onClick={() => navigate(`/community/directory?${type}=${slug}`)}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-              >
-                <Users className="h-4 w-4" /> View Creators in {community.name}
-              </button>
-            </div>
-          </div>
+                <h1 className="text-lg font-bold text-foreground mb-0.5">{community.name}</h1>
+                <p className="text-xs text-muted-foreground mb-1">{community.description}</p>
+                <p className="text-xs text-muted-foreground mb-5">{community.memberCount} creators</p>
+              </div>
 
-          <div className="hidden lg:flex items-center justify-center h-full">
-            <div className="text-center">
-              <p className="text-lg mb-1">{type === "city" ? "📍" : "✨"}</p>
-              <p className="text-sm font-medium text-foreground">{community.name}</p>
-              <p className="text-xs text-muted-foreground mt-1">{community.description}</p>
-              <p className="text-xs text-muted-foreground mt-3">Select a channel from the sidebar</p>
+              <div className="px-4 pb-6 lg:hidden">
+                <div className="space-y-1">
+                  {community.channels.map((ch) => (
+                    <button
+                      key={ch.id}
+                      onClick={() => setActiveChannel(ch.id)}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-accent"
+                    >
+                      <span className="text-base">{ch.icon}</span>
+                      <span className="flex-1 text-sm font-medium text-foreground">{ch.label}</span>
+                      {ch.unread && ch.unread > 0 && (
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-foreground px-1.5 text-[10px] font-bold text-background">
+                          {ch.unread}
+                        </span>
+                      )}
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-4 border-t border-border pt-4">
+                  <button
+                    onClick={() => navigate(`/community/directory?${type}=${slug}`)}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                  >
+                    <Users className="h-4 w-4" /> View Creators in {community.name}
+                  </button>
+                </div>
+              </div>
+
+              {/* Desktop placeholder */}
+              <div className="hidden lg:flex items-center justify-center h-full">
+                <div className="text-center">
+                  <p className="text-lg mb-1">{type === "city" ? "📍" : "✨"}</p>
+                  <p className="text-sm font-medium text-foreground">{community.name}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{community.description}</p>
+                  <p className="text-xs text-muted-foreground mt-3">Select a channel from the sidebar</p>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <>
+              {/* Channel header */}
+              <div className="flex items-center gap-3 border-b border-border px-4 py-3 shrink-0">
+                <button onClick={() => setActiveChannel(null)} className="rounded-lg p-1 text-muted-foreground hover:text-foreground lg:hidden">
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+                <span className="text-lg">{channel?.icon}</span>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{channel?.label}</p>
+                  <p className="text-xs text-muted-foreground">{community.name} Community</p>
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {messages.map((msg) => (
+                  <MessageCard key={msg.id} message={msg} />
+                ))}
+                {messages.length === 0 && (
+                  <div className="text-center py-12">
+                    <p className="text-sm text-muted-foreground">No messages yet</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Compose */}
+              <div className="border-t border-border p-3 shrink-0">
+                <div className="flex items-center gap-2 rounded-xl bg-accent px-4 py-3">
+                  <input
+                    type="text"
+                    placeholder={`Message #${channel?.label.toLowerCase()}...`}
+                    className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+                    readOnly
+                  />
+                  <button className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">Send</button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </AppShell>
