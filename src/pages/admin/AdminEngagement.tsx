@@ -32,13 +32,13 @@ const useStudentEngagement = () =>
       const scores = await Promise.all(
         userIds.map(async (userId) => {
           const { data } = await supabase.rpc("get_student_engagement_score", { _user_id: userId });
-          return { userId, score: data };
+          return { userId, score: data as Record<string, number> | null };
         })
       );
 
       return userIds.map((userId) => {
         const profile = profiles?.find((p: any) => p.id === userId);
-        const scoreData = scores.find((s) => s.userId === userId)?.score;
+        const scoreData = scores.find((s) => s.userId === userId)?.score as Record<string, number> | null;
         const userEnrollments = enrollments.filter((e: any) => e.user_id === userId);
         return {
           userId,
