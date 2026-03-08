@@ -1,10 +1,9 @@
 import AppShell from "@/components/layout/AppShell";
 import {
-  courses,
   communityPosts,
-  workshops,
   featuredCreators,
 } from "@/data/mockData";
+import { detailedCourses } from "@/data/learningData";
 import HeroCarousel from "@/components/home/HeroCarousel";
 import UpcomingEvents from "@/components/home/UpcomingEvents";
 import {
@@ -18,7 +17,7 @@ import { useNavigate } from "react-router-dom";
 
 const Index = () => {
   const navigate = useNavigate();
-  const enrolledCourses = courses.filter((c) => c.progress > 0);
+  const enrolledCourses = detailedCourses.filter((c) => c.progress > 0);
 
   return (
     <AppShell>
@@ -64,9 +63,7 @@ const Index = () => {
                         {course.title}
                       </h3>
                       <p className="mt-1 font-mono text-xs text-muted-foreground">
-                        {course.format === "Cohort"
-                          ? `Week ${course.currentModule} / ${course.totalModules}`
-                          : `Module ${course.currentModule} / ${course.totalModules}`}
+                        {course.modules.reduce((a, m) => a + m.lessons.filter(l => l.state === "completed").length, 0)} / {course.lessonsCount} lessons
                       </p>
                     </div>
                   </div>

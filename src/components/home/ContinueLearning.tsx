@@ -1,10 +1,10 @@
 import { useNavigate } from "react-router-dom";
-import { courses } from "@/data/mockData";
+import { detailedCourses } from "@/data/learningData";
 import { ArrowRight } from "lucide-react";
 
 const ContinueLearning = () => {
   const navigate = useNavigate();
-  const inProgress = courses.filter((c) => c.progress > 0);
+  const inProgress = detailedCourses.filter((c) => c.progress > 0);
 
   if (inProgress.length === 0) return null;
 
