@@ -7,8 +7,9 @@ import { Tables, TablesInsert } from "@/integrations/supabase/types";
 import {
   FileText, Search, Plus, MoreHorizontal, Star, ArrowLeft, Trash2,
   GripVertical, ChevronDown, ChevronRight, Video, BookOpen, Save, X,
-  Upload, File, FileQuestion, ClipboardList, Loader2,
+  Upload, File, FileQuestion, ClipboardList, Loader2, Eye,
 } from "lucide-react";
+import StudentCoursePreview from "@/components/admin/StudentCoursePreview";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
