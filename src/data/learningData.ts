@@ -3,6 +3,14 @@ import instructor2 from "@/assets/instructor-2.jpg";
 import courseEditing from "@/assets/course-editing.jpg";
 import courseCinematography from "@/assets/course-cinematography.jpg";
 import courseContent from "@/assets/course-content.jpg";
+import mcKarthik from "@/assets/mc-karthik-subbaraj.png";
+import mcAnthony from "@/assets/mc-anthony-gonsalvez.png";
+import mcVenketRam from "@/assets/mc-venket-ram.png";
+import mcDrkKiran from "@/assets/mc-drk-kiran.webp";
+import mcRaviBasrur from "@/assets/mc-ravi-basrur.webp";
+import mcLokesh from "@/assets/mc-lokesh-kanagaraj.png";
+import mcNelson from "@/assets/mc-nelson-dilipkumar.jpg";
+import mcComingSoon from "@/assets/mc-coming-soon.jpg";
 
 export type Difficulty = "Beginner" | "Intermediate" | "Advanced";
 export type LessonState = "not_started" | "in_progress" | "completed";
