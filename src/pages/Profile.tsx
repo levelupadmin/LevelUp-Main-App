@@ -39,7 +39,7 @@ const Profile = () => {
         <div className="relative h-32 rounded-b-xl bg-gradient-to-br from-highlight/20 via-secondary to-background lg:h-44">
           <div className="absolute -bottom-10 left-1/2 -translate-x-1/2">
             <img
-              src={user?.avatar || instructor1}
+              src={user?.avatar_url || instructor1}
               alt={user?.name}
               className="h-20 w-20 rounded-full border-4 border-background object-cover lg:h-24 lg:w-24"
             />
