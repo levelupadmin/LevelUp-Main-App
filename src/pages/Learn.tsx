@@ -15,7 +15,7 @@ const Learn = () => {
 
   const inProgressCourses = detailedCourses.filter((c) => c.progress > 0 && c.progress < 100);
   const upcomingWorkshops = workshopsList.filter((w) => !w.isPast).slice(0, 3);
-  const activeCohorts = cohorts.filter((c) => c.status === "open" || c.status === "upcoming");
+  const activeCohorts = cohorts.filter((c) => c.isApplicationOpen);
 
   const filteredCourses = useMemo(() => {
     let result = [...detailedCourses];
