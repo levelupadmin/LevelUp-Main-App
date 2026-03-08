@@ -2,21 +2,27 @@ import { useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Flame, Users, Mail, ChevronDown, ChevronRight, Settings, ArrowLeft,
-  Hash, Lock, Plus,
+  Hash, Lock, Plus, MapPin, Sparkles,
 } from "lucide-react";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { sidebarBatches, sidebarSpaces } from "@/data/feedData";
+import { sidebarBatches } from "@/data/feedData";
 import { batchCohorts, type BatchCohort, type BatchChannel } from "@/data/batchData";
+import {
+  cityCommunities, skillCommunities,
+  type CityCommunity, type SkillCommunity, type Channel,
+} from "@/data/communityData";
 import instructor1 from "@/assets/instructor-1.jpg";
 import FeedView from "@/components/community/FeedView";
 import PeopleView from "@/components/community/PeopleView";
 import InboxView from "@/components/community/InboxView";
 import ChannelView from "@/components/community/ChannelView";
+import SpaceChannelView from "@/components/community/SpaceChannelView";
 
 type View = "feed" | "people" | "inbox";
+type SpaceType = "city" | "skill";
 
 interface Props {
   children?: React.ReactNode;
@@ -28,34 +34,56 @@ const CommunityShell = ({ children, initialView = "feed" }: Props) => {
   const location = useLocation();
   const [activeView, setActiveView] = useState<View>(initialView);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Batch expansion
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     GENERAL: true, LEARNING: true, SHOWCASE: true, SOCIAL: true,
   });
-
-  // Channel selection state
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
 
+  // Space expansion
+  const [expandedSpace, setExpandedSpace] = useState<{ type: SpaceType; id: string } | null>(null);
+  const [selectedSpaceChannel, setSelectedSpaceChannel] = useState<{ type: SpaceType; spaceId: string; channelId: string } | null>(null);
+
+  // Collapsed space sub-sections
+  const [citiesExpanded, setCitiesExpanded] = useState(true);
+  const [skillsExpanded, setSkillsExpanded] = useState(true);
+
   const isPostDetail = location.pathname.startsWith("/community/post/");
   const isBatchSpace = location.pathname.startsWith("/community/batch/");
-  const isChannelActive = selectedBatchId !== null && selectedChannelId !== null;
+  const isBatchChannelActive = selectedBatchId !== null && selectedChannelId !== null;
+  const isSpaceChannelActive = selectedSpaceChannel !== null;
+  const isAnyChannelActive = isBatchChannelActive || isSpaceChannelActive;
 
-  const handleNavClick = useCallback((view: View) => {
-    setActiveView(view);
+  // Clear all channel selections
+  const clearChannels = () => {
     setExpandedBatch(null);
     setSelectedBatchId(null);
     setSelectedChannelId(null);
+    setExpandedSpace(null);
+    setSelectedSpaceChannel(null);
+  };
+
+  const handleNavClick = useCallback((view: View) => {
+    setActiveView(view);
+    clearChannels();
     setSidebarOpen(false);
     if (location.pathname !== "/community") navigate("/community");
   }, [navigate, location.pathname]);
 
   const handleBatchClick = (batchId: string) => {
+    // Collapse any expanded space
+    setExpandedSpace(null);
+    setSelectedSpaceChannel(null);
+
     if (expandedBatch === batchId) {
       setExpandedBatch(null);
+      setSelectedBatchId(null);
+      setSelectedChannelId(null);
     } else {
       setExpandedBatch(batchId);
-      // Auto-select first channel
       const cohort = batchCohorts.find(c => c.id === batchId);
       if (cohort && cohort.channels.length > 0) {
         setSelectedBatchId(batchId);
@@ -64,17 +92,41 @@ const CommunityShell = ({ children, initialView = "feed" }: Props) => {
     }
   };
 
-  const handleChannelClick = (batchId: string, channelId: string) => {
+  const handleBatchChannelClick = (batchId: string, channelId: string) => {
     setSelectedBatchId(batchId);
     setSelectedChannelId(channelId);
+    setSelectedSpaceChannel(null);
     setSidebarOpen(false);
-    // Ensure we're on /community (not navigating away)
     if (location.pathname !== "/community") navigate("/community");
   };
 
-  const handleSpaceClick = (slug: string) => {
-    navigate(`/community/skill/${slug}`);
+  const handleSpaceClick = (type: SpaceType, spaceId: string) => {
+    // Collapse any expanded batch
+    setExpandedBatch(null);
+    setSelectedBatchId(null);
+    setSelectedChannelId(null);
+
+    if (expandedSpace?.id === spaceId && expandedSpace?.type === type) {
+      setExpandedSpace(null);
+      setSelectedSpaceChannel(null);
+    } else {
+      setExpandedSpace({ type, id: spaceId });
+      // Auto-select first channel
+      const community = type === "city"
+        ? cityCommunities.find(c => c.id === spaceId)
+        : skillCommunities.find(c => c.id === spaceId);
+      if (community && community.channels.length > 0) {
+        setSelectedSpaceChannel({ type, spaceId, channelId: community.channels[0].id });
+      }
+    }
+  };
+
+  const handleSpaceChannelClick = (type: SpaceType, spaceId: string, channelId: string) => {
+    setSelectedSpaceChannel({ type, spaceId, channelId });
+    setSelectedBatchId(null);
+    setSelectedChannelId(null);
     setSidebarOpen(false);
+    if (location.pathname !== "/community") navigate("/community");
   };
 
   const toggleCategory = (cat: string) => {
@@ -87,13 +139,21 @@ const CommunityShell = ({ children, initialView = "feed" }: Props) => {
     { id: "inbox" as View, label: "Inbox", icon: Mail, badge: 3 },
   ];
 
-  // Get selected cohort/channel objects
+  // Resolved objects
   const selectedCohort = selectedBatchId ? batchCohorts.find(c => c.id === selectedBatchId) : null;
-  const selectedChannel = selectedCohort && selectedChannelId
-    ? selectedCohort.channels.find(ch => ch.id === selectedChannelId)
+  const selectedBatchChannel = selectedCohort && selectedChannelId
+    ? selectedCohort.channels.find(ch => ch.id === selectedChannelId) : null;
+
+  const resolvedSpace = selectedSpaceChannel
+    ? (selectedSpaceChannel.type === "city"
+      ? cityCommunities.find(c => c.id === selectedSpaceChannel.spaceId)
+      : skillCommunities.find(c => c.id === selectedSpaceChannel.spaceId))
+    : null;
+  const resolvedSpaceChannel = resolvedSpace
+    ? resolvedSpace.channels.find(ch => ch.id === selectedSpaceChannel!.channelId)
     : null;
 
-  // ── Sidebar content ──
+  // ── Sidebar ──
   const SidebarInner = () => (
     <div className="flex flex-col h-full" style={{ background: "hsl(240 33% 14%)" }}>
       {/* User context */}
@@ -125,7 +185,7 @@ const CommunityShell = ({ children, initialView = "feed" }: Props) => {
             </p>
           </div>
           {mainNav.map((item) => {
-            const isActive = activeView === item.id && !isPostDetail && !isBatchSpace && !isChannelActive;
+            const isActive = activeView === item.id && !isPostDetail && !isBatchSpace && !isAnyChannelActive;
             return (
               <button
                 key={item.id}
@@ -150,7 +210,7 @@ const CommunityShell = ({ children, initialView = "feed" }: Props) => {
             );
           })}
 
-          {/* My Batches */}
+          {/* ── My Batches ── */}
           <div className="mt-4 px-3 mb-1">
             <p className="text-[10px] font-semibold uppercase tracking-wider px-2 py-2" style={{ color: "hsl(0 0% 33%)" }}>
               My Batches
@@ -212,15 +272,13 @@ const CommunityShell = ({ children, initialView = "feed" }: Props) => {
                             return (
                               <button
                                 key={ch.id}
-                                onClick={() => handleChannelClick(batch.id, ch.id)}
+                                onClick={() => handleBatchChannelClick(batch.id, ch.id)}
                                 className="w-full flex items-center gap-2 py-1.5 text-[13px] transition-colors relative"
                                 style={{
                                   paddingLeft: "2rem",
                                   color: isActiveChannel
                                     ? "hsl(var(--highlight))"
-                                    : ch.isUnread
-                                      ? "hsl(0 0% 95%)"
-                                      : "hsl(0 0% 50%)",
+                                    : ch.isUnread ? "hsl(0 0% 95%)" : "hsl(0 0% 50%)",
                                   background: isActiveChannel ? "hsl(240 20% 18%)" : "transparent",
                                 }}
                               >
@@ -246,28 +304,93 @@ const CommunityShell = ({ children, initialView = "feed" }: Props) => {
             })
           )}
 
-          {/* My Spaces */}
+          {/* ── My Spaces ── */}
           <div className="mt-4 px-3 mb-1">
             <p className="text-[10px] font-semibold uppercase tracking-wider px-2 py-2" style={{ color: "hsl(0 0% 33%)" }}>
               My Spaces
             </p>
           </div>
-          {sidebarSpaces.map((space) => (
-            <button
-              key={space.id}
-              onClick={() => handleSpaceClick(space.slug)}
-              className="w-full flex items-center gap-2.5 px-5 py-2 text-[13px] transition-colors hover:text-white"
-              style={{ color: "hsl(0 0% 75%)" }}
-            >
-              <span>{space.emoji}</span>
-              <span className="flex-1 text-left truncate">{space.name}</span>
-              {space.hasUnread && (
-                <div className="w-2 h-2 rounded-full" style={{ background: "hsl(var(--info))" }} />
-              )}
-            </button>
-          ))}
+
+          {/* Cities */}
           <button
-            className="w-full flex items-center gap-2 px-5 py-2 text-xs transition-colors"
+            onClick={() => setCitiesExpanded(!citiesExpanded)}
+            className="w-full flex items-center gap-2 px-5 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors"
+            style={{ color: "hsl(0 0% 45%)" }}
+          >
+            {citiesExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+            <MapPin size={12} />
+            Cities
+          </button>
+          {citiesExpanded && cityCommunities.slice(0, 3).map((city) => {
+            const isExpanded = expandedSpace?.type === "city" && expandedSpace.id === city.id;
+            return (
+              <div key={city.id}>
+                <button
+                  onClick={() => handleSpaceClick("city", city.id)}
+                  className="w-full flex items-center gap-2.5 px-5 py-2 text-[13px] transition-colors"
+                  style={{
+                    color: isExpanded ? "hsl(0 0% 95%)" : "hsl(0 0% 75%)",
+                    background: isExpanded ? "hsl(240 20% 18%)" : "transparent",
+                  }}
+                >
+                  {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  <span>🏙️</span>
+                  <span className="flex-1 text-left truncate">{city.name}</span>
+                </button>
+                {isExpanded && (
+                  <SpaceChannelList
+                    channels={city.channels}
+                    type="city"
+                    spaceId={city.id}
+                    selectedSpaceChannel={selectedSpaceChannel}
+                    onChannelClick={handleSpaceChannelClick}
+                  />
+                )}
+              </div>
+            );
+          })}
+
+          {/* Skills */}
+          <button
+            onClick={() => setSkillsExpanded(!skillsExpanded)}
+            className="w-full flex items-center gap-2 px-5 py-1.5 text-[11px] font-bold uppercase tracking-wider mt-1 transition-colors"
+            style={{ color: "hsl(0 0% 45%)" }}
+          >
+            {skillsExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+            <Sparkles size={12} />
+            Skills
+          </button>
+          {skillsExpanded && skillCommunities.slice(0, 4).map((skill) => {
+            const isExpanded = expandedSpace?.type === "skill" && expandedSpace.id === skill.id;
+            return (
+              <div key={skill.id}>
+                <button
+                  onClick={() => handleSpaceClick("skill", skill.id)}
+                  className="w-full flex items-center gap-2.5 px-5 py-2 text-[13px] transition-colors"
+                  style={{
+                    color: isExpanded ? "hsl(0 0% 95%)" : "hsl(0 0% 75%)",
+                    background: isExpanded ? "hsl(240 20% 18%)" : "transparent",
+                  }}
+                >
+                  {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  <span>✨</span>
+                  <span className="flex-1 text-left truncate">{skill.name}</span>
+                </button>
+                {isExpanded && (
+                  <SpaceChannelList
+                    channels={skill.channels}
+                    type="skill"
+                    spaceId={skill.id}
+                    selectedSpaceChannel={selectedSpaceChannel}
+                    onChannelClick={handleSpaceChannelClick}
+                  />
+                )}
+              </div>
+            );
+          })}
+
+          <button
+            className="w-full flex items-center gap-2 px-5 py-2 text-xs transition-colors mt-1"
             style={{ color: "hsl(var(--highlight))" }}
           >
             <Plus size={14} />
@@ -301,13 +424,25 @@ const CommunityShell = ({ children, initialView = "feed" }: Props) => {
   const renderMainContent = () => {
     if (children) return children;
 
-    // If a channel is selected, show ChannelView
-    if (isChannelActive && selectedCohort && selectedChannel) {
+    // Batch channel view
+    if (isBatchChannelActive && selectedCohort && selectedBatchChannel) {
       return (
         <ChannelView
           key={`${selectedBatchId}-${selectedChannelId}`}
           cohort={selectedCohort}
-          channel={selectedChannel}
+          channel={selectedBatchChannel}
+          onToggleSidebar={() => setSidebarOpen(true)}
+        />
+      );
+    }
+
+    // Space channel view
+    if (isSpaceChannelActive && resolvedSpace && resolvedSpaceChannel) {
+      return (
+        <SpaceChannelView
+          key={`${selectedSpaceChannel!.spaceId}-${selectedSpaceChannel!.channelId}`}
+          spaceName={resolvedSpace.name}
+          channel={resolvedSpaceChannel}
           onToggleSidebar={() => setSidebarOpen(true)}
         />
       );
@@ -346,5 +481,56 @@ const CommunityShell = ({ children, initialView = "feed" }: Props) => {
     </div>
   );
 };
+
+// ── Reusable space channel list in sidebar ──
+function SpaceChannelList({
+  channels,
+  type,
+  spaceId,
+  selectedSpaceChannel,
+  onChannelClick,
+}: {
+  channels: Channel[];
+  type: SpaceType;
+  spaceId: string;
+  selectedSpaceChannel: { type: SpaceType; spaceId: string; channelId: string } | null;
+  onChannelClick: (type: SpaceType, spaceId: string, channelId: string) => void;
+}) {
+  return (
+    <div className="pb-1">
+      {channels.map(ch => {
+        const isActive =
+          selectedSpaceChannel?.type === type &&
+          selectedSpaceChannel.spaceId === spaceId &&
+          selectedSpaceChannel.channelId === ch.id;
+        const hasUnread = (ch.unread ?? 0) > 0;
+
+        return (
+          <button
+            key={ch.id}
+            onClick={() => onChannelClick(type, spaceId, ch.id)}
+            className="w-full flex items-center gap-2 py-1.5 text-[13px] transition-colors relative"
+            style={{
+              paddingLeft: "2.5rem",
+              color: isActive
+                ? "hsl(var(--highlight))"
+                : hasUnread ? "hsl(0 0% 95%)" : "hsl(0 0% 50%)",
+              background: isActive ? "hsl(240 20% 18%)" : "transparent",
+            }}
+          >
+            {isActive && (
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r" style={{ background: "hsl(var(--highlight))" }} />
+            )}
+            <span className="text-xs">{ch.icon}</span>
+            <span className={hasUnread && !isActive ? "font-semibold" : ""}>{ch.label}</span>
+            {hasUnread && !isActive && (
+              <div className="ml-auto mr-3 w-2 h-2 rounded-full" style={{ background: "hsl(var(--info))" }} />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export default CommunityShell;

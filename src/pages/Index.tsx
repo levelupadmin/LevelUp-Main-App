@@ -6,6 +6,7 @@ import {
 import { detailedCourses } from "@/data/learningData";
 import HeroCarousel from "@/components/home/HeroCarousel";
 import UpcomingEvents from "@/components/home/UpcomingEvents";
+import MyBatchCard from "@/components/home/MyBatchCard";
 import {
   ArrowRight,
   ChevronRight,
@@ -97,7 +98,10 @@ const Index = () => {
           </section>
         )}
 
-        {/* 2b. Upcoming Events */}
+        {/* 2b. My Batches */}
+        <MyBatchCard />
+
+        {/* 2c. Upcoming Events */}
         <UpcomingEvents />
 
         {/* 3. Popular in Community */}

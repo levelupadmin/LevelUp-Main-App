@@ -25,7 +25,7 @@ import Workshops from "./pages/Workshops";
 import WorkshopDetail from "./pages/WorkshopDetail";
 import Community from "./pages/Community";
 import CohortCommunity from "./pages/community/CohortCommunity";
-import SpaceCommunity from "./pages/community/SpaceCommunity";
+// SpaceCommunity routes now redirect to /community
 import BatchSpace from "./pages/community/BatchSpace";
 import Directory from "./pages/Directory";
 import CommunityPost from "./pages/CommunityPost";
@@ -80,8 +80,8 @@ const App = () => (
           <Route path="/community/post/:id" element={<AuthGuard><CommunityPost /></AuthGuard>} />
           <Route path="/community/batch/:id" element={<AuthGuard><BatchSpace /></AuthGuard>} />
           <Route path="/community/cohort/:slug" element={<AuthGuard><CohortCommunity /></AuthGuard>} />
-          <Route path="/community/city/:slug" element={<AuthGuard><SpaceCommunity type="city" /></AuthGuard>} />
-          <Route path="/community/skill/:slug" element={<AuthGuard><SpaceCommunity type="skill" /></AuthGuard>} />
+          <Route path="/community/city/:slug" element={<Navigate to="/community" replace />} />
+          <Route path="/community/skill/:slug" element={<Navigate to="/community" replace />} />
           <Route path="/community/directory" element={<AuthGuard><Directory /></AuthGuard>} />
           <Route path="/community/post/:id" element={<AuthGuard><CommunityPost /></AuthGuard>} />
 
