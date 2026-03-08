@@ -49,7 +49,7 @@ const ProfileEdit = () => {
       roles,
       skills,
       availability,
-      socialLinks: { instagram: instagram.trim(), youtube: youtube.trim(), linkedin: linkedin.trim() },
+      social_links: { instagram: instagram.trim(), youtube: youtube.trim(), linkedin: linkedin.trim() },
     });
     toast({ title: "Profile updated ✓" });
     navigate("/profile/me");

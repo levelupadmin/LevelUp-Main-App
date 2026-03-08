@@ -142,7 +142,7 @@ const Profile = () => {
               <button className="text-xs font-medium text-highlight hover:underline">See all</button>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {(user?.portfolio ?? [
+              {([
                 { id: "p1", title: "Golden Hour – Short Film", thumbnail: "", appreciations: 42 },
                 { id: "p2", title: "City Rhythms – Documentary", thumbnail: "", appreciations: 28 },
                 { id: "p3", title: "Monsoon Diaries", thumbnail: "", appreciations: 15 },
