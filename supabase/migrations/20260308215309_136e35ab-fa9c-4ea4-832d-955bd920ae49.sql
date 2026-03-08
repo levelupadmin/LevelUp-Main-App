@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS lesson_progress_user_lesson_unique ON public.lesson_progress (user_id, lesson_id);
