@@ -504,6 +504,14 @@ const AdminContent = () => {
               </Button>
             </div>
           </div>
+
+          <StudentCoursePreview
+            open={showStudentPreview}
+            onOpenChange={setShowStudentPreview}
+            course={selectedCourse}
+            modules={modules}
+            lessons={lessons as any}
+          />
         </div>
       </AdminLayout>
     );
