@@ -382,6 +382,7 @@ export type Database = {
           created_at: string
           id: string
           lesson_id: string
+          notes: string | null
           progress_pct: number
           status: Database["public"]["Enums"]["progress_status"]
           updated_at: string
@@ -393,6 +394,7 @@ export type Database = {
           created_at?: string
           id?: string
           lesson_id: string
+          notes?: string | null
           progress_pct?: number
           status?: Database["public"]["Enums"]["progress_status"]
           updated_at?: string
@@ -404,6 +406,7 @@ export type Database = {
           created_at?: string
           id?: string
           lesson_id?: string
+          notes?: string | null
           progress_pct?: number
           status?: Database["public"]["Enums"]["progress_status"]
           updated_at?: string
