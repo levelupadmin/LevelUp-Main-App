@@ -162,8 +162,142 @@ export const mockChannelMessages: Record<string, ChannelMessage[]> = {
   ],
 };
 
+// ── Feed Posts ──
+export interface FeedComment {
+  id: string;
+  author: string;
+  avatar: string;
+  content: string;
+  timeAgo: string;
+  likes: number;
+}
+
+export interface FeedPost {
+  id: string;
+  author: string;
+  avatar: string;
+  role: string;
+  content: string;
+  image?: string;
+  timeAgo: string;
+  likes: number;
+  comments: number;
+  commentsData: FeedComment[];
+  isBatchmate: boolean;
+  tags?: string[];
+}
+
+export const feedPosts: FeedPost[] = [
+  {
+    id: "fp-1", author: "Riya Desai", avatar: instructor2, role: "Cinematographer",
+    content: "Just wrapped my first color-graded short film! 🎨 Shot on Sony A7III, graded entirely in DaVinci Resolve. The teal-orange look is overdone but I tried a muted earthy palette instead. Would love feedback from fellow colorists!",
+    image: heroCinematography, timeAgo: "2h ago", likes: 42, comments: 14, isBatchmate: true,
+    tags: ["Color Grading", "Short Film"],
+    commentsData: [
+      { id: "fc-1", author: "Vikram Das", avatar: instructor1, content: "Love the earthy tones! What LUTs did you start with?", timeAgo: "1h ago", likes: 5 },
+      { id: "fc-2", author: "Sneha Patel", avatar: instructor2, content: "This is gorgeous. The skin tones look so natural 🔥", timeAgo: "45m ago", likes: 8 },
+    ],
+  },
+  {
+    id: "fp-2", author: "Sameer Khan", avatar: instructor1, role: "Filmmaker",
+    content: "🏆 BIG NEWS — My documentary project from the LevelUp filmmaking cohort just got selected for the Mumbai International Short Film Festival! Couldn't have done it without this community. Batch 2 forever! 🎬",
+    timeAgo: "5h ago", likes: 128, comments: 34, isBatchmate: false,
+    tags: ["Achievement", "Documentary"],
+    commentsData: [
+      { id: "fc-3", author: "Priya Sharma", avatar: instructor2, content: "SO proud of you! Batch 2 represent! 🎉", timeAgo: "4h ago", likes: 12 },
+    ],
+  },
+  {
+    id: "fp-3", author: "Kavya Singh", avatar: instructor2, role: "Content Creator",
+    content: "Unpopular opinion: vertical video is the future of storytelling, not just a social media format. We should be teaching vertical cinematography in cohorts. Change my mind. 🤔",
+    timeAgo: "8h ago", likes: 67, comments: 43, isBatchmate: true,
+    tags: ["Discussion"],
+    commentsData: [
+      { id: "fc-4", author: "Aditya Kumar", avatar: instructor1, content: "Hard disagree. Cinema is inherently widescreen — it's about peripheral vision.", timeAgo: "7h ago", likes: 15 },
+      { id: "fc-5", author: "Ananya Iyer", avatar: instructor2, content: "Why not both? The format should serve the story.", timeAgo: "6h ago", likes: 22 },
+    ],
+  },
+  {
+    id: "fp-4", author: "Aditya Verma", avatar: instructor1, role: "Video Editor",
+    content: "Quick tip for editors: If you're getting quality loss on Instagram Reels, export at 1080x1920, H.264, VBR 2-pass, target 15Mbps. Instagram re-encodes everything, so give it the best source possible. Saved me so many headaches.",
+    timeAgo: "12h ago", likes: 93, comments: 21, isBatchmate: false,
+    tags: ["Tips", "Editing"],
+    commentsData: [
+      { id: "fc-6", author: "Rohit Nair", avatar: instructor1, content: "This is gold. Bookmarked! 🙏", timeAgo: "11h ago", likes: 7 },
+    ],
+  },
+  {
+    id: "fp-5", author: "Meera Krishnan", avatar: instructor2, role: "Cinematographer",
+    content: "Spent the weekend shooting a documentary about street food vendors in Dharavi. No lights, no reflectors — just available light and a 35mm prime. Sometimes constraints make the best work. Here's a frame grab:",
+    image: heroFilmmaking, timeAgo: "1 day ago", likes: 156, comments: 28, isBatchmate: true,
+    tags: ["Documentary", "BTS"],
+    commentsData: [
+      { id: "fc-7", author: "Arjun Reddy", avatar: instructor1, content: "The texture in this frame is incredible. Available light supremacy.", timeAgo: "22h ago", likes: 18 },
+      { id: "fc-8", author: "Kavita Desai", avatar: instructor2, content: "Would love to see the full doc when it's done! 🎬", timeAgo: "20h ago", likes: 9 },
+    ],
+  },
+  {
+    id: "fp-6", author: "Rohan Gupta", avatar: instructor1, role: "Filmmaker",
+    content: "Looking for a sound designer in Mumbai for a 15-min short film. Paid gig. DM me if interested or tag someone! Need someone comfortable with Foley and ambient sound design.",
+    timeAgo: "1 day ago", likes: 34, comments: 16, isBatchmate: false,
+    tags: ["Opportunity", "Collaboration"],
+    commentsData: [
+      { id: "fc-9", author: "Priya Nair", avatar: instructor2, content: "DM'd you! This sounds right up my alley.", timeAgo: "23h ago", likes: 4 },
+    ],
+  },
+  {
+    id: "fp-7", author: "Ananya Iyer", avatar: instructor2, role: "Editor",
+    content: "Just discovered an incredible free LUT pack for DaVinci Resolve — 50+ film emulation LUTs that actually look good. Link in the resources channel of the Editing community. You're welcome 😏",
+    timeAgo: "2 days ago", likes: 78, comments: 19, isBatchmate: true,
+    tags: ["Resources", "Color Grading"],
+    commentsData: [],
+  },
+  {
+    id: "fp-8", author: "Vikash Gupta", avatar: instructor1, role: "Cinematographer",
+    content: "Question for DPs: What's your go-to setup for product films on a budget? Client wants a cinematic look but the budget is... let's just say creative. 😅 Currently thinking A7IV + Sigma Art 24-70 + one Aputure 300d.",
+    timeAgo: "2 days ago", likes: 45, comments: 31, isBatchmate: false,
+    tags: ["Question", "Cinematography"],
+    commentsData: [
+      { id: "fc-10", author: "Meera Krishnan", avatar: instructor2, content: "That setup works! Add a bounce board and a cheap LED panel for fill. You don't need more.", timeAgo: "2 days ago", likes: 11 },
+    ],
+  },
+  {
+    id: "fp-9", author: "Sneha Patel", avatar: instructor2, role: "Content Creator",
+    content: "Crossed 500K subscribers on YouTube today! 🎉 Started this journey 3 years ago with a phone and zero editing skills. The LevelUp editing cohort literally changed my career. If you're on the fence about joining — just do it.",
+    timeAgo: "3 days ago", likes: 234, comments: 52, isBatchmate: true,
+    tags: ["Milestone", "YouTube"],
+    commentsData: [
+      { id: "fc-11", author: "Rahul Sharma", avatar: instructor1, content: "INSANE! Congratulations Sneha! 🥳🥳🥳", timeAgo: "3 days ago", likes: 14 },
+    ],
+  },
+  {
+    id: "fp-10", author: "Arjun Reddy", avatar: instructor1, role: "Filmmaker",
+    content: "Hot take: Film schools are becoming irrelevant. Communities like LevelUp + YouTube + actually making films will teach you more in 6 months than 3 years of theory. The future is peer learning and mentorship, not lectures.",
+    timeAgo: "3 days ago", likes: 189, comments: 67, isBatchmate: false,
+    tags: ["Discussion", "Hot Take"],
+    commentsData: [
+      { id: "fc-12", author: "Kavita Desai", avatar: instructor2, content: "Partially agree but film school gave me access to equipment and industry connections I couldn't get otherwise.", timeAgo: "3 days ago", likes: 24 },
+    ],
+  },
+];
+
+export const trendingPosts = feedPosts.filter(p => (p.likes + p.comments) > 80).sort((a, b) => (b.likes + b.comments) - (a.likes + a.comments));
+
 // ── Creator Directory ──
 export interface DirectoryCreator {
+  id: string;
+  name: string;
+  role: string;
+  city: string;
+  experience: string;
+  experienceLevel: "Beginner" | "Intermediate" | "Advanced" | "Expert";
+  avatar: string;
+  description: string;
+  skills: string[];
+  available: boolean;
+  portfolioUrl?: string;
+  notableWork?: string;
+}
   id: string;
   name: string;
   role: string;
