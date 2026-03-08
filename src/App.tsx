@@ -24,9 +24,10 @@ import CohortDashboard from "./pages/CohortDashboard";
 import Workshops from "./pages/Workshops";
 import WorkshopDetail from "./pages/WorkshopDetail";
 import Community from "./pages/Community";
-import CommunitySpace from "./pages/CommunitySpace";
-import CommunityPost from "./pages/CommunityPost";
+import CohortCommunity from "./pages/community/CohortCommunity";
+import SpaceCommunity from "./pages/community/SpaceCommunity";
 import Directory from "./pages/Directory";
+import CommunityPost from "./pages/CommunityPost";
 import Opportunities from "./pages/Opportunities";
 import Profile from "./pages/Profile";
 import ProfilePublic from "./pages/ProfilePublic";
@@ -72,10 +73,15 @@ const App = () => (
           <Route path="/learn/cohort/:slug/dashboard" element={<AuthGuard><CohortDashboard /></AuthGuard>} />
           <Route path="/learn/workshops" element={<AuthGuard><Workshops /></AuthGuard>} />
           <Route path="/workshops/:slug" element={<AuthGuard><WorkshopDetail /></AuthGuard>} />
+
+          {/* Community */}
           <Route path="/community" element={<AuthGuard><Community /></AuthGuard>} />
-          <Route path="/community/space/:slug" element={<AuthGuard><CommunitySpace /></AuthGuard>} />
-          <Route path="/community/post/:id" element={<AuthGuard><CommunityPost /></AuthGuard>} />
+          <Route path="/community/cohort/:slug" element={<AuthGuard><CohortCommunity /></AuthGuard>} />
+          <Route path="/community/city/:slug" element={<AuthGuard><SpaceCommunity type="city" /></AuthGuard>} />
+          <Route path="/community/skill/:slug" element={<AuthGuard><SpaceCommunity type="skill" /></AuthGuard>} />
           <Route path="/community/directory" element={<AuthGuard><Directory /></AuthGuard>} />
+          <Route path="/community/post/:id" element={<AuthGuard><CommunityPost /></AuthGuard>} />
+
           <Route path="/opportunities" element={<AuthGuard><Opportunities /></AuthGuard>} />
           <Route path="/profile/me" element={<AuthGuard><Profile /></AuthGuard>} />
           <Route path="/profile/:handle" element={<AuthGuard><ProfilePublic /></AuthGuard>} />
