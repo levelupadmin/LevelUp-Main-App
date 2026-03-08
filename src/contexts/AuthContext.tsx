@@ -80,12 +80,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [state]);
 
   const login = (method: "phone" | "email" | "google", identifier?: string) => {
-    const user: UserProfile = {
+    const newUser: UserProfile = {
       ...defaultUser,
       ...(method === "phone" ? { phone: identifier } : {}),
       ...(method === "email" ? { email: identifier } : {}),
     };
-    setState((s) => ({ ...s, isAuthenticated: true, user: s.user ?? user }));
+    setState((s) => ({
+      ...s,
+      isAuthenticated: true,
+      user: s.user ? { ...s.user, role: s.user.role || defaultUser.role } : newUser,
+    }));
   };
 
   const logout = () => {
