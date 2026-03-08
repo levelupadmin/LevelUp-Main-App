@@ -118,7 +118,10 @@ const AdminContent = () => {
 
   // Module/Lesson creation
   const [newModuleTitle, setNewModuleTitle] = useState("");
-  const [newLessonData, setNewLessonData] = useState<{ moduleId: string; title: string; duration: string; type: string } | null>(null);
+  const [newLessonData, setNewLessonData] = useState<{
+    moduleId: string; title: string; duration: string; type: string;
+    videoUrl: string; file: File | null; content: string; uploading: boolean;
+  } | null>(null);
 
   const { data: courses = [], isLoading } = useCourses();
   const { data: modules = [] } = useModules(selectedCourseId);
