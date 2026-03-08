@@ -75,8 +75,9 @@ const App = () => (
           <Route path="/learn/workshops" element={<AuthGuard><Workshops /></AuthGuard>} />
           <Route path="/workshops/:slug" element={<AuthGuard><WorkshopDetail /></AuthGuard>} />
 
-          {/* Community */}
+          {/* Community — immersive (no AppShell) */}
           <Route path="/community" element={<AuthGuard><Community /></AuthGuard>} />
+          <Route path="/community/post/:id" element={<AuthGuard><CommunityPost /></AuthGuard>} />
           <Route path="/community/batch/:id" element={<AuthGuard><BatchSpace /></AuthGuard>} />
           <Route path="/community/cohort/:slug" element={<AuthGuard><CohortCommunity /></AuthGuard>} />
           <Route path="/community/city/:slug" element={<AuthGuard><SpaceCommunity type="city" /></AuthGuard>} />
