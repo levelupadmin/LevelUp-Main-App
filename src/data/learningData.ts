@@ -53,7 +53,7 @@ export interface CourseDetailed {
   thumbnail: string;
   category: string;
   difficulty: Difficulty;
-  format: "Masterclass" | "Cohort";
+  format: "Masterclass" | "Cohort" | "Workshop";
   rating: number;
   ratingsCount: number;
   students: number;
