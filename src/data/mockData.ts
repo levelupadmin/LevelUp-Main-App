@@ -14,11 +14,11 @@ export const heroData = {
 export const featuredBanner = {
   id: "1",
   category: "Filmmaking",
-  headline: "The Art of Cinematic Storytelling",
-  tagline: "A 12-week masterclass with Rajiv Menon",
-  description: "Learn the craft behind India's most celebrated visual narratives — from script to screen.",
-  cta: "Explore Program",
-  image: courseCinematography,
+  headline: "Learn & Create",
+  headlineAccent: "Cinema every single week",
+  cta: "How it works",
+  socialProof: "Join 2,340+ creators from India's top production houses",
+  brands: ["Yash Raj Films", "Excel Entertainment", "Phantom Films", "TVF", "Pocket Aces", "Film Companion", "Dice Media", "Terribly Tiny Tales"],
   route: "/learn/course/1",
 };
 
