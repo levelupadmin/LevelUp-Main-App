@@ -393,6 +393,15 @@ const AdminCourses = () => {
             </div>
           </div>
 
+          {/* Setup Checklist */}
+          <CourseSetupChecklist
+            course={selectedCourse}
+            modulesCount={modules.length}
+            lessonsCount={lessons.length}
+            schedulesCount={schedules.length}
+            onNavigateTab={setActiveDetailTab}
+          />
+
           {/* Detail Tabs */}
           <Tabs value={activeDetailTab} onValueChange={setActiveDetailTab}>
             <TabsList className="bg-secondary/50 border border-border">
