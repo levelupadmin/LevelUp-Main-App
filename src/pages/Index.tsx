@@ -49,28 +49,26 @@ const Index = () => {
                   key={course.id}
                   className="group overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/20"
                 >
-                  <div className="flex gap-4 p-5">
-                    <div className="h-24 w-20 shrink-0 overflow-hidden rounded-lg">
-                      <img
-                        src={course.thumbnail}
-                        alt={course.title}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-                    <div className="flex flex-1 flex-col justify-between">
-                      <div>
-                        <span className="inline-flex rounded bg-accent px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                          {course.format}
-                        </span>
-                        <h3 className="mt-1.5 text-sm font-bold leading-snug text-foreground">
-                          {course.title}
-                        </h3>
-                        <p className="mt-1 font-mono text-xs text-muted-foreground">
-                          {course.format === "Cohort"
-                            ? `Week ${course.currentModule} / ${course.totalModules}`
-                            : `Module ${course.currentModule} / ${course.totalModules}`}
-                        </p>
-                      </div>
+                  {/* Text area with fading background image */}
+                  <div className="relative overflow-hidden p-5">
+                    <img
+                      src={course.thumbnail}
+                      alt=""
+                      className="absolute inset-0 h-full w-full object-cover opacity-15"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-r from-card/80 via-card/60 to-transparent" />
+                    <div className="relative z-10">
+                      <span className="inline-flex rounded bg-accent/80 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground backdrop-blur-sm">
+                        {course.format}
+                      </span>
+                      <h3 className="mt-1.5 text-sm font-bold leading-snug text-foreground">
+                        {course.title}
+                      </h3>
+                      <p className="mt-1 font-mono text-xs text-muted-foreground">
+                        {course.format === "Cohort"
+                          ? `Week ${course.currentModule} / ${course.totalModules}`
+                          : `Module ${course.currentModule} / ${course.totalModules}`}
+                      </p>
                     </div>
                   </div>
                   {/* Progress + CTA */}
