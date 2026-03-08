@@ -1,47 +1,43 @@
-import { Heart, MessageCircle, ArrowRight } from "lucide-react";
-import { communityPosts } from "@/data/mockData";
 import { useNavigate } from "react-router-dom";
+import { communityPosts } from "@/data/mockData";
+import { ArrowRight } from "lucide-react";
 
 const CommunityHighlights = () => {
   const navigate = useNavigate();
 
   return (
-    <div>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-bold text-foreground">Community</h2>
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-foreground">
+          Popular in the <em className="font-light italic">community</em>
+        </h2>
         <button
           onClick={() => navigate("/community")}
-          className="flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:text-primary/80"
+          className="inline-flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
         >
-          View all <ArrowRight className="h-3 w-3" />
+          View all
+          <ArrowRight className="h-4 w-4" />
         </button>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         {communityPosts.slice(0, 2).map((post) => (
-          <div key={post.id} className="rounded-lg border border-border bg-card p-4">
+          <div
+            key={post.id}
+            onClick={() => navigate(`/community/post/${post.id}`)}
+            className="cursor-pointer rounded-xl border border-border bg-card p-5 transition-colors hover:border-muted-foreground/20"
+          >
             <div className="mb-3 flex items-center gap-3">
-              <img src={post.avatar} alt={post.author} className="h-8 w-8 rounded-full object-cover" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground">{post.author}</p>
-                <p className="text-xs text-muted-foreground">{post.authorLevel} · {post.timeAgo}</p>
+              <img src={post.avatar} alt={post.author} className="h-10 w-10 rounded-full object-cover" />
+              <div>
+                <p className="text-sm font-bold text-foreground">{post.author}</p>
+                <p className="text-xs text-muted-foreground">{post.timeAgo}</p>
               </div>
-              <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-                {post.tag}
-              </span>
             </div>
-            <p className="text-sm leading-relaxed text-foreground/90 line-clamp-2">{post.content}</p>
-            <div className="mt-3 flex items-center gap-4 border-t border-border pt-3 text-xs text-muted-foreground">
-              <button className="flex items-center gap-1 transition-colors hover:text-primary">
-                <Heart className="h-3.5 w-3.5" /> {post.likes}
-              </button>
-              <button className="flex items-center gap-1 transition-colors hover:text-primary">
-                <MessageCircle className="h-3.5 w-3.5" /> {post.comments}
-              </button>
-            </div>
+            <p className="text-sm leading-relaxed text-secondary-foreground line-clamp-3">{post.content}</p>
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 };
 

@@ -1,44 +1,49 @@
-import { Play } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { courses } from "@/data/mockData";
+import { ArrowRight } from "lucide-react";
 
 const ContinueLearning = () => {
+  const navigate = useNavigate();
   const inProgress = courses.filter((c) => c.progress > 0);
 
   if (inProgress.length === 0) return null;
 
   return (
-    <div>
-      <h2 className="mb-3 text-lg font-bold text-foreground">Continue Learning</h2>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-foreground">Continue learning</h2>
+        <button
+          onClick={() => navigate("/learn/my-learning")}
+          className="inline-flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
+        >
+          View all
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
         {inProgress.map((course) => (
           <div
             key={course.id}
-            className="group overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-primary/30"
+            onClick={() => navigate(`/learn/course/${course.id}`)}
+            className="group cursor-pointer rounded-xl border border-border bg-card p-4 transition-colors hover:border-muted-foreground/20"
           >
-            <div className="relative">
-              <img src={course.thumbnail} alt={course.title} className="h-36 w-full object-cover" />
-              <div className="absolute inset-0 flex items-center justify-center bg-background/30 opacity-0 transition-opacity group-hover:opacity-100">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary">
-                  <Play className="h-4 w-4 text-primary-foreground" />
+            <div className="flex gap-4">
+              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg">
+                <img src={course.thumbnail} alt={course.title} className="h-full w-full object-cover" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{course.category}</p>
+                <h3 className="mt-1 text-sm font-bold text-foreground">{course.title}</h3>
+                <div className="mt-2 h-1 rounded-full bg-accent">
+                  <div className="h-full rounded-full bg-foreground" style={{ width: `${course.progress}%` }} />
                 </div>
+                <p className="mt-1 text-xs text-muted-foreground">{course.progress}% complete</p>
               </div>
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-secondary">
-                <div
-                  className="h-full bg-primary rounded-full"
-                  style={{ width: `${course.progress}%` }}
-                />
-              </div>
-            </div>
-            <div className="p-4">
-              <p className="text-sm font-semibold text-foreground line-clamp-1">{course.title}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {course.progress}% complete · {course.instructor}
-              </p>
             </div>
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 };
 
