@@ -48,6 +48,8 @@ import AdminModeration from "./pages/admin/AdminModeration";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
 import AdminCohorts from "./pages/admin/AdminCohorts";
+import AdminOpportunities from "./pages/admin/AdminOpportunities";
+import AdminSettings from "./pages/admin/AdminSettings";
 
 import NotFound from "./pages/NotFound";
 
