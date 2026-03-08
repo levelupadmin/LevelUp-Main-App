@@ -131,7 +131,7 @@ const AdminCourses = () => {
   const [editingCourse, setEditingCourse] = useState<Partial<TablesInsert<"courses">> | null>(null);
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [showStudentPreview, setShowStudentPreview] = useState(false);
-  const [activeDetailTab, setActiveDetailTab] = useState("content");
+  const [activeDetailTab, setActiveDetailTab] = useState("details");
 
   // Module/Lesson creation
   const [newModuleTitle, setNewModuleTitle] = useState("");
