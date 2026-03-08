@@ -1,20 +1,47 @@
 import AppShell from "@/components/layout/AppShell";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useCourse, useCourseModules, useCourseLessons } from "@/hooks/useCourseData";
-import { Star, Clock, Users, Play, Lock, CheckCircle2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Star, Clock, Users, Play, Lock, CheckCircle2, Calendar } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 const CourseDetail = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const slotParam = searchParams.get("slot");
 
   const { data: course, isLoading: courseLoading } = useCourse(slug || "");
   const { data: modules = [] } = useCourseModules(course?.id);
   const { data: lessons = [] } = useCourseLessons(course?.id);
+
+  // Fetch schedules for recurring courses
+  const { data: schedules = [] } = useQuery({
+    queryKey: ["course-schedules", course?.id],
+    enabled: !!course?.id && course?.is_recurring,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("course_schedules")
+        .select("*")
+        .eq("course_id", course!.id)
+        .eq("is_active", true)
+        .order("day_of_week");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Find the active slot based on URL param
+  const activeSlot = slotParam
+    ? schedules.find((s: any) => s.slug === slotParam || s.id === slotParam)
+    : null;
 
   if (courseLoading) {
     return (
@@ -83,6 +110,22 @@ const CourseDetail = () => {
             )}
           </div>
 
+          {/* Slot-specific schedule badge */}
+          {activeSlot && (
+            <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+              <Calendar className="h-5 w-5 text-primary" />
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  {DAY_LABELS[(activeSlot as any).day_of_week]} at {(activeSlot as any).start_time?.slice(0, 5)}
+                  {(activeSlot as any).end_time ? ` – ${(activeSlot as any).end_time?.slice(0, 5)}` : ""}
+                </p>
+                {(activeSlot as any).label && (
+                  <p className="text-xs text-muted-foreground">{(activeSlot as any).label}</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Instructor */}
           <p className="text-sm text-muted-foreground">
             by <span className="font-semibold text-foreground">{course.instructor_name}</span>
@@ -105,11 +148,49 @@ const CourseDetail = () => {
 
           {/* CTA */}
           <div className="flex flex-wrap gap-3">
-            <Button onClick={handleStartCourse} className="gap-2">
-              <Play className="h-4 w-4" />
-              {course.is_free ? "Start Course (Free)" : `Start Course · ₹${course.price.toLocaleString()}`}
-            </Button>
+            {course.payment_page_url && !course.is_free ? (
+              <Button asChild className="gap-2">
+                <a
+                  href={`${course.payment_page_url}${slotParam ? (course.payment_page_url.includes("?") ? "&" : "?") + `slot=${slotParam}` : ""}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    if (slotParam) localStorage.setItem("pending_slot", slotParam);
+                  }}
+                >
+                  <Play className="h-4 w-4" />
+                  {`Enroll Now · ₹${course.price.toLocaleString()}`}
+                </a>
+              </Button>
+            ) : (
+              <Button onClick={handleStartCourse} className="gap-2">
+                <Play className="h-4 w-4" />
+                {course.is_free ? "Start Course (Free)" : `Start Course · ₹${course.price.toLocaleString()}`}
+              </Button>
+            )}
           </div>
+
+          {/* Available slots (only when no slot param and course is recurring) */}
+          {!slotParam && course.is_recurring && schedules.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-foreground">Available Batches</h3>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {schedules.map((s: any) => (
+                  <button
+                    key={s.id}
+                    onClick={() => navigate(`/course/${slug}?slot=${s.slug || s.id}`)}
+                    className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-secondary/30"
+                  >
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{DAY_LABELS[s.day_of_week]} at {s.start_time?.slice(0, 5)}</p>
+                      {s.label && <p className="text-xs text-muted-foreground">{s.label}</p>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Tabs */}

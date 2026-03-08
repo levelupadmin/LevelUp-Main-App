@@ -576,21 +576,54 @@ const AdminCourses = () => {
 
               {/* Existing Schedule Slots */}
               <div className="space-y-2">
-                {schedules.map((s: any) => (
-                  <div key={s.id} className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
-                    <div className="flex items-center gap-4">
-                      <div className="w-24">
-                        <span className="text-sm font-medium text-foreground">{DAY_LABELS[s.day_of_week]}</span>
+                {schedules.map((s: any) => {
+                  const slotSlug = s.slug || `${DAY_LABELS[s.day_of_week]?.toLowerCase()}-${s.start_time?.slice(0, 5)?.replace(":", "")}`;
+                  const landingUrl = `${window.location.origin}/course/${selectedCourse.slug}?slot=${slotSlug}`;
+                  return (
+                    <div key={s.id} className="rounded-lg border border-border bg-card px-4 py-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="w-24">
+                            <span className="text-sm font-medium text-foreground">{DAY_LABELS[s.day_of_week]}</span>
+                          </div>
+                          <span className="text-sm text-muted-foreground">{s.start_time?.slice(0, 5)} – {s.end_time?.slice(0, 5) || "–"}</span>
+                          {s.label && <Badge variant="outline" className="text-[10px]">{s.label}</Badge>}
+                          {s.zoom_link && <span className="text-xs text-muted-foreground flex items-center gap-1"><Link2 className="h-3 w-3" /> Custom link</span>}
+                        </div>
+                        <button onClick={() => deleteSchedule.mutate(s.id)} className="rounded-md p-1 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                      <span className="text-sm text-muted-foreground">{s.start_time?.slice(0, 5)} – {s.end_time?.slice(0, 5) || "–"}</span>
-                      {s.label && <Badge variant="outline" className="text-[10px]">{s.label}</Badge>}
-                      {s.zoom_link && <span className="text-xs text-muted-foreground flex items-center gap-1"><Link2 className="h-3 w-3" /> Custom link</span>}
+                      <div className="flex items-center gap-2">
+                        <Input
+                          className="flex-1 text-xs h-8 font-mono"
+                          value={landingUrl}
+                          readOnly
+                        />
+                        <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => {
+                          navigator.clipboard.writeText(landingUrl);
+                          toast({ title: "Link copied!", description: `Landing page link for ${DAY_LABELS[s.day_of_week]} slot copied.` });
+                        }}>
+                          <Link2 className="h-3 w-3" /> Copy Link
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[10px] text-muted-foreground shrink-0">Slug:</label>
+                        <Input
+                          className="h-7 text-xs w-40 font-mono"
+                          defaultValue={s.slug || slotSlug}
+                          onBlur={async (e) => {
+                            const { error } = await supabase.from("course_schedules").update({ slug: e.target.value } as any).eq("id", s.id);
+                            if (!error) {
+                              queryClient.invalidateQueries({ queryKey: ["admin-schedules"] });
+                              toast({ title: "Slug updated" });
+                            }
+                          }}
+                        />
+                      </div>
                     </div>
-                    <button onClick={() => deleteSchedule.mutate(s.id)} className="rounded-md p-1 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Add Schedule Slot */}
