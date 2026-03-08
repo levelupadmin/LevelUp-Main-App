@@ -125,6 +125,7 @@ export type Database = {
           created_at: string
           description: string | null
           duration: string | null
+          file_url: string | null
           id: string
           is_free: boolean
           module_id: string
@@ -140,6 +141,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           duration?: string | null
+          file_url?: string | null
           id?: string
           is_free?: boolean
           module_id: string
@@ -155,6 +157,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           duration?: string | null
+          file_url?: string | null
           id?: string
           is_free?: boolean
           module_id?: string
@@ -191,7 +194,7 @@ export type Database = {
     Enums: {
       content_status: "draft" | "published" | "archived"
       difficulty_level: "beginner" | "intermediate" | "advanced"
-      lesson_type: "video" | "text" | "quiz" | "assignment"
+      lesson_type: "video" | "text" | "quiz" | "assignment" | "pdf"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -321,7 +324,7 @@ export const Constants = {
     Enums: {
       content_status: ["draft", "published", "archived"],
       difficulty_level: ["beginner", "intermediate", "advanced"],
-      lesson_type: ["video", "text", "quiz", "assignment"],
+      lesson_type: ["video", "text", "quiz", "assignment", "pdf"],
     },
   },
 } as const
