@@ -221,6 +221,7 @@ export type Database = {
       courses: {
         Row: {
           access_tags: string[] | null
+          banner_url: string | null
           category: string
           certificate_enabled: boolean
           certificate_threshold: number | null
@@ -233,6 +234,7 @@ export type Database = {
           estimated_duration: string | null
           id: string
           instructor_id: string | null
+          instructor_image_url: string | null
           instructor_name: string
           is_free: boolean
           is_recurring: boolean
@@ -253,6 +255,7 @@ export type Database = {
         }
         Insert: {
           access_tags?: string[] | null
+          banner_url?: string | null
           category?: string
           certificate_enabled?: boolean
           certificate_threshold?: number | null
@@ -265,6 +268,7 @@ export type Database = {
           estimated_duration?: string | null
           id?: string
           instructor_id?: string | null
+          instructor_image_url?: string | null
           instructor_name?: string
           is_free?: boolean
           is_recurring?: boolean
@@ -285,6 +289,7 @@ export type Database = {
         }
         Update: {
           access_tags?: string[] | null
+          banner_url?: string | null
           category?: string
           certificate_enabled?: boolean
           certificate_threshold?: number | null
@@ -297,6 +302,7 @@ export type Database = {
           estimated_duration?: string | null
           id?: string
           instructor_id?: string | null
+          instructor_image_url?: string | null
           instructor_name?: string
           is_free?: boolean
           is_recurring?: boolean
