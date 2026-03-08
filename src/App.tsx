@@ -42,12 +42,11 @@ import Subscription from "./pages/Subscription";
 
 // Admin pages
 import AdminDashboard from "./pages/admin/AdminDashboard";
-import AdminContent from "./pages/admin/AdminContent";
-import AdminWorkshops from "./pages/admin/AdminWorkshops";
+import AdminCourses from "./pages/admin/AdminCourses";
+import AdminCoupons from "./pages/admin/AdminCoupons";
 import AdminModeration from "./pages/admin/AdminModeration";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
-import AdminCohorts from "./pages/admin/AdminCohorts";
 import AdminOpportunities from "./pages/admin/AdminOpportunities";
 import AdminSettings from "./pages/admin/AdminSettings";
 
