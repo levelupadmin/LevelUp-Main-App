@@ -322,61 +322,148 @@ const AdminContent = () => {
 
                   {isExpanded && (
                     <div className="border-t border-border">
-                      {modLessons.map((lesson) => (
-                        <div key={lesson.id} className="flex items-center justify-between px-4 py-2.5 pl-14 border-b border-border last:border-b-0 hover:bg-secondary/20">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Video className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span className="text-sm text-foreground truncate">{lesson.title}</span>
-                            {lesson.is_free && <Badge variant="outline" className="text-[10px] px-1 py-0 bg-green-500/10 text-green-400 border-green-500/20">Free</Badge>}
-                            <span className="text-xs text-muted-foreground">{lesson.duration}</span>
+                      {modLessons.map((lesson) => {
+                        const LessonIcon = lesson.type === "video" ? Video : lesson.type === "pdf" ? FileText : lesson.type === "text" ? BookOpen : lesson.type === "quiz" ? FileQuestion : ClipboardList;
+                        return (
+                          <div key={lesson.id} className="flex items-center justify-between px-4 py-2.5 pl-14 border-b border-border last:border-b-0 hover:bg-secondary/20">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <LessonIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              <span className="text-sm text-foreground truncate">{lesson.title}</span>
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">{lesson.type}</Badge>
+                              {lesson.is_free && <Badge variant="outline" className="text-[10px] px-1 py-0 bg-green-500/10 text-green-400 border-green-500/20">Free</Badge>}
+                              {lesson.duration && <span className="text-xs text-muted-foreground">{lesson.duration}</span>}
+                              {(lesson.file_url || lesson.video_url) && <span className="text-xs text-muted-foreground truncate max-w-[120px]">📎 attached</span>}
+                            </div>
+                            <button
+                              onClick={() => deleteLesson.mutate(lesson.id)}
+                              className="rounded-md p-1 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
-                          <button
-                            onClick={() => deleteLesson.mutate(lesson.id)}
-                            className="rounded-md p-1 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
 
                       {/* Add Lesson inline */}
                       {newLessonData?.moduleId === mod.id ? (
-                        <div className="px-4 py-3 pl-14 border-t border-border bg-secondary/20 flex gap-2">
-                          <Input
-                            placeholder="Lesson title"
-                            value={newLessonData.title}
-                            onChange={(e) => setNewLessonData({ ...newLessonData, title: e.target.value })}
-                            className="flex-1"
-                          />
-                          <Input
-                            placeholder="Duration"
-                            value={newLessonData.duration}
-                            onChange={(e) => setNewLessonData({ ...newLessonData, duration: e.target.value })}
-                            className="w-24"
-                          />
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              createLesson.mutate({
-                                module_id: mod.id,
-                                course_id: selectedCourse.id,
-                                title: newLessonData.title,
-                                duration: newLessonData.duration,
-                                sort_order: modLessons.length,
-                                type: "video",
-                              })
-                            }
-                            disabled={!newLessonData.title}
-                          >
-                            <Save className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setNewLessonData(null)}>
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
+                        <div className="px-4 py-3 pl-14 border-t border-border bg-secondary/20 space-y-2">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Lesson title"
+                              value={newLessonData.title}
+                              onChange={(e) => setNewLessonData({ ...newLessonData, title: e.target.value })}
+                              className="flex-1"
+                            />
+                            <Input
+                              placeholder="Duration"
+                              value={newLessonData.duration}
+                              onChange={(e) => setNewLessonData({ ...newLessonData, duration: e.target.value })}
+                              className="w-24"
+                            />
+                            <Select value={newLessonData.type} onValueChange={(v) => setNewLessonData({ ...newLessonData, type: v, file: null, videoUrl: "", content: "" })}>
+                              <SelectTrigger className="w-32">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="video">Video</SelectItem>
+                                <SelectItem value="pdf">PDF</SelectItem>
+                                <SelectItem value="text">Text</SelectItem>
+                                <SelectItem value="quiz">Quiz</SelectItem>
+                                <SelectItem value="assignment">Assignment</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Type-specific inputs */}
+                          {newLessonData.type === "video" && (
+                            <div className="space-y-2">
+                              <Input
+                                placeholder="Video URL (YouTube/Vimeo)"
+                                value={newLessonData.videoUrl}
+                                onChange={(e) => setNewLessonData({ ...newLessonData, videoUrl: e.target.value })}
+                              />
+                              <div className="text-xs text-muted-foreground">Or upload a video file:</div>
+                              <Input
+                                type="file"
+                                accept="video/mp4,video/quicktime,video/webm"
+                                onChange={(e) => setNewLessonData({ ...newLessonData, file: e.target.files?.[0] || null })}
+                              />
+                            </div>
+                          )}
+
+                          {newLessonData.type === "pdf" && (
+                            <div>
+                              <Input
+                                type="file"
+                                accept="application/pdf"
+                                onChange={(e) => setNewLessonData({ ...newLessonData, file: e.target.files?.[0] || null })}
+                              />
+                              <div className="text-xs text-muted-foreground mt-1">Upload a PDF document</div>
+                            </div>
+                          )}
+
+                          {newLessonData.type === "text" && (
+                            <Textarea
+                              placeholder="Lesson content..."
+                              value={newLessonData.content}
+                              onChange={(e) => setNewLessonData({ ...newLessonData, content: e.target.value })}
+                              rows={4}
+                            />
+                          )}
+
+                          <div className="flex gap-2 justify-end">
+                            <Button size="sm" variant="ghost" onClick={() => setNewLessonData(null)}>
+                              <X className="h-3.5 w-3.5 mr-1" /> Cancel
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={!newLessonData.title || newLessonData.uploading}
+                              onClick={async () => {
+                                setNewLessonData({ ...newLessonData, uploading: true });
+                                let fileUrl: string | null = null;
+                                let videoUrl: string | null = newLessonData.videoUrl || null;
+
+                                // Upload file if present
+                                if (newLessonData.file) {
+                                  const ext = newLessonData.file.name.split(".").pop();
+                                  const path = `${selectedCourse.id}/${Date.now()}.${ext}`;
+                                  const { error: uploadError } = await supabase.storage
+                                    .from("course-content")
+                                    .upload(path, newLessonData.file);
+                                  if (uploadError) {
+                                    toast({ title: "Upload failed", description: uploadError.message, variant: "destructive" });
+                                    setNewLessonData({ ...newLessonData, uploading: false });
+                                    return;
+                                  }
+                                  const { data: urlData } = supabase.storage.from("course-content").getPublicUrl(path);
+                                  if (newLessonData.type === "video") {
+                                    videoUrl = urlData.publicUrl;
+                                  } else {
+                                    fileUrl = urlData.publicUrl;
+                                  }
+                                }
+
+                                createLesson.mutate({
+                                  module_id: mod.id,
+                                  course_id: selectedCourse.id,
+                                  title: newLessonData.title,
+                                  duration: newLessonData.duration,
+                                  sort_order: modLessons.length,
+                                  type: newLessonData.type as any,
+                                  video_url: videoUrl,
+                                  file_url: fileUrl,
+                                  content: newLessonData.content || null,
+                                });
+                              }}
+                            >
+                              {newLessonData.uploading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                              {newLessonData.uploading ? "Uploading..." : "Save"}
+                            </Button>
+                          </div>
                         </div>
                       ) : (
                         <button
-                          onClick={() => setNewLessonData({ moduleId: mod.id, title: "", duration: "", type: "video" })}
+                          onClick={() => setNewLessonData({ moduleId: mod.id, title: "", duration: "", type: "video", videoUrl: "", file: null, content: "", uploading: false })}
                           className="w-full px-4 py-2 pl-14 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/20 transition-colors text-left"
                         >
                           + Add lesson
