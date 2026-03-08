@@ -278,6 +278,9 @@ const AdminContent = () => {
                 </div>
               </div>
               <div className="flex gap-2 shrink-0">
+                <Button size="sm" variant="outline" onClick={() => setShowStudentPreview(true)} className="gap-1.5">
+                  <Eye className="h-3.5 w-3.5" /> Student Preview
+                </Button>
                 {selectedCourse.status === "draft" && (
                   <Button size="sm" onClick={() => handleStatusChange(selectedCourse.id, "published")} className="bg-green-600 hover:bg-green-700 text-white">
                     Publish
