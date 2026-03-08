@@ -63,7 +63,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [state, setState] = useState<AuthState>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Backfill role for sessions saved before role was added
+        if (parsed.user && !parsed.user.role) {
+          parsed.user.role = "super_admin";
+        }
+        return parsed;
+      }
     } catch {}
     return { isAuthenticated: false, isLoading: false, hasCompletedOnboarding: false, user: null };
   });
