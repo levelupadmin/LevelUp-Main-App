@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback } from "react";
 import AppShell from "@/components/layout/AppShell";
 import {
   courses,
@@ -7,6 +8,9 @@ import {
   featuredBanner,
 } from "@/data/mockData";
 import heroBanner from "@/assets/hero-banner.jpg";
+import heroEditing from "@/assets/hero-editing.jpg";
+import heroContent from "@/assets/hero-content.jpg";
+import heroCinematography from "@/assets/hero-cinematography.jpg";
 import {
   ArrowRight,
   ChevronRight,
@@ -18,57 +22,142 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+const heroSlides = [
+  {
+    image: heroBanner,
+    headline: "Learn & Create",
+    headlineAccent: "Cinema every single week",
+    cta: "How it works",
+    route: "/learn/course/1",
+    category: "Filmmaking",
+  },
+  {
+    image: heroEditing,
+    headline: "Master the Cut",
+    headlineAccent: "from raw footage to final film",
+    cta: "Explore Editing",
+    route: "/learn/course/2",
+    category: "Editing",
+  },
+  {
+    image: heroContent,
+    headline: "Build Your Audience",
+    headlineAccent: "one story at a time",
+    cta: "Start Creating",
+    route: "/learn/course/3",
+    category: "Content Creation",
+  },
+  {
+    image: heroCinematography,
+    headline: "See Through",
+    headlineAccent: "the lens of a master",
+    cta: "View Program",
+    route: "/learn/course/4",
+    category: "Cinematography",
+  },
+];
+
 const Index = () => {
   const navigate = useNavigate();
   const enrolledCourses = courses.filter((c) => c.progress > 0);
 
+  const [current, setCurrent] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  const goTo = useCallback(
+    (idx: number) => {
+      if (idx === current || isTransitioning) return;
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setCurrent(idx);
+        setIsTransitioning(false);
+      }, 400);
+    },
+    [current, isTransitioning],
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      goTo((current + 1) % heroSlides.length);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [current, goTo]);
+
+  const slide = heroSlides[current];
+
   return (
     <AppShell>
       <div className="mx-auto max-w-6xl space-y-14 p-6 lg:p-10">
-        {/* 1. Featured Banner — GrowthX-style full-bleed hero */}
+        {/* 1. Featured Banner Carousel */}
         <section
-          onClick={() => navigate(featuredBanner.route)}
+          onClick={() => navigate(slide.route)}
           className="group relative -mx-6 -mt-6 cursor-pointer overflow-hidden lg:-mx-10 lg:-mt-10"
         >
-          {/* Full-bleed background image */}
           <div className="relative h-[420px] w-full lg:h-[560px]">
-            <img
-              src={heroBanner}
-              alt="Level Up Learning"
-              className="h-full w-full object-cover"
-            />
-            {/* Bottom gradient for text readability */}
+            {/* Background images – stacked for crossfade */}
+            {heroSlides.map((s, i) => (
+              <img
+                key={i}
+                src={s.image}
+                alt={s.headline}
+                className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${
+                  i === current && !isTransitioning ? "opacity-100" : "opacity-0"
+                }`}
+              />
+            ))}
+            {/* Gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
 
-            {/* Hero text overlay */}
-            <div className="absolute inset-0 flex flex-col justify-end p-6 pb-20 lg:p-16 lg:pb-28">
-              <h1 className="max-w-4xl text-4xl font-bold leading-[1.1] text-foreground sm:text-5xl lg:text-7xl">
-                {featuredBanner.headline}{" "}
+            {/* Hero text */}
+            <div className="absolute inset-0 flex flex-col justify-end p-6 pb-24 lg:p-16 lg:pb-32">
+              <span
+                className={`mb-3 inline-flex w-fit rounded-md bg-accent/60 px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground backdrop-blur-sm transition-all duration-500 ${
+                  isTransitioning ? "translate-y-2 opacity-0" : "translate-y-0 opacity-100"
+                }`}
+              >
+                {slide.category}
+              </span>
+              <h1
+                className={`max-w-4xl text-4xl font-bold leading-[1.1] text-foreground transition-all duration-500 sm:text-5xl lg:text-7xl ${
+                  isTransitioning ? "translate-y-4 opacity-0" : "translate-y-0 opacity-100"
+                }`}
+              >
+                {slide.headline}{" "}
                 <br className="hidden sm:block" />
-                <em className="font-light italic">{featuredBanner.headlineAccent}</em>
+                <em className="font-light italic">{slide.headlineAccent}</em>
               </h1>
-              <div className="mt-6">
+              <div
+                className={`mt-6 transition-all delay-100 duration-500 ${
+                  isTransitioning ? "translate-y-4 opacity-0" : "translate-y-0 opacity-100"
+                }`}
+              >
                 <button className="inline-flex items-center gap-2 rounded-full bg-primary px-7 py-3.5 text-sm font-semibold text-primary-foreground transition-colors group-hover:bg-primary/90">
-                  {featuredBanner.cta}
+                  {slide.cta}
                   <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
             </div>
 
-            {/* Social proof bar at bottom */}
+            {/* Slide indicators + social proof bar */}
             <div className="absolute bottom-0 left-0 right-0 border-t border-border/30 bg-background/80 backdrop-blur-sm">
-              <div className="mx-auto max-w-6xl px-6 py-3 lg:px-16">
-                <p className="mb-2 text-xs text-muted-foreground">
+              <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3 lg:px-16">
+                <p className="text-xs text-muted-foreground">
                   {featuredBanner.socialProof}
                 </p>
-                <div className="flex items-center gap-6 overflow-x-auto hide-scrollbar">
-                  {featuredBanner.brands.map((brand) => (
-                    <span
-                      key={brand}
-                      className="shrink-0 font-mono text-xs font-medium tracking-wide text-muted-foreground/70"
-                    >
-                      {brand}
-                    </span>
+                <div className="flex items-center gap-2">
+                  {heroSlides.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        goTo(i);
+                      }}
+                      className={`h-1.5 rounded-full transition-all duration-300 ${
+                        i === current
+                          ? "w-6 bg-foreground"
+                          : "w-1.5 bg-muted-foreground/40 hover:bg-muted-foreground"
+                      }`}
+                    />
                   ))}
                 </div>
               </div>
