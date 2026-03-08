@@ -149,9 +149,31 @@ const Learn = () => {
               <h3 className="text-base font-bold text-foreground flex items-center gap-2">
                 <Play className="h-4 w-4 text-primary" /> Masterclasses
               </h3>
-              <div className="space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {filtered.masterclasses.map((course) => (
-                  <CourseCard key={course.id} course={course} onClick={() => navigate(`/learn/course/${course.id}`)} />
+                  <button
+                    key={course.id}
+                    onClick={() => navigate(`/learn/course/${course.id}`)}
+                    className="group relative aspect-[3/4] overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]"
+                  >
+                    <img
+                      src={course.instructorImage}
+                      alt={course.instructor}
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+                    <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4">
+                      <p className="text-base sm:text-lg font-extrabold text-white uppercase leading-tight tracking-wide">
+                        {course.instructor}
+                      </p>
+                      <p className="mt-1 text-[10px] sm:text-xs text-white/50 uppercase tracking-[0.15em] font-medium">
+                        Teaches
+                      </p>
+                      <p className="text-sm sm:text-base font-bold text-white uppercase tracking-wide">
+                        {course.category}
+                      </p>
+                    </div>
+                  </button>
                 ))}
               </div>
             </div>
