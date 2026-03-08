@@ -11,6 +11,17 @@ export const heroData = {
   subtitle: "Learn from India's top creative minds",
 };
 
+export const featuredBanner = {
+  id: "1",
+  category: "Filmmaking",
+  headline: "The Art of Cinematic Storytelling",
+  tagline: "A 12-week masterclass with Rajiv Menon",
+  description: "Learn the craft behind India's most celebrated visual narratives — from script to screen.",
+  cta: "Explore Program",
+  image: courseCinematography,
+  route: "/learn/course/1",
+};
+
 export const courses = [
   {
     id: "1",
@@ -19,13 +30,16 @@ export const courses = [
     instructorImage: instructor1,
     thumbnail: courseCinematography,
     category: "Filmmaking",
+    format: "Masterclass" as const,
     rating: 4.9,
     students: 2340,
-    lessons: 24,
+    lessons: 21,
     duration: "4h 30m",
     price: 1999,
     isSubscription: true,
     progress: 45,
+    currentModule: 4,
+    totalModules: 21,
     description: "Core principles to distribution, user onboarding, retention & more",
   },
   {
@@ -35,6 +49,7 @@ export const courses = [
     instructorImage: instructor2,
     thumbnail: courseEditing,
     category: "Editing",
+    format: "Masterclass" as const,
     rating: 4.8,
     students: 1890,
     lessons: 32,
@@ -42,6 +57,8 @@ export const courses = [
     price: 2499,
     isSubscription: true,
     progress: 0,
+    currentModule: 0,
+    totalModules: 32,
     description: "From raw footage to final cut — learn professional editing workflows",
   },
   {
@@ -51,6 +68,7 @@ export const courses = [
     instructorImage: instructor1,
     thumbnail: courseContent,
     category: "Content Creation",
+    format: "Cohort" as const,
     rating: 4.7,
     students: 3210,
     lessons: 18,
@@ -58,6 +76,8 @@ export const courses = [
     price: 1499,
     isSubscription: true,
     progress: 0,
+    currentModule: 0,
+    totalModules: 12,
     description: "Build your audience and create content that resonates",
   },
   {
@@ -67,6 +87,7 @@ export const courses = [
     instructorImage: instructor2,
     thumbnail: courseCinematography,
     category: "Cinematography",
+    format: "Cohort" as const,
     rating: 4.9,
     students: 1560,
     lessons: 20,
@@ -74,6 +95,8 @@ export const courses = [
     price: 1999,
     isSubscription: true,
     progress: 72,
+    currentModule: 3,
+    totalModules: 12,
     description: "Master the visual language of cinema from framing to lighting",
   },
 ];
@@ -180,42 +203,50 @@ export const communityPosts = [
   },
 ];
 
-export const newMembers = [
+export const featuredCreators = [
   {
     id: "m1",
     memberNo: 5581,
-    joinDate: "06/03/2026",
     name: "Akash Gupta",
-    role: "Marketing Manager",
-    bio: "akash gupta just joined level up. marketing at truein. t shaped performance brain living in google ads and ppc. runs on cpc roas and black coffee. spreadsheet mafia energy. if your utms are messy he will judge you silently.",
+    role: "Cinematographer",
+    experience: "8 years",
+    description: "Shot 3 national award-winning documentaries. Specializes in natural light cinematography across rural India.",
     avatar: instructor1,
+    thumbnail: courseCinematography,
+    skills: ["Cinema Camera", "Natural Light", "Documentary"],
   },
   {
     id: "m2",
     memberNo: 5580,
-    joinDate: "05/03/2026",
     name: "Sai Bhaskar Devatha",
-    role: "Senior Product Manager",
-    bio: "sai bhaskar from eltropy joined level up. building ai agents for bankers. iit guwahati to citi to upraised to fintech startup. senior product manager making bots that understand banking jargon",
+    role: "Video Editor",
+    experience: "5 years",
+    description: "Lead editor at a top Mumbai post-production house. Known for fast-paced narrative edits and color grading.",
     avatar: instructor2,
+    thumbnail: courseEditing,
+    skills: ["DaVinci Resolve", "Premiere Pro", "Color Grading"],
   },
   {
     id: "m3",
     memberNo: 5579,
-    joinDate: "05/03/2026",
     name: "Ritu Kapoor",
-    role: "Chief Technology Officer",
-    bio: "ritu from university of illinois joined level up. cto at edtech startup. two decades building education tech. someone who went from engineering to running engineering teams. the transition set",
+    role: "Content Creator",
+    experience: "3 years",
+    description: "500K+ subscribers on YouTube. Creates cinematic travel vlogs and brand films for premium lifestyle brands.",
     avatar: instructor1,
+    thumbnail: courseContent,
+    skills: ["YouTube", "Brand Films", "Travel"],
   },
   {
     id: "m4",
     memberNo: 5578,
-    joinDate: "04/03/2026",
     name: "Aditya Kashyap",
-    role: "Amazon Future Builder",
-    bio: "aditya from amazon joined level up. nitk to 150+ associates in operations. saved monthly optimizing positions at bank. zinnov consultant. operations efficiency",
+    role: "Sound Designer",
+    experience: "6 years",
+    description: "Designed sound for 12+ indie feature films. Currently building India's largest open-source SFX library.",
     avatar: instructor2,
+    thumbnail: courseCinematography,
+    skills: ["Pro Tools", "Foley", "Film Sound"],
   },
 ];
 

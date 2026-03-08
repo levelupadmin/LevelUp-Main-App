@@ -1,6 +1,20 @@
 import AppShell from "@/components/layout/AppShell";
-import { courses, communityPosts, workshops, newMembers, userProfile } from "@/data/mockData";
-import { ArrowRight, ChevronRight, ExternalLink, Calendar, MapPin } from "lucide-react";
+import {
+  courses,
+  communityPosts,
+  workshops,
+  featuredCreators,
+  featuredBanner,
+} from "@/data/mockData";
+import {
+  ArrowRight,
+  ChevronRight,
+  Calendar,
+  MapPin,
+  MessageSquare,
+  Play,
+  ExternalLink,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const Index = () => {
@@ -9,83 +23,113 @@ const Index = () => {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-6xl space-y-12 p-6 lg:p-10">
-        {/* Onboarding Banner */}
-        <section className="rounded-2xl border border-border bg-card p-6 lg:p-10">
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-md space-y-4">
-              <h1 className="text-3xl font-bold leading-tight text-foreground lg:text-4xl">
-                Your onboarding<br />is incomplete.
+      <div className="mx-auto max-w-6xl space-y-14 p-6 lg:p-10">
+        {/* 1. Featured Banner */}
+        <section
+          onClick={() => navigate(featuredBanner.route)}
+          className="group relative cursor-pointer overflow-hidden rounded-2xl border border-border"
+        >
+          <div className="relative flex flex-col lg:flex-row">
+            {/* Image */}
+            <div className="relative h-56 w-full lg:absolute lg:inset-0 lg:h-full">
+              <img
+                src={featuredBanner.image}
+                alt={featuredBanner.headline}
+                className="h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/80 to-transparent lg:bg-gradient-to-r lg:from-card lg:via-card/90 lg:to-transparent" />
+            </div>
+            {/* Content */}
+            <div className="relative z-10 flex flex-col justify-center p-6 lg:max-w-lg lg:p-12">
+              <span className="mb-3 inline-flex w-fit rounded-md bg-accent px-3 py-1 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                {featuredBanner.category}
+              </span>
+              <h1 className="text-2xl font-bold leading-tight text-foreground lg:text-4xl">
+                {featuredBanner.headline}
               </h1>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                Setup your profile, introduce yourself to the community &amp; complete the onboarding to unlock full access.
+              <p className="mt-2 text-sm font-medium text-muted-foreground lg:text-base">
+                {featuredBanner.tagline}
               </p>
-              <button
-                onClick={() => navigate("/onboarding")}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                Complete onboarding
+              <p className="mt-3 text-sm leading-relaxed text-secondary-foreground line-clamp-2">
+                {featuredBanner.description}
+              </p>
+              <button className="mt-6 inline-flex w-fit items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors group-hover:bg-primary/90">
+                {featuredBanner.cta}
                 <ArrowRight className="h-4 w-4" />
               </button>
-            </div>
-            <div className="flex gap-3 overflow-hidden">
-              {[courses[0], courses[1], courses[2]].map((c, i) => (
-                <div
-                  key={i}
-                  className="h-44 w-36 shrink-0 overflow-hidden rounded-xl lg:h-52 lg:w-44"
-                >
-                  <img
-                    src={c.thumbnail}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-              ))}
             </div>
           </div>
         </section>
 
-        {/* Continue Learning */}
+        {/* 2. Continue Learning */}
         {enrolledCourses.length > 0 && (
-          <section className="space-y-4">
-            <div className="space-y-1">
-              <h2 className="text-xl font-bold text-foreground">Continue learning</h2>
-              <p className="text-sm text-muted-foreground">
-                Explore the learning programs you have enrolled in.
-              </p>
+          <section className="space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold text-foreground">Continue learning</h2>
+                <p className="text-sm text-muted-foreground">Pick up where you left off</p>
+              </div>
+              <button
+                onClick={() => navigate("/learn/my-learning")}
+                className="hidden items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
+              >
+                View all
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               {enrolledCourses.map((course) => (
                 <div
                   key={course.id}
-                  onClick={() => navigate(`/learn/course/${course.id}`)}
-                  className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/20"
+                  className="group overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/20"
                 >
-                  <div className="flex gap-4 p-4">
-                    <div className="h-28 w-24 shrink-0 overflow-hidden rounded-lg">
-                      <img src={course.thumbnail} alt={course.title} className="h-full w-full object-cover" />
+                  <div className="flex gap-4 p-5">
+                    <div className="h-24 w-20 shrink-0 overflow-hidden rounded-lg">
+                      <img
+                        src={course.thumbnail}
+                        alt={course.title}
+                        className="h-full w-full object-cover"
+                      />
                     </div>
-                    <div className="flex flex-col justify-between py-1">
+                    <div className="flex flex-1 flex-col justify-between">
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Course</p>
-                        <h3 className="mt-1 text-base font-bold leading-tight text-foreground">{course.title}</h3>
-                        <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{course.description}</p>
+                        <span className="inline-flex rounded bg-accent px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                          {course.format}
+                        </span>
+                        <h3 className="mt-1.5 text-sm font-bold leading-snug text-foreground">
+                          {course.title}
+                        </h3>
+                        <p className="mt-1 font-mono text-xs text-muted-foreground">
+                          {course.format === "Cohort"
+                            ? `Week ${course.currentModule} / ${course.totalModules}`
+                            : `Module ${course.currentModule} / ${course.totalModules}`}
+                        </p>
                       </div>
                     </div>
                   </div>
-                  <div className="border-t border-border px-4 py-3">
+                  {/* Progress + CTA */}
+                  <div className="border-t border-border px-5 py-3">
                     <div className="mb-2 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-success">{course.progress}%</span>
+                      <span className="font-mono text-xs font-semibold text-foreground">
+                        {course.progress}% complete
+                      </span>
                     </div>
-                    <div className="flex gap-2">
-                      <button className="flex-1 rounded-lg border border-border py-2 text-xs font-semibold text-foreground transition-colors hover:bg-secondary">
-                        Overview
-                      </button>
-                      <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
-                        Continue Learning
-                        <ArrowRight className="h-3 w-3" />
-                      </button>
+                    <div className="mb-3 h-1 w-full overflow-hidden rounded-full bg-accent">
+                      <div
+                        className="h-full rounded-full bg-foreground transition-all"
+                        style={{ width: `${course.progress}%` }}
+                      />
                     </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/learn/course/${course.id}`);
+                      }}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
+                      <Play className="h-3.5 w-3.5" />
+                      Continue Learning
+                    </button>
                   </div>
                 </div>
               ))}
@@ -93,70 +137,138 @@ const Index = () => {
           </section>
         )}
 
-        {/* Popular in Community */}
-        <section className="space-y-4">
-          <h2 className="text-xl font-bold text-foreground">
-            Popular in the <em className="not-italic font-light italic">community</em>
-          </h2>
-          <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
-            {communityPosts.map((post) => (
+        {/* 3. Popular in Community */}
+        <section className="space-y-5">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold text-foreground">
+                Popular in the community
+              </h2>
+              <p className="text-sm text-muted-foreground">Active discussions from your spaces</p>
+            </div>
+            <button
+              onClick={() => navigate("/community")}
+              className="hidden items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
+            >
+              View all
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {communityPosts.slice(0, 4).map((post) => (
               <div
                 key={post.id}
                 onClick={() => navigate(`/community/post/${post.id}`)}
-                className="w-80 shrink-0 cursor-pointer rounded-xl border border-border bg-card p-5 transition-colors hover:border-muted-foreground/20"
+                className="group cursor-pointer rounded-xl border border-border bg-card p-5 transition-colors hover:border-muted-foreground/20"
               >
-                <div className="mb-4 flex items-center gap-3">
-                  <img src={post.avatar} alt={post.author} className="h-10 w-10 rounded-full object-cover" />
-                  <div>
-                    <p className="text-sm font-bold text-foreground">{post.author}</p>
-                    <p className="text-xs text-muted-foreground">{post.timeAgo}</p>
-                  </div>
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="rounded bg-accent px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    {post.tag}
+                  </span>
+                  <span className="text-xs text-muted-foreground">·</span>
+                  <span className="text-xs text-muted-foreground">{post.timeAgo}</span>
                 </div>
-                <p className="text-sm leading-relaxed text-secondary-foreground line-clamp-4">
+                <h3 className="mt-2 text-sm font-bold text-foreground line-clamp-1">
+                  {post.content.substring(0, 60)}…
+                </h3>
+                <p className="mt-1 text-sm leading-relaxed text-secondary-foreground line-clamp-2">
                   {post.content}
                 </p>
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={post.avatar}
+                      alt={post.author}
+                      className="h-6 w-6 rounded-full object-cover"
+                    />
+                    <span className="text-xs font-medium text-foreground">{post.author}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3" />
+                      {post.comments} replies
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-semibold text-foreground opacity-0 transition-opacity group-hover:opacity-100">
+                      Open thread
+                      <ArrowRight className="h-3 w-3" />
+                    </span>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         </section>
 
-        {/* New Members */}
-        <section className="space-y-4">
-          <div className="space-y-1">
-            <h2 className="text-xl font-bold text-foreground">New members</h2>
-            <p className="text-sm text-muted-foreground">
-              Say hello to curated folks who joined the fam
-            </p>
+        {/* 4. Featured Creators */}
+        <section className="space-y-5">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold text-foreground">Featured creators</h2>
+              <p className="text-sm text-muted-foreground">
+                Talented members doing remarkable work
+              </p>
+            </div>
+            <button
+              onClick={() => navigate("/community/directory")}
+              className="hidden items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
+            >
+              View directory
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
           <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
-            {newMembers.map((member) => (
+            {featuredCreators.map((creator) => (
               <div
-                key={member.id}
-                className="flex w-80 shrink-0 flex-col justify-between rounded-xl border border-border bg-card p-5"
+                key={creator.id}
+                className="w-72 shrink-0 overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/20"
               >
-                <div>
-                  <div className="mb-4 flex items-center justify-between">
-                    <span className="font-mono text-xs text-muted-foreground">
-                      MEMBER NO. {member.memberNo}
-                    </span>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {member.joinDate}
-                    </span>
-                  </div>
-                  <p className="text-sm leading-relaxed text-secondary-foreground line-clamp-5">
-                    {member.bio}
-                  </p>
+                {/* Thumbnail */}
+                <div className="relative h-32 overflow-hidden">
+                  <img
+                    src={creator.thumbnail}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
+                  {/* Avatar overlapping */}
+                  <img
+                    src={creator.avatar}
+                    alt={creator.name}
+                    className="absolute -bottom-5 left-4 h-12 w-12 rounded-full border-2 border-card object-cover"
+                  />
                 </div>
-                <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
-                  <div className="flex items-center gap-3">
-                    <img src={member.avatar} alt={member.name} className="h-10 w-10 rounded-full object-cover" />
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{member.name}</p>
-                      <p className="text-xs text-muted-foreground">{member.role}</p>
-                    </div>
+                {/* Info */}
+                <div className="px-4 pb-4 pt-8">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-foreground">{creator.name}</h3>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      #{creator.memberNo}
+                    </span>
                   </div>
-                  <button className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground">
-                    View
+                  <p className="mt-0.5 text-xs font-medium text-muted-foreground">
+                    {creator.role} · {creator.experience}
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-secondary-foreground line-clamp-2">
+                    {creator.description}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {creator.skills.map((skill) => (
+                      <span
+                        key={skill}
+                        className="rounded bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/profile/${creator.id}`);
+                    }}
+                    className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
+                  >
+                    View Portfolio
                     <ExternalLink className="h-3 w-3" />
                   </button>
                 </div>
@@ -165,13 +277,13 @@ const Index = () => {
           </div>
         </section>
 
-        {/* Upcoming Events */}
-        <section className="space-y-4">
+        {/* 5. Upcoming Events */}
+        <section className="space-y-5">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <h2 className="text-xl font-bold text-foreground">Upcoming events</h2>
               <p className="text-sm text-muted-foreground">
-                Get facetime with some of the brightest minds in product, marketing, strategy
+                Get facetime with some of the brightest minds in filmmaking
               </p>
             </div>
             <button
@@ -190,7 +302,11 @@ const Index = () => {
                 className="w-80 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/20"
               >
                 <div className="relative h-44 overflow-hidden">
-                  <img src={workshop.thumbnail} alt={workshop.title} className="h-full w-full object-cover" />
+                  <img
+                    src={workshop.thumbnail}
+                    alt={workshop.title}
+                    className="h-full w-full object-cover"
+                  />
                   <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
                   {(workshop as any).soldOut && (
                     <span className="absolute right-3 top-3 rounded-md bg-destructive px-2.5 py-1 text-xs font-bold uppercase text-destructive-foreground">
@@ -203,7 +319,11 @@ const Index = () => {
                 </div>
                 <div className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <img src={workshop.instructorImage} alt={workshop.instructor} className="h-8 w-8 rounded-full object-cover" />
+                    <img
+                      src={workshop.instructorImage}
+                      alt={workshop.instructor}
+                      className="h-8 w-8 rounded-full object-cover"
+                    />
                     <span className="text-sm text-foreground">{workshop.instructor}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -220,6 +340,24 @@ const Index = () => {
               </div>
             ))}
           </div>
+        </section>
+
+        {/* 6. Explore More Courses — placeholder */}
+        <section className="rounded-2xl border border-dashed border-border bg-card/50 p-10 text-center">
+          <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+            Coming soon
+          </p>
+          <h2 className="mt-2 text-lg font-bold text-foreground">Explore more courses</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Discover programs across filmmaking, editing, sound design, and more.
+          </p>
+          <button
+            onClick={() => navigate("/explore")}
+            className="mt-5 inline-flex items-center gap-2 rounded-lg border border-border px-6 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
+          >
+            Browse catalog
+            <ArrowRight className="h-4 w-4" />
+          </button>
         </section>
       </div>
     </AppShell>
