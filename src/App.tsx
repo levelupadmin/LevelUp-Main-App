@@ -49,6 +49,9 @@ import AdminUsers from "./pages/admin/AdminUsers";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
 import AdminOpportunities from "./pages/admin/AdminOpportunities";
 import AdminSettings from "./pages/admin/AdminSettings";
+import AdminReferrals from "./pages/admin/AdminReferrals";
+import AdminWaitlists from "./pages/admin/AdminWaitlists";
+import AdminEngagement from "./pages/admin/AdminEngagement";
 
 import NotFound from "./pages/NotFound";
 
