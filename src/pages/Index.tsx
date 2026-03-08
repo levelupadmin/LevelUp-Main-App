@@ -100,6 +100,9 @@ const Index = () => {
           </section>
         )}
 
+        {/* 2b. Upcoming Events */}
+        <UpcomingEvents />
+
         {/* 3. Popular in Community */}
         <section className="space-y-5">
           <div className="flex items-center justify-between">
