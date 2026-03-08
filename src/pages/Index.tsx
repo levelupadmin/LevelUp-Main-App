@@ -6,11 +6,10 @@ import {
   featuredCreators,
 } from "@/data/mockData";
 import HeroCarousel from "@/components/home/HeroCarousel";
+import UpcomingEvents from "@/components/home/UpcomingEvents";
 import {
   ArrowRight,
   ChevronRight,
-  Calendar,
-  MapPin,
   MessageSquare,
   Play,
   ExternalLink,
