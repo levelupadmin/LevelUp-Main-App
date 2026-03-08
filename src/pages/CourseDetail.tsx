@@ -10,13 +10,38 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 const CourseDetail = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const slotParam = searchParams.get("slot");
 
   const { data: course, isLoading: courseLoading } = useCourse(slug || "");
   const { data: modules = [] } = useCourseModules(course?.id);
   const { data: lessons = [] } = useCourseLessons(course?.id);
+
+  // Fetch schedules for recurring courses
+  const { data: schedules = [] } = useQuery({
+    queryKey: ["course-schedules", course?.id],
+    enabled: !!course?.id && course?.is_recurring,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("course_schedules")
+        .select("*")
+        .eq("course_id", course!.id)
+        .eq("is_active", true)
+        .order("day_of_week");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Find the active slot based on URL param
+  const activeSlot = slotParam
+    ? schedules.find((s: any) => s.slug === slotParam || s.id === slotParam)
+    : null;
 
   if (courseLoading) {
     return (
