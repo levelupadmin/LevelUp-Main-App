@@ -483,4 +483,52 @@ const CourseCard = ({ course, ctaLabel, onClick }: { course: CourseDetailed; cta
   </div>
 );
 
+import type { Cohort } from "@/data/cohortData";
+
+const CohortCard = ({ cohort, onClick }: { cohort: Cohort; onClick: () => void }) => {
+  const seatsLeft = cohort.totalSeats - cohort.filledSeats;
+  return (
+    <div
+      onClick={onClick}
+      className="group cursor-pointer overflow-hidden rounded-lg border border-border bg-card transition-all hover:border-foreground/20 hover:shadow-elevated"
+    >
+      <div className="relative">
+        <img src={cohort.thumbnail} alt={cohort.title} className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+        <div className="absolute inset-0 bg-gradient-to-t from-card/80 to-transparent" />
+        <Badge variant="secondary" className="absolute left-3 top-3 text-[10px]">{cohort.category}</Badge>
+        {cohort.isApplicationOpen ? (
+          <Badge className="absolute right-3 top-3 bg-[hsl(var(--success))]/15 text-[hsl(var(--success))] border-[hsl(var(--success))]/30 text-[10px]">Open</Badge>
+        ) : (
+          <Badge variant="destructive" className="absolute right-3 top-3 text-[10px]">Closed</Badge>
+        )}
+      </div>
+      <div className="p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="flex -space-x-1.5">
+            {cohort.mentors.slice(0, 2).map((m) => (
+              <img key={m.id} src={m.image} alt={m.name} className="h-5 w-5 rounded-full border border-card object-cover" />
+            ))}
+          </div>
+          <span className="text-xs text-muted-foreground truncate">{cohort.mentors.map((m) => m.name).join(", ")}</span>
+        </div>
+        <h3 className="text-sm font-bold text-foreground leading-snug group-hover:text-foreground/80 transition-colors line-clamp-2">{cohort.title}</h3>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {cohort.duration}</span>
+          <span className="flex items-center gap-1"><Users className="h-3 w-3" /> {seatsLeft > 0 ? `${seatsLeft} seats left` : "Full"}</span>
+        </div>
+        <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Award className="h-3 w-3 text-[hsl(var(--highlight))] mt-0.5 shrink-0" />
+          <span className="line-clamp-1">{cohort.outcome}</span>
+        </div>
+        <div className="flex items-center justify-between border-t border-border pt-3 mt-1">
+          <span className="font-bold text-foreground">₹{cohort.price.toLocaleString()}</span>
+          <Button size="sm" variant="default" className="h-7 text-xs px-3" onClick={(e) => { e.stopPropagation(); onClick(); }}>
+            {cohort.isApplicationOpen ? "Request Your Invite" : "Join Waitlist"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default Learn;
