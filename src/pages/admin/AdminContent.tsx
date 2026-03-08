@@ -7,8 +7,9 @@ import { Tables, TablesInsert } from "@/integrations/supabase/types";
 import {
   FileText, Search, Plus, MoreHorizontal, Star, ArrowLeft, Trash2,
   GripVertical, ChevronDown, ChevronRight, Video, BookOpen, Save, X,
-  Upload, File, FileQuestion, ClipboardList, Loader2,
+  Upload, File, FileQuestion, ClipboardList, Loader2, Eye,
 } from "lucide-react";
+import StudentCoursePreview from "@/components/admin/StudentCoursePreview";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -115,6 +116,7 @@ const AdminContent = () => {
   const [showDeleteDialog, setShowDeleteDialog] = useState<string | null>(null);
   const [editingCourse, setEditingCourse] = useState<Partial<TablesInsert<"courses">> | null>(null);
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
+  const [showStudentPreview, setShowStudentPreview] = useState(false);
 
   // Module/Lesson creation
   const [newModuleTitle, setNewModuleTitle] = useState("");
@@ -276,6 +278,9 @@ const AdminContent = () => {
                 </div>
               </div>
               <div className="flex gap-2 shrink-0">
+                <Button size="sm" variant="outline" onClick={() => setShowStudentPreview(true)} className="gap-1.5">
+                  <Eye className="h-3.5 w-3.5" /> Student Preview
+                </Button>
                 {selectedCourse.status === "draft" && (
                   <Button size="sm" onClick={() => handleStatusChange(selectedCourse.id, "published")} className="bg-green-600 hover:bg-green-700 text-white">
                     Publish
@@ -499,6 +504,14 @@ const AdminContent = () => {
               </Button>
             </div>
           </div>
+
+          <StudentCoursePreview
+            open={showStudentPreview}
+            onOpenChange={setShowStudentPreview}
+            course={selectedCourse}
+            modules={modules}
+            lessons={lessons as any}
+          />
         </div>
       </AdminLayout>
     );
