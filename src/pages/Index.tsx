@@ -6,6 +6,7 @@ import {
 import { detailedCourses } from "@/data/learningData";
 import HeroCarousel from "@/components/home/HeroCarousel";
 import UpcomingEvents from "@/components/home/UpcomingEvents";
+import MyBatchCard from "@/components/home/MyBatchCard";
 import {
   ArrowRight,
   ChevronRight,
