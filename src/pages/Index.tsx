@@ -1,10 +1,9 @@
 import AppShell from "@/components/layout/AppShell";
 import {
-  courses,
   communityPosts,
-  workshops,
   featuredCreators,
 } from "@/data/mockData";
+import { detailedCourses } from "@/data/learningData";
 import HeroCarousel from "@/components/home/HeroCarousel";
 import UpcomingEvents from "@/components/home/UpcomingEvents";
 import {
