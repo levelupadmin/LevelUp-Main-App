@@ -22,7 +22,7 @@ export interface Lesson {
   moduleIndex: number;
   title: string;
   duration: string;
-  videoProgress: number; // 0-100
+  videoProgress: number;
   state: LessonState;
   notes: string;
   microActivity: MicroActivity;
@@ -67,10 +67,34 @@ export interface CourseDetailed {
   subscribed: boolean;
   description: string;
   highlights: string[];
+  skills: string[];
   modules: CourseModule[];
   reviews: Review[];
   sampleProjects: { title: string; image: string }[];
   lastLessonId?: string;
+}
+
+// ── Workshop types ──
+export interface Workshop {
+  id: string;
+  title: string;
+  instructor: string;
+  instructorBio: string;
+  instructorImage: string;
+  thumbnail: string;
+  category: string;
+  description: string;
+  highlights: string[];
+  date: string;
+  time: string;
+  duration: string;
+  price: number;
+  seatsTotal: number;
+  seatsRemaining: number;
+  isPast: boolean;
+  hasReplay: boolean;
+  testimonials: { author: string; text: string }[];
+  faq: { question: string; answer: string }[];
 }
 
 const makeLesson = (
@@ -144,6 +168,7 @@ export const detailedCourses: CourseDetailed[] = [
       "Certificate of completion",
       "Lifetime access + community",
     ],
+    skills: ["Storytelling", "Directing", "Visual Grammar", "Narrative Structure", "Post-Production"],
     lastLessonId: "1-8",
     modules: [
       {
@@ -244,6 +269,7 @@ export const detailedCourses: CourseDetailed[] = [
       "Color grading fundamentals",
       "Certificate of completion",
     ],
+    skills: ["DaVinci Resolve", "Premiere Pro", "Color Grading", "Audio Mixing", "Transitions"],
     modules: [
       {
         title: "Getting Started",
@@ -305,7 +331,7 @@ export const detailedCourses: CourseDetailed[] = [
     thumbnail: courseContent,
     category: "Content Creation",
     difficulty: "Beginner",
-    format: "Cohort",
+    format: "Masterclass",
     rating: 4.7,
     ratingsCount: 1203,
     students: 3210,
@@ -314,8 +340,8 @@ export const detailedCourses: CourseDetailed[] = [
     price: 1499,
     subscriptionPrice: 499,
     isSubscription: true,
-    progress: 0,
-    purchased: false,
+    progress: 100,
+    purchased: true,
     subscribed: false,
     description: "Learn how to create scroll-stopping content for Instagram, YouTube, and beyond. From ideation to analytics, this course covers the full creator workflow.",
     highlights: [
@@ -325,29 +351,30 @@ export const detailedCourses: CourseDetailed[] = [
       "Brand collaboration playbook",
       "Community feedback rounds",
     ],
+    skills: ["Instagram", "YouTube", "Content Strategy", "Analytics", "Brand Deals"],
     modules: [
       {
         title: "Creator Mindset",
         lessons: [
-          makeLesson("3-1", "3", 0, "Finding Your Niche", "14m", "not_started", 0, true),
-          makeLesson("3-2", "3", 0, "Building a Content Calendar", "12m"),
-          makeLesson("3-3", "3", 0, "Understanding Algorithms", "16m"),
+          makeLesson("3-1", "3", 0, "Finding Your Niche", "14m", "completed", 100, true),
+          makeLesson("3-2", "3", 0, "Building a Content Calendar", "12m", "completed", 100),
+          makeLesson("3-3", "3", 0, "Understanding Algorithms", "16m", "completed", 100),
         ],
       },
       {
         title: "Production Basics",
         lessons: [
-          makeLesson("3-4", "3", 1, "Phone Filming Techniques", "18m"),
-          makeLesson("3-5", "3", 1, "Quick Editing for Reels", "15m"),
-          makeLesson("3-6", "3", 1, "Thumbnail & Hook Design", "14m"),
+          makeLesson("3-4", "3", 1, "Phone Filming Techniques", "18m", "completed", 100),
+          makeLesson("3-5", "3", 1, "Quick Editing for Reels", "15m", "completed", 100),
+          makeLesson("3-6", "3", 1, "Thumbnail & Hook Design", "14m", "completed", 100),
         ],
       },
       {
         title: "Growth & Monetization",
         lessons: [
-          makeLesson("3-7", "3", 2, "Growing from 0 to 10K", "20m"),
-          makeLesson("3-8", "3", 2, "Brand Deals 101", "16m"),
-          makeLesson("3-9", "3", 2, "Building Multiple Revenue Streams", "18m"),
+          makeLesson("3-7", "3", 2, "Growing from 0 to 10K", "20m", "completed", 100),
+          makeLesson("3-8", "3", 2, "Brand Deals 101", "16m", "completed", 100),
+          makeLesson("3-9", "3", 2, "Building Multiple Revenue Streams", "18m", "completed", 100),
         ],
       },
     ],
@@ -368,7 +395,7 @@ export const detailedCourses: CourseDetailed[] = [
     thumbnail: courseCinematography,
     category: "Cinematography",
     difficulty: "Intermediate",
-    format: "Cohort",
+    format: "Masterclass",
     rating: 4.9,
     ratingsCount: 489,
     students: 1560,
@@ -388,6 +415,7 @@ export const detailedCourses: CourseDetailed[] = [
       "Practical shooting exercises",
       "Feedback from Nandini Reddy",
     ],
+    skills: ["Lighting", "Lenses", "Composition", "Camera Movement", "Color Science"],
     lastLessonId: "4-7",
     modules: [
       {
@@ -442,7 +470,7 @@ export const detailedCourses: CourseDetailed[] = [
     thumbnail: courseContent,
     category: "Design",
     difficulty: "Beginner",
-    format: "Workshop",
+    format: "Masterclass",
     rating: 4.6,
     ratingsCount: 312,
     students: 980,
@@ -456,6 +484,7 @@ export const detailedCourses: CourseDetailed[] = [
     subscribed: false,
     description: "Learn how design thinking can transform your creative process — from thumbnails to brand identity.",
     highlights: ["14 concise lessons", "Design templates included", "Portfolio exercises", "Certificate"],
+    skills: ["Typography", "Visual Hierarchy", "Brand Design", "Thumbnails", "Layouts"],
     modules: [
       {
         title: "Design Foundations",
@@ -479,52 +508,221 @@ export const detailedCourses: CourseDetailed[] = [
   },
   {
     id: "6",
-    title: "Music Production for Film & Content",
-    subtitle: "Create original scores and soundscapes for your projects",
+    title: "Screenwriting Fundamentals",
+    subtitle: "Write compelling screenplays from concept to final draft",
     instructor: "Priya Sharma",
-    instructorBio: "Lead editor and sound designer at a top Mumbai studio.",
+    instructorBio: "Lead editor and screenwriting mentor. Published screenwriter with 3 produced shorts.",
     instructorImage: instructor2,
     thumbnail: courseEditing,
-    category: "Music",
-    difficulty: "Advanced",
-    format: "Workshop",
-    rating: 4.8,
-    ratingsCount: 198,
-    students: 640,
-    duration: "5h 00m",
-    lessonsCount: 22,
-    price: 2999,
+    category: "Filmmaking",
+    difficulty: "Beginner",
+    format: "Masterclass",
+    rating: 4.7,
+    ratingsCount: 278,
+    students: 820,
+    duration: "3h 40m",
+    lessonsCount: 16,
+    price: 1499,
     subscriptionPrice: 499,
     isSubscription: true,
     progress: 0,
     purchased: false,
     subscribed: false,
-    description: "Compose, produce, and mix music for film and digital content. From GarageBand to Logic Pro, learn the complete pipeline.",
-    highlights: ["22 deep-dive lessons", "Sample packs included", "Mix & master exercises", "Collaboration opportunities"],
+    description: "Learn the fundamentals of screenwriting — from character development and dialogue to formatting and pitching your screenplay.",
+    highlights: ["16 structured lessons", "Script templates included", "Character worksheets", "Pitch deck guide", "Peer review exercises"],
+    skills: ["Screenwriting", "Character Development", "Dialogue", "Story Structure", "Pitching"],
     modules: [
       {
-        title: "Getting Started with Music",
+        title: "Story Foundations",
         lessons: [
-          makeLesson("6-1", "6", 0, "Music Theory Crash Course", "16m", "not_started", 0, true),
-          makeLesson("6-2", "6", 0, "Setting Up Your DAW", "14m"),
-          makeLesson("6-3", "6", 0, "Creating Your First Beat", "20m"),
+          makeLesson("6-1", "6", 0, "What Makes a Great Script?", "14m", "not_started", 0, true),
+          makeLesson("6-2", "6", 0, "Character Development 101", "18m"),
+          makeLesson("6-3", "6", 0, "Building a Logline", "12m"),
         ],
       },
       {
-        title: "Scoring for Film",
+        title: "Writing Craft",
         lessons: [
-          makeLesson("6-4", "6", 1, "Understanding Scene Emotion", "18m"),
-          makeLesson("6-5", "6", 1, "Layering Instruments", "22m"),
-          makeLesson("6-6", "6", 1, "Mixing for Dialogue", "16m"),
+          makeLesson("6-4", "6", 1, "Dialogue That Sounds Real", "20m"),
+          makeLesson("6-5", "6", 1, "Scene Transitions & Pacing", "16m"),
+          makeLesson("6-6", "6", 1, "Formatting Your Screenplay", "14m"),
+        ],
+      },
+      {
+        title: "Pitching & Distribution",
+        lessons: [
+          makeLesson("6-7", "6", 2, "Writing a Pitch Deck", "16m"),
+          makeLesson("6-8", "6", 2, "Finding Producers", "14m"),
         ],
       },
     ],
     reviews: [
-      { id: "r9", author: "Aditya V", avatar: instructor1, rating: 5, text: "Finally a music course made for filmmakers, not musicians. Exactly what I needed.", date: "3 weeks ago" },
+      { id: "r9", author: "Kavita D", avatar: instructor2, rating: 5, text: "Finally a screenwriting course for Indian storytellers. The examples are so relatable.", date: "1 week ago" },
     ],
-    sampleProjects: [{ title: "Original Score — Short Film", image: courseEditing }],
+    sampleProjects: [
+      { title: "Short Film Script — Urban Stories", image: courseEditing },
+    ],
   },
 ];
+
+// ── Workshops ──
+export const workshopsList: Workshop[] = [
+  {
+    id: "w1",
+    title: "Intro to Color Grading with DaVinci Resolve",
+    instructor: "Priya Sharma",
+    instructorBio: "Lead editor at a top Mumbai post-production house. 10+ years crafting narratives through the cut. Known for her vibrant color grading style across indie films and brand campaigns.",
+    instructorImage: instructor2,
+    thumbnail: courseEditing,
+    category: "Editing",
+    description: "A hands-on workshop to get you started with color grading in DaVinci Resolve. We'll cover color wheels, nodes, LUTs, and how to build a cinematic look from scratch using real footage.",
+    highlights: [
+      "Understand color theory for video",
+      "Set up a DaVinci Resolve color workflow",
+      "Apply LUTs and create custom looks",
+      "Grade a short film clip live together",
+      "Q&A with Priya on post-production careers",
+    ],
+    date: "Sat, 22 Mar 2026",
+    time: "3:00 PM IST",
+    duration: "2 hours",
+    price: 99,
+    seatsTotal: 100,
+    seatsRemaining: 23,
+    isPast: false,
+    hasReplay: false,
+    testimonials: [
+      { author: "Sneha Patel", text: "Priya's color grading tips completely changed my editing workflow. Worth every rupee!" },
+      { author: "Rohit Nair", text: "The live grading session was incredible. Learned more in 2 hours than weeks of YouTube." },
+    ],
+    faq: [
+      { question: "Do I need DaVinci Resolve installed?", answer: "Yes, please download the free version of DaVinci Resolve before the workshop. We'll provide project files to follow along." },
+      { question: "Is this suitable for beginners?", answer: "Absolutely! This workshop is designed for beginners who have basic editing knowledge but are new to color grading." },
+      { question: "Will there be a recording?", answer: "Yes, all registered participants will receive a replay link within 24 hours of the session." },
+    ],
+  },
+  {
+    id: "w2",
+    title: "Mobile Filmmaking Basics",
+    instructor: "Arjun Kapoor",
+    instructorBio: "500K+ subscribers, brand filmmaker and content strategist. Known for creating cinematic content using just a smartphone.",
+    instructorImage: instructor1,
+    thumbnail: courseCinematography,
+    category: "Filmmaking",
+    description: "Learn how to shoot professional-looking videos using just your smartphone. Covers framing, lighting with natural light, audio capture, and quick editing on mobile apps.",
+    highlights: [
+      "Shoot cinematic video on any smartphone",
+      "Master natural light setups",
+      "Capture clean audio with budget gear",
+      "Edit on CapCut and InShot",
+      "Build a mini portfolio from the workshop",
+    ],
+    date: "Sun, 30 Mar 2026",
+    time: "5:00 PM IST",
+    duration: "1.5 hours",
+    price: 149,
+    seatsTotal: 80,
+    seatsRemaining: 42,
+    isPast: false,
+    hasReplay: false,
+    testimonials: [
+      { author: "Ananya Iyer", text: "Arjun made mobile filmmaking feel so accessible. Shot my first reel the same evening!" },
+    ],
+    faq: [
+      { question: "What phone do I need?", answer: "Any smartphone with a decent camera — iPhone 11+ or Android with OIS recommended, but not required." },
+      { question: "Do I need any accessories?", answer: "No accessories needed. Arjun will show you how to achieve great results with just your phone." },
+    ],
+  },
+  {
+    id: "w3",
+    title: "Sound Design for Short Films",
+    instructor: "Rajiv Menon",
+    instructorBio: "Award-winning filmmaker known for documentary storytelling. Deep expertise in atmospheric sound design.",
+    instructorImage: instructor1,
+    thumbnail: courseContent,
+    category: "Filmmaking",
+    description: "Explore the world of sound design for cinema. Learn how to layer audio, create atmosphere, work with foley, and use free sound libraries to elevate your short films.",
+    highlights: [
+      "Understand the role of sound in storytelling",
+      "Layer ambient audio and foley",
+      "Work with free SFX libraries",
+      "Mix dialogue and music effectively",
+      "Create an atmospheric soundscape from scratch",
+    ],
+    date: "Sat, 5 Apr 2026",
+    time: "4:00 PM IST",
+    duration: "2 hours",
+    price: 199,
+    seatsTotal: 60,
+    seatsRemaining: 8,
+    isPast: false,
+    hasReplay: false,
+    testimonials: [],
+    faq: [
+      { question: "Do I need Pro Tools?", answer: "No! We'll use Audacity (free) and DaVinci Resolve's Fairlight page. Both are free and cross-platform." },
+      { question: "Is this for editors or filmmakers?", answer: "Both! Anyone who works with video and wants to improve their audio game will benefit." },
+    ],
+  },
+  {
+    id: "w4",
+    title: "YouTube Growth Strategies 2026",
+    instructor: "Arjun Kapoor",
+    instructorBio: "500K+ subscribers, brand filmmaker and content strategist.",
+    instructorImage: instructor1,
+    thumbnail: courseContent,
+    category: "Content Creation",
+    description: "A deep-dive into YouTube growth strategies that actually work in 2026. Covering algorithm updates, Shorts strategy, audience retention, and monetization beyond AdSense.",
+    highlights: [
+      "2026 algorithm deep-dive",
+      "Shorts vs long-form strategy",
+      "Audience retention techniques",
+      "Monetization beyond ads",
+    ],
+    date: "Sat, 8 Mar 2026",
+    time: "5:00 PM IST",
+    duration: "1.5 hours",
+    price: 99,
+    seatsTotal: 120,
+    seatsRemaining: 0,
+    isPast: true,
+    hasReplay: true,
+    testimonials: [
+      { author: "Meera K", text: "Applied the retention hook technique and saw immediate improvement in my watch time." },
+      { author: "Vikram Das", text: "Best YouTube strategy session I've attended. Practical and no fluff." },
+    ],
+    faq: [],
+  },
+  {
+    id: "w5",
+    title: "Lighting Masterclass for Indie Filmmakers",
+    instructor: "Nandini Reddy",
+    instructorBio: "DoP with credits on 20+ indie films. Teaches at FTII.",
+    instructorImage: instructor2,
+    thumbnail: courseCinematography,
+    category: "Cinematography",
+    description: "Learn how to create professional lighting setups on a budget. Covers three-point lighting, natural light techniques, and mood-based lighting for different genres.",
+    highlights: [
+      "Budget lighting setups",
+      "Three-point lighting mastery",
+      "Natural light techniques",
+      "Genre-based lighting moods",
+    ],
+    date: "Sun, 2 Mar 2026",
+    time: "4:00 PM IST",
+    duration: "2 hours",
+    price: 149,
+    seatsTotal: 50,
+    seatsRemaining: 0,
+    isPast: true,
+    hasReplay: true,
+    testimonials: [
+      { author: "Akash G", text: "Nandini showed us how to light a scene with just ₹500 worth of gear. Mind-blown." },
+    ],
+    faq: [],
+  },
+];
+
+export const getWorkshopById = (id: string) => workshopsList.find((w) => w.id === id);
 
 // Helper to get all lessons flat
 export const getAllLessons = (): Lesson[] =>
