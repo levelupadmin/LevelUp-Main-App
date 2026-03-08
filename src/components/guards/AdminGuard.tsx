@@ -1,10 +1,13 @@
 import { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
+import { useAuth, AppRole } from "@/contexts/AuthContext";
 
-// TODO: Replace with real role check from Lovable Cloud
+const ADMIN_ROLES: AppRole[] = ["super_admin", "mentor"];
+
 const useIsAdmin = () => {
-  // Placeholder: always admin for now
-  return { isAdmin: true, isLoading: false };
+  const { user, isLoading } = useAuth();
+  const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
+  return { isAdmin, isLoading, role: user?.role ?? "student" };
 };
 
 const AdminGuard = ({ children }: { children: ReactNode }) => {
