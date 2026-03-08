@@ -2,11 +2,10 @@ import AppShell from "@/components/layout/AppShell";
 import { detailedCourses, workshopsList, type CourseDetailed } from "@/data/learningData";
 import { cohorts } from "@/data/cohortData";
 import { categories } from "@/data/mockData";
-import { Star, Clock, Users, Search, Play, ArrowRight, ChevronRight, BookOpen, GraduationCap } from "lucide-react";
+import { Star, Clock, Users, Search, Play, ChevronRight, BookOpen, GraduationCap, Calendar } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 
 const Learn = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -14,24 +13,32 @@ const Learn = () => {
   const navigate = useNavigate();
 
   const inProgressCourses = detailedCourses.filter((c) => c.progress > 0 && c.progress < 100);
-  const upcomingWorkshops = workshopsList.filter((w) => !w.isPast).slice(0, 3);
   const activeCohorts = cohorts.filter((c) => c.isApplicationOpen);
 
-  const filteredCourses = useMemo(() => {
-    let result = [...detailedCourses];
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (c) =>
-          c.title.toLowerCase().includes(q) ||
-          c.instructor.toLowerCase().includes(q) ||
-          c.category.toLowerCase().includes(q)
-      );
-    }
-    if (selectedCategory !== "all") {
-      result = result.filter((c) => c.category.toLowerCase() === selectedCategory);
-    }
-    return result;
+  const filtered = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    const matchCategory = (cat: string) =>
+      selectedCategory === "all" || cat.toLowerCase() === selectedCategory;
+
+    const masterclasses = detailedCourses.filter(
+      (c) =>
+        matchCategory(c.category) &&
+        (!q || c.title.toLowerCase().includes(q) || c.instructor.toLowerCase().includes(q) || c.category.toLowerCase().includes(q))
+    );
+
+    const filteredCohorts = cohorts.filter(
+      (c) =>
+        matchCategory(c.category) &&
+        (!q || c.title.toLowerCase().includes(q) || c.category.toLowerCase().includes(q))
+    );
+
+    const workshops = workshopsList.filter(
+      (w) =>
+        matchCategory(w.category) &&
+        (!q || w.title.toLowerCase().includes(q) || w.instructor.toLowerCase().includes(q) || w.category.toLowerCase().includes(q))
+    );
+
+    return { masterclasses, cohorts: filteredCohorts, workshops };
   }, [searchQuery, selectedCategory]);
 
   return (
