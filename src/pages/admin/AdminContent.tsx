@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,6 +7,7 @@ import { Tables, TablesInsert } from "@/integrations/supabase/types";
 import {
   FileText, Search, Plus, MoreHorizontal, Star, ArrowLeft, Trash2,
   GripVertical, ChevronDown, ChevronRight, Video, BookOpen, Save, X,
+  Upload, File, FileQuestion, ClipboardList, Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
