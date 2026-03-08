@@ -72,14 +72,14 @@ const HeroCarousel = () => {
       onClick={() => navigate(slide.route)}
     >
       <div className="relative h-[480px] w-full sm:h-[520px] lg:h-[600px]">
-        {/* Background images — all rendered, only current visible */}
+        {/* Background images with Ken Burns animation */}
         {heroSlides.map((s, i) => (
           <img
             key={s.id}
             src={s.image}
             alt=""
             className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${
-              i === current ? "opacity-100" : "opacity-0"
+              i === current ? "opacity-100 animate-ken-burns" : "opacity-0"
             }`}
           />
         ))}
@@ -90,12 +90,10 @@ const HeroCarousel = () => {
 
         {/* Content overlay */}
         <div className="absolute inset-0 flex flex-col justify-end p-6 pb-24 sm:pb-28 lg:p-16 lg:pb-32">
-          {/* Eyebrow */}
           <span className="mb-4 inline-flex w-fit rounded-full border border-border/50 bg-background/40 px-4 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground backdrop-blur-sm">
             {slide.category}
           </span>
 
-          {/* Headline */}
           <h1 className="max-w-3xl text-3xl font-bold leading-[1.08] text-foreground sm:text-5xl lg:text-[4.25rem]">
             {slide.headline}
             <br />
@@ -104,8 +102,6 @@ const HeroCarousel = () => {
             </em>
           </h1>
 
-          {/* CTA + Metadata row */}
-          {/* CTA */}
           <div className="mt-8">
             <button
               onClick={(e) => {
@@ -119,7 +115,6 @@ const HeroCarousel = () => {
             </button>
           </div>
 
-          {/* Metadata row */}
           <div className="mt-5 flex flex-wrap gap-2">
             {slide.meta.map((tag) => (
               <span

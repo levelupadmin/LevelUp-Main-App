@@ -6,6 +6,7 @@ import {
 import { detailedCourses } from "@/data/learningData";
 import HeroCarousel from "@/components/home/HeroCarousel";
 import UpcomingEvents from "@/components/home/UpcomingEvents";
+import StreakCard from "@/components/home/StreakCard";
 import {
   ArrowRight,
   ChevronRight,
@@ -14,6 +15,27 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+
+const SectionHeader = ({ title, subtitle, action, onAction }: { title: string; subtitle: string; action?: string; onAction?: () => void }) => (
+  <div className="flex items-center justify-between">
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <div className="h-5 w-1 rounded-full bg-highlight" />
+        <h2 className="text-xl font-bold text-foreground">{title}</h2>
+      </div>
+      <p className="text-sm text-muted-foreground">{subtitle}</p>
+    </div>
+    {action && onAction && (
+      <button
+        onClick={onAction}
+        className="hidden items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
+      >
+        {action}
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    )}
+  </div>
+);
 
 const Index = () => {
   const navigate = useNavigate();
@@ -25,29 +47,24 @@ const Index = () => {
         {/* 1. Featured Banner — Carousel Hero */}
         <HeroCarousel />
 
+        {/* Streak widget */}
+        <StreakCard />
+
         {/* 2. Continue Learning */}
         {enrolledCourses.length > 0 && (
           <section className="space-y-5">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <h2 className="text-xl font-bold text-foreground">Continue learning</h2>
-                <p className="text-sm text-muted-foreground">Pick up where you left off</p>
-              </div>
-              <button
-                onClick={() => navigate("/learn/my-learning")}
-                className="hidden items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
-              >
-                View all
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+            <SectionHeader
+              title="Continue learning"
+              subtitle="Pick up where you left off"
+              action="View all"
+              onAction={() => navigate("/learn/my-learning")}
+            />
             <div className="grid gap-4 sm:grid-cols-2">
               {enrolledCourses.map((course) => (
                 <div
                   key={course.id}
-                  className="group overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/20"
+                  className="group relative overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-muted-foreground/20 hover:shadow-[0_0_0_1px_hsl(var(--highlight)/0.08)]"
                 >
-                  {/* Text area with fading background image */}
                   <div className="relative overflow-hidden p-5">
                     <img
                       src={course.thumbnail}
@@ -91,6 +108,10 @@ const Index = () => {
                       Continue Learning
                     </button>
                   </div>
+                  {/* YouTube-style bottom progress bar */}
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent">
+                    <div className="h-full bg-highlight transition-all" style={{ width: `${course.progress}%` }} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -102,27 +123,18 @@ const Index = () => {
 
         {/* 3. Popular in Community */}
         <section className="space-y-5">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <h2 className="text-xl font-bold text-foreground">
-                Popular in the community
-              </h2>
-              <p className="text-sm text-muted-foreground">Active discussions from your spaces</p>
-            </div>
-            <button
-              onClick={() => navigate("/community")}
-              className="hidden items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
-            >
-              View all
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
+          <SectionHeader
+            title="Popular in the community"
+            subtitle="Active discussions from your spaces"
+            action="View all"
+            onAction={() => navigate("/community")}
+          />
           <div className="grid gap-3 sm:grid-cols-2">
             {communityPosts.slice(0, 4).map((post) => (
               <div
                 key={post.id}
                 onClick={() => navigate(`/community/post/${post.id}`)}
-                className="group cursor-pointer rounded-xl border border-border bg-card p-5 transition-colors hover:border-muted-foreground/20"
+                className="group cursor-pointer rounded-xl border border-border bg-card p-5 transition-all hover:border-muted-foreground/20 hover:shadow-[0_0_0_1px_hsl(var(--highlight)/0.08)]"
               >
                 <div className="mb-1 flex items-center gap-2">
                   <span className="rounded bg-accent px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
@@ -164,28 +176,18 @@ const Index = () => {
 
         {/* 4. Featured Creators */}
         <section className="space-y-5">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <h2 className="text-xl font-bold text-foreground">Featured creators</h2>
-              <p className="text-sm text-muted-foreground">
-                Talented members doing remarkable work
-              </p>
-            </div>
-            <button
-              onClick={() => navigate("/community/directory")}
-              className="hidden items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
-            >
-              View directory
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
+          <SectionHeader
+            title="Featured creators"
+            subtitle="Talented members doing remarkable work"
+            action="View directory"
+            onAction={() => navigate("/community/directory")}
+          />
           <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
             {featuredCreators.map((creator) => (
               <div
                 key={creator.id}
-                className="w-72 shrink-0 overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/20"
+                className="w-72 shrink-0 overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-muted-foreground/20 hover:shadow-[0_0_0_1px_hsl(var(--highlight)/0.08)]"
               >
-                {/* Thumbnail */}
                 <div className="relative h-32 overflow-hidden">
                   <img
                     src={creator.thumbnail}
@@ -193,14 +195,12 @@ const Index = () => {
                     className="h-full w-full object-cover"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
-                  {/* Avatar overlapping */}
                   <img
                     src={creator.avatar}
                     alt={creator.name}
                     className="absolute -bottom-5 left-4 h-12 w-12 rounded-full border-2 border-card object-cover"
                   />
                 </div>
-                {/* Info */}
                 <div className="px-4 pb-4 pt-8">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-bold text-foreground">{creator.name}</h3>
@@ -240,8 +240,7 @@ const Index = () => {
           </div>
         </section>
 
-
-        {/* 6. Explore More Courses — placeholder */}
+        {/* 6. Explore More Courses */}
         <section className="rounded-2xl border border-dashed border-border bg-card/50 p-10 text-center">
           <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             Coming soon
