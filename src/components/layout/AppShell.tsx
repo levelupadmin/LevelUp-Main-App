@@ -120,7 +120,7 @@ const AppShell = ({ children }: { children: ReactNode }) => {
 
           {/* Mobile logo */}
           <div className="flex items-center gap-2 lg:hidden">
-            <img src={logo} alt="LevelUp Learning" className="h-6 w-6" />
+            
             <span className="text-sm font-bold text-foreground">LevelUp Learning</span>
           </div>
 
