@@ -1,6 +1,6 @@
 import AppShell from "@/components/layout/AppShell";
 import { communityPosts } from "@/data/mockData";
-import { Heart, MessageCircle, Plus, TrendingUp, Hash, MessageSquare, HelpCircle, Calendar, Users, Award } from "lucide-react";
+import { MessageCircle, Plus, TrendingUp, Hash, MessageSquare, HelpCircle, Calendar, Users, Award } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -21,11 +21,11 @@ const Community = () => {
     <AppShell>
       <div className="flex h-[calc(100vh-3.5rem)] lg:h-[calc(100vh-3.5rem)]">
         {/* Spaces sidebar - Desktop */}
-        <aside className="hidden w-56 shrink-0 border-r border-border bg-card/50 lg:block">
+        <aside className="hidden w-56 shrink-0 border-r border-border bg-sidebar lg:block">
           <div className="p-4">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Spaces</h2>
-              <button className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+              <button className="rounded-lg p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
                 <Plus className="h-4 w-4" />
               </button>
             </div>
@@ -37,10 +37,10 @@ const Community = () => {
                   <button
                     key={space.id}
                     onClick={() => setActiveSpace(space.id)}
-                    className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                       active
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                        ? "bg-accent text-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
                     }`}
                   >
                     <Icon className="h-4 w-4" />
@@ -55,7 +55,7 @@ const Community = () => {
           <div className="border-t border-border p-4">
             <button
               onClick={() => navigate("/community/directory")}
-              className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               <Users className="h-4 w-4" />
               Creator Directory
@@ -72,17 +72,17 @@ const Community = () => {
                 <h1 className="text-2xl font-bold text-foreground">Community</h1>
                 <p className="text-sm text-muted-foreground">Connect with fellow creators</p>
               </div>
-              <button className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
+              <button className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
                 <Plus className="h-4 w-4" />
                 <span className="hidden sm:inline">New Post</span>
               </button>
             </div>
 
             {/* Trending */}
-            <div className="mb-5 rounded-lg border border-primary/15 bg-primary/5 px-4 py-3">
+            <div className="mb-5 rounded-xl border border-border bg-card px-4 py-3">
               <div className="flex items-center gap-2 text-sm">
-                <TrendingUp className="h-4 w-4 text-primary" />
-                <span className="font-semibold text-primary">Trending:</span>
+                <TrendingUp className="h-4 w-4 text-foreground" />
+                <span className="font-semibold text-foreground">Trending:</span>
                 <span className="text-foreground">#GoldenHourChallenge</span>
                 <span className="text-muted-foreground">· 89 posts today</span>
               </div>
@@ -94,10 +94,10 @@ const Community = () => {
                 <button
                   key={space.id}
                   onClick={() => setActiveSpace(space.id)}
-                  className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                     activeSpace === space.id
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-secondary text-secondary-foreground"
+                      ? "bg-foreground text-background"
+                      : "bg-accent text-secondary-foreground"
                   }`}
                 >
                   {space.label}
@@ -110,28 +110,28 @@ const Community = () => {
               {communityPosts.map((post) => (
                 <div
                   key={post.id}
-                  className="rounded-lg border border-border bg-card p-4 transition-colors hover:border-border/80 cursor-pointer"
+                  className="rounded-xl border border-border bg-card p-5 transition-colors hover:border-muted-foreground/20 cursor-pointer"
                   onClick={() => navigate(`/community/post/${post.id}`)}
                 >
                   <div className="mb-3 flex items-center gap-3">
-                    <img src={post.avatar} alt={post.author} className="h-9 w-9 rounded-full object-cover" />
+                    <img src={post.avatar} alt={post.author} className="h-10 w-10 rounded-full object-cover" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground">{post.author}</p>
+                      <p className="text-sm font-bold text-foreground">{post.author}</p>
                       <p className="text-xs text-muted-foreground">
                         {post.authorLevel} · {post.timeAgo}
                       </p>
                     </div>
-                    <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+                    <span className="rounded-lg bg-accent px-2.5 py-1 text-xs font-medium text-secondary-foreground">
                       {post.tag}
                     </span>
                   </div>
-                  <p className="text-sm leading-relaxed text-foreground/90">{post.content}</p>
+                  <p className="text-sm leading-relaxed text-secondary-foreground">{post.content}</p>
                   <div className="mt-3 flex items-center gap-5 border-t border-border pt-3 text-muted-foreground">
-                    <button className="flex items-center gap-1.5 text-xs transition-colors hover:text-primary">
-                      <Heart className="h-4 w-4" /> {post.likes}
+                    <button className="flex items-center gap-1.5 text-xs transition-colors hover:text-foreground">
+                      ♡ {post.likes}
                     </button>
-                    <button className="flex items-center gap-1.5 text-xs transition-colors hover:text-primary">
-                      <MessageCircle className="h-4 w-4" /> {post.comments}
+                    <button className="flex items-center gap-1.5 text-xs transition-colors hover:text-foreground">
+                      <MessageCircle className="h-3.5 w-3.5" /> {post.comments}
                     </button>
                   </div>
                 </div>
