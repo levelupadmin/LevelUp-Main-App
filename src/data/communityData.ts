@@ -298,19 +298,6 @@ export interface DirectoryCreator {
   portfolioUrl?: string;
   notableWork?: string;
 }
-  id: string;
-  name: string;
-  role: string;
-  city: string;
-  experience: string;
-  experienceLevel: "Beginner" | "Intermediate" | "Advanced" | "Expert";
-  avatar: string;
-  description: string;
-  skills: string[];
-  available: boolean;
-  portfolioUrl?: string;
-  notableWork?: string;
-}
 
 export const directoryCreators: DirectoryCreator[] = [
   { id: "dc-1", name: "Meera Krishnan", role: "Cinematographer", city: "Mumbai", experience: "8 years", experienceLevel: "Expert", avatar: instructor2, description: "Shot 3 national award-winning documentaries. Specializes in natural light.", skills: ["Cinema Camera", "Lighting", "Color Science", "Documentary"], available: true, portfolioUrl: "https://meera.film", notableWork: "National Award — Best Cinematography 2024" },
