@@ -98,7 +98,10 @@ const Index = () => {
           </section>
         )}
 
-        {/* 2b. Upcoming Events */}
+        {/* 2b. My Batches */}
+        <MyBatchCard />
+
+        {/* 2c. Upcoming Events */}
         <UpcomingEvents />
 
         {/* 3. Popular in Community */}
