@@ -17,9 +17,10 @@ interface Props {
   spaceEmoji?: string;
   channel: Channel;
   onToggleSidebar: () => void;
+  hideHeader?: boolean;
 }
 
-const SpaceChannelView = ({ spaceName, channel, onToggleSidebar }: Props) => {
+const SpaceChannelView = ({ spaceName, channel, onToggleSidebar, hideHeader }: Props) => {
   const [messageText, setMessageText] = useState("");
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -35,16 +36,18 @@ const SpaceChannelView = ({ spaceName, channel, onToggleSidebar }: Props) => {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-background shrink-0">
-        <button onClick={onToggleSidebar} className="md:hidden text-foreground">
-          <Menu size={20} />
-        </button>
-        <span className="text-base">{channel.icon}</span>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-sm font-bold text-foreground">{channel.label}</h1>
-          <p className="text-[11px] text-muted-foreground truncate">{spaceName}</p>
+      {!hideHeader && (
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-background shrink-0">
+          <button onClick={onToggleSidebar} className="md:hidden text-foreground">
+            <Menu size={20} />
+          </button>
+          <span className="text-base">{channel.icon}</span>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-sm font-bold text-foreground">{channel.label}</h1>
+            <p className="text-[11px] text-muted-foreground truncate">{spaceName}</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Messages */}
       <ScrollArea className="flex-1">
