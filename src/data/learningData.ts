@@ -59,6 +59,7 @@ export interface CourseDetailed {
   instructorBio: string;
   instructorImage: string;
   thumbnail: string;
+  cardImage?: string;
   category: string;
   difficulty: Difficulty;
   format: "Masterclass" | "Cohort" | "Workshop";
