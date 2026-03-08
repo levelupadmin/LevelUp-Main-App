@@ -1,6 +1,6 @@
 import AppShell from "@/components/layout/AppShell";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { useCourse, useCourseModules, useCourseLessons } from "@/hooks/useCourseData";
+import { useCourse, useCourseModules, useCourseLessons, useEnrollment, useEnrollInCourse } from "@/hooks/useCourseData";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Star, Clock, Users, Play, Lock, CheckCircle2, Calendar, Bell, BookOpen, Award, Shield, ChevronDown } from "lucide-react";
@@ -26,6 +26,8 @@ const CourseDetail = () => {
   const { data: course, isLoading: courseLoading } = useCourse(slug || "");
   const { data: modules = [] } = useCourseModules(course?.id);
   const { data: lessons = [] } = useCourseLessons(course?.id);
+  const { data: enrollment } = useEnrollment(course?.id);
+  const enrollMutation = useEnrollInCourse();
 
   const { data: schedules = [] } = useQuery({
     queryKey: ["course-schedules", course?.id],
@@ -84,6 +86,17 @@ const CourseDetail = () => {
   const freeLessons = lessons.filter((l) => l.is_free);
 
   const handleStartCourse = () => {
+    if (enrollment) {
+      navigate(`/learn/course/${course.slug}/dashboard`);
+      return;
+    }
+    // For free courses, auto-enroll and go to dashboard
+    if (course.is_free) {
+      enrollMutation.mutate(course.id, {
+        onSuccess: () => navigate(`/learn/course/${course.slug}/dashboard`),
+      });
+      return;
+    }
     if (freeLessons.length > 0) {
       navigate(`/learn/lesson/${freeLessons[0].id}`);
     } else if (lessons.length > 0) {
@@ -97,7 +110,12 @@ const CourseDetail = () => {
 
   const renderCTA = (className?: string) => (
     <div className={className}>
-      {enrollUrl && !course.is_free ? (
+      {enrollment ? (
+        <Button onClick={() => navigate(`/learn/course/${course.slug}/dashboard`)} size="lg" className="gap-2 font-bold">
+          <Play className="h-4 w-4" />
+          Go to Dashboard
+        </Button>
+      ) : enrollUrl && !course.is_free ? (
         <Button asChild size="lg" className="gap-2 font-bold">
           <a
             href={enrollUrl}
@@ -110,7 +128,7 @@ const CourseDetail = () => {
           </a>
         </Button>
       ) : (
-        <Button onClick={handleStartCourse} size="lg" className="gap-2 font-bold">
+        <Button onClick={handleStartCourse} size="lg" className="gap-2 font-bold" disabled={enrollMutation.isPending}>
           <Play className="h-4 w-4" />
           {course.is_free ? "Start Course (Free)" : `Start Course · ₹${course.price.toLocaleString()}`}
         </Button>

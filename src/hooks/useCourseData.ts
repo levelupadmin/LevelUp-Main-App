@@ -1,10 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 
 export type Course = Tables<"courses">;
 export type Module = Tables<"course_modules">;
 export type Lesson = Tables<"lessons">;
+export type LessonProgress = Tables<"lesson_progress">;
+export type Enrollment = Tables<"enrollments">;
 
 export const useCourse = (slug: string) =>
   useQuery({
@@ -81,3 +83,118 @@ export const useLessonCourse = (courseId: string | undefined) =>
       return data as Course | null;
     },
   });
+
+/* ─── Enrollment ─── */
+
+export const useEnrollment = (courseId: string | undefined) =>
+  useQuery({
+    queryKey: ["enrollment", courseId],
+    enabled: !!courseId,
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data, error } = await supabase
+        .from("enrollments")
+        .select("*")
+        .eq("course_id", courseId!)
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .maybeSingle();
+      if (error) throw error;
+      return data as Enrollment | null;
+    },
+  });
+
+export const useEnrollInCourse = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (courseId: string) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+      const { data, error } = await supabase
+        .from("enrollments")
+        .insert({ course_id: courseId, user_id: user.id })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, courseId) => {
+      qc.invalidateQueries({ queryKey: ["enrollment", courseId] });
+    },
+  });
+};
+
+/* ─── Lesson Progress ─── */
+
+export const useCourseProgress = (courseId: string | undefined) =>
+  useQuery({
+    queryKey: ["course-progress", courseId],
+    enabled: !!courseId,
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from("lesson_progress")
+        .select("*")
+        .eq("course_id", courseId!)
+        .eq("user_id", user.id);
+      if (error) throw error;
+      return (data ?? []) as LessonProgress[];
+    },
+  });
+
+export const useMarkLessonComplete = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lessonId, courseId }: { lessonId: string; courseId: string }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+      const { data, error } = await supabase
+        .from("lesson_progress")
+        .upsert(
+          {
+            lesson_id: lessonId,
+            course_id: courseId,
+            user_id: user.id,
+            status: "completed" as const,
+            progress_pct: 100,
+            completed_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,lesson_id" }
+        )
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["course-progress", vars.courseId] });
+    },
+  });
+};
+
+export const useSaveLessonNotes = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lessonId, courseId, notes }: { lessonId: string; courseId: string; notes: string }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+      const { error } = await supabase
+        .from("lesson_progress")
+        .upsert(
+          {
+            lesson_id: lessonId,
+            course_id: courseId,
+            user_id: user.id,
+            notes,
+          } as any,
+          { onConflict: "user_id,lesson_id" }
+        );
+      if (error) throw error;
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["course-progress", vars.courseId] });
+    },
+  });
+};
