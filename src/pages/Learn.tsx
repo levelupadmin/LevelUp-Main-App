@@ -157,22 +157,10 @@ const Learn = () => {
                     className="group relative aspect-[3/4] overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]"
                   >
                     <img
-                      src={course.instructorImage}
+                      src={course.cardImage || course.thumbnail}
                       alt={course.instructor}
                       className="absolute inset-0 h-full w-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4">
-                      <p className="text-base sm:text-lg font-extrabold text-white uppercase leading-tight tracking-wide">
-                        {course.instructor}
-                      </p>
-                      <p className="mt-1 text-[10px] sm:text-xs text-white/50 uppercase tracking-[0.15em] font-medium">
-                        Teaches
-                      </p>
-                      <p className="text-sm sm:text-base font-bold text-white uppercase tracking-wide">
-                        {course.category}
-                      </p>
-                    </div>
                   </button>
                 ))}
               </div>
