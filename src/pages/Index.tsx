@@ -25,39 +25,53 @@ const Index = () => {
   return (
     <AppShell>
       <div className="mx-auto max-w-6xl space-y-14 p-6 lg:p-10">
-        {/* 1. Featured Banner */}
+        {/* 1. Featured Banner — GrowthX-style full-bleed hero */}
         <section
           onClick={() => navigate(featuredBanner.route)}
-          className="group relative cursor-pointer overflow-hidden rounded-2xl border border-border"
+          className="group relative -mx-6 -mt-6 cursor-pointer overflow-hidden lg:-mx-10 lg:-mt-10"
         >
-          <div className="relative flex flex-col lg:flex-row">
-            {/* Image */}
-            <div className="relative h-56 w-full lg:absolute lg:inset-0 lg:h-full">
-              <img
-                src={featuredBanner.image}
-                alt={featuredBanner.headline}
-                className="h-full w-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/80 to-transparent lg:bg-gradient-to-r lg:from-card lg:via-card/90 lg:to-transparent" />
-            </div>
-            {/* Content */}
-            <div className="relative z-10 flex flex-col justify-center p-6 lg:max-w-lg lg:p-12">
-              <span className="mb-3 inline-flex w-fit rounded-md bg-accent px-3 py-1 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                {featuredBanner.category}
-              </span>
-              <h1 className="text-2xl font-bold leading-tight text-foreground lg:text-4xl">
-                {featuredBanner.headline}
+          {/* Full-bleed background image */}
+          <div className="relative h-[420px] w-full lg:h-[560px]">
+            <img
+              src={heroBanner}
+              alt="Level Up Learning"
+              className="h-full w-full object-cover"
+            />
+            {/* Bottom gradient for text readability */}
+            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
+
+            {/* Hero text overlay */}
+            <div className="absolute inset-0 flex flex-col justify-end p-6 pb-20 lg:p-16 lg:pb-28">
+              <h1 className="max-w-4xl text-4xl font-bold leading-[1.1] text-foreground sm:text-5xl lg:text-7xl">
+                {featuredBanner.headline}{" "}
+                <br className="hidden sm:block" />
+                <em className="font-light italic">{featuredBanner.headlineAccent}</em>
               </h1>
-              <p className="mt-2 text-sm font-medium text-muted-foreground lg:text-base">
-                {featuredBanner.tagline}
-              </p>
-              <p className="mt-3 text-sm leading-relaxed text-secondary-foreground line-clamp-2">
-                {featuredBanner.description}
-              </p>
-              <button className="mt-6 inline-flex w-fit items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors group-hover:bg-primary/90">
-                {featuredBanner.cta}
-                <ArrowRight className="h-4 w-4" />
-              </button>
+              <div className="mt-6">
+                <button className="inline-flex items-center gap-2 rounded-full bg-primary px-7 py-3.5 text-sm font-semibold text-primary-foreground transition-colors group-hover:bg-primary/90">
+                  {featuredBanner.cta}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Social proof bar at bottom */}
+            <div className="absolute bottom-0 left-0 right-0 border-t border-border/30 bg-background/80 backdrop-blur-sm">
+              <div className="mx-auto max-w-6xl px-6 py-3 lg:px-16">
+                <p className="mb-2 text-xs text-muted-foreground">
+                  {featuredBanner.socialProof}
+                </p>
+                <div className="flex items-center gap-6 overflow-x-auto hide-scrollbar">
+                  {featuredBanner.brands.map((brand) => (
+                    <span
+                      key={brand}
+                      className="shrink-0 font-mono text-xs font-medium tracking-wide text-muted-foreground/70"
+                    >
+                      {brand}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </section>
