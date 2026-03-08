@@ -11,6 +11,17 @@ export const heroData = {
   subtitle: "Learn from India's top creative minds",
 };
 
+export const featuredBanner = {
+  id: "1",
+  category: "Filmmaking",
+  headline: "The Art of Cinematic Storytelling",
+  tagline: "A 12-week masterclass with Rajiv Menon",
+  description: "Learn the craft behind India's most celebrated visual narratives — from script to screen.",
+  cta: "Explore Program",
+  image: courseCinematography,
+  route: "/learn/course/1",
+};
+
 export const courses = [
   {
     id: "1",
@@ -19,13 +30,16 @@ export const courses = [
     instructorImage: instructor1,
     thumbnail: courseCinematography,
     category: "Filmmaking",
+    format: "Masterclass" as const,
     rating: 4.9,
     students: 2340,
-    lessons: 24,
+    lessons: 21,
     duration: "4h 30m",
     price: 1999,
     isSubscription: true,
     progress: 45,
+    currentModule: 4,
+    totalModules: 21,
     description: "Core principles to distribution, user onboarding, retention & more",
   },
   {
@@ -35,6 +49,7 @@ export const courses = [
     instructorImage: instructor2,
     thumbnail: courseEditing,
     category: "Editing",
+    format: "Masterclass" as const,
     rating: 4.8,
     students: 1890,
     lessons: 32,
@@ -42,6 +57,8 @@ export const courses = [
     price: 2499,
     isSubscription: true,
     progress: 0,
+    currentModule: 0,
+    totalModules: 32,
     description: "From raw footage to final cut — learn professional editing workflows",
   },
   {
@@ -51,6 +68,7 @@ export const courses = [
     instructorImage: instructor1,
     thumbnail: courseContent,
     category: "Content Creation",
+    format: "Cohort" as const,
     rating: 4.7,
     students: 3210,
     lessons: 18,
@@ -58,6 +76,8 @@ export const courses = [
     price: 1499,
     isSubscription: true,
     progress: 0,
+    currentModule: 0,
+    totalModules: 12,
     description: "Build your audience and create content that resonates",
   },
   {
@@ -67,6 +87,7 @@ export const courses = [
     instructorImage: instructor2,
     thumbnail: courseCinematography,
     category: "Cinematography",
+    format: "Cohort" as const,
     rating: 4.9,
     students: 1560,
     lessons: 20,
@@ -74,6 +95,8 @@ export const courses = [
     price: 1999,
     isSubscription: true,
     progress: 72,
+    currentModule: 3,
+    totalModules: 12,
     description: "Master the visual language of cinema from framing to lighting",
   },
 ];
