@@ -26,6 +26,8 @@ const CourseDetail = () => {
   const { data: course, isLoading: courseLoading } = useCourse(slug || "");
   const { data: modules = [] } = useCourseModules(course?.id);
   const { data: lessons = [] } = useCourseLessons(course?.id);
+  const { data: enrollment } = useEnrollment(course?.id);
+  const enrollMutation = useEnrollInCourse();
 
   const { data: schedules = [] } = useQuery({
     queryKey: ["course-schedules", course?.id],
