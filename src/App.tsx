@@ -91,6 +91,7 @@ const App = () => (
           <Route path="/admin/moderation" element={<AuthGuard><AdminGuard><AdminModeration /></AdminGuard></AuthGuard>} />
           <Route path="/admin/users" element={<AuthGuard><AdminGuard><AdminUsers /></AdminGuard></AuthGuard>} />
           <Route path="/admin/analytics" element={<AuthGuard><AdminGuard><AdminAnalytics /></AdminGuard></AuthGuard>} />
+          <Route path="/admin/cohorts" element={<AuthGuard><AdminGuard><AdminCohorts /></AdminGuard></AuthGuard>} />
 
           <Route path="*" element={<NotFound />} />
         </Routes>
