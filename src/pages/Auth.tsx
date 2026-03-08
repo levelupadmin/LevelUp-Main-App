@@ -2,154 +2,114 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import logo from "@/assets/logo.png";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Phone, Mail, Chrome } from "lucide-react";
+import { Mail, LogIn, UserPlus, Eye, EyeOff } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 const Auth = () => {
   const navigate = useNavigate();
-  const { login, hasCompletedOnboarding } = useAuth();
+  const { signIn, signUp, isAuthenticated, hasCompletedOnboarding } = useAuth();
 
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
-  const [otpSent, setOtpSent] = useState<"phone" | "email" | null>(null);
-  const [otp, setOtp] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSuccess = (method: "phone" | "email" | "google", id?: string) => {
-    login(method, id);
-    toast({ title: "Welcome to Level Up! 🎬" });
+  // Redirect if already authed
+  if (isAuthenticated) {
     navigate(hasCompletedOnboarding ? "/home" : "/onboarding", { replace: true });
-  };
+    return null;
+  }
 
-  const sendOtp = (method: "phone" | "email") => {
-    if (method === "phone" && phoneNumber.length !== 10) {
-      toast({ title: "Enter a valid 10-digit phone number", variant: "destructive" });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast({ title: "Please fill all fields", variant: "destructive" });
       return;
     }
-    if (method === "email" && !email.includes("@")) {
-      toast({ title: "Enter a valid email address", variant: "destructive" });
+    if (mode === "signup" && !fullName.trim()) {
+      toast({ title: "Please enter your name", variant: "destructive" });
       return;
     }
-    setOtpSent(method);
-    toast({ title: `OTP sent to your ${method}` });
-  };
-
-  const verifyOtp = () => {
-    if (otp.length !== 4) return;
-    handleSuccess(otpSent!, otpSent === "phone" ? phoneNumber : email);
-  };
-
-  const resetOtp = () => {
-    setOtpSent(null);
-    setOtp("");
+    setLoading(true);
+    if (mode === "signup") {
+      const { error } = await signUp(email, password, fullName);
+      if (error) {
+        toast({ title: error, variant: "destructive" });
+      } else {
+        toast({ title: "Check your email to verify your account ✉️" });
+      }
+    } else {
+      const { error } = await signIn(email, password);
+      if (error) {
+        toast({ title: error, variant: "destructive" });
+      } else {
+        toast({ title: "Welcome back! 🎬" });
+      }
+    }
+    setLoading(false);
   };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-6">
       <div className="w-full max-w-sm">
-        {/* Logo & heading */}
         <div className="mb-10 text-center">
           <img src={logo} alt="Level Up" className="mx-auto mb-5 h-14 w-14" />
           <h1 className="text-2xl font-bold text-foreground mb-1">Welcome to Level Up</h1>
           <p className="text-sm text-muted-foreground">India's creative learning platform</p>
         </div>
 
-        {otpSent ? (
-          /* OTP verification */
-          <div className="space-y-5 text-center">
-            <p className="text-sm text-muted-foreground">
-              Enter the 4-digit code sent to{" "}
-              <span className="font-semibold text-foreground">
-                {otpSent === "phone" ? `+91 ${phoneNumber}` : email}
-              </span>
-            </p>
-            <div className="flex justify-center">
-              <InputOTP maxLength={4} value={otp} onChange={setOtp}>
-                <InputOTPGroup>
-                  <InputOTPSlot index={0} />
-                  <InputOTPSlot index={1} />
-                  <InputOTPSlot index={2} />
-                  <InputOTPSlot index={3} />
-                </InputOTPGroup>
-              </InputOTP>
-            </div>
-            <button
-              onClick={verifyOtp}
-              disabled={otp.length !== 4}
-              className="w-full rounded-md bg-highlight py-3 text-sm font-bold text-highlight-foreground transition-colors hover:opacity-90 disabled:opacity-40"
-            >
-              Verify
-            </button>
-            <button onClick={resetOtp} className="text-xs text-muted-foreground hover:text-foreground">
-              ← Change {otpSent === "phone" ? "number" : "email"}
-            </button>
-          </div>
-        ) : (
-          /* Sign in methods */
-          <Tabs defaultValue="phone" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 bg-secondary mb-5">
-              <TabsTrigger value="phone" className="text-xs gap-1.5"><Phone className="h-3.5 w-3.5" />Phone</TabsTrigger>
-              <TabsTrigger value="email" className="text-xs gap-1.5"><Mail className="h-3.5 w-3.5" />Email</TabsTrigger>
-            </TabsList>
+        <Tabs value={mode} onValueChange={(v) => setMode(v as "login" | "signup")} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 bg-secondary mb-5">
+            <TabsTrigger value="login" className="text-xs gap-1.5"><LogIn className="h-3.5 w-3.5" />Log In</TabsTrigger>
+            <TabsTrigger value="signup" className="text-xs gap-1.5"><UserPlus className="h-3.5 w-3.5" />Sign Up</TabsTrigger>
+          </TabsList>
 
-            <TabsContent value="phone" className="space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="flex h-10 items-center rounded-md border border-input bg-card px-3 text-sm text-muted-foreground">+91</span>
-                <Input
-                  type="tel"
-                  placeholder="10-digit mobile number"
-                  maxLength={10}
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))}
-                  className="bg-card"
-                />
-              </div>
-              <button
-                onClick={() => sendOtp("phone")}
-                className="w-full rounded-md bg-highlight py-3 text-sm font-bold text-highlight-foreground transition-colors hover:opacity-90"
-              >
-                Send OTP
-              </button>
-            </TabsContent>
-
-            <TabsContent value="email" className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === "signup" && (
               <Input
-                type="email"
-                placeholder="your@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                placeholder="Full Name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
                 className="bg-card"
               />
+            )}
+            <Input
+              type="email"
+              placeholder="your@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="bg-card"
+            />
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-card pr-10"
+              />
               <button
-                onClick={() => sendOtp("email")}
-                className="w-full rounded-md bg-highlight py-3 text-sm font-bold text-highlight-foreground transition-colors hover:opacity-90"
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                Send OTP
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
-            </TabsContent>
-          </Tabs>
-        )}
-
-        {/* Divider */}
-        {!otpSent && (
-          <>
-            <div className="my-6 flex items-center gap-3">
-              <div className="h-px flex-1 bg-border" />
-              <span className="text-xs text-muted-foreground">or continue with</span>
-              <div className="h-px flex-1 bg-border" />
             </div>
-
             <button
-              onClick={() => handleSuccess("google")}
-              className="flex w-full items-center justify-center gap-2.5 rounded-md border border-border bg-card py-3 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-md bg-highlight py-3 text-sm font-bold text-highlight-foreground transition-colors hover:opacity-90 disabled:opacity-40"
             >
-              <Chrome className="h-4 w-4" />
-              Sign in with Google
+              {loading ? "Please wait..." : mode === "signup" ? "Create Account" : "Log In"}
             </button>
-          </>
-        )}
+          </form>
+        </Tabs>
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
           Just want to look around?{" "}
