@@ -14,8 +14,8 @@ const Community = () => {
 
   const tabs: { id: Tab; label: string; icon: typeof GraduationCap }[] = [
     { id: "cohorts", label: "My Cohorts", icon: GraduationCap },
-    { id: "explore", label: "Explore", icon: Compass },
-    { id: "directory", label: "Directory", icon: Users },
+    { id: "explore", label: "Discover", icon: Compass },
+    { id: "directory", label: "Meet Creators", icon: Users },
   ];
 
   return (

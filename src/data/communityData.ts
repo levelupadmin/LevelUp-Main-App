@@ -65,8 +65,8 @@ export const cohortCommunities: CohortCommunity[] = [
   {
     id: "cc-1",
     cohortId: "cohort-2",
-    title: "Professional Video Editing Bootcamp",
-    batchLabel: "Batch 3 — 2026",
+    title: "LevelUp Video Editing Academy",
+    batchLabel: "Cohort 3",
     memberCount: 25,
     image: courseEditing,
     channels: cohortChannels,
