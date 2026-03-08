@@ -34,6 +34,7 @@ import OpportunityDetail from "./pages/OpportunityDetail";
 import PostOpportunity from "./pages/PostOpportunity";
 import Profile from "./pages/Profile";
 import ProfileEdit from "./pages/ProfileEdit";
+import Portfolio from "./pages/Portfolio";
 import ProfilePublic from "./pages/ProfilePublic";
 import Search from "./pages/Search";
 import Notifications from "./pages/Notifications";
