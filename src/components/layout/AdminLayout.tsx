@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FileText, Users, Shield, BarChart3,
   Clapperboard, GraduationCap, ArrowLeft, Briefcase, Settings,
-  ChevronDown,
+  ChevronDown, Gift, Bell, TrendingUp,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { useAuth, AppRole } from "@/contexts/AuthContext";
@@ -23,6 +23,9 @@ const adminNav: NavItem[] = [
   { path: "/admin", label: "Dashboard", icon: LayoutDashboard, roles: ["super_admin", "mentor"] },
   { path: "/admin/courses", label: "Courses", icon: FileText, roles: ["super_admin", "mentor"] },
   { path: "/admin/coupons", label: "Coupons", icon: GraduationCap, roles: ["super_admin"] },
+  { path: "/admin/referrals", label: "Referrals", icon: Gift, roles: ["super_admin"] },
+  { path: "/admin/waitlists", label: "Waitlists", icon: Bell, roles: ["super_admin"] },
+  { path: "/admin/engagement", label: "Engagement", icon: TrendingUp, roles: ["super_admin"] },
   { path: "/admin/opportunities", label: "Opportunities", icon: Briefcase, roles: ["super_admin"] },
   { path: "/admin/moderation", label: "Moderation", icon: Shield, roles: ["super_admin"] },
   { path: "/admin/users", label: "Users", icon: Users, roles: ["super_admin"] },

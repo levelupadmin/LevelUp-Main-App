@@ -236,6 +236,7 @@ export type Database = {
           instructor_name: string
           is_free: boolean
           is_recurring: boolean
+          max_students: number | null
           payment_page_url: string | null
           price: number
           rating: number
@@ -267,6 +268,7 @@ export type Database = {
           instructor_name?: string
           is_free?: boolean
           is_recurring?: boolean
+          max_students?: number | null
           payment_page_url?: string | null
           price?: number
           rating?: number
@@ -298,6 +300,7 @@ export type Database = {
           instructor_name?: string
           is_free?: boolean
           is_recurring?: boolean
+          max_students?: number | null
           payment_page_url?: string | null
           price?: number
           rating?: number
@@ -593,6 +596,89 @@ export type Database = {
         }
         Relationships: []
       }
+      referral_codes: {
+        Row: {
+          code: string
+          coupon_id: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          successful_referrals: number
+          total_referrals: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          code: string
+          coupon_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          successful_referrals?: number
+          total_referrals?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          code?: string
+          coupon_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          successful_referrals?: number
+          total_referrals?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_codes_coupon_id_fkey"
+            columns: ["coupon_id"]
+            isOneToOne: false
+            referencedRelation: "coupon_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      referral_redemptions: {
+        Row: {
+          course_id: string | null
+          id: string
+          redeemed_at: string
+          referral_code_id: string
+          referred_user_id: string
+        }
+        Insert: {
+          course_id?: string | null
+          id?: string
+          redeemed_at?: string
+          referral_code_id: string
+          referred_user_id: string
+        }
+        Update: {
+          course_id?: string | null
+          id?: string
+          redeemed_at?: string
+          referral_code_id?: string
+          referred_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_redemptions_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_redemptions_referral_code_id_fkey"
+            columns: ["referral_code_id"]
+            isOneToOne: false
+            referencedRelation: "referral_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scheduled_notifications: {
         Row: {
           channel: Database["public"]["Enums"]["notification_channel"]
@@ -659,11 +745,66 @@ export type Database = {
         }
         Relationships: []
       }
+      waitlists: {
+        Row: {
+          course_id: string
+          created_at: string
+          email: string
+          id: string
+          name: string
+          notified: boolean
+          phone: string | null
+          schedule_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          email: string
+          id?: string
+          name: string
+          notified?: boolean
+          phone?: string | null
+          schedule_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          notified?: boolean
+          phone?: string | null
+          schedule_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "waitlists_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlists_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "course_schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      get_student_engagement_score: {
+        Args: { _user_id: string }
+        Returns: Json
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]

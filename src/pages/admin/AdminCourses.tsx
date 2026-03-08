@@ -11,6 +11,7 @@ import {
   Link2, Tag, Award, Clock, Repeat, Settings2,
 } from "lucide-react";
 import StudentCoursePreview from "@/components/admin/StudentCoursePreview";
+import CourseSetupChecklist from "@/components/admin/CourseSetupChecklist";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -391,6 +392,15 @@ const AdminCourses = () => {
               </div>
             </div>
           </div>
+
+          {/* Setup Checklist */}
+          <CourseSetupChecklist
+            course={selectedCourse}
+            modulesCount={modules.length}
+            lessonsCount={lessons.length}
+            schedulesCount={schedules.length}
+            onNavigateTab={setActiveDetailTab}
+          />
 
           {/* Detail Tabs */}
           <Tabs value={activeDetailTab} onValueChange={setActiveDetailTab}>

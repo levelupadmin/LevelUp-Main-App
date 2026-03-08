@@ -49,6 +49,9 @@ import AdminUsers from "./pages/admin/AdminUsers";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
 import AdminOpportunities from "./pages/admin/AdminOpportunities";
 import AdminSettings from "./pages/admin/AdminSettings";
+import AdminReferrals from "./pages/admin/AdminReferrals";
+import AdminWaitlists from "./pages/admin/AdminWaitlists";
+import AdminEngagement from "./pages/admin/AdminEngagement";
 
 import NotFound from "./pages/NotFound";
 
@@ -112,6 +115,9 @@ const App = () => (
             <Route path="/admin/analytics" element={<AuthGuard><AdminGuard><AdminAnalytics /></AdminGuard></AuthGuard>} />
             <Route path="/admin/opportunities" element={<AuthGuard><AdminGuard><AdminOpportunities /></AdminGuard></AuthGuard>} />
             <Route path="/admin/settings" element={<AuthGuard><AdminGuard><AdminSettings /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/referrals" element={<AuthGuard><AdminGuard><AdminReferrals /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/waitlists" element={<AuthGuard><AdminGuard><AdminWaitlists /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/engagement" element={<AuthGuard><AdminGuard><AdminEngagement /></AdminGuard></AuthGuard>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
