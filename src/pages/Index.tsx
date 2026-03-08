@@ -6,11 +6,10 @@ import {
   featuredCreators,
 } from "@/data/mockData";
 import HeroCarousel from "@/components/home/HeroCarousel";
+import UpcomingEvents from "@/components/home/UpcomingEvents";
 import {
   ArrowRight,
   ChevronRight,
-  Calendar,
-  MapPin,
   MessageSquare,
   Play,
   ExternalLink,
@@ -100,6 +99,9 @@ const Index = () => {
             </div>
           </section>
         )}
+
+        {/* 2b. Upcoming Events */}
+        <UpcomingEvents />
 
         {/* 3. Popular in Community */}
         <section className="space-y-5">
@@ -241,70 +243,6 @@ const Index = () => {
           </div>
         </section>
 
-        {/* 5. Upcoming Events */}
-        <section className="space-y-5">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <h2 className="text-xl font-bold text-foreground">Upcoming events</h2>
-              <p className="text-sm text-muted-foreground">
-                Get facetime with some of the brightest minds in filmmaking
-              </p>
-            </div>
-            <button
-              onClick={() => navigate("/learn/workshops")}
-              className="hidden items-center gap-1 text-sm font-semibold text-foreground transition-colors hover:text-muted-foreground sm:inline-flex"
-            >
-              View all events
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
-            {workshops.map((workshop) => (
-              <div
-                key={workshop.id}
-                onClick={() => navigate(`/workshops/${workshop.id}`)}
-                className="w-80 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/20"
-              >
-                <div className="relative h-44 overflow-hidden">
-                  <img
-                    src={workshop.thumbnail}
-                    alt={workshop.title}
-                    className="h-full w-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
-                  {(workshop as any).soldOut && (
-                    <span className="absolute right-3 top-3 rounded-md bg-destructive px-2.5 py-1 text-xs font-bold uppercase text-destructive-foreground">
-                      Sold Out
-                    </span>
-                  )}
-                  <h3 className="absolute bottom-3 left-4 right-4 text-lg font-bold leading-tight text-foreground">
-                    {workshop.title}
-                  </h3>
-                </div>
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <img
-                      src={workshop.instructorImage}
-                      alt={workshop.instructor}
-                      className="h-8 w-8 rounded-full object-cover"
-                    />
-                    <span className="text-sm text-foreground">{workshop.instructor}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {workshop.date}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <MapPin className="h-3 w-3" />
-                      {workshop.city}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
 
         {/* 6. Explore More Courses — placeholder */}
         <section className="rounded-2xl border border-dashed border-border bg-card/50 p-10 text-center">
