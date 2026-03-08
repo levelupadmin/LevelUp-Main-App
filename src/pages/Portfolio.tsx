@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, ArrowLeft } from "lucide-react";
+import { Plus } from "lucide-react";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePortfolioProjects, useDeleteProject, useTogglePin } from "@/hooks/usePortfolio";
@@ -8,6 +8,7 @@ import PortfolioCard from "@/components/portfolio/PortfolioCard";
 import ProjectLightbox from "@/components/portfolio/ProjectLightbox";
 import UploadProjectModal from "@/components/portfolio/UploadProjectModal";
 import PortfolioEmpty from "@/components/portfolio/PortfolioEmpty";
+import ShareProfileBanner from "@/components/profile/ShareProfileBanner";
 import type { PortfolioProject } from "@/hooks/usePortfolio";
 import {
   Breadcrumb,
@@ -36,9 +37,10 @@ const Portfolio = () => {
     return projects.filter((p) => p.category === activeFilter);
   }, [projects, activeFilter]);
 
-  // Separate pinned project for spotlight
   const pinnedProject = filtered.find((p) => p.is_pinned);
   const gridProjects = filtered.filter((p) => !p.is_pinned);
+
+  const handle = user?.id || "me";
 
   return (
     <AppShell>
@@ -72,6 +74,9 @@ const Portfolio = () => {
           </button>
         </div>
 
+        {/* Share banner */}
+        <ShareProfileBanner handle={handle} name={user?.name} />
+
         {/* Filter tabs */}
         <div className="flex gap-2 overflow-x-auto pb-1">
           {filterTabs.map((tab) => (
@@ -99,7 +104,7 @@ const Portfolio = () => {
           <PortfolioEmpty isOwner={true} onAddProject={() => setShowUploadModal(true)} />
         ) : (
           <>
-            {/* Pinned / Spotlight project */}
+            {/* Pinned / Spotlight */}
             {pinnedProject && (
               <div
                 onClick={() => setSelectedProject(pinnedProject)}
@@ -129,7 +134,7 @@ const Portfolio = () => {
 
             {/* Masonry grid */}
             <div className="columns-2 gap-3 lg:columns-3">
-              {/* Add Project card (owner only) */}
+              {/* Add card */}
               <div
                 onClick={() => setShowUploadModal(true)}
                 className="mb-3 flex cursor-pointer items-center justify-center rounded-xl border-2 border-dashed border-border bg-card/50 transition-colors hover:border-highlight/30 hover:bg-card break-inside-avoid"

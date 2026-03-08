@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userProfile } from "@/data/mockData";
 import { useNavigate } from "react-router-dom";
 import {
-  Settings, Edit2, MapPin, Share2, ChevronRight,
+  Settings, Edit2, MapPin, ChevronRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -13,6 +13,7 @@ import BentoStats from "@/components/profile/BentoStats";
 import CinematicPortfolio from "@/components/profile/CinematicPortfolio";
 import BadgeShowcase from "@/components/profile/BadgeShowcase";
 import RecentActivity from "@/components/profile/RecentActivity";
+import ShareProfileBanner from "@/components/profile/ShareProfileBanner";
 
 const availabilityConfig = {
   "open-to-work": { label: "Open to work", dotClass: "bg-success" },
@@ -29,6 +30,9 @@ const Profile = () => {
 
   const fields = [user?.name, user?.bio, user?.city, (user?.roles?.length ?? 0) > 0, (user?.skills?.length ?? 0) > 0, (user?.interests?.length ?? 0) > 0];
   const completionPct = Math.round((fields.filter(Boolean).length / fields.length) * 100);
+
+  // Use user ID as handle for shareable link
+  const handle = user?.id || "me";
 
   return (
     <AppShell>
@@ -92,20 +96,16 @@ const Profile = () => {
           {/* Bento Stats */}
           <BentoStats />
 
-          {/* Action buttons: Edit + Share */}
-          <div className="flex gap-3">
-            <button
-              onClick={() => navigate("/profile/edit")}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-card py-2.5 text-sm font-semibold text-foreground hover:bg-secondary transition-colors"
-            >
-              <Edit2 className="h-4 w-4" /> Edit Profile
-            </button>
-            <button
-              className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-semibold text-foreground hover:bg-secondary transition-colors"
-            >
-              <Share2 className="h-4 w-4" /> Share
-            </button>
-          </div>
+          {/* Edit Profile */}
+          <button
+            onClick={() => navigate("/profile/edit")}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card py-2.5 text-sm font-semibold text-foreground hover:bg-secondary transition-colors"
+          >
+            <Edit2 className="h-4 w-4" /> Edit Profile
+          </button>
+
+          {/* Share Profile + Portfolio Banner */}
+          <ShareProfileBanner handle={handle} name={user?.name} />
 
           {/* Skills */}
           <div>

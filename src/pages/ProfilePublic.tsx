@@ -2,13 +2,17 @@ import AppShell from "@/components/layout/AppShell";
 import { useParams } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { MapPin, Flame, BookOpen, Trophy, Heart, UserPlus, MessageCircle, Briefcase } from "lucide-react";
+import { MapPin, Flame, BookOpen, Trophy, Heart, Eye, UserPlus, MessageCircle, Briefcase, Play } from "lucide-react";
+import { usePortfolioProjects } from "@/hooks/usePortfolio";
+import ProfileAvatar from "@/components/profile/ProfileAvatar";
 import instructor1 from "@/assets/instructor-1.jpg";
-import courseCinematography from "@/assets/course-cinematography.jpg";
-import courseEditing from "@/assets/course-editing.jpg";
+import { useState } from "react";
+import ProjectLightbox from "@/components/portfolio/ProjectLightbox";
+import type { PortfolioProject } from "@/hooks/usePortfolio";
 
-// Mock public profile data
+// Mock public profile data (would come from DB in production)
 const mockPublic = {
+  id: "mock-user-id",
   name: "Vikram Das",
   avatar: instructor1,
   bio: "Cinematographer & filmmaker based in Mumbai. Passionate about visual storytelling and documentary work.",
@@ -23,10 +27,6 @@ const mockPublic = {
   streak: 24,
   coursesCompleted: 5,
   badgesEarned: 4,
-  portfolio: [
-    { id: "1", title: "Sunrise on the Ghats", thumbnail: courseCinematography, appreciations: 89 },
-    { id: "2", title: "Urban Pulse – Mumbai", thumbnail: courseEditing, appreciations: 56 },
-  ],
   badges: [
     { id: "b1", name: "First Lesson", icon: "🎯", earned: true },
     { id: "b2", name: "7-Day Streak", icon: "🔥", earned: true },
@@ -46,21 +46,22 @@ const ProfilePublic = () => {
   const { handle } = useParams();
   const p = mockPublic;
   const avail = availConfig[p.availability];
+  const [selectedProject, setSelectedProject] = useState<PortfolioProject | null>(null);
+
+  // Fetch real portfolio projects for this user
+  const { data: portfolioProjects = [] } = usePortfolioProjects(handle);
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-3xl space-y-5 pb-6">
+      <div className="mx-auto max-w-3xl space-y-5 pb-6 animate-fade-in">
         {/* Cover */}
-        <div className="relative h-32 rounded-b-xl bg-gradient-to-br from-highlight/20 via-secondary to-background lg:h-44">
-          <div className="absolute -bottom-10 left-1/2 -translate-x-1/2">
-            <img src={p.avatar} alt={p.name} className="h-20 w-20 rounded-full border-4 border-background object-cover lg:h-24 lg:w-24" />
-            <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-md bg-highlight px-2 py-0.5 text-[10px] font-bold text-highlight-foreground">
-              Lv.{p.level}
-            </span>
+        <div className="relative h-36 rounded-b-2xl bg-gradient-to-br from-highlight/15 via-secondary to-background lg:h-48">
+          <div className="absolute -bottom-12 left-1/2 -translate-x-1/2">
+            <ProfileAvatar avatarUrl={p.avatar} name={p.name} level={p.level} />
           </div>
         </div>
 
-        <div className="mt-12 space-y-5 px-4 lg:px-6">
+        <div className="mt-14 space-y-5 px-4 lg:px-6">
           {/* Name */}
           <div className="text-center">
             <h1 className="text-xl font-bold text-foreground">{p.name}</h1>
@@ -88,19 +89,19 @@ const ProfilePublic = () => {
 
           {/* Action buttons */}
           <div className="flex gap-3">
-            <button className="flex flex-1 items-center justify-center gap-2 rounded-md bg-highlight py-2.5 text-sm font-bold text-highlight-foreground hover:opacity-90">
+            <button className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-highlight py-2.5 text-sm font-bold text-highlight-foreground hover:opacity-90 transition-opacity">
               <UserPlus className="h-4 w-4" /> Follow
             </button>
-            <button className="flex flex-1 items-center justify-center gap-2 rounded-md border border-border bg-card py-2.5 text-sm font-semibold text-foreground hover:bg-secondary">
+            <button className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-card py-2.5 text-sm font-semibold text-foreground hover:bg-secondary transition-colors">
               <Briefcase className="h-4 w-4" /> Connect
             </button>
-            <button className="flex items-center justify-center rounded-md border border-border bg-card px-3 py-2.5 text-foreground hover:bg-secondary">
+            <button className="flex items-center justify-center rounded-xl border border-border bg-card px-3 py-2.5 text-foreground hover:bg-secondary transition-colors">
               <MessageCircle className="h-4 w-4" />
             </button>
           </div>
 
           {/* XP */}
-          <div className="rounded-lg border border-border bg-card p-4">
+          <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center justify-between text-sm">
               <span className="font-semibold text-foreground">Level {p.level} — {p.levelName}</span>
               <span className="font-mono text-xs text-muted-foreground">{p.xp}/{p.xpToNext} XP</span>
@@ -115,7 +116,7 @@ const ProfilePublic = () => {
               { icon: BookOpen, label: "Completed", value: `${p.coursesCompleted} courses`, color: "text-xp" },
               { icon: Trophy, label: "Badges", value: `${p.badgesEarned} earned`, color: "text-highlight" },
             ].map((s) => (
-              <div key={s.label} className="rounded-lg border border-border bg-card p-3 text-center">
+              <div key={s.label} className="rounded-xl border border-border bg-card p-3 text-center">
                 <s.icon className={`mx-auto h-5 w-5 ${s.color}`} />
                 <p className="mt-1 text-sm font-bold text-foreground">{s.value}</p>
                 <p className="text-xs text-muted-foreground">{s.label}</p>
@@ -128,50 +129,97 @@ const ProfilePublic = () => {
             <h2 className="mb-3 text-base font-bold text-foreground">Skills</h2>
             <div className="flex flex-wrap gap-2">
               {p.skills.map((s) => (
-                <span key={s} className="rounded-md border border-border bg-secondary px-3 py-1 text-xs font-medium text-foreground">{s}</span>
+                <span key={s} className="rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-medium text-foreground">{s}</span>
               ))}
             </div>
           </div>
 
-          {/* Portfolio */}
+          {/* Portfolio — real projects from DB */}
           <div>
-            <h2 className="mb-3 text-base font-bold text-foreground">Portfolio</h2>
-            <div className="grid grid-cols-2 gap-3">
-              {p.portfolio.map((proj) => (
-                <div key={proj.id} className="rounded-lg border border-border bg-card overflow-hidden">
-                  <div className="aspect-video bg-secondary">
-                    <img src={proj.thumbnail} alt={proj.title} className="h-full w-full object-cover" />
-                  </div>
-                  <div className="p-2.5">
-                    <p className="text-xs font-medium text-foreground line-clamp-1">{proj.title}</p>
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                      <Heart className="h-3 w-3" /> {proj.appreciations}
-                    </p>
-                  </div>
-                </div>
-              ))}
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-bold text-foreground">Portfolio</h2>
+              {portfolioProjects.length > 0 && (
+                <span className="text-xs text-muted-foreground">{portfolioProjects.length} project{portfolioProjects.length !== 1 ? "s" : ""}</span>
+              )}
             </div>
+
+            {portfolioProjects.length > 0 ? (
+              <div className="columns-2 gap-3">
+                {portfolioProjects.map((project) => (
+                  <div
+                    key={project.id}
+                    onClick={() => setSelectedProject(project)}
+                    className="group relative mb-3 cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-all duration-300 hover:scale-[1.02] hover:border-highlight/30 hover:shadow-[0_0_20px_hsl(var(--highlight)/0.12)] break-inside-avoid"
+                  >
+                    <div className="relative">
+                      {project.thumbnail_url ? (
+                        <img
+                          src={project.thumbnail_url}
+                          alt={project.title}
+                          className="w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          style={{ aspectRatio: project.is_pinned ? "16/9" : "4/3" }}
+                        />
+                      ) : (
+                        <div className="flex w-full items-center justify-center bg-secondary" style={{ aspectRatio: "4/3" }}>
+                          <Play className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                      {project.is_pinned && (
+                        <span className="absolute left-2 top-2 rounded-full bg-highlight/90 px-2 py-0.5 text-[10px] font-bold text-highlight-foreground">📌 Featured</span>
+                      )}
+                      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+                        <p className="text-xs font-semibold text-white line-clamp-1 flex-1 mr-2">{project.title}</p>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="flex items-center gap-0.5 text-[10px] text-white/80">
+                            <Heart className="h-3 w-3" /> {project.appreciations}
+                          </span>
+                          <span className="flex items-center gap-0.5 text-[10px] text-white/80">
+                            <Eye className="h-3 w-3" /> {project.views}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border bg-card/50 py-8 text-center">
+                <p className="text-sm text-muted-foreground">No projects yet.</p>
+              </div>
+            )}
           </div>
 
           {/* Badges */}
           <div>
             <h2 className="mb-3 text-base font-bold text-foreground">Badges</h2>
-            <div className="flex gap-3 overflow-x-auto pb-2">
+            <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory">
               {p.badges.map((b) => (
                 <div
                   key={b.id}
-                  className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 min-w-[72px] ${
-                    b.earned ? "border-highlight/20 bg-highlight/5" : "border-border bg-card opacity-40"
+                  className={`relative flex flex-col items-center gap-2 rounded-xl border p-4 min-w-[80px] snap-center transition-all ${
+                    b.earned
+                      ? "border-highlight/20 bg-highlight/5"
+                      : "border-border bg-card/50 opacity-50 grayscale"
                   }`}
                 >
                   <span className="text-2xl">{b.icon}</span>
-                  <span className="text-[10px] font-medium text-foreground text-center">{b.name}</span>
+                  <span className="text-[10px] font-medium text-foreground text-center leading-tight">{b.name}</span>
                 </div>
               ))}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Lightbox */}
+      {selectedProject && (
+        <ProjectLightbox
+          project={selectedProject}
+          onClose={() => setSelectedProject(null)}
+          isOwner={false}
+        />
+      )}
     </AppShell>
   );
 };
