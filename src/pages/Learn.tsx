@@ -1,7 +1,8 @@
 import AppShell from "@/components/layout/AppShell";
 import { detailedCourses, type CourseDetailed, type Difficulty } from "@/data/learningData";
+import { cohorts } from "@/data/cohortData";
 import { categories } from "@/data/mockData";
-import { Star, Clock, Users, Search, SlidersHorizontal, BookOpen, ArrowRight, Play, CheckCircle2, Sparkles, UsersRound, CalendarDays } from "lucide-react";
+import { Star, Clock, Users, Search, SlidersHorizontal, BookOpen, ArrowRight, Play, CheckCircle2, Sparkles, UsersRound, CalendarDays, GraduationCap, Award } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
