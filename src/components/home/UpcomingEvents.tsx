@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, Calendar, Clock, Radio, Users, Monitor } from "lucide-react";
+import { ChevronRight, Calendar, Radio } from "lucide-react";
 import instructor1 from "@/assets/instructor-1.jpg";
 import instructor2 from "@/assets/instructor-2.jpg";
 import courseCinematography from "@/assets/course-cinematography.jpg";
@@ -16,7 +16,6 @@ const upcomingEvents = [
     mentorImage: instructor1,
     thumbnail: heroFilmmaking,
     date: "Sat, Mar 14",
-    time: "7:00 PM IST",
     onlineLabel: "Live on Zoom",
     badge: "Limited Seats",
     price: "₹199",
@@ -29,7 +28,6 @@ const upcomingEvents = [
     mentorImage: instructor2,
     thumbnail: courseEditing,
     date: "Sun, Mar 16",
-    time: "5:00 PM IST",
     onlineLabel: "Online Event",
     badge: "Beginner Friendly",
     price: "Free",
@@ -42,7 +40,6 @@ const upcomingEvents = [
     mentorImage: instructor1,
     thumbnail: courseCinematography,
     date: "Tue, Mar 18",
-    time: "8:00 PM IST",
     onlineLabel: "Live on Zoom",
     badge: "Recording Available",
     price: "Free",
@@ -55,7 +52,6 @@ const upcomingEvents = [
     mentorImage: instructor2,
     thumbnail: courseContent,
     date: "Fri, Mar 21",
-    time: "6:30 PM IST",
     onlineLabel: "Virtual Session",
     badge: "Live Feedback",
     price: "₹99",
@@ -68,10 +64,10 @@ const UpcomingEvents = () => {
   return (
     <section className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1.5">
           <h2 className="text-xl font-bold text-foreground">Upcoming Events</h2>
-          <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
+          <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
             Join live online sessions, workshops and creator conversations led by mentors, industry professionals and the Level Up community.
           </p>
         </div>
@@ -84,80 +80,53 @@ const UpcomingEvents = () => {
         </button>
       </div>
 
-      {/* Cards — horizontal scroll */}
+      {/* Cards */}
       <div className="flex gap-5 overflow-x-auto hide-scrollbar pb-2">
         {upcomingEvents.map((event) => (
           <div
             key={event.id}
             onClick={() => navigate(`/workshops/${event.id}`)}
-            className="group relative w-[340px] shrink-0 cursor-pointer overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:border-muted-foreground/30 hover:shadow-[0_8px_40px_-12px_hsl(0_0%_100%/0.06)]"
+            className="group relative w-[380px] shrink-0 cursor-pointer overflow-hidden rounded-2xl border border-border bg-card"
           >
-            {/* Image area */}
-            <div className="relative h-56 overflow-hidden">
+            {/* Full image with gradient overlay — tall poster style */}
+            <div className="relative aspect-[3/4] w-full overflow-hidden">
               <img
                 src={event.thumbnail}
                 alt={event.title}
                 className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
               />
-              {/* Dark gradient overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/70 to-transparent" />
+              {/* Gradient overlay — heavier at bottom */}
+              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/50 to-transparent" />
 
-              {/* Top chips */}
-              <div className="absolute left-3.5 top-3.5 flex items-center gap-2">
-                <span className="rounded-md bg-foreground/90 px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-background backdrop-blur-sm">
-                  {event.type}
-                </span>
-                {event.badge && (
-                  <span className="rounded-md bg-card/80 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-foreground/80 backdrop-blur-sm ring-1 ring-border">
-                    {event.badge}
-                  </span>
-                )}
-              </div>
+              {/* Title area — positioned over image near bottom */}
+              <h3 className="absolute bottom-20 left-5 right-5 text-xl font-bold leading-tight text-foreground drop-shadow-lg">
+                {event.title}
+              </h3>
 
-              {/* Price chip */}
-              <span className="absolute right-3.5 top-3.5 rounded-md bg-card/80 px-2.5 py-1 font-mono text-xs font-bold text-foreground backdrop-blur-sm ring-1 ring-border">
-                {event.price}
-              </span>
+              {/* Bottom metadata row — over the gradient */}
+              <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between px-5 pb-5">
+                {/* Mentor */}
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src={event.mentorImage}
+                    alt={event.mentor}
+                    className="h-10 w-10 rounded-full object-cover ring-1 ring-border"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{event.mentor}</p>
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <Radio className="h-2.5 w-2.5" style={{ color: "hsl(142, 71%, 45%)" }} />
+                      <span className="text-[11px] text-muted-foreground">{event.onlineLabel}</span>
+                    </div>
+                  </div>
+                </div>
 
-              {/* Title overlay */}
-              <div className="absolute bottom-4 left-4 right-4">
-                <h3 className="text-lg font-bold leading-snug text-foreground drop-shadow-lg">
-                  {event.title}
-                </h3>
-              </div>
-            </div>
-
-            {/* Bottom metadata */}
-            <div className="flex items-center justify-between px-4 py-3.5">
-              {/* Mentor */}
-              <div className="flex items-center gap-2.5">
-                <img
-                  src={event.mentorImage}
-                  alt={event.mentor}
-                  className="h-8 w-8 rounded-full object-cover ring-1 ring-border"
-                />
-                <span className="text-sm font-medium text-foreground">{event.mentor}</span>
-              </div>
-
-              {/* Date + Time + Online */}
-              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                <span className="inline-flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
+                {/* Date */}
+                <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                  <Calendar className="h-3.5 w-3.5" />
                   {event.date}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  {event.time}
-                </span>
+                </div>
               </div>
-            </div>
-
-            {/* Online indicator bar */}
-            <div className="flex items-center gap-2 border-t border-border px-4 py-2.5">
-              <Radio className="h-3 w-3" style={{ color: "hsl(142, 71%, 45%)" }} />
-              <span className="text-[11px] font-semibold text-muted-foreground">
-                {event.onlineLabel}
-              </span>
             </div>
           </div>
         ))}
