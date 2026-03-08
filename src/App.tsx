@@ -115,6 +115,9 @@ const App = () => (
             <Route path="/admin/analytics" element={<AuthGuard><AdminGuard><AdminAnalytics /></AdminGuard></AuthGuard>} />
             <Route path="/admin/opportunities" element={<AuthGuard><AdminGuard><AdminOpportunities /></AdminGuard></AuthGuard>} />
             <Route path="/admin/settings" element={<AuthGuard><AdminGuard><AdminSettings /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/referrals" element={<AuthGuard><AdminGuard><AdminReferrals /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/waitlists" element={<AuthGuard><AdminGuard><AdminWaitlists /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/engagement" element={<AuthGuard><AdminGuard><AdminEngagement /></AdminGuard></AuthGuard>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

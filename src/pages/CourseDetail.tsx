@@ -284,6 +284,14 @@ const CourseDetail = () => {
           </Tabs>
         </div>
       </div>
+
+      <WaitlistForm
+        open={showWaitlist}
+        onOpenChange={setShowWaitlist}
+        courseId={course.id}
+        scheduleId={activeSlot?.id}
+        courseTitle={course.title}
+      />
     </AppShell>
   );
 };
