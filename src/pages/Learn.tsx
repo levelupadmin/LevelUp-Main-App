@@ -243,6 +243,13 @@ const Learn = () => {
             </div>
           )}
         </section>
+      </div>
+    </AppShell>
+  );
+};
+
+// ── Course Card Component ──
+function CourseCard({ course, onClick }: { course: CourseDetailed; onClick: () => void }) {
   const isEnrolled = course.purchased || course.progress > 0;
 
   return (
@@ -250,7 +257,6 @@ const Learn = () => {
       onClick={onClick}
       className="group flex w-full gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-muted-foreground/30 sm:gap-4"
     >
-      {/* Thumbnail */}
       <div className="relative h-24 w-36 shrink-0 overflow-hidden rounded-lg sm:h-28 sm:w-44">
         <img src={course.thumbnail} alt={course.title} className="h-full w-full object-cover" />
         {isEnrolled && course.progress > 0 && (
@@ -264,8 +270,6 @@ const Learn = () => {
           </div>
         )}
       </div>
-
-      {/* Info */}
       <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
         <div>
           <p className="text-sm font-semibold text-foreground line-clamp-2 leading-tight">{course.title}</p>
@@ -299,7 +303,5 @@ const Learn = () => {
     </button>
   );
 }
-
-import courseCinematography from "@/assets/course-cinematography.jpg";
 
 export default Learn;
