@@ -105,7 +105,8 @@ const HeroCarousel = () => {
           </h1>
 
           {/* CTA + Metadata row */}
-          <div className="mt-8 flex flex-wrap items-center gap-4">
+          {/* CTA */}
+          <div className="mt-8">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -116,19 +117,18 @@ const HeroCarousel = () => {
               {slide.cta}
               <ArrowRight className="h-4 w-4" />
             </button>
+          </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {slide.meta.map((tag, idx) => (
-                <span key={tag} className="flex items-center gap-2">
-                  <span className="rounded-full border border-foreground/20 bg-foreground/10 px-4 py-2 font-mono text-xs font-semibold tracking-wide text-foreground/90 backdrop-blur-md">
-                    {tag}
-                  </span>
-                  {idx < slide.meta.length - 1 && (
-                    <span className="hidden text-muted-foreground/30 sm:inline">·</span>
-                  )}
-                </span>
-              ))}
-            </div>
+          {/* Metadata row */}
+          <div className="mt-5 flex flex-wrap gap-2">
+            {slide.meta.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full border border-border/40 bg-background/30 px-3 py-1 font-mono text-[10px] font-medium tracking-wide text-muted-foreground/80 backdrop-blur-sm"
+              >
+                {tag}
+              </span>
+            ))}
           </div>
         </div>
 
