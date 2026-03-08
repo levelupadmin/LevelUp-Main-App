@@ -48,6 +48,8 @@ import AdminModeration from "./pages/admin/AdminModeration";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
 import AdminCohorts from "./pages/admin/AdminCohorts";
+import AdminOpportunities from "./pages/admin/AdminOpportunities";
+import AdminSettings from "./pages/admin/AdminSettings";
 
 import NotFound from "./pages/NotFound";
 
@@ -107,6 +109,8 @@ const App = () => (
             <Route path="/admin/users" element={<AuthGuard><AdminGuard><AdminUsers /></AdminGuard></AuthGuard>} />
             <Route path="/admin/analytics" element={<AuthGuard><AdminGuard><AdminAnalytics /></AdminGuard></AuthGuard>} />
             <Route path="/admin/cohorts" element={<AuthGuard><AdminGuard><AdminCohorts /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/opportunities" element={<AuthGuard><AdminGuard><AdminOpportunities /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/settings" element={<AuthGuard><AdminGuard><AdminSettings /></AdminGuard></AuthGuard>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

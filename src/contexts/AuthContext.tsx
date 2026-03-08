@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
+export type AppRole = "student" | "mentor" | "super_admin";
+
 export interface UserProfile {
   phone?: string;
   email?: string;
@@ -7,6 +9,7 @@ export interface UserProfile {
   avatar: string;
   bio: string;
   city: string;
+  role: AppRole;
   roles: string[];
   interests: string[];
   experience: string;
@@ -36,6 +39,7 @@ const defaultUser: UserProfile = {
   avatar: "",
   bio: "Aspiring filmmaker | Learning cinematography | Mumbai 🎬",
   city: "Mumbai",
+  role: "super_admin",
   roles: ["Filmmaker"],
   interests: [],
   experience: "",

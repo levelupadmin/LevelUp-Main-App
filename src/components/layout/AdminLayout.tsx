@@ -1,25 +1,63 @@
 import { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, FileText, Users, Shield, BarChart3, Clapperboard, GraduationCap, ArrowLeft } from "lucide-react";
+import {
+  LayoutDashboard, FileText, Users, Shield, BarChart3,
+  Clapperboard, GraduationCap, ArrowLeft, Briefcase, Settings,
+  ChevronDown,
+} from "lucide-react";
 import logo from "@/assets/logo.png";
+import { useAuth, AppRole } from "@/contexts/AuthContext";
+import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-const adminNav = [
-  { path: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/admin/content", label: "Content", icon: FileText },
-  { path: "/admin/workshops", label: "Workshops", icon: Clapperboard },
-  { path: "/admin/cohorts", label: "Cohorts", icon: GraduationCap },
-  { path: "/admin/moderation", label: "Moderation", icon: Shield },
-  { path: "/admin/users", label: "Users", icon: Users },
-  { path: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+interface NavItem {
+  path: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  roles: AppRole[];
+}
+
+const adminNav: NavItem[] = [
+  { path: "/admin", label: "Dashboard", icon: LayoutDashboard, roles: ["super_admin", "mentor"] },
+  { path: "/admin/content", label: "Content", icon: FileText, roles: ["super_admin", "mentor"] },
+  { path: "/admin/workshops", label: "Workshops", icon: Clapperboard, roles: ["super_admin", "mentor"] },
+  { path: "/admin/cohorts", label: "Cohorts", icon: GraduationCap, roles: ["super_admin", "mentor"] },
+  { path: "/admin/opportunities", label: "Opportunities", icon: Briefcase, roles: ["super_admin"] },
+  { path: "/admin/moderation", label: "Moderation", icon: Shield, roles: ["super_admin"] },
+  { path: "/admin/users", label: "Users", icon: Users, roles: ["super_admin"] },
+  { path: "/admin/analytics", label: "Analytics", icon: BarChart3, roles: ["super_admin", "mentor"] },
+  { path: "/admin/settings", label: "Settings", icon: Settings, roles: ["super_admin"] },
 ];
+
+const roleLabel: Record<AppRole, string> = {
+  super_admin: "Super Admin",
+  mentor: "Mentor",
+  student: "Student",
+};
+
+const roleBadgeClass: Record<AppRole, string> = {
+  super_admin: "bg-destructive/20 text-destructive-foreground border-destructive/30",
+  mentor: "bg-[hsl(var(--highlight))]/20 text-[hsl(var(--highlight))] border-[hsl(var(--highlight))]/30",
+  student: "bg-secondary text-secondary-foreground border-border",
+};
 
 const AdminLayout = ({ children }: { children: ReactNode }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, updateProfile } = useAuth();
+  const currentRole = user?.role ?? "student";
+
+  const visibleNav = adminNav.filter((item) => item.roles.includes(currentRole));
+
+  const switchRole = (role: AppRole) => {
+    updateProfile({ role });
+  };
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Admin Sidebar - Desktop */}
+      {/* Desktop Sidebar */}
       <aside className="fixed left-0 top-0 z-40 hidden h-screen w-56 flex-col border-r border-border bg-card lg:flex">
         <div className="flex h-14 items-center gap-2.5 border-b border-border px-5">
           <button
@@ -29,10 +67,14 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <img src={logo} alt="Level Up" className="h-6 w-6" />
-          <span className="text-sm font-bold text-gradient">Admin</span>
+          <span className="text-sm font-bold text-foreground">Admin</span>
+          <Badge variant="outline" className={`ml-auto text-[10px] px-1.5 py-0 ${roleBadgeClass[currentRole]}`}>
+            {roleLabel[currentRole]}
+          </Badge>
         </div>
+
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
-          {adminNav.map((item) => {
+          {visibleNav.map((item) => {
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
             return (
@@ -41,7 +83,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
                 onClick={() => navigate(item.path)}
                 className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   isActive
-                    ? "bg-primary/10 text-primary"
+                    ? "bg-[hsl(var(--highlight))]/10 text-[hsl(var(--highlight))]"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                 }`}
               >
@@ -51,12 +93,35 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             );
           })}
         </nav>
+
+        {/* Dev Role Switcher */}
+        <div className="border-t border-border p-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex w-full items-center justify-between rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-secondary transition-colors">
+                <span>🛠 Switch Role</span>
+                <ChevronDown className="h-3 w-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-44">
+              {(["super_admin", "mentor", "student"] as AppRole[]).map((r) => (
+                <DropdownMenuItem
+                  key={r}
+                  onClick={() => switchRole(r)}
+                  className={currentRole === r ? "bg-secondary" : ""}
+                >
+                  {roleLabel[r]}
+                  {currentRole === r && <span className="ml-auto text-[hsl(var(--highlight))]">●</span>}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </aside>
 
-      {/* Admin Top Bar */}
+      {/* Mobile Top Bar */}
       <header className="fixed left-0 right-0 top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl lg:left-56">
         <div className="flex h-14 items-center px-4 lg:px-6">
-          {/* Mobile: show nav horizontally */}
           <div className="flex items-center gap-1 overflow-x-auto hide-scrollbar lg:hidden">
             <button
               onClick={() => navigate("/home")}
@@ -64,7 +129,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
-            {adminNav.map((item) => {
+            {visibleNav.map((item) => {
               const isActive = location.pathname === item.path;
               const Icon = item.icon;
               return (
@@ -73,7 +138,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
                   onClick={() => navigate(item.path)}
                   className={`flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                     isActive
-                      ? "bg-primary text-primary-foreground"
+                      ? "bg-[hsl(var(--highlight))] text-[hsl(var(--highlight-foreground))]"
                       : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                   }`}
                 >
@@ -83,11 +148,30 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               );
             })}
           </div>
+          {/* Desktop: role switcher in header */}
+          <div className="hidden lg:flex ml-auto">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary transition-colors">
+                  🛠 {roleLabel[currentRole]}
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {(["super_admin", "mentor", "student"] as AppRole[]).map((r) => (
+                  <DropdownMenuItem key={r} onClick={() => switchRole(r)} className={currentRole === r ? "bg-secondary" : ""}>
+                    {roleLabel[r]}
+                    {currentRole === r && <span className="ml-auto text-[hsl(var(--highlight))]">●</span>}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </header>
 
       <main className="min-h-screen pt-14 lg:ml-56">
-        <div className="mx-auto max-w-5xl p-4 lg:p-6">
+        <div className="mx-auto max-w-6xl p-4 lg:p-6">
           {children}
         </div>
       </main>
