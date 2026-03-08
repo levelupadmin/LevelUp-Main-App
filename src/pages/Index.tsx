@@ -4,9 +4,8 @@ import {
   communityPosts,
   workshops,
   featuredCreators,
-  featuredBanner,
 } from "@/data/mockData";
-import heroBanner from "@/assets/hero-banner.jpg";
+import HeroCarousel from "@/components/home/HeroCarousel";
 import {
   ArrowRight,
   ChevronRight,
@@ -25,56 +24,8 @@ const Index = () => {
   return (
     <AppShell>
       <div className="mx-auto max-w-6xl space-y-14 p-6 lg:p-10">
-        {/* 1. Featured Banner — GrowthX-style full-bleed hero */}
-        <section
-          onClick={() => navigate(featuredBanner.route)}
-          className="group relative -mx-6 -mt-6 cursor-pointer overflow-hidden lg:-mx-10 lg:-mt-10"
-        >
-          {/* Full-bleed background image */}
-          <div className="relative h-[420px] w-full lg:h-[560px]">
-            <img
-              src={heroBanner}
-              alt="Level Up Learning"
-              className="h-full w-full object-cover"
-            />
-            {/* Bottom gradient for text readability */}
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
-
-            {/* Hero text overlay */}
-            <div className="absolute inset-0 flex flex-col justify-end p-6 pb-20 lg:p-16 lg:pb-28">
-              <h1 className="max-w-4xl text-4xl font-bold leading-[1.1] text-foreground sm:text-5xl lg:text-7xl">
-                {featuredBanner.headline}{" "}
-                <br className="hidden sm:block" />
-                <em className="font-light italic">{featuredBanner.headlineAccent}</em>
-              </h1>
-              <div className="mt-6">
-                <button className="inline-flex items-center gap-2 rounded-full bg-primary px-7 py-3.5 text-sm font-semibold text-primary-foreground transition-colors group-hover:bg-primary/90">
-                  {featuredBanner.cta}
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Social proof bar at bottom */}
-            <div className="absolute bottom-0 left-0 right-0 border-t border-border/30 bg-background/80 backdrop-blur-sm">
-              <div className="mx-auto max-w-6xl px-6 py-3 lg:px-16">
-                <p className="mb-2 text-xs text-muted-foreground">
-                  {featuredBanner.socialProof}
-                </p>
-                <div className="flex items-center gap-6 overflow-x-auto hide-scrollbar">
-                  {featuredBanner.brands.map((brand) => (
-                    <span
-                      key={brand}
-                      className="shrink-0 font-mono text-xs font-medium tracking-wide text-muted-foreground/70"
-                    >
-                      {brand}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* 1. Featured Banner — Carousel Hero */}
+        <HeroCarousel />
 
         {/* 2. Continue Learning */}
         {enrolledCourses.length > 0 && (
