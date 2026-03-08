@@ -42,6 +42,7 @@ import AdminWorkshops from "./pages/admin/AdminWorkshops";
 import AdminModeration from "./pages/admin/AdminModeration";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
+import AdminCohorts from "./pages/admin/AdminCohorts";
 
 import NotFound from "./pages/NotFound";
 
