@@ -25,7 +25,7 @@ import Workshops from "./pages/Workshops";
 import WorkshopDetail from "./pages/WorkshopDetail";
 import Community from "./pages/Community";
 import CohortCommunity from "./pages/community/CohortCommunity";
-import SpaceCommunity from "./pages/community/SpaceCommunity";
+// SpaceCommunity routes now redirect to /community
 import BatchSpace from "./pages/community/BatchSpace";
 import Directory from "./pages/Directory";
 import CommunityPost from "./pages/CommunityPost";
