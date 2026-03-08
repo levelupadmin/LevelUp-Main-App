@@ -14,6 +14,122 @@ export type Database = {
   }
   public: {
     Tables: {
+      certificates: {
+        Row: {
+          certificate_url: string | null
+          completion_pct: number
+          course_id: string
+          id: string
+          issued_at: string
+          user_id: string
+        }
+        Insert: {
+          certificate_url?: string | null
+          completion_pct?: number
+          course_id: string
+          id?: string
+          issued_at?: string
+          user_id: string
+        }
+        Update: {
+          certificate_url?: string | null
+          completion_pct?: number
+          course_id?: string
+          id?: string
+          issued_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "certificates_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coupon_codes: {
+        Row: {
+          applicable_course_ids: string[] | null
+          code: string
+          created_at: string
+          current_uses: number
+          discount_type: Database["public"]["Enums"]["discount_type"]
+          discount_value: number
+          id: string
+          is_active: boolean
+          max_uses: number | null
+          updated_at: string
+          valid_from: string | null
+          valid_until: string | null
+        }
+        Insert: {
+          applicable_course_ids?: string[] | null
+          code: string
+          created_at?: string
+          current_uses?: number
+          discount_type?: Database["public"]["Enums"]["discount_type"]
+          discount_value?: number
+          id?: string
+          is_active?: boolean
+          max_uses?: number | null
+          updated_at?: string
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Update: {
+          applicable_course_ids?: string[] | null
+          code?: string
+          created_at?: string
+          current_uses?: number
+          discount_type?: Database["public"]["Enums"]["discount_type"]
+          discount_value?: number
+          id?: string
+          is_active?: boolean
+          max_uses?: number | null
+          updated_at?: string
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Relationships: []
+      }
+      course_access_grants: {
+        Row: {
+          created_at: string
+          granted_course_id: string
+          id: string
+          source_course_id: string
+        }
+        Insert: {
+          created_at?: string
+          granted_course_id: string
+          id?: string
+          source_course_id: string
+        }
+        Update: {
+          created_at?: string
+          granted_course_id?: string
+          id?: string
+          source_course_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_access_grants_granted_course_id_fkey"
+            columns: ["granted_course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_access_grants_source_course_id_fkey"
+            columns: ["source_course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       course_modules: {
         Row: {
           course_id: string
@@ -52,19 +168,75 @@ export type Database = {
           },
         ]
       }
+      course_schedules: {
+        Row: {
+          course_id: string
+          created_at: string
+          day_of_week: number
+          end_time: string | null
+          id: string
+          is_active: boolean
+          label: string | null
+          start_time: string
+          updated_at: string
+          zoom_link: string | null
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          day_of_week: number
+          end_time?: string | null
+          id?: string
+          is_active?: boolean
+          label?: string | null
+          start_time: string
+          updated_at?: string
+          zoom_link?: string | null
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          day_of_week?: number
+          end_time?: string | null
+          id?: string
+          is_active?: boolean
+          label?: string | null
+          start_time?: string
+          updated_at?: string
+          zoom_link?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_schedules_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       courses: {
         Row: {
+          access_tags: string[] | null
           category: string
+          certificate_enabled: boolean
+          certificate_threshold: number | null
+          course_type: Database["public"]["Enums"]["course_type"]
           created_at: string
           description: string | null
           difficulty: Database["public"]["Enums"]["difficulty_level"]
+          drip_enabled: boolean
+          drip_interval_days: number | null
           estimated_duration: string | null
           id: string
           instructor_id: string | null
           instructor_name: string
           is_free: boolean
+          is_recurring: boolean
+          payment_page_url: string | null
           price: number
           rating: number
+          recurrence_rule: Json | null
           short_description: string | null
           slug: string
           status: Database["public"]["Enums"]["content_status"]
@@ -73,19 +245,29 @@ export type Database = {
           thumbnail_url: string | null
           title: string
           updated_at: string
+          zoom_link: string | null
         }
         Insert: {
+          access_tags?: string[] | null
           category?: string
+          certificate_enabled?: boolean
+          certificate_threshold?: number | null
+          course_type?: Database["public"]["Enums"]["course_type"]
           created_at?: string
           description?: string | null
           difficulty?: Database["public"]["Enums"]["difficulty_level"]
+          drip_enabled?: boolean
+          drip_interval_days?: number | null
           estimated_duration?: string | null
           id?: string
           instructor_id?: string | null
           instructor_name?: string
           is_free?: boolean
+          is_recurring?: boolean
+          payment_page_url?: string | null
           price?: number
           rating?: number
+          recurrence_rule?: Json | null
           short_description?: string | null
           slug: string
           status?: Database["public"]["Enums"]["content_status"]
@@ -94,19 +276,29 @@ export type Database = {
           thumbnail_url?: string | null
           title: string
           updated_at?: string
+          zoom_link?: string | null
         }
         Update: {
+          access_tags?: string[] | null
           category?: string
+          certificate_enabled?: boolean
+          certificate_threshold?: number | null
+          course_type?: Database["public"]["Enums"]["course_type"]
           created_at?: string
           description?: string | null
           difficulty?: Database["public"]["Enums"]["difficulty_level"]
+          drip_enabled?: boolean
+          drip_interval_days?: number | null
           estimated_duration?: string | null
           id?: string
           instructor_id?: string | null
           instructor_name?: string
           is_free?: boolean
+          is_recurring?: boolean
+          payment_page_url?: string | null
           price?: number
           rating?: number
+          recurrence_rule?: Json | null
           short_description?: string | null
           slug?: string
           status?: Database["public"]["Enums"]["content_status"]
@@ -115,8 +307,118 @@ export type Database = {
           thumbnail_url?: string | null
           title?: string
           updated_at?: string
+          zoom_link?: string | null
         }
         Relationships: []
+      }
+      enrollments: {
+        Row: {
+          completed_at: string | null
+          course_id: string
+          created_at: string
+          enrolled_at: string
+          id: string
+          schedule_id: string | null
+          source_course_id: string | null
+          status: Database["public"]["Enums"]["enrollment_status"]
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          course_id: string
+          created_at?: string
+          enrolled_at?: string
+          id?: string
+          schedule_id?: string | null
+          source_course_id?: string | null
+          status?: Database["public"]["Enums"]["enrollment_status"]
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          course_id?: string
+          created_at?: string
+          enrolled_at?: string
+          id?: string
+          schedule_id?: string | null
+          source_course_id?: string | null
+          status?: Database["public"]["Enums"]["enrollment_status"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "enrollments_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrollments_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "course_schedules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrollments_source_course_id_fkey"
+            columns: ["source_course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lesson_progress: {
+        Row: {
+          completed_at: string | null
+          course_id: string
+          created_at: string
+          id: string
+          lesson_id: string
+          progress_pct: number
+          status: Database["public"]["Enums"]["progress_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          course_id: string
+          created_at?: string
+          id?: string
+          lesson_id: string
+          progress_pct?: number
+          status?: Database["public"]["Enums"]["progress_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          course_id?: string
+          created_at?: string
+          id?: string
+          lesson_id?: string
+          progress_pct?: number
+          status?: Database["public"]["Enums"]["progress_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lesson_progress_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lesson_progress_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       lessons: {
         Row: {
@@ -184,6 +486,53 @@ export type Database = {
           },
         ]
       }
+      notification_templates: {
+        Row: {
+          channel: Database["public"]["Enums"]["notification_channel"]
+          course_id: string | null
+          created_at: string
+          hours_before: number | null
+          id: string
+          is_active: boolean
+          subject: string | null
+          template_body: string
+          trigger_type: Database["public"]["Enums"]["notification_trigger"]
+          updated_at: string
+        }
+        Insert: {
+          channel?: Database["public"]["Enums"]["notification_channel"]
+          course_id?: string | null
+          created_at?: string
+          hours_before?: number | null
+          id?: string
+          is_active?: boolean
+          subject?: string | null
+          template_body: string
+          trigger_type: Database["public"]["Enums"]["notification_trigger"]
+          updated_at?: string
+        }
+        Update: {
+          channel?: Database["public"]["Enums"]["notification_channel"]
+          course_id?: string | null
+          created_at?: string
+          hours_before?: number | null
+          id?: string
+          is_active?: boolean
+          subject?: string | null
+          template_body?: string
+          trigger_type?: Database["public"]["Enums"]["notification_trigger"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_templates_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           availability: string | null
@@ -241,6 +590,54 @@ export type Database = {
         }
         Relationships: []
       }
+      scheduled_notifications: {
+        Row: {
+          channel: Database["public"]["Enums"]["notification_channel"]
+          created_at: string
+          enrollment_id: string | null
+          id: string
+          scheduled_for: string
+          sent_at: string | null
+          template_id: string | null
+          user_id: string
+        }
+        Insert: {
+          channel?: Database["public"]["Enums"]["notification_channel"]
+          created_at?: string
+          enrollment_id?: string | null
+          id?: string
+          scheduled_for: string
+          sent_at?: string | null
+          template_id?: string | null
+          user_id: string
+        }
+        Update: {
+          channel?: Database["public"]["Enums"]["notification_channel"]
+          created_at?: string
+          enrollment_id?: string | null
+          id?: string
+          scheduled_for?: string
+          sent_at?: string | null
+          template_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_notifications_enrollment_id_fkey"
+            columns: ["enrollment_id"]
+            isOneToOne: false
+            referencedRelation: "enrollments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_notifications_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "notification_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -279,8 +676,18 @@ export type Database = {
     Enums: {
       app_role: "student" | "mentor" | "super_admin"
       content_status: "draft" | "published" | "archived"
+      course_type: "masterclass" | "workshop" | "cohort"
       difficulty_level: "beginner" | "intermediate" | "advanced"
+      discount_type: "percentage" | "fixed"
+      enrollment_status: "active" | "completed" | "cancelled" | "expired"
       lesson_type: "video" | "text" | "quiz" | "assignment" | "pdf"
+      notification_channel: "email" | "whatsapp"
+      notification_trigger:
+        | "reminder"
+        | "completion"
+        | "enrollment"
+        | "drip_release"
+      progress_status: "not_started" | "in_progress" | "completed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -410,8 +817,19 @@ export const Constants = {
     Enums: {
       app_role: ["student", "mentor", "super_admin"],
       content_status: ["draft", "published", "archived"],
+      course_type: ["masterclass", "workshop", "cohort"],
       difficulty_level: ["beginner", "intermediate", "advanced"],
+      discount_type: ["percentage", "fixed"],
+      enrollment_status: ["active", "completed", "cancelled", "expired"],
       lesson_type: ["video", "text", "quiz", "assignment", "pdf"],
+      notification_channel: ["email", "whatsapp"],
+      notification_trigger: [
+        "reminder",
+        "completion",
+        "enrollment",
+        "drip_release",
+      ],
+      progress_status: ["not_started", "in_progress", "completed"],
     },
   },
 } as const
