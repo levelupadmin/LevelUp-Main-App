@@ -3,12 +3,14 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useCourse, useCourseModules, useCourseLessons } from "@/hooks/useCourseData";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Star, Clock, Users, Play, Lock, CheckCircle2, Calendar } from "lucide-react";
+import { Star, Clock, Users, Play, Lock, CheckCircle2, Calendar, Bell } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useState } from "react";
+import WaitlistForm from "@/components/course/WaitlistForm";
 
 const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
