@@ -19,6 +19,7 @@ const CourseDetail = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const slotParam = searchParams.get("slot");
+  const [showWaitlist, setShowWaitlist] = useState(false);
 
   const { data: course, isLoading: courseLoading } = useCourse(slug || "");
   const { data: modules = [] } = useCourseModules(course?.id);
