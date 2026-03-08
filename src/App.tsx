@@ -18,6 +18,9 @@ import Learn from "./pages/Learn";
 import CourseDetail from "./pages/CourseDetail";
 import LessonDetail from "./pages/LessonDetail";
 import MyLearning from "./pages/MyLearning";
+import CohortDetail from "./pages/CohortDetail";
+import CohortApplication from "./pages/CohortApplication";
+import CohortDashboard from "./pages/CohortDashboard";
 import Workshops from "./pages/Workshops";
 import WorkshopDetail from "./pages/WorkshopDetail";
 import Community from "./pages/Community";
@@ -39,6 +42,7 @@ import AdminWorkshops from "./pages/admin/AdminWorkshops";
 import AdminModeration from "./pages/admin/AdminModeration";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
+import AdminCohorts from "./pages/admin/AdminCohorts";
 
 import NotFound from "./pages/NotFound";
 
@@ -63,6 +67,9 @@ const App = () => (
           <Route path="/learn/course/:slug" element={<AuthGuard><CourseDetail /></AuthGuard>} />
           <Route path="/learn/lesson/:lessonId" element={<AuthGuard><LessonDetail /></AuthGuard>} />
           <Route path="/learn/my-learning" element={<AuthGuard><MyLearning /></AuthGuard>} />
+          <Route path="/learn/cohort/:slug" element={<AuthGuard><CohortDetail /></AuthGuard>} />
+          <Route path="/learn/cohort/:slug/apply" element={<AuthGuard><CohortApplication /></AuthGuard>} />
+          <Route path="/learn/cohort/:slug/dashboard" element={<AuthGuard><CohortDashboard /></AuthGuard>} />
           <Route path="/learn/workshops" element={<AuthGuard><Workshops /></AuthGuard>} />
           <Route path="/workshops/:slug" element={<AuthGuard><WorkshopDetail /></AuthGuard>} />
           <Route path="/community" element={<AuthGuard><Community /></AuthGuard>} />
@@ -84,6 +91,7 @@ const App = () => (
           <Route path="/admin/moderation" element={<AuthGuard><AdminGuard><AdminModeration /></AdminGuard></AuthGuard>} />
           <Route path="/admin/users" element={<AuthGuard><AdminGuard><AdminUsers /></AdminGuard></AuthGuard>} />
           <Route path="/admin/analytics" element={<AuthGuard><AdminGuard><AdminAnalytics /></AdminGuard></AuthGuard>} />
+          <Route path="/admin/cohorts" element={<AuthGuard><AdminGuard><AdminCohorts /></AdminGuard></AuthGuard>} />
 
           <Route path="*" element={<NotFound />} />
         </Routes>
