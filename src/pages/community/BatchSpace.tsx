@@ -15,8 +15,7 @@ const BatchSpace = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const cohort = getBatchById(id || "");
-  const defaultChannel = cohort?.channels.find(c => c.name === "general-chat")?.id || cohort?.channels[0]?.id || "";
-  const [activeChannelId, setActiveChannelId] = useState<string>(defaultChannel);
+  const [activeChannelId, setActiveChannelId] = useState<string>("general-chat");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [memberListOpen, setMemberListOpen] = useState(false);
   const [pinnedOpen, setPinnedOpen] = useState(false);
