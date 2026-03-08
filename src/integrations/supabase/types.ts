@@ -539,6 +539,57 @@ export type Database = {
           },
         ]
       }
+      portfolio_projects: {
+        Row: {
+          appreciations: number
+          category: string
+          created_at: string
+          description: string | null
+          duration: string | null
+          id: string
+          is_pinned: boolean
+          thumbnail_url: string | null
+          title: string
+          tools_used: string[] | null
+          updated_at: string
+          user_id: string
+          video_url: string | null
+          views: number
+        }
+        Insert: {
+          appreciations?: number
+          category?: string
+          created_at?: string
+          description?: string | null
+          duration?: string | null
+          id?: string
+          is_pinned?: boolean
+          thumbnail_url?: string | null
+          title: string
+          tools_used?: string[] | null
+          updated_at?: string
+          user_id: string
+          video_url?: string | null
+          views?: number
+        }
+        Update: {
+          appreciations?: number
+          category?: string
+          created_at?: string
+          description?: string | null
+          duration?: string | null
+          id?: string
+          is_pinned?: boolean
+          thumbnail_url?: string | null
+          title?: string
+          tools_used?: string[] | null
+          updated_at?: string
+          user_id?: string
+          video_url?: string | null
+          views?: number
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           availability: string | null
