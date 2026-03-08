@@ -18,6 +18,7 @@ import Index from "./pages/Index";
 import Learn from "./pages/Learn";
 import CourseDetail from "./pages/CourseDetail";
 import LessonDetail from "./pages/LessonDetail";
+import MasterclassDashboard from "./pages/MasterclassDashboard";
 import MyLearning from "./pages/MyLearning";
 import CohortDetail from "./pages/CohortDetail";
 import CohortApplication from "./pages/CohortApplication";
