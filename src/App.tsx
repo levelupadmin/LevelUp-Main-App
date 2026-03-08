@@ -98,6 +98,8 @@ const App = () => (
             <Route path="/opportunities/:id" element={<AuthGuard><OpportunityDetail /></AuthGuard>} />
             <Route path="/profile/me" element={<AuthGuard><Profile /></AuthGuard>} />
             <Route path="/profile/edit" element={<AuthGuard><ProfileEdit /></AuthGuard>} />
+            <Route path="/portfolio" element={<AuthGuard><Portfolio /></AuthGuard>} />
+            <Route path="/profile/:handle" element={<AuthGuard><ProfilePublic /></AuthGuard>} />
             <Route path="/profile/:handle" element={<AuthGuard><ProfilePublic /></AuthGuard>} />
             <Route path="/search" element={<AuthGuard><Search /></AuthGuard>} />
             <Route path="/notifications" element={<AuthGuard><Notifications /></AuthGuard>} />
