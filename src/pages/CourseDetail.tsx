@@ -171,6 +171,12 @@ const CourseDetail = () => {
                 {course.is_free ? "Start Course (Free)" : `Start Course · ₹${course.price.toLocaleString()}`}
               </Button>
             )}
+            {(course as any).max_students && course.student_count >= (course as any).max_students && (
+              <Button variant="outline" onClick={() => setShowWaitlist(true)} className="gap-2">
+                <Bell className="h-4 w-4" />
+                Join Waitlist
+              </Button>
+            )}
           </div>
 
           {/* Available slots (only when no slot param and course is recurring) */}
