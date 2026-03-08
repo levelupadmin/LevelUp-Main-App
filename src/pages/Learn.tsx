@@ -2,11 +2,10 @@ import AppShell from "@/components/layout/AppShell";
 import { detailedCourses, workshopsList, type CourseDetailed } from "@/data/learningData";
 import { cohorts } from "@/data/cohortData";
 import { categories } from "@/data/mockData";
-import { Star, Clock, Users, Search, Play, ArrowRight, ChevronRight, BookOpen, GraduationCap } from "lucide-react";
+import { Star, Clock, Users, Search, Play, ChevronRight, BookOpen, GraduationCap, Calendar } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 
 const Learn = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -14,24 +13,32 @@ const Learn = () => {
   const navigate = useNavigate();
 
   const inProgressCourses = detailedCourses.filter((c) => c.progress > 0 && c.progress < 100);
-  const upcomingWorkshops = workshopsList.filter((w) => !w.isPast).slice(0, 3);
   const activeCohorts = cohorts.filter((c) => c.isApplicationOpen);
 
-  const filteredCourses = useMemo(() => {
-    let result = [...detailedCourses];
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (c) =>
-          c.title.toLowerCase().includes(q) ||
-          c.instructor.toLowerCase().includes(q) ||
-          c.category.toLowerCase().includes(q)
-      );
-    }
-    if (selectedCategory !== "all") {
-      result = result.filter((c) => c.category.toLowerCase() === selectedCategory);
-    }
-    return result;
+  const filtered = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    const matchCategory = (cat: string) =>
+      selectedCategory === "all" || cat.toLowerCase() === selectedCategory;
+
+    const masterclasses = detailedCourses.filter(
+      (c) =>
+        matchCategory(c.category) &&
+        (!q || c.title.toLowerCase().includes(q) || c.instructor.toLowerCase().includes(q) || c.category.toLowerCase().includes(q))
+    );
+
+    const filteredCohorts = cohorts.filter(
+      (c) =>
+        matchCategory(c.category) &&
+        (!q || c.title.toLowerCase().includes(q) || c.category.toLowerCase().includes(q))
+    );
+
+    const workshops = workshopsList.filter(
+      (w) =>
+        matchCategory(w.category) &&
+        (!q || w.title.toLowerCase().includes(q) || w.instructor.toLowerCase().includes(q) || w.category.toLowerCase().includes(q))
+    );
+
+    return { masterclasses, cohorts: filteredCohorts, workshops };
   }, [searchQuery, selectedCategory]);
 
   return (
@@ -92,48 +99,16 @@ const Learn = () => {
           )}
         </section>
 
-        {/* ── Section 2: Upcoming Workshops ── */}
-        {upcomingWorkshops.length > 0 && (
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-foreground">Upcoming Workshops</h2>
-              <button onClick={() => navigate("/learn/workshops")} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
-                See all →
-              </button>
-            </div>
-            <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
-              {upcomingWorkshops.map((w) => (
-                <button
-                  key={w.id}
-                  onClick={() => navigate(`/workshops/${w.id}`)}
-                  className="group min-w-[260px] max-w-[300px] shrink-0 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground/30"
-                >
-                  <Badge variant="secondary" className="text-[10px] mb-2.5">{w.date} · {w.time}</Badge>
-                  <p className="text-sm font-semibold text-foreground line-clamp-2 leading-tight mb-2">{w.title}</p>
-                  <div className="flex items-center gap-2 mb-3">
-                    <img src={w.instructorImage} alt={w.instructor} className="h-5 w-5 rounded-full object-cover" />
-                    <span className="text-xs text-muted-foreground">{w.instructor}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-foreground">₹{w.price}</span>
-                    <span className="text-[10px] text-muted-foreground">{w.seatsRemaining}/{w.seatsTotal} seats left</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* ── Section 3: Explore Courses ── */}
+        {/* ── Section 2: Explore ── */}
         <section className="space-y-4">
-          <h2 className="text-lg font-bold text-foreground">Explore Courses</h2>
+          <h2 className="text-lg font-bold text-foreground">Explore</h2>
 
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search courses, instructors..."
+              placeholder="Search courses, workshops, instructors..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-10 w-full rounded-lg border border-border bg-card pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-foreground/30 focus:outline-none"
@@ -168,64 +143,106 @@ const Learn = () => {
             ))}
           </div>
 
-          {/* Course list */}
-          <div className="space-y-3">
-            {filteredCourses.map((course) => (
-              <CourseCard key={course.id} course={course} onClick={() => navigate(`/learn/course/${course.id}`)} />
-            ))}
-            {filteredCourses.length === 0 && (
-              <div className="text-center py-12">
-                <Search className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-sm font-medium text-foreground">No courses found</p>
-                <p className="text-xs text-muted-foreground mt-1">Try a different search or category</p>
+          {/* ── Pathway: Masterclasses ── */}
+          {filtered.masterclasses.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                <Play className="h-4 w-4 text-primary" /> Masterclasses
+              </h3>
+              <div className="space-y-3">
+                {filtered.masterclasses.map((course) => (
+                  <CourseCard key={course.id} course={course} onClick={() => navigate(`/learn/course/${course.id}`)} />
+                ))}
               </div>
-            )}
-          </div>
-        </section>
-
-        {/* ── Section 4: Cohort Programs ── */}
-        {activeCohorts.length > 0 && (
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-foreground">Cohort Programs</h2>
-              <button onClick={() => navigate("/learn")} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
-                Learn more →
-              </button>
             </div>
-            {activeCohorts.slice(0, 1).map((cohort) => (
-              <button
-                key={cohort.id}
-                onClick={() => navigate(`/learn/cohort/${cohort.id}`)}
-                className="group relative w-full overflow-hidden rounded-2xl text-left transition-transform hover:scale-[1.005]"
-              >
-                <div className="relative h-48 sm:h-56">
-                  <img src={cohort.thumbnail} alt={cohort.title} className="h-full w-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent" />
-                  <div className="absolute top-3 left-3">
-                    <Badge className="bg-primary text-primary-foreground text-[10px] font-bold">
-                      <GraduationCap className="h-3 w-3 mr-1" />
-                      Cohort Program
-                    </Badge>
-                  </div>
-                  <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5">
-                    <p className="text-xs text-white/60 mb-1">{cohort.category} · {cohort.duration}</p>
-                    <h3 className="text-lg sm:text-xl font-bold text-white leading-tight">{cohort.title}</h3>
-                    <p className="text-sm text-white/70 mt-1 line-clamp-1">{cohort.subtitle}</p>
-                    <div className="flex items-center gap-4 mt-3">
-                      <div className="flex items-center gap-1.5 text-white/70 text-xs">
-                        <Users className="h-3.5 w-3.5" />
-                        {cohort.totalSeats - cohort.filledSeats}/{cohort.totalSeats} seats
+          )}
+
+          {/* ── Pathway: Cohorts (Banner) ── */}
+          {filtered.cohorts.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                <GraduationCap className="h-4 w-4 text-primary" /> Cohort Programs
+              </h3>
+              {filtered.cohorts.map((cohort) => (
+                <button
+                  key={cohort.id}
+                  onClick={() => navigate(`/learn/cohort/${cohort.id}`)}
+                  className="group relative w-full overflow-hidden rounded-2xl text-left transition-transform hover:scale-[1.005]"
+                >
+                  <div className="relative h-48 sm:h-56">
+                    <img src={cohort.thumbnail} alt={cohort.title} className="h-full w-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent" />
+                    <div className="absolute top-3 left-3">
+                      <Badge className="bg-primary text-primary-foreground text-[10px] font-bold">
+                        <GraduationCap className="h-3 w-3 mr-1" />
+                        Cohort Program
+                      </Badge>
+                    </div>
+                    <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5">
+                      <p className="text-xs text-white/60 mb-1">{cohort.category} · {cohort.duration}</p>
+                      <h3 className="text-lg sm:text-xl font-bold text-white leading-tight">{cohort.title}</h3>
+                      <p className="text-sm text-white/70 mt-1 line-clamp-1">{cohort.subtitle}</p>
+                      <div className="flex items-center gap-4 mt-3">
+                        <div className="flex items-center gap-1.5 text-white/70 text-xs">
+                          <Users className="h-3.5 w-3.5" />
+                          {cohort.totalSeats - cohort.filledSeats}/{cohort.totalSeats} seats
+                        </div>
+                        <span className="text-xs font-semibold text-white flex items-center gap-1">
+                          Learn more <ChevronRight className="h-3 w-3" />
+                        </span>
                       </div>
-                      <span className="text-xs font-semibold text-white flex items-center gap-1">
-                        Learn more <ChevronRight className="h-3 w-3" />
-                      </span>
                     </div>
                   </div>
-                </div>
-              </button>
-            ))}
-          </section>
-        )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ── Pathway: Workshops ── */}
+          {filtered.workshops.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-primary" /> Workshops
+                </h3>
+                <button onClick={() => navigate("/learn/workshops")} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
+                  See all →
+                </button>
+              </div>
+              <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
+                {filtered.workshops.map((w) => (
+                  <button
+                    key={w.id}
+                    onClick={() => navigate(`/workshops/${w.id}`)}
+                    className="group min-w-[260px] max-w-[300px] shrink-0 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground/30"
+                  >
+                    <Badge variant="secondary" className="text-[10px] mb-2.5">{w.date} · {w.time}</Badge>
+                    <p className="text-sm font-semibold text-foreground line-clamp-2 leading-tight mb-2">{w.title}</p>
+                    <div className="flex items-center gap-2 mb-3">
+                      <img src={w.instructorImage} alt={w.instructor} className="h-5 w-5 rounded-full object-cover" />
+                      <span className="text-xs text-muted-foreground">{w.instructor}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-foreground">₹{w.price}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {w.isPast ? "Watch Replay" : `${w.seatsRemaining}/${w.seatsTotal} seats left`}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {filtered.masterclasses.length === 0 && filtered.cohorts.length === 0 && filtered.workshops.length === 0 && (
+            <div className="text-center py-12">
+              <Search className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+              <p className="text-sm font-medium text-foreground">No results found</p>
+              <p className="text-xs text-muted-foreground mt-1">Try a different search or category</p>
+            </div>
+          )}
+        </section>
       </div>
     </AppShell>
   );
@@ -240,7 +257,6 @@ function CourseCard({ course, onClick }: { course: CourseDetailed; onClick: () =
       onClick={onClick}
       className="group flex w-full gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-muted-foreground/30 sm:gap-4"
     >
-      {/* Thumbnail */}
       <div className="relative h-24 w-36 shrink-0 overflow-hidden rounded-lg sm:h-28 sm:w-44">
         <img src={course.thumbnail} alt={course.title} className="h-full w-full object-cover" />
         {isEnrolled && course.progress > 0 && (
@@ -254,8 +270,6 @@ function CourseCard({ course, onClick }: { course: CourseDetailed; onClick: () =
           </div>
         )}
       </div>
-
-      {/* Info */}
       <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
         <div>
           <p className="text-sm font-semibold text-foreground line-clamp-2 leading-tight">{course.title}</p>
@@ -289,7 +303,5 @@ function CourseCard({ course, onClick }: { course: CourseDetailed; onClick: () =
     </button>
   );
 }
-
-import courseCinematography from "@/assets/course-cinematography.jpg";
 
 export default Learn;
