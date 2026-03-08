@@ -129,7 +129,7 @@ const Profile = () => {
           {/* Quick links */}
           <div className="rounded-xl border border-border bg-card overflow-hidden">
             {[
-              { label: "My Portfolio", action: () => {} },
+              { label: "My Portfolio", action: () => navigate("/portfolio") },
               { label: "Subscription", action: () => navigate("/settings/subscription") },
               { label: "Notifications", action: () => navigate("/notifications") },
             ].map((item, i) => (

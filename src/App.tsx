@@ -34,6 +34,7 @@ import OpportunityDetail from "./pages/OpportunityDetail";
 import PostOpportunity from "./pages/PostOpportunity";
 import Profile from "./pages/Profile";
 import ProfileEdit from "./pages/ProfileEdit";
+import Portfolio from "./pages/Portfolio";
 import ProfilePublic from "./pages/ProfilePublic";
 import Search from "./pages/Search";
 import Notifications from "./pages/Notifications";
@@ -97,6 +98,8 @@ const App = () => (
             <Route path="/opportunities/:id" element={<AuthGuard><OpportunityDetail /></AuthGuard>} />
             <Route path="/profile/me" element={<AuthGuard><Profile /></AuthGuard>} />
             <Route path="/profile/edit" element={<AuthGuard><ProfileEdit /></AuthGuard>} />
+            <Route path="/portfolio" element={<AuthGuard><Portfolio /></AuthGuard>} />
+            <Route path="/profile/:handle" element={<AuthGuard><ProfilePublic /></AuthGuard>} />
             <Route path="/profile/:handle" element={<AuthGuard><ProfilePublic /></AuthGuard>} />
             <Route path="/search" element={<AuthGuard><Search /></AuthGuard>} />
             <Route path="/notifications" element={<AuthGuard><Notifications /></AuthGuard>} />
