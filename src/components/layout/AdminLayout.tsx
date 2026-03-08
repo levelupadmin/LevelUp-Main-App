@@ -1,12 +1,13 @@
 import { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, FileText, Users, Shield, BarChart3, Clapperboard, ArrowLeft } from "lucide-react";
+import { LayoutDashboard, FileText, Users, Shield, BarChart3, Clapperboard, GraduationCap, ArrowLeft } from "lucide-react";
 import logo from "@/assets/logo.png";
 
 const adminNav = [
   { path: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { path: "/admin/content", label: "Content", icon: FileText },
   { path: "/admin/workshops", label: "Workshops", icon: Clapperboard },
+  { path: "/admin/cohorts", label: "Cohorts", icon: GraduationCap },
   { path: "/admin/moderation", label: "Moderation", icon: Shield },
   { path: "/admin/users", label: "Users", icon: Users },
   { path: "/admin/analytics", label: "Analytics", icon: BarChart3 },
