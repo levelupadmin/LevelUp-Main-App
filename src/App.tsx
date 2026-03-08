@@ -29,6 +29,8 @@ import SpaceCommunity from "./pages/community/SpaceCommunity";
 import Directory from "./pages/Directory";
 import CommunityPost from "./pages/CommunityPost";
 import Opportunities from "./pages/Opportunities";
+import OpportunityDetail from "./pages/OpportunityDetail";
+import PostOpportunity from "./pages/PostOpportunity";
 import Profile from "./pages/Profile";
 import ProfilePublic from "./pages/ProfilePublic";
 import Search from "./pages/Search";
@@ -83,6 +85,8 @@ const App = () => (
           <Route path="/community/post/:id" element={<AuthGuard><CommunityPost /></AuthGuard>} />
 
           <Route path="/opportunities" element={<AuthGuard><Opportunities /></AuthGuard>} />
+          <Route path="/opportunities/new" element={<AuthGuard><PostOpportunity /></AuthGuard>} />
+          <Route path="/opportunities/:id" element={<AuthGuard><OpportunityDetail /></AuthGuard>} />
           <Route path="/profile/me" element={<AuthGuard><Profile /></AuthGuard>} />
           <Route path="/profile/:handle" element={<AuthGuard><ProfilePublic /></AuthGuard>} />
           <Route path="/search" element={<AuthGuard><Search /></AuthGuard>} />
