@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
+export type AppRole = "student" | "mentor" | "super_admin";
+
 export interface UserProfile {
   phone?: string;
   email?: string;
@@ -7,6 +9,7 @@ export interface UserProfile {
   avatar: string;
   bio: string;
   city: string;
+  role: AppRole;
   roles: string[];
   interests: string[];
   experience: string;
