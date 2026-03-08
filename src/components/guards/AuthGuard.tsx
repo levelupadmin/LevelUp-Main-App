@@ -1,11 +1,6 @@
 import { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-
-// TODO: Replace with real auth state from Lovable Cloud
-const useAuth = () => {
-  // Placeholder: always authenticated for now
-  return { isAuthenticated: true, isLoading: false };
-};
+import { useAuth } from "@/contexts/AuthContext";
 
 const AuthGuard = ({ children }: { children: ReactNode }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -14,7 +9,7 @@ const AuthGuard = ({ children }: { children: ReactNode }) => {
   if (isLoading) return null;
 
   if (!isAuthenticated) {
-    return <Navigate to="/auth" state={{ from: location }} replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return <>{children}</>;
