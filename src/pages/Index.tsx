@@ -1,13 +1,39 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import AppShell from "@/components/layout/AppShell";
+import StreakCard from "@/components/home/StreakCard";
+import DailyChallengeCard from "@/components/home/DailyChallengeCard";
+import ContinueLearning from "@/components/home/ContinueLearning";
+import CommunityHighlights from "@/components/home/CommunityHighlights";
+import { userProfile } from "@/data/mockData";
 
 const Index = () => {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+    <AppShell>
+      <div className="space-y-5 py-4">
+        {/* Greeting */}
+        <div className="px-4">
+          <p className="text-sm text-muted-foreground">Good morning,</p>
+          <h1 className="font-display text-2xl font-bold text-foreground">
+            {userProfile.name.split(" ")[0]} 👋
+          </h1>
+        </div>
+
+        {/* Streak */}
+        <div className="px-4">
+          <StreakCard />
+        </div>
+
+        {/* Daily Challenge */}
+        <div className="px-4">
+          <DailyChallengeCard />
+        </div>
+
+        {/* Continue Learning */}
+        <ContinueLearning />
+
+        {/* Community Highlights */}
+        <CommunityHighlights />
       </div>
-    </div>
+    </AppShell>
   );
 };
 
