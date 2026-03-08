@@ -3,6 +3,14 @@ import instructor2 from "@/assets/instructor-2.jpg";
 import courseEditing from "@/assets/course-editing.jpg";
 import courseCinematography from "@/assets/course-cinematography.jpg";
 import courseContent from "@/assets/course-content.jpg";
+import mcKarthik from "@/assets/mc-karthik-subbaraj.png";
+import mcAnthony from "@/assets/mc-anthony-gonsalvez.png";
+import mcVenketRam from "@/assets/mc-venket-ram.png";
+import mcDrkKiran from "@/assets/mc-drk-kiran.webp";
+import mcRaviBasrur from "@/assets/mc-ravi-basrur.webp";
+import mcLokesh from "@/assets/mc-lokesh-kanagaraj.png";
+import mcNelson from "@/assets/mc-nelson-dilipkumar.jpg";
+import mcComingSoon from "@/assets/mc-coming-soon.jpg";
 
 export type Difficulty = "Beginner" | "Intermediate" | "Advanced";
 export type LessonState = "not_started" | "in_progress" | "completed";
@@ -51,6 +59,7 @@ export interface CourseDetailed {
   instructorBio: string;
   instructorImage: string;
   thumbnail: string;
+  cardImage?: string;
   category: string;
   difficulty: Difficulty;
   format: "Masterclass" | "Cohort" | "Workshop";
@@ -141,11 +150,12 @@ export const detailedCourses: CourseDetailed[] = [
   {
     id: "1",
     title: "The Art of Cinematic Storytelling",
-    subtitle: "From script to screen — master the craft of visual narrative",
-    instructor: "Rajiv Menon",
-    instructorBio: "Award-winning filmmaker with 15+ years in Indian cinema. Known for documentary storytelling and visual poetry.",
+    subtitle: "Storytelling to editing to working with actors",
+    instructor: "Karthik Subbaraj",
+    instructorBio: "Award-winning filmmaker known for Petta, Jigarthanda, and Pizza. Master of genre filmmaking in Indian cinema.",
     instructorImage: instructor1,
     thumbnail: courseCinematography,
+    cardImage: mcKarthik,
     category: "Filmmaking",
     difficulty: "Intermediate",
     format: "Masterclass",
@@ -242,11 +252,12 @@ export const detailedCourses: CourseDetailed[] = [
   {
     id: "2",
     title: "Professional Video Editing Masterclass",
-    subtitle: "From raw footage to final cut — learn professional editing workflows",
-    instructor: "Priya Sharma",
-    instructorBio: "Lead editor at a top Mumbai post-production house. 10+ years crafting narratives through the cut.",
+    subtitle: "An all-out practical editing experience",
+    instructor: "Anthony Gonsalvez",
+    instructorBio: "One of India's most sought-after film editors. Known for his work on blockbuster Tamil and Hindi films.",
     instructorImage: instructor2,
     thumbnail: courseEditing,
+    cardImage: mcAnthony,
     category: "Editing",
     difficulty: "Beginner",
     format: "Masterclass",
@@ -324,11 +335,12 @@ export const detailedCourses: CourseDetailed[] = [
   {
     id: "3",
     title: "Content Creation for Social Media",
-    subtitle: "Build your audience and create content that resonates",
-    instructor: "Arjun Kapoor",
-    instructorBio: "500K+ subscribers, brand filmmaker and content strategist. Building India's creator economy.",
+    subtitle: "The art and craft of filmmaking",
+    instructor: "Lokesh Kanagaraj",
+    instructorBio: "Director of Vikram, Kaithi, and Master. Pioneer of the LCU (Lokesh Cinematic Universe).",
     instructorImage: instructor1,
     thumbnail: courseContent,
+    cardImage: mcLokesh,
     category: "Content Creation",
     difficulty: "Beginner",
     format: "Masterclass",
@@ -388,11 +400,12 @@ export const detailedCourses: CourseDetailed[] = [
   {
     id: "4",
     title: "Cinematography Fundamentals",
-    subtitle: "Master the visual language of cinema from framing to lighting",
-    instructor: "Nandini Reddy",
-    instructorBio: "DoP with credits on 20+ indie films. Teaches at FTII and conducts workshops across India.",
+    subtitle: "Capturing the perfect image through diverse case studies",
+    instructor: "G Venket Ram",
+    instructorBio: "Legendary photographer known for iconic celebrity portraits and his annual Artnude calendar. Teaches visual storytelling through the lens.",
     instructorImage: instructor2,
     thumbnail: courseCinematography,
+    cardImage: mcVenketRam,
     category: "Cinematography",
     difficulty: "Intermediate",
     format: "Masterclass",
@@ -463,11 +476,12 @@ export const detailedCourses: CourseDetailed[] = [
   {
     id: "5",
     title: "Design Thinking for Creators",
-    subtitle: "Apply design principles to elevate your creative output",
-    instructor: "Rajiv Menon",
-    instructorBio: "Award-winning filmmaker with 15+ years in Indian cinema.",
+    subtitle: "Set designing, creative problem-solving, and miniatures",
+    instructor: "DRK Kiran",
+    instructorBio: "Acclaimed art director in South Indian cinema. Known for building immersive film worlds through set design and miniatures.",
     instructorImage: instructor1,
     thumbnail: courseContent,
+    cardImage: mcDrkKiran,
     category: "Design",
     difficulty: "Beginner",
     format: "Masterclass",
@@ -508,12 +522,13 @@ export const detailedCourses: CourseDetailed[] = [
   },
   {
     id: "6",
-    title: "Screenwriting Fundamentals",
-    subtitle: "Write compelling screenplays from concept to final draft",
-    instructor: "Priya Sharma",
-    instructorBio: "Lead editor and screenwriting mentor. Published screenwriter with 3 produced shorts.",
+    title: "The Art of Commercial Filmmaking",
+    subtitle: "The art of commercial filmmaking",
+    instructor: "Nelson Dilipkumar",
+    instructorBio: "Director of Jailer, Beast, and Doctor. Known for blending comedy with thrilling narratives.",
     instructorImage: instructor2,
     thumbnail: courseEditing,
+    cardImage: mcNelson,
     category: "Filmmaking",
     difficulty: "Beginner",
     format: "Masterclass",
