@@ -1,5 +1,5 @@
+import React, { useState } from "react";
 import { ArrowLeft, Menu, Users } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { type Channel } from "@/data/communityData";
 import SpaceChannelView from "./SpaceChannelView";
 
@@ -20,7 +20,7 @@ const SpaceDetailView = ({
   onToggleSidebar,
   onBack,
 }: Props) => {
-  const [selectedChannelId, setSelectedChannelId] = __React.useState(channels[0]?.id ?? "");
+  const [selectedChannelId, setSelectedChannelId] = useState(channels[0]?.id ?? "");
   const selectedChannel = channels.find((ch) => ch.id === selectedChannelId) ?? channels[0];
 
   return (
@@ -54,34 +54,32 @@ const SpaceDetailView = ({
       </div>
 
       {/* Channel tabs */}
-      <div className="border-b" style={{ borderColor: "hsl(var(--border))" }}>
-        <ScrollArea className="w-full" orientation="horizontal">
-          <div className="flex gap-1 px-3 py-2">
-            {channels.map((ch) => {
-              const isActive = ch.id === selectedChannelId;
-              return (
-                <button
-                  key={ch.id}
-                  onClick={() => setSelectedChannelId(ch.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors"
-                  style={{
-                    background: isActive ? "hsl(var(--highlight) / 0.15)" : "transparent",
-                    color: isActive ? "hsl(var(--highlight))" : "hsl(var(--muted-foreground))",
-                  }}
-                >
-                  <span>{ch.icon}</span>
-                  <span>{ch.label}</span>
-                  {(ch.unread ?? 0) > 0 && !isActive && (
-                    <span
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ background: "hsl(var(--info))" }}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </ScrollArea>
+      <div className="border-b overflow-x-auto hide-scrollbar" style={{ borderColor: "hsl(var(--border))" }}>
+        <div className="flex gap-1 px-3 py-2">
+          {channels.map((ch) => {
+            const isActive = ch.id === selectedChannelId;
+            return (
+              <button
+                key={ch.id}
+                onClick={() => setSelectedChannelId(ch.id)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors"
+                style={{
+                  background: isActive ? "hsl(var(--highlight) / 0.15)" : "transparent",
+                  color: isActive ? "hsl(var(--highlight))" : "hsl(var(--muted-foreground))",
+                }}
+              >
+                <span>{ch.icon}</span>
+                <span>{ch.label}</span>
+                {(ch.unread ?? 0) > 0 && !isActive && (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: "hsl(var(--info))" }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Channel content */}
@@ -99,9 +97,5 @@ const SpaceDetailView = ({
     </div>
   );
 };
-
-// Fix: use proper React import
-import React from "react";
-const __React = React;
 
 export default SpaceDetailView;
