@@ -47,19 +47,21 @@ const Index = () => {
               {enrolledCourses.map((course) => (
                 <div
                   key={course.id}
-                  className="group overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/20"
+                  className="group relative overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/20"
                 >
-                  <div className="flex gap-4 p-5">
-                    <div className="h-24 w-20 shrink-0 overflow-hidden rounded-lg">
-                      <img
-                        src={course.thumbnail}
-                        alt={course.title}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
+                  {/* Background image fade */}
+                  <div className="absolute inset-0">
+                    <img
+                      src={course.thumbnail}
+                      alt=""
+                      className="h-full w-full object-cover opacity-15"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-r from-card via-card/80 to-card/60" />
+                  </div>
+                  <div className="relative flex gap-4 p-5">
                     <div className="flex flex-1 flex-col justify-between">
                       <div>
-                        <span className="inline-flex rounded bg-accent px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        <span className="inline-flex rounded bg-accent/80 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                           {course.format}
                         </span>
                         <h3 className="mt-1.5 text-sm font-bold leading-snug text-foreground">
