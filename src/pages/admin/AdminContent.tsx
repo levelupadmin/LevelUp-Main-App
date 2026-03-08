@@ -27,7 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 
 type Course = Tables<"courses">;
 type Module = Tables<"course_modules">;
-type Lesson = Tables<"lessons">;
+type Lesson = Tables<"lessons"> & { file_url?: string | null };
 
 const statusStyles: Record<string, string> = {
   published: "bg-green-500/10 text-green-400 border-green-500/20",
