@@ -1,7 +1,7 @@
 import AppShell from "@/components/layout/AppShell";
 import { detailedCourses, type CourseDetailed, type Difficulty } from "@/data/learningData";
 import { categories } from "@/data/mockData";
-import { Star, Clock, Users, Search, SlidersHorizontal, ChevronDown, BookOpen, ArrowRight, Play, CheckCircle2 } from "lucide-react";
+import { Star, Clock, Users, Search, SlidersHorizontal, BookOpen, ArrowRight, Play, CheckCircle2, Sparkles, UsersRound, CalendarDays } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,30 @@ import {
 type Tab = "catalog" | "my-learning";
 type SortOption = "newest" | "popular" | "rated";
 type DurationFilter = "all" | "short" | "medium" | "long";
+type CourseFormat = "Masterclass" | "Cohort" | "Workshop";
+
+const FORMAT_ORDER: CourseFormat[] = ["Masterclass", "Cohort", "Workshop"];
+
+const FORMAT_META: Record<CourseFormat, { label: string; description: string; cta: string; icon: React.ReactNode }> = {
+  Masterclass: {
+    label: "Masterclasses",
+    description: "Self-paced deep dives by India's top creators",
+    cta: "Subscribe Now",
+    icon: <Sparkles className="h-4 w-4" />,
+  },
+  Cohort: {
+    label: "Cohorts",
+    description: "Live, group-based learning with mentorship",
+    cta: "Request Your Invite",
+    icon: <UsersRound className="h-4 w-4" />,
+  },
+  Workshop: {
+    label: "Workshops",
+    description: "Hands-on, focused sessions to build real skills",
+    cta: "Enroll Now",
+    icon: <CalendarDays className="h-4 w-4" />,
+  },
+};
 
 const Learn = () => {
   const [activeTab, setActiveTab] = useState<Tab>("catalog");
@@ -70,9 +94,6 @@ const Learn = () => {
     return result;
   }, [searchQuery, selectedCategory, selectedDifficulty, selectedDuration, sortBy]);
 
-  const inProgressCourses = detailedCourses.filter((c) => c.progress > 0 && c.progress < 100);
-  const completedCourses = detailedCourses.filter((c) => c.progress === 100);
-
   const instructors = useMemo(
     () => [...new Set(detailedCourses.map((c) => c.instructor))],
     []
@@ -83,6 +104,21 @@ const Learn = () => {
     if (selectedInstructor === "all") return filteredCourses;
     return filteredCourses.filter((c) => c.instructor === selectedInstructor);
   }, [filteredCourses, selectedInstructor]);
+
+  const groupedByFormat = useMemo(() => {
+    const groups: Record<CourseFormat, CourseDetailed[]> = {
+      Masterclass: [],
+      Cohort: [],
+      Workshop: [],
+    };
+    finalCourses.forEach((c) => {
+      if (groups[c.format]) groups[c.format].push(c);
+    });
+    return groups;
+  }, [finalCourses]);
+
+  const inProgressCourses = detailedCourses.filter((c) => c.progress > 0 && c.progress < 100);
+  const completedCourses = detailedCourses.filter((c) => c.progress === 100);
 
   return (
     <AppShell>
@@ -236,11 +272,34 @@ const Learn = () => {
             {/* Results count */}
             <p className="text-xs text-muted-foreground">{finalCourses.length} course{finalCourses.length !== 1 ? "s" : ""} found</p>
 
-            {/* Course grid */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {finalCourses.map((course) => (
-                <CourseCard key={course.id} course={course} onClick={() => navigate(`/learn/course/${course.id}`)} />
-              ))}
+            {/* Grouped course sections */}
+            <div className="space-y-8">
+              {FORMAT_ORDER.map((format) => {
+                const courses = groupedByFormat[format];
+                if (courses.length === 0) return null;
+                const meta = FORMAT_META[format];
+                return (
+                  <section key={format} className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">{meta.icon}</span>
+                      <div>
+                        <h2 className="text-lg font-bold text-foreground">{meta.label}</h2>
+                        <p className="text-xs text-muted-foreground">{meta.description}</p>
+                      </div>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {courses.map((course) => (
+                        <CourseCard
+                          key={course.id}
+                          course={course}
+                          ctaLabel={meta.cta}
+                          onClick={() => navigate(`/learn/course/${course.id}`)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
             </div>
 
             {finalCourses.length === 0 && (
@@ -255,7 +314,6 @@ const Learn = () => {
 
         {activeTab === "my-learning" && (
           <div className="space-y-8">
-            {/* In progress */}
             {inProgressCourses.length > 0 && (
               <div className="space-y-4">
                 <h2 className="text-lg font-bold text-foreground">In Progress</h2>
@@ -291,7 +349,6 @@ const Learn = () => {
               </div>
             )}
 
-            {/* Completed */}
             {completedCourses.length > 0 && (
               <div className="space-y-4">
                 <h2 className="text-lg font-bold text-foreground">Completed</h2>
@@ -328,7 +385,6 @@ const Learn = () => {
               </div>
             )}
 
-            {/* Downloads placeholder */}
             <div className="space-y-3">
               <h2 className="text-lg font-bold text-foreground">Downloads</h2>
               <div className="rounded-lg border border-dashed border-border bg-card/50 p-8 text-center">
@@ -343,7 +399,7 @@ const Learn = () => {
   );
 };
 
-const CourseCard = ({ course, onClick }: { course: CourseDetailed; onClick: () => void }) => (
+const CourseCard = ({ course, ctaLabel, onClick }: { course: CourseDetailed; ctaLabel: string; onClick: () => void }) => (
   <div
     onClick={onClick}
     className="group cursor-pointer overflow-hidden rounded-lg border border-border bg-card transition-all hover:border-foreground/20 hover:shadow-elevated"
@@ -380,7 +436,9 @@ const CourseCard = ({ course, onClick }: { course: CourseDetailed; onClick: () =
       </div>
       <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
         <span className="font-bold text-foreground">₹{course.price.toLocaleString()}</span>
-        <span className="text-xs text-muted-foreground">or ₹{course.subscriptionPrice}/mo</span>
+        <Button size="sm" variant="default" className="h-7 text-xs px-3" onClick={(e) => { e.stopPropagation(); onClick(); }}>
+          {ctaLabel}
+        </Button>
       </div>
     </div>
   </div>

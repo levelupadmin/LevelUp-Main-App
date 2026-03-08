@@ -53,7 +53,7 @@ export interface CourseDetailed {
   thumbnail: string;
   category: string;
   difficulty: Difficulty;
-  format: "Masterclass" | "Cohort";
+  format: "Masterclass" | "Cohort" | "Workshop";
   rating: number;
   ratingsCount: number;
   students: number;
@@ -442,7 +442,7 @@ export const detailedCourses: CourseDetailed[] = [
     thumbnail: courseContent,
     category: "Design",
     difficulty: "Beginner",
-    format: "Masterclass",
+    format: "Workshop",
     rating: 4.6,
     ratingsCount: 312,
     students: 980,
@@ -487,7 +487,7 @@ export const detailedCourses: CourseDetailed[] = [
     thumbnail: courseEditing,
     category: "Music",
     difficulty: "Advanced",
-    format: "Masterclass",
+    format: "Workshop",
     rating: 4.8,
     ratingsCount: 198,
     students: 640,
