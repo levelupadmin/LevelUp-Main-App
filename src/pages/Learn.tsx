@@ -118,6 +118,21 @@ const Learn = () => {
     return groups;
   }, [finalCourses]);
 
+  // Filter cohorts by selected category
+  const filteredCohorts = useMemo(() => {
+    let result = [...cohorts];
+    if (selectedCategory !== "all") {
+      result = result.filter((c) => c.category.toLowerCase() === selectedCategory);
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (c) => c.title.toLowerCase().includes(q) || c.category.toLowerCase().includes(q) || c.mentors.some((m) => m.name.toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [selectedCategory, searchQuery]);
+
   const inProgressCourses = detailedCourses.filter((c) => c.progress > 0 && c.progress < 100);
   const completedCourses = detailedCourses.filter((c) => c.progress === 100);
 
