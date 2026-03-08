@@ -1,5 +1,18 @@
 import instructor1 from "@/assets/instructor-1.jpg";
 import instructor2 from "@/assets/instructor-2.jpg";
+import courseEditing from "@/assets/course-editing.jpg";
+import cityChennai from "@/assets/city-chennai.jpg";
+import cityBangalore from "@/assets/city-bangalore.jpg";
+import cityMumbai from "@/assets/city-mumbai.jpg";
+import cityHyderabad from "@/assets/city-hyderabad.jpg";
+import cityKochi from "@/assets/city-kochi.jpg";
+import heroFilmmaking from "@/assets/hero-filmmaking-1.jpg";
+import heroEditing from "@/assets/hero-editing-1.jpg";
+import heroCinematography from "@/assets/hero-cinematography-1.jpg";
+import courseContent from "@/assets/course-content.jpg";
+import skillWriting from "@/assets/skill-writing.jpg";
+import skillDesign from "@/assets/skill-design.jpg";
+import skillMusic from "@/assets/skill-music.jpg";
 
 // ── Channel types ──
 export interface Channel {
@@ -29,6 +42,7 @@ export interface CohortCommunity {
   title: string;
   batchLabel: string;
   memberCount: number;
+  image: string;
   channels: Channel[];
 }
 
@@ -54,6 +68,7 @@ export const cohortCommunities: CohortCommunity[] = [
     title: "Professional Video Editing Bootcamp",
     batchLabel: "Batch 3 — 2026",
     memberCount: 25,
+    image: courseEditing,
     channels: cohortChannels,
   },
 ];
@@ -65,6 +80,7 @@ export interface CityCommunity {
   name: string;
   memberCount: number;
   description: string;
+  image: string;
   channels: Channel[];
 }
 
@@ -80,11 +96,11 @@ export const cityChannels: Channel[] = [
 ];
 
 export const cityCommunities: CityCommunity[] = [
-  { id: "city-chennai", slug: "chennai", name: "Chennai", memberCount: 342, description: "Connect with creators in Chennai — from Kollywood to indie filmmaking.", channels: cityChannels },
-  { id: "city-bangalore", slug: "bangalore", name: "Bangalore", memberCount: 518, description: "Bangalore's vibrant creator community — tech meets art.", channels: cityChannels },
-  { id: "city-mumbai", slug: "mumbai", name: "Mumbai", memberCount: 891, description: "The heart of Indian cinema and content creation.", channels: cityChannels },
-  { id: "city-hyderabad", slug: "hyderabad", name: "Hyderabad", memberCount: 276, description: "Telugu cinema powerhouse and growing creator hub.", channels: cityChannels },
-  { id: "city-kochi", slug: "kochi", name: "Kochi", memberCount: 198, description: "Kerala's creative capital — storytelling rooted in culture.", channels: cityChannels },
+  { id: "city-chennai", slug: "chennai", name: "Chennai", memberCount: 342, description: "Connect with creators in Chennai — from Kollywood to indie filmmaking.", image: cityChennai, channels: cityChannels },
+  { id: "city-bangalore", slug: "bangalore", name: "Bangalore", memberCount: 518, description: "Bangalore's vibrant creator community — tech meets art.", image: cityBangalore, channels: cityChannels },
+  { id: "city-mumbai", slug: "mumbai", name: "Mumbai", memberCount: 891, description: "The heart of Indian cinema and content creation.", image: cityMumbai, channels: cityChannels },
+  { id: "city-hyderabad", slug: "hyderabad", name: "Hyderabad", memberCount: 276, description: "Telugu cinema powerhouse and growing creator hub.", image: cityHyderabad, channels: cityChannels },
+  { id: "city-kochi", slug: "kochi", name: "Kochi", memberCount: 198, description: "Kerala's creative capital — storytelling rooted in culture.", image: cityKochi, channels: cityChannels },
 ];
 
 // ── Skill Communities ──
@@ -94,6 +110,7 @@ export interface SkillCommunity {
   name: string;
   memberCount: number;
   description: string;
+  image: string;
   channels: Channel[];
 }
 
@@ -108,13 +125,13 @@ export const skillChannels: Channel[] = [
 ];
 
 export const skillCommunities: SkillCommunity[] = [
-  { id: "skill-filmmaking", slug: "filmmaking", name: "Filmmaking", memberCount: 1240, description: "For everyone who breathes cinema — from shorts to features.", channels: skillChannels },
-  { id: "skill-editing", slug: "editing", name: "Editing", memberCount: 980, description: "Editors shaping stories one cut at a time.", channels: skillChannels },
-  { id: "skill-cinematography", slug: "cinematography", name: "Cinematography", memberCount: 756, description: "The art of visual storytelling through the lens.", channels: skillChannels },
-  { id: "skill-content", slug: "content-creation", name: "Content Creation", memberCount: 1580, description: "Reels, YouTube, podcasts — creating for the internet.", channels: skillChannels },
-  { id: "skill-writing", slug: "writing", name: "Writing", memberCount: 620, description: "Screenwriters, scriptwriters, and storytellers.", channels: skillChannels },
-  { id: "skill-design", slug: "design", name: "Design", memberCount: 430, description: "Visual design for film, content, and brands.", channels: skillChannels },
-  { id: "skill-music", slug: "music", name: "Music", memberCount: 340, description: "Scoring, sound design, and music production.", channels: skillChannels },
+  { id: "skill-filmmaking", slug: "filmmaking", name: "Filmmaking", memberCount: 1240, description: "For everyone who breathes cinema — from shorts to features.", image: heroFilmmaking, channels: skillChannels },
+  { id: "skill-editing", slug: "editing", name: "Editing", memberCount: 980, description: "Editors shaping stories one cut at a time.", image: heroEditing, channels: skillChannels },
+  { id: "skill-cinematography", slug: "cinematography", name: "Cinematography", memberCount: 756, description: "The art of visual storytelling through the lens.", image: heroCinematography, channels: skillChannels },
+  { id: "skill-content", slug: "content-creation", name: "Content Creation", memberCount: 1580, description: "Reels, YouTube, podcasts — creating for the internet.", image: courseContent, channels: skillChannels },
+  { id: "skill-writing", slug: "writing", name: "Writing", memberCount: 620, description: "Screenwriters, scriptwriters, and storytellers.", image: skillWriting, channels: skillChannels },
+  { id: "skill-design", slug: "design", name: "Design", memberCount: 430, description: "Visual design for film, content, and brands.", image: skillDesign, channels: skillChannels },
+  { id: "skill-music", slug: "music", name: "Music", memberCount: 340, description: "Scoring, sound design, and music production.", image: skillMusic, channels: skillChannels },
 ];
 
 // ── Channel mock messages ──
