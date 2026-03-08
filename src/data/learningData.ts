@@ -487,7 +487,7 @@ export const detailedCourses: CourseDetailed[] = [
     thumbnail: courseEditing,
     category: "Music",
     difficulty: "Advanced",
-    format: "Masterclass",
+    format: "Workshop",
     rating: 4.8,
     ratingsCount: 198,
     students: 640,
