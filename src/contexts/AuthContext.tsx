@@ -39,6 +39,7 @@ const defaultUser: UserProfile = {
   avatar: "",
   bio: "Aspiring filmmaker | Learning cinematography | Mumbai 🎬",
   city: "Mumbai",
+  role: "super_admin",
   roles: ["Filmmaker"],
   interests: [],
   experience: "",
