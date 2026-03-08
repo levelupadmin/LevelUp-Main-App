@@ -26,6 +26,7 @@ import WorkshopDetail from "./pages/WorkshopDetail";
 import Community from "./pages/Community";
 import CohortCommunity from "./pages/community/CohortCommunity";
 import SpaceCommunity from "./pages/community/SpaceCommunity";
+import BatchSpace from "./pages/community/BatchSpace";
 import Directory from "./pages/Directory";
 import CommunityPost from "./pages/CommunityPost";
 import Opportunities from "./pages/Opportunities";
