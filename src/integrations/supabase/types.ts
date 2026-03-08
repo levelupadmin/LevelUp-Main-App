@@ -177,6 +177,7 @@ export type Database = {
           id: string
           is_active: boolean
           label: string | null
+          slug: string | null
           start_time: string
           updated_at: string
           zoom_link: string | null
@@ -189,6 +190,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string | null
+          slug?: string | null
           start_time: string
           updated_at?: string
           zoom_link?: string | null
@@ -201,6 +203,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string | null
+          slug?: string | null
           start_time?: string
           updated_at?: string
           zoom_link?: string | null

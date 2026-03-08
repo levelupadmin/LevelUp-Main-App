@@ -1,0 +1,1 @@
+ALTER TABLE public.course_schedules ADD COLUMN IF NOT EXISTS slug text;
