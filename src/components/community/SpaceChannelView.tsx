@@ -17,9 +17,10 @@ interface Props {
   spaceEmoji?: string;
   channel: Channel;
   onToggleSidebar: () => void;
+  hideHeader?: boolean;
 }
 
-const SpaceChannelView = ({ spaceName, channel, onToggleSidebar }: Props) => {
+const SpaceChannelView = ({ spaceName, channel, onToggleSidebar, hideHeader }: Props) => {
   const [messageText, setMessageText] = useState("");
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
