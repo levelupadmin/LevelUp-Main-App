@@ -14,7 +14,173 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      course_modules: {
+        Row: {
+          course_id: string
+          created_at: string
+          description: string | null
+          id: string
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_modules_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      courses: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          difficulty: Database["public"]["Enums"]["difficulty_level"]
+          estimated_duration: string | null
+          id: string
+          instructor_id: string | null
+          instructor_name: string
+          is_free: boolean
+          price: number
+          rating: number
+          short_description: string | null
+          slug: string
+          status: Database["public"]["Enums"]["content_status"]
+          student_count: number
+          tags: string[] | null
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          difficulty?: Database["public"]["Enums"]["difficulty_level"]
+          estimated_duration?: string | null
+          id?: string
+          instructor_id?: string | null
+          instructor_name?: string
+          is_free?: boolean
+          price?: number
+          rating?: number
+          short_description?: string | null
+          slug: string
+          status?: Database["public"]["Enums"]["content_status"]
+          student_count?: number
+          tags?: string[] | null
+          thumbnail_url?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          difficulty?: Database["public"]["Enums"]["difficulty_level"]
+          estimated_duration?: string | null
+          id?: string
+          instructor_id?: string | null
+          instructor_name?: string
+          is_free?: boolean
+          price?: number
+          rating?: number
+          short_description?: string | null
+          slug?: string
+          status?: Database["public"]["Enums"]["content_status"]
+          student_count?: number
+          tags?: string[] | null
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      lessons: {
+        Row: {
+          content: string | null
+          course_id: string
+          created_at: string
+          description: string | null
+          duration: string | null
+          id: string
+          is_free: boolean
+          module_id: string
+          sort_order: number
+          title: string
+          type: Database["public"]["Enums"]["lesson_type"]
+          updated_at: string
+          video_url: string | null
+        }
+        Insert: {
+          content?: string | null
+          course_id: string
+          created_at?: string
+          description?: string | null
+          duration?: string | null
+          id?: string
+          is_free?: boolean
+          module_id: string
+          sort_order?: number
+          title: string
+          type?: Database["public"]["Enums"]["lesson_type"]
+          updated_at?: string
+          video_url?: string | null
+        }
+        Update: {
+          content?: string | null
+          course_id?: string
+          created_at?: string
+          description?: string | null
+          duration?: string | null
+          id?: string
+          is_free?: boolean
+          module_id?: string
+          sort_order?: number
+          title?: string
+          type?: Database["public"]["Enums"]["lesson_type"]
+          updated_at?: string
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lessons_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lessons_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "course_modules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +189,9 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      content_status: "draft" | "published" | "archived"
+      difficulty_level: "beginner" | "intermediate" | "advanced"
+      lesson_type: "video" | "text" | "quiz" | "assignment"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +318,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      content_status: ["draft", "published", "archived"],
+      difficulty_level: ["beginner", "intermediate", "advanced"],
+      lesson_type: ["video", "text", "quiz", "assignment"],
+    },
   },
 } as const
