@@ -2,11 +2,11 @@ import { Home, PlayCircle, Users, Briefcase, UserCircle } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const tabs = [
-  { path: "/", label: "Home", icon: Home },
+  { path: "/home", label: "Home", icon: Home },
   { path: "/learn", label: "Learn", icon: PlayCircle },
   { path: "/community", label: "Community", icon: Users },
   { path: "/opportunities", label: "Opportunities", icon: Briefcase },
-  { path: "/profile", label: "Profile", icon: UserCircle },
+  { path: "/profile/me", label: "Profile", icon: UserCircle },
 ];
 
 const BottomTabs = () => {
