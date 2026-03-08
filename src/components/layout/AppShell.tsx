@@ -15,7 +15,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useState } from "react";
-import logo from "@/assets/logo.png";
+import logo from "@/assets/logo-white.png";
 
 const mainNav = [
   { path: "/home", label: "Home", icon: Home },
