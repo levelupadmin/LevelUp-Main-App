@@ -8,29 +8,25 @@ import { userProfile } from "@/data/mockData";
 const Index = () => {
   return (
     <AppShell>
-      <div className="space-y-5 py-4">
+      <div className="mx-auto max-w-5xl space-y-6 p-4 lg:p-6">
         {/* Greeting */}
-        <div className="px-4">
+        <div>
           <p className="text-sm text-muted-foreground">Good morning,</p>
-          <h1 className="font-display text-2xl font-bold text-foreground">
+          <h1 className="text-2xl font-bold text-foreground lg:text-3xl">
             {userProfile.name.split(" ")[0]} 👋
           </h1>
         </div>
 
-        {/* Streak */}
-        <div className="px-4">
+        {/* Top row: Streak + Challenge */}
+        <div className="grid gap-4 lg:grid-cols-2">
           <StreakCard />
-        </div>
-
-        {/* Daily Challenge */}
-        <div className="px-4">
           <DailyChallengeCard />
         </div>
 
         {/* Continue Learning */}
         <ContinueLearning />
 
-        {/* Community Highlights */}
+        {/* Community */}
         <CommunityHighlights />
       </div>
     </AppShell>
