@@ -154,7 +154,7 @@ const UpcomingEvents = () => {
 
             {/* Online indicator bar */}
             <div className="flex items-center gap-2 border-t border-border px-4 py-2.5">
-              <Radio className="h-3 w-3 text-green-500" />
+              <Radio className="h-3 w-3" style={{ color: "hsl(142, 71%, 45%)" }} />
               <span className="text-[11px] font-semibold text-muted-foreground">
                 {event.onlineLabel}
               </span>
