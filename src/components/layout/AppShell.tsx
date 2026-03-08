@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Home,
   PlayCircle,
@@ -53,6 +54,7 @@ const AppShell = ({
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isCommunity = location.pathname === "/community" || location.pathname.startsWith("/community/");
@@ -150,7 +152,7 @@ const AppShell = ({
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <div className="h-8 w-8 rounded-full bg-accent" />
-            <span className="flex-1 text-left font-medium">Arjun Mehta</span>
+            <span className="flex-1 text-left font-medium">{user?.name || "Profile"}</span>
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>

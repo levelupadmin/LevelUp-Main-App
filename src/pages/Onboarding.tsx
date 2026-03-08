@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import logo from "@/assets/logo.png";
 import { Check, Film, Scissors, Camera, Smartphone, Palette, Music, ArrowLeft } from "lucide-react";
@@ -29,29 +29,35 @@ const goalOptions = [
 
 const Onboarding = () => {
   const navigate = useNavigate();
-  const { completeOnboarding } = useAuth();
+  const { completeOnboarding, isAuthenticated, hasCompletedOnboarding } = useAuth();
   const [step, setStep] = useState(0);
   const [interests, setInterests] = useState<string[]>([]);
   const [experience, setExperience] = useState("");
   const [goal, setGoal] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (hasCompletedOnboarding) return <Navigate to="/home" replace />;
 
   const toggleInterest = (id: string) =>
     setInterests((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
 
   const canNext = step === 0 ? interests.length > 0 : step === 1 ? !!experience : !!goal;
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step < 2) {
       setStep(step + 1);
     } else {
-      completeOnboarding({ interests, experience, goal });
+      setSaving(true);
+      await completeOnboarding({ interests, experience, goal });
       toast({ title: "You're all set! Let's go 🚀" });
       navigate("/home", { replace: true });
     }
   };
 
-  const skip = () => {
-    completeOnboarding({ interests: [], experience: "", goal: "" });
+  const skip = async () => {
+    setSaving(true);
+    await completeOnboarding({ interests: [], experience: "", goal: "" });
     navigate("/home", { replace: true });
   };
 
@@ -163,14 +169,14 @@ const Onboarding = () => {
           )}
           <button
             onClick={handleNext}
-            disabled={!canNext}
+            disabled={!canNext || saving}
             className="flex-1 rounded-md bg-highlight py-3 text-sm font-bold text-highlight-foreground transition-colors hover:opacity-90 disabled:opacity-40"
           >
-            {step === 2 ? "Get Started" : "Next"}
+            {saving ? "Saving..." : step === 2 ? "Get Started" : "Next"}
           </button>
         </div>
 
-        <button onClick={skip} className="mt-4 w-full text-center text-xs text-muted-foreground hover:text-foreground">
+        <button onClick={skip} disabled={saving} className="mt-4 w-full text-center text-xs text-muted-foreground hover:text-foreground">
           Skip for now
         </button>
       </div>
