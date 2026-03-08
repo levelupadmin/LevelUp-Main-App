@@ -291,9 +291,32 @@ const Learn = () => {
             {/* Grouped course sections */}
             <div className="space-y-8">
               {FORMAT_ORDER.map((format) => {
+                const meta = FORMAT_META[format];
+
+                // For Cohort format, render cohort cards from cohortData
+                if (format === "Cohort") {
+                  if (filteredCohorts.length === 0) return null;
+                  return (
+                    <section key={format} className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">{meta.icon}</span>
+                        <div>
+                          <h2 className="text-lg font-bold text-foreground">{meta.label}</h2>
+                          <p className="text-xs text-muted-foreground">{meta.description}</p>
+                        </div>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {filteredCohorts.map((cohort) => (
+                          <CohortCard key={cohort.id} cohort={cohort} onClick={() => navigate(`/learn/cohort/${cohort.id}`)} />
+                        ))}
+                      </div>
+                    </section>
+                  );
+                }
+
+                // For Masterclass / Workshop, render course cards
                 const courses = groupedByFormat[format];
                 if (courses.length === 0) return null;
-                const meta = FORMAT_META[format];
                 return (
                   <section key={format} className="space-y-4">
                     <div className="flex items-center gap-2">
