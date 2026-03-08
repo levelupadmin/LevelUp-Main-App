@@ -89,19 +89,27 @@ function PdfViewer({ lesson }: { lesson: Lesson }) {
   const pdfUrl = (lesson as any).file_url;
 
   if (pdfUrl) {
+    const googleViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(pdfUrl)}&embedded=true`;
     return (
       <div className="space-y-3">
         <div className="aspect-[3/4] max-h-[70vh] border border-border rounded-lg overflow-hidden bg-card">
-          <iframe src={`${pdfUrl}#toolbar=1`} className="h-full w-full" title={lesson.title} />
+          <iframe
+            src={googleViewerUrl}
+            className="h-full w-full"
+            title={lesson.title}
+            sandbox="allow-scripts allow-same-origin allow-popups"
+          />
         </div>
-        <a
-          href={pdfUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
-        >
-          <FileText className="h-4 w-4" /> Open PDF in new tab
-        </a>
+        <div className="flex gap-3">
+          <a
+            href={pdfUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+          >
+            <FileText className="h-4 w-4" /> Open PDF in new tab
+          </a>
+        </div>
       </div>
     );
   }
