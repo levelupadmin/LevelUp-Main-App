@@ -5,6 +5,7 @@ import { GraduationCap, Compass, Users, ChevronRight, MapPin, Sparkles } from "l
 import { cohortCommunities } from "@/data/communityData";
 import { cityCommunities, skillCommunities } from "@/data/communityData";
 import { directoryCreators } from "@/data/communityData";
+import { batchCohorts } from "@/data/batchData";
 
 type Tab = "cohorts" | "explore" | "directory";
 
@@ -18,6 +19,9 @@ const Community = () => {
     { id: "directory", label: "Meet Creators", icon: Users },
   ];
 
+  // Enrolled batch cohorts
+  const enrolledBatches = batchCohorts;
+
   return (
     <AppShell>
       <div className="mx-auto max-w-4xl px-4 py-6 lg:px-6">
@@ -26,6 +30,69 @@ const Community = () => {
           <h1 className="text-2xl font-bold text-foreground">Community</h1>
           <p className="text-sm text-muted-foreground">Your creative network — cohorts, communities, and creators</p>
         </div>
+
+        {/* ── My Batches (always at top if enrolled) ── */}
+        {enrolledBatches.length > 0 && (
+          <section className="mb-6">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">My Batches</h2>
+            <div className="flex gap-3 overflow-x-auto pb-2 hide-scrollbar">
+              {enrolledBatches.map((batch) => {
+                const onlineMembers = batch.members.filter((m) => m.isOnline).slice(0, 4);
+                return (
+                  <button
+                    key={batch.id}
+                    onClick={() => navigate(`/community/batch/${batch.id}`)}
+                    className="group min-w-[280px] max-w-[320px] shrink-0 rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-muted-foreground/30 hover:shadow-card"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className="text-sm font-bold text-foreground leading-tight">{batch.name}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Batch {batch.batchNumber}</p>
+                      </div>
+                      {batch.unreadCount > 0 && (
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-white">
+                          {batch.unreadCount}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div className="flex -space-x-2">
+                          {onlineMembers.map((m, i) => (
+                            <img
+                              key={m.id}
+                              src={m.avatar}
+                              alt={m.name}
+                              className="h-6 w-6 rounded-full border-2 border-card object-cover"
+                              style={{ zIndex: onlineMembers.length - i }}
+                            />
+                          ))}
+                        </div>
+                        <span className="ml-2 text-[10px] text-muted-foreground">{batch.memberCount} members</span>
+                      </div>
+                      {batch.nextSession && (
+                        <span className="text-[10px] font-medium text-[hsl(var(--highlight))]">Next: {batch.nextSession}</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {enrolledBatches.length === 0 && (
+          <div className="mb-6 rounded-xl border border-dashed border-border bg-card/50 p-6 text-center">
+            <GraduationCap className="mx-auto mb-2 h-7 w-7 text-muted-foreground/40" />
+            <p className="text-sm font-medium text-foreground">Join a cohort program for a dedicated batch community</p>
+            <button
+              onClick={() => navigate("/learn")}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[hsl(var(--highlight))] hover:underline"
+            >
+              Browse Cohorts <ChevronRight className="h-3 w-3" />
+            </button>
+          </div>
+        )}
 
         {/* Top tabs */}
         <div className="mb-6 flex gap-1 rounded-xl bg-muted p-1">

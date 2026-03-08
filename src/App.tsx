@@ -26,6 +26,7 @@ import WorkshopDetail from "./pages/WorkshopDetail";
 import Community from "./pages/Community";
 import CohortCommunity from "./pages/community/CohortCommunity";
 import SpaceCommunity from "./pages/community/SpaceCommunity";
+import BatchSpace from "./pages/community/BatchSpace";
 import Directory from "./pages/Directory";
 import CommunityPost from "./pages/CommunityPost";
 import Opportunities from "./pages/Opportunities";
@@ -76,6 +77,7 @@ const App = () => (
 
           {/* Community */}
           <Route path="/community" element={<AuthGuard><Community /></AuthGuard>} />
+          <Route path="/community/batch/:id" element={<AuthGuard><BatchSpace /></AuthGuard>} />
           <Route path="/community/cohort/:slug" element={<AuthGuard><CohortCommunity /></AuthGuard>} />
           <Route path="/community/city/:slug" element={<AuthGuard><SpaceCommunity type="city" /></AuthGuard>} />
           <Route path="/community/skill/:slug" element={<AuthGuard><SpaceCommunity type="skill" /></AuthGuard>} />
