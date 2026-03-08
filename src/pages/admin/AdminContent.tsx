@@ -257,7 +257,44 @@ const AdminContent = () => {
 
           {/* Course Header */}
           <div className="rounded-lg border border-border bg-card p-5">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-4">
+              {/* Thumbnail */}
+              <div className="shrink-0 w-32 space-y-2">
+                <div className="aspect-video rounded-lg overflow-hidden bg-secondary border border-border">
+                  {selectedCourse.thumbnail_url ? (
+                    <img src={selectedCourse.thumbnail_url} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center">
+                      <Upload className="h-5 w-5 text-muted-foreground/40" />
+                    </div>
+                  )}
+                </div>
+                <label className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+                  <Upload className="h-3 w-3" />
+                  {selectedCourse.thumbnail_url ? "Change" : "Upload"} thumbnail
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const ext = file.name.split(".").pop();
+                      const path = `thumbnails/${selectedCourse.id}.${ext}`;
+                      const { error: uploadError } = await supabase.storage
+                        .from("course-content")
+                        .upload(path, file, { upsert: true });
+                      if (uploadError) {
+                        toast({ title: "Upload failed", description: uploadError.message, variant: "destructive" });
+                        return;
+                      }
+                      const { data: urlData } = supabase.storage.from("course-content").getPublicUrl(path);
+                      updateCourse.mutate({ id: selectedCourse.id, thumbnail_url: urlData.publicUrl });
+                    }}
+                  />
+                </label>
+              </div>
+
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <h2 className="text-xl font-bold text-foreground truncate">{selectedCourse.title}</h2>
