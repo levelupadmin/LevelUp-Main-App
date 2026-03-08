@@ -29,6 +29,8 @@ import SpaceCommunity from "./pages/community/SpaceCommunity";
 import Directory from "./pages/Directory";
 import CommunityPost from "./pages/CommunityPost";
 import Opportunities from "./pages/Opportunities";
+import OpportunityDetail from "./pages/OpportunityDetail";
+import PostOpportunity from "./pages/PostOpportunity";
 import Profile from "./pages/Profile";
 import ProfilePublic from "./pages/ProfilePublic";
 import Search from "./pages/Search";
