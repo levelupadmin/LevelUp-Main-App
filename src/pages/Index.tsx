@@ -63,9 +63,7 @@ const Index = () => {
                         {course.title}
                       </h3>
                       <p className="mt-1 font-mono text-xs text-muted-foreground">
-                        {course.format === "Cohort"
-                          ? `Week ${course.currentModule} / ${course.totalModules}`
-                          : `Module ${course.currentModule} / ${course.totalModules}`}
+                        {course.modules.reduce((a, m) => a + m.lessons.filter(l => l.state === "completed").length, 0)} / {course.lessonsCount} lessons
                       </p>
                     </div>
                   </div>
