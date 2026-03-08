@@ -77,6 +77,7 @@ const App = () => (
 
           {/* Community */}
           <Route path="/community" element={<AuthGuard><Community /></AuthGuard>} />
+          <Route path="/community/batch/:id" element={<AuthGuard><BatchSpace /></AuthGuard>} />
           <Route path="/community/cohort/:slug" element={<AuthGuard><CohortCommunity /></AuthGuard>} />
           <Route path="/community/city/:slug" element={<AuthGuard><SpaceCommunity type="city" /></AuthGuard>} />
           <Route path="/community/skill/:slug" element={<AuthGuard><SpaceCommunity type="skill" /></AuthGuard>} />
