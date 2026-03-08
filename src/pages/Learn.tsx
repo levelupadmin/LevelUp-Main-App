@@ -214,7 +214,7 @@ const Learn = () => {
                     <div className="flex items-center gap-4 mt-3">
                       <div className="flex items-center gap-1.5 text-white/70 text-xs">
                         <Users className="h-3.5 w-3.5" />
-                        {cohort.seatsTotal - cohort.seatsFilled}/{cohort.seatsTotal} seats
+                        {cohort.totalSeats - cohort.filledSeats}/{cohort.totalSeats} seats
                       </div>
                       <span className="text-xs font-semibold text-white flex items-center gap-1">
                         Learn more <ChevronRight className="h-3 w-3" />
