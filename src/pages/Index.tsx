@@ -4,9 +4,8 @@ import {
   communityPosts,
   workshops,
   featuredCreators,
-  featuredBanner,
 } from "@/data/mockData";
-import heroBanner from "@/assets/hero-banner.jpg";
+import HeroCarousel from "@/components/home/HeroCarousel";
 import {
   ArrowRight,
   ChevronRight,
