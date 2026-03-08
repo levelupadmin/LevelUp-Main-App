@@ -42,12 +42,11 @@ import Subscription from "./pages/Subscription";
 
 // Admin pages
 import AdminDashboard from "./pages/admin/AdminDashboard";
-import AdminContent from "./pages/admin/AdminContent";
-import AdminWorkshops from "./pages/admin/AdminWorkshops";
+import AdminCourses from "./pages/admin/AdminCourses";
+import AdminCoupons from "./pages/admin/AdminCoupons";
 import AdminModeration from "./pages/admin/AdminModeration";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
-import AdminCohorts from "./pages/admin/AdminCohorts";
 import AdminOpportunities from "./pages/admin/AdminOpportunities";
 import AdminSettings from "./pages/admin/AdminSettings";
 
@@ -103,12 +102,14 @@ const App = () => (
 
             {/* Admin */}
             <Route path="/admin" element={<AuthGuard><AdminGuard><AdminDashboard /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/content" element={<AuthGuard><AdminGuard><AdminContent /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/workshops" element={<AuthGuard><AdminGuard><AdminWorkshops /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/courses" element={<AuthGuard><AdminGuard><AdminCourses /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/content" element={<Navigate to="/admin/courses" replace />} />
+            <Route path="/admin/workshops" element={<Navigate to="/admin/courses" replace />} />
+            <Route path="/admin/cohorts" element={<Navigate to="/admin/courses" replace />} />
+            <Route path="/admin/coupons" element={<AuthGuard><AdminGuard><AdminCoupons /></AdminGuard></AuthGuard>} />
             <Route path="/admin/moderation" element={<AuthGuard><AdminGuard><AdminModeration /></AdminGuard></AuthGuard>} />
             <Route path="/admin/users" element={<AuthGuard><AdminGuard><AdminUsers /></AdminGuard></AuthGuard>} />
             <Route path="/admin/analytics" element={<AuthGuard><AdminGuard><AdminAnalytics /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/cohorts" element={<AuthGuard><AdminGuard><AdminCohorts /></AdminGuard></AuthGuard>} />
             <Route path="/admin/opportunities" element={<AuthGuard><AdminGuard><AdminOpportunities /></AdminGuard></AuthGuard>} />
             <Route path="/admin/settings" element={<AuthGuard><AdminGuard><AdminSettings /></AdminGuard></AuthGuard>} />
 
