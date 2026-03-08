@@ -16,13 +16,6 @@ import {
   Play,
   ExternalLink,
 } from "lucide-react";
-  ChevronRight,
-  Calendar,
-  MapPin,
-  MessageSquare,
-  Play,
-  ExternalLink,
-} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const Index = () => {
