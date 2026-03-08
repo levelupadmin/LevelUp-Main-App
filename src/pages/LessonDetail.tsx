@@ -1,33 +1,31 @@
 import AppShell from "@/components/layout/AppShell";
 import { useParams, useNavigate } from "react-router-dom";
-import { getLessonById, getCourseById, getCourseLessons } from "@/data/learningData";
-import {
-  Play, Pause, CheckCircle2, ChevronLeft, ChevronRight, Share2,
-  FileText, Send, Upload, BarChart3, MessageSquare, Download,
-  SkipBack, SkipForward, Volume2, Maximize, Settings, Zap,
-} from "lucide-react";
-import { useState } from "react";
+import { useLesson, useLessonCourse, useCourseLessons, useCourseModules } from "@/hooks/useCourseData";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
+import LessonContentViewer from "@/components/learn/LessonContentViewer";
 
 const LessonDetail = () => {
   const { lessonId } = useParams();
   const navigate = useNavigate();
-  const { toast } = useToast();
 
-  const lesson = getLessonById(lessonId || "");
-  const course = lesson ? getCourseById(lesson.courseId) : null;
-  const courseLessons = lesson ? getCourseLessons(lesson.courseId) : [];
-  const currentIndex = courseLessons.findIndex((l) => l.id === lesson?.id);
+  const { data: lesson, isLoading: lessonLoading } = useLesson(lessonId || "");
+  const { data: course } = useLessonCourse(lesson?.course_id);
+  const { data: allLessons = [] } = useCourseLessons(lesson?.course_id);
+  const { data: modules = [] } = useCourseModules(lesson?.course_id);
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [videoProgress, setVideoProgress] = useState(lesson?.videoProgress || 0);
-  const [activitySubmitted, setActivitySubmitted] = useState(lesson?.microActivity.submitted || false);
-  const [activityAnswer, setActivityAnswer] = useState("");
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
-  const [isCompleted, setIsCompleted] = useState(lesson?.state === "completed");
+  if (lessonLoading) {
+    return (
+      <AppShell>
+        <div className="mx-auto max-w-5xl space-y-4 p-4">
+          <Skeleton className="aspect-video w-full rounded-lg" />
+          <Skeleton className="h-6 w-2/3" />
+        </div>
+      </AppShell>
+    );
+  }
 
   if (!lesson || !course) {
     return (
@@ -39,47 +37,19 @@ const LessonDetail = () => {
     );
   }
 
-  const canComplete = videoProgress >= 80 && activitySubmitted;
-  const prevLesson = currentIndex > 0 ? courseLessons[currentIndex - 1] : null;
-  const nextLesson = currentIndex < courseLessons.length - 1 ? courseLessons[currentIndex + 1] : null;
+  // Sort lessons by module order then lesson order
+  const sortedLessons = [...allLessons].sort((a, b) => {
+    const modA = modules.find((m) => m.id === a.module_id);
+    const modB = modules.find((m) => m.id === b.module_id);
+    const modOrder = (modA?.sort_order ?? 0) - (modB?.sort_order ?? 0);
+    return modOrder !== 0 ? modOrder : a.sort_order - b.sort_order;
+  });
 
-  const handlePlayToggle = () => {
-    setIsPlaying(!isPlaying);
-    if (!isPlaying && videoProgress < 100) {
-      setVideoProgress(Math.min(videoProgress + 25, 100));
-    }
-  };
+  const currentIndex = sortedLessons.findIndex((l) => l.id === lesson.id);
+  const prevLesson = currentIndex > 0 ? sortedLessons[currentIndex - 1] : null;
+  const nextLesson = currentIndex < sortedLessons.length - 1 ? sortedLessons[currentIndex + 1] : null;
 
-  const handleSubmitActivity = () => {
-    if (lesson.microActivity.type === "reflection" || lesson.microActivity.type === "upload") {
-      if (!activityAnswer.trim()) return;
-    } else if (!selectedOption) return;
-
-    setActivitySubmitted(true);
-    toast({ title: "Activity submitted!", description: "Great work — keep going." });
-  };
-
-  const handleShare = () => {
-    toast({
-      title: "Shared to community!",
-      description: "Your progress has been shared with the Level Up community.",
-    });
-  };
-
-  const handleMarkComplete = () => {
-    setIsCompleted(true);
-    // +10 XP toast
-    toast({
-      title: "+10 XP 🎉",
-      description: `Lesson "${lesson.title}" completed!`,
-    });
-    // Navigate after a short delay
-    setTimeout(() => {
-      if (nextLesson) {
-        navigate(`/learn/lesson/${nextLesson.id}`);
-      }
-    }, 1200);
-  };
+  const currentModule = modules.find((m) => m.id === lesson.module_id);
 
   return (
     <AppShell>
@@ -87,62 +57,20 @@ const LessonDetail = () => {
         {/* Back nav */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
           <button
-            onClick={() => navigate(`/learn/course/${course.id}`)}
+            onClick={() => navigate(`/learn/course/${course.slug}`)}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
             <span className="truncate max-w-[200px]">{course.title}</span>
           </button>
           <span className="text-xs text-muted-foreground ml-auto font-mono">
-            {currentIndex + 1} / {courseLessons.length}
+            {currentIndex + 1} / {sortedLessons.length}
           </span>
         </div>
 
-        {/* Video Player Placeholder */}
-        <div className="relative bg-[hsl(0,0%,5%)] aspect-video flex items-center justify-center">
-          <div className="absolute inset-0 flex items-center justify-center">
-            <img src={course.thumbnail} alt="" className="h-full w-full object-cover opacity-20" />
-          </div>
-          <div className="relative z-10 flex flex-col items-center gap-4">
-            <button
-              onClick={handlePlayToggle}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-foreground/10 backdrop-blur-md border border-foreground/20 transition-all hover:bg-foreground/20 hover:scale-105"
-            >
-              {isPlaying ? (
-                <Pause className="h-7 w-7 text-foreground" />
-              ) : (
-                <Play className="h-7 w-7 text-foreground ml-1" />
-              )}
-            </button>
-            <p className="text-xs text-muted-foreground text-center px-4">
-              Video player — VdoCipher integration pending
-            </p>
-          </div>
-
-          {/* Video controls bar */}
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[hsl(0,0%,5%)] to-transparent p-4">
-            <div className="mb-2 h-1 w-full rounded-full bg-secondary">
-              <div
-                className="h-full rounded-full bg-foreground transition-all"
-                style={{ width: `${videoProgress}%` }}
-              />
-            </div>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <div className="flex items-center gap-3">
-                <button onClick={handlePlayToggle} className="hover:text-foreground transition-colors">
-                  {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                </button>
-                <button className="hover:text-foreground transition-colors"><SkipBack className="h-4 w-4" /></button>
-                <button className="hover:text-foreground transition-colors"><SkipForward className="h-4 w-4" /></button>
-                <span className="font-mono">{Math.floor(videoProgress * 0.18)}:00 / 18:00</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <button className="hover:text-foreground transition-colors"><Volume2 className="h-4 w-4" /></button>
-                <button className="hover:text-foreground transition-colors"><Settings className="h-4 w-4" /></button>
-                <button className="hover:text-foreground transition-colors"><Maximize className="h-4 w-4" /></button>
-              </div>
-            </div>
-          </div>
+        {/* Content viewer */}
+        <div className="relative">
+          <LessonContentViewer lesson={lesson} courseThumbnail={course.thumbnail_url} />
         </div>
 
         {/* Lesson header */}
@@ -151,128 +79,31 @@ const LessonDetail = () => {
             <div>
               <h1 className="text-lg font-bold text-foreground lg:text-xl">{lesson.title}</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Lesson {currentIndex + 1} of {courseLessons.length} · {lesson.duration}
+                {currentModule && <span>{currentModule.title} · </span>}
+                Lesson {currentIndex + 1} of {sortedLessons.length}
+                {lesson.duration && ` · ${lesson.duration}`}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              {isCompleted && (
-                <Badge className="bg-[hsl(var(--success))]/10 text-[hsl(var(--success))] border-[hsl(var(--success))]/20 text-[10px]">
-                  <CheckCircle2 className="h-3 w-3 mr-1" /> Completed
-                </Badge>
-              )}
-              <Button variant="outline" size="sm" onClick={handleShare} className="gap-1.5">
-                <Share2 className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Share</span>
-              </Button>
+            <Badge variant="secondary" className="text-[10px] capitalize shrink-0">{lesson.type}</Badge>
+          </div>
+
+          {lesson.description && (
+            <p className="text-sm text-muted-foreground mt-3 leading-relaxed">{lesson.description}</p>
+          )}
+        </div>
+
+        {/* Text/content area for non-video lessons shown below the viewer */}
+        {lesson.type !== "video" && lesson.content && (
+          <div className="px-4 py-4 lg:px-6">
+            <div className="rounded-lg border border-border bg-card p-5">
+              <pre className="whitespace-pre-wrap font-body text-sm text-muted-foreground leading-relaxed">
+                {lesson.content}
+              </pre>
             </div>
           </div>
+        )}
 
-          {/* Completion requirements */}
-          <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
-            <span className={`flex items-center gap-1.5 ${videoProgress >= 80 ? "text-[hsl(var(--success))]" : ""}`}>
-              {videoProgress >= 80 ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-              Video {videoProgress}% watched
-            </span>
-            <span className={`flex items-center gap-1.5 ${activitySubmitted ? "text-[hsl(var(--success))]" : ""}`}>
-              {activitySubmitted ? <CheckCircle2 className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
-              Activity {activitySubmitted ? "done" : "pending"}
-            </span>
-          </div>
-        </div>
-
-        {/* Content tabs */}
-        <div className="px-4 py-4 lg:px-6">
-          <Tabs defaultValue="notes" className="space-y-4">
-            <TabsList className="bg-secondary/50 border border-border">
-              <TabsTrigger value="notes">Notes</TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger>
-            </TabsList>
-
-            {/* Tab 1 — Notes */}
-            <TabsContent value="notes">
-              <div className="rounded-lg border border-border bg-card p-5">
-                <h3 className="text-sm font-semibold text-foreground mb-2">Lesson Notes</h3>
-                <pre className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed font-body">{lesson.notes}</pre>
-              </div>
-            </TabsContent>
-
-            {/* Tab 2 — Activity */}
-            <TabsContent value="activity" className="space-y-4">
-              <div className="rounded-lg border border-border bg-card p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  {lesson.microActivity.type === "quiz" && <BarChart3 className="h-4 w-4 text-foreground" />}
-                  {lesson.microActivity.type === "reflection" && <MessageSquare className="h-4 w-4 text-foreground" />}
-                  {lesson.microActivity.type === "upload" && <Upload className="h-4 w-4 text-foreground" />}
-                  {lesson.microActivity.type === "poll" && <BarChart3 className="h-4 w-4 text-foreground" />}
-                  <Badge variant="secondary" className="text-[10px] capitalize">{lesson.microActivity.type}</Badge>
-                </div>
-                <p className="text-sm font-semibold text-foreground mb-4">{lesson.microActivity.prompt}</p>
-
-                {activitySubmitted ? (
-                  <div className="rounded-lg bg-[hsl(var(--success))]/5 border border-[hsl(var(--success))]/20 p-4 text-center">
-                    <CheckCircle2 className="h-6 w-6 text-[hsl(var(--success))] mx-auto mb-2" />
-                    <p className="text-sm font-semibold text-foreground">Activity completed!</p>
-                    <p className="text-xs text-muted-foreground mt-1">Great work on this lesson</p>
-                    <Button variant="outline" size="sm" onClick={handleShare} className="mt-3 gap-1.5">
-                      <Share2 className="h-3.5 w-3.5" />
-                      Share to community?
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    {(lesson.microActivity.type === "quiz" || lesson.microActivity.type === "poll") &&
-                      lesson.microActivity.options && (
-                        <div className="space-y-2 mb-4">
-                          {lesson.microActivity.options.map((opt) => (
-                            <button
-                              key={opt}
-                              onClick={() => setSelectedOption(opt)}
-                              className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${
-                                selectedOption === opt
-                                  ? "border-foreground/40 bg-foreground/5 text-foreground"
-                                  : "border-border bg-secondary/20 text-muted-foreground hover:border-foreground/20"
-                              }`}
-                            >
-                              {opt}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                    {(lesson.microActivity.type === "reflection" || lesson.microActivity.type === "upload") && (
-                      <>
-                        <textarea
-                          value={activityAnswer}
-                          onChange={(e) => setActivityAnswer(e.target.value)}
-                          placeholder={
-                            lesson.microActivity.type === "reflection"
-                              ? "Write your reflection..."
-                              : "Describe your upload or paste a link..."
-                          }
-                          rows={3}
-                          className="mb-2 w-full rounded-lg border border-border bg-secondary/20 p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-foreground/30 focus:outline-none resize-none"
-                        />
-                        {lesson.microActivity.type === "upload" && (
-                          <div className="mb-4 rounded-lg border border-dashed border-border p-4 text-center">
-                            <Upload className="h-6 w-6 text-muted-foreground/40 mx-auto mb-1" />
-                            <p className="text-xs text-muted-foreground">File upload — coming soon</p>
-                          </div>
-                        )}
-                      </>
-                    )}
-
-                    <Button onClick={handleSubmitActivity} className="gap-2">
-                      <Send className="h-4 w-4" />
-                      Submit Activity
-                    </Button>
-                  </>
-                )}
-              </div>
-            </TabsContent>
-          </Tabs>
-        </div>
-
-        {/* Bottom action bar */}
+        {/* Bottom nav */}
         <div className="sticky bottom-0 border-t border-border bg-background/80 backdrop-blur-md px-4 py-3 lg:px-6">
           <div className="flex items-center justify-between gap-3">
             <Button
@@ -283,31 +114,8 @@ const LessonDetail = () => {
               className="gap-1.5"
             >
               <ChevronLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">Previous Lesson</span>
+              <span className="hidden sm:inline">Previous</span>
             </Button>
-
-            {canComplete && !isCompleted ? (
-              <Button onClick={handleMarkComplete} className="gap-2">
-                <Zap className="h-4 w-4" />
-                Mark Complete (+10 XP)
-              </Button>
-            ) : isCompleted ? (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!nextLesson}
-                onClick={() => nextLesson && navigate(`/learn/lesson/${nextLesson.id}`)}
-                className="gap-2"
-              >
-                Next Lesson <ChevronRight className="h-4 w-4" />
-              </Button>
-            ) : (
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">
-                  {videoProgress < 80 ? "Watch 80%+ video" : "Complete the activity"} to unlock
-                </p>
-              </div>
-            )}
 
             <Button
               variant="ghost"
@@ -316,7 +124,7 @@ const LessonDetail = () => {
               onClick={() => nextLesson && navigate(`/learn/lesson/${nextLesson.id}`)}
               className="gap-1.5"
             >
-              <span className="hidden sm:inline">Next Lesson</span>
+              <span className="hidden sm:inline">Next</span>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
