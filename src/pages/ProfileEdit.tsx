@@ -28,9 +28,9 @@ const ProfileEdit = () => {
   const [skills, setSkills] = useState<string[]>(user?.skills ?? []);
   const [skillInput, setSkillInput] = useState("");
   const [availability, setAvailability] = useState(user?.availability ?? "open-to-collaborate");
-  const [instagram, setInstagram] = useState(user?.socialLinks?.instagram ?? "");
-  const [youtube, setYoutube] = useState(user?.socialLinks?.youtube ?? "");
-  const [linkedin, setLinkedin] = useState(user?.socialLinks?.linkedin ?? "");
+  const [instagram, setInstagram] = useState(user?.social_links?.instagram ?? "");
+  const [youtube, setYoutube] = useState(user?.social_links?.youtube ?? "");
+  const [linkedin, setLinkedin] = useState(user?.social_links?.linkedin ?? "");
 
   const toggleRole = (r: string) =>
     setRoles((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : prev.length < 3 ? [...prev, r] : prev));
