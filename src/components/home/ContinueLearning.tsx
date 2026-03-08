@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { courses } from "@/data/mockData";
+import { detailedCourses } from "@/data/learningData";
 import { ArrowRight } from "lucide-react";
 
 const ContinueLearning = () => {
