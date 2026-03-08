@@ -44,7 +44,6 @@ const AppShell = ({ children }: { children: ReactNode }) => {
       <aside className="fixed left-0 top-0 z-40 hidden h-screen w-60 flex-col border-r border-border bg-sidebar lg:flex">
         {/* Logo */}
         <div className="flex h-14 items-center gap-2.5 border-b border-border px-5">
-          <img src={logo} alt="LevelUp Learning" className="h-7 w-7" />
           <span className="text-base font-bold text-foreground">LevelUp Learning</span>
         </div>
 
@@ -121,7 +120,7 @@ const AppShell = ({ children }: { children: ReactNode }) => {
 
           {/* Mobile logo */}
           <div className="flex items-center gap-2 lg:hidden">
-            <img src={logo} alt="LevelUp Learning" className="h-6 w-6" />
+            
             <span className="text-sm font-bold text-foreground">LevelUp Learning</span>
           </div>
 
@@ -153,7 +152,7 @@ const AppShell = ({ children }: { children: ReactNode }) => {
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
           <aside className="absolute left-0 top-0 h-full w-64 border-r border-border bg-sidebar shadow-elevated">
             <div className="flex h-14 items-center gap-2.5 border-b border-border px-5">
-              <img src={logo} alt="LevelUp Learning" className="h-7 w-7" />
+              
               <span className="text-base font-bold text-foreground">LevelUp Learning</span>
             </div>
             <nav className="px-3 py-4 space-y-0.5">
