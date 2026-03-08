@@ -2,6 +2,7 @@ import instructor1 from "@/assets/instructor-1.jpg";
 import instructor2 from "@/assets/instructor-2.jpg";
 import courseEditing from "@/assets/course-editing.jpg";
 import courseCinematography from "@/assets/course-cinematography.jpg";
+import heroFilmmaking from "@/assets/hero-filmmaking.jpg";
 
 // ── Types ──
 
@@ -21,7 +22,7 @@ export interface BatchChannel {
   name: string;
   category: string;
   description: string;
-  isLocked?: boolean; // only mentors/admin can post
+  isLocked?: boolean;
   unreadCount: number;
   isUnread: boolean;
 }
@@ -39,6 +40,7 @@ export interface BatchMessage {
   authorId: string;
   content: string;
   timestamp: string;
+  dateGroup: string; // "Today", "Yesterday", "March 5"
   isPinned?: boolean;
   reactions: { emoji: string; count: number; reacted: boolean }[];
   threadReplies: ThreadReply[];
@@ -60,9 +62,11 @@ export interface BatchCohort {
   messages: BatchMessage[];
 }
 
-// ── Members ──
+// ══════════════════════════════════════════════
+// BATCH 1: Video Editing Academy — Batch 4
+// ══════════════════════════════════════════════
 
-const members: BatchMember[] = [
+const veMembers: BatchMember[] = [
   { id: "m-mentor", name: "Avinash", avatar: instructor1, role: "mentor", level: 10, isOnline: true },
   { id: "m-ta", name: "Devansh", avatar: instructor2, role: "ta", level: 8, isOnline: true },
   { id: "m-1", name: "Aarav Patel", avatar: instructor1, role: "student", level: 4, isOnline: true },
@@ -92,280 +96,404 @@ const members: BatchMember[] = [
   { id: "m-25", name: "Deepak Rathi", avatar: instructor1, role: "student", level: 2, isOnline: false },
 ];
 
-// ── Channels ──
-
-const channels: BatchChannel[] = [
-  // GENERAL
-  { id: "announcements", name: "announcements", category: "GENERAL", description: "Official updates from mentors and TAs", isLocked: true, unreadCount: 2, isUnread: true },
-  { id: "general-chat", name: "general-chat", category: "GENERAL", description: "Open discussion for the batch", unreadCount: 5, isUnread: true },
-  { id: "introductions", name: "introductions", category: "GENERAL", description: "Introduce yourself to the batch!", unreadCount: 0, isUnread: false },
-  // LEARNING
-  { id: "session-links", name: "session-links", category: "LEARNING", description: "Live session links and recordings", unreadCount: 1, isUnread: true },
-  { id: "resources", name: "resources", category: "LEARNING", description: "Shared resources, tools, and references", unreadCount: 0, isUnread: false },
-  { id: "assignments", name: "assignments", category: "LEARNING", description: "Assignment briefs and submissions", unreadCount: 3, isUnread: true },
-  { id: "doubts-and-questions", name: "doubts-and-questions", category: "LEARNING", description: "Ask anything about the course material", unreadCount: 2, isUnread: true },
-  // SHOWCASE
-  { id: "project-showcase", name: "project-showcase", category: "SHOWCASE", description: "Share your finished projects", unreadCount: 0, isUnread: false },
-  { id: "work-in-progress", name: "work-in-progress", category: "SHOWCASE", description: "Get early feedback on ongoing work", unreadCount: 0, isUnread: false },
-  { id: "feedback-requests", name: "feedback-requests", category: "SHOWCASE", description: "Request specific feedback from peers", unreadCount: 0, isUnread: false },
-  // SOCIAL
-  { id: "off-topic", name: "off-topic", category: "SOCIAL", description: "Memes, random chats, and fun", unreadCount: 4, isUnread: true },
-  { id: "collabs", name: "collabs", category: "SOCIAL", description: "Find collaborators for projects", unreadCount: 0, isUnread: false },
-  { id: "wins", name: "wins", category: "SOCIAL", description: "Celebrate your wins, big or small! 🎉", unreadCount: 1, isUnread: true },
+const veChannels: BatchChannel[] = [
+  { id: "ve-announcements", name: "announcements", category: "GENERAL", description: "Official updates from mentors and TAs", isLocked: true, unreadCount: 2, isUnread: true },
+  { id: "ve-general-chat", name: "general-chat", category: "GENERAL", description: "Open discussion for the batch", unreadCount: 5, isUnread: true },
+  { id: "ve-introductions", name: "introductions", category: "GENERAL", description: "Introduce yourself to the batch!", unreadCount: 0, isUnread: false },
+  { id: "ve-session-links", name: "session-links", category: "LEARNING", description: "Live session links and recordings", unreadCount: 1, isUnread: true },
+  { id: "ve-resources", name: "resources", category: "LEARNING", description: "Shared resources, tools, and references", unreadCount: 0, isUnread: false },
+  { id: "ve-assignments", name: "assignments", category: "LEARNING", description: "Assignment briefs and submissions", unreadCount: 3, isUnread: true },
+  { id: "ve-doubts-and-questions", name: "doubts-and-questions", category: "LEARNING", description: "Ask anything about the course material", unreadCount: 2, isUnread: true },
+  { id: "ve-project-showcase", name: "project-showcase", category: "SHOWCASE", description: "Share your finished projects", unreadCount: 0, isUnread: false },
+  { id: "ve-work-in-progress", name: "work-in-progress", category: "SHOWCASE", description: "Get early feedback on ongoing work", unreadCount: 0, isUnread: false },
+  { id: "ve-feedback-requests", name: "feedback-requests", category: "SHOWCASE", description: "Request specific feedback from peers", unreadCount: 0, isUnread: false },
+  { id: "ve-off-topic", name: "off-topic", category: "SOCIAL", description: "Memes, random chats, and fun", unreadCount: 4, isUnread: true },
+  { id: "ve-collabs", name: "collabs", category: "SOCIAL", description: "Find collaborators for projects", unreadCount: 0, isUnread: false },
+  { id: "ve-wins", name: "wins", category: "SOCIAL", description: "Celebrate your wins, big or small! 🎉", unreadCount: 1, isUnread: true },
 ];
 
-// ── Messages ──
-
-const messages: BatchMessage[] = [
-  // #announcements
+const veMessages: BatchMessage[] = [
+  // ── #announcements (3 messages, 2 pinned) ──
   {
-    id: "msg-1",
-    channelId: "announcements",
-    authorId: "m-mentor",
-    content: "📋 Week 4 Schedule:\n\nMonday — Color Theory Basics (7 PM)\nWednesday — DaVinci Resolve Workshop (7 PM)\nFriday — Assignment Review Session (6 PM)\n\nAll sessions are mandatory. Recordings will be available in #session-links within 24hrs.",
-    timestamp: "Today at 10:30 AM",
-    isPinned: true,
+    id: "ve-msg-1", channelId: "ve-announcements", authorId: "m-mentor", dateGroup: "Today",
+    content: "📋 **Week 6 Schedule:**\n\nMonday — Sound Design Fundamentals (7 PM)\nWednesday — Foley Recording Workshop (7 PM)\nFriday — Assignment 5 Review Session (6 PM)\n\nAll sessions are mandatory. Recordings available in #session-links within 24hrs.",
+    timestamp: "10:30 AM", isPinned: true,
     reactions: [{ emoji: "👍", count: 18, reacted: false }, { emoji: "🔥", count: 7, reacted: true }],
     threadReplies: [],
   },
   {
-    id: "msg-2",
-    channelId: "announcements",
-    authorId: "m-ta",
-    content: "⚠️ Assignment 3 deadline extended to Sunday 11:59 PM. Please submit your color-graded edits in #assignments. Late submissions won't be reviewed in the live session.",
-    timestamp: "Yesterday at 2:15 PM",
-    isPinned: true,
+    id: "ve-msg-2", channelId: "ve-announcements", authorId: "m-ta", dateGroup: "Yesterday",
+    content: "⚠️ **Assignment 4 deadline:** Sunday 11:59 PM. Submit your sound-mixed edits in #assignments. Late submissions won't be reviewed in the live session.\n\nReminder: include both the project file AND exported MP4.",
+    timestamp: "2:15 PM", isPinned: true,
     reactions: [{ emoji: "👍", count: 22, reacted: true }, { emoji: "💯", count: 5, reacted: false }],
     threadReplies: [],
   },
   {
-    id: "msg-3",
-    channelId: "announcements",
-    authorId: "m-mentor",
-    content: "Great work on the Week 3 projects everyone! Special shoutout to Aarav, Priya, and Meera for exceptional color grading work. Keep pushing yourselves! 💪",
-    timestamp: "2 days ago",
+    id: "ve-msg-3", channelId: "ve-announcements", authorId: "m-mentor", dateGroup: "March 5",
+    content: "Great work on the Week 5 projects everyone! Special shoutout to Aarav, Priya, and Meera for exceptional audio work. The foley in Arjun's documentary was chef's kiss 💪",
+    timestamp: "4:00 PM",
     reactions: [{ emoji: "❤️", count: 15, reacted: false }, { emoji: "🔥", count: 9, reacted: false }],
     threadReplies: [],
   },
 
-  // #general-chat
+  // ── #general-chat (8 messages, 1 thread with 4 replies) ──
   {
-    id: "msg-4",
-    channelId: "general-chat",
-    authorId: "m-5",
+    id: "ve-msg-4", channelId: "ve-general-chat", authorId: "m-5", dateGroup: "Today",
     content: "Has anyone tried the new Premiere Pro update? The AI-assisted editing tools are pretty wild",
-    timestamp: "Today at 11:45 AM",
+    timestamp: "11:45 AM",
     reactions: [{ emoji: "👍", count: 4, reacted: false }],
     threadReplies: [
-      { id: "tr-1", authorId: "m-7", content: "Yeah, the scene detection is way better now. Saved me hours on my last project!", timestamp: "Today at 11:52 AM" },
-      { id: "tr-2", authorId: "m-3", content: "I'm still team DaVinci Resolve tbh. The free version has everything I need 😄", timestamp: "Today at 12:05 PM" },
-      { id: "tr-3", authorId: "m-mentor", content: "Both are great tools. We'll cover Resolve's AI features in next week's session. Premiere's scene edit detection is excellent for rough cuts though.", timestamp: "Today at 12:18 PM" },
+      { id: "ve-tr-1", authorId: "m-7", content: "Yeah, the scene detection is way better now. Saved me hours on my last project!", timestamp: "11:52 AM" },
+      { id: "ve-tr-2", authorId: "m-3", content: "I'm still team DaVinci Resolve tbh. The free version has everything I need 😄", timestamp: "12:05 PM" },
+      { id: "ve-tr-3", authorId: "m-mentor", content: "Both are great tools. We'll cover Resolve's AI features in next week's session. Premiere's scene edit detection is excellent for rough cuts though.", timestamp: "12:18 PM" },
+      { id: "ve-tr-4", authorId: "m-13", content: "Has anyone tried CapCut Pro for quick social media edits? Surprisingly powerful for the price.", timestamp: "12:30 PM" },
     ],
   },
   {
-    id: "msg-5",
-    channelId: "general-chat",
-    authorId: "m-10",
+    id: "ve-msg-5", channelId: "ve-general-chat", authorId: "m-10", dateGroup: "Today",
     content: "Just finished watching the recording of Wednesday's session. The part about match cuts blew my mind 🤯",
-    timestamp: "Today at 10:20 AM",
+    timestamp: "10:20 AM",
     reactions: [{ emoji: "🔥", count: 6, reacted: false }, { emoji: "💯", count: 3, reacted: false }],
     threadReplies: [],
   },
   {
-    id: "msg-6",
-    channelId: "general-chat",
-    authorId: "m-ta",
+    id: "ve-msg-6", channelId: "ve-general-chat", authorId: "m-ta", dateGroup: "Today",
     content: "Quick reminder: if you're having trouble with DaVinci crashing on export, make sure you're using the latest driver for your GPU. I've added a troubleshooting guide in #resources 🛠️",
-    timestamp: "Today at 9:00 AM",
+    timestamp: "9:00 AM",
     reactions: [{ emoji: "👍", count: 11, reacted: true }],
     threadReplies: [],
   },
   {
-    id: "msg-7",
-    channelId: "general-chat",
-    authorId: "m-1",
-    content: "Who else is staying up late working on Assignment 3? The color grading rabbit hole is real 😅",
-    timestamp: "Yesterday at 11:30 PM",
+    id: "ve-msg-7", channelId: "ve-general-chat", authorId: "m-1", dateGroup: "Yesterday",
+    content: "Who else is staying up late working on Assignment 4? The sound mixing rabbit hole is real 😅",
+    timestamp: "11:30 PM",
     reactions: [{ emoji: "😂", count: 14, reacted: true }, { emoji: "💯", count: 8, reacted: false }],
     threadReplies: [],
   },
-
-  // #session-links
   {
-    id: "msg-8",
-    channelId: "session-links",
-    authorId: "m-ta",
-    content: "🔴 LIVE NOW — Week 4, Session 1: Color Theory Basics",
-    timestamp: "Today at 6:55 PM",
-    reactions: [{ emoji: "🔥", count: 12, reacted: false }],
+    id: "ve-msg-8", channelId: "ve-general-chat", authorId: "m-24", dateGroup: "Yesterday",
+    content: "Anyone else's ears ringing after 6 hours of audio editing? 😂 Need to invest in better monitoring headphones.",
+    timestamp: "9:15 PM",
+    reactions: [{ emoji: "😂", count: 9, reacted: false }],
     threadReplies: [],
-    link: { url: "https://zoom.us/j/example", label: "Join Session" },
   },
   {
-    id: "msg-9",
-    channelId: "session-links",
-    authorId: "m-ta",
-    content: "Week 3 Session 3 recording is now available. Topic: Advanced Cutting Techniques.",
-    timestamp: "Yesterday at 9:00 AM",
+    id: "ve-msg-8b", channelId: "ve-general-chat", authorId: "m-7", dateGroup: "Yesterday",
+    content: "Pro tip: Audio-Technica ATH-M50x are the sweet spot for editing. Flat response, comfortable, and under ₹12K.",
+    timestamp: "9:25 PM",
+    reactions: [{ emoji: "👍", count: 7, reacted: false }],
+    threadReplies: [],
+    link: { url: "https://amazon.in/audio-technica-m50x", label: "View on Amazon" },
+  },
+  {
+    id: "ve-msg-8c", channelId: "ve-general-chat", authorId: "m-16", dateGroup: "March 5",
+    content: "Just realized we're already in Week 6. Time flies when you're having fun (and pulling all-nighters editing) 🎬",
+    timestamp: "7:00 PM",
+    reactions: [{ emoji: "❤️", count: 12, reacted: false }, { emoji: "🔥", count: 5, reacted: false }],
+    threadReplies: [],
+  },
+  {
+    id: "ve-msg-8d", channelId: "ve-general-chat", authorId: "m-mentor", dateGroup: "March 5",
+    content: "Proud of every single one of you. The growth I've seen from Week 1 to now is incredible. Keep pushing! 💪",
+    timestamp: "5:30 PM",
+    reactions: [{ emoji: "❤️", count: 24, reacted: true }, { emoji: "🔥", count: 11, reacted: false }],
+    threadReplies: [],
+  },
+
+  // ── #session-links (2 messages with styled links) ──
+  {
+    id: "ve-msg-9", channelId: "ve-session-links", authorId: "m-ta", dateGroup: "Today",
+    content: "🔴 LIVE NOW — Week 6, Session 1: Sound Design Fundamentals",
+    timestamp: "6:55 PM",
+    reactions: [{ emoji: "🔥", count: 12, reacted: false }],
+    threadReplies: [],
+    link: { url: "https://zoom.us/j/example", label: "Join Session — Sat 3 PM" },
+  },
+  {
+    id: "ve-msg-10", channelId: "ve-session-links", authorId: "m-ta", dateGroup: "Yesterday",
+    content: "Week 5 Session 3 recording is now available. Topic: Advanced Audio Mixing Techniques.",
+    timestamp: "9:00 AM",
     reactions: [{ emoji: "👍", count: 8, reacted: false }],
     threadReplies: [],
     link: { url: "#", label: "Watch Recording" },
   },
 
-  // #assignments
+  // ── #assignments (3 messages with attachments) ──
   {
-    id: "msg-10",
-    channelId: "assignments",
-    authorId: "m-mentor",
-    content: "📝 Assignment 3: Color Grade Challenge\n\nDownload the raw footage from the link below. Apply three different color grades:\n1. Warm cinematic look\n2. Cool thriller tone\n3. Your own creative grade\n\nSubmit your DaVinci Resolve project file + exported MP4s. Deadline: Sunday 11:59 PM.",
-    timestamp: "3 days ago",
-    isPinned: true,
+    id: "ve-msg-11", channelId: "ve-assignments", authorId: "m-mentor", dateGroup: "March 5",
+    content: "📝 **Assignment 4: Sound Design Challenge**\n\nDownload the silent footage from the link below. Add:\n1. Dialogue cleanup and EQ\n2. Foley sound effects\n3. Ambient soundscape\n4. Music bed (royalty-free)\n\nSubmit DaVinci project file + exported MP4. Deadline: Sunday 11:59 PM.",
+    timestamp: "10:00 AM", isPinned: true,
     reactions: [{ emoji: "👍", count: 20, reacted: true }],
     threadReplies: [],
-    attachment: { name: "Assignment3_RawFootage.zip", size: "450 MB" },
+    attachment: { name: "Assignment4_SilentFootage.zip", size: "380 MB" },
   },
   {
-    id: "msg-11",
-    channelId: "assignments",
-    authorId: "m-3",
-    content: "Submitting my Assignment 3! Really enjoyed the creative grade part — went for a Wes Anderson-inspired palette 🎨",
-    timestamp: "Today at 3:00 PM",
+    id: "ve-msg-12", channelId: "ve-assignments", authorId: "m-ta", dateGroup: "March 4",
+    content: "📋 **Assignment 3 Results are out!**\n\nScores have been shared individually via email. Top 3 submissions:\n🥇 Priya Sharma — 94/100\n🥈 Arjun Nair — 91/100\n🥉 Meera Joshi — 89/100\n\nGreat work everyone!",
+    timestamp: "3:00 PM",
+    reactions: [{ emoji: "🔥", count: 18, reacted: false }, { emoji: "❤️", count: 12, reacted: false }],
+    threadReplies: [],
+    attachment: { name: "Assignment3_Feedback.pdf", size: "2.4 MB" },
+  },
+  {
+    id: "ve-msg-13", channelId: "ve-assignments", authorId: "m-3", dateGroup: "Today",
+    content: "Submitting my Assignment 4! The foley work was so much fun — recorded actual kitchen sounds for the cooking scene 🎨🔊",
+    timestamp: "3:00 PM",
     reactions: [{ emoji: "❤️", count: 8, reacted: false }, { emoji: "🔥", count: 5, reacted: false }],
     threadReplies: [],
     image: courseCinematography,
   },
 
-  // #project-showcase
+  // ── #project-showcase (4 messages with images, high reactions) ──
   {
-    id: "msg-12",
-    channelId: "project-showcase",
-    authorId: "m-7",
-    content: "Just wrapped my short documentary about street food vendors in Old Delhi. 3 weeks of shooting, 2 weeks of editing. Would love your honest feedback! 🎬",
-    timestamp: "Yesterday at 4:30 PM",
+    id: "ve-msg-14", channelId: "ve-project-showcase", authorId: "m-7", dateGroup: "Today",
+    content: "Just wrapped my short documentary about street food vendors in Old Delhi. 3 weeks of shooting, 2 weeks of editing. Would love your honest feedback! 🎬\n\nThe sound design was all done using techniques from Week 5.",
+    timestamp: "4:30 PM",
     reactions: [{ emoji: "🔥", count: 24, reacted: true }, { emoji: "❤️", count: 18, reacted: false }, { emoji: "💯", count: 9, reacted: false }],
     threadReplies: [
-      { id: "tr-4", authorId: "m-mentor", content: "Incredible work, Arjun! The pacing in the first act is perfect. One note: the audio levels dip around the 4-minute mark. Otherwise, festival-ready quality.", timestamp: "Yesterday at 5:15 PM" },
-      { id: "tr-5", authorId: "m-10", content: "This is so good! The color grading is gorgeous. What LUT did you use as a base?", timestamp: "Yesterday at 5:45 PM" },
+      { id: "ve-tr-5", authorId: "m-mentor", content: "Incredible work, Arjun! The pacing in the first act is perfect. The foley is natural — doesn't feel forced at all. Festival-ready quality.", timestamp: "5:15 PM" },
+      { id: "ve-tr-6", authorId: "m-10", content: "This is so good! The ambient sounds really pull you into the scene. What mic setup did you use?", timestamp: "5:45 PM" },
     ],
     image: courseEditing,
   },
   {
-    id: "msg-13",
-    channelId: "project-showcase",
-    authorId: "m-16",
-    content: "My first ever music video edit! 🎵 Shot on iPhone, edited in DaVinci. Far from perfect but I'm proud of the progress since week 1.",
-    timestamp: "2 days ago",
+    id: "ve-msg-15", channelId: "ve-project-showcase", authorId: "m-16", dateGroup: "Yesterday",
+    content: "My first ever music video edit! 🎵 Shot on iPhone, edited in DaVinci. The beat sync technique Avinash taught us was a game changer.",
+    timestamp: "2:00 PM",
     reactions: [{ emoji: "❤️", count: 31, reacted: true }, { emoji: "🔥", count: 14, reacted: false }],
     threadReplies: [],
     image: courseCinematography,
   },
-
-  // #doubts-and-questions
   {
-    id: "msg-14",
-    channelId: "doubts-and-questions",
-    authorId: "m-8",
-    content: "How do I fix flickering when I apply a power window in DaVinci Resolve? It's fine in the viewer but flickers on export.",
-    timestamp: "Today at 1:30 PM",
-    reactions: [],
-    threadReplies: [
-      { id: "tr-6", authorId: "m-ta", content: "Try increasing the softness on your power window edges, and make sure you're not keyframing too aggressively. Also check your render cache — set it to Smart mode.", timestamp: "Today at 1:45 PM" },
-    ],
+    id: "ve-msg-16", channelId: "ve-project-showcase", authorId: "m-1", dateGroup: "Yesterday",
+    content: "Wedding highlight reel for my first paid client! 4 minutes, shot across 2 days. Feedback welcome 🙏",
+    timestamp: "11:00 AM",
+    reactions: [{ emoji: "🔥", count: 19, reacted: false }, { emoji: "❤️", count: 15, reacted: false }, { emoji: "💯", count: 7, reacted: false }],
+    threadReplies: [],
+    image: heroFilmmaking,
+  },
+  {
+    id: "ve-msg-17", channelId: "ve-project-showcase", authorId: "m-22", dateGroup: "March 5",
+    content: "Travel montage from my Rajasthan trip. Tried the invisible cut technique from Session 4 — let me know if you can spot them! 😄",
+    timestamp: "6:00 PM",
+    reactions: [{ emoji: "🔥", count: 11, reacted: false }, { emoji: "👍", count: 8, reacted: false }],
+    threadReplies: [],
+    image: courseCinematography,
   },
 
-  // #off-topic
+  // ── #off-topic (5 messages, casual, emoji reactions) ──
   {
-    id: "msg-15",
-    channelId: "off-topic",
-    authorId: "m-13",
+    id: "ve-msg-18", channelId: "ve-off-topic", authorId: "m-13", dateGroup: "Today",
     content: "Just watched Lokesh Kanagaraj's latest — the editing in the climax is INSANE. How does Anthony cut like that?! 🤯",
-    timestamp: "Today at 8:30 AM",
+    timestamp: "8:30 AM",
     reactions: [{ emoji: "🔥", count: 16, reacted: false }, { emoji: "💯", count: 8, reacted: true }],
     threadReplies: [],
   },
   {
-    id: "msg-16",
-    channelId: "off-topic",
-    authorId: "m-6",
+    id: "ve-msg-19", channelId: "ve-off-topic", authorId: "m-6", dateGroup: "Yesterday",
     content: "Unpopular opinion: vertical video is perfectly fine for storytelling. Fight me 😂",
-    timestamp: "Yesterday at 9:00 PM",
+    timestamp: "9:00 PM",
     reactions: [{ emoji: "😂", count: 12, reacted: false }, { emoji: "👍", count: 4, reacted: false }],
     threadReplies: [],
   },
-
-  // #wins
   {
-    id: "msg-17",
-    channelId: "wins",
-    authorId: "m-1",
+    id: "ve-msg-20", channelId: "ve-off-topic", authorId: "m-11", dateGroup: "Yesterday",
+    content: "Just realized I've spent more time organizing my footage library than actually editing this week 📁😅",
+    timestamp: "4:30 PM",
+    reactions: [{ emoji: "😂", count: 18, reacted: true }, { emoji: "💯", count: 6, reacted: false }],
+    threadReplies: [],
+  },
+  {
+    id: "ve-msg-21", channelId: "ve-off-topic", authorId: "m-20", dateGroup: "March 5",
+    content: "Anyone else dream in timelines? I literally saw a J-cut in my sleep last night 😭",
+    timestamp: "10:00 PM",
+    reactions: [{ emoji: "😂", count: 22, reacted: false }, { emoji: "❤️", count: 5, reacted: false }],
+    threadReplies: [],
+  },
+  {
+    id: "ve-msg-22", channelId: "ve-off-topic", authorId: "m-9", dateGroup: "March 4",
+    content: "Mumbai editors meetup this Saturday at Versova! DM me if you're in. Coffee's on me ☕",
+    timestamp: "6:00 PM",
+    reactions: [{ emoji: "🔥", count: 8, reacted: false }, { emoji: "👍", count: 6, reacted: false }],
+    threadReplies: [],
+  },
+
+  // ── #wins ──
+  {
+    id: "ve-msg-23", channelId: "ve-wins", authorId: "m-1", dateGroup: "Today",
     content: "Got my first paid editing gig through a connection I made HERE in this batch! ₹15,000 for a wedding highlight reel. Thank you Batch 4 fam! 🎉🎊",
-    timestamp: "Today at 2:00 PM",
+    timestamp: "2:00 PM",
     reactions: [{ emoji: "🔥", count: 25, reacted: true }, { emoji: "❤️", count: 19, reacted: false }, { emoji: "💯", count: 12, reacted: false }],
     threadReplies: [],
   },
 
-  // #introductions
+  // ── #introductions ──
   {
-    id: "msg-18",
-    channelId: "introductions",
-    authorId: "m-mentor",
-    content: "Welcome to Video Editing Academy — Batch 4! 🎬\n\nI'm Avinash, your lead mentor. I've been editing professionally for 12 years, working on feature films, documentaries, and brand content. Excited to guide you all through this journey!\n\nDrop your intro below — tell us your name, where you're from, and what got you into video editing.",
-    timestamp: "2 weeks ago",
-    isPinned: true,
+    id: "ve-msg-24", channelId: "ve-introductions", authorId: "m-mentor", dateGroup: "February 20",
+    content: "Welcome to Video Editing Academy — Batch 4! 🎬\n\nI'm Avinash, your lead mentor. I've been editing professionally for 12 years, working on feature films, documentaries, and brand content.\n\nDrop your intro below — tell us your name, where you're from, and what got you into video editing.",
+    timestamp: "10:00 AM", isPinned: true,
     reactions: [{ emoji: "❤️", count: 27, reacted: true }, { emoji: "🔥", count: 15, reacted: false }],
     threadReplies: [],
   },
-
-  // #resources
   {
-    id: "msg-19",
-    channelId: "resources",
-    authorId: "m-ta",
-    content: "📚 Essential resources for this week:\n\n• DaVinci Resolve Color Grading Guide (PDF attached)\n• Free LUT pack — 25 cinematic looks\n• GPU troubleshooting guide for Windows/Mac",
-    timestamp: "3 days ago",
-    reactions: [{ emoji: "👍", count: 16, reacted: false }],
+    id: "ve-msg-25", channelId: "ve-introductions", authorId: "m-1", dateGroup: "February 20",
+    content: "Hey everyone! I'm Aarav from Pune. Started editing vlogs for fun and now I want to go professional. Excited to learn from all of you! 🙌",
+    timestamp: "11:30 AM",
+    reactions: [{ emoji: "👍", count: 8, reacted: false }],
     threadReplies: [],
-    attachment: { name: "Week4_Resources.zip", size: "120 MB" },
   },
 
-  // #collabs
+  // ── #resources ──
   {
-    id: "msg-20",
-    channelId: "collabs",
-    authorId: "m-9",
+    id: "ve-msg-26", channelId: "ve-resources", authorId: "m-ta", dateGroup: "March 5",
+    content: "📚 Essential resources for Week 6:\n\n• Sound Design for Film — Free PDF Guide\n• Royalty-free SFX library (10,000+ sounds)\n• Recommended monitoring headphones list",
+    timestamp: "9:00 AM",
+    reactions: [{ emoji: "👍", count: 16, reacted: false }],
+    threadReplies: [],
+    attachment: { name: "Week6_SoundResources.zip", size: "85 MB" },
+  },
+
+  // ── #doubts-and-questions ──
+  {
+    id: "ve-msg-27", channelId: "ve-doubts-and-questions", authorId: "m-8", dateGroup: "Today",
+    content: "How do I reduce room echo in dialogue recordings without making it sound robotic? Using DaVinci Fairlight.",
+    timestamp: "1:30 PM",
+    reactions: [],
+    threadReplies: [
+      { id: "ve-tr-7", authorId: "m-ta", content: "Use the De-Reverb plugin in Fairlight — start with a light setting (around 30%) and increase gradually. Also try the Noise Gate to cut silence between dialogue.", timestamp: "1:45 PM" },
+    ],
+  },
+  {
+    id: "ve-msg-28", channelId: "ve-doubts-and-questions", authorId: "m-14", dateGroup: "Yesterday",
+    content: "What's the best way to sync external audio with camera audio? I'm using a Zoom H6 recorder.",
+    timestamp: "3:00 PM",
+    reactions: [{ emoji: "👍", count: 3, reacted: false }],
+    threadReplies: [
+      { id: "ve-tr-8", authorId: "m-mentor", content: "Use DaVinci's auto-sync feature: select both clips → right-click → Auto Align. Works based on waveform matching. For best results, always clap at the start of each take!", timestamp: "3:20 PM" },
+    ],
+  },
+
+  // ── #collabs ──
+  {
+    id: "ve-msg-29", channelId: "ve-collabs", authorId: "m-9", dateGroup: "Yesterday",
     content: "Looking for a sound designer for my short film project. It's a 7-min drama, already picture-locked. Anyone interested? 🎧",
-    timestamp: "Yesterday at 6:00 PM",
+    timestamp: "6:00 PM",
     reactions: [{ emoji: "👍", count: 3, reacted: false }],
     threadReplies: [],
   },
 
-  // #feedback-requests
+  // ── #feedback-requests ──
   {
-    id: "msg-21",
-    channelId: "feedback-requests",
-    authorId: "m-4",
-    content: "Can someone review my rough cut before I submit? It's a 3-min edit, I'm specifically struggling with the transition at 1:24. Link in thread 👇",
-    timestamp: "Today at 4:00 PM",
+    id: "ve-msg-30", channelId: "ve-feedback-requests", authorId: "m-4", dateGroup: "Today",
+    content: "Can someone review my rough cut before I submit? It's a 3-min edit, I'm specifically struggling with the audio transition at 1:24. Link in thread 👇",
+    timestamp: "4:00 PM",
     reactions: [{ emoji: "👍", count: 5, reacted: false }],
     threadReplies: [
-      { id: "tr-7", authorId: "m-7", content: "Just watched it — the J-cut at 1:24 feels a bit jarring. Try extending the audio from the next scene by half a second before the visual cut.", timestamp: "Today at 4:20 PM" },
+      { id: "ve-tr-9", authorId: "m-7", content: "Just watched it — the audio crossfade at 1:24 is too abrupt. Try a 0.5s exponential fade instead of linear. Also, the ambient bed drops out completely.", timestamp: "4:20 PM" },
     ],
   },
 
-  // #work-in-progress
+  // ── #work-in-progress ──
   {
-    id: "msg-22",
-    channelId: "work-in-progress",
-    authorId: "m-20",
-    content: "Working on a travel edit from my recent Goa trip. Still rough but the color grade is coming together nicely 🌊",
-    timestamp: "Yesterday at 3:00 PM",
+    id: "ve-msg-31", channelId: "ve-work-in-progress", authorId: "m-20", dateGroup: "Yesterday",
+    content: "Working on a travel edit from my recent Goa trip. Still rough but the color grade and sound design are coming together nicely 🌊",
+    timestamp: "3:00 PM",
     reactions: [{ emoji: "🔥", count: 8, reacted: false }, { emoji: "❤️", count: 6, reacted: false }],
     threadReplies: [],
     image: courseCinematography,
   },
 ];
 
-// ── Cohort export ──
+
+// ══════════════════════════════════════════════
+// BATCH 2: Filmmaking Intensive — Batch 2
+// ══════════════════════════════════════════════
+
+const fmMembers: BatchMember[] = [
+  { id: "fm-mentor", name: "Raghav", avatar: instructor1, role: "mentor", level: 10, isOnline: true },
+  { id: "fm-1", name: "Aisha Khan", avatar: instructor2, role: "student", level: 3, isOnline: true },
+  { id: "fm-2", name: "Siddharth Nair", avatar: instructor1, role: "student", level: 4, isOnline: false },
+  { id: "fm-3", name: "Lakshmi Iyer", avatar: instructor2, role: "student", level: 2, isOnline: true },
+  { id: "fm-4", name: "Rajesh Pillai", avatar: instructor1, role: "student", level: 5, isOnline: false },
+  { id: "fm-5", name: "Tanya Verma", avatar: instructor2, role: "student", level: 3, isOnline: false },
+  { id: "fm-6", name: "Manish Gupta", avatar: instructor1, role: "student", level: 2, isOnline: true },
+  { id: "fm-7", name: "Neha Sharma", avatar: instructor2, role: "student", level: 4, isOnline: false },
+  { id: "fm-8", name: "Pranav Desai", avatar: instructor1, role: "student", level: 3, isOnline: false },
+  { id: "fm-9", name: "Swati Reddy", avatar: instructor2, role: "student", level: 2, isOnline: true },
+  { id: "fm-10", name: "Gaurav Mehta", avatar: instructor1, role: "student", level: 3, isOnline: false },
+  { id: "fm-11", name: "Roshni Kapoor", avatar: instructor2, role: "student", level: 4, isOnline: false },
+  { id: "fm-12", name: "Ankit Joshi", avatar: instructor1, role: "student", level: 2, isOnline: false },
+  { id: "fm-13", name: "Pallavi Das", avatar: instructor2, role: "student", level: 3, isOnline: true },
+  { id: "fm-14", name: "Vishal Thakkar", avatar: instructor1, role: "student", level: 2, isOnline: false },
+];
+
+const fmChannels: BatchChannel[] = [
+  { id: "fm-announcements", name: "announcements", category: "GENERAL", description: "Official updates from the mentor", isLocked: true, unreadCount: 1, isUnread: true },
+  { id: "fm-general-chat", name: "general-chat", category: "GENERAL", description: "Open discussion", unreadCount: 3, isUnread: true },
+  { id: "fm-introductions", name: "introductions", category: "GENERAL", description: "Introduce yourself!", unreadCount: 0, isUnread: false },
+  { id: "fm-session-links", name: "session-links", category: "LEARNING", description: "Session links and recordings", unreadCount: 1, isUnread: true },
+  { id: "fm-assignments", name: "assignments", category: "LEARNING", description: "Assignment briefs", unreadCount: 0, isUnread: false },
+  { id: "fm-project-showcase", name: "project-showcase", category: "SHOWCASE", description: "Share your projects", unreadCount: 0, isUnread: false },
+  { id: "fm-off-topic", name: "off-topic", category: "SOCIAL", description: "Off-topic fun", unreadCount: 0, isUnread: false },
+];
+
+const fmMessages: BatchMessage[] = [
+  {
+    id: "fm-msg-1", channelId: "fm-announcements", authorId: "fm-mentor", dateGroup: "Today",
+    content: "📋 **Week 3 Update:**\n\nWe'll be covering pre-production planning this week. Come prepared with your short film concepts!\n\nSaturday — Storyboarding Workshop (4 PM)\nSunday — Script Table Read (5 PM)",
+    timestamp: "9:00 AM", isPinned: true,
+    reactions: [{ emoji: "👍", count: 11, reacted: false }, { emoji: "🔥", count: 4, reacted: false }],
+    threadReplies: [],
+  },
+  {
+    id: "fm-msg-2", channelId: "fm-general-chat", authorId: "fm-1", dateGroup: "Today",
+    content: "Super excited for the storyboarding workshop! I've been sketching out my concept all week 🎨",
+    timestamp: "10:30 AM",
+    reactions: [{ emoji: "🔥", count: 5, reacted: false }],
+    threadReplies: [],
+  },
+  {
+    id: "fm-msg-3", channelId: "fm-general-chat", authorId: "fm-mentor", dateGroup: "Today",
+    content: "Quick tip: for your storyboards, focus on camera angles and movement. Don't worry about artistic quality — stick figures are totally fine! The goal is shot planning.",
+    timestamp: "11:00 AM",
+    reactions: [{ emoji: "👍", count: 8, reacted: false }, { emoji: "💯", count: 3, reacted: false }],
+    threadReplies: [],
+  },
+  {
+    id: "fm-msg-4", channelId: "fm-general-chat", authorId: "fm-4", dateGroup: "Yesterday",
+    content: "Just watched the Kurosawa analysis video Raghav shared. The way he uses weather as a narrative device is brilliant.",
+    timestamp: "7:00 PM",
+    reactions: [{ emoji: "❤️", count: 6, reacted: false }],
+    threadReplies: [],
+  },
+  {
+    id: "fm-msg-5", channelId: "fm-session-links", authorId: "fm-mentor", dateGroup: "Today",
+    content: "🔴 Join today's session: Storyboarding Workshop",
+    timestamp: "3:50 PM",
+    reactions: [{ emoji: "🔥", count: 7, reacted: false }],
+    threadReplies: [],
+    link: { url: "https://zoom.us/j/filmmaking", label: "Join Session — Sat 4 PM" },
+  },
+  {
+    id: "fm-msg-6", channelId: "fm-assignments", authorId: "fm-mentor", dateGroup: "March 4",
+    content: "📝 **Assignment 2: Write a 3-page screenplay**\n\nGenre: Your choice. Must include at least 3 distinct locations and 2 characters. Due by Friday.",
+    timestamp: "10:00 AM",
+    reactions: [{ emoji: "👍", count: 9, reacted: false }],
+    threadReplies: [],
+    attachment: { name: "Screenplay_Template.pdf", size: "1.2 MB" },
+  },
+  {
+    id: "fm-msg-7", channelId: "fm-project-showcase", authorId: "fm-3", dateGroup: "Yesterday",
+    content: "Here's my first short film concept art and mood board! Going for a neo-noir vibe set in Kochi backwaters 🌙",
+    timestamp: "5:00 PM",
+    reactions: [{ emoji: "🔥", count: 10, reacted: false }, { emoji: "❤️", count: 7, reacted: false }],
+    threadReplies: [],
+    image: heroFilmmaking,
+  },
+];
+
+
+// ── Cohort exports ──
 
 export const batchCohorts: BatchCohort[] = [
   {
@@ -376,9 +504,21 @@ export const batchCohorts: BatchCohort[] = [
     nextSession: "Sat 3 PM",
     unreadCount: 18,
     image: courseEditing,
-    members,
-    channels,
-    messages,
+    members: veMembers,
+    channels: veChannels,
+    messages: veMessages,
+  },
+  {
+    id: "batch-fm-2",
+    name: "Filmmaking Intensive",
+    batchNumber: 2,
+    memberCount: 16,
+    nextSession: "Sat 4 PM",
+    unreadCount: 5,
+    image: heroFilmmaking,
+    members: fmMembers,
+    channels: fmChannels,
+    messages: fmMessages,
   },
 ];
 
