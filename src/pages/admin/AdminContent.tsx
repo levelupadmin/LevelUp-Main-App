@@ -199,8 +199,8 @@ const AdminContent = () => {
   });
 
   const createLesson = useMutation({
-    mutationFn: async (lesson: TablesInsert<"lessons">) => {
-      const { error } = await supabase.from("lessons").insert(lesson);
+    mutationFn: async (lesson: TablesInsert<"lessons"> & { file_url?: string | null }) => {
+      const { error } = await supabase.from("lessons").insert(lesson as any);
       if (error) throw error;
     },
     onSuccess: () => {
