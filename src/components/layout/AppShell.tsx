@@ -44,8 +44,8 @@ const AppShell = ({ children }: { children: ReactNode }) => {
       <aside className="fixed left-0 top-0 z-40 hidden h-screen w-60 flex-col border-r border-border bg-sidebar lg:flex">
         {/* Logo */}
         <div className="flex h-14 items-center gap-2.5 border-b border-border px-5">
-          <img src={logo} alt="Level Up" className="h-7 w-7" />
-          <span className="text-base font-bold text-foreground">Level Up</span>
+          <img src={logo} alt="LevelUp Learning" className="h-7 w-7" />
+          <span className="text-base font-bold text-foreground">LevelUp Learning</span>
         </div>
 
         {/* Nav */}
