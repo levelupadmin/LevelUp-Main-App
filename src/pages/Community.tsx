@@ -6,8 +6,6 @@ import { cohortCommunities } from "@/data/communityData";
 import { cityCommunities, skillCommunities } from "@/data/communityData";
 import { directoryCreators } from "@/data/communityData";
 import { batchCohorts } from "@/data/batchData";
-import instructor1 from "@/assets/instructor-1.jpg";
-import instructor2 from "@/assets/instructor-2.jpg";
 
 type Tab = "cohorts" | "explore" | "directory";
 
