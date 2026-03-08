@@ -17,7 +17,7 @@ import { useNavigate } from "react-router-dom";
 
 const Index = () => {
   const navigate = useNavigate();
-  const enrolledCourses = courses.filter((c) => c.progress > 0);
+  const enrolledCourses = detailedCourses.filter((c) => c.progress > 0);
 
   return (
     <AppShell>
