@@ -380,19 +380,34 @@ function LessonContent({ lesson, courseThumbnail }: { lesson: Lesson; courseThum
 
     case "pdf": {
       if (pdfUrl) {
+        const googleViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(pdfUrl)}&embedded=true`;
         return (
           <div className="bg-background p-4 space-y-3">
             <div className="aspect-[3/4] max-h-[60vh] rounded-lg overflow-hidden border border-border">
-              <iframe src={`${pdfUrl}#toolbar=1&navpanes=1`} className="h-full w-full bg-white" title={lesson.title} />
+              <iframe
+                src={googleViewerUrl}
+                className="h-full w-full"
+                title={lesson.title}
+                sandbox="allow-scripts allow-same-origin allow-popups"
+              />
             </div>
-            <a
-              href={pdfUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
-            >
-              <ExternalLink className="h-3.5 w-3.5" /> Open PDF in new tab
-            </a>
+            <div className="flex gap-3">
+              <a
+                href={pdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Open PDF in new tab
+              </a>
+              <a
+                href={pdfUrl}
+                download
+                className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
+              >
+                <FileText className="h-3.5 w-3.5" /> Download
+              </a>
+            </div>
           </div>
         );
       }
