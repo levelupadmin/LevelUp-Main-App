@@ -259,8 +259,8 @@ const AdminCourses = () => {
   });
 
   const updateLesson = useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; title?: string; duration?: string; is_free?: boolean; description?: string }) => {
-      const { error } = await supabase.from("lessons").update(updates).eq("id", id);
+    mutationFn: async ({ id, ...updates }: { id: string; title?: string; duration?: string; is_free?: boolean; description?: string; video_url?: string | null; file_url?: string | null; content?: string | null; type?: string }) => {
+      const { error } = await supabase.from("lessons").update(updates as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
