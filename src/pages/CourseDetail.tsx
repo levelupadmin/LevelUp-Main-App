@@ -284,14 +284,29 @@ const CourseDetail = () => {
                 <CardContent className="p-5">
                   <div className="flex items-center gap-3 mb-3">
                     <Award className={`h-6 w-6 ${progressPct >= (course.certificate_threshold ?? 70) ? "text-highlight" : "text-muted-foreground/40"}`} />
-                    <div>
+                    <div className="flex-1">
                       <p className="text-sm font-bold text-foreground">
-                        {progressPct >= (course.certificate_threshold ?? 70) ? "Certificate Unlocked! 🎉" : "Earn Your Certificate"}
+                        {certificate ? "Certificate Earned! 🎉" : progressPct >= (course.certificate_threshold ?? 70) ? "Certificate Unlocked! 🎉" : "Earn Your Certificate"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Complete {course.certificate_threshold ?? 70}% of the course
                       </p>
                     </div>
+                    {progressPct >= (course.certificate_threshold ?? 70) && !certificate && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="gap-1.5 text-xs"
+                        disabled={generateCert.isPending}
+                        onClick={() => generateCert.mutate({ courseId: course.id, completionPct: progressPct })}
+                      >
+                        <Award className="h-3.5 w-3.5" />
+                        {generateCert.isPending ? "Generating…" : "Get Certificate"}
+                      </Button>
+                    )}
+                    {certificate && (
+                      <Badge className="bg-highlight/15 text-highlight text-[10px]">Issued</Badge>
+                    )}
                   </div>
                   <Progress value={Math.min(progressPct, 100)} className="h-2" />
                 </CardContent>
