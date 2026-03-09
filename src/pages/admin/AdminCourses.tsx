@@ -751,7 +751,7 @@ const AdminCourses = () => {
                           </div>
                         ) : (
                           <button
-                            onClick={() => setNewLessonData({ moduleId: mod.id, title: "", duration: "", type: "video", videoUrl: "", file: null, content: "", uploading: false })}
+                            onClick={() => setNewLessonData({ moduleId: mod.id, title: "", duration: "", type: "video", videoUrl: "", file: null, content: "", uploading: false, isFree: false })}
                             className="w-full px-4 py-2 pl-14 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/20 transition-colors text-left"
                           >
                             + Add lesson
