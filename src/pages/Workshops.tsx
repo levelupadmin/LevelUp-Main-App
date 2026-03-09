@@ -1,102 +1,61 @@
-import AppShell from "@/components/layout/AppShell";
-import { workshopsList } from "@/data/learningData";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import AppShell from "@/components/layout/AppShell";
+import { mockWorkshops } from "@/data/learnMockData";
+import { Calendar, User, Users, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Users, Clock, Play } from "lucide-react";
-
-type FilterTab = "upcoming" | "past";
 
 const Workshops = () => {
-  const [filter, setFilter] = useState<FilterTab>("upcoming");
   const navigate = useNavigate();
-
-  const upcoming = workshopsList.filter((w) => !w.isPast);
-  const past = workshopsList.filter((w) => w.isPast);
-  const workshops = filter === "upcoming" ? upcoming : past;
+  const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
+  const filtered = mockWorkshops.filter((w) => (tab === "upcoming" ? w.isUpcoming : !w.isUpcoming));
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-4xl p-4 py-6 lg:p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Workshops</h1>
-          <p className="text-sm text-muted-foreground">Live and recorded sessions by India's top creators</p>
-        </div>
-
-        {/* Filter tabs */}
-        <div className="flex gap-1 rounded-xl bg-muted p-1 w-fit">
-          {(["upcoming", "past"] as FilterTab[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setFilter(tab)}
-              className={`rounded-lg px-4 py-2 text-sm font-medium capitalize transition-colors ${
-                filter === tab ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab} ({tab === "upcoming" ? upcoming.length : past.length})
+      <div className="px-4 py-6 lg:px-8 max-w-4xl mx-auto space-y-6">
+        <h1 className="text-2xl font-bold text-foreground">Workshops</h1>
+        <div className="flex gap-2">
+          {(["upcoming", "past"] as const).map((t) => (
+            <button key={t} onClick={() => setTab(t)} className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors border ${tab === t ? "bg-[hsl(var(--highlight))] text-[hsl(var(--highlight-foreground))] border-[hsl(var(--highlight))]" : "bg-secondary text-muted-foreground border-border hover:text-foreground"}`}>
+              {t === "upcoming" ? "Upcoming" : "Past"}
             </button>
           ))}
         </div>
-
-        {/* Workshop cards */}
         <div className="space-y-4">
-          {workshops.map((w) => (
-            <button
-              key={w.id}
-              onClick={() => navigate(`/workshops/${w.id}`)}
-              className="flex w-full flex-col sm:flex-row gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground/30"
-            >
-              {/* Thumbnail */}
-              <div className="relative h-36 w-full sm:h-28 sm:w-44 shrink-0 overflow-hidden rounded-lg">
-                <img src={w.thumbnail} alt={w.title} className="h-full w-full object-cover" />
-                {w.isPast && w.hasReplay && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                    <Play className="h-8 w-8 text-white" />
+          {filtered.map((w) => (
+            <button key={w.id} onClick={() => navigate(`/workshops/${w.slug}`)} className="w-full rounded-xl border border-border bg-card p-5 text-left hover:border-[hsl(var(--highlight))/30] transition-all">
+              <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+                <div className="w-full sm:w-40 aspect-video rounded-lg bg-secondary shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <Badge variant="outline" className="bg-[hsl(var(--highlight))]/10 text-[hsl(var(--highlight))] border-[hsl(var(--highlight))]/20 text-xs gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {new Date(w.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · {w.time}
+                  </Badge>
+                  <h3 className="text-base font-semibold text-foreground">{w.title}</h3>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-5 w-5 rounded-full bg-accent flex items-center justify-center"><User className="h-3 w-3 text-muted-foreground" /></div>
+                    <span className="text-xs text-muted-foreground">{w.instructor.name}</span>
                   </div>
-                )}
-              </div>
-
-              {/* Info */}
-              <div className="flex-1 min-w-0 flex flex-col justify-between">
-                <div>
-                  <Badge variant="secondary" className="text-[10px] mb-2">{w.date} · {w.time}</Badge>
-                  <h3 className="text-base font-bold text-foreground line-clamp-2 leading-tight">{w.title}</h3>
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <img src={w.instructorImage} alt={w.instructor} className="h-5 w-5 rounded-full object-cover" />
-                    <span className="text-xs text-muted-foreground">{w.instructor}</span>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{w.duration}</span>
+                    {w.isUpcoming && <span className="flex items-center gap-1"><Users className="h-3 w-3" />{w.registered}/{w.capacity} seats</span>}
                   </div>
-                </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="text-base font-bold text-foreground">₹{w.price}</span>
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" /> {w.duration}
-                    </span>
-                    {!w.isPast && (
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Users className="h-3 w-3" /> {w.seatsRemaining}/{w.seatsTotal} seats left
-                      </span>
-                    )}
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-sm font-bold text-foreground">₹{w.price}</span>
+                    {w.isUpcoming ? (
+                      <Badge className={w.isRegistered ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-[hsl(var(--highlight))] text-[hsl(var(--highlight-foreground))]"}>
+                        {w.isRegistered ? "Registered" : "Register"}
+                      </Badge>
+                    ) : w.resourcesEnabled ? (
+                      <Badge variant="outline" className="bg-secondary">View Resources</Badge>
+                    ) : null}
                   </div>
-                  {w.isPast && w.hasReplay ? (
-                    <Badge className="bg-accent text-accent-foreground text-[10px]">Watch Replay</Badge>
-                  ) : w.seatsRemaining <= 0 && !w.isPast ? (
-                    <Badge variant="destructive" className="text-[10px]">Sold Out</Badge>
-                  ) : (
-                    <Badge className="bg-[hsl(var(--highlight))] text-background text-[10px] font-bold">Register</Badge>
-                  )}
                 </div>
               </div>
             </button>
           ))}
+          {filtered.length === 0 && <p className="text-center text-muted-foreground text-sm py-8">No workshops found.</p>}
         </div>
-
-        {workshops.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-sm text-muted-foreground">No {filter} workshops right now</p>
-          </div>
-        )}
       </div>
     </AppShell>
   );
