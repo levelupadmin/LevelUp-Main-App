@@ -132,6 +132,7 @@ const AdminCourses = () => {
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [showStudentPreview, setShowStudentPreview] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState("details");
+  const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
 
   // Module/Lesson creation
   const [newModuleTitle, setNewModuleTitle] = useState("");
@@ -258,8 +259,8 @@ const AdminCourses = () => {
   });
 
   const updateLesson = useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; title?: string; duration?: string; is_free?: boolean; description?: string }) => {
-      const { error } = await supabase.from("lessons").update(updates).eq("id", id);
+    mutationFn: async ({ id, ...updates }: { id: string; title?: string; duration?: string; is_free?: boolean; description?: string; video_url?: string | null; file_url?: string | null; content?: string | null; type?: string }) => {
+      const { error } = await supabase.from("lessons").update(updates as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -638,49 +639,133 @@ const AdminCourses = () => {
                       <div className="border-t border-border">
                         {modLessons.map((lesson) => {
                           const LessonIcon = lesson.type === "video" ? Video : lesson.type === "pdf" ? FileText : lesson.type === "text" ? BookOpen : lesson.type === "quiz" ? FileQuestion : ClipboardList;
+                          const isEditing = editingLessonId === lesson.id;
                           return (
-                            <div key={lesson.id} className="flex items-center justify-between px-4 py-2.5 pl-14 border-b border-border last:border-b-0 hover:bg-secondary/20">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <LessonIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                <span className="text-sm text-foreground truncate">{lesson.title}</span>
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">{lesson.type}</Badge>
-                                {lesson.duration && <span className="text-xs text-muted-foreground shrink-0">{lesson.duration}</span>}
+                            <div key={lesson.id} className="border-b border-border last:border-b-0">
+                              {/* Lesson header row */}
+                              <div
+                                className="flex items-center justify-between px-4 py-2.5 pl-14 hover:bg-secondary/20 cursor-pointer"
+                                onClick={() => setEditingLessonId(isEditing ? null : lesson.id)}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <LessonIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  <span className="text-sm text-foreground truncate">{lesson.title}</span>
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">{lesson.type}</Badge>
+                                  {lesson.duration && <span className="text-xs text-muted-foreground shrink-0">{lesson.duration}</span>}
+                                  {(lesson.video_url || lesson.file_url) && <File className="h-3 w-3 text-highlight shrink-0" />}
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); updateLesson.mutate({ id: lesson.id, is_free: !lesson.is_free }); }}
+                                    className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${lesson.is_free ? "bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20" : "bg-muted text-muted-foreground border-border hover:bg-secondary"}`}
+                                  >
+                                    {lesson.is_free ? "Free" : "Paid"}
+                                  </button>
+                                  {isEditing ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                                </div>
                               </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <button
-                                  onClick={() => updateLesson.mutate({ id: lesson.id, is_free: !lesson.is_free })}
-                                  className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${lesson.is_free ? "bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20" : "bg-muted text-muted-foreground border-border hover:bg-secondary"}`}
-                                >
-                                  {lesson.is_free ? "Free" : "Paid"}
-                                </button>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <button className="rounded-md p-1 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
-                                      <MoreHorizontal className="h-3.5 w-3.5" />
-                                    </button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => {
-                                      const newTitle = prompt("Edit lesson title:", lesson.title);
-                                      if (newTitle && newTitle !== lesson.title) updateLesson.mutate({ id: lesson.id, title: newTitle });
-                                    }}>
-                                      <FileText className="h-3.5 w-3.5 mr-2" /> Rename
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => {
-                                      const newDuration = prompt("Edit duration:", lesson.duration || "");
-                                      if (newDuration !== null) updateLesson.mutate({ id: lesson.id, duration: newDuration });
-                                    }}>
-                                      <Clock className="h-3.5 w-3.5 mr-2" /> Edit Duration
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => updateLesson.mutate({ id: lesson.id, is_free: !lesson.is_free })}>
-                                      <Tag className="h-3.5 w-3.5 mr-2" /> {lesson.is_free ? "Mark as Paid" : "Mark as Free"}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="text-destructive" onClick={() => deleteLesson.mutate(lesson.id)}>
-                                      <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
+
+                              {/* Expanded lesson editor */}
+                              {isEditing && (
+                                <div className="px-4 py-3 pl-14 bg-secondary/10 border-t border-border space-y-3">
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="text-xs font-medium text-muted-foreground mb-1 block">Title</label>
+                                      <Input defaultValue={lesson.title} onBlur={(e) => { if (e.target.value !== lesson.title) updateLesson.mutate({ id: lesson.id, title: e.target.value }); }} />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div>
+                                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Duration</label>
+                                        <Input defaultValue={lesson.duration || ""} placeholder="e.g. 12:30" onBlur={(e) => updateLesson.mutate({ id: lesson.id, duration: e.target.value })} />
+                                      </div>
+                                      <div>
+                                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Type</label>
+                                        <Select defaultValue={lesson.type} onValueChange={(v) => updateLesson.mutate({ id: lesson.id, type: v })}>
+                                          <SelectTrigger><SelectValue /></SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="video">Video</SelectItem>
+                                            <SelectItem value="pdf">PDF</SelectItem>
+                                            <SelectItem value="text">Text</SelectItem>
+                                            <SelectItem value="quiz">Quiz</SelectItem>
+                                            <SelectItem value="assignment">Assignment</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Description</label>
+                                    <Input defaultValue={lesson.description || ""} placeholder="Brief description..." onBlur={(e) => updateLesson.mutate({ id: lesson.id, description: e.target.value })} />
+                                  </div>
+
+                                  {/* File / Video / Content Section */}
+                                  {(lesson.type === "video") && (
+                                    <div className="rounded-md border border-border bg-card p-3 space-y-2">
+                                      <label className="text-xs font-medium text-muted-foreground block">Video Source</label>
+                                      {lesson.video_url ? (
+                                        <div className="flex items-center gap-2">
+                                          <Video className="h-4 w-4 text-highlight shrink-0" />
+                                          <a href={lesson.video_url} target="_blank" rel="noreferrer" className="text-xs text-highlight hover:underline truncate flex-1">{lesson.video_url}</a>
+                                          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => updateLesson.mutate({ id: lesson.id, video_url: null })}>Remove</Button>
+                                        </div>
+                                      ) : (
+                                        <p className="text-xs text-muted-foreground italic">No video attached</p>
+                                      )}
+                                      <Input placeholder="Paste video URL (YouTube/Vimeo/direct)" defaultValue={lesson.video_url || ""} onBlur={(e) => { if (e.target.value !== (lesson.video_url || "")) updateLesson.mutate({ id: lesson.id, video_url: e.target.value || null }); }} />
+                                      <div className="text-xs text-muted-foreground">Or upload a file:</div>
+                                      <Input type="file" accept="video/mp4,video/quicktime,video/webm" onChange={async (e) => {
+                                        const file = e.target.files?.[0]; if (!file) return;
+                                        const path = `${selectedCourse.id}/${Date.now()}.${file.name.split(".").pop()}`;
+                                        const { error: err } = await supabase.storage.from("course-content").upload(path, file, { upsert: true });
+                                        if (err) { toast({ title: "Upload failed", description: err.message, variant: "destructive" }); return; }
+                                        const { data: u } = supabase.storage.from("course-content").getPublicUrl(path);
+                                        updateLesson.mutate({ id: lesson.id, video_url: u.publicUrl });
+                                      }} />
+                                    </div>
+                                  )}
+
+                                  {(lesson.type === "pdf") && (
+                                    <div className="rounded-md border border-border bg-card p-3 space-y-2">
+                                      <label className="text-xs font-medium text-muted-foreground block">PDF File</label>
+                                      {lesson.file_url ? (
+                                        <div className="flex items-center gap-2">
+                                          <File className="h-4 w-4 text-highlight shrink-0" />
+                                          <a href={lesson.file_url} target="_blank" rel="noreferrer" className="text-xs text-highlight hover:underline truncate flex-1">{lesson.file_url.split("/").pop()}</a>
+                                          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => updateLesson.mutate({ id: lesson.id, file_url: null })}>Remove</Button>
+                                        </div>
+                                      ) : (
+                                        <p className="text-xs text-muted-foreground italic">No PDF attached</p>
+                                      )}
+                                      <Input type="file" accept="application/pdf" onChange={async (e) => {
+                                        const file = e.target.files?.[0]; if (!file) return;
+                                        const path = `${selectedCourse.id}/${Date.now()}.${file.name.split(".").pop()}`;
+                                        const { error: err } = await supabase.storage.from("course-content").upload(path, file, { upsert: true });
+                                        if (err) { toast({ title: "Upload failed", description: err.message, variant: "destructive" }); return; }
+                                        const { data: u } = supabase.storage.from("course-content").getPublicUrl(path);
+                                        updateLesson.mutate({ id: lesson.id, file_url: u.publicUrl });
+                                      }} />
+                                    </div>
+                                  )}
+
+                                  {(lesson.type === "text" || lesson.type === "quiz" || lesson.type === "assignment") && (
+                                    <div className="rounded-md border border-border bg-card p-3 space-y-2">
+                                      <label className="text-xs font-medium text-muted-foreground block">Content</label>
+                                      <Textarea defaultValue={lesson.content || ""} placeholder="Lesson content..." rows={5} onBlur={(e) => { if (e.target.value !== (lesson.content || "")) updateLesson.mutate({ id: lesson.id, content: e.target.value || null }); }} />
+                                    </div>
+                                  )}
+
+                                  <div className="flex items-center justify-between pt-1">
+                                    <div className="flex items-center gap-2">
+                                      <Switch checked={lesson.is_free} onCheckedChange={(v) => updateLesson.mutate({ id: lesson.id, is_free: v })} />
+                                      <span className="text-xs text-muted-foreground">{lesson.is_free ? "Free preview" : "Paid (requires enrollment)"}</span>
+                                    </div>
+                                    <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => { deleteLesson.mutate(lesson.id); setEditingLessonId(null); }}>
+                                      <Trash2 className="h-3 w-3 mr-1" /> Delete Lesson
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
