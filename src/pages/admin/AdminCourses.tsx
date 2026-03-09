@@ -8,7 +8,8 @@ import {
   FileText, Search, Plus, MoreHorizontal, Star, ArrowLeft, Trash2,
   GripVertical, ChevronDown, ChevronRight, Video, BookOpen, Save, X,
   Upload, File, FileQuestion, ClipboardList, Loader2, Eye, Calendar,
-  Link2, Tag, Award, Clock, Repeat, Settings2,
+  Link2, Tag, Award, Clock, Repeat, Settings2, DollarSign, Package,
+  ExternalLink, Lock, Unlock, PlayCircle, FileDown,
 } from "lucide-react";
 import StudentCoursePreview from "@/components/admin/StudentCoursePreview";
 import CourseSetupChecklist from "@/components/admin/CourseSetupChecklist";
