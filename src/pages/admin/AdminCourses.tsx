@@ -116,6 +116,28 @@ const useAccessGrants = (courseId: string | null) =>
     },
   });
 
+const usePricingVariants = (courseId: string | null) =>
+  useQuery({
+    queryKey: ["admin-pricing-variants", courseId],
+    enabled: !!courseId,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("course_pricing_variants").select("*").eq("course_id", courseId!).order("sort_order");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+const useCourseResources = (courseId: string | null) =>
+  useQuery({
+    queryKey: ["admin-resources", courseId],
+    enabled: !!courseId,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("course_resources").select("*").eq("course_id", courseId!).order("sort_order");
+      if (error) throw error;
+      return data;
+    },
+  });
+
 // ─── Main Component ───
 const AdminCourses = () => {
   const { user } = useAuth();
