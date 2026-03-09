@@ -8,7 +8,9 @@ import {
   useCourseProgress,
   useMarkLessonComplete,
   useSaveLessonNotes,
+  useEnrollment,
 } from "@/hooks/useCourseData";
+import { useDripLockMap } from "@/hooks/useDripLock";
 import { ChevronLeft, ChevronRight, CheckCircle2, PanelRightOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
