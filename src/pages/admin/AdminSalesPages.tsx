@@ -64,7 +64,7 @@ const useSalesPagePricingVariants = (salesPageId: string | null) =>
     queryKey: ["admin-sales-pricing", salesPageId],
     enabled: !!salesPageId,
     queryFn: async () => {
-      const { data, error } = await supabase.from("course_pricing_variants").select("*").eq("sales_page_id" as any, salesPageId!).order("sort_order");
+      const { data, error } = await supabase.from("course_pricing_variants").select("*").eq("sales_page_id", salesPageId!).order("sort_order");
       if (error) throw error;
       return data as any[];
     },
