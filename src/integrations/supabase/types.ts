@@ -14,6 +14,107 @@ export type Database = {
   }
   public: {
     Tables: {
+      assignment_submissions: {
+        Row: {
+          assignment_id: string
+          content: string | null
+          created_at: string
+          feedback: string | null
+          file_url: string | null
+          graded_at: string | null
+          id: string
+          score: number | null
+          status: Database["public"]["Enums"]["submission_status"]
+          submitted_at: string
+          user_id: string
+        }
+        Insert: {
+          assignment_id: string
+          content?: string | null
+          created_at?: string
+          feedback?: string | null
+          file_url?: string | null
+          graded_at?: string | null
+          id?: string
+          score?: number | null
+          status?: Database["public"]["Enums"]["submission_status"]
+          submitted_at?: string
+          user_id: string
+        }
+        Update: {
+          assignment_id?: string
+          content?: string | null
+          created_at?: string
+          feedback?: string | null
+          file_url?: string | null
+          graded_at?: string | null
+          id?: string
+          score?: number | null
+          status?: Database["public"]["Enums"]["submission_status"]
+          submitted_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignment_submissions_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assignments: {
+        Row: {
+          allow_retake: boolean
+          course_id: string
+          created_at: string
+          id: string
+          instructions: string | null
+          lesson_id: string
+          max_score: number
+          passing_score: number
+          updated_at: string
+        }
+        Insert: {
+          allow_retake?: boolean
+          course_id: string
+          created_at?: string
+          id?: string
+          instructions?: string | null
+          lesson_id: string
+          max_score?: number
+          passing_score?: number
+          updated_at?: string
+        }
+        Update: {
+          allow_retake?: boolean
+          course_id?: string
+          created_at?: string
+          id?: string
+          instructions?: string | null
+          lesson_id?: string
+          max_score?: number
+          passing_score?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignments_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignments_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: true
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       certificates: {
         Row: {
           certificate_url: string | null
@@ -333,8 +434,13 @@ export type Database = {
           created_at: string
           description: string | null
           difficulty: Database["public"]["Enums"]["difficulty_level"]
+          disable_comments: boolean
+          disable_qna: boolean
           drip_enabled: boolean
           drip_interval_days: number | null
+          drip_mode: string
+          drip_schedule: Json | null
+          drm_enabled: boolean
           estimated_duration: string | null
           id: string
           instructor_id: string | null
@@ -349,6 +455,7 @@ export type Database = {
           rating: number
           recurrence_rule: Json | null
           short_description: string | null
+          show_as_locked: boolean
           slug: string
           status: Database["public"]["Enums"]["content_status"]
           student_count: number
@@ -357,6 +464,7 @@ export type Database = {
           title: string
           trailer_url: string | null
           updated_at: string
+          validity_days: number | null
           zoom_link: string | null
         }
         Insert: {
@@ -369,8 +477,13 @@ export type Database = {
           created_at?: string
           description?: string | null
           difficulty?: Database["public"]["Enums"]["difficulty_level"]
+          disable_comments?: boolean
+          disable_qna?: boolean
           drip_enabled?: boolean
           drip_interval_days?: number | null
+          drip_mode?: string
+          drip_schedule?: Json | null
+          drm_enabled?: boolean
           estimated_duration?: string | null
           id?: string
           instructor_id?: string | null
@@ -385,6 +498,7 @@ export type Database = {
           rating?: number
           recurrence_rule?: Json | null
           short_description?: string | null
+          show_as_locked?: boolean
           slug: string
           status?: Database["public"]["Enums"]["content_status"]
           student_count?: number
@@ -393,6 +507,7 @@ export type Database = {
           title: string
           trailer_url?: string | null
           updated_at?: string
+          validity_days?: number | null
           zoom_link?: string | null
         }
         Update: {
@@ -405,8 +520,13 @@ export type Database = {
           created_at?: string
           description?: string | null
           difficulty?: Database["public"]["Enums"]["difficulty_level"]
+          disable_comments?: boolean
+          disable_qna?: boolean
           drip_enabled?: boolean
           drip_interval_days?: number | null
+          drip_mode?: string
+          drip_schedule?: Json | null
+          drm_enabled?: boolean
           estimated_duration?: string | null
           id?: string
           instructor_id?: string | null
@@ -421,6 +541,7 @@ export type Database = {
           rating?: number
           recurrence_rule?: Json | null
           short_description?: string | null
+          show_as_locked?: boolean
           slug?: string
           status?: Database["public"]["Enums"]["content_status"]
           student_count?: number
@@ -429,6 +550,7 @@ export type Database = {
           title?: string
           trailer_url?: string | null
           updated_at?: string
+          validity_days?: number | null
           zoom_link?: string | null
         }
         Relationships: []
@@ -491,6 +613,61 @@ export type Database = {
           },
         ]
       }
+      lesson_comments: {
+        Row: {
+          content: string
+          course_id: string
+          created_at: string
+          id: string
+          lesson_id: string
+          parent_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          course_id: string
+          created_at?: string
+          id?: string
+          lesson_id: string
+          parent_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          course_id?: string
+          created_at?: string
+          id?: string
+          lesson_id?: string
+          parent_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lesson_comments_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lesson_comments_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lesson_comments_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "lesson_comments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lesson_progress: {
         Row: {
           completed_at: string | null
@@ -538,6 +715,54 @@ export type Database = {
           },
           {
             foreignKeyName: "lesson_progress_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lesson_resources: {
+        Row: {
+          course_id: string
+          created_at: string
+          file_url: string | null
+          id: string
+          lesson_id: string
+          sort_order: number
+          title: string
+          type: Database["public"]["Enums"]["resource_type"]
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          file_url?: string | null
+          id?: string
+          lesson_id: string
+          sort_order?: number
+          title: string
+          type?: Database["public"]["Enums"]["resource_type"]
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          file_url?: string | null
+          id?: string
+          lesson_id?: string
+          sort_order?: number
+          title?: string
+          type?: Database["public"]["Enums"]["resource_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lesson_resources_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lesson_resources_lesson_id_fkey"
             columns: ["lesson_id"]
             isOneToOne: false
             referencedRelation: "lessons"
@@ -768,6 +993,95 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      qna_answers: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          is_accepted: boolean
+          question_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          is_accepted?: boolean
+          question_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          is_accepted?: boolean
+          question_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qna_answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "qna_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      qna_questions: {
+        Row: {
+          body: string | null
+          course_id: string
+          created_at: string
+          id: string
+          is_resolved: boolean
+          lesson_id: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          course_id: string
+          created_at?: string
+          id?: string
+          is_resolved?: boolean
+          lesson_id: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          course_id?: string
+          created_at?: string
+          id?: string
+          is_resolved?: boolean
+          lesson_id?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qna_questions_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qna_questions_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       referral_codes: {
         Row: {
@@ -1006,6 +1320,7 @@ export type Database = {
         | "drip_release"
       progress_status: "not_started" | "in_progress" | "completed"
       resource_type: "slide" | "template" | "recording" | "link" | "pdf"
+      submission_status: "submitted" | "graded" | "returned"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1149,6 +1464,7 @@ export const Constants = {
       ],
       progress_status: ["not_started", "in_progress", "completed"],
       resource_type: ["slide", "template", "recording", "link", "pdf"],
+      submission_status: ["submitted", "graded", "returned"],
     },
   },
 } as const
