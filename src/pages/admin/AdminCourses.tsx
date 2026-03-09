@@ -1437,7 +1437,67 @@ const AdminCourses = () => {
                 )}
               </div>
 
-              {/* Access Tags / Cross-Course Grants */}
+              {/* Course Settings */}
+              <div className="rounded-lg border border-border bg-card p-5 space-y-3">
+                <h4 className="text-sm font-semibold text-foreground flex items-center gap-2"><Shield className="h-4 w-4" /> Course Settings</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-foreground">Validity (days)</span>
+                      <p className="text-[10px] text-muted-foreground">Auto-expire enrollment after N days</p>
+                    </div>
+                    <Input
+                      type="number"
+                      defaultValue={(selectedCourse as any).validity_days || ""}
+                      placeholder="∞"
+                      className="w-24 h-8 text-sm"
+                      onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, validity_days: e.target.value ? parseInt(e.target.value) : null } as any)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-foreground">Show as Locked</span>
+                      <p className="text-[10px] text-muted-foreground">Display course with lock icon for non-enrolled users</p>
+                    </div>
+                    <Switch
+                      checked={(selectedCourse as any).show_as_locked || false}
+                      onCheckedChange={(v) => updateCourse.mutate({ id: selectedCourse.id, show_as_locked: v } as any)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-foreground">DRM Protection</span>
+                      <p className="text-[10px] text-muted-foreground">Enable video DRM protection</p>
+                    </div>
+                    <Switch
+                      checked={(selectedCourse as any).drm_enabled || false}
+                      onCheckedChange={(v) => updateCourse.mutate({ id: selectedCourse.id, drm_enabled: v } as any)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-foreground">Disable Q&A</span>
+                      <p className="text-[10px] text-muted-foreground">Hide Q&A section for students</p>
+                    </div>
+                    <Switch
+                      checked={(selectedCourse as any).disable_qna || false}
+                      onCheckedChange={(v) => updateCourse.mutate({ id: selectedCourse.id, disable_qna: v } as any)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-foreground">Disable Comments</span>
+                      <p className="text-[10px] text-muted-foreground">Hide comments section for students</p>
+                    </div>
+                    <Switch
+                      checked={(selectedCourse as any).disable_comments || false}
+                      onCheckedChange={(v) => updateCourse.mutate({ id: selectedCourse.id, disable_comments: v } as any)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+
               <div className="rounded-lg border border-border bg-card p-5 space-y-3">
                 <div>
                   <h4 className="text-sm font-semibold text-foreground flex items-center gap-2"><Tag className="h-4 w-4" /> Access Grants</h4>
