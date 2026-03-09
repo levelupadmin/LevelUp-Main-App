@@ -1211,44 +1211,7 @@ const AdminCourses = () => {
               </div>
             </TabsContent>
 
-            <TabsContent value="pricing" className="space-y-4 mt-4">
-              <div className="rounded-lg border border-border bg-card p-5 space-y-4">
-                <h3 className="text-base font-semibold text-foreground">Pricing & Payment</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Price (₹)</label>
-                    <Input
-                      type="number"
-                      defaultValue={selectedCourse.price}
-                      onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, price: parseInt(e.target.value) || 0 })}
-                    />
-                  </div>
-                  <div className="flex items-end gap-2 pb-1">
-                    <Switch
-                      checked={selectedCourse.is_free}
-                      onCheckedChange={(v) => updateCourse.mutate({ id: selectedCourse.id, is_free: v })}
-                    />
-                    <label className="text-sm text-muted-foreground">Free course</label>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Payment Page URL (Razorpay / Stripe)</label>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="https://rzp.io/..."
-                      defaultValue={(selectedCourse as any).payment_page_url || ""}
-                      id="payment-url-input"
-                    />
-                    <Button size="sm" variant="outline" onClick={() => {
-                      const input = document.getElementById("payment-url-input") as HTMLInputElement;
-                      if (input) updateCourse.mutate({ id: selectedCourse.id, payment_page_url: input.value } as any);
-                    }}>
-                      <Save className="h-3.5 w-3.5 mr-1" /> Save
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
+            {/* Pricing tab removed — now in Sales Pages */}
 
             {/* ── COMMENTS TAB ── */}
             <TabsContent value="comments">
