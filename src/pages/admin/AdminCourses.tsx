@@ -526,12 +526,14 @@ const AdminCourses = () => {
 
           {/* Detail Tabs */}
           <Tabs value={activeDetailTab} onValueChange={setActiveDetailTab}>
-            <TabsList className="bg-secondary/50 border border-border">
+            <TabsList className="bg-secondary/50 border border-border flex-wrap">
               <TabsTrigger value="details" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" />Details</TabsTrigger>
               <TabsTrigger value="content" className="gap-1.5 text-xs"><BookOpen className="h-3.5 w-3.5" />Content</TabsTrigger>
               {(courseType === "workshop" || courseType === "cohort") && (
                 <TabsTrigger value="schedule" className="gap-1.5 text-xs"><Calendar className="h-3.5 w-3.5" />Schedule</TabsTrigger>
               )}
+              <TabsTrigger value="presale" className="gap-1.5 text-xs"><DollarSign className="h-3.5 w-3.5" />Presale</TabsTrigger>
+              <TabsTrigger value="resources" className="gap-1.5 text-xs"><Package className="h-3.5 w-3.5" />Resources</TabsTrigger>
               <TabsTrigger value="pricing" className="gap-1.5 text-xs"><Tag className="h-3.5 w-3.5" />Pricing</TabsTrigger>
               <TabsTrigger value="settings" className="gap-1.5 text-xs"><Settings2 className="h-3.5 w-3.5" />Settings</TabsTrigger>
             </TabsList>
