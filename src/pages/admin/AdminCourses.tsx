@@ -245,6 +245,30 @@ const AdminCourses = () => {
     },
   });
 
+  const updateModule = useMutation({
+    mutationFn: async ({ id, ...updates }: { id: string; title?: string; description?: string }) => {
+      const { error } = await supabase.from("course_modules").update(updates).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-modules"] });
+      toast({ title: "Module updated" });
+    },
+    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const updateLesson = useMutation({
+    mutationFn: async ({ id, ...updates }: { id: string; title?: string; duration?: string; is_free?: boolean; description?: string }) => {
+      const { error } = await supabase.from("lessons").update(updates).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-lessons"] });
+      toast({ title: "Lesson updated" });
+    },
+    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const createSchedule = useMutation({
     mutationFn: async (schedule: any) => {
       const { error } = await supabase.from("course_schedules").insert(schedule);
