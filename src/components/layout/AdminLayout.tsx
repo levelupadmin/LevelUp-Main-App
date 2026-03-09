@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FileText, Users, Shield, BarChart3,
   Clapperboard, GraduationCap, ArrowLeft, Briefcase, Settings,
-  ChevronDown, Gift, Bell, TrendingUp,
+  ChevronDown, Gift, Bell, TrendingUp, ShoppingBag,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { useAuth, AppRole } from "@/contexts/AuthContext";
