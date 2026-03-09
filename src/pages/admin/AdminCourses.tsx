@@ -174,6 +174,8 @@ const AdminCourses = () => {
   const { data: lessons = [] } = useLessons(selectedCourseId);
   const { data: schedules = [] } = useSchedules(selectedCourseId);
   const { data: accessGrants = [] } = useAccessGrants(selectedCourseId);
+  const { data: pricingVariants = [] } = usePricingVariants(selectedCourseId);
+  const { data: courseResources = [] } = useCourseResources(selectedCourseId);
 
   const filteredCourses = courses
     .filter((c) => search === "" || c.title.toLowerCase().includes(search.toLowerCase()) || c.instructor_name.toLowerCase().includes(search.toLowerCase()))
