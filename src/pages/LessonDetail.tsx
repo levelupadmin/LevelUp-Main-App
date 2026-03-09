@@ -31,9 +31,12 @@ const LessonDetail = () => {
   const { data: allLessons = [] } = useCourseLessons(lesson?.course_id);
   const { data: modules = [] } = useCourseModules(lesson?.course_id);
   const { data: progress = [] } = useCourseProgress(lesson?.course_id);
+  const { data: enrollment } = useEnrollment(lesson?.course_id);
 
   const markComplete = useMarkLessonComplete();
   const saveNotes = useSaveLessonNotes();
+
+  const dripMap = useDripLockMap(course, modules, allLessons, enrollment, progress);
 
   if (lessonLoading) {
     return (
