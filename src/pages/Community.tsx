@@ -11,6 +11,9 @@ import {
   feedPosts, trendingPosts,
   type FeedPost, type DirectoryCreator,
 } from "@/data/communityData";
+import { useAuth } from "@/contexts/AuthContext";
+import { useSpaces, usePosts, useCreatePost, useToggleLike } from "@/hooks/useCommunity";
+import { formatDistanceToNow } from "date-fns";
 
 const Community = () => {
   const [activeSection, setActiveSection] = useState<CommunitySection>("feed");
