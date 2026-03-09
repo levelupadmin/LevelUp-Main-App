@@ -342,7 +342,78 @@ const AdminCourses = () => {
     },
   });
 
-  const handleStatusChange = (courseId: string, newStatus: "draft" | "published" | "archived") => {
+  // Pricing variant mutations
+  const createPricingVariant = useMutation({
+    mutationFn: async (variant: any) => {
+      const { error } = await supabase.from("course_pricing_variants").insert(variant);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-pricing-variants"] });
+      toast({ title: "Pricing variant added" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const updatePricingVariant = useMutation({
+    mutationFn: async ({ id, ...updates }: any) => {
+      const { error } = await supabase.from("course_pricing_variants").update(updates).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-pricing-variants"] });
+      toast({ title: "Pricing variant updated" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const deletePricingVariant = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("course_pricing_variants").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-pricing-variants"] });
+      toast({ title: "Pricing variant removed" });
+    },
+  });
+
+  // Resource mutations
+  const createResource = useMutation({
+    mutationFn: async (resource: any) => {
+      const { error } = await supabase.from("course_resources").insert(resource);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-resources"] });
+      toast({ title: "Resource added" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const updateResource = useMutation({
+    mutationFn: async ({ id, ...updates }: any) => {
+      const { error } = await supabase.from("course_resources").update(updates).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-resources"] });
+      toast({ title: "Resource updated" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteResource = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("course_resources").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-resources"] });
+      toast({ title: "Resource removed" });
+    },
+  });
+
     updateCourse.mutate({ id: courseId, status: newStatus });
   };
 
