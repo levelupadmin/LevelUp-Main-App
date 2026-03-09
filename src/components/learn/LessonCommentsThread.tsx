@@ -89,9 +89,9 @@ const LessonCommentsThread = ({ lessonId, courseId }: Props) => {
       {/* New comment input */}
       <div className="flex gap-3">
         <Avatar className="h-8 w-8 shrink-0">
-          <AvatarImage src={profile?.avatar_url || ""} />
+          <AvatarImage src={user?.avatar_url || ""} />
           <AvatarFallback className="text-xs bg-secondary text-secondary-foreground">
-            {profile?.name?.charAt(0) || "U"}
+            {user?.name?.charAt(0) || "U"}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1 space-y-2">
