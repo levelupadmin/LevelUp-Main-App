@@ -155,10 +155,12 @@ const UserDetailSheet = ({ user, open, onOpenChange, userRole, userStatus, roleS
                 <GraduationCap className="h-4 w-4" />
                 Enrolled Courses ({enrollments.length})
               </h3>
-              <Button size="sm" variant="outline" onClick={() => setShowAssign(!showAssign)} className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />
-                Assign Course
-              </Button>
+              {isValidUUID && (
+                <Button size="sm" variant="outline" onClick={() => setShowAssign(!showAssign)} className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" />
+                  Assign Course
+                </Button>
+              )}
             </div>
 
             {/* Assign course UI */}
