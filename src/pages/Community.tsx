@@ -141,60 +141,7 @@ function FeedView() {
   );
 }
 
-function FeedPostCard({ post, liked, commentsExpanded, onLike, onToggleComments }: { post: FeedPost; liked: boolean; commentsExpanded: boolean; onLike: () => void; onToggleComments: () => void }) {
-  return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
-      <div className="p-4">
-        <div className="flex items-center gap-3 mb-3">
-          <img src={post.avatar} alt={post.author} className="h-10 w-10 rounded-full object-cover" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-foreground truncate">{post.author}</p>
-              {post.isBatchmate && <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Batchmate</span>}
-            </div>
-            <p className="text-xs text-muted-foreground">{post.role} · {post.timeAgo}</p>
-          </div>
-        </div>
-        <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-line">{post.content}</p>
-        {post.tags && post.tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {post.tags.map((tag) => <span key={tag} className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground">#{tag}</span>)}
-          </div>
-        )}
-      </div>
-      {post.image && <img src={post.image} alt="" className="w-full max-h-80 object-cover" />}
-      <div className="flex items-center gap-1 border-t border-border px-4 py-2">
-        <button onClick={onLike} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${liked ? "text-[hsl(var(--destructive))]" : "text-muted-foreground hover:text-foreground"}`}>
-          <Heart className={`h-3.5 w-3.5 ${liked ? "fill-current" : ""}`} /> {post.likes + (liked ? 1 : 0)}
-        </button>
-        <button onClick={onToggleComments} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
-          <MessageCircle className="h-3.5 w-3.5" /> {post.comments}
-        </button>
-        <button className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors ml-auto">
-          <Send className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      {commentsExpanded && post.commentsData.length > 0 && (
-        <div className="border-t border-border bg-background/50 px-4 py-3 space-y-3">
-          {post.commentsData.map((c) => (
-            <div key={c.id} className="flex gap-2.5">
-              <img src={c.avatar} alt={c.author} className="h-7 w-7 rounded-full object-cover mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs"><span className="font-semibold text-foreground">{c.author}</span><span className="text-muted-foreground ml-2">{c.timeAgo}</span></p>
-                <p className="text-xs text-foreground/80 mt-0.5">{c.content}</p>
-                <button className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"><Heart className="h-3 w-3" /> {c.likes}</button>
-              </div>
-            </div>
-          ))}
-          <div className="flex gap-2 pt-1">
-            <div className="h-7 w-7 shrink-0 rounded-full bg-accent" />
-            <input placeholder="Write a comment..." className="flex-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none" />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// FeedPostCard removed — feed now renders from database directly
 
 /* ═══════════════════════════════════════════
    MY SPACES VIEW
