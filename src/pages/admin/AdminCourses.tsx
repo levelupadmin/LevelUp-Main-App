@@ -740,7 +740,7 @@ const AdminCourses = () => {
                                   createLesson.mutate({
                                     module_id: mod.id, course_id: selectedCourse.id, title: newLessonData.title,
                                     duration: newLessonData.duration, sort_order: modLessons.length, type: newLessonData.type as any,
-                                    video_url: videoUrl, file_url: fileUrl, content: newLessonData.content || null,
+                                    video_url: videoUrl, file_url: fileUrl, content: newLessonData.content || null, is_free: newLessonData.isFree,
                                   });
                                 }}
                               >
