@@ -1106,127 +1106,14 @@ const AdminCourses = () => {
               )}
             </TabsContent>
 
-            {/* ── PRESALE TAB ── */}
+            {/* ── LINKED SALES PAGES (read-only indicator) ── */}
             <TabsContent value="presale" className="space-y-4 mt-4">
-              {/* Presale Content */}
-              <div className="rounded-lg border border-border bg-card p-5 space-y-4">
-                <h3 className="text-base font-semibold text-foreground">Presale Page Content</h3>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Trailer / Preview Video URL</label>
-                  <Input
-                    placeholder="https://youtube.com/watch?v=..."
-                    defaultValue={(selectedCourse as any).trailer_url || ""}
-                    onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, trailer_url: e.target.value } as any)}
-                  />
-                  <p className="text-[10px] text-muted-foreground mt-1">Shown on the sales page for non-enrolled users</p>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Presale Description (Rich)</label>
-                  <Textarea
-                    className="min-h-[120px]"
-                    placeholder="Detailed sales copy, feature bullets, social proof..."
-                    defaultValue={(selectedCourse as any).presale_description || ""}
-                    onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, presale_description: e.target.value } as any)}
-                  />
-                </div>
-              </div>
-
-              {/* Pricing Variants */}
-              <div className="rounded-lg border border-border bg-card p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-foreground">Pricing Variants</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">Create multiple price points for A/B testing via ads. Only one shows on the site.</p>
-                  </div>
-                  <Button size="sm" variant="outline" onClick={() => createPricingVariant.mutate({
-                    course_id: selectedCourse.id,
-                    label: "New Variant",
-                    price: selectedCourse.price || 0,
-                    sort_order: pricingVariants.length,
-                  })}>
-                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Variant
-                  </Button>
-                </div>
-
-                {pricingVariants.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">No pricing variants yet. Add one to enable price testing.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {pricingVariants.map((v: any) => (
-                      <div key={v.id} className="rounded-lg border border-border bg-secondary/20 p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-3">
-                            <div>
-                              <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Label</label>
-                              <Input
-                                defaultValue={v.label}
-                                className="h-8 text-sm"
-                                onBlur={(e) => updatePricingVariant.mutate({ id: v.id, label: e.target.value })}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Price (₹)</label>
-                              <Input
-                                type="number"
-                                defaultValue={v.price}
-                                className="h-8 text-sm"
-                                onBlur={(e) => updatePricingVariant.mutate({ id: v.id, price: parseInt(e.target.value) || 0 })}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Razorpay Link</label>
-                              <Input
-                                placeholder="https://rzp.io/..."
-                                defaultValue={v.payment_link || ""}
-                                className="h-8 text-sm"
-                                onBlur={(e) => updatePricingVariant.mutate({ id: v.id, payment_link: e.target.value })}
-                              />
-                            </div>
-                          </div>
-                          <button onClick={() => deletePricingVariant.mutate(v.id)} className="rounded-md p-1 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors mt-4">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-6">
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={v.is_active_on_site}
-                              onCheckedChange={(checked) => {
-                                // If turning on, turn off all others first
-                                if (checked) {
-                                  pricingVariants.filter((pv: any) => pv.id !== v.id && pv.is_active_on_site).forEach((pv: any) => {
-                                    updatePricingVariant.mutate({ id: pv.id, is_active_on_site: false });
-                                  });
-                                }
-                                updatePricingVariant.mutate({ id: v.id, is_active_on_site: checked });
-                              }}
-                            />
-                            <label className="text-xs text-muted-foreground">Show on site</label>
-                            {v.is_active_on_site && <Badge variant="outline" className="text-[10px] bg-green-500/10 text-green-400 border-green-500/20">Active</Badge>}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={v.is_active_for_ads}
-                              onCheckedChange={(checked) => updatePricingVariant.mutate({ id: v.id, is_active_for_ads: checked })}
-                            />
-                            <label className="text-xs text-muted-foreground">Active for ads</label>
-                          </div>
-                        </div>
-                        {v.payment_link && (
-                          <div className="flex items-center gap-2">
-                            <Input className="flex-1 text-xs h-7 font-mono" value={v.payment_link} readOnly />
-                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => {
-                              navigator.clipboard.writeText(v.payment_link);
-                              toast({ title: "Link copied!", description: `${v.label} payment link copied.` });
-                            }}>
-                              <Link2 className="h-3 w-3" /> Copy
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div className="rounded-lg border border-border bg-card p-5 space-y-3">
+                <h3 className="text-base font-semibold text-foreground">Sales & Pricing</h3>
+                <p className="text-sm text-muted-foreground">Presale pages and pricing variants have moved to the <strong>Sales Pages</strong> section in the admin sidebar. Go there to manage pricing, payment links, and presale content for this course.</p>
+                <Button size="sm" variant="outline" onClick={() => window.location.href = "/admin/sales"} className="gap-1.5">
+                  <ExternalLink className="h-3.5 w-3.5" /> Go to Sales Pages
+                </Button>
               </div>
             </TabsContent>
 
