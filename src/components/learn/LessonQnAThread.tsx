@@ -17,7 +17,7 @@ interface Props {
 }
 
 const LessonQnAThread = ({ lessonId, courseId }: Props) => {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const qc = useQueryClient();
   const [expandedQ, setExpandedQ] = useState<string | null>(null);
   const [answerText, setAnswerText] = useState("");

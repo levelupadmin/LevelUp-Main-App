@@ -15,7 +15,7 @@ interface Props {
 }
 
 const LessonCommentsThread = ({ lessonId, courseId }: Props) => {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const qc = useQueryClient();
   const [newComment, setNewComment] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
