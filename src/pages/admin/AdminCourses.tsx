@@ -9,9 +9,14 @@ import {
   GripVertical, ChevronDown, ChevronRight, Video, BookOpen, Save, X,
   Upload, File, FileQuestion, ClipboardList, Loader2, Eye, Calendar,
   Link2, Tag, Award, Clock, Repeat, Settings2, DollarSign, Package,
-  ExternalLink, Lock, Unlock, PlayCircle, FileDown,
+  ExternalLink, Lock, Unlock, PlayCircle, FileDown, MessageSquare,
+  HelpCircle, BarChart3, Shield,
 } from "lucide-react";
 import StudentCoursePreview from "@/components/admin/StudentCoursePreview";
+import AdminCommentsTab from "@/components/admin/AdminCommentsTab";
+import AdminQnATab from "@/components/admin/AdminQnATab";
+import AdminReportTab from "@/components/admin/AdminReportTab";
+import AdminAssignmentResponsesTab from "@/components/admin/AdminAssignmentResponsesTab";
 import CourseSetupChecklist from "@/components/admin/CourseSetupChecklist";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
