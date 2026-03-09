@@ -185,6 +185,9 @@ function MySpacesView({ navigate }: { navigate: ReturnType<typeof useNavigate> }
    ═══════════════════════════════════════════ */
 function DiscoverView({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
   const [exploreMode, setExploreMode] = useState<"city" | "skill">("city");
+  const { data: dbCitySpaces = [] } = useSpaces("city");
+  const { data: dbSkillSpaces = [] } = useSpaces("skill");
+
   return (
     <div className="space-y-5">
       <div className="mb-2"><h2 className="text-lg font-bold text-foreground">Discover Communities</h2><p className="text-xs text-muted-foreground">Find your tribe by city or skill</p></div>
@@ -196,9 +199,13 @@ function DiscoverView({ navigate }: { navigate: ReturnType<typeof useNavigate> }
         <>
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Cities</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {cityCommunities.map((city) => (
-              <button key={city.id} onClick={() => navigate(`/community/city/${city.slug}`)} className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]">
-                <div className="relative aspect-[4/5]"><img src={city.image} alt={city.name} className="h-full w-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" /><div className="absolute bottom-0 left-0 right-0 p-3"><p className="text-sm font-bold text-white">{city.name}</p><p className="text-[10px] text-white/60">{city.memberCount} creators</p></div></div>
+            {dbCitySpaces.map((space) => (
+              <button key={space.id} onClick={() => navigate(`/community/city/${space.slug}`)} className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]">
+                <div className="relative aspect-[4/5] bg-secondary">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute inset-0 flex items-center justify-center text-4xl">{space.icon || "📍"}</div>
+                  <div className="absolute bottom-0 left-0 right-0 p-3"><p className="text-sm font-bold text-white">{space.name}</p><p className="text-[10px] text-white/60">{space.description}</p></div>
+                </div>
               </button>
             ))}
           </div>
@@ -208,9 +215,13 @@ function DiscoverView({ navigate }: { navigate: ReturnType<typeof useNavigate> }
         <>
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Skills</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {skillCommunities.map((skill) => (
-              <button key={skill.id} onClick={() => navigate(`/community/skill/${skill.slug}`)} className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]">
-                <div className="relative aspect-[4/5]"><img src={skill.image} alt={skill.name} className="h-full w-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" /><div className="absolute bottom-0 left-0 right-0 p-3"><p className="text-sm font-bold text-white">{skill.name}</p><p className="text-[10px] text-white/60">{skill.memberCount} creators</p></div></div>
+            {dbSkillSpaces.map((space) => (
+              <button key={space.id} onClick={() => navigate(`/community/skill/${space.slug}`)} className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]">
+                <div className="relative aspect-[4/5] bg-secondary">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute inset-0 flex items-center justify-center text-4xl">{space.icon || "✨"}</div>
+                  <div className="absolute bottom-0 left-0 right-0 p-3"><p className="text-sm font-bold text-white">{space.name}</p><p className="text-[10px] text-white/60">{space.description}</p></div>
+                </div>
               </button>
             ))}
           </div>
