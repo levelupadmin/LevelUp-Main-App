@@ -17,6 +17,7 @@ import { useState } from "react";
 import { toast } from "@/hooks/use-toast";
 import LessonContentViewer from "@/components/learn/LessonContentViewer";
 import LessonSidebar from "@/components/learn/LessonSidebar";
+import LessonBelowContent from "@/components/learn/LessonBelowContent";
 
 const LessonDetail = () => {
   const { lessonId } = useParams();
