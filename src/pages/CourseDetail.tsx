@@ -238,13 +238,18 @@ const CourseDetail = () => {
                         {modLessons.map((lesson) => {
                           const done = completedIds.has(lesson.id);
                           const isNext = nextLesson?.id === lesson.id;
+                          const drip = dripMap.get(lesson.id);
+                          const isLocked = drip?.isLocked ?? false;
                           return (
                             <button
                               key={lesson.id}
-                              onClick={() => navigate(`/learn/lesson/${lesson.id}`)}
-                              className={`group/lesson flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/30 ${isNext ? "bg-highlight/5 border-l-2 border-l-highlight" : ""}`}
+                              onClick={() => !isLocked && navigate(`/learn/lesson/${lesson.id}`)}
+                              disabled={isLocked}
+                              className={`group/lesson flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${isLocked ? "opacity-50 cursor-not-allowed" : "hover:bg-secondary/30"} ${isNext ? "bg-highlight/5 border-l-2 border-l-highlight" : ""}`}
                             >
-                              {done ? (
+                              {isLocked ? (
+                                <Lock className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+                              ) : done ? (
                                 <CheckCircle2 className="h-4 w-4 text-highlight shrink-0" />
                               ) : isNext ? (
                                 <Play className="h-4 w-4 text-highlight shrink-0" />
@@ -252,9 +257,12 @@ const CourseDetail = () => {
                                 <Circle className="h-4 w-4 text-muted-foreground/30 shrink-0" />
                               )}
                               <div className="flex-1 min-w-0">
-                                <p className={`text-sm truncate ${isNext ? "text-foreground font-medium" : done ? "text-muted-foreground" : "text-foreground"}`}>
+                                <p className={`text-sm truncate ${isLocked ? "text-muted-foreground" : isNext ? "text-foreground font-medium" : done ? "text-muted-foreground" : "text-foreground"}`}>
                                   {lesson.title}
                                 </p>
+                                {isLocked && drip?.reason && (
+                                  <p className="text-[10px] text-muted-foreground mt-0.5">{drip.reason}</p>
+                                )}
                               </div>
                               <div className="flex items-center gap-2">
                                 <Badge variant="outline" className="text-[9px] capitalize">{lesson.type}</Badge>
