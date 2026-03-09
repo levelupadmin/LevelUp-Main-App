@@ -9,9 +9,14 @@ import {
   GripVertical, ChevronDown, ChevronRight, Video, BookOpen, Save, X,
   Upload, File, FileQuestion, ClipboardList, Loader2, Eye, Calendar,
   Link2, Tag, Award, Clock, Repeat, Settings2, DollarSign, Package,
-  ExternalLink, Lock, Unlock, PlayCircle, FileDown,
+  ExternalLink, Lock, Unlock, PlayCircle, FileDown, MessageSquare,
+  HelpCircle, BarChart3, Shield,
 } from "lucide-react";
 import StudentCoursePreview from "@/components/admin/StudentCoursePreview";
+import AdminCommentsTab from "@/components/admin/AdminCommentsTab";
+import AdminQnATab from "@/components/admin/AdminQnATab";
+import AdminReportTab from "@/components/admin/AdminReportTab";
+import AdminAssignmentResponsesTab from "@/components/admin/AdminAssignmentResponsesTab";
 import CourseSetupChecklist from "@/components/admin/CourseSetupChecklist";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -535,6 +540,10 @@ const AdminCourses = () => {
               <TabsTrigger value="presale" className="gap-1.5 text-xs"><DollarSign className="h-3.5 w-3.5" />Presale</TabsTrigger>
               <TabsTrigger value="resources" className="gap-1.5 text-xs"><Package className="h-3.5 w-3.5" />Resources</TabsTrigger>
               <TabsTrigger value="pricing" className="gap-1.5 text-xs"><Tag className="h-3.5 w-3.5" />Pricing</TabsTrigger>
+              <TabsTrigger value="comments" className="gap-1.5 text-xs"><MessageSquare className="h-3.5 w-3.5" />Comments</TabsTrigger>
+              <TabsTrigger value="qna" className="gap-1.5 text-xs"><HelpCircle className="h-3.5 w-3.5" />Q&A</TabsTrigger>
+              <TabsTrigger value="report" className="gap-1.5 text-xs"><BarChart3 className="h-3.5 w-3.5" />Report</TabsTrigger>
+              <TabsTrigger value="assignments" className="gap-1.5 text-xs"><ClipboardList className="h-3.5 w-3.5" />Assignments</TabsTrigger>
               <TabsTrigger value="settings" className="gap-1.5 text-xs"><Settings2 className="h-3.5 w-3.5" />Settings</TabsTrigger>
             </TabsList>
 
@@ -1356,6 +1365,26 @@ const AdminCourses = () => {
               </div>
             </TabsContent>
 
+            {/* ── COMMENTS TAB ── */}
+            <TabsContent value="comments">
+              <AdminCommentsTab courseId={selectedCourse.id} lessons={lessons as any} modules={modules as any} />
+            </TabsContent>
+
+            {/* ── QNA TAB ── */}
+            <TabsContent value="qna">
+              <AdminQnATab courseId={selectedCourse.id} lessons={lessons as any} modules={modules as any} />
+            </TabsContent>
+
+            {/* ── REPORT TAB ── */}
+            <TabsContent value="report">
+              <AdminReportTab courseId={selectedCourse.id} lessons={lessons as any} modules={modules as any} />
+            </TabsContent>
+
+            {/* ── ASSIGNMENT RESPONSES TAB ── */}
+            <TabsContent value="assignments">
+              <AdminAssignmentResponsesTab courseId={selectedCourse.id} lessons={lessons as any} />
+            </TabsContent>
+
             {/* ── SETTINGS TAB ── */}
             <TabsContent value="settings" className="space-y-4 mt-4">
               {/* Drip Release */}
@@ -1408,7 +1437,67 @@ const AdminCourses = () => {
                 )}
               </div>
 
-              {/* Access Tags / Cross-Course Grants */}
+              {/* Course Settings */}
+              <div className="rounded-lg border border-border bg-card p-5 space-y-3">
+                <h4 className="text-sm font-semibold text-foreground flex items-center gap-2"><Shield className="h-4 w-4" /> Course Settings</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-foreground">Validity (days)</span>
+                      <p className="text-[10px] text-muted-foreground">Auto-expire enrollment after N days</p>
+                    </div>
+                    <Input
+                      type="number"
+                      defaultValue={(selectedCourse as any).validity_days || ""}
+                      placeholder="∞"
+                      className="w-24 h-8 text-sm"
+                      onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, validity_days: e.target.value ? parseInt(e.target.value) : null } as any)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-foreground">Show as Locked</span>
+                      <p className="text-[10px] text-muted-foreground">Display course with lock icon for non-enrolled users</p>
+                    </div>
+                    <Switch
+                      checked={(selectedCourse as any).show_as_locked || false}
+                      onCheckedChange={(v) => updateCourse.mutate({ id: selectedCourse.id, show_as_locked: v } as any)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-foreground">DRM Protection</span>
+                      <p className="text-[10px] text-muted-foreground">Enable video DRM protection</p>
+                    </div>
+                    <Switch
+                      checked={(selectedCourse as any).drm_enabled || false}
+                      onCheckedChange={(v) => updateCourse.mutate({ id: selectedCourse.id, drm_enabled: v } as any)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-foreground">Disable Q&A</span>
+                      <p className="text-[10px] text-muted-foreground">Hide Q&A section for students</p>
+                    </div>
+                    <Switch
+                      checked={(selectedCourse as any).disable_qna || false}
+                      onCheckedChange={(v) => updateCourse.mutate({ id: selectedCourse.id, disable_qna: v } as any)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-foreground">Disable Comments</span>
+                      <p className="text-[10px] text-muted-foreground">Hide comments section for students</p>
+                    </div>
+                    <Switch
+                      checked={(selectedCourse as any).disable_comments || false}
+                      onCheckedChange={(v) => updateCourse.mutate({ id: selectedCourse.id, disable_comments: v } as any)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+
               <div className="rounded-lg border border-border bg-card p-5 space-y-3">
                 <div>
                   <h4 className="text-sm font-semibold text-foreground flex items-center gap-2"><Tag className="h-4 w-4" /> Access Grants</h4>
