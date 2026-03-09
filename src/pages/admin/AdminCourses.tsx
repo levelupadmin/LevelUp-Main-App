@@ -540,6 +540,10 @@ const AdminCourses = () => {
               <TabsTrigger value="presale" className="gap-1.5 text-xs"><DollarSign className="h-3.5 w-3.5" />Presale</TabsTrigger>
               <TabsTrigger value="resources" className="gap-1.5 text-xs"><Package className="h-3.5 w-3.5" />Resources</TabsTrigger>
               <TabsTrigger value="pricing" className="gap-1.5 text-xs"><Tag className="h-3.5 w-3.5" />Pricing</TabsTrigger>
+              <TabsTrigger value="comments" className="gap-1.5 text-xs"><MessageSquare className="h-3.5 w-3.5" />Comments</TabsTrigger>
+              <TabsTrigger value="qna" className="gap-1.5 text-xs"><HelpCircle className="h-3.5 w-3.5" />Q&A</TabsTrigger>
+              <TabsTrigger value="report" className="gap-1.5 text-xs"><BarChart3 className="h-3.5 w-3.5" />Report</TabsTrigger>
+              <TabsTrigger value="assignments" className="gap-1.5 text-xs"><ClipboardList className="h-3.5 w-3.5" />Assignments</TabsTrigger>
               <TabsTrigger value="settings" className="gap-1.5 text-xs"><Settings2 className="h-3.5 w-3.5" />Settings</TabsTrigger>
             </TabsList>
 
