@@ -137,7 +137,7 @@ const AdminCourses = () => {
   const [newModuleTitle, setNewModuleTitle] = useState("");
   const [newLessonData, setNewLessonData] = useState<{
     moduleId: string; title: string; duration: string; type: string;
-    videoUrl: string; file: File | null; content: string; uploading: boolean;
+    videoUrl: string; file: File | null; content: string; uploading: boolean; isFree: boolean;
   } | null>(null);
 
   // Schedule creation
@@ -243,6 +243,30 @@ const AdminCourses = () => {
       queryClient.invalidateQueries({ queryKey: ["admin-lessons"] });
       toast({ title: "Lesson deleted" });
     },
+  });
+
+  const updateModule = useMutation({
+    mutationFn: async ({ id, ...updates }: { id: string; title?: string; description?: string }) => {
+      const { error } = await supabase.from("course_modules").update(updates).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-modules"] });
+      toast({ title: "Module updated" });
+    },
+    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const updateLesson = useMutation({
+    mutationFn: async ({ id, ...updates }: { id: string; title?: string; duration?: string; is_free?: boolean; description?: string }) => {
+      const { error } = await supabase.from("lessons").update(updates).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-lessons"] });
+      toast({ title: "Lesson updated" });
+    },
+    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const createSchedule = useMutation({
@@ -572,23 +596,43 @@ const AdminCourses = () => {
                 const isExpanded = expandedModules.has(mod.id);
                 return (
                   <div key={mod.id} className="rounded-lg border border-border bg-card overflow-hidden">
-                    <button
-                      onClick={() => toggleModule(mod.id)}
-                      className="flex w-full items-center justify-between px-4 py-3 hover:bg-secondary/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <GripVertical className="h-4 w-4 text-muted-foreground" />
-                        {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                        <span className="font-medium text-foreground">{mod.title}</span>
-                        <span className="text-xs text-muted-foreground">{modLessons.length} lessons</span>
-                      </div>
+                    <div className="flex w-full items-center justify-between px-4 py-3 hover:bg-secondary/30 transition-colors">
                       <button
-                        onClick={(e) => { e.stopPropagation(); deleteModule.mutate(mod.id); }}
-                        className="rounded-md p-1 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                        onClick={() => toggleModule(mod.id)}
+                        className="flex items-center gap-3 flex-1 min-w-0"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+                        {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                        <span className="font-medium text-foreground truncate">{mod.title}</span>
+                        <span className="text-xs text-muted-foreground shrink-0">{modLessons.length} lessons</span>
                       </button>
-                    </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="rounded-md p-1 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => {
+                              const newTitle = prompt("Edit module title:", mod.title);
+                              if (newTitle && newTitle !== mod.title) updateModule.mutate({ id: mod.id, title: newTitle });
+                            }}>
+                              <FileText className="h-3.5 w-3.5 mr-2" /> Rename Module
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => {
+                              const newDesc = prompt("Edit module description:", mod.description || "");
+                              if (newDesc !== null) updateModule.mutate({ id: mod.id, description: newDesc || null } as any);
+                            }}>
+                              <BookOpen className="h-3.5 w-3.5 mr-2" /> Edit Description
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onClick={() => deleteModule.mutate(mod.id)}>
+                              <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete Module
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
 
                     {isExpanded && (
                       <div className="border-t border-border">
@@ -600,12 +644,43 @@ const AdminCourses = () => {
                                 <LessonIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                 <span className="text-sm text-foreground truncate">{lesson.title}</span>
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">{lesson.type}</Badge>
-                                {lesson.is_free && <Badge variant="outline" className="text-[10px] px-1 py-0 bg-green-500/10 text-green-400 border-green-500/20">Free</Badge>}
-                                {lesson.duration && <span className="text-xs text-muted-foreground">{lesson.duration}</span>}
+                                {lesson.duration && <span className="text-xs text-muted-foreground shrink-0">{lesson.duration}</span>}
                               </div>
-                              <button onClick={() => deleteLesson.mutate(lesson.id)} className="rounded-md p-1 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={() => updateLesson.mutate({ id: lesson.id, is_free: !lesson.is_free })}
+                                  className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${lesson.is_free ? "bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20" : "bg-muted text-muted-foreground border-border hover:bg-secondary"}`}
+                                >
+                                  {lesson.is_free ? "Free" : "Paid"}
+                                </button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button className="rounded-md p-1 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+                                      <MoreHorizontal className="h-3.5 w-3.5" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => {
+                                      const newTitle = prompt("Edit lesson title:", lesson.title);
+                                      if (newTitle && newTitle !== lesson.title) updateLesson.mutate({ id: lesson.id, title: newTitle });
+                                    }}>
+                                      <FileText className="h-3.5 w-3.5 mr-2" /> Rename
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => {
+                                      const newDuration = prompt("Edit duration:", lesson.duration || "");
+                                      if (newDuration !== null) updateLesson.mutate({ id: lesson.id, duration: newDuration });
+                                    }}>
+                                      <Clock className="h-3.5 w-3.5 mr-2" /> Edit Duration
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => updateLesson.mutate({ id: lesson.id, is_free: !lesson.is_free })}>
+                                      <Tag className="h-3.5 w-3.5 mr-2" /> {lesson.is_free ? "Mark as Paid" : "Mark as Free"}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="text-destructive" onClick={() => deleteLesson.mutate(lesson.id)}>
+                                      <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
                             </div>
                           );
                         })}
@@ -640,6 +715,10 @@ const AdminCourses = () => {
                             {newLessonData.type === "text" && (
                               <Textarea placeholder="Lesson content..." value={newLessonData.content} onChange={(e) => setNewLessonData({ ...newLessonData, content: e.target.value })} rows={4} />
                             )}
+                            <div className="flex items-center gap-2">
+                              <Switch checked={newLessonData.isFree} onCheckedChange={(v) => setNewLessonData({ ...newLessonData, isFree: v })} />
+                              <span className="text-xs text-muted-foreground">{newLessonData.isFree ? "Free preview" : "Paid (requires enrollment)"}</span>
+                            </div>
                             <div className="flex gap-2 justify-end">
                               <Button size="sm" variant="ghost" onClick={() => setNewLessonData(null)}><X className="h-3.5 w-3.5 mr-1" /> Cancel</Button>
                               <Button
@@ -661,7 +740,7 @@ const AdminCourses = () => {
                                   createLesson.mutate({
                                     module_id: mod.id, course_id: selectedCourse.id, title: newLessonData.title,
                                     duration: newLessonData.duration, sort_order: modLessons.length, type: newLessonData.type as any,
-                                    video_url: videoUrl, file_url: fileUrl, content: newLessonData.content || null,
+                                    video_url: videoUrl, file_url: fileUrl, content: newLessonData.content || null, is_free: newLessonData.isFree,
                                   });
                                 }}
                               >
@@ -672,7 +751,7 @@ const AdminCourses = () => {
                           </div>
                         ) : (
                           <button
-                            onClick={() => setNewLessonData({ moduleId: mod.id, title: "", duration: "", type: "video", videoUrl: "", file: null, content: "", uploading: false })}
+                            onClick={() => setNewLessonData({ moduleId: mod.id, title: "", duration: "", type: "video", videoUrl: "", file: null, content: "", uploading: false, isFree: false })}
                             className="w-full px-4 py-2 pl-14 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/20 transition-colors text-left"
                           >
                             + Add lesson
