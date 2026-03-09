@@ -414,6 +414,7 @@ const AdminCourses = () => {
     },
   });
 
+  const handleStatusChange = (courseId: string, newStatus: "draft" | "published" | "archived") => {
     updateCourse.mutate({ id: courseId, status: newStatus });
   };
 
