@@ -54,6 +54,7 @@ import AdminSettings from "./pages/admin/AdminSettings";
 import AdminReferrals from "./pages/admin/AdminReferrals";
 import AdminWaitlists from "./pages/admin/AdminWaitlists";
 import AdminEngagement from "./pages/admin/AdminEngagement";
+import AdminSalesPages from "./pages/admin/AdminSalesPages";
 
 import NotFound from "./pages/NotFound";
 
