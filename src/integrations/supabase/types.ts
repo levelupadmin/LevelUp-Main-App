@@ -168,6 +168,110 @@ export type Database = {
           },
         ]
       }
+      course_pricing_variants: {
+        Row: {
+          course_id: string
+          created_at: string
+          currency: string
+          id: string
+          is_active_for_ads: boolean
+          is_active_on_site: boolean
+          label: string
+          payment_link: string | null
+          price: number
+          sort_order: number
+          valid_from: string | null
+          valid_until: string | null
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          currency?: string
+          id?: string
+          is_active_for_ads?: boolean
+          is_active_on_site?: boolean
+          label?: string
+          payment_link?: string | null
+          price?: number
+          sort_order?: number
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          currency?: string
+          id?: string
+          is_active_for_ads?: boolean
+          is_active_on_site?: boolean
+          label?: string
+          payment_link?: string | null
+          price?: number
+          sort_order?: number
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_pricing_variants_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      course_resources: {
+        Row: {
+          course_id: string
+          created_at: string
+          file_url: string | null
+          id: string
+          is_unlocked: boolean
+          module_id: string | null
+          sort_order: number
+          title: string
+          type: Database["public"]["Enums"]["resource_type"]
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          file_url?: string | null
+          id?: string
+          is_unlocked?: boolean
+          module_id?: string | null
+          sort_order?: number
+          title: string
+          type?: Database["public"]["Enums"]["resource_type"]
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          file_url?: string | null
+          id?: string
+          is_unlocked?: boolean
+          module_id?: string | null
+          sort_order?: number
+          title?: string
+          type?: Database["public"]["Enums"]["resource_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_resources_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_resources_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "course_modules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       course_schedules: {
         Row: {
           course_id: string
@@ -240,6 +344,7 @@ export type Database = {
           is_recurring: boolean
           max_students: number | null
           payment_page_url: string | null
+          presale_description: string | null
           price: number
           rating: number
           recurrence_rule: Json | null
@@ -250,6 +355,7 @@ export type Database = {
           tags: string[] | null
           thumbnail_url: string | null
           title: string
+          trailer_url: string | null
           updated_at: string
           zoom_link: string | null
         }
@@ -274,6 +380,7 @@ export type Database = {
           is_recurring?: boolean
           max_students?: number | null
           payment_page_url?: string | null
+          presale_description?: string | null
           price?: number
           rating?: number
           recurrence_rule?: Json | null
@@ -284,6 +391,7 @@ export type Database = {
           tags?: string[] | null
           thumbnail_url?: string | null
           title: string
+          trailer_url?: string | null
           updated_at?: string
           zoom_link?: string | null
         }
@@ -308,6 +416,7 @@ export type Database = {
           is_recurring?: boolean
           max_students?: number | null
           payment_page_url?: string | null
+          presale_description?: string | null
           price?: number
           rating?: number
           recurrence_rule?: Json | null
@@ -318,6 +427,7 @@ export type Database = {
           tags?: string[] | null
           thumbnail_url?: string | null
           title?: string
+          trailer_url?: string | null
           updated_at?: string
           zoom_link?: string | null
         }
@@ -445,6 +555,7 @@ export type Database = {
           file_url: string | null
           id: string
           is_free: boolean
+          is_locked_until_enabled: boolean
           module_id: string
           sort_order: number
           title: string
@@ -461,6 +572,7 @@ export type Database = {
           file_url?: string | null
           id?: string
           is_free?: boolean
+          is_locked_until_enabled?: boolean
           module_id: string
           sort_order?: number
           title: string
@@ -477,6 +589,7 @@ export type Database = {
           file_url?: string | null
           id?: string
           is_free?: boolean
+          is_locked_until_enabled?: boolean
           module_id?: string
           sort_order?: number
           title?: string
@@ -892,6 +1005,7 @@ export type Database = {
         | "enrollment"
         | "drip_release"
       progress_status: "not_started" | "in_progress" | "completed"
+      resource_type: "slide" | "template" | "recording" | "link" | "pdf"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1034,6 +1148,7 @@ export const Constants = {
         "drip_release",
       ],
       progress_status: ["not_started", "in_progress", "completed"],
+      resource_type: ["slide", "template", "recording", "link", "pdf"],
     },
   },
 } as const
