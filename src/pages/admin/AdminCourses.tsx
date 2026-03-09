@@ -137,7 +137,7 @@ const AdminCourses = () => {
   const [newModuleTitle, setNewModuleTitle] = useState("");
   const [newLessonData, setNewLessonData] = useState<{
     moduleId: string; title: string; duration: string; type: string;
-    videoUrl: string; file: File | null; content: string; uploading: boolean;
+    videoUrl: string; file: File | null; content: string; uploading: boolean; isFree: boolean;
   } | null>(null);
 
   // Schedule creation
