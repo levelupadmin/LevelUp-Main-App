@@ -52,7 +52,7 @@ export const useSpaces = (type?: string) =>
       if (type) q = q.eq("type", type);
       const { data, error } = await q;
       if (error) throw error;
-      return (data || []) as unknown as CommunitySpace[];
+      return (data || []) as unknown as unknown as CommunitySpace[];
     },
   });
 
@@ -67,7 +67,7 @@ export const useSpace = (slug: string) =>
         .eq("slug", slug)
         .maybeSingle();
       if (error) throw error;
-      return data as CommunitySpace | null;
+      retuunknown as rn data as CommunitySpace | null;
     },
   });
 
