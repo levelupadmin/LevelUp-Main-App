@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, Circle, Play, BookOpen, StickyNote, X } from "lucide-react";
+import { CheckCircle2, Circle, Play, BookOpen, StickyNote, X, Lock } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -106,16 +106,21 @@ const LessonSidebar = ({
                       {modLessons.map((lesson) => {
                         const status = getStatus(lesson.id);
                         const isCurrent = lesson.id === currentLessonId;
+                        const isLocked = lesson.is_locked_until_enabled;
                         return (
                           <button
                             key={lesson.id}
-                            onClick={() => navigate(`/learn/lesson/${lesson.id}`)}
+                            onClick={() => !isLocked && navigate(`/learn/lesson/${lesson.id}`)}
+                            disabled={isLocked}
                             className={cn(
-                              "flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-secondary/40",
-                              isCurrent && "bg-highlight/10 border-l-2 border-highlight"
+                              "flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors",
+                              isLocked ? "opacity-50 cursor-not-allowed" : "hover:bg-secondary/40",
+                              isCurrent && !isLocked && "bg-highlight/10 border-l-2 border-highlight"
                             )}
                           >
-                            {status === "completed" ? (
+                            {isLocked ? (
+                              <Lock className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+                            ) : status === "completed" ? (
                               <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
                             ) : isCurrent ? (
                               <Play className="h-4 w-4 text-highlight shrink-0" />
@@ -123,7 +128,7 @@ const LessonSidebar = ({
                               <Circle className="h-4 w-4 text-muted-foreground/40 shrink-0" />
                             )}
                             <div className="flex-1 min-w-0">
-                              <p className={cn("text-xs truncate", isCurrent ? "text-foreground font-semibold" : "text-muted-foreground")}>
+                              <p className={cn("text-xs truncate", isCurrent && !isLocked ? "text-foreground font-semibold" : "text-muted-foreground")}>
                                 {lesson.title}
                               </p>
                             </div>

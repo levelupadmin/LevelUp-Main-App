@@ -17,6 +17,7 @@ import { useState } from "react";
 import { toast } from "@/hooks/use-toast";
 import LessonContentViewer from "@/components/learn/LessonContentViewer";
 import LessonSidebar from "@/components/learn/LessonSidebar";
+import LessonBelowContent from "@/components/learn/LessonBelowContent";
 
 const LessonDetail = () => {
   const { lessonId } = useParams();
@@ -145,7 +146,7 @@ const LessonDetail = () => {
           </div>
 
           {/* Text/content area for non-video lessons */}
-          {lesson.type !== "video" && lesson.content && (
+          {lesson.type !== "video" && lesson.type !== "assignment" && lesson.content && (
             <div className="px-4 py-4 lg:px-6">
               <div className="rounded-lg border border-border bg-card p-5">
                 <pre className="whitespace-pre-wrap font-body text-sm text-muted-foreground leading-relaxed">
@@ -154,6 +155,9 @@ const LessonDetail = () => {
               </div>
             </div>
           )}
+
+          {/* Below-content tabs: Comments, Resources, QnA + Assignment submission */}
+          <LessonBelowContent lesson={lesson} course={course} />
 
           {/* Bottom nav */}
           <div className="mt-auto sticky bottom-0 border-t border-border bg-background/80 backdrop-blur-md px-4 py-3 lg:px-6 shrink-0">
