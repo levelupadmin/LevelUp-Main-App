@@ -1,6 +1,8 @@
 import AppShell from "@/components/layout/AppShell";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useCourse, useCourseModules, useCourseLessons, useEnrollment, useEnrollInCourse, useCourseProgress } from "@/hooks/useCourseData";
+import { useDripLockMap } from "@/hooks/useDripLock";
+import { useCertificate, useGenerateCertificate } from "@/hooks/useCertificate";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
