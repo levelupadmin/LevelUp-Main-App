@@ -1,7 +1,7 @@
 import { useState } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { mockAdminUsers, UserRole, UserStatus } from "@/data/adminData";
-import { Search, MoreHorizontal, Users, Shield, ChevronRight } from "lucide-react";
+import { Search, MoreHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import UserDetailSheet from "@/components/admin/UserDetailSheet";
 
 const roleStyles: Record<UserRole, string> = {
   super_admin: "bg-destructive/10 text-destructive border-destructive/20",

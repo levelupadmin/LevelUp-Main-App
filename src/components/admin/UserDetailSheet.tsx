@@ -37,10 +37,10 @@ const UserDetailSheet = ({ user, open, onOpenChange, userRole, userStatus, roleS
     queryFn: async () => {
       const { data, error } = await supabase
         .from("enrollments")
-        .select("*, courses(*)")
+        .select("*, courses!enrollments_course_id_fkey(*)")
         .eq("user_id", user!.id);
       if (error) throw error;
-      return data as (Enrollment & { courses: Course })[];
+      return data as any[];
     },
   });
 
