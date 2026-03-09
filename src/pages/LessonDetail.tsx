@@ -11,7 +11,7 @@ import {
   useEnrollment,
 } from "@/hooks/useCourseData";
 import { useDripLockMap } from "@/hooks/useDripLock";
-import { ChevronLeft, ChevronRight, CheckCircle2, PanelRightOpen } from "lucide-react";
+import { ChevronLeft, ChevronRight, CheckCircle2, PanelRightOpen, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
