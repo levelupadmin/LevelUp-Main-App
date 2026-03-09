@@ -30,10 +30,12 @@ const UserDetailSheet = ({ user, open, onOpenChange, userRole, userStatus, roleS
   const [assignCourseId, setAssignCourseId] = useState<string>("");
   const [showAssign, setShowAssign] = useState(false);
 
+  const isValidUUID = user ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id) : false;
+
   // Fetch user's enrollments with course data
   const { data: enrollments = [], isLoading: loadingEnrollments } = useQuery({
     queryKey: ["admin-user-enrollments", user?.id],
-    enabled: !!user,
+    enabled: !!user && isValidUUID,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("enrollments")
