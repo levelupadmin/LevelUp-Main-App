@@ -105,7 +105,13 @@ const CourseDetail = () => {
     const modB = modules.find((m) => m.id === b.module_id);
     return (modA?.sort_order ?? 0) - (modB?.sort_order ?? 0) || a.sort_order - b.sort_order;
   });
-  const nextLesson = sortedLessons.find((l) => !completedIds.has(l.id)) ?? sortedLessons[0];
+
+  const dripMap = useDripLockMap(course, modules, lessons, enrollment, progress);
+  const nextLesson = sortedLessons.find((l) => !completedIds.has(l.id) && !dripMap.get(l.id)?.isLocked) ?? sortedLessons[0];
+
+  // Certificate
+  const { data: certificate } = useCertificate(course?.id);
+  const generateCert = useGenerateCertificate();
 
   const handleStartCourse = () => {
     if (enrollment) {
