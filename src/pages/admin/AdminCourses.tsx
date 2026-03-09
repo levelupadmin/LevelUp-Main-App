@@ -1099,7 +1099,224 @@ const AdminCourses = () => {
               )}
             </TabsContent>
 
-            {/* ── PRICING TAB ── */}
+            {/* ── PRESALE TAB ── */}
+            <TabsContent value="presale" className="space-y-4 mt-4">
+              {/* Presale Content */}
+              <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+                <h3 className="text-base font-semibold text-foreground">Presale Page Content</h3>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Trailer / Preview Video URL</label>
+                  <Input
+                    placeholder="https://youtube.com/watch?v=..."
+                    defaultValue={(selectedCourse as any).trailer_url || ""}
+                    onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, trailer_url: e.target.value } as any)}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">Shown on the sales page for non-enrolled users</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Presale Description (Rich)</label>
+                  <Textarea
+                    className="min-h-[120px]"
+                    placeholder="Detailed sales copy, feature bullets, social proof..."
+                    defaultValue={(selectedCourse as any).presale_description || ""}
+                    onBlur={(e) => updateCourse.mutate({ id: selectedCourse.id, presale_description: e.target.value } as any)}
+                  />
+                </div>
+              </div>
+
+              {/* Pricing Variants */}
+              <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">Pricing Variants</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Create multiple price points for A/B testing via ads. Only one shows on the site.</p>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => createPricingVariant.mutate({
+                    course_id: selectedCourse.id,
+                    label: "New Variant",
+                    price: selectedCourse.price || 0,
+                    sort_order: pricingVariants.length,
+                  })}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Variant
+                  </Button>
+                </div>
+
+                {pricingVariants.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">No pricing variants yet. Add one to enable price testing.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {pricingVariants.map((v: any) => (
+                      <div key={v.id} className="rounded-lg border border-border bg-secondary/20 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-3">
+                            <div>
+                              <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Label</label>
+                              <Input
+                                defaultValue={v.label}
+                                className="h-8 text-sm"
+                                onBlur={(e) => updatePricingVariant.mutate({ id: v.id, label: e.target.value })}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Price (₹)</label>
+                              <Input
+                                type="number"
+                                defaultValue={v.price}
+                                className="h-8 text-sm"
+                                onBlur={(e) => updatePricingVariant.mutate({ id: v.id, price: parseInt(e.target.value) || 0 })}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Razorpay Link</label>
+                              <Input
+                                placeholder="https://rzp.io/..."
+                                defaultValue={v.payment_link || ""}
+                                className="h-8 text-sm"
+                                onBlur={(e) => updatePricingVariant.mutate({ id: v.id, payment_link: e.target.value })}
+                              />
+                            </div>
+                          </div>
+                          <button onClick={() => deletePricingVariant.mutate(v.id)} className="rounded-md p-1 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors mt-4">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={v.is_active_on_site}
+                              onCheckedChange={(checked) => {
+                                // If turning on, turn off all others first
+                                if (checked) {
+                                  pricingVariants.filter((pv: any) => pv.id !== v.id && pv.is_active_on_site).forEach((pv: any) => {
+                                    updatePricingVariant.mutate({ id: pv.id, is_active_on_site: false });
+                                  });
+                                }
+                                updatePricingVariant.mutate({ id: v.id, is_active_on_site: checked });
+                              }}
+                            />
+                            <label className="text-xs text-muted-foreground">Show on site</label>
+                            {v.is_active_on_site && <Badge variant="outline" className="text-[10px] bg-green-500/10 text-green-400 border-green-500/20">Active</Badge>}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={v.is_active_for_ads}
+                              onCheckedChange={(checked) => updatePricingVariant.mutate({ id: v.id, is_active_for_ads: checked })}
+                            />
+                            <label className="text-xs text-muted-foreground">Active for ads</label>
+                          </div>
+                        </div>
+                        {v.payment_link && (
+                          <div className="flex items-center gap-2">
+                            <Input className="flex-1 text-xs h-7 font-mono" value={v.payment_link} readOnly />
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => {
+                              navigator.clipboard.writeText(v.payment_link);
+                              toast({ title: "Link copied!", description: `${v.label} payment link copied.` });
+                            }}>
+                              <Link2 className="h-3 w-3" /> Copy
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
+            {/* ── RESOURCES TAB ── */}
+            <TabsContent value="resources" className="space-y-4 mt-4">
+              <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">Course Resources</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Slides, recordings, templates — toggle unlock to make visible to enrolled students.</p>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => createResource.mutate({
+                    course_id: selectedCourse.id,
+                    title: "New Resource",
+                    type: "link",
+                    sort_order: courseResources.length,
+                  })}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Resource
+                  </Button>
+                </div>
+
+                {courseResources.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">No resources yet. Add slides, recordings, or templates.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {courseResources.map((r: any) => (
+                      <div key={r.id} className="rounded-lg border border-border bg-secondary/20 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-3">
+                            <div>
+                              <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Title</label>
+                              <Input
+                                defaultValue={r.title}
+                                className="h-8 text-sm"
+                                onBlur={(e) => updateResource.mutate({ id: r.id, title: e.target.value })}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Type</label>
+                              <Select defaultValue={r.type} onValueChange={(v) => updateResource.mutate({ id: r.id, type: v })}>
+                                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="recording">Recording</SelectItem>
+                                  <SelectItem value="slide">Slide</SelectItem>
+                                  <SelectItem value="template">Template</SelectItem>
+                                  <SelectItem value="pdf">PDF</SelectItem>
+                                  <SelectItem value="link">Link</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-medium text-muted-foreground mb-1 block">File URL / Link</label>
+                              <div className="flex gap-1">
+                                <Input
+                                  placeholder="URL or upload..."
+                                  defaultValue={r.file_url || ""}
+                                  className="h-8 text-sm"
+                                  onBlur={(e) => updateResource.mutate({ id: r.id, file_url: e.target.value })}
+                                />
+                                <label className="shrink-0 flex items-center justify-center h-8 w-8 rounded-md border border-border bg-secondary hover:bg-accent cursor-pointer transition-colors">
+                                  <Upload className="h-3 w-3 text-muted-foreground" />
+                                  <input type="file" className="hidden" onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    const ext = file.name.split(".").pop();
+                                    const path = `resources/${selectedCourse.id}/${r.id}.${ext}`;
+                                    const { error: uploadError } = await supabase.storage.from("course-content").upload(path, file, { upsert: true });
+                                    if (uploadError) { toast({ title: "Upload failed", description: uploadError.message, variant: "destructive" }); return; }
+                                    const { data: urlData } = supabase.storage.from("course-content").getPublicUrl(path);
+                                    updateResource.mutate({ id: r.id, file_url: urlData.publicUrl });
+                                  }} />
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+                          <button onClick={() => deleteResource.mutate(r.id)} className="rounded-md p-1 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors mt-4">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={r.is_unlocked}
+                              onCheckedChange={(checked) => updateResource.mutate({ id: r.id, is_unlocked: checked })}
+                            />
+                            <label className="text-xs text-muted-foreground flex items-center gap-1">
+                              {r.is_unlocked ? <><Unlock className="h-3 w-3" /> Visible to students</> : <><Lock className="h-3 w-3" /> Locked</>}
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
             <TabsContent value="pricing" className="space-y-4 mt-4">
               <div className="rounded-lg border border-border bg-card p-5 space-y-4">
                 <h3 className="text-base font-semibold text-foreground">Pricing & Payment</h3>
