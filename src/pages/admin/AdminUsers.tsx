@@ -1,7 +1,7 @@
 import { useState } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { mockAdminUsers, UserRole, UserStatus } from "@/data/adminData";
-import { Search, MoreHorizontal, Users, Shield, ChevronRight } from "lucide-react";
+import { Search, MoreHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import UserDetailSheet from "@/components/admin/UserDetailSheet";
 
 const roleStyles: Record<UserRole, string> = {
   super_admin: "bg-destructive/10 text-destructive border-destructive/20",
@@ -185,47 +186,18 @@ const AdminUsers = () => {
           </div>
         </div>
 
-        {/* User Detail Slide-out */}
+        {/* User Detail Sheet */}
         {detail && (
-          <Dialog open={!!selectedUser} onOpenChange={() => setSelectedUser(null)}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>{detail.name}</DialogTitle>
-                <DialogDescription>{detail.email}</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-md bg-secondary p-3">
-                    <p className="text-xs text-muted-foreground">City</p>
-                    <p className="text-sm font-medium text-foreground">{detail.city}</p>
-                  </div>
-                  <div className="rounded-md bg-secondary p-3">
-                    <p className="text-xs text-muted-foreground">Level</p>
-                    <p className="text-sm font-medium text-foreground">{detail.level}</p>
-                  </div>
-                  <div className="rounded-md bg-secondary p-3">
-                    <p className="text-xs text-muted-foreground">Courses Enrolled</p>
-                    <p className="text-sm font-medium text-foreground">{detail.coursesEnrolled}</p>
-                  </div>
-                  <div className="rounded-md bg-secondary p-3">
-                    <p className="text-xs text-muted-foreground">Last Active</p>
-                    <p className="text-sm font-medium text-foreground">{detail.lastActive}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Role:</span>
-                  <Badge variant="outline" className={roleStyles[userRoles[detail.id]]}>{roleLabel[userRoles[detail.id]]}</Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Status:</span>
-                  <Badge variant="outline" className={statusStyles[userStatuses[detail.id]]}>{userStatuses[detail.id]}</Badge>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setSelectedUser(null)}>Close</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <UserDetailSheet
+            user={detail}
+            open={!!selectedUser}
+            onOpenChange={() => setSelectedUser(null)}
+            userRole={userRoles[detail.id]}
+            userStatus={userStatuses[detail.id]}
+            roleStyles={roleStyles}
+            statusStyles={statusStyles}
+            roleLabel={roleLabel}
+          />
         )}
 
         {/* Confirmation Dialog */}
