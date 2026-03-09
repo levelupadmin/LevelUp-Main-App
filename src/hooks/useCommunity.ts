@@ -52,7 +52,7 @@ export const useSpaces = (type?: string) =>
       if (type) q = q.eq("type", type);
       const { data, error } = await q;
       if (error) throw error;
-      return (data || []) as CommunitySpace[];
+      return (data || []) as unknown as CommunitySpace[];
     },
   });
 
