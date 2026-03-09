@@ -59,6 +59,25 @@ const LessonDetail = () => {
     );
   }
 
+  // Gate drip-locked lessons
+  const lessonDrip = dripMap.get(lesson.id);
+  if (lessonDrip?.isLocked) {
+    return (
+      <AppShell>
+        <div className="flex flex-col items-center justify-center py-32 gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
+            <Lock className="h-7 w-7 text-muted-foreground" />
+          </div>
+          <p className="text-lg font-bold text-foreground">Lesson Locked</p>
+          <p className="text-sm text-muted-foreground text-center max-w-sm">{lessonDrip.reason || "This lesson is not yet available."}</p>
+          <Button variant="outline" size="sm" onClick={() => navigate(`/learn/course/${course.slug}/dashboard`)}>
+            ← Back to Course
+          </Button>
+        </div>
+      </AppShell>
+    );
+  }
+
   // Sort lessons by module order then lesson order
   const sortedLessons = [...allLessons].sort((a, b) => {
     const modA = modules.find((m) => m.id === a.module_id);
