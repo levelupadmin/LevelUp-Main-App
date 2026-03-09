@@ -1365,6 +1365,26 @@ const AdminCourses = () => {
               </div>
             </TabsContent>
 
+            {/* ── COMMENTS TAB ── */}
+            <TabsContent value="comments">
+              <AdminCommentsTab courseId={selectedCourse.id} lessons={lessons as any} modules={modules as any} />
+            </TabsContent>
+
+            {/* ── QNA TAB ── */}
+            <TabsContent value="qna">
+              <AdminQnATab courseId={selectedCourse.id} lessons={lessons as any} modules={modules as any} />
+            </TabsContent>
+
+            {/* ── REPORT TAB ── */}
+            <TabsContent value="report">
+              <AdminReportTab courseId={selectedCourse.id} lessons={lessons as any} modules={modules as any} />
+            </TabsContent>
+
+            {/* ── ASSIGNMENT RESPONSES TAB ── */}
+            <TabsContent value="assignments">
+              <AdminAssignmentResponsesTab courseId={selectedCourse.id} lessons={lessons as any} />
+            </TabsContent>
+
             {/* ── SETTINGS TAB ── */}
             <TabsContent value="settings" className="space-y-4 mt-4">
               {/* Drip Release */}
