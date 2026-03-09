@@ -715,6 +715,10 @@ const AdminCourses = () => {
                             {newLessonData.type === "text" && (
                               <Textarea placeholder="Lesson content..." value={newLessonData.content} onChange={(e) => setNewLessonData({ ...newLessonData, content: e.target.value })} rows={4} />
                             )}
+                            <div className="flex items-center gap-2">
+                              <Switch checked={newLessonData.isFree} onCheckedChange={(v) => setNewLessonData({ ...newLessonData, isFree: v })} />
+                              <span className="text-xs text-muted-foreground">{newLessonData.isFree ? "Free preview" : "Paid (requires enrollment)"}</span>
+                            </div>
                             <div className="flex gap-2 justify-end">
                               <Button size="sm" variant="ghost" onClick={() => setNewLessonData(null)}><X className="h-3.5 w-3.5 mr-1" /> Cancel</Button>
                               <Button
