@@ -1,6 +1,6 @@
 import AppShell from "@/components/layout/AppShell";
 import { categories } from "@/data/mockData";
-import { Star, Clock, Users, Search, Play, ChevronRight, BookOpen, GraduationCap, Calendar } from "lucide-react";
+import { Search, Play, ChevronRight, BookOpen, GraduationCap, Calendar, Users, Tag } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -8,18 +8,42 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Fetch all published courses from DB
-const usePublishedCourses = () =>
+// Fetch all published courses + their active-on-site pricing variant
+const usePublishedCoursesWithPricing = () =>
   useQuery({
-    queryKey: ["published-courses"],
+    queryKey: ["published-courses-with-pricing"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("courses")
-        .select("*")
-        .eq("status", "published")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
+      const [coursesRes, pricingRes] = await Promise.all([
+        supabase
+          .from("courses")
+          .select("*")
+          .eq("status", "published")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("course_pricing_variants")
+          .select("*")
+          .eq("is_active_on_site", true)
+          .order("sort_order", { ascending: true }),
+      ]);
+      if (coursesRes.error) throw coursesRes.error;
+      if (pricingRes.error) throw pricingRes.error;
+
+      // Build a map: course_id -> best site pricing variant
+      const priceMap = new Map<string, { price: number; label: string }>();
+      for (const pv of pricingRes.data) {
+        if (!priceMap.has(pv.course_id)) {
+          priceMap.set(pv.course_id, { price: pv.price, label: pv.label });
+        }
+      }
+
+      return coursesRes.data.map((c: any) => {
+        const pv = priceMap.get(c.id);
+        return {
+          ...c,
+          displayPrice: pv?.price ?? c.price,
+          displayPriceLabel: pv?.label ?? null,
+        };
+      });
     },
   });
 
@@ -32,29 +56,22 @@ const useUserEnrollments = () =>
       if (!user) return [];
       const { data: enrollments, error } = await supabase
         .from("enrollments")
-        .select("*, courses(*)")
+        .select("*, courses!enrollments_course_id_fkey(*)")
         .eq("user_id", user.id)
         .eq("status", "active");
       if (error) throw error;
 
-      // Get progress for each enrollment
       const courseIds = enrollments.map((e: any) => e.course_id);
       if (courseIds.length === 0) return [];
 
-      const { data: lessons } = await supabase
-        .from("lessons")
-        .select("id, course_id")
-        .in("course_id", courseIds);
-
-      const { data: progress } = await supabase
-        .from("lesson_progress")
-        .select("lesson_id, status, course_id")
-        .eq("user_id", user.id)
-        .in("course_id", courseIds);
+      const [lessonsRes, progressRes] = await Promise.all([
+        supabase.from("lessons").select("id, course_id").in("course_id", courseIds),
+        supabase.from("lesson_progress").select("lesson_id, status, course_id").eq("user_id", user.id).in("course_id", courseIds),
+      ]);
 
       return enrollments.map((e: any) => {
-        const courseLessons = (lessons || []).filter((l: any) => l.course_id === e.course_id);
-        const completed = (progress || []).filter((p: any) => p.course_id === e.course_id && p.status === "completed").length;
+        const courseLessons = (lessonsRes.data || []).filter((l: any) => l.course_id === e.course_id);
+        const completed = (progressRes.data || []).filter((p: any) => p.course_id === e.course_id && p.status === "completed").length;
         const pct = courseLessons.length > 0 ? Math.round((completed / courseLessons.length) * 100) : 0;
         return { ...e, progressPct: pct, course: e.courses };
       });
@@ -66,7 +83,7 @@ const Learn = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
 
-  const { data: allCourses = [], isLoading } = usePublishedCourses();
+  const { data: allCourses = [], isLoading } = usePublishedCoursesWithPricing();
   const { data: enrollments = [] } = useUserEnrollments();
 
   const inProgressEnrollments = enrollments.filter((e: any) => e.progressPct > 0 && e.progressPct < 100);
@@ -99,6 +116,12 @@ const Learn = () => {
 
     return { masterclasses, cohorts, workshops };
   }, [searchQuery, selectedCategory, allCourses]);
+
+  const formatPrice = (course: any) => {
+    if (course.is_free) return "Free";
+    const price = course.displayPrice ?? course.price;
+    return `₹${price.toLocaleString("en-IN")}`;
+  };
 
   return (
     <AppShell>
@@ -236,10 +259,19 @@ const Learn = () => {
                           className="absolute inset-0 h-full w-full object-cover"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                        {course.displayPriceLabel && (
+                          <div className="absolute top-2 right-2">
+                            <Badge variant="secondary" className="bg-primary/90 text-primary-foreground text-[10px] font-bold border-0">
+                              <Tag className="h-2.5 w-2.5 mr-0.5" />
+                              {course.displayPriceLabel}
+                            </Badge>
+                          </div>
+                        )}
                         <div className="absolute bottom-0 left-0 right-0 p-3">
                           <p className="text-xs text-white/70">{course.category}</p>
                           <p className="text-sm font-bold text-white leading-tight">{course.title}</p>
                           <p className="text-xs text-white/60 mt-0.5">{course.instructor_name}</p>
+                          <p className="text-xs font-bold text-white mt-1">{formatPrice(course)}</p>
                         </div>
                       </button>
                     ))}
@@ -262,11 +294,16 @@ const Learn = () => {
                       <div className="relative h-48 sm:h-56">
                         <img src={cohort.banner_url || cohort.thumbnail_url || "/placeholder.svg"} alt={cohort.title} className="h-full w-full object-cover" />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent" />
-                        <div className="absolute top-3 left-3">
+                        <div className="absolute top-3 left-3 flex gap-2">
                           <Badge className="bg-primary text-primary-foreground text-[10px] font-bold">
                             <GraduationCap className="h-3 w-3 mr-1" />
                             Cohort Program
                           </Badge>
+                          {cohort.displayPriceLabel && (
+                            <Badge variant="secondary" className="bg-white/20 text-white text-[10px] font-bold border-0 backdrop-blur-sm">
+                              {cohort.displayPriceLabel}
+                            </Badge>
+                          )}
                         </div>
                         <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5">
                           <p className="text-xs text-white/60 mb-1">{cohort.category} · {cohort.estimated_duration || "—"}</p>
@@ -279,7 +316,8 @@ const Learn = () => {
                                 {cohort.max_students} seats
                               </div>
                             )}
-                            <span className="text-xs font-semibold text-white flex items-center gap-1">
+                            <span className="text-sm font-bold text-white">{formatPrice(cohort)}</span>
+                            <span className="text-xs font-semibold text-white flex items-center gap-1 ml-auto">
                               Learn more <ChevronRight className="h-3 w-3" />
                             </span>
                           </div>
@@ -305,7 +343,14 @@ const Learn = () => {
                         onClick={() => navigate(`/learn/course/${w.slug}`)}
                         className="group min-w-[260px] max-w-[300px] shrink-0 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground/30"
                       >
-                        {w.estimated_duration && <Badge variant="secondary" className="text-[10px] mb-2.5">{w.estimated_duration}</Badge>}
+                        <div className="flex items-center gap-2 mb-2.5">
+                          {w.estimated_duration && <Badge variant="secondary" className="text-[10px]">{w.estimated_duration}</Badge>}
+                          {w.displayPriceLabel && (
+                            <Badge variant="outline" className="text-[10px] text-primary border-primary/30">
+                              {w.displayPriceLabel}
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-sm font-semibold text-foreground line-clamp-2 leading-tight mb-2">{w.title}</p>
                         <div className="flex items-center gap-2 mb-3">
                           {w.instructor_image_url && (
@@ -314,7 +359,7 @@ const Learn = () => {
                           <span className="text-xs text-muted-foreground">{w.instructor_name}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-bold text-foreground">{w.is_free ? "Free" : `₹${w.price.toLocaleString()}`}</span>
+                          <span className="text-sm font-bold text-foreground">{formatPrice(w)}</span>
                         </div>
                       </button>
                     ))}
