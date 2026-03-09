@@ -119,7 +119,7 @@ const CourseDetail = () => {
       return;
     }
     if (course.is_free) {
-      enrollMutation.mutate(course.id, {
+      enrollMutation.mutate({ courseId: course.id, courseTitle: course.title }, {
         onSuccess: () => navigate(`/learn/course/${course.slug}/dashboard`),
       });
       return;
