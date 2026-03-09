@@ -54,6 +54,7 @@ import AdminSettings from "./pages/admin/AdminSettings";
 import AdminReferrals from "./pages/admin/AdminReferrals";
 import AdminWaitlists from "./pages/admin/AdminWaitlists";
 import AdminEngagement from "./pages/admin/AdminEngagement";
+import AdminSalesPages from "./pages/admin/AdminSalesPages";
 
 import NotFound from "./pages/NotFound";
 
@@ -110,6 +111,7 @@ const App = () => (
 
             {/* Admin */}
             <Route path="/admin" element={<AuthGuard><AdminGuard><AdminDashboard /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/sales" element={<AuthGuard><AdminGuard><AdminSalesPages /></AdminGuard></AuthGuard>} />
             <Route path="/admin/courses" element={<AuthGuard><AdminGuard><AdminCourses /></AdminGuard></AuthGuard>} />
             <Route path="/admin/content" element={<Navigate to="/admin/courses" replace />} />
             <Route path="/admin/workshops" element={<Navigate to="/admin/courses" replace />} />
