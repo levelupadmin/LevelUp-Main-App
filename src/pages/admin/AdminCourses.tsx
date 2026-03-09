@@ -502,7 +502,7 @@ const AdminCourses = () => {
                       {selectedCourse.rating}
                     </span>
                   )}
-                  <span>{selectedCourse.is_free ? "Free" : `₹${selectedCourse.price.toLocaleString()}`}</span>
+                  <span>{selectedCourse.is_free ? "Free" : `₹${(selectedCourse.price ?? 0).toLocaleString()}`}</span>
                   {isRecurring && <span className="flex items-center gap-1"><Repeat className="h-3 w-3" /> Recurring</span>}
                 </div>
               </div>
@@ -1495,7 +1495,7 @@ const AdminCourses = () => {
                         </td>
                         <td className="px-4 py-3 text-right text-muted-foreground hidden sm:table-cell">{course.student_count}</td>
                         <td className="px-4 py-3 text-right text-muted-foreground hidden sm:table-cell">
-                          {course.is_free ? "Free" : `₹${course.price.toLocaleString()}`}
+                          {course.is_free ? "Free" : `₹${(course.price ?? 0).toLocaleString()}`}
                         </td>
                         <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
