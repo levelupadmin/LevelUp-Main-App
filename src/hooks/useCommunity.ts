@@ -67,7 +67,7 @@ export const useSpace = (slug: string) =>
         .eq("slug", slug)
         .maybeSingle();
       if (error) throw error;
-      retuunknown as rn data as CommunitySpace | null;
+      return data as unknown as CommunitySpace | null;
     },
   });
 
