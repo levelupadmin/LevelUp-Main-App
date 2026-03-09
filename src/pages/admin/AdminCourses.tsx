@@ -132,6 +132,7 @@ const AdminCourses = () => {
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [showStudentPreview, setShowStudentPreview] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState("details");
+  const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
 
   // Module/Lesson creation
   const [newModuleTitle, setNewModuleTitle] = useState("");
