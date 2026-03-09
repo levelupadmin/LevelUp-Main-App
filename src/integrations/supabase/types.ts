@@ -280,6 +280,7 @@ export type Database = {
           label: string
           payment_link: string | null
           price: number
+          sales_page_id: string | null
           sort_order: number
           valid_from: string | null
           valid_until: string | null
@@ -294,6 +295,7 @@ export type Database = {
           label?: string
           payment_link?: string | null
           price?: number
+          sales_page_id?: string | null
           sort_order?: number
           valid_from?: string | null
           valid_until?: string | null
@@ -308,6 +310,7 @@ export type Database = {
           label?: string
           payment_link?: string | null
           price?: number
+          sales_page_id?: string | null
           sort_order?: number
           valid_from?: string | null
           valid_until?: string | null
@@ -318,6 +321,13 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_pricing_variants_sales_page_id_fkey"
+            columns: ["sales_page_id"]
+            isOneToOne: false
+            referencedRelation: "sales_pages"
             referencedColumns: ["id"]
           },
         ]
@@ -1165,6 +1175,87 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      sales_page_courses: {
+        Row: {
+          course_id: string
+          created_at: string
+          id: string
+          sales_page_id: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          id?: string
+          sales_page_id: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          id?: string
+          sales_page_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_page_courses_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_page_courses_sales_page_id_fkey"
+            columns: ["sales_page_id"]
+            isOneToOne: false
+            referencedRelation: "sales_pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales_pages: {
+        Row: {
+          course_type_hint: string
+          created_at: string
+          description: string | null
+          hero_image_url: string | null
+          id: string
+          is_published: boolean
+          presale_description: string | null
+          show_application_form: boolean
+          slug: string
+          title: string
+          trailer_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          course_type_hint?: string
+          created_at?: string
+          description?: string | null
+          hero_image_url?: string | null
+          id?: string
+          is_published?: boolean
+          presale_description?: string | null
+          show_application_form?: boolean
+          slug: string
+          title: string
+          trailer_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          course_type_hint?: string
+          created_at?: string
+          description?: string | null
+          hero_image_url?: string | null
+          id?: string
+          is_published?: boolean
+          presale_description?: string | null
+          show_application_form?: boolean
+          slug?: string
+          title?: string
+          trailer_url?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       scheduled_notifications: {
         Row: {
