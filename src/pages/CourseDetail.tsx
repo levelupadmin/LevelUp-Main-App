@@ -1,6 +1,8 @@
 import AppShell from "@/components/layout/AppShell";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useCourse, useCourseModules, useCourseLessons, useEnrollment, useEnrollInCourse, useCourseProgress } from "@/hooks/useCourseData";
+import { useDripLockMap } from "@/hooks/useDripLock";
+import { useCertificate, useGenerateCertificate } from "@/hooks/useCertificate";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -103,7 +105,13 @@ const CourseDetail = () => {
     const modB = modules.find((m) => m.id === b.module_id);
     return (modA?.sort_order ?? 0) - (modB?.sort_order ?? 0) || a.sort_order - b.sort_order;
   });
-  const nextLesson = sortedLessons.find((l) => !completedIds.has(l.id)) ?? sortedLessons[0];
+
+  const dripMap = useDripLockMap(course, modules, lessons, enrollment, progress);
+  const nextLesson = sortedLessons.find((l) => !completedIds.has(l.id) && !dripMap.get(l.id)?.isLocked) ?? sortedLessons[0];
+
+  // Certificate
+  const { data: certificate } = useCertificate(course?.id);
+  const generateCert = useGenerateCertificate();
 
   const handleStartCourse = () => {
     if (enrollment) {
@@ -111,7 +119,7 @@ const CourseDetail = () => {
       return;
     }
     if (course.is_free) {
-      enrollMutation.mutate(course.id, {
+      enrollMutation.mutate({ courseId: course.id, courseTitle: course.title }, {
         onSuccess: () => navigate(`/learn/course/${course.slug}/dashboard`),
       });
       return;
@@ -230,13 +238,18 @@ const CourseDetail = () => {
                         {modLessons.map((lesson) => {
                           const done = completedIds.has(lesson.id);
                           const isNext = nextLesson?.id === lesson.id;
+                          const drip = dripMap.get(lesson.id);
+                          const isLocked = drip?.isLocked ?? false;
                           return (
                             <button
                               key={lesson.id}
-                              onClick={() => navigate(`/learn/lesson/${lesson.id}`)}
-                              className={`group/lesson flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/30 ${isNext ? "bg-highlight/5 border-l-2 border-l-highlight" : ""}`}
+                              onClick={() => !isLocked && navigate(`/learn/lesson/${lesson.id}`)}
+                              disabled={isLocked}
+                              className={`group/lesson flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${isLocked ? "opacity-50 cursor-not-allowed" : "hover:bg-secondary/30"} ${isNext ? "bg-highlight/5 border-l-2 border-l-highlight" : ""}`}
                             >
-                              {done ? (
+                              {isLocked ? (
+                                <Lock className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+                              ) : done ? (
                                 <CheckCircle2 className="h-4 w-4 text-highlight shrink-0" />
                               ) : isNext ? (
                                 <Play className="h-4 w-4 text-highlight shrink-0" />
@@ -244,9 +257,12 @@ const CourseDetail = () => {
                                 <Circle className="h-4 w-4 text-muted-foreground/30 shrink-0" />
                               )}
                               <div className="flex-1 min-w-0">
-                                <p className={`text-sm truncate ${isNext ? "text-foreground font-medium" : done ? "text-muted-foreground" : "text-foreground"}`}>
+                                <p className={`text-sm truncate ${isLocked ? "text-muted-foreground" : isNext ? "text-foreground font-medium" : done ? "text-muted-foreground" : "text-foreground"}`}>
                                   {lesson.title}
                                 </p>
+                                {isLocked && drip?.reason && (
+                                  <p className="text-[10px] text-muted-foreground mt-0.5">{drip.reason}</p>
+                                )}
                               </div>
                               <div className="flex items-center gap-2">
                                 <Badge variant="outline" className="text-[9px] capitalize">{lesson.type}</Badge>
@@ -268,14 +284,29 @@ const CourseDetail = () => {
                 <CardContent className="p-5">
                   <div className="flex items-center gap-3 mb-3">
                     <Award className={`h-6 w-6 ${progressPct >= (course.certificate_threshold ?? 70) ? "text-highlight" : "text-muted-foreground/40"}`} />
-                    <div>
+                    <div className="flex-1">
                       <p className="text-sm font-bold text-foreground">
-                        {progressPct >= (course.certificate_threshold ?? 70) ? "Certificate Unlocked! 🎉" : "Earn Your Certificate"}
+                        {certificate ? "Certificate Earned! 🎉" : progressPct >= (course.certificate_threshold ?? 70) ? "Certificate Unlocked! 🎉" : "Earn Your Certificate"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Complete {course.certificate_threshold ?? 70}% of the course
                       </p>
                     </div>
+                    {progressPct >= (course.certificate_threshold ?? 70) && !certificate && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="gap-1.5 text-xs"
+                        disabled={generateCert.isPending}
+                        onClick={() => generateCert.mutate({ courseId: course.id, completionPct: progressPct })}
+                      >
+                        <Award className="h-3.5 w-3.5" />
+                        {generateCert.isPending ? "Generating…" : "Get Certificate"}
+                      </Button>
+                    )}
+                    {certificate && (
+                      <Badge className="bg-highlight/15 text-highlight text-[10px]">Issued</Badge>
+                    )}
                   </div>
                   <Progress value={Math.min(progressPct, 100)} className="h-2" />
                 </CardContent>

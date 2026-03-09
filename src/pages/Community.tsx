@@ -11,6 +11,9 @@ import {
   feedPosts, trendingPosts,
   type FeedPost, type DirectoryCreator,
 } from "@/data/communityData";
+import { useAuth } from "@/contexts/AuthContext";
+import { useSpaces, usePosts, useCreatePost, useToggleLike } from "@/hooks/useCommunity";
+import { formatDistanceToNow } from "date-fns";
 
 const Community = () => {
   const [activeSection, setActiveSection] = useState<CommunitySection>("feed");
@@ -32,16 +35,24 @@ const Community = () => {
    FEED VIEW
    ═══════════════════════════════════════════ */
 function FeedView() {
-  const [newPost, setNewPost] = useState("");
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [newPostTitle, setNewPostTitle] = useState("");
+  const [newPostBody, setNewPostBody] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
-  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
-  const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
+  const [selectedSpace, setSelectedSpace] = useState("");
 
-  const toggleLike = (id: string) => {
-    setLikedPosts((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
-  };
-  const toggleComments = (id: string) => {
-    setExpandedComments((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const { data: spaces = [] } = useSpaces();
+  const { data: posts = [], isLoading } = usePosts();
+  const createPost = useCreatePost();
+  const toggleLikeMut = useToggleLike();
+
+  const handlePost = () => {
+    if (!newPostTitle.trim() || !selectedSpace) return;
+    createPost.mutate(
+      { spaceId: selectedSpace, title: newPostTitle.trim(), body: newPostBody.trim() || undefined },
+      { onSuccess: () => { setNewPostTitle(""); setNewPostBody(""); setComposerOpen(false); setSelectedSpace(""); } }
+    );
   };
 
   return (
@@ -50,97 +61,87 @@ function FeedView() {
       <div className="rounded-xl border border-border bg-card p-4">
         {!composerOpen ? (
           <button onClick={() => setComposerOpen(true)} className="flex w-full items-center gap-3 text-left">
-            <div className="h-9 w-9 rounded-full bg-accent" />
+            <div className="h-9 w-9 rounded-full bg-accent flex items-center justify-center text-sm font-bold text-foreground">
+              {(user?.name || "U").charAt(0)}
+            </div>
             <span className="flex-1 text-sm text-muted-foreground">What's on your mind?</span>
           </button>
         ) : (
           <div className="space-y-3">
-            <div className="flex gap-3">
-              <div className="h-9 w-9 shrink-0 rounded-full bg-accent" />
-              <textarea value={newPost} onChange={(e) => setNewPost(e.target.value)} placeholder="Share your work, ask a question, or start a discussion..." className="flex-1 resize-none rounded-lg border-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none min-h-[80px]" autoFocus />
-            </div>
-            <div className="flex items-center justify-between">
-              <button className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-                <Image className="h-3.5 w-3.5" /> Photo
+            <select
+              value={selectedSpace}
+              onChange={(e) => setSelectedSpace(e.target.value)}
+              className="w-full rounded-lg border border-border bg-background py-2 px-3 text-sm text-foreground outline-none"
+            >
+              <option value="">Select a space...</option>
+              {spaces.map((s) => <option key={s.id} value={s.id}>{s.icon} {s.name}</option>)}
+            </select>
+            <input
+              value={newPostTitle}
+              onChange={(e) => setNewPostTitle(e.target.value)}
+              placeholder="Post title"
+              className="w-full rounded-lg border border-border bg-background py-2 px-3 text-sm font-medium text-foreground placeholder:text-muted-foreground outline-none"
+            />
+            <textarea
+              value={newPostBody}
+              onChange={(e) => setNewPostBody(e.target.value)}
+              placeholder="Share your work, ask a question..."
+              className="w-full resize-none rounded-lg border border-border bg-background py-2 px-3 text-sm text-foreground placeholder:text-muted-foreground outline-none min-h-[80px]"
+            />
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => { setComposerOpen(false); setNewPostTitle(""); setNewPostBody(""); }} className="rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
+              <button disabled={!newPostTitle.trim() || !selectedSpace || createPost.isPending} onClick={handlePost} className="rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40">
+                {createPost.isPending ? "Posting…" : "Post"}
               </button>
-              <div className="flex gap-2">
-                <button onClick={() => { setComposerOpen(false); setNewPost(""); }} className="rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
-                <button disabled={!newPost.trim()} className="rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40">Post</button>
-              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Trending */}
-      {trendingPosts.length > 0 && (
-        <div className="flex items-center gap-2 rounded-lg bg-accent/60 px-3 py-2">
-          <TrendingUp className="h-3.5 w-3.5 text-[hsl(var(--highlight))]" />
-          <p className="text-xs text-muted-foreground"><span className="font-semibold text-foreground">Trending:</span> {trendingPosts[0].content.slice(0, 60)}…</p>
+      {/* Posts from database */}
+      {isLoading ? (
+        <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-32 rounded-xl bg-card animate-pulse" />)}</div>
+      ) : posts.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center">
+          <MessageCircle className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
+          <p className="text-sm font-medium text-foreground">No posts yet</p>
+          <p className="text-xs text-muted-foreground mt-1">Be the first to share something!</p>
         </div>
-      )}
-
-      {feedPosts.map((post) => (
-        <FeedPostCard key={post.id} post={post} liked={likedPosts.has(post.id)} commentsExpanded={expandedComments.has(post.id)} onLike={() => toggleLike(post.id)} onToggleComments={() => toggleComments(post.id)} />
-      ))}
-    </div>
-  );
-}
-
-function FeedPostCard({ post, liked, commentsExpanded, onLike, onToggleComments }: { post: FeedPost; liked: boolean; commentsExpanded: boolean; onLike: () => void; onToggleComments: () => void }) {
-  return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
-      <div className="p-4">
-        <div className="flex items-center gap-3 mb-3">
-          <img src={post.avatar} alt={post.author} className="h-10 w-10 rounded-full object-cover" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-foreground truncate">{post.author}</p>
-              {post.isBatchmate && <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Batchmate</span>}
-            </div>
-            <p className="text-xs text-muted-foreground">{post.role} · {post.timeAgo}</p>
-          </div>
-        </div>
-        <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-line">{post.content}</p>
-        {post.tags && post.tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {post.tags.map((tag) => <span key={tag} className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground">#{tag}</span>)}
-          </div>
-        )}
-      </div>
-      {post.image && <img src={post.image} alt="" className="w-full max-h-80 object-cover" />}
-      <div className="flex items-center gap-1 border-t border-border px-4 py-2">
-        <button onClick={onLike} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${liked ? "text-[hsl(var(--destructive))]" : "text-muted-foreground hover:text-foreground"}`}>
-          <Heart className={`h-3.5 w-3.5 ${liked ? "fill-current" : ""}`} /> {post.likes + (liked ? 1 : 0)}
-        </button>
-        <button onClick={onToggleComments} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
-          <MessageCircle className="h-3.5 w-3.5" /> {post.comments}
-        </button>
-        <button className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors ml-auto">
-          <Send className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      {commentsExpanded && post.commentsData.length > 0 && (
-        <div className="border-t border-border bg-background/50 px-4 py-3 space-y-3">
-          {post.commentsData.map((c) => (
-            <div key={c.id} className="flex gap-2.5">
-              <img src={c.avatar} alt={c.author} className="h-7 w-7 rounded-full object-cover mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs"><span className="font-semibold text-foreground">{c.author}</span><span className="text-muted-foreground ml-2">{c.timeAgo}</span></p>
-                <p className="text-xs text-foreground/80 mt-0.5">{c.content}</p>
-                <button className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"><Heart className="h-3 w-3" /> {c.likes}</button>
+      ) : (
+        posts.map((post) => (
+          <div key={post.id} className="rounded-xl border border-border bg-card overflow-hidden">
+            <button onClick={() => navigate(`/community/post/${post.id}`)} className="w-full p-4 text-left hover:bg-accent/30 transition-colors">
+              <div className="flex items-center gap-3 mb-2">
+                {post.author_avatar ? (
+                  <img src={post.author_avatar} alt="" className="h-10 w-10 rounded-full object-cover" />
+                ) : (
+                  <div className="h-10 w-10 rounded-full bg-accent flex items-center justify-center text-sm font-bold text-foreground">{(post.author_name || "U").charAt(0)}</div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">{post.author_name}</p>
+                  <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</p>
+                </div>
               </div>
+              <h3 className="text-sm font-bold text-foreground">{post.title}</h3>
+              {post.body && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{post.body}</p>}
+            </button>
+            {post.image_url && <img src={post.image_url} alt="" className="w-full max-h-80 object-cover" />}
+            <div className="flex items-center gap-1 border-t border-border px-4 py-2">
+              <button onClick={() => toggleLikeMut.mutate({ postId: post.id, hasLiked: post.has_liked || false })} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${post.has_liked ? "text-destructive" : "text-muted-foreground hover:text-foreground"}`}>
+                <Heart className={`h-3.5 w-3.5 ${post.has_liked ? "fill-current" : ""}`} /> {post.like_count || 0}
+              </button>
+              <button onClick={() => navigate(`/community/post/${post.id}`)} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+                <MessageCircle className="h-3.5 w-3.5" /> {post.comment_count || 0}
+              </button>
             </div>
-          ))}
-          <div className="flex gap-2 pt-1">
-            <div className="h-7 w-7 shrink-0 rounded-full bg-accent" />
-            <input placeholder="Write a comment..." className="flex-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none" />
           </div>
-        </div>
+        ))
       )}
     </div>
   );
 }
+
+// FeedPostCard removed — feed now renders from database directly
 
 /* ═══════════════════════════════════════════
    MY SPACES VIEW
@@ -184,6 +185,9 @@ function MySpacesView({ navigate }: { navigate: ReturnType<typeof useNavigate> }
    ═══════════════════════════════════════════ */
 function DiscoverView({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
   const [exploreMode, setExploreMode] = useState<"city" | "skill">("city");
+  const { data: dbCitySpaces = [] } = useSpaces("city");
+  const { data: dbSkillSpaces = [] } = useSpaces("skill");
+
   return (
     <div className="space-y-5">
       <div className="mb-2"><h2 className="text-lg font-bold text-foreground">Discover Communities</h2><p className="text-xs text-muted-foreground">Find your tribe by city or skill</p></div>
@@ -195,9 +199,13 @@ function DiscoverView({ navigate }: { navigate: ReturnType<typeof useNavigate> }
         <>
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Cities</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {cityCommunities.map((city) => (
-              <button key={city.id} onClick={() => navigate(`/community/city/${city.slug}`)} className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]">
-                <div className="relative aspect-[4/5]"><img src={city.image} alt={city.name} className="h-full w-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" /><div className="absolute bottom-0 left-0 right-0 p-3"><p className="text-sm font-bold text-white">{city.name}</p><p className="text-[10px] text-white/60">{city.memberCount} creators</p></div></div>
+            {dbCitySpaces.map((space) => (
+              <button key={space.id} onClick={() => navigate(`/community/city/${space.slug}`)} className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]">
+                <div className="relative aspect-[4/5] bg-secondary">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute inset-0 flex items-center justify-center text-4xl">{space.icon || "📍"}</div>
+                  <div className="absolute bottom-0 left-0 right-0 p-3"><p className="text-sm font-bold text-white">{space.name}</p><p className="text-[10px] text-white/60">{space.description}</p></div>
+                </div>
               </button>
             ))}
           </div>
@@ -207,9 +215,13 @@ function DiscoverView({ navigate }: { navigate: ReturnType<typeof useNavigate> }
         <>
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Skills</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {skillCommunities.map((skill) => (
-              <button key={skill.id} onClick={() => navigate(`/community/skill/${skill.slug}`)} className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]">
-                <div className="relative aspect-[4/5]"><img src={skill.image} alt={skill.name} className="h-full w-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" /><div className="absolute bottom-0 left-0 right-0 p-3"><p className="text-sm font-bold text-white">{skill.name}</p><p className="text-[10px] text-white/60">{skill.memberCount} creators</p></div></div>
+            {dbSkillSpaces.map((space) => (
+              <button key={space.id} onClick={() => navigate(`/community/skill/${space.slug}`)} className="group relative overflow-hidden rounded-xl text-left transition-transform hover:scale-[1.02]">
+                <div className="relative aspect-[4/5] bg-secondary">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute inset-0 flex items-center justify-center text-4xl">{space.icon || "✨"}</div>
+                  <div className="absolute bottom-0 left-0 right-0 p-3"><p className="text-sm font-bold text-white">{space.name}</p><p className="text-[10px] text-white/60">{space.description}</p></div>
+                </div>
               </button>
             ))}
           </div>

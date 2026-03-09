@@ -8,8 +8,10 @@ import {
   useCourseProgress,
   useMarkLessonComplete,
   useSaveLessonNotes,
+  useEnrollment,
 } from "@/hooks/useCourseData";
-import { ChevronLeft, ChevronRight, CheckCircle2, PanelRightOpen } from "lucide-react";
+import { useDripLockMap } from "@/hooks/useDripLock";
+import { ChevronLeft, ChevronRight, CheckCircle2, PanelRightOpen, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,9 +31,12 @@ const LessonDetail = () => {
   const { data: allLessons = [] } = useCourseLessons(lesson?.course_id);
   const { data: modules = [] } = useCourseModules(lesson?.course_id);
   const { data: progress = [] } = useCourseProgress(lesson?.course_id);
+  const { data: enrollment } = useEnrollment(lesson?.course_id);
 
   const markComplete = useMarkLessonComplete();
   const saveNotes = useSaveLessonNotes();
+
+  const dripMap = useDripLockMap(course, modules, allLessons, enrollment, progress);
 
   if (lessonLoading) {
     return (
@@ -49,6 +54,25 @@ const LessonDetail = () => {
       <AppShell>
         <div className="flex items-center justify-center py-32">
           <p className="text-muted-foreground">Lesson not found</p>
+        </div>
+      </AppShell>
+    );
+  }
+
+  // Gate drip-locked lessons
+  const lessonDrip = dripMap.get(lesson.id);
+  if (lessonDrip?.isLocked) {
+    return (
+      <AppShell>
+        <div className="flex flex-col items-center justify-center py-32 gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
+            <Lock className="h-7 w-7 text-muted-foreground" />
+          </div>
+          <p className="text-lg font-bold text-foreground">Lesson Locked</p>
+          <p className="text-sm text-muted-foreground text-center max-w-sm">{lessonDrip.reason || "This lesson is not yet available."}</p>
+          <Button variant="outline" size="sm" onClick={() => navigate(`/learn/course/${course.slug}/dashboard`)}>
+            ← Back to Course
+          </Button>
         </div>
       </AppShell>
     );

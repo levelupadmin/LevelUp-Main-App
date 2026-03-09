@@ -108,7 +108,7 @@ export const useEnrollment = (courseId: string | undefined) =>
 export const useEnrollInCourse = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (courseId: string) => {
+    mutationFn: async ({ courseId, courseTitle }: { courseId: string; courseTitle?: string }) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
       const { data, error } = await supabase
@@ -117,10 +117,21 @@ export const useEnrollInCourse = () => {
         .select()
         .single();
       if (error) throw error;
+
+      // Fire enrollment notification (fire-and-forget)
+      supabase.functions.invoke("send-notification", {
+        body: {
+          trigger_type: "enrollment",
+          user_id: user.id,
+          course_id: courseId,
+          data: { course_title: courseTitle || "" },
+        },
+      }).catch(() => {});
+
       return data;
     },
-    onSuccess: (_, courseId) => {
-      qc.invalidateQueries({ queryKey: ["enrollment", courseId] });
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["enrollment", vars.courseId] });
     },
   });
 };
