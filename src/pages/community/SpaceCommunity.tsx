@@ -1,14 +1,29 @@
 import AppShell from "@/components/layout/AppShell";
 import { useParams, useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { ArrowLeft, Users, Heart, MessageCircle, Send, Plus } from "lucide-react";
-import { useSpace, usePosts, useCreatePost, useToggleLike } from "@/hooks/useCommunity";
-import { useAuth } from "@/contexts/AuthContext";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
+import { ArrowLeft, Hash, ChevronDown } from "lucide-react";
+import { useSpace } from "@/hooks/useCommunity";
+import {
+  useChannels,
+  useChannelMessages,
+  useSendMessage,
+  useToggleReaction,
+  useDeleteMessage,
+  type Channel,
+  type ChatMessage,
+} from "@/hooks/useCommunityChat";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDistanceToNow } from "date-fns";
+import ChannelSidebar from "@/components/community/ChannelSidebar";
+import ChatMessageList from "@/components/community/ChatMessageList";
+import ChatInput from "@/components/community/ChatInput";
+import ThreadPanel from "@/components/community/ThreadPanel";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 interface SpaceCommunityProps {
   type: "city" | "skill";
@@ -17,37 +32,53 @@ interface SpaceCommunityProps {
 const SpaceCommunity = ({ type }: SpaceCommunityProps) => {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [postTitle, setPostTitle] = useState("");
-  const [postBody, setPostBody] = useState("");
+  const isMobile = useIsMobile();
 
   const { data: space, isLoading: spaceLoading } = useSpace(slug || "");
-  const { data: posts = [], isLoading: postsLoading } = usePosts(space?.id);
-  const createPost = useCreatePost();
-  const toggleLike = useToggleLike();
+  const { data: channels = [], isLoading: channelsLoading } = useChannels(space?.id);
 
-  const handleCreatePost = () => {
-    if (!postTitle.trim() || !space) return;
-    createPost.mutate(
-      { spaceId: space.id, title: postTitle.trim(), body: postBody.trim() || undefined },
-      {
-        onSuccess: () => {
-          setPostTitle("");
-          setPostBody("");
-          setComposerOpen(false);
-        },
-      }
-    );
+  const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
+  const [threadMessage, setThreadMessage] = useState<ChatMessage | null>(null);
+  const [mobileChannelOpen, setMobileChannelOpen] = useState(false);
+
+  // Auto-select default channel
+  const currentChannel = activeChannel || channels.find((c) => c.is_default) || channels[0] || null;
+
+  const { data: messages = [], isLoading: messagesLoading } = useChannelMessages(currentChannel?.id);
+  const sendMessage = useSendMessage();
+  const toggleReaction = useToggleReaction();
+  const deleteMessage = useDeleteMessage();
+
+  const handleSelectChannel = (ch: Channel) => {
+    setActiveChannel(ch);
+    setThreadMessage(null);
+    setMobileChannelOpen(false);
   };
 
-  if (spaceLoading) {
+  const handleSend = (content: string) => {
+    if (!currentChannel) return;
+    sendMessage.mutate({ channelId: currentChannel.id, content });
+  };
+
+  if (spaceLoading || channelsLoading) {
     return (
       <AppShell>
-        <div className="mx-auto max-w-2xl px-4 py-6 space-y-4">
-          <Skeleton className="h-8 w-1/3" />
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
+        <div className="flex h-[calc(100vh-4rem)]">
+          <div className="w-56 border-r border-border p-4 space-y-2 hidden md:block">
+            <Skeleton className="h-6 w-3/4" />
+            {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-7 w-full" />)}
+          </div>
+          <div className="flex-1 p-4 space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex gap-3">
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <div className="space-y-1.5 flex-1">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-4 w-3/4" />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </AppShell>
     );
@@ -59,7 +90,9 @@ const SpaceCommunity = ({ type }: SpaceCommunityProps) => {
         <div className="flex items-center justify-center h-[60vh]">
           <div className="text-center">
             <p className="text-sm text-muted-foreground">Community not found</p>
-            <button onClick={() => navigate("/community")} className="mt-3 text-sm font-semibold text-foreground hover:underline">← Back</button>
+            <button onClick={() => navigate("/community")} className="mt-3 text-sm font-semibold text-foreground hover:underline">
+              ← Back
+            </button>
           </div>
         </div>
       </AppShell>
@@ -68,117 +101,100 @@ const SpaceCommunity = ({ type }: SpaceCommunityProps) => {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-2xl px-4 py-6 space-y-5">
-        {/* Header */}
-        <div>
-          <button onClick={() => navigate("/community")} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back to Community
-          </button>
-          <div className="flex items-center gap-3">
-            {space.icon && <span className="text-2xl">{space.icon}</span>}
-            <div>
-              <h1 className="text-lg font-bold text-foreground">{space.name}</h1>
-              {space.description && <p className="text-xs text-muted-foreground">{space.description}</p>}
-            </div>
-          </div>
-        </div>
-
-        {/* Composer */}
-        {!composerOpen ? (
-          <button
-            onClick={() => setComposerOpen(true)}
-            className="flex w-full items-center gap-3 rounded-xl border border-border bg-card p-4 text-left hover:border-muted-foreground/30 transition-colors"
-          >
-            <div className="h-9 w-9 rounded-full bg-accent flex items-center justify-center text-sm font-bold text-foreground">
-              {(user?.name || "U").charAt(0)}
-            </div>
-            <span className="flex-1 text-sm text-muted-foreground">Share something with the community...</span>
-            <Plus className="h-4 w-4 text-muted-foreground" />
-          </button>
-        ) : (
-          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-            <Input
-              value={postTitle}
-              onChange={(e) => setPostTitle(e.target.value)}
-              placeholder="Post title"
-              className="text-sm font-medium"
+      <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+        {/* Desktop: Channel Sidebar */}
+        {!isMobile && (
+          <div className="w-56 flex-shrink-0">
+            <ChannelSidebar
+              channels={channels}
+              activeChannelId={currentChannel?.id}
+              onSelectChannel={handleSelectChannel}
+              spaceName={space.name}
+              spaceIcon={space.icon}
             />
-            <Textarea
-              value={postBody}
-              onChange={(e) => setPostBody(e.target.value)}
-              placeholder="Write your post (optional)..."
-              className="min-h-[80px] resize-none text-sm"
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => { setComposerOpen(false); setPostTitle(""); setPostBody(""); }}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                disabled={!postTitle.trim() || createPost.isPending}
-                onClick={handleCreatePost}
-                className="gap-1.5"
-              >
-                <Send className="h-3.5 w-3.5" />
-                {createPost.isPending ? "Posting…" : "Post"}
-              </Button>
-            </div>
           </div>
         )}
 
-        {/* Posts */}
-        {postsLoading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-32 w-full rounded-xl" />)}
-          </div>
-        ) : posts.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center">
-            <MessageCircle className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
-            <p className="text-sm font-medium text-foreground">No posts yet</p>
-            <p className="text-xs text-muted-foreground mt-1">Be the first to share something!</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {posts.map((post) => (
-              <div key={post.id} className="rounded-xl border border-border bg-card overflow-hidden">
-                <button
-                  onClick={() => navigate(`/community/post/${post.id}`)}
-                  className="w-full p-4 text-left hover:bg-accent/30 transition-colors"
-                >
-                  <div className="flex items-center gap-3 mb-2">
-                    {post.author_avatar ? (
-                      <img src={post.author_avatar} alt="" className="h-8 w-8 rounded-full object-cover" />
-                    ) : (
-                      <div className="h-8 w-8 rounded-full bg-accent flex items-center justify-center text-xs font-bold text-foreground">
-                        {(post.author_name || "U").charAt(0)}
-                      </div>
-                    )}
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{post.author_name}</p>
-                      <p className="text-[10px] text-muted-foreground">{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</p>
-                    </div>
-                  </div>
-                  <h3 className="text-sm font-bold text-foreground">{post.title}</h3>
-                  {post.body && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{post.body}</p>}
-                </button>
-                {post.image_url && <img src={post.image_url} alt="" className="w-full max-h-64 object-cover" />}
-                <div className="flex items-center gap-1 border-t border-border px-4 py-2">
-                  <button
-                    onClick={() => toggleLike.mutate({ postId: post.id, hasLiked: post.has_liked || false })}
-                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${post.has_liked ? "text-destructive" : "text-muted-foreground hover:text-foreground"}`}
-                  >
-                    <Heart className={`h-3.5 w-3.5 ${post.has_liked ? "fill-current" : ""}`} /> {post.like_count || 0}
+        {/* Main chat area */}
+        <div className="flex flex-1 flex-col min-w-0">
+          {/* Channel header */}
+          <div className="flex items-center gap-3 border-b border-border px-4 py-2.5 bg-card">
+            {isMobile && (
+              <Sheet open={mobileChannelOpen} onOpenChange={setMobileChannelOpen}>
+                <SheetTrigger asChild>
+                  <button className="flex items-center gap-1 text-muted-foreground hover:text-foreground">
+                    <ChevronDown className="h-4 w-4" />
                   </button>
-                  <button
-                    onClick={() => navigate(`/community/post/${post.id}`)}
-                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <MessageCircle className="h-3.5 w-3.5" /> {post.comment_count || 0}
-                  </button>
-                </div>
-              </div>
-            ))}
+                </SheetTrigger>
+                <SheetContent side="left" className="w-64 p-0">
+                  <SheetTitle className="sr-only">Channels</SheetTitle>
+                  <ChannelSidebar
+                    channels={channels}
+                    activeChannelId={currentChannel?.id}
+                    onSelectChannel={handleSelectChannel}
+                    spaceName={space.name}
+                    spaceIcon={space.icon}
+                  />
+                </SheetContent>
+              </Sheet>
+            )}
+            <button
+              onClick={() => navigate("/community")}
+              className="text-muted-foreground hover:text-foreground md:hidden"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base">{currentChannel?.icon || "💬"}</span>
+              <h1 className="text-sm font-bold text-foreground truncate">
+                {currentChannel?.name?.toLowerCase() || "general"}
+              </h1>
+            </div>
+            {currentChannel?.description && (
+              <span className="hidden md:block text-xs text-muted-foreground truncate ml-2 border-l border-border pl-3">
+                {currentChannel.description}
+              </span>
+            )}
           </div>
+
+          {/* Messages */}
+          <ChatMessageList
+            messages={messages}
+            isLoading={messagesLoading}
+            onOpenThread={(msg) => setThreadMessage(msg)}
+            onReact={(mid, emoji, has) => toggleReaction.mutate({ messageId: mid, emoji, hasReacted: has })}
+            onDelete={(mid) => deleteMessage.mutate(mid)}
+          />
+
+          {/* Input */}
+          <ChatInput
+            onSend={handleSend}
+            placeholder={`Message #${currentChannel?.name?.toLowerCase() || "general"}`}
+            disabled={sendMessage.isPending}
+          />
+        </div>
+
+        {/* Thread panel */}
+        {threadMessage && currentChannel && !isMobile && (
+          <ThreadPanel
+            parentMessage={threadMessage}
+            channelId={currentChannel.id}
+            onClose={() => setThreadMessage(null)}
+          />
+        )}
+
+        {/* Mobile thread as sheet */}
+        {threadMessage && currentChannel && isMobile && (
+          <Sheet open={!!threadMessage} onOpenChange={() => setThreadMessage(null)}>
+            <SheetContent side="bottom" className="h-[80vh] p-0 rounded-t-2xl">
+              <SheetTitle className="sr-only">Thread</SheetTitle>
+              <ThreadPanel
+                parentMessage={threadMessage}
+                channelId={currentChannel.id}
+                onClose={() => setThreadMessage(null)}
+              />
+            </SheetContent>
+          </Sheet>
         )}
       </div>
     </AppShell>
