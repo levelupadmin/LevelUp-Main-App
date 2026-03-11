@@ -113,6 +113,7 @@ const App = () => (
             <Route path="/admin" element={<AuthGuard><AdminGuard><AdminDashboard /></AdminGuard></AuthGuard>} />
             <Route path="/admin/sales" element={<AuthGuard><AdminGuard><AdminSalesPages /></AdminGuard></AuthGuard>} />
             <Route path="/admin/courses" element={<AuthGuard><AdminGuard><AdminCourses /></AdminGuard></AuthGuard>} />
+            <Route path="/admin/courses/:courseId" element={<AuthGuard><AdminGuard><AdminCourseBuilder /></AdminGuard></AuthGuard>} />
             <Route path="/admin/content" element={<Navigate to="/admin/courses" replace />} />
             <Route path="/admin/workshops" element={<Navigate to="/admin/courses" replace />} />
             <Route path="/admin/cohorts" element={<Navigate to="/admin/courses" replace />} />
