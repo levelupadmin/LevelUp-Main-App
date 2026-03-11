@@ -55,7 +55,7 @@ import AdminReferrals from "./pages/admin/AdminReferrals";
 import AdminWaitlists from "./pages/admin/AdminWaitlists";
 import AdminEngagement from "./pages/admin/AdminEngagement";
 import AdminSalesPages from "./pages/admin/AdminSalesPages";
-
+import AdminCourseBuilder from "./pages/admin/AdminCourseBuilder";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
