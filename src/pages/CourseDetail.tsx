@@ -55,6 +55,13 @@ const CourseDetail = () => {
     },
   });
 
+  // Certificate — must be called before any early returns
+  const { data: certificate } = useCertificate(course?.id);
+  const generateCert = useGenerateCertificate();
+
+  // Drip lock — must be called before any early returns
+  const dripMap = useDripLockMap(course, modules, lessons, enrollment, progress);
+
   const activeSlot = slotParam
     ? schedules.find((s: any) => s.slug === slotParam || s.id === slotParam)
     : null;
@@ -106,12 +113,7 @@ const CourseDetail = () => {
     return (modA?.sort_order ?? 0) - (modB?.sort_order ?? 0) || a.sort_order - b.sort_order;
   });
 
-  const dripMap = useDripLockMap(course, modules, lessons, enrollment, progress);
   const nextLesson = sortedLessons.find((l) => !completedIds.has(l.id) && !dripMap.get(l.id)?.isLocked) ?? sortedLessons[0];
-
-  // Certificate
-  const { data: certificate } = useCertificate(course?.id);
-  const generateCert = useGenerateCertificate();
 
   const handleStartCourse = () => {
     if (enrollment) {
