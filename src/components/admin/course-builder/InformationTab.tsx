@@ -27,7 +27,7 @@ const InformationTab = ({ courseId }: Props) => {
     description: "",
     short_description: "",
     category: "General",
-    difficulty: "beginner",
+    difficulty: "beginner" as "beginner" | "intermediate" | "advanced",
     instructor_name: "",
     estimated_duration: "",
     thumbnail_url: "",

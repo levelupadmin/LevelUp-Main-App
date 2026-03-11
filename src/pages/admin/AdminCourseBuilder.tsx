@@ -15,7 +15,7 @@ import AdminQnATab from "@/components/admin/AdminQnATab";
 import AdminReportTab from "@/components/admin/AdminReportTab";
 import AdminAssignmentResponsesTab from "@/components/admin/AdminAssignmentResponsesTab";
 import StudentCoursePreview from "@/components/admin/StudentCoursePreview";
-import { useAdminCourse, statusStyles } from "@/hooks/useCourseAdmin";
+import { useAdminCourse, useModules, useLessons, statusStyles } from "@/hooks/useCourseAdmin";
 
 const AdminCourseBuilder = () => {
   const { courseId } = useParams<{ courseId: string }>();
@@ -24,6 +24,8 @@ const AdminCourseBuilder = () => {
   const [showPreview, setShowPreview] = useState(false);
 
   const { data: course, isLoading } = useAdminCourse(courseId);
+  const { data: modules = [] } = useModules(courseId);
+  const { data: lessons = [] } = useLessons(courseId);
 
   if (isLoading) {
     return (
@@ -48,16 +50,11 @@ const AdminCourseBuilder = () => {
     );
   }
 
-  if (showPreview) {
-    return (
-      <AdminLayout>
-        <StudentCoursePreview
-          courseId={course.id}
-          onClose={() => setShowPreview(false)}
-        />
-      </AdminLayout>
-    );
-  }
+  // Simplified lesson/module props for tabs that need them
+  const lessonProps = lessons.map((l) => ({
+    id: l.id, title: l.title, module_id: l.module_id, type: l.type,
+  }));
+  const moduleProps = modules.map((m) => ({ id: m.id, title: m.title }));
 
   const renderTab = () => {
     switch (activeTab) {
@@ -68,13 +65,13 @@ const AdminCourseBuilder = () => {
       case "drip":
         return <DripTab />;
       case "report":
-        return <AdminReportTab courseId={course.id} />;
+        return <AdminReportTab courseId={course.id} lessons={lessonProps} modules={moduleProps} />;
       case "comments":
-        return <AdminCommentsTab courseId={course.id} />;
+        return <AdminCommentsTab courseId={course.id} lessons={lessonProps} modules={moduleProps} />;
       case "qna":
-        return <AdminQnATab courseId={course.id} />;
+        return <AdminQnATab courseId={course.id} lessons={lessonProps} modules={moduleProps} />;
       case "assignments":
-        return <AdminAssignmentResponsesTab courseId={course.id} />;
+        return <AdminAssignmentResponsesTab courseId={course.id} lessons={lessonProps} />;
       case "reviews":
         return <ReviewsTab />;
       case "chatbot":
@@ -86,6 +83,15 @@ const AdminCourseBuilder = () => {
 
   return (
     <AdminLayout>
+      {/* Preview Dialog */}
+      <StudentCoursePreview
+        open={showPreview}
+        onOpenChange={setShowPreview}
+        course={course}
+        modules={modules}
+        lessons={lessons}
+      />
+
       {/* Builder Header */}
       <div className="-mx-4 -mt-4 lg:-mx-6 lg:-mt-6 px-4 lg:px-6 py-3 border-b border-border bg-card/50 flex items-center gap-3">
         <Button
