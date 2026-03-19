@@ -1,8 +1,16 @@
+import { useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import {
+  Clock, Users, CalendarDays, CheckCircle2, Play,
+  GraduationCap, ChevronRight, Loader2
+} from "lucide-react";
+import WaitlistForm from "@/components/course/WaitlistForm";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
