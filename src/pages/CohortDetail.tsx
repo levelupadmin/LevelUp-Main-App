@@ -11,13 +11,8 @@ import {
   GraduationCap, ChevronRight, Loader2
 } from "lucide-react";
 import WaitlistForm from "@/components/course/WaitlistForm";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import {
-  Clock, Users, CalendarDays, CheckCircle2, Play,
-  GraduationCap, ChevronRight, Loader2
-} from "lucide-react";
-import WaitlistForm from "@/components/course/WaitlistForm";
+
+
 
 const CohortDetail = () => {
   const { slug } = useParams();
