@@ -198,7 +198,8 @@ const CohortDetail = () => {
           <div className="space-y-3">
             <h2 className="text-lg font-bold text-foreground">Join the Waitlist</h2>
             <p className="text-sm text-muted-foreground">{course.presale_description}</p>
-            <WaitlistForm courseId={course.id} />
+            <WaitlistForm open={showWaitlist} onOpenChange={setShowWaitlist} courseId={course.id} courseTitle={course.title} />
+            <Button variant="outline" onClick={() => setShowWaitlist(true)}>Join Waitlist</Button>
           </div>
         )}
       </div>
