@@ -1,20 +1,18 @@
 import AppShell from "@/components/layout/AppShell";
-import {
-  communityPosts,
-  featuredCreators,
-} from "@/data/mockData";
-import { detailedCourses } from "@/data/learningData";
 import HeroCarousel from "@/components/home/HeroCarousel";
 import UpcomingEvents from "@/components/home/UpcomingEvents";
 import StreakCard from "@/components/home/StreakCard";
+import ContinueLearning from "@/components/home/ContinueLearning";
+import CommunityHighlights from "@/components/home/CommunityHighlights";
 import {
   ArrowRight,
   ChevronRight,
-  MessageSquare,
-  Play,
   ExternalLink,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const SectionHeader = ({ title, subtitle, action, onAction }: { title: string; subtitle: string; action?: string; onAction?: () => void }) => (
   <div className="flex items-center justify-between">
@@ -39,7 +37,30 @@ const SectionHeader = ({ title, subtitle, action, onAction }: { title: string; s
 
 const Index = () => {
   const navigate = useNavigate();
-  const enrolledCourses = detailedCourses.filter((c) => c.progress > 0);
+
+  // Featured creators from profiles (random selection of users with bio/skills)
+  const { data: featuredCreators = [], isLoading: creatorsLoading } = useQuery({
+    queryKey: ["featured-creators"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, name, avatar_url, bio, city, skills, roles, experience")
+        .not("bio", "eq", "")
+        .not("name", "eq", "")
+        .limit(6);
+      if (error) throw error;
+      return data.map((p) => ({
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar_url || "/placeholder.svg",
+        bio: p.bio || "",
+        city: p.city || "",
+        skills: p.skills || [],
+        roles: p.roles || [],
+        experience: p.experience || "",
+      }));
+    },
+  });
 
   return (
     <AppShell>
@@ -50,195 +71,80 @@ const Index = () => {
         {/* Streak widget */}
         <StreakCard />
 
-        {/* 2. Continue Learning */}
-        {enrolledCourses.length > 0 && (
+        {/* 2. Continue Learning — from real enrollments */}
+        <ContinueLearning />
+
+        {/* 2b. Upcoming Events */}
+        <UpcomingEvents />
+
+        {/* 3. Popular in Community — from real posts */}
+        <CommunityHighlights />
+
+        {/* 4. Featured Creators — from real profiles */}
+        {creatorsLoading ? (
+          <section className="space-y-5">
+            <Skeleton className="h-8 w-56" />
+            <div className="flex gap-4 overflow-hidden">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-64 w-72 shrink-0 rounded-xl" />)}
+            </div>
+          </section>
+        ) : featuredCreators.length > 0 && (
           <section className="space-y-5">
             <SectionHeader
-              title="Continue learning"
-              subtitle="Pick up where you left off"
-              action="View all"
-              onAction={() => navigate("/learn/my-learning")}
+              title="Featured creators"
+              subtitle="Talented members doing remarkable work"
+              action="View directory"
+              onAction={() => navigate("/community/directory")}
             />
-            <div className="grid gap-4 sm:grid-cols-2">
-              {enrolledCourses.map((course) => (
+            <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
+              {featuredCreators.map((creator) => (
                 <div
-                  key={course.id}
-                  className="group relative overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-muted-foreground/20 hover:shadow-[0_0_0_1px_hsl(var(--highlight)/0.08)]"
+                  key={creator.id}
+                  className="w-72 shrink-0 overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-muted-foreground/20 hover:shadow-[0_0_0_1px_hsl(var(--highlight)/0.08)]"
                 >
-                  <div className="relative overflow-hidden p-5">
-                    <img
-                      src={course.thumbnail}
-                      alt=""
-                      className="absolute inset-0 h-full w-full object-cover opacity-15"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-r from-card/80 via-card/60 to-transparent" />
-                    <div className="relative z-10">
-                      <span className="inline-flex rounded bg-accent/80 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground backdrop-blur-sm">
-                        {course.format}
-                      </span>
-                      <h3 className="mt-1.5 text-sm font-bold leading-snug text-foreground">
-                        {course.title}
-                      </h3>
-                      <p className="mt-1 font-mono text-xs text-muted-foreground">
-                        {course.modules.reduce((a, m) => a + m.lessons.filter(l => l.state === "completed").length, 0)} / {course.lessonsCount} lessons
-                      </p>
-                    </div>
-                  </div>
-                  {/* Progress + CTA */}
-                  <div className="border-t border-border px-5 py-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="font-mono text-xs font-semibold text-foreground">
-                        {course.progress}% complete
-                      </span>
-                    </div>
-                    <div className="mb-3 h-1 w-full overflow-hidden rounded-full bg-accent">
-                      <div
-                        className="h-full rounded-full bg-foreground transition-all"
-                        style={{ width: `${course.progress}%` }}
+                  <div className="px-4 py-5">
+                    <div className="flex items-center gap-3 mb-3">
+                      <img
+                        src={creator.avatar}
+                        alt={creator.name}
+                        className="h-12 w-12 rounded-full border-2 border-card object-cover"
                       />
+                      <div>
+                        <h3 className="text-sm font-bold text-foreground">{creator.name}</h3>
+                        <p className="text-xs text-muted-foreground">
+                          {creator.roles?.[0] || "Creator"} {creator.experience ? `· ${creator.experience}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-xs leading-relaxed text-secondary-foreground line-clamp-2">
+                      {creator.bio}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {creator.skills.slice(0, 3).map((skill) => (
+                        <span
+                          key={skill}
+                          className="rounded bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                        >
+                          {skill}
+                        </span>
+                      ))}
                     </div>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate(`/learn/course/${course.id}`);
+                        navigate(`/profile/${creator.id}`);
                       }}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                      className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
                     >
-                      <Play className="h-3.5 w-3.5" />
-                      Continue Learning
+                      View Profile
+                      <ExternalLink className="h-3 w-3" />
                     </button>
-                  </div>
-                  {/* YouTube-style bottom progress bar */}
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent">
-                    <div className="h-full bg-highlight transition-all" style={{ width: `${course.progress}%` }} />
                   </div>
                 </div>
               ))}
             </div>
           </section>
         )}
-
-        {/* 2b. Upcoming Events */}
-        <UpcomingEvents />
-
-        {/* 3. Popular in Community */}
-        <section className="space-y-5">
-          <SectionHeader
-            title="Popular in the community"
-            subtitle="Active discussions from your spaces"
-            action="View all"
-            onAction={() => navigate("/community")}
-          />
-          <div className="grid gap-3 sm:grid-cols-2">
-            {communityPosts.slice(0, 4).map((post) => (
-              <div
-                key={post.id}
-                onClick={() => navigate(`/community/post/${post.id}`)}
-                className="group cursor-pointer rounded-xl border border-border bg-card p-5 transition-all hover:border-muted-foreground/20 hover:shadow-[0_0_0_1px_hsl(var(--highlight)/0.08)]"
-              >
-                <div className="mb-1 flex items-center gap-2">
-                  <span className="rounded bg-accent px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    {post.tag}
-                  </span>
-                  <span className="text-xs text-muted-foreground">·</span>
-                  <span className="text-xs text-muted-foreground">{post.timeAgo}</span>
-                </div>
-                <h3 className="mt-2 text-sm font-bold text-foreground line-clamp-1">
-                  {post.content.substring(0, 60)}…
-                </h3>
-                <p className="mt-1 text-sm leading-relaxed text-secondary-foreground line-clamp-2">
-                  {post.content}
-                </p>
-                <div className="mt-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={post.avatar}
-                      alt={post.author}
-                      className="h-6 w-6 rounded-full object-cover"
-                    />
-                    <span className="text-xs font-medium text-foreground">{post.author}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <MessageSquare className="h-3 w-3" />
-                      {post.comments} replies
-                    </span>
-                    <span className="inline-flex items-center gap-1 font-semibold text-foreground opacity-0 transition-opacity group-hover:opacity-100">
-                      Open thread
-                      <ArrowRight className="h-3 w-3" />
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* 4. Featured Creators */}
-        <section className="space-y-5">
-          <SectionHeader
-            title="Featured creators"
-            subtitle="Talented members doing remarkable work"
-            action="View directory"
-            onAction={() => navigate("/community/directory")}
-          />
-          <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
-            {featuredCreators.map((creator) => (
-              <div
-                key={creator.id}
-                className="w-72 shrink-0 overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-muted-foreground/20 hover:shadow-[0_0_0_1px_hsl(var(--highlight)/0.08)]"
-              >
-                <div className="relative h-32 overflow-hidden">
-                  <img
-                    src={creator.thumbnail}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
-                  <img
-                    src={creator.avatar}
-                    alt={creator.name}
-                    className="absolute -bottom-5 left-4 h-12 w-12 rounded-full border-2 border-card object-cover"
-                  />
-                </div>
-                <div className="px-4 pb-4 pt-8">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-foreground">{creator.name}</h3>
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      #{creator.memberNo}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 text-xs font-medium text-muted-foreground">
-                    {creator.role} · {creator.experience}
-                  </p>
-                  <p className="mt-2 text-xs leading-relaxed text-secondary-foreground line-clamp-2">
-                    {creator.description}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {creator.skills.map((skill) => (
-                      <span
-                        key={skill}
-                        className="rounded bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/profile/${creator.id}`);
-                    }}
-                    className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
-                  >
-                    View Portfolio
-                    <ExternalLink className="h-3 w-3" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
 
         {/* 6. Explore More Courses */}
         <section className="rounded-2xl border border-dashed border-border bg-card/50 p-10 text-center">

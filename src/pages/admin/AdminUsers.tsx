@@ -1,7 +1,8 @@
 import { useState } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
-import { mockAdminUsers, UserRole, UserStatus } from "@/data/adminData";
-import { Search, MoreHorizontal } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Search, MoreHorizontal, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import UserDetailSheet from "@/components/admin/UserDetailSheet";
+import type { UserRole, UserStatus, AdminUser } from "@/data/adminData";
 
 const roleStyles: Record<UserRole, string> = {
   super_admin: "bg-destructive/10 text-destructive border-destructive/20",
@@ -33,43 +35,81 @@ const roleLabel: Record<UserRole, string> = { super_admin: "Super Admin", mentor
 
 const AdminUsers = () => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [userRoles, setUserRoles] = useState<Record<string, UserRole>>(
-    Object.fromEntries(mockAdminUsers.map((u) => [u.id, u.role]))
-  );
-  const [userStatuses, setUserStatuses] = useState<Record<string, UserStatus>>(
-    Object.fromEntries(mockAdminUsers.map((u) => [u.id, u.status]))
-  );
   const [confirmDialog, setConfirmDialog] = useState<{ userId: string; action: string; newRole?: UserRole } | null>(null);
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
-  const users = mockAdminUsers
-    .filter((u) => search === "" || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()))
-    .filter((u) => roleFilter === "all" || userRoles[u.id] === roleFilter)
-    .filter((u) => statusFilter === "all" || userStatuses[u.id] === statusFilter);
+  // Fetch real users from profiles + user_roles
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: async () => {
+      const { data: profiles, error } = await supabase
+        .from("profiles")
+        .select("id, name, avatar_url, city, created_at, updated_at")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+
+      // Fetch roles for all users
+      const { data: roles } = await supabase
+        .from("user_roles")
+        .select("user_id, role");
+
+      const roleMap: Record<string, UserRole> = {};
+      (roles || []).forEach((r) => {
+        const existing = roleMap[r.user_id];
+        if (!existing || r.role === "super_admin" || (r.role === "mentor" && existing === "student")) {
+          roleMap[r.user_id] = r.role as UserRole;
+        }
+      });
+
+      return (profiles || []).map((p): AdminUser => ({
+        id: p.id,
+        name: p.name || "Unnamed",
+        email: "", // email not in profiles table
+        city: p.city || "",
+        role: roleMap[p.id] || "student",
+        level: 0,
+        status: "active" as UserStatus,
+        joined: new Date(p.created_at).toLocaleDateString(),
+        coursesEnrolled: 0,
+        lastActive: p.updated_at ? new Date(p.updated_at).toLocaleDateString() : "",
+      }));
+    },
+  });
+
+  // Role change mutation
+  const changeRoleMutation = useMutation({
+    mutationFn: async ({ userId, newRole }: { userId: string; newRole: UserRole }) => {
+      // Delete existing roles, then insert new one
+      await supabase.from("user_roles").delete().eq("user_id", userId);
+      const { error } = await supabase.from("user_roles").insert({ user_id: userId, role: newRole });
+      if (error) throw error;
+    },
+    onSuccess: (_, { newRole }) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      toast({ title: "Role updated", description: `User role changed to ${roleLabel[newRole]}.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to update role", description: err.message, variant: "destructive" });
+    },
+  });
 
   const confirmAction = () => {
     if (!confirmDialog) return;
     const { userId, action, newRole } = confirmDialog;
     if (action === "changeRole" && newRole) {
-      setUserRoles((s) => ({ ...s, [userId]: newRole }));
-      toast({ title: "Role updated", description: `User role changed to ${roleLabel[newRole]}.` });
-    } else if (action === "suspend") {
-      setUserStatuses((s) => ({ ...s, [userId]: "suspended" }));
-      toast({ title: "User suspended" });
-    } else if (action === "ban") {
-      setUserStatuses((s) => ({ ...s, [userId]: "banned" }));
-      toast({ title: "User banned", variant: "destructive" });
-    } else if (action === "activate") {
-      setUserStatuses((s) => ({ ...s, [userId]: "active" }));
-      toast({ title: "User activated" });
+      changeRoleMutation.mutate({ userId, newRole });
     }
     setConfirmDialog(null);
   };
 
-  const detail = selectedUser ? mockAdminUsers.find((u) => u.id === selectedUser) : null;
+  const filtered = users
+    .filter((u) => search === "" || u.name.toLowerCase().includes(search.toLowerCase()))
+    .filter((u) => roleFilter === "all" || u.role === roleFilter);
+
+  const selectedUser = selectedUserId ? users.find((u) => u.id === selectedUserId) || null : null;
 
   return (
     <AdminLayout>
@@ -82,7 +122,7 @@ const AdminUsers = () => {
         <div className="flex flex-wrap gap-3">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            <Input placeholder="Search by name..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
           <Select value={roleFilter} onValueChange={setRoleFilter}>
             <SelectTrigger className="w-32"><SelectValue placeholder="Role" /></SelectTrigger>
@@ -93,107 +133,85 @@ const AdminUsers = () => {
               <SelectItem value="super_admin">Super Admin</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-32"><SelectValue placeholder="Status" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="suspended">Suspended</SelectItem>
-              <SelectItem value="banned">Banned</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
 
-        <div className="rounded-lg border border-border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-secondary/50">
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">User</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">City</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Role</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">Level</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">Joined</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => (
-                  <tr key={u.id} className="border-b border-border hover:bg-secondary/30 transition-colors cursor-pointer" onClick={() => setSelectedUser(u.id)}>
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="font-medium text-foreground">{u.name}</p>
-                        <p className="text-xs text-muted-foreground">{u.email}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{u.city}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant="outline" className={roleStyles[userRoles[u.id]]}>{roleLabel[userRoles[u.id]]}</Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant="outline" className={statusStyles[userStatuses[u.id]]}>{userStatuses[u.id]}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">Lvl {u.level}</td>
-                    <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{u.joined}</td>
-                    <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button className="rounded-md p-1.5 hover:bg-secondary transition-colors">
-                            <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setSelectedUser(u.id)}>View Profile</DropdownMenuItem>
-                          <DropdownMenuSub>
-                            <DropdownMenuSubTrigger>Change Role</DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent>
-                              {(["student", "mentor", "super_admin"] as UserRole[]).map((r) => (
-                                <DropdownMenuItem
-                                  key={r}
-                                  onClick={() => setConfirmDialog({ userId: u.id, action: "changeRole", newRole: r })}
-                                  className={userRoles[u.id] === r ? "bg-secondary" : ""}
-                                >
-                                  {roleLabel[r]}
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuSubContent>
-                          </DropdownMenuSub>
-                          <DropdownMenuSeparator />
-                          {userStatuses[u.id] !== "active" && (
-                            <DropdownMenuItem onClick={() => setConfirmDialog({ userId: u.id, action: "activate" })}>
-                              Activate
-                            </DropdownMenuItem>
-                          )}
-                          {userStatuses[u.id] === "active" && (
-                            <DropdownMenuItem onClick={() => setConfirmDialog({ userId: u.id, action: "suspend" })}>
-                              Suspend
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem
-                            onClick={() => setConfirmDialog({ userId: u.id, action: "ban" })}
-                            className="text-destructive"
-                          >
-                            Ban User
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-        </div>
+        ) : (
+          <div className="rounded-lg border border-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-secondary/50">
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">User</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">City</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Role</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">Joined</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((u) => (
+                    <tr key={u.id} className="border-b border-border hover:bg-secondary/30 transition-colors cursor-pointer" onClick={() => setSelectedUserId(u.id)}>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-foreground">{u.name}</p>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{u.city || "—"}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline" className={roleStyles[u.role]}>{roleLabel[u.role]}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{u.joined}</td>
+                      <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="rounded-md p-1.5 hover:bg-secondary transition-colors">
+                              <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setSelectedUserId(u.id)}>View Profile</DropdownMenuItem>
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger>Change Role</DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent>
+                                {(["student", "mentor", "super_admin"] as UserRole[]).map((r) => (
+                                  <DropdownMenuItem
+                                    key={r}
+                                    onClick={() => setConfirmDialog({ userId: u.id, action: "changeRole", newRole: r })}
+                                    className={u.role === r ? "bg-secondary" : ""}
+                                  >
+                                    {roleLabel[r]}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                        No users found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* User Detail Sheet */}
-        {detail && (
+        {selectedUser && (
           <UserDetailSheet
-            user={detail}
-            open={!!selectedUser}
-            onOpenChange={() => setSelectedUser(null)}
-            userRole={userRoles[detail.id]}
-            userStatus={userStatuses[detail.id]}
+            user={selectedUser}
+            open={!!selectedUserId}
+            onOpenChange={() => setSelectedUserId(null)}
+            userRole={selectedUser.role}
+            userStatus={selectedUser.status}
             roleStyles={roleStyles}
             statusStyles={statusStyles}
             roleLabel={roleLabel}
@@ -207,19 +225,11 @@ const AdminUsers = () => {
               <DialogTitle>Confirm Action</DialogTitle>
               <DialogDescription>
                 {confirmDialog?.action === "changeRole" && `Change user role to ${roleLabel[confirmDialog.newRole!]}?`}
-                {confirmDialog?.action === "suspend" && "Suspend this user? They won't be able to access the platform."}
-                {confirmDialog?.action === "ban" && "Ban this user permanently? This action can be reversed."}
-                {confirmDialog?.action === "activate" && "Reactivate this user account?"}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setConfirmDialog(null)}>Cancel</Button>
-              <Button
-                onClick={confirmAction}
-                variant={confirmDialog?.action === "ban" ? "destructive" : "default"}
-              >
-                Confirm
-              </Button>
+              <Button onClick={confirmAction}>Confirm</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
