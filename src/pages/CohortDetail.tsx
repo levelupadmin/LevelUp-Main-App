@@ -17,6 +17,7 @@ import WaitlistForm from "@/components/course/WaitlistForm";
 const CohortDetail = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const [showWaitlist, setShowWaitlist] = useState(false);
 
   const { data: course, isLoading } = useQuery({
     queryKey: ["cohort-detail", slug],
