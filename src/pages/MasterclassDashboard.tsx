@@ -7,6 +7,8 @@ import {
   useCourseProgress,
   useEnrollment,
 } from "@/hooks/useCourseData";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Play,
   CheckCircle2,
