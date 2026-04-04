@@ -16,32 +16,13 @@ const Checkout = () => {
   const { data: course, isLoading } = useCourse(slug || "");
   const { data: enrollment, isLoading: enrollLoading } = useEnrollment(course?.id);
   const enrollMutation = useEnrollInCourse();
-  const [autoEnrolling, setAutoEnrolling] = useState(false);
   const [enrollFailed, setEnrollFailed] = useState(false);
   const utmParams = useUtmParams();
 
-  // Auto-enroll if user is authenticated and not yet enrolled
-  useEffect(() => {
-    if (!course || !isAuthenticated || enrollLoading || enrollment || autoEnrolling || enrollFailed) return;
-    setAutoEnrolling(true);
-    enrollMutation.mutate(
-      { courseId: course.id, courseTitle: course.title, utmParams },
-      {
-        onSuccess: () => {
-          navigate(`/learn/course/${course.slug}/dashboard`, { replace: true });
-        },
-        onError: () => {
-          setAutoEnrolling(false);
-          setEnrollFailed(true);
-        },
-      }
-    );
-  }, [course, isAuthenticated, enrollment, enrollLoading, autoEnrolling, enrollFailed]);
-
-  // Already enrolled — redirect to dashboard
+  // Already enrolled — redirect to success page
   useEffect(() => {
     if (enrollment && course) {
-      navigate(`/learn/course/${course.slug}/dashboard`, { replace: true });
+      navigate(`/enrollment-success/${course.slug}`, { replace: true });
     }
   }, [enrollment, course]);
 
@@ -69,10 +50,10 @@ const Checkout = () => {
     );
   }
 
-  if (autoEnrolling || enrollMutation.isPending) {
+  if (enrollMutation.isPending) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
-        <div className="animate-spin h-8 w-8 border-2 border-highlight border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
         <p className="text-sm text-muted-foreground">Setting up your access…</p>
       </div>
     );
@@ -83,7 +64,18 @@ const Checkout = () => {
       navigate(`/login?redirect=/checkout/${slug}`);
       return;
     }
-    // If authenticated, the useEffect above handles enrollment
+    if (!course || enrollMutation.isPending) return;
+    enrollMutation.mutate(
+      { courseId: course.id, courseTitle: course.title, utmParams },
+      {
+        onSuccess: () => {
+          navigate(`/enrollment-success/${course.slug}`, { replace: true });
+        },
+        onError: () => {
+          setEnrollFailed(true);
+        },
+      }
+    );
   };
 
   return (

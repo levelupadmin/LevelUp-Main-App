@@ -15,6 +15,7 @@ import Explore from "./pages/Explore";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
 import Checkout from "./pages/Checkout";
+import EnrollmentSuccess from "./pages/EnrollmentSuccess";
 
 // Member pages
 import Index from "./pages/Index";
@@ -79,6 +80,7 @@ const App = () => (
               <Route path="/auth" element={<Navigate to="/login" replace />} />
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/checkout/:slug" element={<Checkout />} />
+              <Route path="/enrollment-success/:slug" element={<EnrollmentSuccess />} />
 
               {/* Member (no auth guard in dev mode) */}
               <Route path="/home" element={<Index />} />
