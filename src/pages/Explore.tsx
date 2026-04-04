@@ -1,16 +1,5 @@
-import AppShell from "@/components/layout/AppShell";
-import PlaceholderPage from "@/components/shared/PlaceholderPage";
-import { Compass } from "lucide-react";
+import { Navigate } from "react-router-dom";
 
-const Explore = () => (
-  <AppShell>
-    <PlaceholderPage
-      icon={Compass}
-      title="Explore"
-      subtitle="Browse featured courses, trending creators, and curated collections."
-      badge="Public"
-    />
-  </AppShell>
-);
+const Explore = () => <Navigate to="/learn" replace />;
 
 export default Explore;
