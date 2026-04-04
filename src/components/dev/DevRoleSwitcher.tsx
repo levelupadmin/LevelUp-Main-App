@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useDevAuth, DevRole } from "@/contexts/DevAuthContext";
-import { Settings, ChevronDown, X } from "lucide-react";
+import { Settings, ChevronDown, X, ShieldCheck } from "lucide-react";
 
 const ROLE_OPTIONS: { value: DevRole; label: string; description: string }[] = [
   { value: "super_admin", label: "Super Admin", description: "Full platform access" },
@@ -9,11 +10,24 @@ const ROLE_OPTIONS: { value: DevRole; label: string; description: string }[] = [
   { value: "student_free", label: "Student (Free)", description: "No purchased courses" },
 ];
 
+const ADMIN_ROLES: DevRole[] = ["super_admin", "mentor"];
+
 const DevRoleSwitcher = () => {
   const { currentRole, setRole } = useDevAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
   const current = ROLE_OPTIONS.find((r) => r.value === currentRole)!;
+  const canAccessAdmin = ADMIN_ROLES.includes(currentRole);
+
+  const handleRoleSelect = (role: DevRole) => {
+    setRole(role);
+    setOpen(false);
+
+    if (ADMIN_ROLES.includes(role)) {
+      navigate("/admin");
+    }
+  };
 
   return (
     <div className="fixed bottom-4 right-4 z-[9999]">
@@ -23,19 +37,33 @@ const DevRoleSwitcher = () => {
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Dev Mode
             </span>
-            <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">
+            <button onClick={() => setOpen(false)} className="text-muted-foreground transition-colors hover:text-foreground">
               <X className="h-4 w-4" />
             </button>
           </div>
+
+          {canAccessAdmin && (
+            <button
+              onClick={() => {
+                setOpen(false);
+                navigate("/admin");
+              }}
+              className="mb-2 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Open Admin Portal
+            </button>
+          )}
+
           <div className="space-y-1">
             {ROLE_OPTIONS.map((role) => (
               <button
                 key={role.value}
-                onClick={() => { setRole(role.value); setOpen(false); }}
+                onClick={() => handleRoleSelect(role.value)}
                 className={`w-full rounded-lg px-3 py-2 text-left transition-colors ${
                   currentRole === role.value
                     ? "bg-primary text-primary-foreground"
-                    : "hover:bg-accent text-foreground"
+                    : "text-foreground hover:bg-accent"
                 }`}
               >
                 <p className="text-sm font-semibold">{role.label}</p>
