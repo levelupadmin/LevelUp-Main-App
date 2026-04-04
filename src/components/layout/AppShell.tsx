@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useDevAuth } from "@/contexts/DevAuthContext";
 import {
   Home,
   PlayCircle,
@@ -18,6 +19,7 @@ import {
   Rss,
   GraduationCap,
   Compass,
+  ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -55,6 +57,7 @@ const AppShell = ({
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isAdmin } = useDevAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isCommunity = location.pathname === "/community" || location.pathname.startsWith("/community/");
@@ -102,6 +105,20 @@ const AppShell = ({
           );
         })}
       </div>
+      {isAdmin && (
+        <>
+          <div className="my-4 h-px bg-border" />
+          <button
+            onClick={() => { navigate("/admin"); onNavigate?.(); }}
+            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              isActive("/admin") ? "bg-accent text-foreground" : "text-sidebar-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <ShieldCheck className="h-[18px] w-[18px]" />
+            Admin Portal
+          </button>
+        </>
+      )}
     </>
   );
 
