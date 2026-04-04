@@ -1,5 +1,6 @@
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useUtmParams } from "@/hooks/useUtmParams";
 import { useCourse, useEnrollment, useEnrollInCourse } from "@/hooks/useCourseData";
 import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
