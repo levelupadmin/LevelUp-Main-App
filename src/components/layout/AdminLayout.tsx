@@ -94,29 +94,6 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           })}
         </nav>
 
-        {/* Dev Role Switcher */}
-        <div className="border-t border-border p-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="flex w-full items-center justify-between rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-secondary transition-colors">
-                <span>🛠 Switch Role</span>
-                <ChevronDown className="h-3 w-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-44">
-              {devRoleOptions.map((r) => (
-                <DropdownMenuItem
-                  key={r.value}
-                  onClick={() => switchRole(r.value)}
-                  className={currentRole === r.value ? "bg-secondary" : ""}
-                >
-                  {r.label}
-                  {currentRole === r.value && <span className="ml-auto text-[hsl(var(--highlight))]">●</span>}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
       </aside>
 
       {/* Mobile Top Bar */}
