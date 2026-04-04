@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { AppRole } from "@/contexts/AuthContext";
-import { useDevAuth } from "@/contexts/DevAuthContext";
+import { useDevAuth, DevRole } from "@/contexts/DevAuthContext";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
