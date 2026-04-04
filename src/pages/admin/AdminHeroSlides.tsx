@@ -50,8 +50,48 @@ const emptyForm = {
   sort_order: 0,
   is_active: true,
 };
+interface SortableSlideRowProps {
+  slide: HeroSlide;
+  onEdit: (s: HeroSlide) => void;
+  onDelete: (id: string) => void;
+  onToggle: (id: string, v: boolean) => void;
+}
 
-const AdminHeroSlides = () => {
+const SortableSlideRow = ({ slide: s, onEdit, onDelete, onToggle }: SortableSlideRowProps) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+
+  return (
+    <Card ref={setNodeRef} style={style} className="flex items-center gap-4 p-4">
+      <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing touch-none">
+        <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+      </button>
+      <div className="h-16 w-28 rounded-md bg-muted overflow-hidden shrink-0">
+        {s.image_url ? (
+          <img src={s.image_url} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="h-full w-full flex items-center justify-center">
+            <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground truncate">{s.title}</p>
+        <p className="text-xs text-muted-foreground truncate">{s.rotating_words.join(", ")}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Order: {s.sort_order}</p>
+      </div>
+      <Switch checked={s.is_active} onCheckedChange={(v) => onToggle(s.id, v)} />
+      <Button variant="ghost" size="icon" onClick={() => onEdit(s)}>
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" onClick={() => onDelete(s.id)}>
+        <Trash2 className="h-4 w-4 text-destructive" />
+      </Button>
+    </Card>
+  );
+};
+
+
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
