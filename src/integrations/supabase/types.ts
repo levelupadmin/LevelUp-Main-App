@@ -1603,6 +1603,66 @@ export type Database = {
         }
         Relationships: []
       }
+      utm_tracking: {
+        Row: {
+          course_id: string
+          created_at: string
+          enrollment_id: string | null
+          id: string
+          landing_page: string | null
+          referrer: string | null
+          user_id: string
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          enrollment_id?: string | null
+          id?: string
+          landing_page?: string | null
+          referrer?: string | null
+          user_id: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          enrollment_id?: string | null
+          id?: string
+          landing_page?: string | null
+          referrer?: string | null
+          user_id?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "utm_tracking_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "utm_tracking_enrollment_id_fkey"
+            columns: ["enrollment_id"]
+            isOneToOne: false
+            referencedRelation: "enrollments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       waitlists: {
         Row: {
           course_id: string
