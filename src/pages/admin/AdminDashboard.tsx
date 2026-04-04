@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const AdminDashboard = () => {
-  const { user } = useAuth();
+  const { user } = useDevAuth();
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === "super_admin";
 
