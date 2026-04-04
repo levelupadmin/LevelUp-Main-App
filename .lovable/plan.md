@@ -1,53 +1,33 @@
 
 
-# Fix: Enrollment flow broken in dev/preview mode
+# Fix: Admin Dashboard shows "Mentor Dashboard" instead of full Super Admin view
+
+## Problem
+
+The screenshot confirms: even with "Super Admin" selected in Dev Mode, the admin dashboard shows "Mentor Dashboard" with only "Pending Submissions" and limited quick actions. The header badge shows "Student".
 
 ## Root Cause
 
-Every enrollment-related query calls `supabase.auth.getUser()`. In dev/preview mode this always returns `null`, so:
-1. `useEnrollInCourse` — the mutation falls into the preview fallback, but uses `require()` (broken in Vite ESM), so `devUserId` stays `"anonymous"` instead of the actual dev user ID
-2. `useEnrollment` — same broken `require()` pattern, so it never finds the preview enrollment
-3. `MyLearning.tsx` — calls `supabase.auth.getUser()` directly, gets `null`, returns `[]` immediately
-4. `ContinueLearning.tsx` — queries Supabase with the dev user's fake ID (`"dev-student-free"`), which doesn't exist in the DB, so returns nothing
-
-The result: enrollment appears to succeed (no error shown), but the course never appears anywhere.
+`AdminLayout` and `AdminDashboard` read the role via `useAuth()`, which proxies to `useDevAuth()`. While this chain *should* work, the `updateProfile` function exposed by `useAuth` is a **no-op** — so AdminLayout's built-in role switcher (visible in the sidebar footer and header) does nothing when clicked, potentially confusing state. More critically, there may be a React re-render timing issue where navigation happens before the DevAuthContext state update propagates, and the components mount with stale role data.
 
 ## Fix
 
-### 1. Fix `useCourseData.ts` — replace broken `require()` with proper imports
+Make `AdminLayout` and `AdminDashboard` **directly import and use `useDevAuth()`** for the role, instead of relying on the indirect `useAuth()` proxy. This guarantees they always read the latest role from DevAuthContext.
 
-- Import `useDevAuth` directly at the top (ESM import, not `require()`)
-- `useEnrollment`: if no real user, read dev user from `useDevAuth()` and check the preview store
-- `useEnrollInCourse`: same — use the imported `useDevAuth` hook result for the dev user ID
-- Problem: these are inside `queryFn` (not a React component), so we can't call `useDevAuth()` inside them. Instead, we'll restructure the hooks to capture the dev user at hook level and pass it into the `queryFn` closure.
+### 1. `src/components/layout/AdminLayout.tsx`
+- Import `useDevAuth` from DevAuthContext
+- Replace `useAuth()` usage with `useDevAuth()` for role determination
+- Wire the sidebar role switcher to call `devCtx.setRole()` instead of the no-op `updateProfile`
+- Keep the nav filtering using `devUser.role`
 
-### 2. Fix `MyLearning.tsx` — add preview enrollment awareness
+### 2. `src/pages/admin/AdminDashboard.tsx`
+- Import `useDevAuth` from DevAuthContext
+- Derive `isSuperAdmin` from `devCtx.user.role === "super_admin"` instead of `useAuth().user?.role`
+- This ensures the full KPI grid (Users, Courses, Enrollments, Completion Rate) and all 4 quick actions render for super admin
 
-- Import `useAuth` to get the dev user
-- If `supabase.auth.getUser()` returns null, fall back to reading preview enrollments from sessionStorage
-- For preview enrollments, fetch the course data directly by course ID (the course data is public/readable)
-- Show preview-enrolled courses with 0% progress (since lesson_progress also requires a real user)
+### 3. `src/components/guards/AdminGuard.tsx` (already correct)
+- Already uses `useDevAuth` directly — no changes needed
 
-### 3. Fix `ContinueLearning.tsx` — same pattern
-
-- Already uses `useAuth()` for `user?.id`, but then queries `enrollments` table with a fake dev ID that doesn't exist in DB
-- Add preview enrollment fallback: if no real session, read from sessionStorage and fetch course metadata separately
-
-### 4. Enhance `previewEnrollment.ts` — add ability to list all enrollments
-
-- Add `getPreviewEnrollments(userId: string): string[]` to return all course IDs a dev user is enrolled in
-- This lets MyLearning and ContinueLearning enumerate preview enrollments
-
-## Files to modify
-
-- **`src/lib/previewEnrollment.ts`** — add `getPreviewEnrollments()` helper
-- **`src/hooks/useCourseData.ts`** — replace `require()` with proper hook-level dev auth; restructure `useEnrollment` and `useEnrollInCourse` to capture dev user outside `queryFn`
-- **`src/pages/MyLearning.tsx`** — add preview enrollment fallback when no real Supabase session
-- **`src/components/home/ContinueLearning.tsx`** — same preview fallback
-
-## Technical notes
-
-- The key constraint: React hooks (`useDevAuth`) can only be called at hook/component level, not inside `queryFn`. So each hook needs to call `useDevAuth()` at the top and capture the user in the closure.
-- No database changes needed.
-- Preview enrollments are ephemeral (sessionStorage) — this is intentional for dev/preview mode.
+## Result
+Selecting "Super Admin" in Dev Mode will immediately show the full admin dashboard with all stats, all sidebar nav items, and all quick actions.
 
