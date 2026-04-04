@@ -72,9 +72,10 @@ const Index = () => {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-6xl space-y-16 p-6 lg:p-10">
-        {/* 1. Cinematic Hero */}
-        <HeroCarousel />
+      {/* Full-bleed hero — no container padding */}
+      <HeroCarousel />
+
+      <div className="mx-auto max-w-6xl space-y-12 px-4 py-10 sm:px-6 lg:px-8">
 
         {/* 2. Credibility Bar */}
         <CredibilityBar />
