@@ -380,16 +380,24 @@ const CourseDetail = () => {
             <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-transparent" />
 
             {/* Play trailer button */}
-            {totalLessons > 0 && (
+            {totalLessons > 0 && (enrollment || course.is_free || freeLessons.length > 0) && (
               <button
-                onClick={handleStartCourse}
+                onClick={() => {
+                  if (enrollment) {
+                    handleStartCourse();
+                  } else if (freeLessons.length > 0) {
+                    navigate(`/learn/lesson/${freeLessons[0].id}`);
+                  } else {
+                    handleStartCourse();
+                  }
+                }}
                 className="absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2 group"
               >
                 <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-foreground/30 bg-foreground/10 backdrop-blur-xl transition-all group-hover:bg-foreground/20 group-hover:scale-110 group-hover:border-foreground/50">
                   <Play className="h-8 w-8 text-foreground ml-1" />
                 </div>
                 <p className="mt-3 text-xs text-foreground/70 font-medium tracking-wider uppercase text-center">
-                  {freeLessons.length > 0 ? "Watch Preview" : "Play Trailer"}
+                  {enrollment ? "Continue" : "Watch Preview"}
                 </p>
               </button>
             )}
