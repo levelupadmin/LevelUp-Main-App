@@ -127,7 +127,7 @@ const HeroCarousel = () => {
               onClick={() => navigate("/explore")}
               className="inline-flex items-center gap-2.5 rounded-full bg-foreground px-8 py-3.5 text-sm font-semibold text-background transition-all hover:scale-[1.03] hover:shadow-[0_0_24px_4px_hsl(38_75%_55%/0.2)]"
             >
-              See all Programs
+              {ctaLabel}
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
