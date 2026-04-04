@@ -1,14 +1,32 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useUtmParams } from "@/hooks/useUtmParams";
 import { useCourse, useEnrollment, useEnrollInCourse } from "@/hooks/useCourseData";
 import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, BookOpen, Play, Clock, User, ArrowRight } from "lucide-react";
+import { CheckCircle2, BookOpen, Play, Clock, User, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import logo from "@/assets/logo.png";
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
+
+function loadRazorpayScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (window.Razorpay) { resolve(); return; }
+    const s = document.createElement("script");
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Failed to load Razorpay SDK"));
+    document.head.appendChild(s);
+  });
+}
 
 const Checkout = () => {
   const { slug } = useParams();
@@ -17,7 +35,7 @@ const Checkout = () => {
   const { data: course, isLoading } = useCourse(slug || "");
   const { data: enrollment, isLoading: enrollLoading } = useEnrollment(course?.id);
   const enrollMutation = useEnrollInCourse();
-  const [enrollFailed, setEnrollFailed] = useState(false);
+  const [paying, setPaying] = useState(false);
   const utmParams = useUtmParams();
 
   // Already enrolled — redirect to success page
@@ -26,6 +44,91 @@ const Checkout = () => {
       navigate(`/enrollment-success/${course.slug}`, { replace: true });
     }
   }, [enrollment, course]);
+
+  const handleFreeEnroll = useCallback(() => {
+    if (!course || enrollMutation.isPending) return;
+    enrollMutation.mutate(
+      { courseId: course.id, courseTitle: course.title, utmParams },
+      {
+        onSuccess: () => navigate(`/enrollment-success/${course.slug}`, { replace: true }),
+        onError: (err) => {
+          toast.error("Enrollment failed", {
+            description: err instanceof Error ? err.message : "Please try again.",
+          });
+        },
+      }
+    );
+  }, [course, enrollMutation, utmParams, navigate]);
+
+  const handlePaidCheckout = useCallback(async () => {
+    if (!course || paying) return;
+    setPaying(true);
+
+    try {
+      await loadRazorpayScript();
+
+      const { data, error } = await supabase.functions.invoke("create-razorpay-order", {
+        body: { course_id: course.id },
+      });
+
+      if (error || !data?.order_id) {
+        throw new Error(error?.message || data?.error || "Could not create order");
+      }
+
+      const options = {
+        key: data.key_id,
+        amount: data.amount,
+        currency: data.currency,
+        name: "Level Up",
+        description: data.course_title,
+        order_id: data.order_id,
+        prefill: {
+          email: user?.email || "",
+          name: user?.name || "",
+        },
+        theme: { color: "#6366f1" },
+        handler: () => {
+          // Payment successful on client side — webhook handles enrollment
+          // Poll for enrollment or navigate optimistically
+          toast.success("Payment successful! Setting up your access…");
+          setTimeout(() => {
+            navigate(`/enrollment-success/${course.slug}`, { replace: true });
+          }, 2000);
+        },
+        modal: {
+          ondismiss: () => setPaying(false),
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", (response: any) => {
+        setPaying(false);
+        toast.error("Payment failed", {
+          description: response.error?.description || "Please try again.",
+        });
+      });
+      rzp.open();
+    } catch (err) {
+      setPaying(false);
+      toast.error("Payment error", {
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    }
+  }, [course, paying, user, navigate]);
+
+  const handleGetAccess = () => {
+    if (!isAuthenticated) {
+      navigate(`/login?redirect=/checkout/${slug}`);
+      return;
+    }
+    if (!course) return;
+
+    if (course.is_free || course.price === 0) {
+      handleFreeEnroll();
+    } else {
+      handlePaidCheckout();
+    }
+  };
 
   if (isLoading) {
     return (
@@ -51,36 +154,7 @@ const Checkout = () => {
     );
   }
 
-  if (enrollMutation.isPending) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
-        <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
-        <p className="text-sm text-muted-foreground">Setting up your access…</p>
-      </div>
-    );
-  }
-
-  const handleGetAccess = () => {
-    if (!isAuthenticated) {
-      navigate(`/login?redirect=/checkout/${slug}`);
-      return;
-    }
-    if (!course || enrollMutation.isPending) return;
-    enrollMutation.mutate(
-      { courseId: course.id, courseTitle: course.title, utmParams },
-      {
-        onSuccess: () => {
-          navigate(`/enrollment-success/${course.slug}`, { replace: true });
-        },
-        onError: (err) => {
-          setEnrollFailed(true);
-          toast.error("Enrollment failed", {
-            description: err instanceof Error ? err.message : "Please try again.",
-          });
-        },
-      }
-    );
-  };
+  const isBusy = enrollMutation.isPending || paying;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4 py-12">
@@ -141,12 +215,18 @@ const Checkout = () => {
             {/* CTA */}
             <Button
               onClick={handleGetAccess}
+              disabled={isBusy}
               className="w-full gap-2 font-bold py-6 text-base"
               size="lg"
             >
-              {isAuthenticated ? (
+              {isBusy ? (
                 <>
-                  <CheckCircle2 className="h-5 w-5" /> Get Access Now
+                  <Loader2 className="h-5 w-5 animate-spin" /> Processing…
+                </>
+              ) : isAuthenticated ? (
+                <>
+                  <CheckCircle2 className="h-5 w-5" />
+                  {course.is_free || course.price === 0 ? "Get Access Now" : `Pay ₹${course.price.toLocaleString()}`}
                 </>
               ) : (
                 <>
