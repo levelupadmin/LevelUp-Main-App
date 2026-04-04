@@ -62,6 +62,7 @@ const AdminWaitlists = lazy(() => import("./pages/admin/AdminWaitlists"));
 const AdminEngagement = lazy(() => import("./pages/admin/AdminEngagement"));
 const AdminSalesPages = lazy(() => import("./pages/admin/AdminSalesPages"));
 const AdminCourseBuilder = lazy(() => import("./pages/admin/AdminCourseBuilder"));
+const AdminHeroSlides = lazy(() => import("./pages/admin/AdminHeroSlides"));
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -141,6 +142,7 @@ const App = () => (
                 <Route path="/admin/referrals" element={<AdminGuard><Suspense fallback={<AdminFallback />}><AdminReferrals /></Suspense></AdminGuard>} />
                 <Route path="/admin/waitlists" element={<AdminGuard><Suspense fallback={<AdminFallback />}><AdminWaitlists /></Suspense></AdminGuard>} />
                 <Route path="/admin/engagement" element={<AdminGuard><Suspense fallback={<AdminFallback />}><AdminEngagement /></Suspense></AdminGuard>} />
+                <Route path="/admin/hero" element={<AdminGuard><Suspense fallback={<AdminFallback />}><AdminHeroSlides /></Suspense></AdminGuard>} />
 
                 <Route path="*" element={<NotFound />} />
               </Routes>

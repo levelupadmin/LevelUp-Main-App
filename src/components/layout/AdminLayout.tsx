@@ -22,6 +22,7 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   { path: "/admin", label: "Dashboard", icon: LayoutDashboard, roles: ["super_admin", "mentor"] },
+  { path: "/admin/hero", label: "Hero Slides", icon: Clapperboard, roles: ["super_admin"] },
   { path: "/admin/sales", label: "Sales Pages", icon: ShoppingBag, roles: ["super_admin", "mentor"] },
   { path: "/admin/courses", label: "Courses", icon: FileText, roles: ["super_admin", "mentor"] },
   { path: "/admin/coupons", label: "Coupons", icon: GraduationCap, roles: ["super_admin"] },
