@@ -1,48 +1,62 @@
 
-Problem identified: the persistent white screen is very likely being caused by an invalid dev-role state introduced by the recent admin changes.
 
-What’s actually wrong
-- `DevAuthContext` only supports these roles: `super_admin`, `mentor`, `student_enrolled`, `student_free`
-- But `AdminLayout` now calls `setRole("student")`
-- `DevRoleSwitcher` assumes `currentRole` is always valid and does:
-  `const current = ROLE_OPTIONS.find((r) => r.value === currentRole)!;`
-- If `currentRole` becomes `"student"`, `current` is `undefined`, and reading `current.label` will crash the app, which matches the white-screen symptom
+# Replace all courses with real LevelUp programs
 
-Implementation plan
-1. Fix `src/components/layout/AdminLayout.tsx`
-- Stop passing `"student"` into `setRole`
-- Replace the admin role switcher options with valid dev roles only:
-  - `super_admin`
-  - `mentor`
-  - `student_enrolled`
-  - `student_free`
-- Map labels explicitly so the admin layout can still show friendly names
+## Summary
+Delete all fake/test courses from the database and seed the exact 12 programs from the LevelUp Home Page reference project. Update all frontend mock/fallback data to match.
 
-2. Harden `src/components/dev/DevRoleSwitcher.tsx`
-- Remove the unsafe non-null assumption
-- Add a safe fallback if `currentRole` is ever invalid, so the preview does not white-screen again even if bad state slips in
+## Real Programs to Seed
 
-3. Review admin role checks for consistency
-- Keep admin access based on `super_admin` and `mentor`
-- Make sure student-facing fallback behavior uses one of the real dev student roles, not `"student"`
+**7 Masterclasses:**
+1. Karthik Subbaraj — Filmmaking, ₹2499
+2. Anthony Gonsalvez — Film Editing, ₹1999
+3. G Venket Ram — Photography, ₹2499
+4. DRK Kiran — Art Direction, ₹999
+5. Ravi Basrur — Music, ₹1999
+6. Lokesh Kanagaraj — Filmmaking, ₹2499
+7. Nelson Dilipkumar — Filmmaking, ₹2499
 
-Files to update
-- `src/components/layout/AdminLayout.tsx`
-- `src/components/dev/DevRoleSwitcher.tsx`
+**5 Live Cohorts:**
+1. Breakthrough Filmmakers' Program (BFP) — Filmmaking
+2. Video Editing Academy — Video Editing
+3. Creator Academy — Content Creation
+4. UI/UX Design Academy — Product Design
+5. Screenwriting & Storytelling — Writing
 
-Expected outcome
-- Preview should render again instead of showing a blank white screen
-- Super Admin / Mentor switching should keep working
-- Student switching from the admin layout will no longer poison dev state
-- Opening the preview in another tab should no longer be required as a workaround
+## Implementation
 
-Technical note
-- This is separate from the earlier enrollment fix
-- The likely crash path is:
-```text
-AdminLayout dropdown -> setRole("student")
--> DevAuthContext currentRole becomes invalid
--> DevRoleSwitcher tries current.label on undefined
--> React render crashes
--> white screen
-```
+### 1. Database migration — wipe and seed courses
+- Delete all rows from `lessons`, `course_modules`, `course_resources`, `course_pricing_variants`, `course_schedules`, `course_access_grants`, `sales_page_courses`, `enrollments`, `lesson_progress`, `waitlists`, `utm_tracking`, `certificates`, `assignment_submissions`, `assignments`, `qna_questions`, `qna_answers`, `lesson_comments`, `lesson_resources` (cascade-safe order)
+- Delete all rows from `courses`
+- Insert 7 masterclass courses with real titles, slugs, instructor names, descriptions, prices, categories, `status = 'published'`, `course_type = 'masterclass'`
+- Insert 5 cohort courses with real titles, slugs, descriptions, `course_type = 'cohort'`, `status = 'published'`
+- Insert modules and lessons for the 3 masterclasses with full lesson data (G Venket Ram — 21 lessons, Anthony Gonsalvez — 19 lessons, DRK Kiran — 20 lessons)
+
+### 2. Update `src/data/mockData.ts`
+- Replace fake `courses` array with entries matching the 7 real masterclasses
+- Replace `featuredCreators` with real instructor data
+- Update `featuredBanner` to reference a real course
+- Remove fake workshop data or replace with placeholder
+
+### 3. Update `src/components/home/ForgeCrossSection.tsx`
+- Update locations/dates to match reference: Writing Retreat → "Coorg, June 2026", Filmmaking Bootcamp → "Goa, April 2026", Creator Residency → "Goa, May 2026 / Bali, June 2026"
+- Update subtitles to match reference project descriptions
+- Update CTA links to match reference
+
+### 4. Update `src/components/home/LiveCohortShowcase.tsx`
+- Fallback data already matches the reference — verify and adjust any minor differences
+
+### 5. Update `src/components/home/MasterclassGrid.tsx`
+- No code changes needed — it reads from DB. Will automatically show the 7 real masterclasses after seeding.
+
+## Files to modify
+- **Database migration** — delete + insert ~12 courses, ~60 lessons, modules
+- **`src/data/mockData.ts`** — replace with real program data
+- **`src/components/home/ForgeCrossSection.tsx`** — update locations, dates, CTAs
+- **`src/components/home/LiveCohortShowcase.tsx`** — minor fallback adjustments if needed
+
+## Technical notes
+- Deleting courses will cascade-remove all enrollments, progress, comments, etc. This is intentional since this is dev data.
+- The 4 masterclasses without detailed lesson data (Karthik, Ravi, Lokesh, Nelson) are hosted externally — they'll be seeded as courses with metadata only (no modules/lessons).
+- Existing `course_type` enum supports `masterclass`, `cohort`, `workshop` — no schema changes needed.
+
