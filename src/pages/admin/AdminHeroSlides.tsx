@@ -17,6 +17,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, GripVertical, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface HeroSlide {
   id: string;
@@ -41,8 +50,48 @@ const emptyForm = {
   sort_order: 0,
   is_active: true,
 };
+interface SortableSlideRowProps {
+  slide: HeroSlide;
+  onEdit: (s: HeroSlide) => void;
+  onDelete: (id: string) => void;
+  onToggle: (id: string, v: boolean) => void;
+}
 
-const AdminHeroSlides = () => {
+const SortableSlideRow = ({ slide: s, onEdit, onDelete, onToggle }: SortableSlideRowProps) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+
+  return (
+    <Card ref={setNodeRef} style={style} className="flex items-center gap-4 p-4">
+      <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing touch-none">
+        <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+      </button>
+      <div className="h-16 w-28 rounded-md bg-muted overflow-hidden shrink-0">
+        {s.image_url ? (
+          <img src={s.image_url} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="h-full w-full flex items-center justify-center">
+            <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground truncate">{s.title}</p>
+        <p className="text-xs text-muted-foreground truncate">{s.rotating_words.join(", ")}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Order: {s.sort_order}</p>
+      </div>
+      <Switch checked={s.is_active} onCheckedChange={(v) => onToggle(s.id, v)} />
+      <Button variant="ghost" size="icon" onClick={() => onEdit(s)}>
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" onClick={() => onDelete(s.id)}>
+        <Trash2 className="h-4 w-4 text-destructive" />
+      </Button>
+    </Card>
+  );
+};
+
+
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -107,6 +156,39 @@ const AdminHeroSlides = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["hero-slides"] }),
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const reorderMutation = useMutation({
+    mutationFn: async (reordered: { id: string; sort_order: number }[]) => {
+      const updates = reordered.map(({ id, sort_order }) =>
+        supabase.from("hero_slides").update({ sort_order }).eq("id", id)
+      );
+      const results = await Promise.all(updates);
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["hero-slides"] });
+      toast.success("Order updated");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = slides.findIndex((s) => s.id === active.id);
+    const newIndex = slides.findIndex((s) => s.id === over.id);
+    const reordered = arrayMove(slides, oldIndex, newIndex);
+    qc.setQueryData(["hero-slides"], reordered);
+    reorderMutation.mutate(
+      reordered.map((s, i) => ({ id: s.id, sort_order: i }))
+    );
+  };
 
   const openCreate = () => {
     setEditingSlide(null);
@@ -195,39 +277,21 @@ const AdminHeroSlides = () => {
             </Button>
           </Card>
         ) : (
-          <div className="space-y-3">
-            {slides.map((s) => (
-              <Card key={s.id} className="flex items-center gap-4 p-4">
-                <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
-                <div className="h-16 w-28 rounded-md bg-muted overflow-hidden shrink-0">
-                  {s.image_url ? (
-                    <img src={s.image_url} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="h-full w-full flex items-center justify-center">
-                      <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{s.title}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {s.rotating_words.join(", ")}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Order: {s.sort_order}</p>
-                </div>
-                <Switch
-                  checked={s.is_active}
-                  onCheckedChange={(v) => toggleActive.mutate({ id: s.id, is_active: v })}
-                />
-                <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => setDeleteId(s.id)}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </Card>
-            ))}
-          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={slides.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-3">
+                {slides.map((s) => (
+                  <SortableSlideRow
+                    key={s.id}
+                    slide={s}
+                    onEdit={openEdit}
+                    onDelete={setDeleteId}
+                    onToggle={(id, v) => toggleActive.mutate({ id, is_active: v })}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
         )}
       </div>
 
