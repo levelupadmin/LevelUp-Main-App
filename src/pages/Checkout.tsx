@@ -16,7 +16,7 @@ const Checkout = () => {
   const { data: course, isLoading } = useCourse(slug || "");
   const { data: enrollment, isLoading: enrollLoading } = useEnrollment(course?.id);
   const enrollMutation = useEnrollInCourse();
-  const [autoEnrolling, setAutoEnrolling] = useState(false);
+  const [enrollFailed, setEnrollFailed] = useState(false);
   const [enrollFailed, setEnrollFailed] = useState(false);
   const utmParams = useUtmParams();
 
