@@ -14,6 +14,7 @@ import AdminGuard from "@/components/guards/AdminGuard";
 import Explore from "./pages/Explore";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
+import Checkout from "./pages/Checkout";
 
 // Member pages
 import Index from "./pages/Index";
