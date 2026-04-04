@@ -118,6 +118,25 @@ export const useEnrollInCourse = () => {
         .single();
       if (error) throw error;
 
+      // Save UTM attribution (fire-and-forget)
+      if (utmParams && (utmParams.utm_source || utmParams.utm_medium || utmParams.utm_campaign || utmParams.referrer)) {
+        supabase
+          .from("utm_tracking" as any)
+          .insert({
+            enrollment_id: data.id,
+            user_id: user.id,
+            course_id: courseId,
+            utm_source: utmParams.utm_source || null,
+            utm_medium: utmParams.utm_medium || null,
+            utm_campaign: utmParams.utm_campaign || null,
+            utm_term: utmParams.utm_term || null,
+            utm_content: utmParams.utm_content || null,
+            referrer: utmParams.referrer || null,
+            landing_page: utmParams.landing_page || null,
+          })
+          .then(() => {});
+      }
+
       // Fire enrollment notification (fire-and-forget)
       supabase.functions.invoke("send-notification", {
         body: {
