@@ -1144,6 +1144,53 @@ export type Database = {
           },
         ]
       }
+      payments: {
+        Row: {
+          amount: number
+          course_id: string
+          created_at: string
+          currency: string
+          id: string
+          razorpay_order_id: string
+          razorpay_payment_id: string | null
+          status: Database["public"]["Enums"]["payment_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          course_id: string
+          created_at?: string
+          currency?: string
+          id?: string
+          razorpay_order_id: string
+          razorpay_payment_id?: string | null
+          status?: Database["public"]["Enums"]["payment_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          course_id?: string
+          created_at?: string
+          currency?: string
+          id?: string
+          razorpay_order_id?: string
+          razorpay_payment_id?: string | null
+          status?: Database["public"]["Enums"]["payment_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       portfolio_projects: {
         Row: {
           appreciations: number
@@ -1788,6 +1835,7 @@ export type Database = {
         | "completion"
         | "enrollment"
         | "drip_release"
+      payment_status: "pending" | "paid" | "failed"
       progress_status: "not_started" | "in_progress" | "completed"
       resource_type: "slide" | "template" | "recording" | "link" | "pdf"
       submission_status: "submitted" | "graded" | "returned"
@@ -1932,6 +1980,7 @@ export const Constants = {
         "enrollment",
         "drip_release",
       ],
+      payment_status: ["pending", "paid", "failed"],
       progress_status: ["not_started", "in_progress", "completed"],
       resource_type: ["slide", "template", "recording", "link", "pdf"],
       submission_status: ["submitted", "graded", "returned"],
