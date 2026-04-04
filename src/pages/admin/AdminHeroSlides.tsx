@@ -117,6 +117,39 @@ const AdminHeroSlides = () => {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const reorderMutation = useMutation({
+    mutationFn: async (reordered: { id: string; sort_order: number }[]) => {
+      const updates = reordered.map(({ id, sort_order }) =>
+        supabase.from("hero_slides").update({ sort_order }).eq("id", id)
+      );
+      const results = await Promise.all(updates);
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["hero-slides"] });
+      toast.success("Order updated");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = slides.findIndex((s) => s.id === active.id);
+    const newIndex = slides.findIndex((s) => s.id === over.id);
+    const reordered = arrayMove(slides, oldIndex, newIndex);
+    qc.setQueryData(["hero-slides"], reordered);
+    reorderMutation.mutate(
+      reordered.map((s, i) => ({ id: s.id, sort_order: i }))
+    );
+  };
+
   const openCreate = () => {
     setEditingSlide(null);
     setForm({ ...emptyForm, sort_order: slides.length });
