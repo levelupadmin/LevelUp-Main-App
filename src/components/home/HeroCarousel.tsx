@@ -115,8 +115,7 @@ const HeroCarousel = () => {
             className="mt-5 max-w-xl text-base leading-relaxed text-hero-subtext sm:text-lg opacity-0 animate-hero-stagger"
             style={{ animationDelay: "0.4s" }}
           >
-            On-demand masterclasses. Live mentor-led cohorts. Immersive offline
-            residencies. One platform for serious creators.
+            {subtitle}
           </p>
 
           <div
