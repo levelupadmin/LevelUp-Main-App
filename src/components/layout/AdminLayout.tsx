@@ -49,13 +49,13 @@ const roleBadgeClass: Record<AppRole, string> = {
 const AdminLayout = ({ children }: { children: ReactNode }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, updateProfile } = useAuth();
-  const currentRole = user?.role ?? "student";
+  const { user: devUser, setRole } = useDevAuth();
+  const currentRole = (devUser?.role ?? "student") as AppRole;
 
   const visibleNav = adminNav.filter((item) => item.roles.includes(currentRole));
 
   const switchRole = (role: AppRole) => {
-    updateProfile({ role });
+    setRole(role as any);
   };
 
   return (
