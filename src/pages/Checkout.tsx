@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, BookOpen, Play, Clock, User, ArrowRight } from "lucide-react";
+import { toast } from "sonner";
 import logo from "@/assets/logo.png";
 
 const Checkout = () => {
