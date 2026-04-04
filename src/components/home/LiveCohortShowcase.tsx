@@ -3,17 +3,22 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ChevronLeft, ChevronRight, ArrowRight, Check } from "lucide-react";
 
-/* Fallback programs if no cohort courses in DB */
+import liveBfp from "@/assets/live-bfp.jpg";
+import liveVe from "@/assets/live-ve.png";
+import liveAcp from "@/assets/live-acp.png";
+import liveUiux from "@/assets/live-uiux.png";
+import liveSw from "@/assets/live-sw.png";
+
 const fallbackPrograms = [
   {
     id: "bfp",
     tag: "FILMMAKING",
     title: "Breakthrough Filmmakers' Program",
     headline: "Become a Filmmaker in 12 Weeks",
-    oneLiner: "From script to screen — live weekend classes with the creators behind your favourite Indian films.",
+    oneLiner:
+      "From script to screen — live weekend classes with the creators behind your favourite Indian films.",
     stats: ["12 Weeks", "Weekends Only", "LIVE Online", "Application-Only"],
     bullets: [
       "Full pipeline — screenwriting, directing, cinematography, editing, distribution",
@@ -22,14 +27,15 @@ const fallbackPrograms = [
     ],
     ctaLink: "https://www.leveluplearning.in/bfp-2",
     ctaLabel: "Request Invite",
-    thumbnail: "",
+    thumbnail: liveBfp,
   },
   {
     id: "ve",
     tag: "VIDEO EDITING",
     title: "Video Editing Academy",
     headline: "Become the Editor Everyone Wants to Hire",
-    oneLiner: "Learn from the editors behind Ali Abdaal, Ankur Warikoo & Sharan Hegde — in 12 weeks.",
+    oneLiner:
+      "Learn from the editors behind Ali Abdaal, Ankur Warikoo & Sharan Hegde — in 12 weeks.",
     stats: ["12 Weeks", "Weekends Only", "LIVE Online", "Application-Only"],
     bullets: [
       "Taught by viral social media editors + National Award-winning filmmaker",
@@ -38,30 +44,32 @@ const fallbackPrograms = [
     ],
     ctaLink: "https://www.leveluplearning.in/ve",
     ctaLabel: "Request Invite",
-    thumbnail: "",
+    thumbnail: liveVe,
   },
   {
     id: "creator-academy",
     tag: "CONTENT CREATION",
     title: "Creator Academy",
     headline: "Become the Creator You Keep Planning to Be",
-    oneLiner: "Not a course. A 12-week execution cohort — publish 21 posts or stay out.",
+    oneLiner:
+      "Not a course. A 12-week execution cohort — publish 21 posts or stay out.",
     stats: ["12 Weeks", "21 Posts", "Pods of 5", "80%+ Completion"],
     bullets: [
-      "Publish by 10 PM IST or your streak resets",
+      'Publish by 10 PM IST or your streak resets',
       "Mentor reviews every draft before you post",
       "Alumni grown to 440K+, 340K+, 230K+ followers",
     ],
     ctaLink: "https://www.leveluplearning.in/creator-academy",
     ctaLabel: "Begin Today",
-    thumbnail: "",
+    thumbnail: liveAcp,
   },
   {
     id: "uiux",
     tag: "PRODUCT DESIGN",
     title: "UI/UX Design Academy",
     headline: "India's First AI-First Product Design Accelerator",
-    oneLiner: "Brief to interview-ready portfolio in 12 weeks with AI workflows built in.",
+    oneLiner:
+      "Brief to interview-ready portfolio in 12 weeks with AI workflows built in.",
     stats: ["12 Weeks", "Weekends Only", "LIVE Online", "Top 5% Accepted"],
     bullets: [
       "AI-first curriculum woven into research, synthesis, UX copy & prototyping",
@@ -70,14 +78,15 @@ const fallbackPrograms = [
     ],
     ctaLink: "https://www.leveluplearning.in/uiux-academy",
     ctaLabel: "Request Invite",
-    thumbnail: "",
+    thumbnail: liveUiux,
   },
   {
     id: "sw",
     tag: "WRITING",
     title: "Screenwriting & Storytelling",
     headline: "Storytellers Are Built Here",
-    oneLiner: "The 8-week experience that transforms your writing forever.",
+    oneLiner:
+      "The 8-week experience that transforms your writing forever.",
     stats: ["8 Weeks", "128 Concepts", "15 Assignments", "4 Mentors"],
     bullets: [
       "Psychology of storytelling, visual storytelling, and pitching & selling",
@@ -86,7 +95,7 @@ const fallbackPrograms = [
     ],
     ctaLink: "https://www.leveluplearning.in/sw",
     ctaLabel: "Request Invite",
-    thumbnail: "",
+    thumbnail: liveSw,
   },
 ];
 
@@ -96,6 +105,7 @@ const AUTOPLAY_MS = 5000;
 const LiveCohortShowcase = () => {
   const navigate = useNavigate();
   const [current, setCurrent] = useState(0);
+  const [direction, setDirection] = useState(1);
   const [labelIdx, setLabelIdx] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
 
@@ -104,7 +114,9 @@ const LiveCohortShowcase = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("courses")
-        .select("id, slug, title, short_description, description, tags, thumbnail_url, payment_page_url, student_count, estimated_duration")
+        .select(
+          "id, slug, title, short_description, description, tags, thumbnail_url, payment_page_url, student_count, estimated_duration"
+        )
         .eq("course_type", "cohort")
         .eq("status", "published")
         .order("created_at", { ascending: false })
@@ -114,24 +126,44 @@ const LiveCohortShowcase = () => {
     },
   });
 
-  const programs = dbCohorts.length > 0
-    ? dbCohorts.map((c) => ({
-        id: c.id,
-        tag: (c.tags?.[0] || "COHORT").toUpperCase(),
-        title: c.title,
-        headline: c.title,
-        oneLiner: c.short_description || "",
-        stats: c.tags?.slice(0, 4) || [],
-        bullets: c.description?.split("\n").filter(Boolean).slice(0, 3) || [],
-        ctaLink: c.payment_page_url || `/learn/course/${c.slug}`,
-        ctaLabel: "Request Invite",
-        thumbnail: c.thumbnail_url || "",
-        slug: c.slug,
-      }))
-    : fallbackPrograms;
+  const programs =
+    dbCohorts.length > 0
+      ? dbCohorts.map((c) => ({
+          id: c.id,
+          tag: (c.tags?.[0] || "COHORT").toUpperCase(),
+          title: c.title,
+          headline: c.title,
+          oneLiner: c.short_description || "",
+          stats: c.tags?.slice(0, 4) || [],
+          bullets:
+            c.description
+              ?.split("\n")
+              .filter(Boolean)
+              .slice(0, 3) || [],
+          ctaLink: c.payment_page_url || `/learn/course/${c.slug}`,
+          ctaLabel: "Request Invite",
+          thumbnail: c.thumbnail_url || "",
+          slug: c.slug,
+        }))
+      : fallbackPrograms;
 
-  const next = useCallback(() => setCurrent((c) => (c + 1) % programs.length), [programs.length]);
-  const prev = useCallback(() => setCurrent((c) => (c - 1 + programs.length) % programs.length), [programs.length]);
+  const navigateTo = useCallback(
+    (newIndex: number) => {
+      setDirection(newIndex > current ? 1 : -1);
+      setCurrent(newIndex);
+    },
+    [current]
+  );
+
+  const next = useCallback(() => {
+    setDirection(1);
+    setCurrent((c) => (c + 1) % programs.length);
+  }, [programs.length]);
+
+  const prev = useCallback(() => {
+    setDirection(-1);
+    setCurrent((c) => (c - 1 + programs.length) % programs.length);
+  }, [programs.length]);
 
   useEffect(() => {
     if (isPaused) return;
@@ -140,12 +172,21 @@ const LiveCohortShowcase = () => {
   }, [isPaused, next]);
 
   useEffect(() => {
-    const t = setInterval(() => setLabelIdx((i) => (i + 1) % rotatingLabels.length), 2500);
+    const t = setInterval(
+      () => setLabelIdx((i) => (i + 1) % rotatingLabels.length),
+      2500
+    );
     return () => clearInterval(t);
   }, []);
 
   const p = programs[current];
   const isExternal = p.ctaLink.startsWith("http");
+
+  const cardVariants = {
+    enter: (dir: number) => ({ x: dir > 0 ? 80 : -80, opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: (dir: number) => ({ x: dir > 0 ? -80 : 80, opacity: 0 }),
+  };
 
   return (
     <section
@@ -155,10 +196,10 @@ const LiveCohortShowcase = () => {
     >
       {/* Header */}
       <div className="space-y-2">
-        <span className="inline-block rounded-full border border-border/50 bg-card/60 px-4 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+        <span className="inline-block rounded-full border border-border/50 bg-secondary px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           Live Mentorship Cohorts
         </span>
-        <h2 className="font-display text-2xl font-bold text-foreground sm:text-3xl">
+        <h2 className="text-2xl font-semibold text-foreground sm:text-3xl tracking-tight">
           From Learner to{" "}
           <span className="relative inline-block h-[1.15em] overflow-hidden align-bottom">
             <AnimatePresence mode="wait">
@@ -168,7 +209,7 @@ const LiveCohortShowcase = () => {
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: -30, opacity: 0 }}
                 transition={{ duration: 0.35 }}
-                className="inline-block text-gradient-amber"
+                className="inline-block text-primary"
               >
                 {rotatingLabels[labelIdx]}
               </motion.span>
@@ -176,6 +217,10 @@ const LiveCohortShowcase = () => {
           </span>
           <span className="text-muted-foreground font-light">.</span>
         </h2>
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          LIVE mentorship cohorts designed for one thing: taking you from "I know
+          about it" to "I can actually do it."
+        </p>
       </div>
 
       {/* Filter pills */}
@@ -183,11 +228,11 @@ const LiveCohortShowcase = () => {
         {programs.map((prog, i) => (
           <button
             key={prog.id}
-            onClick={() => setCurrent(i)}
-            className={`rounded-full border px-4 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition-all ${
+            onClick={() => navigateTo(i)}
+            className={`rounded-full border px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-all ${
               i === current
-                ? "border-highlight/50 bg-highlight/10 text-highlight"
-                : "border-border/40 bg-card/40 text-muted-foreground hover:border-border"
+                ? "border-primary/50 bg-primary/10 text-primary"
+                : "border-border/40 bg-secondary/60 text-muted-foreground hover:border-border"
             }`}
           >
             {prog.tag}
@@ -197,33 +242,36 @@ const LiveCohortShowcase = () => {
 
       {/* Card */}
       <div className="relative overflow-hidden rounded-2xl border border-border/40 bg-card">
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="wait" custom={direction}>
           <motion.div
             key={p.id}
-            initial={{ opacity: 0, x: 40 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -40 }}
+            custom={direction}
+            variants={cardVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
             transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
             className="flex flex-col lg:flex-row"
           >
             {/* Image side */}
             {p.thumbnail && (
-              <div className="relative h-56 w-full shrink-0 overflow-hidden lg:h-auto lg:w-[380px]">
+              <div className="relative h-56 w-full shrink-0 overflow-hidden lg:h-auto lg:w-[380px] lg:order-2">
                 <img
                   src={p.thumbnail}
                   alt={p.title}
                   className="h-full w-full object-cover"
                 />
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent to-card lg:bg-gradient-to-l" />
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent to-card hidden lg:block" />
+                <div className="absolute inset-0 bg-gradient-to-t from-card via-transparent to-transparent lg:hidden" />
               </div>
             )}
 
             {/* Content side */}
-            <div className="flex flex-1 flex-col justify-center p-6 sm:p-8 lg:p-10">
-              <span className="mb-2 inline-flex w-fit rounded-full bg-highlight/10 px-3 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest text-highlight">
+            <div className="flex flex-1 flex-col justify-center p-6 sm:p-8 lg:p-10 lg:order-1">
+              <span className="mb-2 inline-flex w-fit rounded-full bg-primary/10 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
                 {p.tag}
               </span>
-              <h3 className="font-display text-xl font-bold text-foreground sm:text-2xl">
+              <h3 className="text-xl font-semibold text-foreground sm:text-2xl lg:text-3xl tracking-tight">
                 {p.headline}
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -236,7 +284,7 @@ const LiveCohortShowcase = () => {
                   {p.stats.map((s) => (
                     <span
                       key={s}
-                      className="rounded-full border border-border/30 bg-accent/50 px-3 py-1 text-[10px] font-medium text-muted-foreground"
+                      className="rounded-full border border-border/30 bg-secondary/60 px-3 py-1 text-[10px] font-medium text-muted-foreground"
                     >
                       {s}
                     </span>
@@ -246,11 +294,14 @@ const LiveCohortShowcase = () => {
 
               {/* Bullets */}
               {p.bullets.length > 0 && (
-                <ul className="mt-4 space-y-1.5">
+                <ul className="mt-4 space-y-2">
                   {p.bullets.map((b, i) => (
-                    <li key={i} className="flex items-start gap-2 text-xs text-secondary-foreground">
-                      <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-highlight" />
-                      {b}
+                    <li
+                      key={i}
+                      className="flex items-start gap-2.5 text-sm text-foreground/80"
+                    >
+                      <Check className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                      <span className="leading-snug">{b}</span>
                     </li>
                   ))}
                 </ul>
@@ -263,7 +314,7 @@ const LiveCohortShowcase = () => {
                     href={p.ctaLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 rounded-full bg-foreground px-7 py-3 text-sm font-semibold text-background transition-all hover:scale-[1.03] hover:shadow-[0_0_24px_4px_hsl(38_75%_55%/0.15)]"
+                    className="inline-flex items-center gap-2 rounded-[12px] bg-primary px-7 py-3 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 shadow-design-sm"
                   >
                     {p.ctaLabel}
                     <ArrowRight className="h-4 w-4" />
@@ -271,7 +322,7 @@ const LiveCohortShowcase = () => {
                 ) : (
                   <button
                     onClick={() => navigate(p.ctaLink)}
-                    className="inline-flex items-center gap-2 rounded-full bg-foreground px-7 py-3 text-sm font-semibold text-background transition-all hover:scale-[1.03] hover:shadow-[0_0_24px_4px_hsl(38_75%_55%/0.15)]"
+                    className="inline-flex items-center gap-2 rounded-[12px] bg-primary px-7 py-3 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 shadow-design-sm"
                   >
                     {p.ctaLabel}
                     <ArrowRight className="h-4 w-4" />
@@ -302,9 +353,11 @@ const LiveCohortShowcase = () => {
         {programs.map((_, i) => (
           <button
             key={i}
-            onClick={() => setCurrent(i)}
+            onClick={() => navigateTo(i)}
             className={`h-1.5 rounded-full transition-all ${
-              i === current ? "w-6 bg-highlight" : "w-1.5 bg-muted-foreground/30"
+              i === current
+                ? "w-6 bg-primary"
+                : "w-1.5 bg-muted-foreground/30"
             }`}
           />
         ))}
