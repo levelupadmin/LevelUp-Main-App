@@ -88,34 +88,20 @@ export const useLessonCourse = (courseId: string | undefined) =>
 /* ─── Enrollment ─── */
 
 export const useEnrollment = (courseId: string | undefined) => {
-  const { user: devUser } = useDevAuth();
+  const { user } = useAuth();
   return useQuery({
-    queryKey: ["enrollment", courseId, devUser?.id],
-    enabled: !!courseId,
+    queryKey: ["enrollment", courseId, user?.id],
+    enabled: !!courseId && !!user?.id,
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data, error } = await supabase
-          .from("enrollments")
-          .select("*")
-          .eq("course_id", courseId!)
-          .eq("user_id", user.id)
-          .eq("status", "active")
-          .maybeSingle();
-        if (error) throw error;
-        return data as Enrollment | null;
-      }
-      // Preview/dev mode fallback
-      if (devUser && isPreviewEnrolled(devUser.id, courseId!)) {
-        return {
-          id: `preview-${courseId}`,
-          course_id: courseId!,
-          user_id: devUser.id,
-          status: "active",
-          enrolled_at: new Date().toISOString(),
-        } as unknown as Enrollment;
-      }
-      return null;
+      const { data, error } = await supabase
+        .from("enrollments")
+        .select("*")
+        .eq("course_id", courseId!)
+        .eq("user_id", user!.id)
+        .eq("status", "active")
+        .maybeSingle();
+      if (error) throw error;
+      return data as Enrollment | null;
     },
   });
 };
