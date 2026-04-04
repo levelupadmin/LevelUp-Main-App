@@ -1,50 +1,64 @@
 
 
-# Hero CRUD Admin Interface
+# Full Razorpay Checkout Integration
 
 ## Overview
-Create a `hero_slides` database table and an admin page to manage the hero carousel slides (background images, headlines, subtitle, CTA). Update `HeroCarousel.tsx` to fetch slides from the database instead of using hardcoded values.
+Embed Razorpay's checkout widget directly in the app. When a user clicks "Pay", a backend function creates a Razorpay order, the frontend opens the Razorpay modal, and a webhook automatically enrolls the user after successful payment.
 
-## Database
+## Architecture
 
-New table: `hero_slides`
-- `id` uuid PK
-- `title` text (headline text, e.g. "Where India's next great")
-- `rotating_words` text[] (e.g. `{"filmmakers","editors","storytellers"}`)
-- `subtitle` text
-- `cta_label` text (default "See all Programs")
-- `cta_link` text (default "/explore")
-- `image_url` text (background image URL)
-- `sort_order` integer (default 0)
-- `is_active` boolean (default true)
-- `created_at` timestamptz
+```text
+User clicks Pay → Edge Function creates Razorpay Order → Razorpay modal opens in-app
+                                                              ↓
+                                                         User pays
+                                                              ↓
+Razorpay webhook → Edge Function verifies signature → Creates enrollment + marks payment
+```
 
-RLS: admins/mentors get full access, public SELECT on `is_active = true`.
+## What's Needed
+
+### 1. Secrets (before any code)
+- `RAZORPAY_KEY_ID` — your Razorpay API key (starts with `rzp_`)
+- `RAZORPAY_KEY_SECRET` — your Razorpay secret key
+- `RAZORPAY_WEBHOOK_SECRET` — webhook secret from Razorpay dashboard
+
+### 2. Database: `payments` table
+Tracks payment attempts and status:
+- `id`, `user_id`, `course_id`, `razorpay_order_id`, `razorpay_payment_id`, `amount`, `currency`, `status` (pending/paid/failed), `created_at`
+- RLS: users read own, admins read all
+
+### 3. Edge Function: `create-razorpay-order`
+- Receives `course_id` from authenticated user
+- Looks up course price from DB
+- Calls Razorpay Orders API to create an order
+- Inserts a `payments` row with status "pending"
+- Returns `order_id`, `amount`, `key_id` to frontend
+
+### 4. Edge Function: `razorpay-webhook`
+- Receives POST from Razorpay with payment event
+- Verifies webhook signature using `RAZORPAY_WEBHOOK_SECRET`
+- On `payment.captured`: updates payment status to "paid", creates enrollment
+- No JWT verification (external webhook)
+
+### 5. Frontend: Update `Checkout.tsx`
+- Load Razorpay Checkout.js script dynamically
+- On "Pay Now" click: call `create-razorpay-order`, then open Razorpay modal with returned order details
+- On payment success callback: navigate to `/enrollment-success/:slug`
+- Free courses continue with existing instant enrollment flow
+- Add `VITE_RAZORPAY_KEY_ID` to frontend (public key, safe to expose)
+
+### 6. Admin: Payment link field (already exists)
+The `payment_page_url` field on courses is already available as a fallback. No admin changes needed — the system uses the course `price` field directly.
 
 ## Files to Create/Modify
+- **Migration**: Create `payments` table with RLS
+- **`supabase/functions/create-razorpay-order/index.ts`** — new edge function
+- **`supabase/functions/razorpay-webhook/index.ts`** — new edge function
+- **`src/pages/Checkout.tsx`** — add Razorpay modal flow for paid courses, keep free flow
+- **`index.html`** — add Razorpay Checkout.js script tag
 
-### 1. `src/pages/admin/AdminHeroSlides.tsx` (new)
-Admin page within `AdminLayout` providing:
-- List of slides as draggable cards showing thumbnail, title, active toggle
-- Create/edit dialog with fields: title, rotating words (comma-separated input), subtitle, CTA label, CTA link, image upload (to `course-content` bucket), sort order, active toggle
-- Delete confirmation
-- Uses React Query + Supabase for CRUD
-
-### 2. `src/App.tsx`
-- Add lazy import for `AdminHeroSlides`
-- Add route: `/admin/hero` under admin guard
-
-### 3. `src/components/layout/AdminLayout.tsx`
-- Add nav item `{ path: "/admin/hero", label: "Hero Slides", icon: Clapperboard, roles: ["super_admin"] }` after Dashboard
-
-### 4. `src/components/home/HeroCarousel.tsx`
-- Fetch active slides from `hero_slides` table ordered by `sort_order`
-- Fall back to existing hardcoded data if query returns empty (graceful degradation)
-- Use `image_url` for backgrounds, first slide's `rotating_words` for the word rotation
-- Keep existing animations and layout unchanged
-
-## Technical Notes
-- Image upload reuses the existing `course-content` storage bucket
-- Rotating words stored as a Postgres text array, entered as comma-separated in the admin UI
-- The carousel continues to work with hardcoded fallback if no slides exist yet, ensuring zero downtime
+## Setup Steps (for you)
+1. Create a Razorpay account at razorpay.com
+2. Get your API keys from Settings → API Keys
+3. Set up a webhook in Razorpay Dashboard → Settings → Webhooks pointing to your edge function URL, with event `payment.captured`
 
