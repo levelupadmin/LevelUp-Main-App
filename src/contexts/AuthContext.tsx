@@ -43,13 +43,6 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// ── DEV MODE: bypass real auth ──────────────────────────────────
-// Import dev context to provide mock user data
-let useDevAuthFn: (() => { user: UserProfile; isAdmin: boolean }) | null = null;
-try {
-  // Dynamic import won't work at module level, so we rely on the provider hierarchy instead.
-  // The useAuth hook below checks for DevAuthContext first.
-} catch {}
 
 async function fetchProfile(userId: string): Promise<UserProfile | null> {
   const [{ data: profile }, { data: roleData }] = await Promise.all([
