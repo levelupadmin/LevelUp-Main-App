@@ -123,17 +123,12 @@ export const useAuth = () => {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
 
   // In dev mode, pull user from DevAuthContext
-  try {
-    const { useDevAuth } = require("@/contexts/DevAuthContext");
-    const devCtx = useDevAuth();
-    return {
-      ...ctx,
-      isAuthenticated: true,
-      isLoading: false,
-      hasCompletedOnboarding: true,
-      user: devCtx.user,
-    };
-  } catch {
-    return ctx;
-  }
+  const devCtx = useDevAuth();
+  return {
+    ...ctx,
+    isAuthenticated: true,
+    isLoading: false,
+    hasCompletedOnboarding: true,
+    user: devCtx.user,
+  };
 };
