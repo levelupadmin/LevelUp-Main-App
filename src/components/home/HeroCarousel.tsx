@@ -92,7 +92,7 @@ const HeroCarousel = () => {
             className="mt-4 max-w-4xl font-display text-3xl font-bold leading-[1.05] text-hero-headline sm:text-5xl lg:text-[4.5rem] opacity-0 animate-hero-stagger"
             style={{ animationDelay: "0.25s" }}
           >
-            Where India's next great
+            {headline}
             <br />
             <span className="relative inline-block h-[1.15em] overflow-hidden align-bottom">
               <AnimatePresence mode="wait">
