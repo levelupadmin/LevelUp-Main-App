@@ -1,7 +1,6 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
-import { useDevAuth } from "@/contexts/DevAuthContext";
 
 export type AppRole = "student" | "mentor" | "super_admin";
 
@@ -33,8 +32,10 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  signUp: (email: string, password: string, fullName?: string) => Promise<{ error: string | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  sendOtp: (method: "email" | "phone", value: string, meta?: Record<string, any>) => Promise<{ error: string | null }>;
+  verifyOtp: (method: "email" | "phone", value: string, token: string) => Promise<{ error: string | null }>;
+  verifyPhoneUpdate: (phone: string, token: string) => Promise<{ error: string | null }>;
+  updateUserPhone: (phone: string) => Promise<{ error: string | null }>;
   logout: () => Promise<void>;
   completeOnboarding: (data: { interests: string[]; experience: string; goal: string }) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
@@ -43,8 +44,7 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-
-async function fetchProfile(userId: string): Promise<UserProfile | null> {
+async function fetchProfile(userId: string, email?: string, phone?: string): Promise<UserProfile | null> {
   const [{ data: profile }, { data: roleData }] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", userId).single(),
     supabase.from("user_roles").select("role").eq("user_id", userId),
@@ -59,7 +59,8 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
 
   return {
     id: profile.id,
-    email: undefined,
+    email: email,
+    phone: phone || profile.phone || undefined,
     name: profile.name || "",
     avatar_url: profile.avatar_url || "",
     bio: profile.bio || "",
@@ -77,36 +78,121 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
 }
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  // In dev mode we provide a fake authenticated state using DevAuthContext
-  // The actual dev user comes from DevAuthProvider which wraps AuthProvider in App.tsx
-
   const [state, setState] = useState<AuthState>({
-    isAuthenticated: true, // DEV MODE: always authenticated
-    isLoading: false,      // DEV MODE: never loading
-    hasCompletedOnboarding: true,
+    isAuthenticated: false,
+    isLoading: true,
+    hasCompletedOnboarding: false,
     user: null,
     session: null,
   });
 
-  // We no longer listen to real auth in dev mode, but keep the functions for interface compat
-  const signUp = async (_email: string, _password: string, _fullName?: string) => {
-    return { error: null };
+  const loadUser = useCallback(async (session: Session | null) => {
+    if (!session?.user) {
+      setState({ isAuthenticated: false, isLoading: false, hasCompletedOnboarding: false, user: null, session: null });
+      return;
+    }
+    const profile = await fetchProfile(session.user.id, session.user.email, session.user.phone);
+    setState({
+      isAuthenticated: true,
+      isLoading: false,
+      hasCompletedOnboarding: profile?.has_completed_onboarding || false,
+      user: profile,
+      session,
+    });
+  }, []);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      loadUser(session);
+    });
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      loadUser(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [loadUser]);
+
+  const sendOtp = async (method: "email" | "phone", value: string, meta?: Record<string, any>) => {
+    try {
+      const opts: any = method === "email"
+        ? { email: value, options: { data: meta } }
+        : { phone: value, options: { data: meta } };
+
+      const { error } = await supabase.auth.signInWithOtp(opts);
+      if (error) return { error: error.message };
+      return { error: null };
+    } catch (e: any) {
+      return { error: e.message || "Failed to send OTP" };
+    }
   };
 
-  const signIn = async (_email: string, _password: string) => {
-    return { error: null };
+  const verifyOtp = async (method: "email" | "phone", value: string, token: string) => {
+    try {
+      const opts: any = method === "email"
+        ? { email: value, token, type: "email" as const }
+        : { phone: value, token, type: "sms" as const };
+
+      const { error } = await supabase.auth.verifyOtp(opts);
+      if (error) return { error: error.message };
+      return { error: null };
+    } catch (e: any) {
+      return { error: e.message || "Failed to verify OTP" };
+    }
   };
 
-  const logout = async () => {};
+  const updateUserPhone = async (phone: string) => {
+    try {
+      const { error } = await supabase.auth.updateUser({ phone });
+      if (error) return { error: error.message };
+      return { error: null };
+    } catch (e: any) {
+      return { error: e.message || "Failed to update phone" };
+    }
+  };
 
-  const completeOnboarding = async (_data: { interests: string[]; experience: string; goal: string }) => {};
+  const verifyPhoneUpdate = async (phone: string, token: string) => {
+    try {
+      const { error } = await supabase.auth.verifyOtp({ phone, token, type: "phone_change" });
+      if (error) return { error: error.message };
+      return { error: null };
+    } catch (e: any) {
+      return { error: e.message || "Failed to verify phone" };
+    }
+  };
 
-  const updateProfile = async (_data: Partial<UserProfile>) => {};
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setState({ isAuthenticated: false, isLoading: false, hasCompletedOnboarding: false, user: null, session: null });
+  };
 
-  const refreshProfile = async () => {};
+  const completeOnboarding = async (data: { interests: string[]; experience: string; goal: string }) => {
+    if (!state.session?.user) return;
+    await supabase.from("profiles").update({
+      interests: data.interests,
+      experience: data.experience,
+      goal: data.goal,
+      has_completed_onboarding: true,
+    }).eq("id", state.session.user.id);
+    setState(prev => ({ ...prev, hasCompletedOnboarding: true, user: prev.user ? { ...prev.user, ...data, has_completed_onboarding: true } : prev.user }));
+  };
+
+  const updateProfile = async (data: Partial<UserProfile>) => {
+    if (!state.session?.user) return;
+    const { social_links, ...rest } = data;
+    await supabase.from("profiles").update({
+      ...rest,
+      ...(social_links ? { social_links } : {}),
+    }).eq("id", state.session.user.id);
+    setState(prev => ({ ...prev, user: prev.user ? { ...prev.user, ...data } : prev.user }));
+  };
+
+  const refreshProfile = async () => {
+    if (state.session) await loadUser(state.session);
+  };
 
   return (
-    <AuthContext.Provider value={{ ...state, signUp, signIn, logout, completeOnboarding, updateProfile, refreshProfile }}>
+    <AuthContext.Provider value={{ ...state, sendOtp, verifyOtp, verifyPhoneUpdate, updateUserPhone, logout, completeOnboarding, updateProfile, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
@@ -115,14 +201,5 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-
-  // In dev mode, pull user from DevAuthContext
-  const devCtx = useDevAuth();
-  return {
-    ...ctx,
-    isAuthenticated: true,
-    isLoading: false,
-    hasCompletedOnboarding: true,
-    user: devCtx.user,
-  };
+  return ctx;
 };
