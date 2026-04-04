@@ -1,154 +1,113 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import heroFilmmaking from "@/assets/hero-filmmaking-1.jpg";
 import heroEditing from "@/assets/hero-editing-1.jpg";
 import heroCinematography from "@/assets/hero-cinematography-1.jpg";
 
-const heroSlides = [
-  {
-    id: "slide-1",
-    image: heroFilmmaking,
-    category: "Masterclass",
-    headline: "Learn cinematic storytelling",
-    headlineAccent: "that actually gets watched",
-    supporting: "Build taste, craft and execution through a premium creator-first learning experience.",
-    cta: "Explore Program",
-    route: "/learn/course/1",
-    meta: ["21 Modules", "Mentor-led", "Certificate", "Beginner Friendly"],
-  },
-  {
-    id: "slide-2",
-    image: heroEditing,
-    category: "Masterclass",
-    headline: "Master the edit.",
-    headlineAccent: "Own the story.",
-    supporting: "From raw footage to final cut — learn professional editing workflows used by India's top editors.",
-    cta: "View Curriculum",
-    route: "/learn/course/2",
-    meta: ["32 Lessons", "Project-based", "Live Feedback", "DaVinci Resolve"],
-  },
-  {
-    id: "slide-3",
-    image: heroCinematography,
-    category: "Cohort",
-    headline: "Cinematography",
-    headlineAccent: "fundamentals, redefined",
-    supporting: "Master the visual language of cinema — from framing to lighting — in a 12-week mentor-led cohort.",
-    cta: "Apply Now",
-    route: "/learn/course/4",
-    meta: ["12 Weeks", "Mentor-led", "Invite Only", "Live Feedback"],
-  },
-];
-
-const AUTOPLAY_MS = 6000;
+const rotatingWords = ["filmmakers", "editors", "storytellers", "cinematographers", "creators"];
+const bgImages = [heroFilmmaking, heroEditing, heroCinematography];
+const WORD_MS = 3000;
+const BG_MS = 6000;
 
 const HeroCarousel = () => {
   const navigate = useNavigate();
-  const [current, setCurrent] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
+  const [wordIdx, setWordIdx] = useState(0);
+  const [bgIdx, setBgIdx] = useState(0);
 
-  const next = useCallback(() => {
-    setCurrent((c) => (c + 1) % heroSlides.length);
-  }, []);
-
-  const prev = useCallback(() => {
-    setCurrent((c) => (c - 1 + heroSlides.length) % heroSlides.length);
+  useEffect(() => {
+    const t = setInterval(() => setWordIdx((i) => (i + 1) % rotatingWords.length), WORD_MS);
+    return () => clearInterval(t);
   }, []);
 
   useEffect(() => {
-    if (isPaused) return;
-    const timer = setInterval(next, AUTOPLAY_MS);
-    return () => clearInterval(timer);
-  }, [isPaused, next]);
-
-  const slide = heroSlides[current];
+    const t = setInterval(() => setBgIdx((i) => (i + 1) % bgImages.length), BG_MS);
+    return () => clearInterval(t);
+  }, []);
 
   return (
-    <section
-      className="group relative -mx-6 -mt-6 cursor-pointer overflow-hidden lg:-mx-10 lg:-mt-10"
-      onMouseEnter={() => setIsPaused(true)}
-      onMouseLeave={() => setIsPaused(false)}
-      onClick={() => navigate(slide.route)}
-    >
-      <div className="relative h-[480px] w-full sm:h-[520px] lg:h-[600px]">
-        {/* Background images with Ken Burns animation */}
-        {heroSlides.map((s, i) => (
+    <section className="relative -mx-6 -mt-6 overflow-hidden lg:-mx-10 lg:-mt-10">
+      <div className="relative h-[520px] w-full sm:h-[560px] lg:h-[640px]">
+        {/* Background images with Ken Burns */}
+        {bgImages.map((src, i) => (
           <img
-            key={s.id}
-            src={s.image}
+            key={i}
+            src={src}
             alt=""
-            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${
-              i === current ? "opacity-100 animate-ken-burns" : "opacity-0"
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${
+              i === bgIdx ? "opacity-100 animate-ken-burns" : "opacity-0"
             }`}
           />
         ))}
 
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/20" />
-        <div className="absolute inset-0 bg-gradient-to-r from-background/80 via-background/30 to-transparent" />
+        {/* Gradient overlays */}
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/10" />
+        <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/40 to-transparent" />
 
-        {/* Content overlay */}
-        <div className="absolute inset-0 flex flex-col justify-end p-6 pb-24 sm:pb-28 lg:p-16 lg:pb-32">
-          <span className="mb-4 inline-flex w-fit rounded-full border border-border/50 bg-background/40 px-4 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground backdrop-blur-sm">
-            {slide.category}
-          </span>
+        {/* Content */}
+        <div className="absolute inset-0 flex flex-col justify-end p-6 pb-28 sm:pb-32 lg:p-16 lg:pb-36">
+          {/* Stagger-animated content */}
+          <p
+            className="font-mono text-[11px] font-semibold uppercase tracking-[0.25em] text-muted-foreground opacity-0 animate-hero-stagger"
+            style={{ animationDelay: "0.1s" }}
+          >
+            LevelUp Learning
+          </p>
 
-          <h1 className="max-w-3xl text-3xl font-bold leading-[1.08] text-foreground sm:text-5xl lg:text-[4.25rem]">
-            {slide.headline}
+          <h1
+            className="mt-4 max-w-4xl font-display text-3xl font-bold leading-[1.05] text-hero-headline sm:text-5xl lg:text-[4.5rem] opacity-0 animate-hero-stagger"
+            style={{ animationDelay: "0.25s" }}
+          >
+            Where India's next great
             <br />
-            <em className="font-light italic text-muted-foreground">
-              {slide.headlineAccent}
-            </em>
+            <span className="relative inline-block h-[1.15em] overflow-hidden align-bottom">
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={rotatingWords[wordIdx]}
+                  initial={{ y: 40, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -40, opacity: 0 }}
+                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                  className="inline-block text-gradient-amber"
+                >
+                  {rotatingWords[wordIdx]}
+                </motion.span>
+              </AnimatePresence>
+            </span>{" "}
+            <span className="text-muted-foreground font-light">are made.</span>
           </h1>
 
-          <div className="mt-8">
+          <p
+            className="mt-5 max-w-xl text-base leading-relaxed text-hero-subtext sm:text-lg opacity-0 animate-hero-stagger"
+            style={{ animationDelay: "0.4s" }}
+          >
+            On-demand masterclasses. Live mentor-led cohorts. Immersive offline
+            residencies. One platform for serious creators.
+          </p>
+
+          <div
+            className="mt-8 opacity-0 animate-hero-stagger"
+            style={{ animationDelay: "0.55s" }}
+          >
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(slide.route);
-              }}
-              className="inline-flex items-center gap-2.5 rounded-full bg-foreground px-7 py-3.5 text-sm font-semibold text-background transition-all hover:bg-foreground/90"
+              onClick={() => navigate("/explore")}
+              className="inline-flex items-center gap-2.5 rounded-full bg-foreground px-8 py-3.5 text-sm font-semibold text-background transition-all hover:scale-[1.03] hover:shadow-[0_0_24px_4px_hsl(38_75%_55%/0.2)]"
             >
-              {slide.cta}
+              See all Programs
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
-
-          <div className="mt-5 flex flex-wrap gap-2">
-            {slide.meta.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full border border-border/40 bg-background/30 px-3 py-1 font-mono text-[10px] font-medium tracking-wide text-muted-foreground/80 backdrop-blur-sm"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
         </div>
 
-        {/* Navigation arrows */}
-        <button
-          onClick={(e) => { e.stopPropagation(); prev(); }}
-          className="absolute left-4 top-1/2 z-10 -translate-y-1/2 rounded-full border border-border/30 bg-background/50 p-2 text-foreground opacity-0 backdrop-blur-sm transition-all hover:bg-background/80 group-hover:opacity-100"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); next(); }}
-          className="absolute right-4 top-1/2 z-10 -translate-y-1/2 rounded-full border border-border/30 bg-background/50 p-2 text-foreground opacity-0 backdrop-blur-sm transition-all hover:bg-background/80 group-hover:opacity-100"
-        >
-          <ChevronRight className="h-5 w-5" />
-        </button>
-
-        {/* Dot indicators */}
+        {/* Dot indicators for bg */}
         <div className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2">
-          {heroSlides.map((_, i) => (
+          {bgImages.map((_, i) => (
             <button
               key={i}
-              onClick={(e) => { e.stopPropagation(); setCurrent(i); }}
+              onClick={() => setBgIdx(i)}
               className={`h-1.5 rounded-full transition-all ${
-                i === current
+                i === bgIdx
                   ? "w-8 bg-foreground"
                   : "w-1.5 bg-muted-foreground/40 hover:bg-muted-foreground/60"
               }`}
