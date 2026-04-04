@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { isPreviewEnrolled, setPreviewEnrolled } from "@/lib/previewEnrollment";
+import { useDevAuth } from "@/contexts/DevAuthContext";
 
 export type Course = Tables<"courses">;
 export type Module = Tables<"course_modules">;
@@ -87,9 +88,10 @@ export const useLessonCourse = (courseId: string | undefined) =>
 
 /* ─── Enrollment ─── */
 
-export const useEnrollment = (courseId: string | undefined) =>
-  useQuery({
-    queryKey: ["enrollment", courseId],
+export const useEnrollment = (courseId: string | undefined) => {
+  const { user: devUser } = useDevAuth();
+  return useQuery({
+    queryKey: ["enrollment", courseId, devUser?.id],
     enabled: !!courseId,
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -104,20 +106,24 @@ export const useEnrollment = (courseId: string | undefined) =>
         if (error) throw error;
         return data as Enrollment | null;
       }
-      // Preview/dev mode fallback: check sessionStorage
-      try {
-        const { useDevAuth } = require("@/contexts/DevAuthContext");
-        const devUser = useDevAuth?.()?.user;
-        if (devUser && isPreviewEnrolled(devUser.id, courseId!)) {
-          return { id: `preview-${courseId}`, course_id: courseId!, user_id: devUser.id, status: "active", enrolled_at: new Date().toISOString() } as unknown as Enrollment;
-        }
-      } catch {}
+      // Preview/dev mode fallback
+      if (devUser && isPreviewEnrolled(devUser.id, courseId!)) {
+        return {
+          id: `preview-${courseId}`,
+          course_id: courseId!,
+          user_id: devUser.id,
+          status: "active",
+          enrolled_at: new Date().toISOString(),
+        } as unknown as Enrollment;
+      }
       return null;
     },
   });
+};
 
 export const useEnrollInCourse = () => {
   const qc = useQueryClient();
+  const { user: devUser } = useDevAuth();
   return useMutation({
     mutationFn: async ({ courseId, courseTitle, utmParams }: { courseId: string; courseTitle?: string; utmParams?: { utm_source?: string | null; utm_medium?: string | null; utm_campaign?: string | null; utm_term?: string | null; utm_content?: string | null; referrer?: string; landing_page?: string } }) => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -164,16 +170,14 @@ export const useEnrollInCourse = () => {
       }
 
       // Preview/dev mode fallback — simulate enrollment in sessionStorage
-      let devUserId = "anonymous";
-      try {
-        const { useDevAuth } = require("@/contexts/DevAuthContext");
-        devUserId = useDevAuth?.()?.user?.id || devUserId;
-      } catch {}
+      const devUserId = devUser?.id || "anonymous";
       setPreviewEnrolled(devUserId, courseId);
       return { id: `preview-${courseId}`, course_id: courseId, user_id: devUserId, status: "active" as const } as unknown as Enrollment;
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["enrollment", vars.courseId] });
+      qc.invalidateQueries({ queryKey: ["my-enrollments-page"] });
+      qc.invalidateQueries({ queryKey: ["continue-learning"] });
     },
   });
 };
