@@ -14,6 +14,7 @@ import AdminGuard from "@/components/guards/AdminGuard";
 import Explore from "./pages/Explore";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
+import Checkout from "./pages/Checkout";
 
 // Member pages
 import Index from "./pages/Index";
@@ -77,6 +78,7 @@ const App = () => (
               <Route path="/login" element={<Auth />} />
               <Route path="/auth" element={<Navigate to="/login" replace />} />
               <Route path="/onboarding" element={<Onboarding />} />
+              <Route path="/checkout/:slug" element={<Checkout />} />
 
               {/* Member (no auth guard in dev mode) */}
               <Route path="/home" element={<Index />} />
