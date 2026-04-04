@@ -177,6 +177,30 @@
   .shadow-lg-design {
     box-shadow: var(--shadow-lg);
   }
+  .shadow-elevated {
+    box-shadow: var(--shadow-lg);
+  }
+  .shadow-card {
+    box-shadow: var(--shadow-sm);
+  }
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(var(--foreground)), hsl(var(--muted-foreground)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-amber {
+    background: linear-gradient(135deg, hsl(38, 75%, 55%), hsl(28, 85%, 50%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .gradient-hero {
+    background: linear-gradient(135deg, hsl(var(--card)), hsl(var(--background)));
+  }
+  .gradient-subtle {
+    background: linear-gradient(180deg, hsl(var(--muted)), hsl(var(--background)));
+  }
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
