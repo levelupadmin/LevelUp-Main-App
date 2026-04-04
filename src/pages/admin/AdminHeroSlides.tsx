@@ -277,39 +277,21 @@ const SortableSlideRow = ({ slide: s, onEdit, onDelete, onToggle }: SortableSlid
             </Button>
           </Card>
         ) : (
-          <div className="space-y-3">
-            {slides.map((s) => (
-              <Card key={s.id} className="flex items-center gap-4 p-4">
-                <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
-                <div className="h-16 w-28 rounded-md bg-muted overflow-hidden shrink-0">
-                  {s.image_url ? (
-                    <img src={s.image_url} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="h-full w-full flex items-center justify-center">
-                      <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{s.title}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {s.rotating_words.join(", ")}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Order: {s.sort_order}</p>
-                </div>
-                <Switch
-                  checked={s.is_active}
-                  onCheckedChange={(v) => toggleActive.mutate({ id: s.id, is_active: v })}
-                />
-                <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => setDeleteId(s.id)}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </Card>
-            ))}
-          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={slides.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-3">
+                {slides.map((s) => (
+                  <SortableSlideRow
+                    key={s.id}
+                    slide={s}
+                    onEdit={openEdit}
+                    onDelete={setDeleteId}
+                    onToggle={(id, v) => toggleActive.mutate({ id, is_active: v })}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
         )}
       </div>
 
