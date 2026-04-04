@@ -1,5 +1,6 @@
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useUtmParams } from "@/hooks/useUtmParams";
 import { useCourse, useEnrollment, useEnrollInCourse } from "@/hooks/useCourseData";
 import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,13 +17,14 @@ const Checkout = () => {
   const { data: enrollment, isLoading: enrollLoading } = useEnrollment(course?.id);
   const enrollMutation = useEnrollInCourse();
   const [autoEnrolling, setAutoEnrolling] = useState(false);
+  const utmParams = useUtmParams();
 
   // Auto-enroll if user is authenticated and not yet enrolled
   useEffect(() => {
     if (!course || !isAuthenticated || enrollLoading || enrollment || autoEnrolling) return;
     setAutoEnrolling(true);
     enrollMutation.mutate(
-      { courseId: course.id, courseTitle: course.title },
+      { courseId: course.id, courseTitle: course.title, utmParams },
       {
         onSuccess: () => {
           navigate(`/learn/course/${course.slug}/dashboard`, { replace: true });

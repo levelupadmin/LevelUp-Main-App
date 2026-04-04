@@ -108,7 +108,7 @@ export const useEnrollment = (courseId: string | undefined) =>
 export const useEnrollInCourse = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ courseId, courseTitle }: { courseId: string; courseTitle?: string }) => {
+    mutationFn: async ({ courseId, courseTitle, utmParams }: { courseId: string; courseTitle?: string; utmParams?: { utm_source?: string | null; utm_medium?: string | null; utm_campaign?: string | null; utm_term?: string | null; utm_content?: string | null; referrer?: string; landing_page?: string } }) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
       const { data, error } = await supabase
@@ -117,6 +117,25 @@ export const useEnrollInCourse = () => {
         .select()
         .single();
       if (error) throw error;
+
+      // Save UTM attribution (fire-and-forget)
+      if (utmParams && (utmParams.utm_source || utmParams.utm_medium || utmParams.utm_campaign || utmParams.referrer)) {
+        supabase
+          .from("utm_tracking" as any)
+          .insert({
+            enrollment_id: data.id,
+            user_id: user.id,
+            course_id: courseId,
+            utm_source: utmParams.utm_source || null,
+            utm_medium: utmParams.utm_medium || null,
+            utm_campaign: utmParams.utm_campaign || null,
+            utm_term: utmParams.utm_term || null,
+            utm_content: utmParams.utm_content || null,
+            referrer: utmParams.referrer || null,
+            landing_page: utmParams.landing_page || null,
+          })
+          .then(() => {});
+      }
 
       // Fire enrollment notification (fire-and-forget)
       supabase.functions.invoke("send-notification", {
