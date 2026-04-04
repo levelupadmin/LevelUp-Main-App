@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, BookOpen, Play, Clock, User, ArrowRight } from "lucide-react";
+import { toast } from "sonner";
 import logo from "@/assets/logo.png";
 
 const Checkout = () => {
@@ -71,8 +72,11 @@ const Checkout = () => {
         onSuccess: () => {
           navigate(`/enrollment-success/${course.slug}`, { replace: true });
         },
-        onError: () => {
+        onError: (err) => {
           setEnrollFailed(true);
+          toast.error("Enrollment failed", {
+            description: err instanceof Error ? err.message : "Please try again.",
+          });
         },
       }
     );
