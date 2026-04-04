@@ -89,6 +89,15 @@ export default {
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         info: "hsl(var(--info))",
+        highlight: {
+          DEFAULT: "hsl(var(--highlight))",
+          foreground: "hsl(var(--highlight-foreground))",
+        },
+        streak: "hsl(var(--streak))",
+        xp: "hsl(var(--xp))",
+        "level-badge": "hsl(var(--level-badge))",
+        "hero-headline": "hsl(var(--hero-headline))",
+        "hero-subtext": "hsl(var(--hero-subtext))",
       },
       borderRadius: {
         lg: "var(--radius)",
