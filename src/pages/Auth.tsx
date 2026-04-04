@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import logo from "@/assets/logo.png";
 import heroImage from "@/assets/hero-filmmaking-1.jpg";
@@ -10,6 +10,8 @@ import { toast } from "@/hooks/use-toast";
 
 const Auth = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get("redirect");
   const { signIn, signUp, isAuthenticated, hasCompletedOnboarding } = useAuth();
 
   const [mode, setMode] = useState<"login" | "signup">("login");

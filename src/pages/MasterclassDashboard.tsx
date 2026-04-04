@@ -341,4 +341,60 @@ const MasterclassDashboard = () => {
   );
 };
 
+/* ─── Course Resources Sub-component ─── */
+function CourseResourcesTab({ courseId }: { courseId: string }) {
+  const { data: resources = [], isLoading } = useQuery({
+    queryKey: ["course-resources", courseId],
+    enabled: !!courseId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("course_resources")
+        .select("*")
+        .eq("course_id", courseId)
+        .order("sort_order");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  if (isLoading) {
+    return <p className="text-xs text-muted-foreground py-4 text-center">Loading resources…</p>;
+  }
+
+  if (resources.length === 0) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
+          <Download className="h-10 w-10 text-muted-foreground/20" />
+          <p className="text-sm text-muted-foreground">
+            No downloadable resources yet.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {resources.map((res) => (
+        <a
+          key={res.id}
+          href={res.file_url || "#"}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-muted-foreground/30"
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary shrink-0">
+            <Download className="h-4 w-4 text-foreground" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground truncate">{res.title}</p>
+            <Badge variant="secondary" className="text-[10px] capitalize mt-0.5">{res.type}</Badge>
+          </div>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export default MasterclassDashboard;
