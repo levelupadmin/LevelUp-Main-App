@@ -144,9 +144,7 @@ const App = () => (
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </ErrorBoundary>
-            <DevRoleSwitcher />
           </AuthProvider>
-        </DevAuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

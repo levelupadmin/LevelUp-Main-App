@@ -50,21 +50,10 @@ const roleBadgeClass: Record<AppRole, string> = {
 const AdminLayout = ({ children }: { children: ReactNode }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user: devUser, setRole } = useDevAuth();
-  const currentRole = (devUser?.role ?? "student") as AppRole;
+  const { user } = useAuth();
+  const currentRole = (user?.role ?? "student") as AppRole;
 
   const visibleNav = adminNav.filter((item) => item.roles.includes(currentRole));
-
-  const devRoleOptions: { value: DevRole; label: string }[] = [
-    { value: "super_admin", label: "Super Admin" },
-    { value: "mentor", label: "Mentor" },
-    { value: "student_enrolled", label: "Student (Enrolled)" },
-    { value: "student_free", label: "Student (Free)" },
-  ];
-
-  const switchRole = (role: DevRole) => {
-    setRole(role);
-  };
 
   return (
     <div className="min-h-screen bg-background">
