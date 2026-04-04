@@ -1,22 +1,53 @@
 
 
-# Fix: Admin Portal Not Reflecting Dev Role Properly
+# Fix: Enrollment flow broken in dev/preview mode
 
 ## Root Cause
 
-`AdminLayout` reads the user role via `useAuth()`. The `useAuth` hook tries to pull the dev user via `require("@/contexts/DevAuthContext")` inside a try/catch — but `require()` is a CommonJS pattern that doesn't work reliably in Vite's ESM bundler. When it fails silently, `useAuth` returns `user: null`, so `currentRole` defaults to `"student"`. Since no admin nav items include the `"student"` role, the sidebar appears empty/broken and the dashboard renders the non-super-admin view.
+Every enrollment-related query calls `supabase.auth.getUser()`. In dev/preview mode this always returns `null`, so:
+1. `useEnrollInCourse` — the mutation falls into the preview fallback, but uses `require()` (broken in Vite ESM), so `devUserId` stays `"anonymous"` instead of the actual dev user ID
+2. `useEnrollment` — same broken `require()` pattern, so it never finds the preview enrollment
+3. `MyLearning.tsx` — calls `supabase.auth.getUser()` directly, gets `null`, returns `[]` immediately
+4. `ContinueLearning.tsx` — queries Supabase with the dev user's fake ID (`"dev-student-free"`), which doesn't exist in the DB, so returns nothing
+
+The result: enrollment appears to succeed (no error shown), but the course never appears anywhere.
 
 ## Fix
 
-1. **`AdminLayout.tsx`** — Import `useDevAuth` directly instead of relying on the broken `useAuth` proxy. Use `devUser.role` for nav filtering and role display.
+### 1. Fix `useCourseData.ts` — replace broken `require()` with proper imports
 
-2. **`AuthContext.tsx`** — Replace the fragile `require()` call in `useAuth` with a proper React import of `useDevAuth`, so all consumers of `useAuth` also get the correct dev role going forward.
+- Import `useDevAuth` directly at the top (ESM import, not `require()`)
+- `useEnrollment`: if no real user, read dev user from `useDevAuth()` and check the preview store
+- `useEnrollInCourse`: same — use the imported `useDevAuth` hook result for the dev user ID
+- Problem: these are inside `queryFn` (not a React component), so we can't call `useDevAuth()` inside them. Instead, we'll restructure the hooks to capture the dev user at hook level and pass it into the `queryFn` closure.
 
-3. **`AdminDashboard.tsx`** — Ensure `isSuperAdmin` derives from the same reliable source so the full KPI grid and quick actions render.
+### 2. Fix `MyLearning.tsx` — add preview enrollment awareness
 
-## Files
+- Import `useAuth` to get the dev user
+- If `supabase.auth.getUser()` returns null, fall back to reading preview enrollments from sessionStorage
+- For preview enrollments, fetch the course data directly by course ID (the course data is public/readable)
+- Show preview-enrolled courses with 0% progress (since lesson_progress also requires a real user)
 
-- **Modify** `src/contexts/AuthContext.tsx` — replace `require()` with a direct import of `useDevAuth`
-- **Modify** `src/components/layout/AdminLayout.tsx` — import `useDevAuth` directly as a fallback for role
-- **Modify** `src/pages/admin/AdminDashboard.tsx` — ensure role check uses the same reliable source
+### 3. Fix `ContinueLearning.tsx` — same pattern
+
+- Already uses `useAuth()` for `user?.id`, but then queries `enrollments` table with a fake dev ID that doesn't exist in DB
+- Add preview enrollment fallback: if no real session, read from sessionStorage and fetch course metadata separately
+
+### 4. Enhance `previewEnrollment.ts` — add ability to list all enrollments
+
+- Add `getPreviewEnrollments(userId: string): string[]` to return all course IDs a dev user is enrolled in
+- This lets MyLearning and ContinueLearning enumerate preview enrollments
+
+## Files to modify
+
+- **`src/lib/previewEnrollment.ts`** — add `getPreviewEnrollments()` helper
+- **`src/hooks/useCourseData.ts`** — replace `require()` with proper hook-level dev auth; restructure `useEnrollment` and `useEnrollInCourse` to capture dev user outside `queryFn`
+- **`src/pages/MyLearning.tsx`** — add preview enrollment fallback when no real Supabase session
+- **`src/components/home/ContinueLearning.tsx`** — same preview fallback
+
+## Technical notes
+
+- The key constraint: React hooks (`useDevAuth`) can only be called at hook/component level, not inside `queryFn`. So each hook needs to call `useDevAuth()` at the top and capture the user in the closure.
+- No database changes needed.
+- Preview enrollments are ephemeral (sessionStorage) — this is intentional for dev/preview mode.
 
