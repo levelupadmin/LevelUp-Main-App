@@ -1,13 +1,20 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { supabase } from "@/integrations/supabase/client";
 import heroFilmmaking from "@/assets/hero-filmmaking-1.jpg";
 import heroEditing from "@/assets/hero-editing-1.jpg";
 import heroCinematography from "@/assets/hero-cinematography-1.jpg";
 
-const rotatingWords = ["filmmakers", "editors", "storytellers", "cinematographers", "creators"];
-const bgImages = [heroFilmmaking, heroEditing, heroCinematography];
+const defaultWords = ["filmmakers", "editors", "storytellers", "cinematographers", "creators"];
+const defaultImages = [heroFilmmaking, heroEditing, heroCinematography];
+const defaultHeadline = "Where India's next great";
+const defaultSubtitle = "On-demand masterclasses. Live mentor-led cohorts. Immersive offline residencies. One platform for serious creators.";
+const defaultCtaLabel = "See all Programs";
+const defaultCtaLink = "/explore";
+
 const WORD_MS = 3000;
 const BG_MS = 6000;
 
@@ -16,15 +23,41 @@ const HeroCarousel = () => {
   const [wordIdx, setWordIdx] = useState(0);
   const [bgIdx, setBgIdx] = useState(0);
 
-  useEffect(() => {
-    const t = setInterval(() => setWordIdx((i) => (i + 1) % rotatingWords.length), WORD_MS);
-    return () => clearInterval(t);
-  }, []);
+  const { data: dbSlides } = useQuery({
+    queryKey: ["hero-slides-public"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("hero_slides")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 60_000,
+  });
+
+  const hasDbSlides = dbSlides && dbSlides.length > 0;
+  const rotatingWords = hasDbSlides ? dbSlides[0].rotating_words as string[] : defaultWords;
+  const bgImages = hasDbSlides
+    ? dbSlides.filter((s) => s.image_url).map((s) => s.image_url as string)
+    : defaultImages;
+  const headline = hasDbSlides ? dbSlides[0].title : defaultHeadline;
+  const subtitle = hasDbSlides && dbSlides[0].subtitle ? dbSlides[0].subtitle : defaultSubtitle;
+  const ctaLabel = hasDbSlides ? dbSlides[0].cta_label : defaultCtaLabel;
+  const ctaLink = hasDbSlides ? dbSlides[0].cta_link : defaultCtaLink;
 
   useEffect(() => {
+    if (rotatingWords.length === 0) return;
+    const t = setInterval(() => setWordIdx((i) => (i + 1) % rotatingWords.length), WORD_MS);
+    return () => clearInterval(t);
+  }, [rotatingWords.length]);
+
+  useEffect(() => {
+    if (bgImages.length === 0) return;
     const t = setInterval(() => setBgIdx((i) => (i + 1) % bgImages.length), BG_MS);
     return () => clearInterval(t);
-  }, []);
+  }, [bgImages.length]);
 
   return (
     <section className="relative -mx-6 -mt-6 overflow-hidden lg:-mx-10 lg:-mt-10">
