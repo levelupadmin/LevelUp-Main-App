@@ -91,7 +91,7 @@ const SortableSlideRow = ({ slide: s, onEdit, onDelete, onToggle }: SortableSlid
   );
 };
 
-
+const AdminHeroSlides = () => {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
