@@ -108,7 +108,7 @@ export const useEnrollment = (courseId: string | undefined) =>
 export const useEnrollInCourse = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ courseId, courseTitle }: { courseId: string; courseTitle?: string }) => {
+    mutationFn: async ({ courseId, courseTitle, utmParams }: { courseId: string; courseTitle?: string; utmParams?: { utm_source?: string | null; utm_medium?: string | null; utm_campaign?: string | null; utm_term?: string | null; utm_content?: string | null; referrer?: string; landing_page?: string } }) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
       const { data, error } = await supabase
