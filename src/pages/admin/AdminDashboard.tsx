@@ -1,5 +1,5 @@
 import AdminLayout from "@/components/layout/AdminLayout";
-import { useDevAuth } from "@/contexts/DevAuthContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const AdminDashboard = () => {
-  const { user } = useDevAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === "super_admin";
 

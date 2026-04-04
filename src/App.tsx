@@ -5,8 +5,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
-import { DevAuthProvider } from "@/contexts/DevAuthContext";
-import DevRoleSwitcher from "@/components/dev/DevRoleSwitcher";
 import ErrorBoundary from "@/components/ErrorBoundary";
 
 import AuthGuard from "@/components/guards/AuthGuard";
@@ -79,7 +77,6 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <DevAuthProvider>
           <AuthProvider>
             <ErrorBoundary>
               <Routes>
@@ -147,9 +144,7 @@ const App = () => (
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </ErrorBoundary>
-            <DevRoleSwitcher />
           </AuthProvider>
-        </DevAuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

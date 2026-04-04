@@ -1,7 +1,6 @@
 import { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
-import { useDevAuth } from "@/contexts/DevAuthContext";
+import { useAuth, AppRole } from "@/contexts/AuthContext";
 import {
   Home,
   PlayCircle,
@@ -57,7 +56,7 @@ const AppShell = ({
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { isAdmin } = useDevAuth();
+  const isAdmin = user?.role === "super_admin" || user?.role === "mentor";
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isCommunity = location.pathname === "/community" || location.pathname.startsWith("/community/");

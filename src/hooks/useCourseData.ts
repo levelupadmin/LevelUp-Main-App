@@ -1,8 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
-import { isPreviewEnrolled, setPreviewEnrolled } from "@/lib/previewEnrollment";
-import { useDevAuth } from "@/contexts/DevAuthContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 export type Course = Tables<"courses">;
 export type Module = Tables<"course_modules">;
@@ -89,90 +88,68 @@ export const useLessonCourse = (courseId: string | undefined) =>
 /* ─── Enrollment ─── */
 
 export const useEnrollment = (courseId: string | undefined) => {
-  const { user: devUser } = useDevAuth();
+  const { user } = useAuth();
   return useQuery({
-    queryKey: ["enrollment", courseId, devUser?.id],
-    enabled: !!courseId,
+    queryKey: ["enrollment", courseId, user?.id],
+    enabled: !!courseId && !!user?.id,
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data, error } = await supabase
-          .from("enrollments")
-          .select("*")
-          .eq("course_id", courseId!)
-          .eq("user_id", user.id)
-          .eq("status", "active")
-          .maybeSingle();
-        if (error) throw error;
-        return data as Enrollment | null;
-      }
-      // Preview/dev mode fallback
-      if (devUser && isPreviewEnrolled(devUser.id, courseId!)) {
-        return {
-          id: `preview-${courseId}`,
-          course_id: courseId!,
-          user_id: devUser.id,
-          status: "active",
-          enrolled_at: new Date().toISOString(),
-        } as unknown as Enrollment;
-      }
-      return null;
+      const { data, error } = await supabase
+        .from("enrollments")
+        .select("*")
+        .eq("course_id", courseId!)
+        .eq("user_id", user!.id)
+        .eq("status", "active")
+        .maybeSingle();
+      if (error) throw error;
+      return data as Enrollment | null;
     },
   });
 };
 
 export const useEnrollInCourse = () => {
   const qc = useQueryClient();
-  const { user: devUser } = useDevAuth();
+  const { user: authUser } = useAuth();
   return useMutation({
     mutationFn: async ({ courseId, courseTitle, utmParams }: { courseId: string; courseTitle?: string; utmParams?: { utm_source?: string | null; utm_medium?: string | null; utm_campaign?: string | null; utm_term?: string | null; utm_content?: string | null; referrer?: string; landing_page?: string } }) => {
-      const { data: { user } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error("Not authenticated");
 
-      // Real authenticated user → real enrollment
-      if (user) {
-        const { data, error } = await supabase
-          .from("enrollments")
-          .insert({ course_id: courseId, user_id: user.id })
-          .select()
-          .single();
-        if (error) throw error;
+      const { data, error } = await supabase
+        .from("enrollments")
+        .insert({ course_id: courseId, user_id: authUser.id })
+        .select()
+        .single();
+      if (error) throw error;
 
-        // Save UTM attribution (fire-and-forget)
-        if (utmParams && (utmParams.utm_source || utmParams.utm_medium || utmParams.utm_campaign || utmParams.referrer)) {
-          supabase
-            .from("utm_tracking")
-            .insert({
-              enrollment_id: data.id,
-              user_id: user.id,
-              course_id: courseId,
-              utm_source: utmParams.utm_source || null,
-              utm_medium: utmParams.utm_medium || null,
-              utm_campaign: utmParams.utm_campaign || null,
-              utm_term: utmParams.utm_term || null,
-              utm_content: utmParams.utm_content || null,
-              referrer: utmParams.referrer || null,
-              landing_page: utmParams.landing_page || null,
-            })
-            .then(() => {});
-        }
-
-        // Fire enrollment notification (fire-and-forget)
-        supabase.functions.invoke("send-notification", {
-          body: {
-            trigger_type: "enrollment",
-            user_id: user.id,
+      // Save UTM attribution (fire-and-forget)
+      if (utmParams && (utmParams.utm_source || utmParams.utm_medium || utmParams.utm_campaign || utmParams.referrer)) {
+        supabase
+          .from("utm_tracking")
+          .insert({
+            enrollment_id: data.id,
+            user_id: authUser.id,
             course_id: courseId,
-            data: { course_title: courseTitle || "" },
-          },
-        }).catch(() => {});
-
-        return data;
+            utm_source: utmParams.utm_source || null,
+            utm_medium: utmParams.utm_medium || null,
+            utm_campaign: utmParams.utm_campaign || null,
+            utm_term: utmParams.utm_term || null,
+            utm_content: utmParams.utm_content || null,
+            referrer: utmParams.referrer || null,
+            landing_page: utmParams.landing_page || null,
+          })
+          .then(() => {});
       }
 
-      // Preview/dev mode fallback — simulate enrollment in sessionStorage
-      const devUserId = devUser?.id || "anonymous";
-      setPreviewEnrolled(devUserId, courseId);
-      return { id: `preview-${courseId}`, course_id: courseId, user_id: devUserId, status: "active" as const } as unknown as Enrollment;
+      // Fire enrollment notification (fire-and-forget)
+      supabase.functions.invoke("send-notification", {
+        body: {
+          trigger_type: "enrollment",
+          user_id: authUser.id,
+          course_id: courseId,
+          data: { course_title: courseTitle || "" },
+        },
+      }).catch(() => {});
+
+      return data;
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["enrollment", vars.courseId] });
