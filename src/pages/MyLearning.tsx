@@ -8,45 +8,78 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/contexts/AuthContext";
+import { getPreviewEnrollments } from "@/lib/previewEnrollment";
 
 type SubTab = "in-progress" | "completed" | "all";
 
-const useMyEnrollments = () =>
-  useQuery({
-    queryKey: ["my-enrollments-page"],
+const useMyEnrollments = () => {
+  const { user: authUser } = useAuth();
+  return useQuery({
+    queryKey: ["my-enrollments-page", authUser?.id],
+    enabled: !!authUser?.id,
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return [];
-      const { data: enrollments, error } = await supabase
-        .from("enrollments")
-        .select("*, courses(*)")
-        .eq("user_id", user.id)
-        .in("status", ["active", "completed"])
-        .order("enrolled_at", { ascending: false });
-      if (error) throw error;
 
-      const courseIds = enrollments.map((e: any) => e.course_id);
-      if (courseIds.length === 0) return [];
+      // Real authenticated user
+      if (user) {
+        const { data: enrollments, error } = await supabase
+          .from("enrollments")
+          .select("*, courses(*)")
+          .eq("user_id", user.id)
+          .in("status", ["active", "completed"])
+          .order("enrolled_at", { ascending: false });
+        if (error) throw error;
 
-      const [{ data: lessons }, { data: progress }] = await Promise.all([
-        supabase.from("lessons").select("id, course_id").in("course_id", courseIds),
-        supabase.from("lesson_progress").select("lesson_id, status, course_id").eq("user_id", user.id).in("course_id", courseIds),
-      ]);
+        const courseIds = enrollments.map((e: any) => e.course_id);
+        if (courseIds.length === 0) return [];
 
-      return enrollments.map((e: any) => {
-        const courseLessons = (lessons || []).filter((l: any) => l.course_id === e.course_id);
-        const completed = (progress || []).filter((p: any) => p.course_id === e.course_id && p.status === "completed").length;
-        const pct = courseLessons.length > 0 ? Math.round((completed / courseLessons.length) * 100) : 0;
-        return {
-          ...e,
-          progressPct: pct,
-          completedCount: completed,
-          totalLessons: courseLessons.length,
-          course: e.courses,
-        };
-      });
+        const [{ data: lessons }, { data: progress }] = await Promise.all([
+          supabase.from("lessons").select("id, course_id").in("course_id", courseIds),
+          supabase.from("lesson_progress").select("lesson_id, status, course_id").eq("user_id", user.id).in("course_id", courseIds),
+        ]);
+
+        return enrollments.map((e: any) => {
+          const courseLessons = (lessons || []).filter((l: any) => l.course_id === e.course_id);
+          const completed = (progress || []).filter((p: any) => p.course_id === e.course_id && p.status === "completed").length;
+          const pct = courseLessons.length > 0 ? Math.round((completed / courseLessons.length) * 100) : 0;
+          return {
+            ...e,
+            progressPct: pct,
+            completedCount: completed,
+            totalLessons: courseLessons.length,
+            course: e.courses,
+          };
+        });
+      }
+
+      // Preview/dev mode fallback
+      if (authUser) {
+        const previewCourseIds = getPreviewEnrollments(authUser.id);
+        if (previewCourseIds.length === 0) return [];
+
+        const { data: courses } = await supabase
+          .from("courses")
+          .select("*")
+          .in("id", previewCourseIds);
+
+        return (courses || []).map((course: any) => ({
+          id: `preview-${course.id}`,
+          course_id: course.id,
+          user_id: authUser.id,
+          status: "active",
+          enrolled_at: new Date().toISOString(),
+          progressPct: 0,
+          completedCount: 0,
+          totalLessons: 0,
+          course,
+        }));
+      }
+
+      return [];
     },
   });
+};
 
 const MyLearning = () => {
   const navigate = useNavigate();

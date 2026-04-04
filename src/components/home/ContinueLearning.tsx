@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { ArrowRight, Play } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getPreviewEnrollments } from "@/lib/previewEnrollment";
 
 const ContinueLearning = () => {
   const navigate = useNavigate();
@@ -13,62 +14,88 @@ const ContinueLearning = () => {
     queryKey: ["continue-learning", user?.id],
     enabled: !!user?.id,
     queryFn: async () => {
-      // Get active enrollments with course info
-      const { data: enrollments, error: enrollErr } = await supabase
-        .from("enrollments")
-        .select("*, courses!enrollments_course_id_fkey(id, title, slug, thumbnail_url, category, course_type)")
-        .eq("user_id", user!.id)
-        .eq("status", "active")
-        .order("enrolled_at", { ascending: false });
+      const { data: { user: realUser } } = await supabase.auth.getUser();
 
-      if (enrollErr) throw enrollErr;
-      if (!enrollments || enrollments.length === 0) return [];
+      // Real authenticated user
+      if (realUser) {
+        const { data: enrollments, error: enrollErr } = await supabase
+          .from("enrollments")
+          .select("*, courses!enrollments_course_id_fkey(id, title, slug, thumbnail_url, category, course_type)")
+          .eq("user_id", realUser.id)
+          .eq("status", "active")
+          .order("enrolled_at", { ascending: false });
 
-      // Get lesson progress for each course
-      const { data: progress } = await supabase
-        .from("lesson_progress")
-        .select("course_id, status")
-        .eq("user_id", user!.id);
+        if (enrollErr) throw enrollErr;
+        if (!enrollments || enrollments.length === 0) return [];
 
-      // Get total lessons per course
-      const courseIds = enrollments.map((e) => e.course_id);
-      const { data: lessons } = await supabase
-        .from("lessons")
-        .select("course_id")
-        .in("course_id", courseIds);
+        const { data: progress } = await supabase
+          .from("lesson_progress")
+          .select("course_id, status")
+          .eq("user_id", realUser.id);
 
-      // Build progress map
-      const totalLessonsMap: Record<string, number> = {};
-      const completedLessonsMap: Record<string, number> = {};
+        const courseIds = enrollments.map((e) => e.course_id);
+        const { data: lessons } = await supabase
+          .from("lessons")
+          .select("course_id")
+          .in("course_id", courseIds);
 
-      (lessons || []).forEach((l) => {
-        totalLessonsMap[l.course_id] = (totalLessonsMap[l.course_id] || 0) + 1;
-      });
+        const totalLessonsMap: Record<string, number> = {};
+        const completedLessonsMap: Record<string, number> = {};
 
-      (progress || []).forEach((p) => {
-        if (p.status === "completed") {
-          completedLessonsMap[p.course_id] = (completedLessonsMap[p.course_id] || 0) + 1;
-        }
-      });
+        (lessons || []).forEach((l) => {
+          totalLessonsMap[l.course_id] = (totalLessonsMap[l.course_id] || 0) + 1;
+        });
 
-      return enrollments
-        .map((e) => {
-          const total = totalLessonsMap[e.course_id] || 0;
-          const completed = completedLessonsMap[e.course_id] || 0;
-          const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
-          return {
-            id: e.course_id,
-            slug: e.courses?.slug || e.course_id,
-            title: e.courses?.title || "Untitled",
-            thumbnail: e.courses?.thumbnail_url || "/placeholder.svg",
-            category: e.courses?.category || "",
-            courseType: e.courses?.course_type || "masterclass",
-            progress: progressPct,
-            completedLessons: completed,
-            totalLessons: total,
-          };
-        })
-        .filter((c) => c.progress > 0 && c.progress < 100);
+        (progress || []).forEach((p) => {
+          if (p.status === "completed") {
+            completedLessonsMap[p.course_id] = (completedLessonsMap[p.course_id] || 0) + 1;
+          }
+        });
+
+        return enrollments
+          .map((e) => {
+            const total = totalLessonsMap[e.course_id] || 0;
+            const completed = completedLessonsMap[e.course_id] || 0;
+            const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+            return {
+              id: e.course_id,
+              slug: e.courses?.slug || e.course_id,
+              title: e.courses?.title || "Untitled",
+              thumbnail: e.courses?.thumbnail_url || "/placeholder.svg",
+              category: e.courses?.category || "",
+              courseType: e.courses?.course_type || "masterclass",
+              progress: progressPct,
+              completedLessons: completed,
+              totalLessons: total,
+            };
+          })
+          .filter((c) => c.progress > 0 && c.progress < 100);
+      }
+
+      // Preview/dev mode fallback
+      if (user) {
+        const previewCourseIds = getPreviewEnrollments(user.id);
+        if (previewCourseIds.length === 0) return [];
+
+        const { data: courses } = await supabase
+          .from("courses")
+          .select("id, title, slug, thumbnail_url, category, course_type")
+          .in("id", previewCourseIds);
+
+        return (courses || []).map((c) => ({
+          id: c.id,
+          slug: c.slug,
+          title: c.title,
+          thumbnail: c.thumbnail_url || "/placeholder.svg",
+          category: c.category || "",
+          courseType: c.course_type || "masterclass",
+          progress: 0,
+          completedLessons: 0,
+          totalLessons: 0,
+        }));
+      }
+
+      return [];
     },
   });
 
