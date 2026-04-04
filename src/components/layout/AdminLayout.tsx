@@ -115,14 +115,14 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-44">
-              {(["super_admin", "mentor", "student"] as AppRole[]).map((r) => (
+              {devRoleOptions.map((r) => (
                 <DropdownMenuItem
-                  key={r}
-                  onClick={() => switchRole(r)}
-                  className={currentRole === r ? "bg-secondary" : ""}
+                  key={r.value}
+                  onClick={() => switchRole(r.value)}
+                  className={currentRole === r.value ? "bg-secondary" : ""}
                 >
-                  {roleLabel[r]}
-                  {currentRole === r && <span className="ml-auto text-[hsl(var(--highlight))]">●</span>}
+                  {r.label}
+                  {currentRole === r.value && <span className="ml-auto text-[hsl(var(--highlight))]">●</span>}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
