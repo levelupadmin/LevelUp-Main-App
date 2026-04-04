@@ -126,11 +126,8 @@ const CourseDetail = () => {
       });
       return;
     }
-    if (freeLessons.length > 0) {
-      navigate(`/learn/lesson/${freeLessons[0].id}`);
-    } else if (lessons.length > 0) {
-      navigate(`/learn/lesson/${lessons[0].id}`);
-    }
+    // Paid course — redirect to checkout
+    navigate(`/checkout/${course.slug}`);
   };
 
   const enrollUrl = course.payment_page_url
