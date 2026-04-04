@@ -1,33 +1,48 @@
 
+Problem identified: the persistent white screen is very likely being caused by an invalid dev-role state introduced by the recent admin changes.
 
-# Fix: Admin Dashboard shows "Mentor Dashboard" instead of full Super Admin view
+What’s actually wrong
+- `DevAuthContext` only supports these roles: `super_admin`, `mentor`, `student_enrolled`, `student_free`
+- But `AdminLayout` now calls `setRole("student")`
+- `DevRoleSwitcher` assumes `currentRole` is always valid and does:
+  `const current = ROLE_OPTIONS.find((r) => r.value === currentRole)!;`
+- If `currentRole` becomes `"student"`, `current` is `undefined`, and reading `current.label` will crash the app, which matches the white-screen symptom
 
-## Problem
+Implementation plan
+1. Fix `src/components/layout/AdminLayout.tsx`
+- Stop passing `"student"` into `setRole`
+- Replace the admin role switcher options with valid dev roles only:
+  - `super_admin`
+  - `mentor`
+  - `student_enrolled`
+  - `student_free`
+- Map labels explicitly so the admin layout can still show friendly names
 
-The screenshot confirms: even with "Super Admin" selected in Dev Mode, the admin dashboard shows "Mentor Dashboard" with only "Pending Submissions" and limited quick actions. The header badge shows "Student".
+2. Harden `src/components/dev/DevRoleSwitcher.tsx`
+- Remove the unsafe non-null assumption
+- Add a safe fallback if `currentRole` is ever invalid, so the preview does not white-screen again even if bad state slips in
 
-## Root Cause
+3. Review admin role checks for consistency
+- Keep admin access based on `super_admin` and `mentor`
+- Make sure student-facing fallback behavior uses one of the real dev student roles, not `"student"`
 
-`AdminLayout` and `AdminDashboard` read the role via `useAuth()`, which proxies to `useDevAuth()`. While this chain *should* work, the `updateProfile` function exposed by `useAuth` is a **no-op** — so AdminLayout's built-in role switcher (visible in the sidebar footer and header) does nothing when clicked, potentially confusing state. More critically, there may be a React re-render timing issue where navigation happens before the DevAuthContext state update propagates, and the components mount with stale role data.
+Files to update
+- `src/components/layout/AdminLayout.tsx`
+- `src/components/dev/DevRoleSwitcher.tsx`
 
-## Fix
+Expected outcome
+- Preview should render again instead of showing a blank white screen
+- Super Admin / Mentor switching should keep working
+- Student switching from the admin layout will no longer poison dev state
+- Opening the preview in another tab should no longer be required as a workaround
 
-Make `AdminLayout` and `AdminDashboard` **directly import and use `useDevAuth()`** for the role, instead of relying on the indirect `useAuth()` proxy. This guarantees they always read the latest role from DevAuthContext.
-
-### 1. `src/components/layout/AdminLayout.tsx`
-- Import `useDevAuth` from DevAuthContext
-- Replace `useAuth()` usage with `useDevAuth()` for role determination
-- Wire the sidebar role switcher to call `devCtx.setRole()` instead of the no-op `updateProfile`
-- Keep the nav filtering using `devUser.role`
-
-### 2. `src/pages/admin/AdminDashboard.tsx`
-- Import `useDevAuth` from DevAuthContext
-- Derive `isSuperAdmin` from `devCtx.user.role === "super_admin"` instead of `useAuth().user?.role`
-- This ensures the full KPI grid (Users, Courses, Enrollments, Completion Rate) and all 4 quick actions render for super admin
-
-### 3. `src/components/guards/AdminGuard.tsx` (already correct)
-- Already uses `useDevAuth` directly — no changes needed
-
-## Result
-Selecting "Super Admin" in Dev Mode will immediately show the full admin dashboard with all stats, all sidebar nav items, and all quick actions.
-
+Technical note
+- This is separate from the earlier enrollment fix
+- The likely crash path is:
+```text
+AdminLayout dropdown -> setRole("student")
+-> DevAuthContext currentRole becomes invalid
+-> DevRoleSwitcher tries current.label on undefined
+-> React render crashes
+-> white screen
+```
