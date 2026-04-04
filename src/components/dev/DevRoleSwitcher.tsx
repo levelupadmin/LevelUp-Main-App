@@ -17,7 +17,7 @@ const DevRoleSwitcher = () => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
-  const current = ROLE_OPTIONS.find((r) => r.value === currentRole)!;
+  const current = ROLE_OPTIONS.find((r) => r.value === currentRole) ?? ROLE_OPTIONS[3];
   const canAccessAdmin = ADMIN_ROLES.includes(currentRole);
 
   const handleRoleSelect = (role: DevRole) => {
