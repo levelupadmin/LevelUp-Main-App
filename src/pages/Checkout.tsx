@@ -65,7 +65,18 @@ const Checkout = () => {
       navigate(`/login?redirect=/checkout/${slug}`);
       return;
     }
-    // If authenticated, the useEffect above handles enrollment
+    if (!course || enrollMutation.isPending) return;
+    enrollMutation.mutate(
+      { courseId: course.id, courseTitle: course.title, utmParams },
+      {
+        onSuccess: () => {
+          navigate(`/enrollment-success/${course.slug}`, { replace: true });
+        },
+        onError: () => {
+          setEnrollFailed(true);
+        },
+      }
+    );
   };
 
   return (

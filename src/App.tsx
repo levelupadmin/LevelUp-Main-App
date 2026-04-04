@@ -80,6 +80,7 @@ const App = () => (
               <Route path="/auth" element={<Navigate to="/login" replace />} />
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/checkout/:slug" element={<Checkout />} />
+              <Route path="/enrollment-success/:slug" element={<EnrollmentSuccess />} />
 
               {/* Member (no auth guard in dev mode) */}
               <Route path="/home" element={<Index />} />
