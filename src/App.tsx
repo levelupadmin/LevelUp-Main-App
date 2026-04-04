@@ -4,6 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { DevAuthProvider } from "@/contexts/DevAuthContext";
+import DevRoleSwitcher from "@/components/dev/DevRoleSwitcher";
 
 import AuthGuard from "@/components/guards/AuthGuard";
 import AdminGuard from "@/components/guards/AdminGuard";
@@ -66,69 +68,72 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            {/* Public */}
-            <Route path="/" element={<Navigate to="/home" replace />} />
-            <Route path="/explore" element={<Explore />} />
-            <Route path="/login" element={<Auth />} />
-            <Route path="/auth" element={<Navigate to="/login" replace />} />
-            <Route path="/onboarding" element={<Onboarding />} />
+        <DevAuthProvider>
+          <AuthProvider>
+            <Routes>
+              {/* Public */}
+              <Route path="/" element={<Navigate to="/home" replace />} />
+              <Route path="/explore" element={<Explore />} />
+              <Route path="/login" element={<Auth />} />
+              <Route path="/auth" element={<Navigate to="/login" replace />} />
+              <Route path="/onboarding" element={<Onboarding />} />
 
-            {/* Member (auth-guarded) */}
-            <Route path="/home" element={<AuthGuard><Index /></AuthGuard>} />
-            <Route path="/learn" element={<AuthGuard><Learn /></AuthGuard>} />
-            <Route path="/learn/course/:slug" element={<AuthGuard><CourseDetail /></AuthGuard>} />
-            <Route path="/learn/lesson/:lessonId" element={<AuthGuard><LessonDetail /></AuthGuard>} />
-            <Route path="/learn/course/:slug/dashboard" element={<AuthGuard><MasterclassDashboard /></AuthGuard>} />
-            <Route path="/learn/my-learning" element={<AuthGuard><MyLearning /></AuthGuard>} />
-            <Route path="/learn/cohort/:slug" element={<AuthGuard><CohortDetail /></AuthGuard>} />
-            <Route path="/learn/cohort/:slug/apply" element={<AuthGuard><CohortApplication /></AuthGuard>} />
-            <Route path="/learn/cohort/:slug/dashboard" element={<AuthGuard><CohortDashboard /></AuthGuard>} />
-            <Route path="/learn/workshops" element={<AuthGuard><Workshops /></AuthGuard>} />
-            <Route path="/workshops/:slug" element={<AuthGuard><WorkshopDetail /></AuthGuard>} />
+              {/* Member (no auth guard in dev mode) */}
+              <Route path="/home" element={<Index />} />
+              <Route path="/learn" element={<Learn />} />
+              <Route path="/learn/course/:slug" element={<CourseDetail />} />
+              <Route path="/learn/lesson/:lessonId" element={<LessonDetail />} />
+              <Route path="/learn/course/:slug/dashboard" element={<MasterclassDashboard />} />
+              <Route path="/learn/my-learning" element={<MyLearning />} />
+              <Route path="/learn/cohort/:slug" element={<CohortDetail />} />
+              <Route path="/learn/cohort/:slug/apply" element={<CohortApplication />} />
+              <Route path="/learn/cohort/:slug/dashboard" element={<CohortDashboard />} />
+              <Route path="/learn/workshops" element={<Workshops />} />
+              <Route path="/workshops/:slug" element={<WorkshopDetail />} />
 
-            {/* Community */}
-            <Route path="/community" element={<AuthGuard><Community /></AuthGuard>} />
-            <Route path="/community/cohort/:slug" element={<AuthGuard><CohortCommunity /></AuthGuard>} />
-            <Route path="/community/city/:slug" element={<AuthGuard><SpaceCommunity type="city" /></AuthGuard>} />
-            <Route path="/community/skill/:slug" element={<AuthGuard><SpaceCommunity type="skill" /></AuthGuard>} />
-            <Route path="/community/directory" element={<AuthGuard><Directory /></AuthGuard>} />
-            <Route path="/community/post/:id" element={<AuthGuard><CommunityPost /></AuthGuard>} />
+              {/* Community */}
+              <Route path="/community" element={<Community />} />
+              <Route path="/community/cohort/:slug" element={<CohortCommunity />} />
+              <Route path="/community/city/:slug" element={<SpaceCommunity type="city" />} />
+              <Route path="/community/skill/:slug" element={<SpaceCommunity type="skill" />} />
+              <Route path="/community/directory" element={<Directory />} />
+              <Route path="/community/post/:id" element={<CommunityPost />} />
 
-            <Route path="/opportunities" element={<AuthGuard><Opportunities /></AuthGuard>} />
-            <Route path="/opportunities/new" element={<AuthGuard><PostOpportunity /></AuthGuard>} />
-            <Route path="/opportunities/:id" element={<AuthGuard><OpportunityDetail /></AuthGuard>} />
-            <Route path="/profile/me" element={<AuthGuard><Profile /></AuthGuard>} />
-            <Route path="/profile/edit" element={<AuthGuard><ProfileEdit /></AuthGuard>} />
-            <Route path="/portfolio" element={<AuthGuard><Portfolio /></AuthGuard>} />
-            <Route path="/profile/:handle" element={<AuthGuard><ProfilePublic /></AuthGuard>} />
-            <Route path="/search" element={<AuthGuard><Search /></AuthGuard>} />
-            <Route path="/notifications" element={<AuthGuard><Notifications /></AuthGuard>} />
-            <Route path="/settings" element={<AuthGuard><Settings /></AuthGuard>} />
-            <Route path="/settings/subscription" element={<AuthGuard><Subscription /></AuthGuard>} />
+              <Route path="/opportunities" element={<Opportunities />} />
+              <Route path="/opportunities/new" element={<PostOpportunity />} />
+              <Route path="/opportunities/:id" element={<OpportunityDetail />} />
+              <Route path="/profile/me" element={<Profile />} />
+              <Route path="/profile/edit" element={<ProfileEdit />} />
+              <Route path="/portfolio" element={<Portfolio />} />
+              <Route path="/profile/:handle" element={<ProfilePublic />} />
+              <Route path="/search" element={<Search />} />
+              <Route path="/notifications" element={<Notifications />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/subscription" element={<Subscription />} />
 
-            {/* Admin */}
-            <Route path="/admin" element={<AuthGuard><AdminGuard><AdminDashboard /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/sales" element={<AuthGuard><AdminGuard><AdminSalesPages /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/courses" element={<AuthGuard><AdminGuard><AdminCourses /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/courses/:courseId" element={<AuthGuard><AdminGuard><AdminCourseBuilder /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/content" element={<Navigate to="/admin/courses" replace />} />
-            <Route path="/admin/workshops" element={<Navigate to="/admin/courses" replace />} />
-            <Route path="/admin/cohorts" element={<Navigate to="/admin/courses" replace />} />
-            <Route path="/admin/coupons" element={<AuthGuard><AdminGuard><AdminCoupons /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/moderation" element={<AuthGuard><AdminGuard><AdminModeration /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/users" element={<AuthGuard><AdminGuard><AdminUsers /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/analytics" element={<AuthGuard><AdminGuard><AdminAnalytics /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/opportunities" element={<AuthGuard><AdminGuard><AdminOpportunities /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/settings" element={<AuthGuard><AdminGuard><AdminSettings /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/referrals" element={<AuthGuard><AdminGuard><AdminReferrals /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/waitlists" element={<AuthGuard><AdminGuard><AdminWaitlists /></AdminGuard></AuthGuard>} />
-            <Route path="/admin/engagement" element={<AuthGuard><AdminGuard><AdminEngagement /></AdminGuard></AuthGuard>} />
+              {/* Admin (still guarded by role check) */}
+              <Route path="/admin" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
+              <Route path="/admin/sales" element={<AdminGuard><AdminSalesPages /></AdminGuard>} />
+              <Route path="/admin/courses" element={<AdminGuard><AdminCourses /></AdminGuard>} />
+              <Route path="/admin/courses/:courseId" element={<AdminGuard><AdminCourseBuilder /></AdminGuard>} />
+              <Route path="/admin/content" element={<Navigate to="/admin/courses" replace />} />
+              <Route path="/admin/workshops" element={<Navigate to="/admin/courses" replace />} />
+              <Route path="/admin/cohorts" element={<Navigate to="/admin/courses" replace />} />
+              <Route path="/admin/coupons" element={<AdminGuard><AdminCoupons /></AdminGuard>} />
+              <Route path="/admin/moderation" element={<AdminGuard><AdminModeration /></AdminGuard>} />
+              <Route path="/admin/users" element={<AdminGuard><AdminUsers /></AdminGuard>} />
+              <Route path="/admin/analytics" element={<AdminGuard><AdminAnalytics /></AdminGuard>} />
+              <Route path="/admin/opportunities" element={<AdminGuard><AdminOpportunities /></AdminGuard>} />
+              <Route path="/admin/settings" element={<AdminGuard><AdminSettings /></AdminGuard>} />
+              <Route path="/admin/referrals" element={<AdminGuard><AdminReferrals /></AdminGuard>} />
+              <Route path="/admin/waitlists" element={<AdminGuard><AdminWaitlists /></AdminGuard>} />
+              <Route path="/admin/engagement" element={<AdminGuard><AdminEngagement /></AdminGuard>} />
 
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AuthProvider>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+            <DevRoleSwitcher />
+          </AuthProvider>
+        </DevAuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
