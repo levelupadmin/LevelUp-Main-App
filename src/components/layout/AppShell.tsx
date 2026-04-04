@@ -105,6 +105,20 @@ const AppShell = ({
           );
         })}
       </div>
+      {isAdmin && (
+        <>
+          <div className="my-4 h-px bg-border" />
+          <button
+            onClick={() => { navigate("/admin"); onNavigate?.(); }}
+            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              isActive("/admin") ? "bg-accent text-foreground" : "text-sidebar-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <ShieldCheck className="h-[18px] w-[18px]" />
+            Admin Portal
+          </button>
+        </>
+      )}
     </>
   );
 
