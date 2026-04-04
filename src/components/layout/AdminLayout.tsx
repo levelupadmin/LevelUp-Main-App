@@ -6,8 +6,7 @@ import {
   ChevronDown, Gift, Bell, TrendingUp, ShoppingBag,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
-import { AppRole } from "@/contexts/AuthContext";
-import { useDevAuth, DevRole } from "@/contexts/DevAuthContext";
+import { useAuth, AppRole } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
