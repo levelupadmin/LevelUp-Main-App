@@ -20,28 +20,10 @@ const Checkout = () => {
   const [enrollFailed, setEnrollFailed] = useState(false);
   const utmParams = useUtmParams();
 
-  // Auto-enroll if user is authenticated and not yet enrolled
-  useEffect(() => {
-    if (!course || !isAuthenticated || enrollLoading || enrollment || autoEnrolling || enrollFailed) return;
-    setAutoEnrolling(true);
-    enrollMutation.mutate(
-      { courseId: course.id, courseTitle: course.title, utmParams },
-      {
-        onSuccess: () => {
-          navigate(`/learn/course/${course.slug}/dashboard`, { replace: true });
-        },
-        onError: () => {
-          setAutoEnrolling(false);
-          setEnrollFailed(true);
-        },
-      }
-    );
-  }, [course, isAuthenticated, enrollment, enrollLoading, autoEnrolling, enrollFailed]);
-
-  // Already enrolled — redirect to dashboard
+  // Already enrolled — redirect to success page
   useEffect(() => {
     if (enrollment && course) {
-      navigate(`/learn/course/${course.slug}/dashboard`, { replace: true });
+      navigate(`/enrollment-success/${course.slug}`, { replace: true });
     }
   }, [enrollment, course]);
 
