@@ -1,34 +1,50 @@
 
 
-# Fix White Screen in Preview — Lazy Loading + Error Boundary
+# Hero CRUD Admin Interface
 
-## Root Cause
-The Lovable preview iframe proxy intermittently returns 503 for module requests during Vite's on-demand loading. Since all ~15 admin pages are eagerly imported in `App.tsx`, a single 503 on any admin module (e.g. `AdminCommentsTab.tsx`) crashes the entire React tree before it mounts. In a separate browser tab, the connection is more stable, so modules load successfully.
+## Overview
+Create a `hero_slides` database table and an admin page to manage the hero carousel slides (background images, headlines, subtitle, CTA). Update `HeroCarousel.tsx` to fetch slides from the database instead of using hardcoded values.
 
-## Fix
+## Database
 
-### 1. Lazy-load all admin pages in `App.tsx`
-Replace the 13 static admin imports with `React.lazy()` + `Suspense`. This means admin modules are only fetched when the user navigates to `/admin/*`, so a 503 on an admin module won't crash the homepage.
+New table: `hero_slides`
+- `id` uuid PK
+- `title` text (headline text, e.g. "Where India's next great")
+- `rotating_words` text[] (e.g. `{"filmmakers","editors","storytellers"}`)
+- `subtitle` text
+- `cta_label` text (default "See all Programs")
+- `cta_link` text (default "/explore")
+- `image_url` text (background image URL)
+- `sort_order` integer (default 0)
+- `is_active` boolean (default true)
+- `created_at` timestamptz
 
-```text
-Before: import AdminDashboard from "./pages/admin/AdminDashboard";
-After:  const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
-```
+RLS: admins/mentors get full access, public SELECT on `is_active = true`.
 
-Wrap admin routes in a `<Suspense fallback={<LoadingSpinner />}>`.
+## Files to Create/Modify
 
-### 2. Add a global ErrorBoundary in `App.tsx`
-Wrap the entire `<Routes>` in an ErrorBoundary component that catches render errors and shows a "Something went wrong — Retry" screen instead of a white screen. This catches any remaining transient failures.
+### 1. `src/pages/admin/AdminHeroSlides.tsx` (new)
+Admin page within `AdminLayout` providing:
+- List of slides as draggable cards showing thumbnail, title, active toggle
+- Create/edit dialog with fields: title, rotating words (comma-separated input), subtitle, CTA label, CTA link, image upload (to `course-content` bucket), sort order, active toggle
+- Delete confirmation
+- Uses React Query + Supabase for CRUD
 
-### 3. Create `src/components/ErrorBoundary.tsx`
-A simple class component with `componentDidCatch` that renders a retry button calling `window.location.reload()`.
+### 2. `src/App.tsx`
+- Add lazy import for `AdminHeroSlides`
+- Add route: `/admin/hero` under admin guard
 
-## Files to modify
-- **`src/App.tsx`** — lazy imports for admin pages, add Suspense + ErrorBoundary wrapper
-- **`src/components/ErrorBoundary.tsx`** — new file, global error boundary component
+### 3. `src/components/layout/AdminLayout.tsx`
+- Add nav item `{ path: "/admin/hero", label: "Hero Slides", icon: Clapperboard, roles: ["super_admin"] }` after Dashboard
 
-## Technical notes
-- Only admin pages need lazy loading since they're the heaviest import chain and not needed on initial load
-- The ErrorBoundary prevents any uncaught render error from producing a white screen
-- No changes to routing logic or auth guards needed
+### 4. `src/components/home/HeroCarousel.tsx`
+- Fetch active slides from `hero_slides` table ordered by `sort_order`
+- Fall back to existing hardcoded data if query returns empty (graceful degradation)
+- Use `image_url` for backgrounds, first slide's `rotating_words` for the word rotation
+- Keep existing animations and layout unchanged
+
+## Technical Notes
+- Image upload reuses the existing `course-content` storage bucket
+- Rotating words stored as a Postgres text array, entered as comma-separated in the admin UI
+- The carousel continues to work with hardcoded fallback if no slides exist yet, ensuring zero downtime
 
