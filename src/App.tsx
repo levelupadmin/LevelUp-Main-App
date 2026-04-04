@@ -62,6 +62,7 @@ const AdminWaitlists = lazy(() => import("./pages/admin/AdminWaitlists"));
 const AdminEngagement = lazy(() => import("./pages/admin/AdminEngagement"));
 const AdminSalesPages = lazy(() => import("./pages/admin/AdminSalesPages"));
 const AdminCourseBuilder = lazy(() => import("./pages/admin/AdminCourseBuilder"));
+const AdminHeroSlides = lazy(() => import("./pages/admin/AdminHeroSlides"));
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
