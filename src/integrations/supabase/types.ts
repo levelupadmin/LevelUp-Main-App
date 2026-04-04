@@ -800,6 +800,45 @@ export type Database = {
           },
         ]
       }
+      hero_slides: {
+        Row: {
+          created_at: string
+          cta_label: string
+          cta_link: string
+          id: string
+          image_url: string | null
+          is_active: boolean
+          rotating_words: string[]
+          sort_order: number
+          subtitle: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          cta_label?: string
+          cta_link?: string
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          rotating_words?: string[]
+          sort_order?: number
+          subtitle?: string
+          title?: string
+        }
+        Update: {
+          created_at?: string
+          cta_label?: string
+          cta_link?: string
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          rotating_words?: string[]
+          sort_order?: number
+          subtitle?: string
+          title?: string
+        }
+        Relationships: []
+      }
       lesson_comments: {
         Row: {
           content: string
