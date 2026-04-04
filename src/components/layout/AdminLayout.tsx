@@ -4,9 +4,9 @@ import {
   LayoutDashboard, FileText, Users, Shield, BarChart3,
   Clapperboard, GraduationCap, ArrowLeft, Briefcase, Settings,
   ChevronDown, Gift, Bell, TrendingUp, ShoppingBag,
-} from "lucide-react";
+import logo from "@/assets/logo.png";
 import { AppRole } from "@/contexts/AuthContext";
-import { useDevAuth, DevRole } from "@/contexts/DevAuthContext";
+import { useDevAuth } from "@/contexts/DevAuthContext";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
