@@ -1,40 +1,47 @@
 
+Diagnosis:
+- The success page and route already exist. The reason you never reach them is earlier in the flow.
+- `Checkout.tsx` treats the user as authenticated via the dev auth wrapper, so the CTA runs the enrollment mutation.
+- But `useEnrollInCourse()` still relies on `supabase.auth.getUser()`. In preview/dev mode that returns `null`, so the mutation throws `"Not authenticated"`.
+- `Checkout.tsx` swallows that failure by only setting `enrollFailed` and never showing a toast/alert, so the button appears to do nothing.
 
-# Fix: Checkout "Get Access Now" Button + Add Success Page for Conversion Tracking
+Implementation plan:
+1. Unify checkout/auth behavior for preview and real usage
+   - Keep real backend enrollment for real signed-in users.
+   - Add a preview-safe fallback for the current forced dev-auth setup so checkout can still complete in preview when no backend session exists.
 
-## Problem
+2. Add a small preview enrollment layer
+   - Create a tiny helper to store/read “simulated enrollments” keyed by mock user + course slug/id.
+   - This is only for preview/dev mode so the CTA can complete and the app can behave consistently after success.
+   - No backend writes, UTM writes, or notifications should be faked in this mode.
 
-Two issues:
+3. Update `useEnrollment` and `useEnrollInCourse`
+   - `useEnrollment`: first read the real backend enrollment; if there is no backend session but there is a dev-auth user, fall back to the preview enrollment store.
+   - `useEnrollInCourse`: if a real backend user exists, insert normally; otherwise create the preview enrollment marker and return a success result.
+   - Invalidate the same React Query keys in both paths so checkout/course detail refresh correctly.
 
-1. **Button does nothing when clicked**: For authenticated users, `handleGetAccess` is a no-op — it only handles the unauthenticated redirect case. It relies on a `useEffect` for auto-enrollment, but that silently fails because in dev mode there's no real Supabase session (`supabase.auth.getUser()` returns null). Even in production, if auto-enroll fails, the button remains dead with no retry mechanism.
+4. Fix the checkout page UX
+   - Keep CTA behavior the same, but make success navigation happen after either real or preview enrollment succeeds.
+   - Replace the silent `setEnrollFailed(true)` path with a visible toast and/or inline error message.
+   - Clean up unused state like `enrollLoading` if it remains unnecessary.
 
-2. **No success page**: After enrollment, users are redirected straight to the course dashboard. There's no dedicated "thank you" / confirmation page that ad platforms (Meta Pixel, GA4) can use as a conversion event URL.
+5. Make the thank-you page reliable for conversions
+   - Keep `/enrollment-success/:slug` as the landing page after enrollment.
+   - Add a small guard so GA4/Meta events fire once per successful arrival, not repeatedly on every revisit/refresh.
+   - Keep the course metadata in the event payload: course id, title, category, and INR value.
 
-## Plan
+6. Keep post-purchase navigation consistent
+   - Update `CourseDetail.tsx` to respect the same preview enrollment fallback so “Start Learning” from the thank-you page doesn’t drop the user back into a non-enrolled state in preview.
+   - Verify the dashboard/start-learning path works after success for both preview-mode users and real authenticated users.
 
-### 1. Create a success/thank-you page (`src/pages/EnrollmentSuccess.tsx`)
+Files to update:
+- `src/hooks/useCourseData.ts`
+- `src/pages/Checkout.tsx`
+- `src/pages/EnrollmentSuccess.tsx`
+- `src/pages/CourseDetail.tsx`
+- likely one small shared helper file for preview enrollment state
 
-- A standalone page at `/enrollment-success/:slug` displaying:
-  - Confirmation message ("You're in!")
-  - Course title and thumbnail
-  - "Start Learning" button linking to the course dashboard
-- Includes a `useEffect` that fires a `window.dataLayer.push` event (for GA4) and a Meta Pixel `fbq('track', 'Purchase')` call on mount
-- This gives ad platforms a distinct URL (`/enrollment-success/...`) to track as a conversion
-
-### 2. Fix `handleGetAccess` in Checkout.tsx
-
-- Make the button directly trigger enrollment instead of being a no-op for authenticated users
-- On success, navigate to `/enrollment-success/:slug` instead of the dashboard
-- On error, show a toast with a clear error message
-- Update the auto-enroll `useEffect` to also redirect to the success page
-
-### 3. Register the route in App.tsx
-
-- Add `/enrollment-success/:slug` route
-
-## Files to change
-
-- **Create** `src/pages/EnrollmentSuccess.tsx` — thank-you page with conversion tracking hooks
-- **Modify** `src/pages/Checkout.tsx` — fix button handler + redirect to success page
-- **Modify** `src/App.tsx` — add the new route
-
+Technical details:
+- No database migration is needed for this fix.
+- The core bug is the mismatch between forced dev auth in `AuthContext` and real-session checks inside the course hooks.
+- The minimum reliable fix is not “change the button”; it is “make enrollment succeed or visibly fail under the same auth model the UI is using.”
