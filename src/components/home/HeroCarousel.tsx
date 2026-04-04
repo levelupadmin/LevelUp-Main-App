@@ -60,7 +60,7 @@ const HeroCarousel = () => {
   }, [bgImages.length]);
 
   return (
-    <section className="relative -mx-6 -mt-6 overflow-hidden lg:-mx-10 lg:-mt-10">
+    <section className="relative overflow-hidden">
       <div className="relative h-[520px] w-full sm:h-[560px] lg:h-[640px]">
         {/* Background images with Ken Burns */}
         {bgImages.map((src, i) => (
