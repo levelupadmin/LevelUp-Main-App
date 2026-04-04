@@ -76,6 +76,22 @@
     --gray-700: 240 5% 26%;
     --gray-800: 240 6% 18%;
     --gray-900: 240 6% 12%;
+
+    /* Highlight – blue accent for interactive highlights */
+    --highlight: 211 100% 50%;
+    --highlight-foreground: 0 0% 100%;
+
+    /* Streak */
+    --streak: 24 90% 55%;
+    --streak-glow: 24 90% 60%;
+
+    /* XP / Level */
+    --xp: 142 40% 45%;
+    --level-badge: 240 4% 58%;
+
+    /* Hero */
+    --hero-headline: 240 6% 12%;
+    --hero-subtext: 240 4% 46%;
   }
 
   .dark {
