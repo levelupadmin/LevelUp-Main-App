@@ -55,8 +55,15 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 
   const visibleNav = adminNav.filter((item) => item.roles.includes(currentRole));
 
-  const switchRole = (role: AppRole) => {
-    setRole(role as any);
+  const devRoleOptions: { value: DevRole; label: string }[] = [
+    { value: "super_admin", label: "Super Admin" },
+    { value: "mentor", label: "Mentor" },
+    { value: "student_enrolled", label: "Student (Enrolled)" },
+    { value: "student_free", label: "Student (Free)" },
+  ];
+
+  const switchRole = (role: DevRole) => {
+    setRole(role);
   };
 
   return (
