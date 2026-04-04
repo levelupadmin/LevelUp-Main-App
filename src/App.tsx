@@ -15,6 +15,7 @@ import Explore from "./pages/Explore";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
 import Checkout from "./pages/Checkout";
+import EnrollmentSuccess from "./pages/EnrollmentSuccess";
 
 // Member pages
 import Index from "./pages/Index";
