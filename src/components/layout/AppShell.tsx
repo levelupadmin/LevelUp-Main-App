@@ -19,6 +19,7 @@ import {
   Rss,
   GraduationCap,
   Compass,
+  ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
 
