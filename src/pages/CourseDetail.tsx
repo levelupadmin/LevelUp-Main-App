@@ -356,8 +356,8 @@ const CourseDetail = () => {
         </Button>
       ) : (
         <Button onClick={handleStartCourse} size="lg" className="gap-2 font-bold bg-highlight text-highlight-foreground hover:bg-highlight/90" disabled={enrollMutation.isPending}>
-          <Play className="h-4 w-4" />
-          {course.is_free ? "Start Course (Free)" : `Start Course · ₹${course.price.toLocaleString()}`}
+          {course.is_free || enrollment ? <Play className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+          {course.is_free ? "Start Course (Free)" : enrollment ? "Continue Learning" : `Enroll Now · ₹${course.price.toLocaleString()}`}
         </Button>
       )}
     </div>
