@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
+import { isPreviewEnrolled, setPreviewEnrolled } from "@/lib/previewEnrollment";
 
 export type Course = Tables<"courses">;
 export type Module = Tables<"course_modules">;
