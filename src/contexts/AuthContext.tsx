@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
+import { useDevAuth } from "@/contexts/DevAuthContext";
 
 export type AppRole = "student" | "mentor" | "super_admin";
 
@@ -42,13 +43,6 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// ── DEV MODE: bypass real auth ──────────────────────────────────
-// Import dev context to provide mock user data
-let useDevAuthFn: (() => { user: UserProfile; isAdmin: boolean }) | null = null;
-try {
-  // Dynamic import won't work at module level, so we rely on the provider hierarchy instead.
-  // The useAuth hook below checks for DevAuthContext first.
-} catch {}
 
 async function fetchProfile(userId: string): Promise<UserProfile | null> {
   const [{ data: profile }, { data: roleData }] = await Promise.all([
@@ -123,17 +117,12 @@ export const useAuth = () => {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
 
   // In dev mode, pull user from DevAuthContext
-  try {
-    const { useDevAuth } = require("@/contexts/DevAuthContext");
-    const devCtx = useDevAuth();
-    return {
-      ...ctx,
-      isAuthenticated: true,
-      isLoading: false,
-      hasCompletedOnboarding: true,
-      user: devCtx.user,
-    };
-  } catch {
-    return ctx;
-  }
+  const devCtx = useDevAuth();
+  return {
+    ...ctx,
+    isAuthenticated: true,
+    isLoading: false,
+    hasCompletedOnboarding: true,
+    user: devCtx.user,
+  };
 };
