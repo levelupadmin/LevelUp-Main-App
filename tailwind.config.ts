@@ -122,6 +122,22 @@ export default {
           from: { transform: "translateY(8px)", opacity: "0" },
           to: { transform: "translateY(0)", opacity: "1" },
         },
+        "pulse-glow": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.6" },
+        },
+        "ken-burns": {
+          "0%": { transform: "scale(1)" },
+          "100%": { transform: "scale(1.08)" },
+        },
+        "slide-in-right": {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(0)" },
+        },
+        "hero-stagger": {
+          "0%": { opacity: "0", transform: "translateY(24px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
