@@ -17,6 +17,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, GripVertical, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface HeroSlide {
   id: string;
