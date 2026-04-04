@@ -17,6 +17,7 @@ const Checkout = () => {
   const { data: enrollment, isLoading: enrollLoading } = useEnrollment(course?.id);
   const enrollMutation = useEnrollInCourse();
   const [autoEnrolling, setAutoEnrolling] = useState(false);
+  const utmParams = useUtmParams();
 
   // Auto-enroll if user is authenticated and not yet enrolled
   useEffect(() => {
