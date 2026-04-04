@@ -50,10 +50,10 @@ const Checkout = () => {
     );
   }
 
-  if (autoEnrolling || enrollMutation.isPending) {
+  if (enrollMutation.isPending) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
-        <div className="animate-spin h-8 w-8 border-2 border-highlight border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
         <p className="text-sm text-muted-foreground">Setting up your access…</p>
       </div>
     );
