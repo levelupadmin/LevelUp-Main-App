@@ -21,6 +21,11 @@ const EnrollmentSuccess = () => {
   useEffect(() => {
     if (!course) return;
 
+    // Fire conversion events only once per course
+    const firedKey = `conversion_fired_${course.id}`;
+    if (sessionStorage.getItem(firedKey)) return;
+    sessionStorage.setItem(firedKey, "1");
+
     // GA4 conversion event
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push({

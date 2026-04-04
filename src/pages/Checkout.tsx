@@ -72,8 +72,11 @@ const Checkout = () => {
         onSuccess: () => {
           navigate(`/enrollment-success/${course.slug}`, { replace: true });
         },
-        onError: () => {
+        onError: (err) => {
           setEnrollFailed(true);
+          toast.error("Enrollment failed", {
+            description: err instanceof Error ? err.message : "Please try again.",
+          });
         },
       }
     );
