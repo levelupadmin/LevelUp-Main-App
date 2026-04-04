@@ -14,9 +14,10 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+        display: ['"Sora"', '"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
         body: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
+        serif: ['"Sora"', 'system-ui', 'sans-serif'],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -72,6 +73,8 @@ export default {
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         info: "hsl(var(--info))",
+        "hero-headline": "hsl(var(--hero-headline))",
+        "hero-subtext": "hsl(var(--hero-subtext))",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -103,6 +106,10 @@ export default {
           "0%": { transform: "translateX(-100%)" },
           "100%": { transform: "translateX(0)" },
         },
+        "hero-stagger": {
+          "0%": { opacity: "0", transform: "translateY(24px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -111,6 +118,7 @@ export default {
         "slide-up": "slide-up 0.3s ease-out",
         "ken-burns": "ken-burns 8s ease-out forwards",
         "slide-in-right": "slide-in-right 0.25s ease-out",
+        "hero-stagger": "hero-stagger 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards",
       },
     },
   },
