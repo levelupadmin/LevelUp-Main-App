@@ -93,16 +93,26 @@ export const useEnrollment = (courseId: string | undefined) =>
     enabled: !!courseId,
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-      const { data, error } = await supabase
-        .from("enrollments")
-        .select("*")
-        .eq("course_id", courseId!)
-        .eq("user_id", user.id)
-        .eq("status", "active")
-        .maybeSingle();
-      if (error) throw error;
-      return data as Enrollment | null;
+      if (user) {
+        const { data, error } = await supabase
+          .from("enrollments")
+          .select("*")
+          .eq("course_id", courseId!)
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .maybeSingle();
+        if (error) throw error;
+        return data as Enrollment | null;
+      }
+      // Preview/dev mode fallback: check sessionStorage
+      try {
+        const { useDevAuth } = require("@/contexts/DevAuthContext");
+        const devUser = useDevAuth?.()?.user;
+        if (devUser && isPreviewEnrolled(devUser.id, courseId!)) {
+          return { id: `preview-${courseId}`, course_id: courseId!, user_id: devUser.id, status: "active", enrolled_at: new Date().toISOString() } as unknown as Enrollment;
+        }
+      } catch {}
+      return null;
     },
   });
 
