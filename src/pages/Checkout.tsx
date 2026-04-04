@@ -17,7 +17,6 @@ const Checkout = () => {
   const { data: enrollment, isLoading: enrollLoading } = useEnrollment(course?.id);
   const enrollMutation = useEnrollInCourse();
   const [enrollFailed, setEnrollFailed] = useState(false);
-  const [enrollFailed, setEnrollFailed] = useState(false);
   const utmParams = useUtmParams();
 
   // Already enrolled — redirect to success page
