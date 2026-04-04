@@ -24,7 +24,7 @@ const Checkout = () => {
     if (!course || !isAuthenticated || enrollLoading || enrollment || autoEnrolling) return;
     setAutoEnrolling(true);
     enrollMutation.mutate(
-      { courseId: course.id, courseTitle: course.title },
+      { courseId: course.id, courseTitle: course.title, utmParams },
       {
         onSuccess: () => {
           navigate(`/learn/course/${course.slug}/dashboard`, { replace: true });
