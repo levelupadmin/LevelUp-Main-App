@@ -63,7 +63,7 @@ const AdminCourseBuilder = () => {
       case "information":
         return <InformationTab courseId={course.id} />;
       case "drip":
-        return <DripTab />;
+        return <DripTab courseId={course.id} />;
       case "report":
         return <AdminReportTab courseId={course.id} lessons={lessonProps} modules={moduleProps} />;
       case "comments":
