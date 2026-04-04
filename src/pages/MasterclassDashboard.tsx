@@ -280,14 +280,7 @@ const MasterclassDashboard = () => {
 
             {/* Resources */}
             <TabsContent value="resources">
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
-                  <Download className="h-10 w-10 text-muted-foreground/20" />
-                  <p className="text-sm text-muted-foreground">
-                    Downloadable resources will appear here as they are added by the instructor.
-                  </p>
-                </CardContent>
-              </Card>
+              <CourseResourcesTab courseId={course.id} />
             </TabsContent>
 
             {/* Reviews */}

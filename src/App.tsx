@@ -78,6 +78,7 @@ const App = () => (
               <Route path="/login" element={<Auth />} />
               <Route path="/auth" element={<Navigate to="/login" replace />} />
               <Route path="/onboarding" element={<Onboarding />} />
+              <Route path="/checkout/:slug" element={<Checkout />} />
 
               {/* Member (no auth guard in dev mode) */}
               <Route path="/home" element={<Index />} />

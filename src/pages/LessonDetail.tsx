@@ -59,6 +59,27 @@ const LessonDetail = () => {
     );
   }
 
+  // Gate enrollment — allow free preview lessons
+  const isEnrolled = !!enrollment;
+  if (!isEnrolled && !lesson.is_free) {
+    return (
+      <AppShell>
+        <div className="flex flex-col items-center justify-center py-32 gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
+            <Lock className="h-7 w-7 text-muted-foreground" />
+          </div>
+          <p className="text-lg font-bold text-foreground">Enroll to Access</p>
+          <p className="text-sm text-muted-foreground text-center max-w-sm">
+            This lesson is available to enrolled students. Get access to unlock all content.
+          </p>
+          <Button size="sm" onClick={() => navigate(`/checkout/${course.slug}`)}>
+            Get Access
+          </Button>
+        </div>
+      </AppShell>
+    );
+  }
+
   // Gate drip-locked lessons
   const lessonDrip = dripMap.get(lesson.id);
   if (lessonDrip?.isLocked) {

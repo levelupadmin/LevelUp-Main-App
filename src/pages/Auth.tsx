@@ -20,7 +20,8 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
 
   if (isAuthenticated) {
-    navigate(hasCompletedOnboarding ? "/home" : "/onboarding", { replace: true });
+    const dest = redirectTo || (hasCompletedOnboarding ? "/home" : "/onboarding");
+    navigate(dest, { replace: true });
     return null;
   }
 
