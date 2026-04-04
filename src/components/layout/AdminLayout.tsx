@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { AppRole } from "@/contexts/AuthContext";
-import { useDevAuth } from "@/contexts/DevAuthContext";
+import { useDevAuth, DevRole } from "@/contexts/DevAuthContext";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -55,8 +55,15 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 
   const visibleNav = adminNav.filter((item) => item.roles.includes(currentRole));
 
-  const switchRole = (role: AppRole) => {
-    setRole(role as any);
+  const devRoleOptions: { value: DevRole; label: string }[] = [
+    { value: "super_admin", label: "Super Admin" },
+    { value: "mentor", label: "Mentor" },
+    { value: "student_enrolled", label: "Student (Enrolled)" },
+    { value: "student_free", label: "Student (Free)" },
+  ];
+
+  const switchRole = (role: DevRole) => {
+    setRole(role);
   };
 
   return (
@@ -108,14 +115,14 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-44">
-              {(["super_admin", "mentor", "student"] as AppRole[]).map((r) => (
+              {devRoleOptions.map((r) => (
                 <DropdownMenuItem
-                  key={r}
-                  onClick={() => switchRole(r)}
-                  className={currentRole === r ? "bg-secondary" : ""}
+                  key={r.value}
+                  onClick={() => switchRole(r.value)}
+                  className={currentRole === r.value ? "bg-secondary" : ""}
                 >
-                  {roleLabel[r]}
-                  {currentRole === r && <span className="ml-auto text-[hsl(var(--highlight))]">●</span>}
+                  {r.label}
+                  {currentRole === r.value && <span className="ml-auto text-[hsl(var(--highlight))]">●</span>}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -162,10 +169,10 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
-                {(["super_admin", "mentor", "student"] as AppRole[]).map((r) => (
-                  <DropdownMenuItem key={r} onClick={() => switchRole(r)} className={currentRole === r ? "bg-secondary" : ""}>
-                    {roleLabel[r]}
-                    {currentRole === r && <span className="ml-auto text-[hsl(var(--highlight))]">●</span>}
+                {devRoleOptions.map((r) => (
+                  <DropdownMenuItem key={r.value} onClick={() => switchRole(r.value)} className={currentRole === r.value ? "bg-secondary" : ""}>
+                    {r.label}
+                    {currentRole === r.value && <span className="ml-auto text-[hsl(var(--highlight))]">●</span>}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
