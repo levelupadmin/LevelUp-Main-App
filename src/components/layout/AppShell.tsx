@@ -57,6 +57,7 @@ const AppShell = ({
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isAdmin } = useDevAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isCommunity = location.pathname === "/community" || location.pathname.startsWith("/community/");
