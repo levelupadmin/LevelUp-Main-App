@@ -77,7 +77,6 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <DevAuthProvider>
           <AuthProvider>
             <ErrorBoundary>
               <Routes>
