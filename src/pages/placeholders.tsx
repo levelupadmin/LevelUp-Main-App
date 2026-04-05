@@ -1,49 +1,59 @@
-import { useAuth } from "@/contexts/AuthContext";
-import { Button } from "@/components/ui/button";
-import { useNavigate } from "react-router-dom";
+import StudentLayout from "@/components/layout/StudentLayout";
 
-const Shell = ({ title, subtitle }: { title: string; subtitle?: string }) => {
-  const { profile, signOut } = useAuth();
-  const navigate = useNavigate();
+export const CourseDetail = () => (
+  <StudentLayout title="Course Detail">
+    <div className="text-muted-foreground">Course detail page — coming soon</div>
+  </StudentLayout>
+);
 
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-      <h1 className="text-2xl font-bold text-foreground">{title}</h1>
-      {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
-      {profile && (
-        <p className="text-xs text-muted-foreground">
-          Signed in as <span className="font-semibold text-foreground">{profile.full_name || profile.email}</span>{" "}
-          ({profile.role})
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
-          Back
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => signOut()}>
-          Sign out
-        </Button>
-      </div>
+export const ChapterViewer = () => (
+  <StudentLayout title="Chapter">
+    <div className="text-muted-foreground">Chapter viewer — coming soon</div>
+  </StudentLayout>
+);
+
+export const Profile = () => (
+  <StudentLayout title="Profile">
+    <div className="text-muted-foreground">Profile page — coming soon</div>
+  </StudentLayout>
+);
+
+export const Checkout = () => (
+  <StudentLayout title="Checkout">
+    <div className="text-muted-foreground">Checkout page — coming soon</div>
+  </StudentLayout>
+);
+
+export const BrowsePage = () => (
+  <StudentLayout title="Browse Programs">
+    <div className="text-muted-foreground">Browse page — coming soon</div>
+  </StudentLayout>
+);
+
+export const CommunityPage = () => (
+  <StudentLayout title="Community">
+    <div className="text-muted-foreground">Community page — coming soon</div>
+  </StudentLayout>
+);
+
+export const MyCoursesPage = () => (
+  <StudentLayout title="My Courses">
+    <div className="text-muted-foreground">My Courses page — coming soon</div>
+  </StudentLayout>
+);
+
+// Admin/Instructor placeholders
+export const AdminDashboard = () => <div className="p-8 text-muted-foreground">Admin Dashboard — coming soon</div>;
+export const AdminCourses = () => <div className="p-8 text-muted-foreground">Admin Courses — coming soon</div>;
+export const AdminOfferings = () => <div className="p-8 text-muted-foreground">Admin Offerings — coming soon</div>;
+export const AdminEnrolments = () => <div className="p-8 text-muted-foreground">Admin Enrolments — coming soon</div>;
+export const AdminUsers = () => <div className="p-8 text-muted-foreground">Admin Users — coming soon</div>;
+export const InstructorDashboard = () => <div className="p-8 text-muted-foreground">Instructor Dashboard — coming soon</div>;
+export const NotFound = () => (
+  <div className="flex min-h-screen items-center justify-center bg-canvas">
+    <div className="text-center">
+      <h1 className="text-3xl font-semibold">404</h1>
+      <p className="text-muted-foreground mt-2">Page not found</p>
     </div>
-  );
-};
-
-// Student pages
-export const Home = () => <Shell title="Student Dashboard" subtitle="Your enrolled courses and progress will appear here." />;
-export const CourseDetail = () => <Shell title="Course Detail" subtitle="Course overview, curriculum, and enrollment." />;
-export const ChapterViewer = () => <Shell title="Chapter Viewer" subtitle="Video player and lesson content." />;
-export const Profile = () => <Shell title="Profile" subtitle="Your profile and settings." />;
-export const Checkout = () => <Shell title="Checkout" subtitle="Complete your purchase." />;
-
-// Admin pages
-export const AdminDashboard = () => <Shell title="Admin Dashboard" subtitle="Platform overview and analytics." />;
-export const AdminCourses = () => <Shell title="Admin — Courses" subtitle="Manage all courses." />;
-export const AdminOfferings = () => <Shell title="Admin — Offerings" subtitle="Manage offerings and pricing." />;
-export const AdminEnrolments = () => <Shell title="Admin — Enrolments" subtitle="View and manage enrolments." />;
-export const AdminUsers = () => <Shell title="Admin — Users" subtitle="User management and roles." />;
-
-// Instructor pages
-export const InstructorDashboard = () => <Shell title="Instructor Dashboard" subtitle="Your assigned courses and student progress." />;
-
-// Not found
-export const NotFound = () => <Shell title="404" subtitle="Page not found." />;
+  </div>
+);
