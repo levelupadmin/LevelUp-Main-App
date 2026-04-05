@@ -3,6 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
 import InitialsAvatar from "@/components/InitialsAvatar";
+import HeroCarousel from "@/components/HeroCarousel";
 import { ArrowRight, Calendar, MessageSquare, ArrowUp } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
@@ -366,6 +367,7 @@ const NewMembers = () => {
 const Home = () => (
   <StudentLayout title="">
     <div className="space-y-8">
+      <HeroCarousel />
       <HeroWelcome />
       <ContinueLearning />
       <PopularCommunity />

@@ -104,6 +104,10 @@ export default {
           from: { width: "0%" },
           to: { width: "100%" },
         },
+        slideProgress: {
+          from: { width: "0%" },
+          to: { width: "100%" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
