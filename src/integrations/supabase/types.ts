@@ -85,6 +85,59 @@ export type Database = {
           },
         ]
       }
+      coupons: {
+        Row: {
+          applies_to_offering_id: string | null
+          code: string
+          created_at: string
+          discount_type: string
+          discount_value: number
+          id: string
+          is_active: boolean
+          max_redemptions: number | null
+          updated_at: string
+          used_count: number
+          valid_from: string | null
+          valid_until: string | null
+        }
+        Insert: {
+          applies_to_offering_id?: string | null
+          code: string
+          created_at?: string
+          discount_type: string
+          discount_value: number
+          id?: string
+          is_active?: boolean
+          max_redemptions?: number | null
+          updated_at?: string
+          used_count?: number
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Update: {
+          applies_to_offering_id?: string | null
+          code?: string
+          created_at?: string
+          discount_type?: string
+          discount_value?: number
+          id?: string
+          is_active?: boolean
+          max_redemptions?: number | null
+          updated_at?: string
+          used_count?: number
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coupons_applies_to_offering_id_fkey"
+            columns: ["applies_to_offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       course_categories: {
         Row: {
           created_at: string
@@ -210,6 +263,185 @@ export type Database = {
           },
         ]
       }
+      custom_field_definitions: {
+        Row: {
+          created_at: string
+          field_type: string
+          id: string
+          is_required: boolean
+          label: string
+          offering_id: string | null
+          options: Json | null
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          field_type: string
+          id?: string
+          is_required?: boolean
+          label: string
+          offering_id?: string | null
+          options?: Json | null
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          field_type?: string
+          id?: string
+          is_required?: boolean
+          label?: string
+          offering_id?: string | null
+          options?: Json | null
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "custom_field_definitions_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      enrolment_audit_log: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          created_at: string
+          enrolment_id: string
+          id: string
+          metadata: Json | null
+          reason: string | null
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          created_at?: string
+          enrolment_id: string
+          id?: string
+          metadata?: Json | null
+          reason?: string | null
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          created_at?: string
+          enrolment_id?: string
+          id?: string
+          metadata?: Json | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "enrolment_audit_log_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrolment_audit_log_enrolment_id_fkey"
+            columns: ["enrolment_id"]
+            isOneToOne: false
+            referencedRelation: "enrolments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      enrolments: {
+        Row: {
+          autopay_active: boolean
+          created_at: string
+          expires_at: string | null
+          granted_by: string | null
+          id: string
+          offering_id: string
+          payment_order_id: string | null
+          razorpay_subscription_id: string | null
+          revoked_at: string | null
+          revoked_by: string | null
+          revoked_reason: string | null
+          source: string
+          starts_at: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          autopay_active?: boolean
+          created_at?: string
+          expires_at?: string | null
+          granted_by?: string | null
+          id?: string
+          offering_id: string
+          payment_order_id?: string | null
+          razorpay_subscription_id?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          revoked_reason?: string | null
+          source?: string
+          starts_at?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          autopay_active?: boolean
+          created_at?: string
+          expires_at?: string | null
+          granted_by?: string | null
+          id?: string
+          offering_id?: string
+          payment_order_id?: string | null
+          razorpay_subscription_id?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          revoked_reason?: string | null
+          source?: string
+          starts_at?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "enrolments_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrolments_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrolments_payment_order_id_fkey"
+            columns: ["payment_order_id"]
+            isOneToOne: false
+            referencedRelation: "payment_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrolments_revoked_by_fkey"
+            columns: ["revoked_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrolments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       instructor_course_assignments: {
         Row: {
           assigned_by: string | null
@@ -250,6 +482,226 @@ export type Database = {
           {
             foreignKeyName: "instructor_course_assignments_instructor_id_fkey"
             columns: ["instructor_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      offering_bumps: {
+        Row: {
+          bump_offering_id: string
+          bump_price_override_inr: number | null
+          created_at: string
+          headline: string | null
+          id: string
+          parent_offering_id: string
+          sort_order: number
+        }
+        Insert: {
+          bump_offering_id: string
+          bump_price_override_inr?: number | null
+          created_at?: string
+          headline?: string | null
+          id?: string
+          parent_offering_id: string
+          sort_order?: number
+        }
+        Update: {
+          bump_offering_id?: string
+          bump_price_override_inr?: number | null
+          created_at?: string
+          headline?: string | null
+          id?: string
+          parent_offering_id?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offering_bumps_bump_offering_id_fkey"
+            columns: ["bump_offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offering_bumps_parent_offering_id_fkey"
+            columns: ["parent_offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      offering_courses: {
+        Row: {
+          course_id: string
+          offering_id: string
+        }
+        Insert: {
+          course_id: string
+          offering_id: string
+        }
+        Update: {
+          course_id?: string
+          offering_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offering_courses_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offering_courses_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      offerings: {
+        Row: {
+          created_at: string
+          currency: string
+          description: string | null
+          gst_mode: string
+          gst_rate: number | null
+          id: string
+          price_inr: number
+          razorpay_plan_id: string | null
+          refund_policy_days: number | null
+          slug: string
+          status: string
+          subscription_period: string | null
+          thumbnail_url: string | null
+          title: string
+          type: string
+          updated_at: string
+          validity_days: number | null
+        }
+        Insert: {
+          created_at?: string
+          currency?: string
+          description?: string | null
+          gst_mode?: string
+          gst_rate?: number | null
+          id?: string
+          price_inr: number
+          razorpay_plan_id?: string | null
+          refund_policy_days?: number | null
+          slug: string
+          status?: string
+          subscription_period?: string | null
+          thumbnail_url?: string | null
+          title: string
+          type: string
+          updated_at?: string
+          validity_days?: number | null
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          description?: string | null
+          gst_mode?: string
+          gst_rate?: number | null
+          id?: string
+          price_inr?: number
+          razorpay_plan_id?: string | null
+          refund_policy_days?: number | null
+          slug?: string
+          status?: string
+          subscription_period?: string | null
+          thumbnail_url?: string | null
+          title?: string
+          type?: string
+          updated_at?: string
+          validity_days?: number | null
+        }
+        Relationships: []
+      }
+      payment_orders: {
+        Row: {
+          bump_offering_ids: string[] | null
+          captured_at: string | null
+          coupon_id: string | null
+          created_at: string
+          custom_field_values: Json | null
+          discount_inr: number
+          gst_inr: number
+          id: string
+          offering_id: string
+          razorpay_order_id: string | null
+          razorpay_payment_id: string | null
+          razorpay_signature: string | null
+          refunded_at: string | null
+          status: string
+          subtotal_inr: number
+          total_inr: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bump_offering_ids?: string[] | null
+          captured_at?: string | null
+          coupon_id?: string | null
+          created_at?: string
+          custom_field_values?: Json | null
+          discount_inr?: number
+          gst_inr?: number
+          id?: string
+          offering_id: string
+          razorpay_order_id?: string | null
+          razorpay_payment_id?: string | null
+          razorpay_signature?: string | null
+          refunded_at?: string | null
+          status?: string
+          subtotal_inr: number
+          total_inr: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bump_offering_ids?: string[] | null
+          captured_at?: string | null
+          coupon_id?: string | null
+          created_at?: string
+          custom_field_values?: Json | null
+          discount_inr?: number
+          gst_inr?: number
+          id?: string
+          offering_id?: string
+          razorpay_order_id?: string | null
+          razorpay_payment_id?: string | null
+          razorpay_signature?: string | null
+          refunded_at?: string | null
+          status?: string
+          subtotal_inr?: number
+          total_inr?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_orders_coupon_id_fkey"
+            columns: ["coupon_id"]
+            isOneToOne: false
+            referencedRelation: "coupons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_orders_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_orders_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
