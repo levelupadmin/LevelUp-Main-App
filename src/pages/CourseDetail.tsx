@@ -95,7 +95,7 @@ const CourseDetail = () => {
     }
 
     if (!courseRes.data) {
-      toast.error(isNotFoundError(courseRes.error?.code) ? "Course not found" : "Could not load this course right now");
+      toast.error("Course not found");
       setLoading(false);
       return;
     }

@@ -93,7 +93,7 @@ const ChapterViewer = () => {
       .from("chapters")
       .select("*")
       .eq("id", chapterId)
-      .single();
+      .maybeSingle();
 
     if (error || !ch) {
       toast.error("Chapter not found");
@@ -108,7 +108,7 @@ const ChapterViewer = () => {
       .from("sections")
       .select("course_id")
       .eq("id", ch.section_id)
-      .single();
+      .maybeSingle();
 
     const cid = sec?.course_id;
     setCourseId(cid || null);
