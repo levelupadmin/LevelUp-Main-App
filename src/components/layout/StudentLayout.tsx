@@ -33,8 +33,8 @@ const StudentLayout = ({ children, title }: Props) => {
 
   return (
     <div className="flex min-h-screen bg-canvas">
-      {/* Desktop sidebar */}
-      <aside className="hidden lg:flex flex-col w-[260px] min-w-[260px] border-r border-border bg-canvas sticky top-0 h-screen">
+      {/* Desktop sidebar - visible at md+ (768px) */}
+      <aside className="hidden md:flex flex-col w-[260px] min-w-[260px] border-r border-border bg-canvas sticky top-0 h-screen">
         <div className="p-6">
           <LevelUpWordmark />
         </div>
@@ -78,7 +78,7 @@ const StudentLayout = ({ children, title }: Props) => {
 
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex flex-col">
             <div className="flex items-center justify-between p-6">
@@ -113,9 +113,9 @@ const StudentLayout = ({ children, title }: Props) => {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-4 lg:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg">
+        <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg">
           <div className="flex items-center gap-3">
-            <button className="lg:hidden text-muted-foreground" onClick={() => setSidebarOpen(true)}>
+            <button className="md:hidden text-muted-foreground" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
             </button>
             <h2 className="text-lg font-semibold">{title}</h2>
@@ -161,7 +161,7 @@ const StudentLayout = ({ children, title }: Props) => {
 
         {/* Content area */}
         <main className="flex-1 grain">
-          <div className="max-w-[1280px] mx-auto px-4 lg:px-8 py-8 lg:py-10 relative z-10">
+          <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-8 md:py-10 relative z-10">
             {children}
           </div>
         </main>
