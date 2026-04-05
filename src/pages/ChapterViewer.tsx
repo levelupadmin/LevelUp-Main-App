@@ -93,7 +93,7 @@ const ChapterViewer = () => {
       .from("chapters")
       .select("*")
       .eq("id", chapterId)
-      .single();
+      .maybeSingle();
 
     if (error || !ch) {
       toast.error("Chapter not found");
