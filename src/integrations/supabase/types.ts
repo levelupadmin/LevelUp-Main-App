@@ -1045,6 +1045,63 @@ export type Database = {
           },
         ]
       }
+      hero_slides: {
+        Row: {
+          category_label: string
+          created_at: string
+          cta_link: string
+          cta_text: string
+          duration_label: string | null
+          gradient_class: string
+          id: string
+          image_url: string | null
+          is_active: boolean
+          next_batch_label: string | null
+          sort_order: number
+          student_count_label: string | null
+          subtitle: string | null
+          title_accent: string
+          title_prefix: string
+          updated_at: string
+        }
+        Insert: {
+          category_label?: string
+          created_at?: string
+          cta_link?: string
+          cta_text?: string
+          duration_label?: string | null
+          gradient_class?: string
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          next_batch_label?: string | null
+          sort_order?: number
+          student_count_label?: string | null
+          subtitle?: string | null
+          title_accent?: string
+          title_prefix?: string
+          updated_at?: string
+        }
+        Update: {
+          category_label?: string
+          created_at?: string
+          cta_link?: string
+          cta_text?: string
+          duration_label?: string | null
+          gradient_class?: string
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          next_batch_label?: string | null
+          sort_order?: number
+          student_count_label?: string | null
+          subtitle?: string | null
+          title_accent?: string
+          title_prefix?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       instructor_course_assignments: {
         Row: {
           assigned_by: string | null
