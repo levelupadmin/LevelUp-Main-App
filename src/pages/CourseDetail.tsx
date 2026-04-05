@@ -52,6 +52,8 @@ interface ChapterProgress {
   completed_at: string | null;
 }
 
+const isNotFoundError = (code?: string | null) => code === "PGRST116";
+
 const CourseDetail = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
@@ -76,6 +78,8 @@ const CourseDetail = () => {
   }, [courseId, user, authLoading, profile]);
 
   const loadCourse = async () => {
+    if (!courseId || !user) return;
+
     setLoading(true);
     const [courseRes, sectionsRes, dripRes] = await Promise.all([
       supabase.from("courses").select("*").eq("id", courseId!).maybeSingle(),
@@ -83,9 +87,16 @@ const CourseDetail = () => {
       supabase.from("course_drip_config").select("drip_mode").eq("course_id", courseId!).maybeSingle(),
     ]);
 
-    if (courseRes.error || !courseRes.data) {
-      toast.error("Course not found");
-      navigate("/home");
+    if (courseRes.error) {
+      console.error("[CourseDetail] course fetch error:", courseRes.error);
+      toast.error("Could not load this course right now");
+      setLoading(false);
+      return;
+    }
+
+    if (!courseRes.data) {
+      toast.error(isNotFoundError(courseRes.error?.code) ? "Course not found" : "Could not load this course right now");
+      setLoading(false);
       return;
     }
 
