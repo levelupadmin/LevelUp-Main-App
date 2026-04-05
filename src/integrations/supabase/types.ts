@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_audit_logs: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          created_at: string
+          id: string
+          ip_address: string | null
+          metadata: Json | null
+          target_id: string | null
+          target_table: string | null
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json | null
+          target_id?: string | null
+          target_table?: string | null
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json | null
+          target_id?: string | null
+          target_table?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_audit_logs_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assignment_submissions: {
         Row: {
           admin_feedback: string | null
@@ -75,6 +116,59 @@ export type Database = {
           {
             foreignKeyName: "assignment_submissions_user_id_fkey"
             columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bulk_import_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          error_count: number | null
+          error_log: Json | null
+          file_url: string
+          id: string
+          import_type: string
+          run_by: string | null
+          started_at: string | null
+          status: string
+          success_count: number | null
+          total_rows: number | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          error_count?: number | null
+          error_log?: Json | null
+          file_url: string
+          id?: string
+          import_type: string
+          run_by?: string | null
+          started_at?: string | null
+          status?: string
+          success_count?: number | null
+          total_rows?: number | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          error_count?: number | null
+          error_log?: Json | null
+          file_url?: string
+          id?: string
+          import_type?: string
+          run_by?: string | null
+          started_at?: string | null
+          status?: string
+          success_count?: number | null
+          total_rows?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bulk_import_jobs_run_by_fkey"
+            columns: ["run_by"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -991,6 +1085,47 @@ export type Database = {
           {
             foreignKeyName: "instructor_course_assignments_instructor_id_fkey"
             columns: ["instructor_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          id: string
+          link_url: string | null
+          read_at: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          link_url?: string | null
+          read_at?: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          link_url?: string | null
+          read_at?: string | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
