@@ -108,7 +108,7 @@ const ChapterViewer = () => {
       .from("sections")
       .select("course_id")
       .eq("id", ch.section_id)
-      .single();
+      .maybeSingle();
 
     const cid = sec?.course_id;
     setCourseId(cid || null);
