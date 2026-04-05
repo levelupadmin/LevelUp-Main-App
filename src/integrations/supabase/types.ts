@@ -387,6 +387,142 @@ export type Database = {
           },
         ]
       }
+      community_post_comments: {
+        Row: {
+          comment_text: string
+          created_at: string
+          id: string
+          parent_comment_id: string | null
+          post_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          comment_text: string
+          created_at?: string
+          id?: string
+          parent_comment_id?: string | null
+          post_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          comment_text?: string
+          created_at?: string
+          id?: string
+          parent_comment_id?: string | null
+          post_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "community_post_comments_parent_comment_id_fkey"
+            columns: ["parent_comment_id"]
+            isOneToOne: false
+            referencedRelation: "community_post_comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_post_comments_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "community_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_post_comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      community_post_likes: {
+        Row: {
+          created_at: string
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "community_post_likes_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "community_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_post_likes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      community_posts: {
+        Row: {
+          content_text: string
+          course_tag_id: string | null
+          created_at: string
+          id: string
+          is_admin_post: boolean
+          is_pinned: boolean
+          media_urls: string[] | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content_text: string
+          course_tag_id?: string | null
+          created_at?: string
+          id?: string
+          is_admin_post?: boolean
+          is_pinned?: boolean
+          media_urls?: string[] | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content_text?: string
+          course_tag_id?: string | null
+          created_at?: string
+          id?: string
+          is_admin_post?: boolean
+          is_pinned?: boolean
+          media_urls?: string[] | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "community_posts_course_tag_id_fkey"
+            columns: ["course_tag_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_posts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       coupons: {
         Row: {
           applies_to_offering_id: string | null
@@ -996,6 +1132,116 @@ export type Database = {
         }
         Relationships: []
       }
+      opportunities: {
+        Row: {
+          closes_at: string | null
+          compensation_max_inr: number | null
+          compensation_min_inr: number | null
+          created_at: string
+          description: string | null
+          id: string
+          location_city: string | null
+          location_type: string | null
+          posted_by_user_id: string
+          poster_is_verified: boolean
+          skills_required: string[] | null
+          status: string
+          title: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          closes_at?: string | null
+          compensation_max_inr?: number | null
+          compensation_min_inr?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          location_city?: string | null
+          location_type?: string | null
+          posted_by_user_id: string
+          poster_is_verified?: boolean
+          skills_required?: string[] | null
+          status?: string
+          title: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          closes_at?: string | null
+          compensation_max_inr?: number | null
+          compensation_min_inr?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          location_city?: string | null
+          location_type?: string | null
+          posted_by_user_id?: string
+          poster_is_verified?: boolean
+          skills_required?: string[] | null
+          status?: string
+          title?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunities_posted_by_user_id_fkey"
+            columns: ["posted_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      opportunity_applications: {
+        Row: {
+          applicant_user_id: string
+          cover_note: string | null
+          created_at: string
+          id: string
+          opportunity_id: string
+          portfolio_link: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          applicant_user_id: string
+          cover_note?: string | null
+          created_at?: string
+          id?: string
+          opportunity_id: string
+          portfolio_link?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          applicant_user_id?: string
+          cover_note?: string | null
+          created_at?: string
+          id?: string
+          opportunity_id?: string
+          portfolio_link?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunity_applications_applicant_user_id_fkey"
+            columns: ["applicant_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opportunity_applications_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: false
+            referencedRelation: "opportunities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payment_orders: {
         Row: {
           bump_offering_ids: string[] | null
@@ -1074,6 +1320,62 @@ export type Database = {
           },
           {
             foreignKeyName: "payment_orders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portfolio_projects: {
+        Row: {
+          created_at: string
+          description: string | null
+          external_url: string | null
+          id: string
+          is_featured: boolean
+          media_urls: string[] | null
+          sort_order: number
+          tags: string[] | null
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+          user_id: string
+          view_count: number
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          external_url?: string | null
+          id?: string
+          is_featured?: boolean
+          media_urls?: string[] | null
+          sort_order?: number
+          tags?: string[] | null
+          thumbnail_url?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+          view_count?: number
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          external_url?: string | null
+          id?: string
+          is_featured?: boolean
+          media_urls?: string[] | null
+          sort_order?: number
+          tags?: string[] | null
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+          view_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portfolio_projects_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -1175,6 +1477,113 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      workshop_attendance: {
+        Row: {
+          created_at: string
+          duration_minutes: number | null
+          id: string
+          joined_at: string | null
+          left_at: string | null
+          user_id: string
+          workshop_id: string
+        }
+        Insert: {
+          created_at?: string
+          duration_minutes?: number | null
+          id?: string
+          joined_at?: string | null
+          left_at?: string | null
+          user_id: string
+          workshop_id: string
+        }
+        Update: {
+          created_at?: string
+          duration_minutes?: number | null
+          id?: string
+          joined_at?: string | null
+          left_at?: string | null
+          user_id?: string
+          workshop_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workshop_attendance_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workshop_attendance_workshop_id_fkey"
+            columns: ["workshop_id"]
+            isOneToOne: false
+            referencedRelation: "workshops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workshops: {
+        Row: {
+          created_at: string
+          description: string | null
+          duration_minutes: number
+          id: string
+          is_recurring: boolean
+          offering_id: string | null
+          recurrence_rule: string | null
+          reminder_sent_at: string | null
+          scheduled_at: string
+          send_reminders: boolean
+          status: string
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+          zoom_link: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number
+          id?: string
+          is_recurring?: boolean
+          offering_id?: string | null
+          recurrence_rule?: string | null
+          reminder_sent_at?: string | null
+          scheduled_at: string
+          send_reminders?: boolean
+          status?: string
+          thumbnail_url?: string | null
+          title: string
+          updated_at?: string
+          zoom_link?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number
+          id?: string
+          is_recurring?: boolean
+          offering_id?: string | null
+          recurrence_rule?: string | null
+          reminder_sent_at?: string | null
+          scheduled_at?: string
+          send_reminders?: boolean
+          status?: string
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+          zoom_link?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workshops_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
