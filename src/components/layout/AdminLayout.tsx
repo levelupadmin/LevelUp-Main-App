@@ -125,24 +125,11 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               );
             })}
           </div>
-          {/* Desktop: role switcher in header */}
+          {/* Desktop: current role display */}
           <div className="hidden lg:flex ml-auto">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary transition-colors">
-                  🛠 {roleLabel[currentRole]}
-                  <ChevronDown className="h-3 w-3" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                {devRoleOptions.map((r) => (
-                  <DropdownMenuItem key={r.value} onClick={() => switchRole(r.value)} className={currentRole === r.value ? "bg-secondary" : ""}>
-                    {r.label}
-                    {currentRole === r.value && <span className="ml-auto text-[hsl(var(--highlight))]">●</span>}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <span className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-muted-foreground">
+              🛠 {roleLabel[currentRole]}
+            </span>
           </div>
         </div>
       </header>

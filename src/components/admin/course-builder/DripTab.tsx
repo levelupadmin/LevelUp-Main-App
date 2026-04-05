@@ -73,7 +73,7 @@ const DripTab = ({ courseId }: DripTabProps) => {
     setDripEnabled(course.drip_enabled);
     setDripMode((course.drip_mode as DripMode) || "none");
     setIntervalDays(course.drip_interval_days ?? 7);
-    const existing = (course.drip_schedule as DripScheduleEntry[] | null) ?? [];
+    const existing = (course.drip_schedule as unknown as DripScheduleEntry[] | null) ?? [];
     setSchedule(existing);
     setDirty(false);
   }, [course]);
