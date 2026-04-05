@@ -6,6 +6,11 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
+import slideBfp from "@/assets/carousel/slide-bfp.jpg";
+import slideVea from "@/assets/carousel/slide-vea.jpg";
+import slideUiux from "@/assets/carousel/slide-uiux.jpg";
+import slideSmp from "@/assets/carousel/slide-smp.jpg";
+import slideMasterclasses from "@/assets/carousel/slide-masterclasses.jpg";
 
 const SLIDES = [
   {
@@ -14,7 +19,7 @@ const SLIDES = [
     italic: "film",
     subtitle: "12-week Breakthrough Filmmakers' Program with industry directors",
     gradient: "from-red-900 to-black",
-    image: "", // will use gradient fallback
+    image: slideBfp,
   },
   {
     category: "LIVE COHORT",
@@ -22,7 +27,7 @@ const SLIDES = [
     italic: "pro",
     subtitle: "Video Editing Academy — Premiere, DaVinci, and the craft of rhythm",
     gradient: "from-indigo-900 to-black",
-    image: "",
+    image: slideVea,
   },
   {
     category: "LIVE COHORT",
@@ -30,7 +35,7 @@ const SLIDES = [
     italic: "ships",
     subtitle: "UI/UX Academy — from wireframe to production-ready interface",
     gradient: "from-emerald-900 to-black",
-    image: "",
+    image: slideUiux,
   },
   {
     category: "LIVE COHORT",
@@ -38,7 +43,7 @@ const SLIDES = [
     italic: "story",
     subtitle: "Screenwriting Mastery — structure, character, and the hand-written draft",
     gradient: "from-amber-900 to-black",
-    image: "",
+    image: slideSmp,
   },
   {
     category: "ALL MASTERCLASSES",
@@ -46,7 +51,7 @@ const SLIDES = [
     italic: "greats",
     subtitle: "One pass. Every masterclass. Karthik, Lokesh, Anthony, Nelson, Ravi & more.",
     gradient: "from-violet-900 to-black",
-    image: "",
+    image: slideMasterclasses,
   },
 ];
 
