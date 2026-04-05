@@ -14,7 +14,343 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      chapters: {
+        Row: {
+          article_body: string | null
+          assignment_prompt: string | null
+          content_type: string
+          created_at: string
+          description: string | null
+          duration_seconds: number | null
+          embed_url: string | null
+          file_size_bytes: number | null
+          id: string
+          make_free: boolean
+          media_url: string | null
+          original_filename: string | null
+          section_id: string
+          sort_order: number
+          subtitle_url: string | null
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          article_body?: string | null
+          assignment_prompt?: string | null
+          content_type: string
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number | null
+          embed_url?: string | null
+          file_size_bytes?: number | null
+          id?: string
+          make_free?: boolean
+          media_url?: string | null
+          original_filename?: string | null
+          section_id: string
+          sort_order?: number
+          subtitle_url?: string | null
+          thumbnail_url?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          article_body?: string | null
+          assignment_prompt?: string | null
+          content_type?: string
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number | null
+          embed_url?: string | null
+          file_size_bytes?: number | null
+          id?: string
+          make_free?: boolean
+          media_url?: string | null
+          original_filename?: string | null
+          section_id?: string
+          sort_order?: number
+          subtitle_url?: string | null
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chapters_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      course_categories: {
+        Row: {
+          created_at: string
+          emoji: string | null
+          id: string
+          name: string
+          slug: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          emoji?: string | null
+          id?: string
+          name: string
+          slug: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          emoji?: string | null
+          id?: string
+          name?: string
+          slug?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      courses: {
+        Row: {
+          category_id: string | null
+          created_at: string
+          description: string | null
+          drm_enabled: boolean
+          duration_minutes: number | null
+          hero_image_url: string | null
+          id: string
+          instructor_avatar_url: string | null
+          instructor_bio: string | null
+          instructor_display_name: string | null
+          language: string | null
+          level: string | null
+          published_at: string | null
+          rating_avg: number | null
+          rating_count: number | null
+          show_as_locked: boolean
+          slug: string
+          status: string
+          student_count: number | null
+          subtitle: string | null
+          tags: string[] | null
+          thumbnail_url: string | null
+          title: string
+          total_lessons: number | null
+          trailer_video_url: string | null
+          updated_at: string
+          what_youll_learn: string[] | null
+        }
+        Insert: {
+          category_id?: string | null
+          created_at?: string
+          description?: string | null
+          drm_enabled?: boolean
+          duration_minutes?: number | null
+          hero_image_url?: string | null
+          id?: string
+          instructor_avatar_url?: string | null
+          instructor_bio?: string | null
+          instructor_display_name?: string | null
+          language?: string | null
+          level?: string | null
+          published_at?: string | null
+          rating_avg?: number | null
+          rating_count?: number | null
+          show_as_locked?: boolean
+          slug: string
+          status?: string
+          student_count?: number | null
+          subtitle?: string | null
+          tags?: string[] | null
+          thumbnail_url?: string | null
+          title: string
+          total_lessons?: number | null
+          trailer_video_url?: string | null
+          updated_at?: string
+          what_youll_learn?: string[] | null
+        }
+        Update: {
+          category_id?: string | null
+          created_at?: string
+          description?: string | null
+          drm_enabled?: boolean
+          duration_minutes?: number | null
+          hero_image_url?: string | null
+          id?: string
+          instructor_avatar_url?: string | null
+          instructor_bio?: string | null
+          instructor_display_name?: string | null
+          language?: string | null
+          level?: string | null
+          published_at?: string | null
+          rating_avg?: number | null
+          rating_count?: number | null
+          show_as_locked?: boolean
+          slug?: string
+          status?: string
+          student_count?: number | null
+          subtitle?: string | null
+          tags?: string[] | null
+          thumbnail_url?: string | null
+          title?: string
+          total_lessons?: number | null
+          trailer_video_url?: string | null
+          updated_at?: string
+          what_youll_learn?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courses_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "course_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instructor_course_assignments: {
+        Row: {
+          assigned_by: string | null
+          course_id: string
+          created_at: string
+          id: string
+          instructor_id: string
+        }
+        Insert: {
+          assigned_by?: string | null
+          course_id: string
+          created_at?: string
+          id?: string
+          instructor_id: string
+        }
+        Update: {
+          assigned_by?: string | null
+          course_id?: string
+          created_at?: string
+          id?: string
+          instructor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instructor_course_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instructor_course_assignments_course_fk"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instructor_course_assignments_instructor_id_fkey"
+            columns: ["instructor_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sections: {
+        Row: {
+          course_id: string
+          created_at: string
+          drip_days_after_enrolment: number | null
+          drip_specific_date: string | null
+          id: string
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          drip_days_after_enrolment?: number | null
+          drip_specific_date?: string | null
+          id?: string
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          drip_days_after_enrolment?: number | null
+          drip_specific_date?: string | null
+          id?: string
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sections_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      users: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          city: string | null
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+          last_active_at: string | null
+          occupation: string | null
+          onboarded_at: string | null
+          open_to_collaborate: boolean | null
+          phone: string | null
+          role: string
+          skills: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id: string
+          last_active_at?: string | null
+          occupation?: string | null
+          onboarded_at?: string | null
+          open_to_collaborate?: boolean | null
+          phone?: string | null
+          role?: string
+          skills?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          last_active_at?: string | null
+          occupation?: string | null
+          onboarded_at?: string | null
+          open_to_collaborate?: boolean | null
+          phone?: string | null
+          role?: string
+          skills?: string[] | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
