@@ -367,6 +367,7 @@ const NewMembers = () => {
 const Home = () => (
   <StudentLayout title="">
     <div className="space-y-8">
+      <HeroCarousel />
       <HeroWelcome />
       <ContinueLearning />
       <PopularCommunity />
