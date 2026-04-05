@@ -55,7 +55,7 @@ interface ChapterProgress {
 const CourseDetail = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
 
   const [course, setCourse] = useState<Course | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -67,14 +67,18 @@ const CourseDetail = () => {
   const [categoryName, setCategoryName] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!courseId) return;
+    if (!courseId || authLoading) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     loadCourse();
-  }, [courseId, user]);
+  }, [courseId, user, authLoading, profile]);
 
   const loadCourse = async () => {
     setLoading(true);
     const [courseRes, sectionsRes, dripRes] = await Promise.all([
-      supabase.from("courses").select("*").eq("id", courseId!).single(),
+      supabase.from("courses").select("*").eq("id", courseId!).maybeSingle(),
       supabase.from("sections").select("*").eq("course_id", courseId!).order("sort_order"),
       supabase.from("course_drip_config").select("drip_mode").eq("course_id", courseId!).maybeSingle(),
     ]);
@@ -95,7 +99,7 @@ const CourseDetail = () => {
         .from("course_categories")
         .select("name")
         .eq("id", courseRes.data.category_id)
-        .single();
+        .maybeSingle();
       setCategoryName(cat?.name || null);
     }
 
