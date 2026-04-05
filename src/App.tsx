@@ -8,12 +8,15 @@ import RequireRole from "@/components/guards/RequireRole";
 import RootRedirect from "@/pages/RootRedirect";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
+import Home from "@/pages/Home";
 import {
-  Home,
   CourseDetail,
   ChapterViewer,
   Profile,
   Checkout,
+  BrowsePage,
+  CommunityPage,
+  MyCoursesPage,
   AdminDashboard,
   AdminCourses,
   AdminOfferings,
@@ -41,6 +44,9 @@ const App = () => (
           <Route path="/chapters/:chapterId" element={<RequireAuth><ChapterViewer /></RequireAuth>} />
           <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
           <Route path="/checkout/:offeringId" element={<RequireAuth><Checkout /></RequireAuth>} />
+          <Route path="/browse" element={<RequireAuth><BrowsePage /></RequireAuth>} />
+          <Route path="/community" element={<RequireAuth><CommunityPage /></RequireAuth>} />
+          <Route path="/my-courses" element={<RequireAuth><MyCoursesPage /></RequireAuth>} />
 
           {/* Admin routes */}
           <Route path="/admin" element={<RequireAuth><RequireRole role="admin"><AdminDashboard /></RequireRole></RequireAuth>} />
@@ -49,7 +55,7 @@ const App = () => (
           <Route path="/admin/enrolments" element={<RequireAuth><RequireRole role="admin"><AdminEnrolments /></RequireRole></RequireAuth>} />
           <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />
 
-          {/* Instructor routes */}
+          {/* Instructor */}
           <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />
 
           {/* Catch-all */}

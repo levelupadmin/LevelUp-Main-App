@@ -8,6 +8,7 @@ interface UserProfile {
   full_name: string | null;
   role: string;
   avatar_url: string | null;
+  member_number: number | null;
 }
 
 interface AuthContextValue {
@@ -34,19 +35,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
       .from("users")
-      .select("id, email, full_name, role, avatar_url")
+      .select("id, email, full_name, role, avatar_url, member_number")
       .eq("id", userId)
       .single();
-    setProfile(data ?? null);
+    setProfile(data as UserProfile | null);
   };
 
   useEffect(() => {
-    // Listen first, then get session
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, newSession) => {
         setSession(newSession);
         if (newSession?.user) {
-          // defer fetch to avoid Supabase deadlock
           setTimeout(() => fetchProfile(newSession.user.id), 0);
         } else {
           setProfile(null);
@@ -57,9 +56,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
-      if (s?.user) {
-        fetchProfile(s.user.id);
-      }
+      if (s?.user) fetchProfile(s.user.id);
       setLoading(false);
     });
 

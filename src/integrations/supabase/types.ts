@@ -1091,6 +1091,59 @@ export type Database = {
           },
         ]
       }
+      live_sessions: {
+        Row: {
+          course_id: string
+          created_at: string
+          description: string | null
+          duration_minutes: number
+          hero_image_url: string | null
+          id: string
+          recording_url: string | null
+          starts_at: string
+          status: string
+          title: string
+          updated_at: string
+          zoom_link: string | null
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number
+          hero_image_url?: string | null
+          id?: string
+          recording_url?: string | null
+          starts_at: string
+          status?: string
+          title: string
+          updated_at?: string
+          zoom_link?: string | null
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number
+          hero_image_url?: string | null
+          id?: string
+          recording_url?: string | null
+          starts_at?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          zoom_link?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_sessions_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           body: string | null
@@ -1518,6 +1571,57 @@ export type Database = {
           },
         ]
       }
+      qna_posts: {
+        Row: {
+          body: string
+          course_id: string | null
+          created_at: string
+          id: string
+          reply_count: number
+          title: string
+          updated_at: string
+          upvote_count: number
+          user_id: string
+        }
+        Insert: {
+          body: string
+          course_id?: string | null
+          created_at?: string
+          id?: string
+          reply_count?: number
+          title: string
+          updated_at?: string
+          upvote_count?: number
+          user_id: string
+        }
+        Update: {
+          body?: string
+          course_id?: string | null
+          created_at?: string
+          id?: string
+          reply_count?: number
+          title?: string
+          updated_at?: string
+          upvote_count?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qna_posts_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qna_posts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sections: {
         Row: {
           course_id: string
@@ -1569,6 +1673,7 @@ export type Database = {
           full_name: string | null
           id: string
           last_active_at: string | null
+          member_number: number
           occupation: string | null
           onboarded_at: string | null
           open_to_collaborate: boolean | null
@@ -1586,6 +1691,7 @@ export type Database = {
           full_name?: string | null
           id: string
           last_active_at?: string | null
+          member_number?: number
           occupation?: string | null
           onboarded_at?: string | null
           open_to_collaborate?: boolean | null
@@ -1603,6 +1709,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           last_active_at?: string | null
+          member_number?: number
           occupation?: string | null
           onboarded_at?: string | null
           open_to_collaborate?: boolean | null

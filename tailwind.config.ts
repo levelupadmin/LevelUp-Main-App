@@ -8,23 +8,38 @@ export default {
     container: {
       center: true,
       padding: "1.5rem",
-      screens: {
-        "2xl": "1400px",
-      },
+      screens: { "2xl": "1400px" },
     },
     extend: {
       fontFamily: {
-        display: ['"Sora"', '"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+        display: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
         body: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
-        serif: ['"Sora"', 'system-ui', 'sans-serif'],
+        serif: ['"Instrument Serif"', 'serif'],
+      },
+      fontSize: {
+        'xs': ['12px', { lineHeight: '1.5' }],
+        'sm': ['14px', { lineHeight: '1.5' }],
+        'base': ['16px', { lineHeight: '1.5' }],
+        'lg': ['18px', { lineHeight: '1.5' }],
+        'xl': ['24px', { lineHeight: '1.2' }],
+        '2xl': ['32px', { lineHeight: '1.2' }],
+        '3xl': ['48px', { lineHeight: '1.2' }],
       },
       colors: {
         border: "hsl(var(--border))",
+        "border-hover": "hsl(var(--border-hover))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+        canvas: "hsl(var(--canvas))",
+        surface: "hsl(var(--surface))",
+        "surface-2": "hsl(var(--surface-2))",
+        cream: {
+          DEFAULT: "hsl(var(--cream))",
+          text: "hsl(var(--cream-text))",
+        },
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -44,6 +59,11 @@ export default {
         accent: {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
+          crimson: "hsl(var(--accent-crimson))",
+          indigo: "hsl(var(--accent-indigo))",
+          emerald: "hsl(var(--accent-emerald))",
+          amber: "hsl(var(--accent-amber))",
+          violet: "hsl(var(--accent-violet))",
         },
         popover: {
           DEFAULT: "hsl(var(--popover))",
@@ -63,23 +83,13 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
-        highlight: {
-          DEFAULT: "hsl(var(--highlight))",
-          foreground: "hsl(var(--highlight-foreground))",
-        },
-        streak: "hsl(var(--streak))",
-        xp: "hsl(var(--xp))",
-        "level-badge": "hsl(var(--level-badge))",
-        success: "hsl(var(--success))",
-        warning: "hsl(var(--warning))",
-        info: "hsl(var(--info))",
-        "hero-headline": "hsl(var(--hero-headline))",
-        "hero-subtext": "hsl(var(--hero-subtext))",
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        sm: "6px",
+        md: "10px",
+        lg: "14px",
+        xl: "20px",
+        "2xl": "28px",
       },
       keyframes: {
         "accordion-down": {
@@ -90,35 +100,15 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
-        "pulse-glow": {
-          "0%, 100%": { opacity: "1" },
-          "50%": { opacity: "0.6" },
-        },
-        "slide-up": {
-          from: { transform: "translateY(8px)", opacity: "0" },
-          to: { transform: "translateY(0)", opacity: "1" },
-        },
-        "ken-burns": {
-          "0%": { transform: "scale(1)" },
-          "100%": { transform: "scale(1.08)" },
-        },
-        "slide-in-right": {
-          "0%": { transform: "translateX(-100%)" },
-          "100%": { transform: "translateX(0)" },
-        },
-        "hero-stagger": {
-          "0%": { opacity: "0", transform: "translateY(24px)" },
-          "100%": { opacity: "1", transform: "translateY(0)" },
+        "slide-progress": {
+          from: { width: "0%" },
+          to: { width: "100%" },
         },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
-        "slide-up": "slide-up 0.3s ease-out",
-        "ken-burns": "ken-burns 8s ease-out forwards",
-        "slide-in-right": "slide-in-right 0.25s ease-out",
-        "hero-stagger": "hero-stagger 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+        "slide-progress": "slide-progress 6s linear",
       },
     },
   },
