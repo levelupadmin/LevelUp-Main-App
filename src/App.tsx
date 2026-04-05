@@ -12,8 +12,6 @@ import Home from "@/pages/Home";
 import CourseDetail from "@/pages/CourseDetail";
 import ChapterViewer from "@/pages/ChapterViewer";
 import {
-  CourseDetail,
-  ChapterViewer,
   Profile,
   Checkout,
   BrowsePage,
