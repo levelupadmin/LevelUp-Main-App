@@ -40,29 +40,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       .single();
     if (error) console.error("[AuthContext] fetchProfile error:", error);
     else console.log("[AuthContext] profile loaded:", data?.full_name, "member#", data?.member_number);
-    setProfile(data as UserProfile | null);
+    return (data as UserProfile | null) ?? null;
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, newSession) => {
-        setSession(newSession);
-        if (newSession?.user) {
-          setTimeout(() => fetchProfile(newSession.user.id), 0);
-        } else {
-          setProfile(null);
-        }
+    let isMounted = true;
+
+    const syncAuthState = async (nextSession: Session | null) => {
+      if (!isMounted) return;
+
+      setLoading(true);
+      setSession(nextSession);
+
+      if (!nextSession?.user) {
+        setProfile(null);
         setLoading(false);
+        return;
+      }
+
+      const nextProfile = await fetchProfile(nextSession.user.id);
+
+      if (!isMounted) return;
+
+      setProfile(nextProfile);
+      setLoading(false);
+    };
+
+    void supabase.auth.getSession().then(({ data: { session: currentSession } }) =>
+      syncAuthState(currentSession)
+    );
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, nextSession) => {
+        await syncAuthState(nextSession);
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      if (s?.user) fetchProfile(s.user.id);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {
