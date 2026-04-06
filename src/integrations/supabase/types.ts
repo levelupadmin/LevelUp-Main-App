@@ -1325,6 +1325,7 @@ export type Database = {
           gst_mode: string
           gst_rate: number | null
           id: string
+          mrp_inr: number | null
           price_inr: number
           razorpay_plan_id: string | null
           refund_policy_days: number | null
@@ -1344,6 +1345,7 @@ export type Database = {
           gst_mode?: string
           gst_rate?: number | null
           id?: string
+          mrp_inr?: number | null
           price_inr: number
           razorpay_plan_id?: string | null
           refund_policy_days?: number | null
@@ -1363,6 +1365,7 @@ export type Database = {
           gst_mode?: string
           gst_rate?: number | null
           id?: string
+          mrp_inr?: number | null
           price_inr?: number
           razorpay_plan_id?: string | null
           refund_policy_days?: number | null

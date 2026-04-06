@@ -1,0 +1,1 @@
+ALTER TABLE public.offerings ADD COLUMN IF NOT EXISTS mrp_inr numeric NULL;
