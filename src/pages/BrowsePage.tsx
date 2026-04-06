@@ -2,81 +2,101 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
+import { TierBadge } from "@/components/TierBadge";
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const TYPE_FILTERS = ["All", "Live Cohort", "Masterclass", "Workshop"] as const;
+const TIER_FILTERS = ["All", "Live Cohort", "Masterclass", "Program", "Workshop"] as const;
+const TIER_MAP: Record<string, string> = {
+  "Live Cohort": "live_cohort",
+  Masterclass: "masterclass",
+  Program: "advanced_program",
+  Workshop: "workshop",
+};
 
-interface Offering {
+interface CourseWithOffering {
   id: string;
   title: string;
   description: string | null;
-  price_inr: number;
-  mrp_inr: number | null;
   thumbnail_url: string | null;
-  type: string;
+  product_tier: string;
+  sort_order: number;
+  duration_text: string | null;
+  instructor_display_name: string | null;
   status: string;
-  course_count: number;
+  offering_id: string | null;
+  price_inr: number | null;
+  mrp_inr: number | null;
 }
 
 const BrowsePage = () => {
-  const [offerings, setOfferings] = useState<Offering[]>([]);
+  const [courses, setCourses] = useState<CourseWithOffering[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>("All");
 
   useEffect(() => {
-    const fetch = async () => {
-      const { data, error } = await supabase
-        .from("offerings")
-        .select("id, title, description, price_inr, mrp_inr, thumbnail_url, type, status")
-        .eq("status", "active")
-        .order("created_at", { ascending: false });
+    const load = async () => {
+      const { data: coursesData } = await supabase
+        .from("courses")
+        .select("id, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
+        .in("status", ["published", "upcoming"])
+        .order("sort_order", { ascending: true });
 
-      if (error || !data) {
-        setLoading(false);
-        return;
-      }
+      if (!coursesData?.length) { setLoading(false); return; }
 
-      // Get course counts per offering
+      const courseIds = coursesData.map((c) => c.id);
       const { data: ocs } = await supabase
         .from("offering_courses")
-        .select("offering_id, course_id")
-        .in("offering_id", data.map((o) => o.id));
+        .select("course_id, offering_id")
+        .in("course_id", courseIds);
 
-      const countMap: Record<string, number> = {};
-      (ocs ?? []).forEach((oc) => {
-        countMap[oc.offering_id] = (countMap[oc.offering_id] || 0) + 1;
-      });
+      const offeringIds = [...new Set((ocs ?? []).map((oc) => oc.offering_id))];
+      const { data: offerings } = offeringIds.length
+        ? await supabase
+            .from("offerings")
+            .select("id, price_inr, mrp_inr")
+            .in("id", offeringIds)
+            .eq("status", "active")
+        : { data: [] };
 
-      setOfferings(
-        data.map((o) => ({ ...o, course_count: countMap[o.id] || 0 }))
+      const ocMap: Record<string, string> = {};
+      (ocs ?? []).forEach((oc) => { if (!ocMap[oc.course_id]) ocMap[oc.course_id] = oc.offering_id; });
+
+      const offeringMap: Record<string, { price_inr: number; mrp_inr: number | null }> = {};
+      (offerings ?? []).forEach((o) => { offeringMap[o.id] = { price_inr: o.price_inr, mrp_inr: o.mrp_inr }; });
+
+      setCourses(
+        coursesData.map((c) => {
+          const offId = ocMap[c.id] ?? null;
+          const off = offId ? offeringMap[offId] : null;
+          return {
+            ...c,
+            offering_id: offId,
+            price_inr: off?.price_inr ?? null,
+            mrp_inr: off?.mrp_inr ?? null,
+          };
+        })
       );
       setLoading(false);
     };
-    fetch();
+    load();
   }, []);
 
   const filtered =
     activeFilter === "All"
-      ? offerings
-      : offerings.filter(
-          (o) => o.type?.toLowerCase() === activeFilter.toLowerCase().replace(" ", "_")
-        );
+      ? courses
+      : courses.filter((c) => c.product_tier === TIER_MAP[activeFilter]);
 
   return (
     <StudentLayout title="Browse Programs">
       <div className="space-y-8">
-        {/* Header */}
         <div>
           <h1 className="text-[32px] font-semibold leading-tight">Browse Programs</h1>
-          <p className="text-base text-muted-foreground mt-1">
-            Find your next creative skill
-          </p>
+          <p className="text-base text-muted-foreground mt-1">Find your next creative skill</p>
         </div>
 
-        {/* Filter pills */}
         <div className="flex gap-2 flex-wrap">
-          {TYPE_FILTERS.map((f) => (
+          {TIER_FILTERS.map((f) => (
             <button
               key={f}
               onClick={() => setActiveFilter(f)}
@@ -92,7 +112,6 @@ const BrowsePage = () => {
           ))}
         </div>
 
-        {/* Grid */}
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => (
@@ -100,49 +119,68 @@ const BrowsePage = () => {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <p className="text-muted-foreground text-sm py-12 text-center">
-            No programs found in this category.
-          </p>
+          <p className="text-muted-foreground text-sm py-12 text-center">No programs found in this category.</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((o) => (
+            {filtered.map((c) => (
               <div
-                key={o.id}
+                key={c.id}
                 className="bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
               >
-                <div className="aspect-video bg-surface-2">
-                  {o.thumbnail_url && (
-                    <img src={o.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                <div className="aspect-video bg-surface-2 relative">
+                  {c.thumbnail_url && (
+                    <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                  )}
+                  <div className="absolute top-2 left-2">
+                    <TierBadge tier={c.product_tier} />
+                  </div>
+                  {c.status === "upcoming" && (
+                    <div className="absolute top-2 right-2 bg-foreground/80 text-background text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">
+                      Coming Soon
+                    </div>
                   )}
                 </div>
-                <div className="p-4 flex flex-col gap-2">
-                  <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                    {o.type?.replace("_", " ")}
-                  </p>
-                  <h3 className="text-xl font-semibold line-clamp-1">{o.title}</h3>
-                  <p className="text-sm text-muted-foreground line-clamp-2">
-                    {o.description}
-                  </p>
-                  <div className="flex items-center gap-3 mt-1 font-mono text-xs text-muted-foreground">
-                    {o.course_count > 0 && <span>{o.course_count} course{o.course_count > 1 ? "s" : ""}</span>}
-                  </div>
+                <div className="p-4 flex flex-col gap-1.5">
+                  <h3 className="text-lg font-semibold line-clamp-1">{c.title}</h3>
+                  {c.instructor_display_name && (
+                    <p className="text-sm text-muted-foreground">{c.instructor_display_name}</p>
+                  )}
+                  <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>
+                  {c.duration_text && (
+                    <p className="font-mono text-xs text-muted-foreground mt-1">{c.duration_text}</p>
+                  )}
                   <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-base font-semibold">
-                        ₹{Number(o.price_inr).toLocaleString()}
-                      </span>
-                      {o.mrp_inr && Number(o.mrp_inr) > Number(o.price_inr) && (
-                        <span className="text-sm text-muted-foreground line-through">
-                          ₹{Number(o.mrp_inr).toLocaleString()}
-                        </span>
+                      {c.price_inr != null ? (
+                        <>
+                          <span className="text-base font-semibold">
+                            ₹{Number(c.price_inr).toLocaleString()}
+                          </span>
+                          {c.mrp_inr && Number(c.mrp_inr) > Number(c.price_inr) && (
+                            <span className="text-sm text-muted-foreground line-through">
+                              ₹{Number(c.mrp_inr).toLocaleString()}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Price TBA</span>
                       )}
                     </div>
-                    <Link
-                      to={`/checkout/${o.id}`}
-                      className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all"
-                    >
-                      Enroll <ArrowRight className="h-3 w-3" />
-                    </Link>
+                    {c.offering_id ? (
+                      <Link
+                        to={`/checkout/${c.offering_id}`}
+                        className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all"
+                      >
+                        Enroll <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    ) : (
+                      <Link
+                        to={`/courses/${c.id}`}
+                        className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all"
+                      >
+                        View <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>
