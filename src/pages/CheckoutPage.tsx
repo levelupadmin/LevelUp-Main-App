@@ -1,0 +1,552 @@
+import { useEffect, useState, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { Loader2, Tag, ShieldCheck, BookOpen } from "lucide-react";
+import type { Tables } from "@/integrations/supabase/types";
+
+/* ── Razorpay global type ── */
+declare global {
+  interface Window {
+    Razorpay: new (options: Record<string, unknown>) => {
+      open: () => void;
+      on: (event: string, cb: () => void) => void;
+    };
+  }
+}
+
+type Offering = Tables<"offerings"> & { mrp_inr?: number | null };
+type Bump = Tables<"offering_bumps">;
+type CustomField = Tables<"custom_field_definitions">;
+
+interface LinkedCourse {
+  course_id: string;
+  courses: { title: string; thumbnail_url: string | null } | null;
+}
+
+export default function CheckoutPage() {
+  const { offeringId } = useParams<{ offeringId: string }>();
+  const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
+
+  const [offering, setOffering] = useState<Offering | null>(null);
+  const [linkedCourses, setLinkedCourses] = useState<LinkedCourse[]>([]);
+  const [bumps, setBumps] = useState<(Bump & { offeringDetail?: Offering })[]>([]);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // User selections
+  const [selectedBumps, setSelectedBumps] = useState<Set<string>>(new Set());
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<Tables<"coupons"> | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+  const [paying, setPaying] = useState(false);
+
+  /* ── Load offering data ── */
+  useEffect(() => {
+    if (authLoading || !user || !offeringId) return;
+
+    async function load() {
+      setLoading(true);
+      const [offRes, coursesRes, bumpsRes, fieldsRes] = await Promise.all([
+        supabase.from("offerings").select("*").eq("id", offeringId!).single(),
+        supabase
+          .from("offering_courses")
+          .select("course_id, courses(title, thumbnail_url)")
+          .eq("offering_id", offeringId!) as any,
+        supabase
+          .from("offering_bumps")
+          .select("*")
+          .eq("parent_offering_id", offeringId!)
+          .order("sort_order"),
+        supabase
+          .from("custom_field_definitions")
+          .select("*")
+          .eq("offering_id", offeringId!)
+          .order("sort_order"),
+      ]);
+
+      if (offRes.error || !offRes.data) {
+        toast.error("Offering not found");
+        navigate("/home");
+        return;
+      }
+
+      setOffering(offRes.data as Offering);
+      setLinkedCourses(coursesRes.data ?? []);
+      setCustomFields(fieldsRes.data ?? []);
+
+      // Load bump offering details
+      const bumpData = bumpsRes.data ?? [];
+      if (bumpData.length > 0) {
+        const bumpOfferingIds = bumpData.map((b: Bump) => b.bump_offering_id);
+        const { data: bumpOfferings } = await supabase
+          .from("offerings")
+          .select("*")
+          .in("id", bumpOfferingIds);
+
+        const enriched = bumpData.map((b: Bump) => ({
+          ...b,
+          offeringDetail: bumpOfferings?.find(
+            (o) => o.id === b.bump_offering_id
+          ),
+        }));
+        setBumps(enriched);
+      }
+
+      setLoading(false);
+    }
+    load();
+  }, [authLoading, user, offeringId, navigate]);
+
+  /* ── Pricing ── */
+  const subtotal = (() => {
+    if (!offering) return 0;
+    let total = Number(offering.price_inr);
+    for (const bId of selectedBumps) {
+      const bump = bumps.find((b) => b.bump_offering_id === bId);
+      if (bump) {
+        total += bump.bump_price_override_inr
+          ? Number(bump.bump_price_override_inr)
+          : Number(bump.offeringDetail?.price_inr ?? 0);
+      }
+    }
+    return total;
+  })();
+
+  const discount = (() => {
+    if (!appliedCoupon) return 0;
+    if (appliedCoupon.discount_type === "percent") {
+      return Math.round(
+        (subtotal * Number(appliedCoupon.discount_value)) / 100
+      );
+    }
+    return Math.min(Number(appliedCoupon.discount_value), subtotal);
+  })();
+
+  const afterDiscount = Math.max(subtotal - discount, 0);
+
+  const gstRate = offering?.gst_mode !== "none" ? Number(offering?.gst_rate ?? 18) : 0;
+  const gstAmount = (() => {
+    if (!offering || offering.gst_mode === "none") return 0;
+    if (offering.gst_mode === "inclusive")
+      return Math.round(afterDiscount - afterDiscount / (1 + gstRate / 100));
+    return Math.round((afterDiscount * gstRate) / 100);
+  })();
+
+  const total =
+    offering?.gst_mode === "exclusive" ? afterDiscount + gstAmount : afterDiscount;
+
+  /* ── Apply coupon ── */
+  const applyCoupon = useCallback(async () => {
+    if (!couponCode.trim()) return;
+    setCouponLoading(true);
+    const { data, error } = await supabase
+      .from("coupons")
+      .select("*")
+      .eq("code", couponCode.trim().toUpperCase())
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (error || !data) {
+      toast.error("Invalid coupon code");
+      setCouponLoading(false);
+      return;
+    }
+
+    // Check validity
+    const now = new Date();
+    if (data.valid_from && new Date(data.valid_from) > now) {
+      toast.error("Coupon is not yet valid");
+      setCouponLoading(false);
+      return;
+    }
+    if (data.valid_until && new Date(data.valid_until) < now) {
+      toast.error("Coupon has expired");
+      setCouponLoading(false);
+      return;
+    }
+    if (data.max_redemptions && data.used_count >= data.max_redemptions) {
+      toast.error("Coupon usage limit reached");
+      setCouponLoading(false);
+      return;
+    }
+    if (data.applies_to_offering_id && data.applies_to_offering_id !== offeringId) {
+      toast.error("Coupon does not apply to this offering");
+      setCouponLoading(false);
+      return;
+    }
+
+    setAppliedCoupon(data);
+    toast.success("Coupon applied!");
+    setCouponLoading(false);
+  }, [couponCode, offeringId]);
+
+  /* ── Load Razorpay script ── */
+  useEffect(() => {
+    if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]'))
+      return;
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
+
+  /* ── Pay ── */
+  const handlePay = async () => {
+    if (!offering || !user) return;
+
+    // Validate custom fields
+    for (const field of customFields) {
+      if (field.is_required && !customFieldValues[field.id]?.trim()) {
+        toast.error(`Please fill in "${field.label}"`);
+        return;
+      }
+    }
+
+    setPaying(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "create-razorpay-order",
+        {
+          body: {
+            offering_id: offeringId,
+            coupon_id: appliedCoupon?.id ?? null,
+            bump_ids: Array.from(selectedBumps),
+            custom_field_values: customFieldValues,
+          },
+        }
+      );
+
+      if (error || !data?.razorpay_order_id) {
+        toast.error(data?.error ?? "Failed to create order");
+        setPaying(false);
+        return;
+      }
+
+      // Fetch user details for prefill
+      const { data: profile } = await supabase
+        .from("users")
+        .select("full_name, email, phone")
+        .eq("id", user.id)
+        .single();
+
+      const options = {
+        key: data.key_id,
+        amount: data.amount,
+        currency: data.currency,
+        name: "LevelUp",
+        description: data.offering_title,
+        order_id: data.razorpay_order_id,
+        prefill: {
+          name: profile?.full_name ?? "",
+          email: profile?.email ?? user.email ?? "",
+          contact: profile?.phone ?? "",
+        },
+        theme: { color: "#ffffff", backdrop_color: "rgba(0,0,0,0.8)" },
+        handler: async (response: {
+          razorpay_payment_id: string;
+          razorpay_order_id: string;
+          razorpay_signature: string;
+        }) => {
+          // Verify payment
+          const { data: verifyData, error: verifyErr } =
+            await supabase.functions.invoke("verify-razorpay-payment", {
+              body: {
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_signature: response.razorpay_signature,
+                payment_order_id: data.payment_order_id,
+              },
+            });
+
+          if (verifyErr || !verifyData?.success) {
+            toast.error("Payment verification failed, please contact support");
+            setPaying(false);
+            return;
+          }
+
+          toast.success(
+            `Welcome to ${verifyData.offering_title ?? offering.title}!`
+          );
+          navigate("/home");
+        },
+        modal: {
+          ondismiss: () => {
+            setPaying(false);
+          },
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", () => {
+        toast.error("Payment failed, please try again");
+        setPaying(false);
+      });
+      rzp.open();
+    } catch {
+      toast.error("Something went wrong, please try again");
+      setPaying(false);
+    }
+  };
+
+  /* ── UI ── */
+  if (loading || authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!offering) return null;
+
+  const hasMrp =
+    (offering as any).mrp_inr &&
+    Number((offering as any).mrp_inr) > Number(offering.price_inr);
+
+  return (
+    <div className="min-h-screen bg-canvas flex items-start justify-center px-4 py-12 md:py-20">
+      <Card className="w-full max-w-[560px] border-border bg-surface">
+        <CardContent className="p-6 md:p-8 space-y-6">
+          {/* ── Header ── */}
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">
+              {offering.title}
+            </h1>
+            {offering.description && (
+              <p className="text-sm text-muted-foreground mt-1">
+                {offering.description}
+              </p>
+            )}
+          </div>
+
+          <Separator className="bg-border" />
+
+          {/* ── What you get ── */}
+          {linkedCourses.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                What you'll get
+              </p>
+              {linkedCourses.map((lc) => (
+                <div
+                  key={lc.course_id}
+                  className="flex items-center gap-3 rounded-lg bg-surface-2 px-3 py-2"
+                >
+                  <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm text-foreground">
+                    {(lc.courses as any)?.title ?? "Course"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Custom fields ── */}
+          {customFields.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Your details
+              </p>
+              {customFields.map((field) => (
+                <div key={field.id}>
+                  <label className="text-sm text-foreground mb-1 block">
+                    {field.label}
+                    {field.is_required && (
+                      <span className="text-destructive ml-0.5">*</span>
+                    )}
+                  </label>
+                  <Input
+                    value={customFieldValues[field.id] ?? ""}
+                    onChange={(e) =>
+                      setCustomFieldValues((v) => ({
+                        ...v,
+                        [field.id]: e.target.value,
+                      }))
+                    }
+                    placeholder={field.label}
+                    className="bg-surface-2 border-border"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Bumps ── */}
+          {bumps.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Add to your order
+              </p>
+              {bumps.map((bump) => {
+                const price =
+                  bump.bump_price_override_inr ??
+                  bump.offeringDetail?.price_inr ??
+                  0;
+                const isSelected = selectedBumps.has(bump.bump_offering_id);
+                return (
+                  <label
+                    key={bump.id}
+                    className={`flex items-start gap-3 rounded-lg border px-4 py-3 cursor-pointer transition-colors ${
+                      isSelected
+                        ? "border-foreground/30 bg-surface-2"
+                        : "border-border hover:bg-surface-2/50"
+                    }`}
+                  >
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={(checked) => {
+                        setSelectedBumps((prev) => {
+                          const next = new Set(prev);
+                          if (checked) next.add(bump.bump_offering_id);
+                          else next.delete(bump.bump_offering_id);
+                          return next;
+                        });
+                      }}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground">
+                        {bump.headline ??
+                          bump.offeringDetail?.title ??
+                          "Add-on"}
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold text-foreground whitespace-nowrap">
+                      +₹{Number(price).toLocaleString("en-IN")}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Coupon ── */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Coupon code
+            </p>
+            {appliedCoupon ? (
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="gap-1">
+                  <Tag className="h-3 w-3" />
+                  {appliedCoupon.code}
+                </Badge>
+                <button
+                  onClick={() => {
+                    setAppliedCoupon(null);
+                    setCouponCode("");
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Remove
+                </button>
+                <span className="ml-auto text-sm text-accent-emerald font-medium">
+                  −₹{discount.toLocaleString("en-IN")}
+                </span>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                  placeholder="Enter code"
+                  className="bg-surface-2 border-border flex-1"
+                  onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={applyCoupon}
+                  disabled={couponLoading || !couponCode.trim()}
+                  className="shrink-0"
+                >
+                  {couponLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Apply"
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <Separator className="bg-border" />
+
+          {/* ── Order summary ── */}
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Subtotal</span>
+              <span className="text-foreground font-medium">
+                {hasMrp && (
+                  <span className="text-muted-foreground line-through mr-2">
+                    ₹{Number((offering as any).mrp_inr).toLocaleString("en-IN")}
+                  </span>
+                )}
+                ₹{subtotal.toLocaleString("en-IN")}
+              </span>
+            </div>
+            {discount > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Discount</span>
+                <span className="text-accent-emerald font-medium">
+                  −₹{discount.toLocaleString("en-IN")}
+                </span>
+              </div>
+            )}
+            {gstAmount > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">
+                  GST ({gstRate}%
+                  {offering.gst_mode === "inclusive" ? " incl." : ""})
+                </span>
+                <span className="text-foreground font-medium">
+                  ₹{gstAmount.toLocaleString("en-IN")}
+                </span>
+              </div>
+            )}
+            <Separator className="bg-border" />
+            <div className="flex justify-between text-base font-semibold">
+              <span className="text-foreground">Total</span>
+              <span className="text-foreground">
+                ₹{total.toLocaleString("en-IN")}
+              </span>
+            </div>
+          </div>
+
+          {/* ── Pay button ── */}
+          <Button
+            size="xl"
+            className="w-full"
+            onClick={handlePay}
+            disabled={paying || total <= 0}
+          >
+            {paying ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Processing…
+              </>
+            ) : (
+              `Pay ₹${total.toLocaleString("en-IN")}`
+            )}
+          </Button>
+
+          <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Secured by Razorpay
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
