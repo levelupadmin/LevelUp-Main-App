@@ -11,9 +11,9 @@ import Signup from "@/pages/Signup";
 import Home from "@/pages/Home";
 import CourseDetail from "@/pages/CourseDetail";
 import ChapterViewer from "@/pages/ChapterViewer";
+import CheckoutPage from "@/pages/CheckoutPage";
 import {
   Profile,
-  Checkout,
   BrowsePage,
   CommunityPage,
   MyCoursesPage,
