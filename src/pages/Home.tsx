@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
@@ -254,54 +255,96 @@ const MasterclassShowcase = () => {
 
 // ── Section 6: Browse Programs ──
 const BrowsePrograms = () => {
-  const [offerings, setOfferings] = useState<any[]>([]);
+  const [courses, setCourses] = useState<any[]>([]);
 
   useEffect(() => {
-    const fetch = async () => {
-      const { data: enrolments } = await supabase
-        .from("enrolments")
-        .select("offering_id")
-        .eq("status", "active");
+    const load = async () => {
+      const { data: coursesData } = await supabase
+        .from("courses")
+        .select("id, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
+        .in("status", ["published", "upcoming"])
+        .order("sort_order", { ascending: true })
+        .limit(6);
 
-      const enrolledIds = (enrolments ?? []).map((e) => e.offering_id);
+      if (!coursesData?.length) return;
 
-      let query = supabase
-        .from("offerings")
-        .select("id, title, description, price_inr, thumbnail_url, type")
-        .eq("status", "active")
-        .order("price_inr", { ascending: true });
+      const courseIds = coursesData.map((c) => c.id);
+      const { data: ocs } = await supabase
+        .from("offering_courses")
+        .select("course_id, offering_id")
+        .in("course_id", courseIds);
 
-      if (enrolledIds.length > 0) {
-        query = query.not("id", "in", `(${enrolledIds.join(",")})`);
-      }
+      const offeringIds = [...new Set((ocs ?? []).map((oc) => oc.offering_id))];
+      const { data: offerings } = offeringIds.length
+        ? await supabase.from("offerings").select("id, price_inr, mrp_inr").in("id", offeringIds).eq("status", "active")
+        : { data: [] };
 
-      const { data } = await query;
-      setOfferings(data ?? []);
+      const ocMap: Record<string, string> = {};
+      (ocs ?? []).forEach((oc) => { if (!ocMap[oc.course_id]) ocMap[oc.course_id] = oc.offering_id; });
+      const offMap: Record<string, any> = {};
+      (offerings ?? []).forEach((o) => { offMap[o.id] = o; });
+
+      setCourses(coursesData.map((c) => {
+        const offId = ocMap[c.id];
+        const off = offId ? offMap[offId] : null;
+        return { ...c, offering_id: offId, price_inr: off?.price_inr, mrp_inr: off?.mrp_inr };
+      }));
     };
-    fetch();
+    load();
   }, []);
 
-  if (!offerings.length) return null;
+  if (!courses.length) return null;
 
   return (
     <section>
-      <h2 className="text-lg font-semibold mb-4">Browse Programs</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">Browse Programs</h2>
+        <Link to="/browse" className="text-sm text-cream flex items-center gap-1">
+          View all <ArrowRight className="h-3 w-3" />
+        </Link>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {offerings.map((o) => (
+        {courses.map((c) => (
           <Link
-            key={o.id}
-            to={`/checkout/${o.id}`}
+            key={c.id}
+            to={c.offering_id ? `/checkout/${c.offering_id}` : `/courses/${c.id}`}
             className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
           >
-            <div className="aspect-video bg-surface-2">
-              {o.thumbnail_url && <img src={o.thumbnail_url} alt="" className="w-full h-full object-cover" />}
+            <div className="aspect-video bg-surface-2 relative">
+              {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
+              <div className="absolute top-2 left-2">
+                <span className={cn(
+                  "inline-block px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase",
+                  c.product_tier === "live_cohort" ? "bg-red-600 text-white" :
+                  c.product_tier === "masterclass" ? "bg-amber-500 text-black" :
+                  c.product_tier === "advanced_program" ? "bg-amber-400 text-black" :
+                  "bg-cream text-cream-text"
+                )}>
+                  {c.product_tier === "live_cohort" ? "LIVE" :
+                   c.product_tier === "masterclass" ? "MASTERCLASS" :
+                   c.product_tier === "advanced_program" ? "PROGRAM" : "WORKSHOP"}
+                </span>
+              </div>
             </div>
             <div className="p-4">
-              <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">{o.type}</p>
-              <h3 className="text-base font-semibold mt-1 line-clamp-1">{o.title}</h3>
-              <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{o.description}</p>
-              <div className="flex items-center justify-between mt-4">
-                <span className="text-base font-semibold">₹{o.price_inr?.toLocaleString()}</span>
+              <h3 className="text-base font-semibold mt-1 line-clamp-1">{c.title}</h3>
+              {c.instructor_display_name && (
+                <p className="text-xs text-muted-foreground mt-0.5">{c.instructor_display_name}</p>
+              )}
+              {c.duration_text && (
+                <p className="text-xs font-mono text-muted-foreground mt-1">{c.duration_text}</p>
+              )}
+              <div className="flex items-center justify-between mt-3">
+                {c.price_inr != null ? (
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-base font-semibold">₹{Number(c.price_inr).toLocaleString()}</span>
+                    {c.mrp_inr && Number(c.mrp_inr) > Number(c.price_inr) && (
+                      <span className="text-sm text-muted-foreground line-through">₹{Number(c.mrp_inr).toLocaleString()}</span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Price TBA</span>
+                )}
                 <span className="text-sm text-cream flex items-center gap-1">
                   Enroll <ArrowRight className="h-3 w-3" />
                 </span>

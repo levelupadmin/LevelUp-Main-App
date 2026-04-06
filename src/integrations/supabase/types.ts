@@ -775,6 +775,7 @@ export type Database = {
           description: string | null
           drm_enabled: boolean
           duration_minutes: number | null
+          duration_text: string | null
           hero_image_url: string | null
           id: string
           instructor_avatar_url: string | null
@@ -782,11 +783,13 @@ export type Database = {
           instructor_display_name: string | null
           language: string | null
           level: string | null
+          product_tier: string
           published_at: string | null
           rating_avg: number | null
           rating_count: number | null
           show_as_locked: boolean
           slug: string
+          sort_order: number
           status: string
           student_count: number | null
           subtitle: string | null
@@ -804,6 +807,7 @@ export type Database = {
           description?: string | null
           drm_enabled?: boolean
           duration_minutes?: number | null
+          duration_text?: string | null
           hero_image_url?: string | null
           id?: string
           instructor_avatar_url?: string | null
@@ -811,11 +815,13 @@ export type Database = {
           instructor_display_name?: string | null
           language?: string | null
           level?: string | null
+          product_tier?: string
           published_at?: string | null
           rating_avg?: number | null
           rating_count?: number | null
           show_as_locked?: boolean
           slug: string
+          sort_order?: number
           status?: string
           student_count?: number | null
           subtitle?: string | null
@@ -833,6 +839,7 @@ export type Database = {
           description?: string | null
           drm_enabled?: boolean
           duration_minutes?: number | null
+          duration_text?: string | null
           hero_image_url?: string | null
           id?: string
           instructor_avatar_url?: string | null
@@ -840,11 +847,13 @@ export type Database = {
           instructor_display_name?: string | null
           language?: string | null
           level?: string | null
+          product_tier?: string
           published_at?: string | null
           rating_avg?: number | null
           rating_count?: number | null
           show_as_locked?: boolean
           slug?: string
+          sort_order?: number
           status?: string
           student_count?: number | null
           subtitle?: string | null
