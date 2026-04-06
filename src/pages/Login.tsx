@@ -194,7 +194,7 @@ const Login = () => {
 
       {/* Right hero carousel */}
       <div className="hidden lg:flex flex-1 relative overflow-hidden">
-        <div className={`absolute inset-0 bg-gradient-to-br ${slide.gradient} transition-all duration-700`}>
+        <div className="absolute inset-0 bg-gradient-to-br from-black/60 to-transparent transition-all duration-700">
           {slide.image && (
             <img
               src={slide.image}
