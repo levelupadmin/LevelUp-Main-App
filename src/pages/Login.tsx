@@ -94,7 +94,7 @@ const Login = () => {
     navigate(from, { replace: true });
   };
 
-  const slide = SLIDES[activeSlide];
+  const slide = slides[activeSlide];
 
   return (
     <div className="flex min-h-screen bg-canvas">
