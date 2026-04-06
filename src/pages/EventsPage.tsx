@@ -7,7 +7,7 @@ import usePageTitle from "@/hooks/usePageTitle";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import { Globe, MapPin, Loader2 } from "lucide-react";
+import { Globe, MapPin, Loader2, Calendar } from "lucide-react";
 
 const EventsPage = () => {
   usePageTitle("Events");
