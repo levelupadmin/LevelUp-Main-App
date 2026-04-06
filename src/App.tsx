@@ -28,6 +28,9 @@ import AdminOfferings from "@/pages/admin/AdminOfferings";
 import AdminEnrolments from "@/pages/admin/AdminEnrolments";
 import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminCoupons from "@/pages/admin/AdminCoupons";
+import AdminHeroSlides from "@/pages/admin/AdminHeroSlides";
+import AdminEvents from "@/pages/admin/AdminEvents";
+import EventsPage from "@/pages/EventsPage";
 
 import {
   CommunityPage,
