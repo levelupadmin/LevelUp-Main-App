@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Users } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, X } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -26,9 +26,6 @@ const EMPTY_FORM = {
   venue_label: "Zoom",
   venue_link: "",
   city: "",
-  host_name: "",
-  host_title: "",
-  host_avatar_url: "",
   pricing_type: "free",
   price_inr: 0,
   max_capacity: 0,
@@ -38,6 +35,8 @@ const EMPTY_FORM = {
   status: "upcoming",
 };
 
+const EMPTY_SPEAKER = { name: "", title: "", avatar_url: "" };
+
 const AdminEvents = () => {
   const { toast } = useToast();
   const [events, setEvents] = useState<any[]>([]);
@@ -45,12 +44,14 @@ const AdminEvents = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [speakers, setSpeakers] = useState([{ ...EMPTY_SPEAKER }]);
   const [saving, setSaving] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [courses, setCourses] = useState<any[]>([]);
   const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>([]);
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [showRegs, setShowRegs] = useState<string | null>(null);
+  const [regCounts, setRegCounts] = useState<Record<string, number>>({});
 
   const load = async () => {
     const { data } = await supabase
@@ -59,6 +60,21 @@ const AdminEvents = () => {
       .order("starts_at", { ascending: false });
     setEvents(data ?? []);
     setLoading(false);
+
+    // Fetch registration counts
+    const eventIds = (data ?? []).map((e: any) => e.id);
+    if (eventIds.length) {
+      const { data: regs } = await supabase
+        .from("event_registrations")
+        .select("event_id")
+        .in("event_id", eventIds)
+        .eq("status", "registered");
+      const countMap: Record<string, number> = {};
+      (regs ?? []).forEach((r: any) => {
+        countMap[r.event_id] = (countMap[r.event_id] || 0) + 1;
+      });
+      setRegCounts(countMap);
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -70,6 +86,7 @@ const AdminEvents = () => {
   const openNew = () => {
     setEditingId(null);
     setForm(EMPTY_FORM);
+    setSpeakers([{ ...EMPTY_SPEAKER }]);
     setSelectedCourseIds([]);
     setDialogOpen(true);
   };
@@ -88,9 +105,6 @@ const AdminEvents = () => {
       venue_label: ev.venue_label || "",
       venue_link: ev.venue_link || "",
       city: ev.city || "",
-      host_name: ev.host_name || "",
-      host_title: ev.host_title || "",
-      host_avatar_url: ev.host_avatar_url || "",
       pricing_type: ev.pricing_type || "free",
       price_inr: ev.price_inr || 0,
       max_capacity: ev.max_capacity || 0,
@@ -99,17 +113,56 @@ const AdminEvents = () => {
       sort_order: ev.sort_order || 0,
       status: ev.status || "upcoming",
     });
+
+    // Load speakers
+    const { data: spks } = await supabase
+      .from("event_speakers")
+      .select("name, title, avatar_url")
+      .eq("event_id", ev.id)
+      .order("sort_order");
+
+    if (spks && spks.length > 0) {
+      setSpeakers(spks.map((s: any) => ({
+        name: s.name || "",
+        title: s.title || "",
+        avatar_url: s.avatar_url || "",
+      })));
+    } else {
+      setSpeakers([{
+        name: ev.host_name || "",
+        title: ev.host_title || "",
+        avatar_url: ev.host_avatar_url || "",
+      }]);
+    }
+
     const { data: efc } = await supabase.from("event_free_courses").select("course_id").eq("event_id", ev.id);
     setSelectedCourseIds((efc ?? []).map((r: any) => r.course_id));
     setDialogOpen(true);
   };
 
   const handleSave = async () => {
-    if (!form.title.trim() || !form.host_name.trim() || !form.starts_at) {
-      toast({ title: "Title, host, and start date are required", variant: "destructive" });
+    const validSpeakers = speakers.filter((s) => s.name.trim());
+    if (!form.title.trim() || !form.starts_at) {
+      toast({ title: "Title and start date are required", variant: "destructive" });
       return;
     }
+    if (validSpeakers.length === 0) {
+      toast({ title: "At least one speaker with a name is required", variant: "destructive" });
+      return;
+    }
+    if (form.pricing_type !== "free" && (!form.price_inr || form.price_inr <= 0)) {
+      toast({ title: "Price must be greater than 0 for paid events", variant: "destructive" });
+      return;
+    }
+    if (form.max_capacity && form.max_capacity < 0) {
+      toast({ title: "Max capacity must be positive", variant: "destructive" });
+      return;
+    }
+
     setSaving(true);
+
+    // Use first speaker as host_name for backward compat
+    const firstSpeaker = validSpeakers[0];
     const payload: any = {
       title: form.title,
       description: form.description || null,
@@ -122,9 +175,9 @@ const AdminEvents = () => {
       venue_label: form.venue_label || null,
       venue_link: form.venue_link || null,
       city: form.city || null,
-      host_name: form.host_name,
-      host_title: form.host_title || null,
-      host_avatar_url: form.host_avatar_url || null,
+      host_name: firstSpeaker.name,
+      host_title: firstSpeaker.title || null,
+      host_avatar_url: firstSpeaker.avatar_url || null,
       pricing_type: form.pricing_type,
       price_inr: form.pricing_type === "free" ? null : (form.price_inr || null),
       max_capacity: form.max_capacity || null,
@@ -161,6 +214,22 @@ const AdminEvents = () => {
       }
     }
 
+    // Save speakers
+    if (eventId) {
+      await supabase.from("event_speakers").delete().eq("event_id", eventId);
+      if (validSpeakers.length > 0) {
+        await supabase.from("event_speakers").insert(
+          validSpeakers.map((s, idx) => ({
+            event_id: eventId!,
+            name: s.name,
+            title: s.title || null,
+            avatar_url: s.avatar_url || null,
+            sort_order: idx,
+          }))
+        );
+      }
+    }
+
     toast({ title: editingId ? "Event updated" : "Event created" });
     setDialogOpen(false);
     setSaving(false);
@@ -188,6 +257,12 @@ const AdminEvents = () => {
 
   const toggleCourse = (id: string) => {
     setSelectedCourseIds((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
+  };
+
+  const updateSpeaker = (idx: number, key: string, value: string) => {
+    const updated = [...speakers];
+    updated[idx] = { ...updated[idx], [key]: value };
+    setSpeakers(updated);
   };
 
   const field = (label: string, key: string, type: "text" | "number" | "datetime-local" = "text") => (
@@ -231,15 +306,16 @@ const AdminEvents = () => {
               <TableHead>Date</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Pricing</TableHead>
+              <TableHead>Registrations</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No events found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No events found</TableCell></TableRow>
             ) : (
               filtered.map((ev) => (
                 <TableRow key={ev.id}>
@@ -247,6 +323,9 @@ const AdminEvents = () => {
                   <TableCell className="font-mono text-xs">{format(new Date(ev.starts_at), "MMM d, yyyy · h:mm a")}</TableCell>
                   <TableCell className="capitalize text-xs">{ev.event_type}</TableCell>
                   <TableCell className="capitalize text-xs">{ev.pricing_type.replace("_", " ")}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {regCounts[ev.id] || 0}{ev.max_capacity ? `/${ev.max_capacity}` : ""}
+                  </TableCell>
                   <TableCell>
                     <span className={cn(
                       "px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono",
@@ -358,13 +437,53 @@ const AdminEvents = () => {
             {field("Venue Link (join URL)", "venue_link")}
             {(form.event_type === "offline" || form.event_type === "hybrid") && field("City", "city")}
 
+            {/* Speakers */}
             <div className="border-t border-border pt-4">
-              <p className="text-sm font-medium mb-2">Host / Speaker</p>
-              <div className="grid grid-cols-2 gap-3">
-                {field("Host Name", "host_name")}
-                {field("Host Title", "host_title")}
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-medium">Speakers / Hosts</p>
+                {speakers.length < 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setSpeakers([...speakers, { ...EMPTY_SPEAKER }])}
+                    className="text-xs text-cream hover:underline"
+                  >
+                    + Add Speaker
+                  </button>
+                )}
               </div>
-              {field("Host Avatar URL", "host_avatar_url")}
+              <div className="space-y-4">
+                {speakers.map((speaker, idx) => (
+                  <div key={idx} className="bg-surface-2 border border-border rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-mono text-muted-foreground">Speaker {idx + 1}</p>
+                      {speakers.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setSpeakers(speakers.filter((_, i) => i !== idx))}
+                          className="text-xs text-destructive hover:underline flex items-center gap-0.5"
+                        >
+                          <X className="h-3 w-3" /> Remove
+                        </button>
+                      )}
+                    </div>
+                    <Input
+                      placeholder="Name *"
+                      value={speaker.name}
+                      onChange={(e) => updateSpeaker(idx, "name", e.target.value)}
+                    />
+                    <Input
+                      placeholder="Title (e.g. Product Manager at Razorpay)"
+                      value={speaker.title}
+                      onChange={(e) => updateSpeaker(idx, "title", e.target.value)}
+                    />
+                    <Input
+                      placeholder="Avatar URL"
+                      value={speaker.avatar_url}
+                      onChange={(e) => updateSpeaker(idx, "avatar_url", e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="border-t border-border pt-4">
