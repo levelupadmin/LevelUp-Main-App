@@ -217,66 +217,56 @@ const UpcomingEvents = () => {
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Upcoming Events</h2>
-        <Link to="/events" className="text-sm text-cream flex items-center gap-1">View all <ArrowRight className="h-3 w-3" /></Link>
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="text-lg font-semibold">Upcoming events</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Get facetime with some of the brightest minds in film, design, and creative tech.</p>
+        </div>
+        <Link to="/events" className="text-sm text-cream flex items-center gap-1 flex-shrink-0">View all events <ArrowRight className="h-3 w-3" /></Link>
       </div>
       <div className="flex gap-4 overflow-x-auto snap-x hide-scrollbar pb-2 lg:grid lg:grid-cols-4 lg:overflow-visible">
         {events.map((ev) => {
           const isRegistered = myRegs.has(ev.id);
           const isSoldOut = ev.status === "sold_out";
           return (
-            <div key={ev.id} className="min-w-[280px] max-w-[320px] lg:max-w-none bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start">
-              <div className="aspect-video bg-surface-2 relative">
+            <div key={ev.id} className="min-w-[300px] max-w-[340px] lg:max-w-none bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start flex flex-col">
+              {/* Banner with overlay title */}
+              <div className="relative aspect-[4/3]">
                 {ev.image_url && <img src={ev.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                 {isSoldOut && (
-                  <div className="absolute top-2 right-2 bg-destructive text-destructive-foreground text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded font-mono">
+                  <div className="absolute top-3 right-3 bg-destructive/90 text-destructive-foreground text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
                     Sold Out
                   </div>
                 )}
-                <div className="absolute top-2 left-2 bg-canvas/80 backdrop-blur px-2 py-1 rounded font-mono text-xs">
-                  {format(new Date(ev.starts_at), "EEE, MMM d")}
+                <div className="absolute bottom-4 left-4 right-4">
+                  <h3 className="text-base font-semibold text-white line-clamp-2 leading-snug">{ev.title}</h3>
                 </div>
               </div>
-              <div className="p-4">
-                <h3 className="text-sm font-semibold line-clamp-2">{ev.title}</h3>
-                <div className="flex items-center justify-between mt-2">
-                  <div className="flex items-center gap-2">
+              {/* Host + meta row */}
+              <div className="p-4 flex items-center justify-between mt-auto">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {ev.host_avatar_url ? (
+                    <img src={ev.host_avatar_url} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0 border border-border" />
+                  ) : (
                     <InitialsAvatar name={ev.host_name} size={32} />
-                    <span className="text-xs text-muted-foreground truncate max-w-[100px]">{ev.host_name}</span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{ev.host_name}</p>
+                    {ev.host_title && <p className="text-[11px] text-muted-foreground truncate">{ev.host_title}</p>}
                   </div>
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                </div>
+                <div className="flex flex-col items-end gap-0.5 flex-shrink-0 ml-3">
+                  <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                    <Calendar className="h-3 w-3" /> {format(new Date(ev.starts_at), "EEE, MMM d")}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                     {ev.event_type === "online" || ev.venue_type !== "in_person" ? (
                       <><Globe className="h-3 w-3" /> Online</>
                     ) : (
-                      <><MapPin className="h-3 w-3" /> {ev.city || "Offline"}</>
+                      <><MapPin className="h-3 w-3" /> {ev.city || "In-Person"}</>
                     )}
                   </span>
-                </div>
-                <div className="mt-3 pt-2 border-t border-border">
-                  {isRegistered ? (
-                    <span className="text-xs text-muted-foreground">Registered ✓</span>
-                  ) : isSoldOut ? (
-                    <span className="text-xs text-muted-foreground">Sold out</span>
-                  ) : ev.pricing_type === "free" ? (
-                    <button
-                      onClick={() => handleRegisterFree(ev.id)}
-                      disabled={registering === ev.id}
-                      className="text-xs font-medium text-cream hover:underline flex items-center gap-1"
-                    >
-                      {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                      Register Free
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleRegisterFree(ev.id)}
-                      disabled={registering === ev.id}
-                      className="text-xs font-medium text-cream hover:underline flex items-center gap-1"
-                    >
-                      {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                      Register {ev.price_inr ? `· ₹${(ev.price_inr / 100).toLocaleString()}` : ""}
-                    </button>
-                  )}
                 </div>
               </div>
             </div>

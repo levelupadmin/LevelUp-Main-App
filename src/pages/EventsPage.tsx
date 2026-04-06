@@ -7,7 +7,7 @@ import usePageTitle from "@/hooks/usePageTitle";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import { Globe, MapPin, Loader2 } from "lucide-react";
+import { Globe, MapPin, Loader2, Calendar } from "lucide-react";
 
 const EventsPage = () => {
   usePageTitle("Events");
@@ -97,28 +97,45 @@ const EventsPage = () => {
             {displayed.map((ev) => {
               const isRegistered = myRegs.has(ev.id);
               const isSoldOut = ev.status === "sold_out";
+              const isCancelled = ev.status === "cancelled";
               const isPast = tab === "past";
               return (
-                <div key={ev.id} className={cn("bg-surface border border-border rounded-xl overflow-hidden card-hover", isPast && "opacity-60")}>
-                  <div className="aspect-video bg-surface-2 relative">
+                <div key={ev.id} className={cn("bg-surface border border-border rounded-xl overflow-hidden card-hover flex flex-col", isPast && "opacity-60")}>
+                  {/* Banner with overlay */}
+                  <div className="relative aspect-[4/3]">
                     {ev.image_url && <img src={ev.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                     {isSoldOut && (
-                      <div className="absolute top-2 right-2 bg-destructive text-destructive-foreground text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded font-mono">
+                      <div className="absolute top-3 right-3 bg-destructive/90 text-destructive-foreground text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
                         Sold Out
                       </div>
                     )}
-                    <div className="absolute top-2 left-2 bg-canvas/80 backdrop-blur px-2 py-1 rounded font-mono text-xs">
-                      {format(new Date(ev.starts_at), "EEE, MMM d · h:mm a")}
+                    {isCancelled && (
+                      <div className="absolute top-3 right-3 bg-muted text-muted-foreground text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
+                        Cancelled
+                      </div>
+                    )}
+                    <div className="absolute bottom-4 left-4 right-4">
+                      <h3 className="text-base font-semibold text-white line-clamp-2 leading-snug">{ev.title}</h3>
                     </div>
                   </div>
-                  <div className="p-4">
-                    <h3 className="text-base font-semibold line-clamp-2">{ev.title}</h3>
-                    <div className="flex items-center justify-between mt-3">
-                      <div className="flex items-center gap-2">
+                  {/* Host + meta */}
+                  <div className="p-4 flex items-center justify-between mt-auto">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {ev.host_avatar_url ? (
+                        <img src={ev.host_avatar_url} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0 border border-border" />
+                      ) : (
                         <InitialsAvatar name={ev.host_name} size={32} />
-                        <span className="text-xs text-muted-foreground">{ev.host_name}</span>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{ev.host_name}</p>
                       </div>
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    </div>
+                    <div className="flex flex-col items-end gap-0.5 flex-shrink-0 ml-3">
+                      <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                        <Calendar className="h-3 w-3" /> {format(new Date(ev.starts_at), "EEE, MMM d")}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                         {ev.event_type === "online" || ev.venue_type !== "in_person" ? (
                           <><Globe className="h-3 w-3" /> Online</>
                         ) : (
@@ -126,8 +143,11 @@ const EventsPage = () => {
                         )}
                       </span>
                     </div>
-                    {!isPast && (
-                      <div className="mt-3 pt-3 border-t border-border">
+                  </div>
+                  {/* CTA */}
+                  {!isPast && !isCancelled && (
+                    <div className="px-4 pb-4 pt-0">
+                      <div className="pt-3 border-t border-border">
                         {isRegistered ? (
                           <span className="text-sm text-muted-foreground font-medium">Registered ✓</span>
                         ) : isSoldOut ? (
@@ -136,7 +156,7 @@ const EventsPage = () => {
                           <button
                             onClick={() => handleRegisterFree(ev.id)}
                             disabled={registering === ev.id}
-                            className="text-sm font-medium text-cream hover:underline flex items-center gap-1"
+                            className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
                           >
                             {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
                             Register Free
@@ -145,15 +165,15 @@ const EventsPage = () => {
                           <button
                             onClick={() => handleRegisterFree(ev.id)}
                             disabled={registering === ev.id}
-                            className="text-sm font-medium text-cream hover:underline flex items-center gap-1"
+                            className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
                           >
                             {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
                             Register {ev.price_inr ? `· ₹${(ev.price_inr / 100).toLocaleString()}` : ""}
                           </button>
                         )}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
