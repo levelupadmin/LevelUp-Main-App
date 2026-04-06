@@ -61,6 +61,7 @@ const App = () => (
             <Route path="/community" element={<RequireAuth><CommunityPage /></RequireAuth>} />
             <Route path="/my-courses" element={<RequireAuth><MyCoursesPage /></RequireAuth>} />
             <Route path="/events" element={<RequireAuth><EventsPage /></RequireAuth>} />
+            <Route path="/events/:eventId" element={<RequireAuth><EventDetail /></RequireAuth>} />
 
             {/* Admin routes */}
             <Route path="/admin" element={<RequireAuth><RequireRole role="admin"><AdminDashboard /></RequireRole></RequireAuth>} />
