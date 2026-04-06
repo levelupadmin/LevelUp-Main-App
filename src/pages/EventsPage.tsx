@@ -125,7 +125,7 @@ const EventsPage = () => {
                       {ev.host_avatar_url ? (
                         <img src={ev.host_avatar_url} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0 border border-border" />
                       ) : (
-                        <InitialsAvatar name={ev.host_name} size={36} />
+                        <InitialsAvatar name={ev.host_name} size={32} />
                       )}
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{ev.host_name}</p>
