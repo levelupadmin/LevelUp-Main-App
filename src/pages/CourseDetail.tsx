@@ -59,7 +59,6 @@ const CourseDetail = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
   const { user, profile, loading: authLoading } = useAuth();
-  usePageTitle(course?.title ?? "Course");
 
   const [course, setCourse] = useState<Course | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -69,6 +68,8 @@ const CourseDetail = () => {
   const [dripMode, setDripMode] = useState("no_drip");
   const [loading, setLoading] = useState(true);
   const [categoryName, setCategoryName] = useState<string | null>(null);
+
+  usePageTitle(course?.title ?? "Course");
 
   useEffect(() => {
     if (!courseId || authLoading) return;

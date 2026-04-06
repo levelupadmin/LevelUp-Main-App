@@ -36,6 +36,7 @@ export default function CheckoutPage() {
   const { offeringId } = useParams<{ offeringId: string }>();
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
+  usePageTitle("Checkout");
 
   const [offering, setOffering] = useState<Offering | null>(null);
   const [linkedCourses, setLinkedCourses] = useState<LinkedCourse[]>([]);
