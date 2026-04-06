@@ -408,19 +408,22 @@ const NewMembers = () => {
 };
 
 // ── Main Home Page ──
-const Home = () => (
-  <StudentLayout title="">
-    <div className="space-y-8">
-      <HeroCarousel />
-      <HeroWelcome />
-      <ContinueLearning />
-      <PopularCommunity />
-      <UpcomingEvents />
-      <MasterclassShowcase />
-      <BrowsePrograms />
-      <NewMembers />
-    </div>
-  </StudentLayout>
-);
+const Home = () => {
+  usePageTitle("Dashboard");
+  return (
+    <StudentLayout title="">
+      <div className="space-y-8">
+        <HeroCarousel />
+        <HeroWelcome />
+        <ContinueLearning />
+        <PopularCommunity />
+        <UpcomingEvents />
+        <MasterclassShowcase />
+        <BrowsePrograms />
+        <NewMembers />
+      </div>
+    </StudentLayout>
+  );
+};
 
 export default Home;
