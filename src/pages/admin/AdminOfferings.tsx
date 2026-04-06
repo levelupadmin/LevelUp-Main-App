@@ -126,6 +126,21 @@ const AdminOfferings = () => {
         await supabase.from("offering_courses").insert(
           linkedCourseIds.map((cid) => ({ offering_id: offId!, course_id: cid }))
         );
+
+        // Auto-set primary_offering_id for courses that don't have one yet
+        const { data: coursesWithoutPrimary } = await supabase
+          .from("courses")
+          .select("id, primary_offering_id")
+          .in("id", linkedCourseIds)
+          .is("primary_offering_id", null) as any;
+
+        if (coursesWithoutPrimary?.length) {
+          await Promise.all(
+            coursesWithoutPrimary.map((c: any) =>
+              supabase.from("courses").update({ primary_offering_id: offId } as any).eq("id", c.id)
+            )
+          );
+        }
       }
     }
 
