@@ -1054,6 +1054,165 @@ export type Database = {
           },
         ]
       }
+      event_free_courses: {
+        Row: {
+          course_id: string
+          event_id: string
+          id: string
+        }
+        Insert: {
+          course_id: string
+          event_id: string
+          id?: string
+        }
+        Update: {
+          course_id?: string
+          event_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_free_courses_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_free_courses_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      event_registrations: {
+        Row: {
+          amount_paid: number | null
+          event_id: string
+          id: string
+          payment_id: string | null
+          registered_at: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          amount_paid?: number | null
+          event_id: string
+          id?: string
+          payment_id?: string | null
+          registered_at?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          amount_paid?: number | null
+          event_id?: string
+          id?: string
+          payment_id?: string | null
+          registered_at?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_registrations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_registrations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      events: {
+        Row: {
+          city: string | null
+          created_at: string
+          description: string | null
+          duration_minutes: number | null
+          ends_at: string | null
+          event_type: string
+          host_avatar_url: string | null
+          host_name: string
+          host_title: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          is_featured: boolean
+          max_capacity: number | null
+          price_inr: number | null
+          pricing_type: string
+          sort_order: number
+          starts_at: string
+          status: string
+          title: string
+          updated_at: string
+          venue_label: string | null
+          venue_link: string | null
+          venue_type: string
+        }
+        Insert: {
+          city?: string | null
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number | null
+          ends_at?: string | null
+          event_type?: string
+          host_avatar_url?: string | null
+          host_name: string
+          host_title?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          is_featured?: boolean
+          max_capacity?: number | null
+          price_inr?: number | null
+          pricing_type?: string
+          sort_order?: number
+          starts_at: string
+          status?: string
+          title: string
+          updated_at?: string
+          venue_label?: string | null
+          venue_link?: string | null
+          venue_type?: string
+        }
+        Update: {
+          city?: string | null
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number | null
+          ends_at?: string | null
+          event_type?: string
+          host_avatar_url?: string | null
+          host_name?: string
+          host_title?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          is_featured?: boolean
+          max_capacity?: number | null
+          price_inr?: number | null
+          pricing_type?: string
+          sort_order?: number
+          starts_at?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          venue_label?: string | null
+          venue_link?: string | null
+          venue_type?: string
+        }
+        Relationships: []
+      }
       hero_slides: {
         Row: {
           category_label: string
@@ -1061,12 +1220,15 @@ export type Database = {
           cta_link: string
           cta_text: string
           duration_label: string | null
+          expires_at: string | null
           gradient_class: string
           id: string
           image_url: string | null
           is_active: boolean
           next_batch_label: string | null
+          placement: string
           sort_order: number
+          starts_at: string | null
           student_count_label: string | null
           subtitle: string | null
           title_accent: string
@@ -1079,12 +1241,15 @@ export type Database = {
           cta_link?: string
           cta_text?: string
           duration_label?: string | null
+          expires_at?: string | null
           gradient_class?: string
           id?: string
           image_url?: string | null
           is_active?: boolean
           next_batch_label?: string | null
+          placement?: string
           sort_order?: number
+          starts_at?: string | null
           student_count_label?: string | null
           subtitle?: string | null
           title_accent?: string
@@ -1097,12 +1262,15 @@ export type Database = {
           cta_link?: string
           cta_text?: string
           duration_label?: string | null
+          expires_at?: string | null
           gradient_class?: string
           id?: string
           image_url?: string | null
           is_active?: boolean
           next_batch_label?: string | null
+          placement?: string
           sort_order?: number
+          starts_at?: string | null
           student_count_label?: string | null
           subtitle?: string | null
           title_accent?: string
