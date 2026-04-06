@@ -296,6 +296,8 @@ const AdminCourseCurriculum = () => {
                               <SelectItem value="video">Video</SelectItem>
                               <SelectItem value="text">Text / Article</SelectItem>
                               <SelectItem value="pdf">PDF</SelectItem>
+                              <SelectItem value="image">Image</SelectItem>
+                              <SelectItem value="embedded">Embedded Link</SelectItem>
                               <SelectItem value="quiz">Quiz</SelectItem>
                             </SelectContent>
                           </Select>
@@ -304,10 +306,31 @@ const AdminCourseCurriculum = () => {
                           <label className="block text-xs font-medium mb-1">Description</label>
                           <Textarea value={ch.description} onChange={(e) => updateChapter(sIdx, cIdx, { description: e.target.value })} rows={2} />
                         </div>
-                        {(ch.content_type === "video" || ch.content_type === "pdf") && (
+                        {(ch.content_type === "video" || ch.content_type === "pdf" || ch.content_type === "image") && (
                           <div>
-                            <label className="block text-xs font-medium mb-1">{ch.content_type === "video" ? "Video URL" : "PDF URL"}</label>
-                            <Input value={ch.media_url} onChange={(e) => updateChapter(sIdx, cIdx, { media_url: e.target.value })} />
+                            <label className="block text-xs font-medium mb-1">
+                              {ch.content_type === "video" ? "Video URL (Vimeo, YouTube, or embed URL)" :
+                               ch.content_type === "pdf" ? "PDF URL" : "Image URL"}
+                            </label>
+                            <Input
+                              value={ch.media_url}
+                              onChange={(e) => updateChapter(sIdx, cIdx, { media_url: e.target.value })}
+                              placeholder={
+                                ch.content_type === "video" ? "https://vimeo.com/123456789" :
+                                ch.content_type === "pdf" ? "https://example.com/document.pdf" :
+                                "https://example.com/image.jpg"
+                              }
+                            />
+                          </div>
+                        )}
+                        {ch.content_type === "embedded" && (
+                          <div>
+                            <label className="block text-xs font-medium mb-1">Embed URL</label>
+                            <Input
+                              value={ch.embed_url}
+                              onChange={(e) => updateChapter(sIdx, cIdx, { embed_url: e.target.value })}
+                              placeholder="https://example.com/embed/..."
+                            />
                           </div>
                         )}
                         {ch.content_type === "text" && (

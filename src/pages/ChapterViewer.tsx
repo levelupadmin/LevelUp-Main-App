@@ -430,7 +430,7 @@ const ChapterViewer = () => {
               )}
               {chapter.article_body && (
                 <div className="prose prose-invert prose-sm max-w-none">
-                  <div dangerouslySetInnerHTML={{ __html: chapter.article_body }} />
+                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(chapter.article_body) }} />
                 </div>
               )}
             </TabsContent>
