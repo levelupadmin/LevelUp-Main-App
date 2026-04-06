@@ -11,6 +11,7 @@ import { ArrowRight, Calendar, MessageSquare, ArrowUp, Globe, MapPin, Loader2 } 
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { resolveCourseThumbnail } from "@/lib/courseThumbnails";
 
 // ── Section 1: Hero Welcome ──
 const HeroWelcome = () => {
