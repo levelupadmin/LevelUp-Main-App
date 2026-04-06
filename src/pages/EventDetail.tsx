@@ -367,7 +367,7 @@ const EventDetail = () => {
                       <img src={s.avatar_url} alt={s.name} className="w-14 h-14 rounded-full object-cover border border-border mb-3" />
                     ) : (
                       <div className="mb-3">
-                        <InitialsAvatar name={s.name} size={56} />
+                        <InitialsAvatar name={s.name} size={48} />
                       </div>
                     )}
                     <p className="text-sm font-medium">{s.name}</p>
