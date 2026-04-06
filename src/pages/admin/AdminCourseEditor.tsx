@@ -56,6 +56,8 @@ const AdminCourseEditor = () => {
             duration_minutes: data.duration_minutes || 0,
             status: data.status || "draft",
             slug: data.slug || "",
+            product_tier: data.product_tier || "masterclass",
+            sort_order: data.sort_order || 50,
           });
         }
       }
