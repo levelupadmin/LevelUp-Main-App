@@ -222,7 +222,7 @@ const Login = () => {
         </div>
 
         <div className="absolute bottom-8 left-12 flex gap-2 z-20">
-          {SLIDES.map((_, i) => (
+          {slides.map((_, i) => (
             <div key={i} className="w-16 h-0.5 bg-white/20 rounded-full overflow-hidden">
               <div
                 className={`h-full bg-white rounded-full ${
