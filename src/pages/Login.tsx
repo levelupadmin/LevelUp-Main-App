@@ -70,7 +70,7 @@ const Login = () => {
   }, []);
 
   const nextSlide = useCallback(() => {
-    setActiveSlide((prev) => (prev + 1) % SLIDES.length);
+    setActiveSlide((prev) => (prev + 1) % slides.length);
   }, []);
 
   useEffect(() => {
