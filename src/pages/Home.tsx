@@ -314,17 +314,7 @@ const BrowsePrograms = () => {
             <div className="aspect-video bg-surface-2 relative">
               {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
               <div className="absolute top-2 left-2">
-                <span className={cn(
-                  "inline-block px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase",
-                  c.product_tier === "live_cohort" ? "bg-red-600 text-white" :
-                  c.product_tier === "masterclass" ? "bg-amber-500 text-black" :
-                  c.product_tier === "advanced_program" ? "bg-amber-400 text-black" :
-                  "bg-cream text-cream-text"
-                )}>
-                  {c.product_tier === "live_cohort" ? "LIVE" :
-                   c.product_tier === "masterclass" ? "MASTERCLASS" :
-                   c.product_tier === "advanced_program" ? "PROGRAM" : "WORKSHOP"}
-                </span>
+                <TierBadge tier={c.product_tier} />
               </div>
             </div>
             <div className="p-4">
