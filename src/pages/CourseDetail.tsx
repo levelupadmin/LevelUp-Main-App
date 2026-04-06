@@ -59,6 +59,7 @@ const CourseDetail = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
   const { user, profile, loading: authLoading } = useAuth();
+  usePageTitle(course?.title ?? "Course");
 
   const [course, setCourse] = useState<Course | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
