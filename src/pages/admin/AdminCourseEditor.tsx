@@ -84,6 +84,8 @@ const AdminCourseEditor = () => {
       duration_minutes: form.duration_minutes || 0,
       status: form.status,
       slug,
+      product_tier: form.product_tier,
+      sort_order: form.sort_order,
     };
 
     let error;
