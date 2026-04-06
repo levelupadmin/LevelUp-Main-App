@@ -157,7 +157,7 @@ const PopularCommunity = () => {
 
 // ── Section 4: Upcoming Events (from events table) ──
 const UpcomingEvents = () => {
-  const { user } = useAuth();
+  const { user, session, profile } = useAuth();
   const { toast } = useToast();
   const [events, setEvents] = useState<any[]>([]);
   const [myRegs, setMyRegs] = useState<Set<string>>(new Set());
