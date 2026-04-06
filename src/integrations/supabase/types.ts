@@ -783,6 +783,7 @@ export type Database = {
           instructor_display_name: string | null
           language: string | null
           level: string | null
+          primary_offering_id: string | null
           product_tier: string
           published_at: string | null
           rating_avg: number | null
@@ -815,6 +816,7 @@ export type Database = {
           instructor_display_name?: string | null
           language?: string | null
           level?: string | null
+          primary_offering_id?: string | null
           product_tier?: string
           published_at?: string | null
           rating_avg?: number | null
@@ -847,6 +849,7 @@ export type Database = {
           instructor_display_name?: string | null
           language?: string | null
           level?: string | null
+          primary_offering_id?: string | null
           product_tier?: string
           published_at?: string | null
           rating_avg?: number | null
@@ -871,6 +874,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "course_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courses_primary_offering_id_fkey"
+            columns: ["primary_offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
             referencedColumns: ["id"]
           },
         ]
