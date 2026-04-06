@@ -202,7 +202,7 @@ const AdminCoupons = () => {
               <Select value={form.applies_to_offering_id} onValueChange={(v) => setForm((f) => ({ ...f, applies_to_offering_id: v }))}>
                 <SelectTrigger><SelectValue placeholder="All offerings" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All offerings</SelectItem>
+                  <SelectItem value="__all__">All offerings</SelectItem>
                   {offerings.map((o) => (
                     <SelectItem key={o.id} value={o.id}>{o.title}</SelectItem>
                   ))}
