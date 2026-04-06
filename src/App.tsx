@@ -42,7 +42,7 @@ const App = () => (
           <Route path="/home" element={<RequireAuth><Home /></RequireAuth>} />
           <Route path="/courses/:courseId" element={<RequireAuth><CourseDetail /></RequireAuth>} />
           <Route path="/chapters/:chapterId" element={<RequireAuth><ChapterViewer /></RequireAuth>} />
-          <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
+          <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
           <Route path="/checkout/:offeringId" element={<RequireAuth><CheckoutPage /></RequireAuth>} />
           <Route path="/browse" element={<RequireAuth><BrowsePage /></RequireAuth>} />
           <Route path="/community" element={<RequireAuth><CommunityPage /></RequireAuth>} />
