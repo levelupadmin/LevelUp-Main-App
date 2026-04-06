@@ -297,9 +297,14 @@ const EventsPage = () => {
                             Register Free
                           </button>
                         ) : (
-                          <span className="text-sm font-medium text-cream flex items-center gap-1">
-                            Register {ev.price_inr ? `· ₹${(ev.price_inr / 100).toLocaleString()}` : ""}
-                          </span>
+                          <button
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRegisterPaid(ev.id); }}
+                            disabled={registering === ev.id}
+                            className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
+                          >
+                            {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                            Register · ₹{ev.price_inr ? (ev.price_inr / 100).toLocaleString() : ""}
+                          </button>
                         )}
                       </div>
                     </div>
