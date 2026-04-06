@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
+import { toast } from "sonner";
 
 interface UserProfile {
   id: string;
@@ -39,12 +40,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       .eq("id", userId)
       .single();
     if (error) console.error("[AuthContext] fetchProfile error:", error);
-    else console.log("[AuthContext] profile loaded:", data?.full_name, "member#", data?.member_number);
     return (data as UserProfile | null) ?? null;
   };
 
   useEffect(() => {
     let isMounted = true;
+    let hadSession = false;
 
     const syncAuthState = async (nextSession: Session | null) => {
       if (!isMounted) return;
@@ -53,11 +54,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSession(nextSession);
 
       if (!nextSession?.user) {
+        // If we previously had a session and now don't, it expired
+        if (hadSession) {
+          toast.error("Your session has expired. Please sign in again.");
+        }
         setProfile(null);
         setLoading(false);
         return;
       }
 
+      hadSession = true;
       const nextProfile = await fetchProfile(nextSession.user.id);
 
       if (!isMounted) return;

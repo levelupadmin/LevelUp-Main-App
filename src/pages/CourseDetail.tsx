@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import usePageTitle from "@/hooks/usePageTitle";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -67,6 +68,8 @@ const CourseDetail = () => {
   const [dripMode, setDripMode] = useState("no_drip");
   const [loading, setLoading] = useState(true);
   const [categoryName, setCategoryName] = useState<string | null>(null);
+
+  usePageTitle(course?.title ?? "Course");
 
   useEffect(() => {
     if (!courseId || authLoading) return;

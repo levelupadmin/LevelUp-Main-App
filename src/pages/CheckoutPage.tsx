@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import usePageTitle from "@/hooks/usePageTitle";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -35,6 +36,7 @@ export default function CheckoutPage() {
   const { offeringId } = useParams<{ offeringId: string }>();
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
+  usePageTitle("Checkout");
 
   const [offering, setOffering] = useState<Offering | null>(null);
   const [linkedCourses, setLinkedCourses] = useState<LinkedCourse[]>([]);

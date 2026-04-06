@@ -1,9 +1,11 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
 import RequireAuth from "@/components/guards/RequireAuth";
 import RequireRole from "@/components/guards/RequireRole";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 import RootRedirect from "@/pages/RootRedirect";
 import Login from "@/pages/Login";
@@ -15,6 +17,7 @@ import CheckoutPage from "@/pages/CheckoutPage";
 import BrowsePage from "@/pages/BrowsePage";
 import ProfilePage from "@/pages/ProfilePage";
 import MyCoursesPage from "@/pages/MyCoursesPage";
+import NotFoundPage from "@/pages/NotFoundPage";
 
 // Admin pages
 import AdminDashboard from "@/pages/admin/AdminDashboard";
@@ -29,7 +32,6 @@ import AdminCoupons from "@/pages/admin/AdminCoupons";
 import {
   CommunityPage,
   InstructorDashboard,
-  NotFound,
 } from "@/pages/placeholders";
 
 const queryClient = new QueryClient();
@@ -37,41 +39,44 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Public */}
-          <Route path="/" element={<RootRedirect />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
+      <ErrorBoundary>
+        <BrowserRouter>
+          <Routes>
+            {/* Public */}
+            <Route path="/" element={<RootRedirect />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
 
-          {/* Student routes */}
-          <Route path="/home" element={<RequireAuth><Home /></RequireAuth>} />
-          <Route path="/courses/:courseId" element={<RequireAuth><CourseDetail /></RequireAuth>} />
-          <Route path="/chapters/:chapterId" element={<RequireAuth><ChapterViewer /></RequireAuth>} />
-          <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
-          <Route path="/checkout/:offeringId" element={<RequireAuth><CheckoutPage /></RequireAuth>} />
-          <Route path="/browse" element={<RequireAuth><BrowsePage /></RequireAuth>} />
-          <Route path="/community" element={<RequireAuth><CommunityPage /></RequireAuth>} />
-          <Route path="/my-courses" element={<RequireAuth><MyCoursesPage /></RequireAuth>} />
+            {/* Student routes */}
+            <Route path="/home" element={<RequireAuth><Home /></RequireAuth>} />
+            <Route path="/courses/:courseId" element={<RequireAuth><CourseDetail /></RequireAuth>} />
+            <Route path="/chapters/:chapterId" element={<RequireAuth><ChapterViewer /></RequireAuth>} />
+            <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+            <Route path="/checkout/:offeringId" element={<RequireAuth><CheckoutPage /></RequireAuth>} />
+            <Route path="/browse" element={<RequireAuth><BrowsePage /></RequireAuth>} />
+            <Route path="/community" element={<RequireAuth><CommunityPage /></RequireAuth>} />
+            <Route path="/my-courses" element={<RequireAuth><MyCoursesPage /></RequireAuth>} />
 
-          {/* Admin routes */}
-          <Route path="/admin" element={<RequireAuth><RequireRole role="admin"><AdminDashboard /></RequireRole></RequireAuth>} />
-          <Route path="/admin/courses" element={<RequireAuth><RequireRole role="admin"><AdminCourses /></RequireRole></RequireAuth>} />
-          <Route path="/admin/courses/:courseId/edit" element={<RequireAuth><RequireRole role="admin"><AdminCourseEditor /></RequireRole></RequireAuth>} />
-          <Route path="/admin/courses/:courseId/curriculum" element={<RequireAuth><RequireRole role="admin"><AdminCourseCurriculum /></RequireRole></RequireAuth>} />
-          <Route path="/admin/offerings" element={<RequireAuth><RequireRole role="admin"><AdminOfferings /></RequireRole></RequireAuth>} />
-          <Route path="/admin/enrolments" element={<RequireAuth><RequireRole role="admin"><AdminEnrolments /></RequireRole></RequireAuth>} />
-          <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />
-          <Route path="/admin/coupons" element={<RequireAuth><RequireRole role="admin"><AdminCoupons /></RequireRole></RequireAuth>} />
+            {/* Admin routes */}
+            <Route path="/admin" element={<RequireAuth><RequireRole role="admin"><AdminDashboard /></RequireRole></RequireAuth>} />
+            <Route path="/admin/courses" element={<RequireAuth><RequireRole role="admin"><AdminCourses /></RequireRole></RequireAuth>} />
+            <Route path="/admin/courses/:courseId/edit" element={<RequireAuth><RequireRole role="admin"><AdminCourseEditor /></RequireRole></RequireAuth>} />
+            <Route path="/admin/courses/:courseId/curriculum" element={<RequireAuth><RequireRole role="admin"><AdminCourseCurriculum /></RequireRole></RequireAuth>} />
+            <Route path="/admin/offerings" element={<RequireAuth><RequireRole role="admin"><AdminOfferings /></RequireRole></RequireAuth>} />
+            <Route path="/admin/enrolments" element={<RequireAuth><RequireRole role="admin"><AdminEnrolments /></RequireRole></RequireAuth>} />
+            <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />
+            <Route path="/admin/coupons" element={<RequireAuth><RequireRole role="admin"><AdminCoupons /></RequireRole></RequireAuth>} />
 
-          {/* Instructor */}
-          <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />
+            {/* Instructor */}
+            <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />
 
-          {/* Catch-all */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+            {/* Catch-all */}
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </BrowserRouter>
+      </ErrorBoundary>
       <Toaster />
+      <SonnerToaster position="bottom-right" theme="dark" />
     </AuthProvider>
   </QueryClientProvider>
 );

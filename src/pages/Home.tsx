@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import usePageTitle from "@/hooks/usePageTitle";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import HeroCarousel from "@/components/HeroCarousel";
+import { TierBadge } from "@/components/TierBadge";
 import { ArrowRight, Calendar, MessageSquare, ArrowUp } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
@@ -313,17 +315,7 @@ const BrowsePrograms = () => {
             <div className="aspect-video bg-surface-2 relative">
               {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
               <div className="absolute top-2 left-2">
-                <span className={cn(
-                  "inline-block px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase",
-                  c.product_tier === "live_cohort" ? "bg-red-600 text-white" :
-                  c.product_tier === "masterclass" ? "bg-amber-500 text-black" :
-                  c.product_tier === "advanced_program" ? "bg-amber-400 text-black" :
-                  "bg-cream text-cream-text"
-                )}>
-                  {c.product_tier === "live_cohort" ? "LIVE" :
-                   c.product_tier === "masterclass" ? "MASTERCLASS" :
-                   c.product_tier === "advanced_program" ? "PROGRAM" : "WORKSHOP"}
-                </span>
+                <TierBadge tier={c.product_tier} />
               </div>
             </div>
             <div className="p-4">
@@ -407,19 +399,22 @@ const NewMembers = () => {
 };
 
 // ── Main Home Page ──
-const Home = () => (
-  <StudentLayout title="">
-    <div className="space-y-8">
-      <HeroCarousel />
-      <HeroWelcome />
-      <ContinueLearning />
-      <PopularCommunity />
-      <UpcomingEvents />
-      <MasterclassShowcase />
-      <BrowsePrograms />
-      <NewMembers />
-    </div>
-  </StudentLayout>
-);
+const Home = () => {
+  usePageTitle("Dashboard");
+  return (
+    <StudentLayout title="">
+      <div className="space-y-8">
+        <HeroCarousel />
+        <HeroWelcome />
+        <ContinueLearning />
+        <PopularCommunity />
+        <UpcomingEvents />
+        <MasterclassShowcase />
+        <BrowsePrograms />
+        <NewMembers />
+      </div>
+    </StudentLayout>
+  );
+};
 
 export default Home;

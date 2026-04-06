@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   { label: "Home", icon: Home, path: "/home" },
   { label: "My Courses", icon: BookOpen, path: "/my-courses" },
-  { label: "Browse Programs", icon: Compass, path: "/browse" },
+  { label: "Browse", icon: Compass, path: "/browse" },
   { label: "Community", icon: MessageSquare, path: "/community" },
   { label: "Profile", icon: User, path: "/profile" },
 ];
@@ -115,7 +115,7 @@ const StudentLayout = ({ children, title }: Props) => {
         {/* Top bar */}
         <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg">
           <div className="flex items-center gap-3">
-            <button className="md:hidden text-muted-foreground" onClick={() => setSidebarOpen(true)}>
+            <button className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
             </button>
             <h2 className="text-lg font-semibold">{title}</h2>
@@ -128,17 +128,17 @@ const StudentLayout = ({ children, title }: Props) => {
               <kbd className="font-mono text-xs text-muted-foreground ml-2">⌘K</kbd>
             </button>
 
-            <button className="relative text-muted-foreground hover:text-foreground">
+            <button className="relative text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center">
               <Bell className="h-5 w-5" />
             </button>
 
             <div className="relative">
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 min-h-[44px]"
               >
                 <InitialsAvatar name={profile?.full_name ?? "U"} photoUrl={profile?.avatar_url} size={32} />
-                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                <ChevronDown className="h-3 w-3 text-muted-foreground hidden sm:block" />
               </button>
 
               {dropdownOpen && (
@@ -147,7 +147,7 @@ const StudentLayout = ({ children, title }: Props) => {
                   <div className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-lg shadow-lg py-1 z-50">
                     <button
                       onClick={async () => { await signOut(); navigate("/login"); }}
-                      className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors"
+                      className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors min-h-[44px]"
                     >
                       <LogOut className="h-4 w-4" />
                       Sign out
@@ -160,12 +160,32 @@ const StudentLayout = ({ children, title }: Props) => {
         </header>
 
         {/* Content area */}
-        <main className="flex-1 grain">
-          <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-8 md:py-10 relative z-10">
+        <main className="flex-1 grain pb-20 md:pb-0">
+          <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-6 md:py-10 relative z-10">
             {children}
           </div>
         </main>
       </div>
+
+      {/* Mobile bottom tab bar */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas border-t border-border flex items-stretch">
+        {NAV_ITEMS.map((item) => {
+          const active = location.pathname === item.path || location.pathname.startsWith(item.path + "/");
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={cn(
+                "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors",
+                active ? "text-cream" : "text-muted-foreground"
+              )}
+            >
+              <item.icon className="h-5 w-5" />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 };
