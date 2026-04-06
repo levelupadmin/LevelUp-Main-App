@@ -245,7 +245,7 @@ const EventDetail = () => {
                       />
                     ) : (
                       <div key={s.id} className="border-2 border-background rounded-full">
-                        <InitialsAvatar name={s.name} size={36} />
+                        <InitialsAvatar name={s.name} size={32} />
                       </div>
                     )
                   )}
