@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
 import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { ArrowRight } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 import usePageTitle from "@/hooks/usePageTitle";
 
@@ -20,7 +19,6 @@ const TIER_MAP: Record<string, string> = {
 interface CourseWithOffering {
   id: string;
   title: string;
-  slug: string;
   description: string | null;
   thumbnail_url: string | null;
   product_tier: string;
@@ -28,6 +26,7 @@ interface CourseWithOffering {
   duration_text: string | null;
   instructor_display_name: string | null;
   status: string;
+  primary_offering_id: string | null;
   offering_id: string | null;
   price_inr: number | null;
   mrp_inr: number | null;
@@ -47,38 +46,79 @@ const BrowsePage = () => {
     const load = async () => {
       const { data: coursesData } = await supabase
         .from("courses")
-        .select("id, slug, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
+        .select("id, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
         .in("status", ["published", "upcoming"])
         .order("sort_order", { ascending: true });
 
       if (!coursesData?.length) { setLoading(false); return; }
 
+      // Read primary_offering_id via a separate raw query since types may not be regenerated yet
       const courseIds = coursesData.map((c) => c.id);
-      const { data: ocs } = await supabase
-        .from("offering_courses")
-        .select("course_id, offering_id")
-        .in("course_id", courseIds);
+      const { data: primaryData } = await supabase
+        .from("courses")
+        .select("id, primary_offering_id")
+        .in("id", courseIds) as any;
 
-      const offeringIds = [...new Set((ocs ?? []).map((oc) => oc.offering_id))];
-      const { data: offerings } = offeringIds.length
-        ? await supabase
+      const primaryMap: Record<string, string | null> = {};
+      (primaryData ?? []).forEach((p: any) => { primaryMap[p.id] = p.primary_offering_id ?? null; });
+
+      // Load pricing for primary offerings
+      const primaryOfferingIds = [...new Set(
+        Object.values(primaryMap).filter(Boolean) as string[]
+      )];
+
+      let offeringMap: Record<string, { price_inr: number; mrp_inr: number | null }> = {};
+
+      if (primaryOfferingIds.length) {
+        const { data: offerings } = await supabase
+          .from("offerings")
+          .select("id, price_inr, mrp_inr")
+          .in("id", primaryOfferingIds)
+          .eq("status", "active");
+
+        (offerings ?? []).forEach((o) => {
+          offeringMap[o.id] = { price_inr: o.price_inr, mrp_inr: o.mrp_inr };
+        });
+      }
+
+      // Fallback for courses without primary_offering_id
+      const coursesWithoutPrimary = coursesData.filter((c) => !primaryMap[c.id]);
+      const fallbackOcMap: Record<string, string> = {};
+
+      if (coursesWithoutPrimary.length) {
+        const fallbackCourseIds = coursesWithoutPrimary.map((c) => c.id);
+        const { data: ocs } = await supabase
+          .from("offering_courses")
+          .select("course_id, offering_id")
+          .in("course_id", fallbackCourseIds);
+
+        const fallbackOfferingIds = [...new Set((ocs ?? []).map((oc) => oc.offering_id))];
+        if (fallbackOfferingIds.length) {
+          const { data: fallbackOfferings } = await supabase
             .from("offerings")
             .select("id, price_inr, mrp_inr")
-            .in("id", offeringIds)
-            .eq("status", "active")
-        : { data: [] };
+            .in("id", fallbackOfferingIds)
+            .eq("status", "active");
 
-      const ocMap: Record<string, string> = {};
-      (ocs ?? []).forEach((oc) => { if (!ocMap[oc.course_id]) ocMap[oc.course_id] = oc.offering_id; });
+          (fallbackOfferings ?? []).forEach((o) => {
+            if (!offeringMap[o.id]) offeringMap[o.id] = { price_inr: o.price_inr, mrp_inr: o.mrp_inr };
+          });
+        }
 
-      const offeringMap: Record<string, { price_inr: number; mrp_inr: number | null }> = {};
-      (offerings ?? []).forEach((o) => { offeringMap[o.id] = { price_inr: o.price_inr, mrp_inr: o.mrp_inr }; });
+        (ocs ?? []).forEach((oc) => { if (!fallbackOcMap[oc.course_id]) fallbackOcMap[oc.course_id] = oc.offering_id; });
+      }
 
       setCourses(
         coursesData.map((c) => {
-          const offId = ocMap[c.id] ?? null;
+          const offId = primaryMap[c.id] || fallbackOcMap[c.id] || null;
           const off = offId ? offeringMap[offId] : null;
-          return { ...c, offering_id: offId, price_inr: off?.price_inr ?? null, mrp_inr: off?.mrp_inr ?? null };
+          return {
+            ...c,
+            primary_offering_id: primaryMap[c.id] || null,
+            offering_id: offId,
+            price_inr: off?.price_inr ?? null,
+            mrp_inr: off?.mrp_inr ?? null,
+          };
         })
       );
       setLoading(false);
@@ -91,7 +131,6 @@ const BrowsePage = () => {
       ? courses
       : courses.filter((c) => c.product_tier === TIER_MAP[activeFilter]);
 
-  // Group by tier
   const groupedByTier = TIER_ORDER
     .map((tier) => ({
       tier,

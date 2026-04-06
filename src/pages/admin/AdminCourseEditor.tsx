@@ -14,6 +14,15 @@ interface Category {
   name: string;
 }
 
+interface OfferingOption {
+  id: string;
+  title: string;
+  price_inr: number;
+}
+
+const formatPrice = (amount: number) =>
+  new Intl.NumberFormat("en-IN").format(amount);
+
 const AdminCourseEditor = () => {
   const { courseId } = useParams();
   const isNew = courseId === "new";
@@ -21,6 +30,7 @@ const AdminCourseEditor = () => {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [availableOfferings, setAvailableOfferings] = useState<OfferingOption[]>([]);
 
   const [form, setForm] = useState({
     title: "",
@@ -35,6 +45,7 @@ const AdminCourseEditor = () => {
     slug: "",
     product_tier: "masterclass",
     sort_order: 50,
+    primary_offering_id: "" as string | null,
   });
 
   useEffect(() => {
@@ -58,7 +69,25 @@ const AdminCourseEditor = () => {
             slug: data.slug || "",
             product_tier: data.product_tier || "masterclass",
             sort_order: data.sort_order || 50,
+            primary_offering_id: (data as any).primary_offering_id || "",
           });
+        }
+
+        // Load offerings linked to this course
+        const { data: ocs } = await supabase
+          .from("offering_courses")
+          .select("offering_id")
+          .eq("course_id", courseId);
+
+        if (ocs?.length) {
+          const offIds = ocs.map((oc) => oc.offering_id);
+          const { data: offs } = await supabase
+            .from("offerings")
+            .select("id, title, price_inr")
+            .in("id", offIds)
+            .eq("status", "active")
+            .order("price_inr", { ascending: true });
+          setAvailableOfferings(offs ?? []);
         }
       }
     };
@@ -73,7 +102,7 @@ const AdminCourseEditor = () => {
 
     setSaving(true);
     const slug = form.slug || form.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    const payload = {
+    const payload: Record<string, any> = {
       title: form.title,
       subtitle: form.subtitle || null,
       description: form.description || null,
@@ -86,11 +115,12 @@ const AdminCourseEditor = () => {
       slug,
       product_tier: form.product_tier,
       sort_order: form.sort_order,
+      primary_offering_id: form.primary_offering_id || null,
     };
 
     let error;
     if (isNew) {
-      const res = await supabase.from("courses").insert(payload).select("id").single();
+      const res = await supabase.from("courses").insert(payload as any).select("id").single();
       error = res.error;
       if (!error && res.data) {
         toast({ title: "Course created" });
@@ -99,7 +129,7 @@ const AdminCourseEditor = () => {
         return;
       }
     } else {
-      const res = await supabase.from("courses").update(payload).eq("id", courseId!);
+      const res = await supabase.from("courses").update(payload as any).eq("id", courseId!);
       error = res.error;
     }
 
@@ -163,6 +193,38 @@ const AdminCourseEditor = () => {
           </div>
           {field("Sort Order", "sort_order", "number")}
         </div>
+
+        {/* Primary Offering */}
+        {!isNew && (
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Primary Offering <span className="text-muted-foreground font-normal">(shown on Browse page)</span>
+            </label>
+            {availableOfferings.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No active offerings linked to this course yet. Create an offering first, then come back to set it.
+              </p>
+            ) : (
+              <Select
+                value={form.primary_offering_id || "none"}
+                onValueChange={(v) => setForm((f) => ({ ...f, primary_offering_id: v === "none" ? null : v }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Select the offering to show on Browse page" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None (hide price on Browse)</SelectItem>
+                  {availableOfferings.map((off) => (
+                    <SelectItem key={off.id} value={off.id}>
+                      {off.title} — ₹{formatPrice(off.price_inr)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              This controls which price and checkout link students see when browsing. Changing this doesn't affect existing enrolments.
+            </p>
+          </div>
+        )}
 
         {field("Subtitle", "subtitle")}
         {field("Description", "description", "textarea")}
