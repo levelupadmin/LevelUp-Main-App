@@ -1,5 +1,9 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { corsHeaders } from "https://esm.sh/@supabase/supabase-js@2.49.1/cors";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -50,7 +54,6 @@ Deno.serve(async (req) => {
     let isFree = event.pricing_type === "free";
 
     if (event.pricing_type === "free_for_enrolled") {
-      // Check if user has active enrolment in any linked course
       const { data: efcs } = await admin.from("event_free_courses").select("course_id").eq("event_id", event_id);
       if (efcs && efcs.length > 0) {
         const courseIds = efcs.map((e: any) => e.course_id);
@@ -72,7 +75,6 @@ Deno.serve(async (req) => {
     }
 
     if (isFree || event.pricing_type === "free") {
-      // Register directly
       const { error: regErr } = await admin.from("event_registrations").insert({
         event_id,
         user_id: user.id,
@@ -85,7 +87,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ registered: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Paid - create Razorpay order (simplified - reuse existing pattern)
+    // Paid — create Razorpay order
     const keyId = Deno.env.get("RAZORPAY_KEY_ID")!;
     const keySecret = Deno.env.get("RAZORPAY_KEY_SECRET")!;
 

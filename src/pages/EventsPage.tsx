@@ -11,7 +11,7 @@ import { Globe, MapPin, Loader2, Calendar } from "lucide-react";
 
 const EventsPage = () => {
   usePageTitle("Events");
-  const { user } = useAuth();
+  const { user, profile, session } = useAuth();
   const { toast } = useToast();
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,25 +19,35 @@ const EventsPage = () => {
   const [myRegs, setMyRegs] = useState<Set<string>>(new Set());
   const [registering, setRegistering] = useState<string | null>(null);
 
+  // Load Razorpay script
   useEffect(() => {
-    const load = async () => {
-      const { data } = await supabase
-        .from("events")
-        .select("*")
-        .eq("is_active", true)
-        .order("starts_at", { ascending: true });
-      setEvents(data ?? []);
-      setLoading(false);
+    if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')) return;
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
 
-      if (user) {
-        const { data: regs } = await supabase
-          .from("event_registrations")
-          .select("event_id")
-          .eq("user_id", user.id);
-        setMyRegs(new Set((regs ?? []).map((r: any) => r.event_id)));
-      }
-    };
-    load();
+  const fetchEvents = async () => {
+    const { data } = await supabase
+      .from("events")
+      .select("*")
+      .eq("is_active", true)
+      .order("starts_at", { ascending: true });
+    setEvents(data ?? []);
+    setLoading(false);
+
+    if (user) {
+      const { data: regs } = await supabase
+        .from("event_registrations")
+        .select("event_id")
+        .eq("user_id", user.id);
+      setMyRegs(new Set((regs ?? []).map((r: any) => r.event_id)));
+    }
+  };
+
+  useEffect(() => {
+    fetchEvents();
   }, [user]);
 
   const now = new Date();
@@ -61,6 +71,61 @@ const EventsPage = () => {
       setMyRegs((prev) => new Set(prev).add(eventId));
     }
     setRegistering(null);
+  };
+
+  const handleRegisterPaid = async (eventId: string) => {
+    if (!session?.access_token) return;
+    setRegistering(eventId);
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/register-for-event`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ event_id: eventId }),
+        }
+      );
+      const data = await res.json();
+
+      if (data.registered) {
+        toast({ title: "Registered! ✓", description: "You're in — see you there." });
+        setMyRegs((prev) => new Set(prev).add(eventId));
+        fetchEvents();
+      } else if (data.razorpay_order_id) {
+        const options = {
+          key: data.key_id,
+          amount: data.amount,
+          currency: "INR",
+          name: "LevelUp Learning",
+          description: "Event Registration",
+          order_id: data.razorpay_order_id,
+          handler: async () => {
+            toast({ title: "Payment successful!", description: "You're registered for the event." });
+            setMyRegs((prev) => new Set(prev).add(eventId));
+            fetchEvents();
+          },
+          prefill: {
+            email: profile?.email || "",
+            name: profile?.full_name || "",
+          },
+          theme: { color: "#F5F1E8" },
+        };
+        const rzp = new (window as any).Razorpay(options);
+        rzp.on("payment.failed", () => {
+          toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
+        });
+        rzp.open();
+      } else if (data.error) {
+        toast({ title: "Registration failed", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Something went wrong. Please try again.", variant: "destructive" });
+    } finally {
+      setRegistering(null);
+    }
   };
 
   return (
@@ -101,7 +166,6 @@ const EventsPage = () => {
               const isPast = tab === "past";
               return (
                 <div key={ev.id} className={cn("bg-surface border border-border rounded-xl overflow-hidden card-hover flex flex-col", isPast && "opacity-60")}>
-                  {/* Banner with overlay */}
                   <div className="relative aspect-[4/3]">
                     {ev.image_url && <img src={ev.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
@@ -119,7 +183,6 @@ const EventsPage = () => {
                       <h3 className="text-base font-semibold text-white line-clamp-2 leading-snug">{ev.title}</h3>
                     </div>
                   </div>
-                  {/* Host + meta */}
                   <div className="p-4 flex items-center justify-between mt-auto">
                     <div className="flex items-center gap-2.5 min-w-0">
                       {ev.host_avatar_url ? (
@@ -144,7 +207,6 @@ const EventsPage = () => {
                       </span>
                     </div>
                   </div>
-                  {/* CTA */}
                   {!isPast && !isCancelled && (
                     <div className="px-4 pb-4 pt-0">
                       <div className="pt-3 border-t border-border">
@@ -163,7 +225,7 @@ const EventsPage = () => {
                           </button>
                         ) : (
                           <button
-                            onClick={() => handleRegisterFree(ev.id)}
+                            onClick={() => handleRegisterPaid(ev.id)}
                             disabled={registering === ev.id}
                             className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
                           >

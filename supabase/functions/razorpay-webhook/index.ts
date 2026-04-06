@@ -56,7 +56,6 @@ Deno.serve(async (req) => {
     const eventType = event.event;
 
     if (eventType !== "payment.captured") {
-      // Acknowledge but ignore other events
       return new Response(JSON.stringify({ received: true }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -73,10 +72,10 @@ Deno.serve(async (req) => {
 
     const razorpayOrderId = payment.order_id;
     const razorpayPaymentId = payment.id;
-    const courseId = payment.notes?.course_id;
+    const offeringId = payment.notes?.offering_id;
     const userId = payment.notes?.user_id;
 
-    if (!razorpayOrderId || !courseId || !userId) {
+    if (!razorpayOrderId || !offeringId || !userId) {
       console.error("Missing required notes on payment:", payment.notes);
       return new Response(
         JSON.stringify({ error: "Missing payment metadata" }),
@@ -92,41 +91,43 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Update payment status
+    // Update payment order status
     const { error: updateError } = await adminClient
-      .from("payments")
+      .from("payment_orders")
       .update({
-        status: "paid",
+        status: "captured",
         razorpay_payment_id: razorpayPaymentId,
+        captured_at: new Date().toISOString(),
       })
       .eq("razorpay_order_id", razorpayOrderId);
 
     if (updateError) {
-      console.error("Failed to update payment:", updateError);
+      console.error("Failed to update payment_orders:", updateError);
     }
 
     // Check if already enrolled
     const { data: existing } = await adminClient
-      .from("enrollments")
+      .from("enrolments")
       .select("id")
       .eq("user_id", userId)
-      .eq("course_id", courseId)
+      .eq("offering_id", offeringId)
       .eq("status", "active")
       .maybeSingle();
 
     if (!existing) {
       const { error: enrollError } = await adminClient
-        .from("enrollments")
+        .from("enrolments")
         .insert({
           user_id: userId,
-          course_id: courseId,
+          offering_id: offeringId,
           status: "active",
+          source: "checkout",
         });
 
       if (enrollError) {
-        console.error("Failed to create enrollment:", enrollError);
+        console.error("Failed to create enrolment:", enrollError);
         return new Response(
-          JSON.stringify({ error: "Enrollment creation failed" }),
+          JSON.stringify({ error: "Enrolment creation failed" }),
           {
             status: 500,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -136,7 +137,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, enrollment: "created" }),
+      JSON.stringify({ success: true, enrolment: "created" }),
       {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

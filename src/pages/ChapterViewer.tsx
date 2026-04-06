@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import DOMPurify from "dompurify";
 import {
   CheckCircle2,
   ChevronLeft,
@@ -310,14 +311,54 @@ const ChapterViewer = () => {
       <div className="flex flex-col lg:flex-row">
         {/* Main content */}
         <div className="flex-1 p-4 lg:p-8 space-y-6 max-w-4xl">
-          {/* Video placeholder */}
-          <div className="aspect-video bg-surface-2 rounded-[16px] border border-border flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-4xl mb-2">🎬</div>
-              <p className="text-muted-foreground text-sm">{chapter.title}</p>
-              <p className="text-muted-foreground/60 text-xs mt-1">Video player placeholder</p>
+          {/* Content renderer */}
+          {chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
+            <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
+              <iframe
+                src={(() => {
+                  const url = chapter.embed_url || chapter.media_url || "";
+                  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+                  if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=0&title=0&byline=0&portrait=0`;
+                  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/);
+                  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}`;
+                  return url;
+                })()}
+                className="w-full h-full"
+                allow="autoplay; fullscreen; picture-in-picture"
+                allowFullScreen
+                frameBorder="0"
+                title={chapter.title}
+              />
             </div>
-          </div>
+          ) : chapter.content_type === "pdf" && chapter.media_url ? (
+            <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card" style={{ height: "80vh" }}>
+              <iframe src={chapter.media_url} className="w-full h-full" title={`${chapter.title} — PDF`} />
+            </div>
+          ) : chapter.content_type === "image" && chapter.media_url ? (
+            <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card flex items-center justify-center p-4">
+              <img src={chapter.media_url} alt={chapter.title} className="max-w-full max-h-[80vh] object-contain rounded-lg" />
+            </div>
+          ) : chapter.content_type === "embedded" && chapter.embed_url ? (
+            <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
+              <iframe src={chapter.embed_url} className="w-full h-full" allow="autoplay; fullscreen" allowFullScreen frameBorder="0" title={chapter.title} />
+            </div>
+          ) : chapter.content_type === "article" || chapter.content_type === "text" ? (
+            <div className="bg-card rounded-[16px] border border-border p-8 flex items-center gap-4">
+              <div className="text-3xl">📄</div>
+              <div>
+                <p className="font-medium">{chapter.title}</p>
+                <p className="text-muted-foreground text-sm mt-1">Scroll down to read the article content</p>
+              </div>
+            </div>
+          ) : (
+            <div className="aspect-video bg-card rounded-[16px] border border-border flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-4xl mb-2">📚</div>
+                <p className="text-muted-foreground text-sm">{chapter.title}</p>
+                <p className="text-muted-foreground/60 text-xs mt-1">Content not available</p>
+              </div>
+            </div>
+          )}
 
           {/* Chapter info */}
           <div className="space-y-4">
@@ -389,7 +430,7 @@ const ChapterViewer = () => {
               )}
               {chapter.article_body && (
                 <div className="prose prose-invert prose-sm max-w-none">
-                  <div dangerouslySetInnerHTML={{ __html: chapter.article_body }} />
+                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(chapter.article_body) }} />
                 </div>
               )}
             </TabsContent>
