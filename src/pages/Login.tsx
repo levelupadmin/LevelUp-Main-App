@@ -36,9 +36,38 @@ const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [slides, setSlides] = useState<SlideData[]>(FALLBACK_SLIDES);
   const [activeSlide, setActiveSlide] = useState(0);
 
   usePageTitle("Sign In");
+
+  // Fetch slides from DB
+  useEffect(() => {
+    supabase
+      .from("hero_slides")
+      .select("*")
+      .eq("is_active", true)
+      .or("placement.eq.login,placement.eq.both")
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const now = new Date();
+          const filtered = data.filter((s: any) =>
+            (!s.starts_at || new Date(s.starts_at) <= now) &&
+            (!s.expires_at || new Date(s.expires_at) >= now)
+          );
+          if (filtered.length > 0) {
+            setSlides(filtered.map((s: any) => ({
+              category: s.category_label || "",
+              title: s.title_prefix || "",
+              italic: s.title_accent || "",
+              subtitle: s.subtitle || "",
+              image: s.image_url || "",
+            })));
+          }
+        }
+      });
+  }, []);
 
   const nextSlide = useCallback(() => {
     setActiveSlide((prev) => (prev + 1) % SLIDES.length);
