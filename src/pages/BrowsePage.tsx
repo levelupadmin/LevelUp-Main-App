@@ -157,9 +157,9 @@ const BrowsePage = () => {
                       className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
                     >
                       <div className="aspect-video bg-surface-2 relative">
-                        {c.thumbnail_url && (
+                        {(resolveCourseThumbnail(c.slug, c.thumbnail_url)) && (
                           <img
-                            src={c.thumbnail_url}
+                            src={resolveCourseThumbnail(c.slug, c.thumbnail_url)!}
                             alt={c.title}
                             className="w-full h-full object-cover"
                             loading="lazy"
