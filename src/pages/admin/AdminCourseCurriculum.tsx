@@ -16,6 +16,7 @@ interface Chapter {
   content_type: string;
   description: string;
   media_url: string;
+  embed_url: string;
   article_body: string;
   duration_seconds: number;
   make_free: boolean;
