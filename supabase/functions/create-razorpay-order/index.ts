@@ -208,8 +208,6 @@ Deno.serve(async (req) => {
 
     /* Increment coupon usage */
     if (couponDbId) {
-      await admin.rpc("", {});
-      // Simple increment via raw update
       const { data: couponRow } = await admin
         .from("coupons")
         .select("used_count")
