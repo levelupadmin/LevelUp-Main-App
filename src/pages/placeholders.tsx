@@ -18,12 +18,6 @@ export const Profile = () => (
   </StudentLayout>
 );
 
-export const Checkout = () => (
-  <StudentLayout title="Checkout">
-    <div className="text-muted-foreground">Checkout page — coming soon</div>
-  </StudentLayout>
-);
-
 export const BrowsePage = () => (
   <StudentLayout title="Browse Programs">
     <div className="text-muted-foreground">Browse page — coming soon</div>
