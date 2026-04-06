@@ -13,48 +13,21 @@ import slideUiux from "@/assets/carousel/slide-uiux.jpg";
 import slideSmp from "@/assets/carousel/slide-smp.jpg";
 import slideMasterclasses from "@/assets/carousel/slide-masterclasses.jpg";
 
-const SLIDES = [
-  {
-    category: "LIVE COHORT",
-    title: "Make your first",
-    italic: "film",
-    subtitle: "12-week Breakthrough Filmmakers' Program with industry directors",
-    gradient: "from-red-900 to-black",
-    image: slideBfp,
-  },
-  {
-    category: "LIVE COHORT",
-    title: "Cut like a",
-    italic: "pro",
-    subtitle: "Video Editing Academy — Premiere, DaVinci, and the craft of rhythm",
-    gradient: "from-indigo-900 to-black",
-    image: slideVea,
-  },
-  {
-    category: "LIVE COHORT",
-    title: "Design that",
-    italic: "ships",
-    subtitle: "UI/UX Academy — from wireframe to production-ready interface",
-    gradient: "from-emerald-900 to-black",
-    image: slideUiux,
-  },
-  {
-    category: "LIVE COHORT",
-    title: "Write the",
-    italic: "story",
-    subtitle: "Screenwriting Mastery — structure, character, and the hand-written draft",
-    gradient: "from-amber-900 to-black",
-    image: slideSmp,
-  },
-  {
-    category: "ALL MASTERCLASSES",
-    title: "Learn from the",
-    italic: "greats",
-    subtitle: "One pass. Every masterclass. Karthik, Lokesh, Anthony, Nelson, Ravi & more.",
-    gradient: "from-violet-900 to-black",
-    image: slideMasterclasses,
-  },
+const FALLBACK_SLIDES = [
+  { category: "LIVE COHORT", title: "Make your first", italic: "film", subtitle: "12-week Breakthrough Filmmakers' Program", image: slideBfp },
+  { category: "LIVE COHORT", title: "Cut like a", italic: "pro", subtitle: "Video Editing Academy", image: slideVea },
+  { category: "LIVE COHORT", title: "Design that", italic: "ships", subtitle: "UI/UX Academy", image: slideUiux },
+  { category: "LIVE COHORT", title: "Write the", italic: "story", subtitle: "Screenwriting Mastery Program", image: slideSmp },
+  { category: "ALL MASTERCLASSES", title: "Learn from the", italic: "greats", subtitle: "Every masterclass. One pass.", image: slideMasterclasses },
 ];
+
+interface SlideData {
+  category: string;
+  title: string;
+  italic: string;
+  subtitle: string;
+  image: string;
+}
 
 const Login = () => {
   const navigate = useNavigate();
