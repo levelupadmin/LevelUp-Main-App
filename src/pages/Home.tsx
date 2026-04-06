@@ -221,6 +221,93 @@ const UpcomingEvents = () => {
     setRegistering(null);
   };
 
+  // Load Razorpay script
+  useEffect(() => {
+    if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')) return;
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
+
+  const handleRegisterPaid = async (eventId: string) => {
+    if (!session?.access_token) return;
+    setRegistering(eventId);
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/register-for-event`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ event_id: eventId }),
+        }
+      );
+      const data = await res.json();
+
+      if (data.registered) {
+        toast({ title: "Registered! ✓", description: "You're in — see you there." });
+        setMyRegs((prev) => new Set(prev).add(eventId));
+      } else if (data.razorpay_order_id) {
+        const options = {
+          key: data.key_id,
+          amount: data.amount,
+          currency: "INR",
+          name: "LevelUp Learning",
+          description: "Event Registration",
+          order_id: data.razorpay_order_id,
+          handler: async (response: any) => {
+            try {
+              const verifyRes = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-event-payment`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session.access_token}`,
+                  },
+                  body: JSON.stringify({
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_signature: response.razorpay_signature,
+                    event_id: eventId,
+                  }),
+                }
+              );
+              const verifyData = await verifyRes.json();
+              if (verifyData.registered) {
+                toast({ title: "Payment successful!", description: "You're registered for the event." });
+                setMyRegs((prev) => new Set(prev).add(eventId));
+              } else {
+                toast({ title: "Verification failed", description: verifyData.error || "Contact support.", variant: "destructive" });
+              }
+            } catch {
+              toast({ title: "Verification failed", description: "Contact support if you were charged.", variant: "destructive" });
+            }
+          },
+          prefill: {
+            email: profile?.email || "",
+            name: profile?.full_name || "",
+          },
+          theme: { color: "#F5F1E8" },
+        };
+        const rzp = new (window as any).Razorpay(options);
+        rzp.on("payment.failed", () => {
+          toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
+        });
+        rzp.open();
+      } else if (data.error) {
+        toast({ title: "Registration failed", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Something went wrong. Please try again.", variant: "destructive" });
+    } finally {
+      setRegistering(null);
+    }
+  };
+
   const getSpeaker = (ev: any) => {
     const spks = speakerMap[ev.id];
     if (spks && spks.length > 0) return { ...spks[0], count: spks.length };
