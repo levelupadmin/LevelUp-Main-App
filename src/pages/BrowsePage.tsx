@@ -2,16 +2,18 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
-import { TierBadge } from "@/components/TierBadge";
+import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import usePageTitle from "@/hooks/usePageTitle";
 
-const TIER_FILTERS = ["All", "Live Cohort", "Masterclass", "Program", "Workshop"] as const;
+const TIER_ORDER = ["live_cohort", "masterclass", "advanced_program", "workshop"] as const;
+const TIER_FILTERS = ["All", "Live Programs", "Masterclasses", "Programs", "Workshops"] as const;
 const TIER_MAP: Record<string, string> = {
-  "Live Cohort": "live_cohort",
-  Masterclass: "masterclass",
-  Program: "advanced_program",
-  Workshop: "workshop",
+  "Live Programs": "live_cohort",
+  Masterclasses: "masterclass",
+  Programs: "advanced_program",
+  Workshops: "workshop",
 };
 
 interface CourseWithOffering {
@@ -29,10 +31,15 @@ interface CourseWithOffering {
   mrp_inr: number | null;
 }
 
+const formatPrice = (amount: number) =>
+  new Intl.NumberFormat("en-IN").format(amount);
+
 const BrowsePage = () => {
   const [courses, setCourses] = useState<CourseWithOffering[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>("All");
+
+  usePageTitle("Browse Programs");
 
   useEffect(() => {
     const load = async () => {
@@ -69,12 +76,7 @@ const BrowsePage = () => {
         coursesData.map((c) => {
           const offId = ocMap[c.id] ?? null;
           const off = offId ? offeringMap[offId] : null;
-          return {
-            ...c,
-            offering_id: offId,
-            price_inr: off?.price_inr ?? null,
-            mrp_inr: off?.mrp_inr ?? null,
-          };
+          return { ...c, offering_id: offId, price_inr: off?.price_inr ?? null, mrp_inr: off?.mrp_inr ?? null };
         })
       );
       setLoading(false);
@@ -87,11 +89,20 @@ const BrowsePage = () => {
       ? courses
       : courses.filter((c) => c.product_tier === TIER_MAP[activeFilter]);
 
+  // Group by tier
+  const groupedByTier = TIER_ORDER
+    .map((tier) => ({
+      tier,
+      config: TIER_SECTION_CONFIG[tier],
+      items: filtered.filter((c) => c.product_tier === tier),
+    }))
+    .filter((g) => g.items.length > 0);
+
   return (
     <StudentLayout title="Browse Programs">
       <div className="space-y-8">
         <div>
-          <h1 className="text-[32px] font-semibold leading-tight">Browse Programs</h1>
+          <h1 className="text-[28px] sm:text-[32px] font-semibold leading-tight">Browse Programs</h1>
           <p className="text-base text-muted-foreground mt-1">Find your next creative skill</p>
         </div>
 
@@ -101,7 +112,7 @@ const BrowsePage = () => {
               key={f}
               onClick={() => setActiveFilter(f)}
               className={cn(
-                "px-4 py-1.5 rounded-full text-sm font-medium transition-colors border",
+                "px-4 py-1.5 rounded-full text-sm font-medium transition-colors border min-h-[44px] sm:min-h-0",
                 activeFilter === f
                   ? "bg-foreground text-background border-foreground"
                   : "bg-surface border-border text-muted-foreground hover:text-foreground hover:border-border-hover"
@@ -114,76 +125,111 @@ const BrowsePage = () => {
 
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3].map((i) => (
+            {[1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className="bg-surface border border-border rounded-xl h-[340px] animate-pulse" />
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <p className="text-muted-foreground text-sm py-12 text-center">No programs found in this category.</p>
+          <div className="text-center py-16">
+            <p className="text-lg font-serif-italic text-cream mb-2">No programs found</p>
+            <p className="text-muted-foreground text-sm">Try a different filter to explore more.</p>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((c) => (
-              <div
-                key={c.id}
-                className="bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
-              >
-                <div className="aspect-video bg-surface-2 relative">
-                  {c.thumbnail_url && (
-                    <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />
-                  )}
-                  <div className="absolute top-2 left-2">
-                    <TierBadge tier={c.product_tier} />
-                  </div>
-                  {c.status === "upcoming" && (
-                    <div className="absolute top-2 right-2 bg-foreground/80 text-background text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">
-                      Coming Soon
-                    </div>
-                  )}
+          <div className="space-y-12">
+            {groupedByTier.map(({ tier, config, items }) => (
+              <section key={tier}>
+                <div className="flex items-center gap-3 mb-5">
+                  <div className={cn("w-1 h-6 rounded-full", config.accentColor)} />
+                  <h2 className="text-xl font-semibold">{config.heading}</h2>
+                  <span className="text-sm text-muted-foreground font-mono">({items.length})</span>
                 </div>
-                <div className="p-4 flex flex-col gap-1.5">
-                  <h3 className="text-lg font-semibold line-clamp-1">{c.title}</h3>
-                  {c.instructor_display_name && (
-                    <p className="text-sm text-muted-foreground">{c.instructor_display_name}</p>
-                  )}
-                  <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>
-                  {c.duration_text && (
-                    <p className="font-mono text-xs text-muted-foreground mt-1">{c.duration_text}</p>
-                  )}
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
-                    <div className="flex items-baseline gap-2">
-                      {c.price_inr != null ? (
-                        <>
-                          <span className="text-base font-semibold">
-                            ₹{Number(c.price_inr).toLocaleString()}
-                          </span>
-                          {c.mrp_inr && Number(c.mrp_inr) > Number(c.price_inr) && (
-                            <span className="text-sm text-muted-foreground line-through">
-                              ₹{Number(c.mrp_inr).toLocaleString()}
-                            </span>
+                <div className={cn(
+                  "grid gap-4",
+                  tier === "workshop"
+                    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+                    : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+                )}>
+                  {items.map((c) => (
+                    <div
+                      key={c.id}
+                      className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
+                    >
+                      <div className="aspect-video bg-surface-2 relative">
+                        {c.thumbnail_url && (
+                          <img
+                            src={c.thumbnail_url}
+                            alt={c.title}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        )}
+                        <div className="absolute top-2 left-2">
+                          <TierBadge tier={c.product_tier} />
+                        </div>
+                        {c.status === "upcoming" && (
+                          <div className="absolute top-2 right-2 bg-foreground/80 text-background text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded font-mono">
+                            Coming Soon
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-4 flex flex-col gap-1.5">
+                        <h3 className={cn(
+                          "font-semibold line-clamp-1",
+                          tier === "workshop" ? "text-base" : "text-lg"
+                        )}>
+                          {c.title}
+                        </h3>
+                        {c.instructor_display_name && (
+                          <p className="text-sm text-muted-foreground line-clamp-1">{c.instructor_display_name}</p>
+                        )}
+                        {tier !== "workshop" && c.description && (
+                          <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>
+                        )}
+                        {c.duration_text && (
+                          <p className="font-mono text-xs text-muted-foreground">{c.duration_text}</p>
+                        )}
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
+                          <div className="flex items-baseline gap-2">
+                            {c.status === "upcoming" ? (
+                              <span className="text-sm font-medium text-muted-foreground">Upcoming</span>
+                            ) : c.price_inr != null ? (
+                              <>
+                                <span className="text-base font-semibold">
+                                  ₹{formatPrice(Number(c.price_inr))}
+                                </span>
+                                {c.mrp_inr && Number(c.mrp_inr) > Number(c.price_inr) && (
+                                  <span className="text-sm text-muted-foreground line-through">
+                                    ₹{formatPrice(Number(c.mrp_inr))}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">Price TBA</span>
+                            )}
+                          </div>
+                          {c.status === "upcoming" ? (
+                            <span className="text-sm font-medium text-muted-foreground">Notify me</span>
+                          ) : c.offering_id ? (
+                            <Link
+                              to={`/checkout/${c.offering_id}`}
+                              className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all min-h-[44px] sm:min-h-0 items-center"
+                            >
+                              Enroll <ArrowRight className="h-3 w-3" />
+                            </Link>
+                          ) : (
+                            <Link
+                              to={`/courses/${c.id}`}
+                              className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all"
+                            >
+                              View <ArrowRight className="h-3 w-3" />
+                            </Link>
                           )}
-                        </>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">Price TBA</span>
-                      )}
+                        </div>
+                      </div>
                     </div>
-                    {c.offering_id ? (
-                      <Link
-                        to={`/checkout/${c.offering_id}`}
-                        className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all"
-                      >
-                        Enroll <ArrowRight className="h-3 w-3" />
-                      </Link>
-                    ) : (
-                      <Link
-                        to={`/courses/${c.id}`}
-                        className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all"
-                      >
-                        View <ArrowRight className="h-3 w-3" />
-                      </Link>
-                    )}
-                  </div>
+                  ))}
                 </div>
-              </div>
+              </section>
             ))}
           </div>
         )}
