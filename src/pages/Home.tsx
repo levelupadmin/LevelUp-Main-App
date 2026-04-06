@@ -11,6 +11,7 @@ import { ArrowRight, Calendar, MessageSquare, ArrowUp, Globe, MapPin, Loader2 } 
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { resolveCourseThumbnail } from "@/lib/courseThumbnails";
 
 // ── Section 1: Hero Welcome ──
 const HeroWelcome = () => {
@@ -60,7 +61,7 @@ const ContinueLearning = () => {
       const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
       const { data: coursesData } = await supabase
         .from("courses")
-        .select("id, title, description, instructor_display_name, thumbnail_url")
+        .select("id, slug, title, description, instructor_display_name, thumbnail_url")
         .in("id", courseIds);
 
       setCourses(coursesData ?? []);
@@ -88,7 +89,7 @@ const ContinueLearning = () => {
               className="min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start"
             >
               <div className="aspect-video bg-surface-2 relative">
-                {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
+                {resolveCourseThumbnail(c.slug, c.thumbnail_url) && <img src={resolveCourseThumbnail(c.slug, c.thumbnail_url)!} alt="" className="w-full h-full object-cover" />}
               </div>
               <div className="p-4">
                 <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
@@ -285,7 +286,7 @@ const BrowsePrograms = () => {
     const load = async () => {
       const { data: coursesData } = await supabase
         .from("courses")
-        .select("id, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
+        .select("id, slug, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
         .in("status", ["published", "upcoming"])
         .order("sort_order", { ascending: true })
         .limit(6);
@@ -335,7 +336,7 @@ const BrowsePrograms = () => {
             className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
           >
             <div className="aspect-video bg-surface-2 relative">
-              {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
+              {resolveCourseThumbnail(c.slug, c.thumbnail_url) && <img src={resolveCourseThumbnail(c.slug, c.thumbnail_url)!} alt="" className="w-full h-full object-cover" />}
               <div className="absolute top-2 left-2">
                 <TierBadge tier={c.product_tier} />
               </div>

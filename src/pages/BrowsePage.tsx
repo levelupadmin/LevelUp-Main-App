@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
 import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { ArrowRight } from "lucide-react";
+import { resolveCourseThumbnail } from "@/lib/courseThumbnails";
 import { cn } from "@/lib/utils";
 import usePageTitle from "@/hooks/usePageTitle";
 
@@ -19,6 +20,7 @@ const TIER_MAP: Record<string, string> = {
 interface CourseWithOffering {
   id: string;
   title: string;
+  slug: string;
   description: string | null;
   thumbnail_url: string | null;
   product_tier: string;
@@ -45,7 +47,7 @@ const BrowsePage = () => {
     const load = async () => {
       const { data: coursesData } = await supabase
         .from("courses")
-        .select("id, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
+        .select("id, slug, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
         .in("status", ["published", "upcoming"])
         .order("sort_order", { ascending: true });
 
@@ -155,9 +157,9 @@ const BrowsePage = () => {
                       className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
                     >
                       <div className="aspect-video bg-surface-2 relative">
-                        {c.thumbnail_url && (
+                        {(resolveCourseThumbnail(c.slug, c.thumbnail_url)) && (
                           <img
-                            src={c.thumbnail_url}
+                            src={resolveCourseThumbnail(c.slug, c.thumbnail_url)!}
                             alt={c.title}
                             className="w-full h-full object-cover"
                             loading="lazy"
