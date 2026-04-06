@@ -7,9 +7,10 @@ import StudentLayout from "@/components/layout/StudentLayout";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import HeroCarousel from "@/components/HeroCarousel";
 import { TierBadge } from "@/components/TierBadge";
-import { ArrowRight, Calendar, MessageSquare, ArrowUp } from "lucide-react";
+import { ArrowRight, Calendar, MessageSquare, ArrowUp, Globe, MapPin, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 // ── Section 1: Hero Welcome ──
 const HeroWelcome = () => {
@@ -153,25 +154,62 @@ const PopularCommunity = () => {
   );
 };
 
-// ── Section 4: Upcoming Events ──
+// ── Section 4: Upcoming Events (from events table) ──
 const UpcomingEvents = () => {
-  const [sessions, setSessions] = useState<any[]>([]);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [events, setEvents] = useState<any[]>([]);
+  const [myRegs, setMyRegs] = useState<Set<string>>(new Set());
+  const [registering, setRegistering] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase
-      .from("live_sessions")
-      .select("id, title, description, starts_at, duration_minutes, hero_image_url, course_id")
-      .eq("status", "scheduled")
-      .gt("starts_at", new Date().toISOString())
-      .order("starts_at", { ascending: true })
-      .limit(6)
-      .then(({ data }) => setSessions(data ?? []));
-  }, []);
+    const load = async () => {
+      const { data } = await supabase
+        .from("events")
+        .select("*")
+        .eq("is_active", true)
+        .in("status", ["upcoming", "live"])
+        .gte("starts_at", new Date().toISOString())
+        .order("starts_at", { ascending: true })
+        .limit(4);
+      setEvents(data ?? []);
 
-  if (!sessions.length) {
+      if (user) {
+        const { data: regs } = await supabase
+          .from("event_registrations")
+          .select("event_id")
+          .eq("user_id", user.id);
+        setMyRegs(new Set((regs ?? []).map((r: any) => r.event_id)));
+      }
+    };
+    load();
+  }, [user]);
+
+  const handleRegisterFree = async (eventId: string) => {
+    if (!user) return;
+    setRegistering(eventId);
+    const { error } = await supabase.from("event_registrations").insert({
+      event_id: eventId,
+      user_id: user.id,
+      status: "registered",
+      amount_paid: 0,
+    });
+    if (error) {
+      toast({ title: "Registration failed", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Registered! ✓" });
+      setMyRegs((prev) => new Set(prev).add(eventId));
+    }
+    setRegistering(null);
+  };
+
+  if (!events.length) {
     return (
       <section>
-        <h2 className="text-lg font-semibold mb-4">Upcoming Events</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Upcoming Events</h2>
+          <Link to="/events" className="text-sm text-cream flex items-center gap-1">View all <ArrowRight className="h-3 w-3" /></Link>
+        </div>
         <p className="text-sm text-muted-foreground">No upcoming events scheduled.</p>
       </section>
     );
@@ -179,83 +217,77 @@ const UpcomingEvents = () => {
 
   return (
     <section>
-      <h2 className="text-lg font-semibold mb-4">Upcoming Events</h2>
-      <div className="flex gap-4 overflow-x-auto snap-x hide-scrollbar pb-2">
-        {sessions.map((s) => (
-          <div
-            key={s.id}
-            className="min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start"
-          >
-            <div className="aspect-video bg-surface-2 relative">
-              {s.hero_image_url && <img src={s.hero_image_url} alt="" className="w-full h-full object-cover" />}
-              <div className="absolute top-3 left-3 bg-canvas/80 backdrop-blur px-2 py-1 rounded font-mono text-xs">
-                {format(new Date(s.starts_at), "MMM d · h:mm a")}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">Upcoming Events</h2>
+        <Link to="/events" className="text-sm text-cream flex items-center gap-1">View all <ArrowRight className="h-3 w-3" /></Link>
+      </div>
+      <div className="flex gap-4 overflow-x-auto snap-x hide-scrollbar pb-2 lg:grid lg:grid-cols-4 lg:overflow-visible">
+        {events.map((ev) => {
+          const isRegistered = myRegs.has(ev.id);
+          const isSoldOut = ev.status === "sold_out";
+          return (
+            <div key={ev.id} className="min-w-[280px] max-w-[320px] lg:max-w-none bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start">
+              <div className="aspect-video bg-surface-2 relative">
+                {ev.image_url && <img src={ev.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />}
+                {isSoldOut && (
+                  <div className="absolute top-2 right-2 bg-destructive text-destructive-foreground text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded font-mono">
+                    Sold Out
+                  </div>
+                )}
+                <div className="absolute top-2 left-2 bg-canvas/80 backdrop-blur px-2 py-1 rounded font-mono text-xs">
+                  {format(new Date(ev.starts_at), "EEE, MMM d")}
+                </div>
+              </div>
+              <div className="p-4">
+                <h3 className="text-sm font-semibold line-clamp-2">{ev.title}</h3>
+                <div className="flex items-center justify-between mt-2">
+                  <div className="flex items-center gap-2">
+                    <InitialsAvatar name={ev.host_name} size={32} />
+                    <span className="text-xs text-muted-foreground truncate max-w-[100px]">{ev.host_name}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    {ev.event_type === "online" || ev.venue_type !== "in_person" ? (
+                      <><Globe className="h-3 w-3" /> Online</>
+                    ) : (
+                      <><MapPin className="h-3 w-3" /> {ev.city || "Offline"}</>
+                    )}
+                  </span>
+                </div>
+                <div className="mt-3 pt-2 border-t border-border">
+                  {isRegistered ? (
+                    <span className="text-xs text-muted-foreground">Registered ✓</span>
+                  ) : isSoldOut ? (
+                    <span className="text-xs text-muted-foreground">Sold out</span>
+                  ) : ev.pricing_type === "free" ? (
+                    <button
+                      onClick={() => handleRegisterFree(ev.id)}
+                      disabled={registering === ev.id}
+                      className="text-xs font-medium text-cream hover:underline flex items-center gap-1"
+                    >
+                      {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                      Register Free
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleRegisterFree(ev.id)}
+                      disabled={registering === ev.id}
+                      className="text-xs font-medium text-cream hover:underline flex items-center gap-1"
+                    >
+                      {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                      Register {ev.price_inr ? `· ₹${(ev.price_inr / 100).toLocaleString()}` : ""}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="p-4">
-              <h3 className="text-base font-semibold line-clamp-1">{s.title}</h3>
-              <p className="text-sm text-muted-foreground mt-1">{s.duration_minutes} min</p>
-              <button className="mt-3 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-                <Calendar className="h-3 w-3" /> Add to calendar
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
 };
 
-// ── Section 5: Masterclass Showcase ──
-const MasterclassShowcase = () => {
-  const [offering, setOffering] = useState<any>(null);
-
-  useEffect(() => {
-    supabase
-      .from("offerings")
-      .select("id, title, description, price_inr, thumbnail_url")
-      .eq("status", "active")
-      .order("price_inr", { ascending: false })
-      .limit(1)
-      .single()
-      .then(({ data }) => setOffering(data));
-  }, []);
-
-  if (!offering) return null;
-
-  const mentors = ["Mr. Praveen", "Sarvesh P.", "Rahul S.", "Director K.", "Lokesh K."];
-
-  return (
-    <section>
-      <div className="bg-cream rounded-2xl px-10 py-10 max-h-[280px] grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-6 items-center">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-cream-text/60 mb-3">ALL-ACCESS PASS</p>
-          <h2 className="text-2xl font-semibold text-cream-text">
-            Learn from the{" "}
-            <span className="font-serif-italic">best instructors</span>
-          </h2>
-          <p className="text-sm text-cream-text/70 mt-2 max-w-md">{offering.description}</p>
-          <Link
-            to={`/checkout/${offering.id}`}
-            className="inline-flex items-center gap-2 mt-5 px-6 py-2.5 bg-cream-text text-cream text-sm font-semibold rounded-lg hover:-translate-y-0.5 transition-transform"
-          >
-            View package <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-        <div className="flex -space-x-4 justify-center md:justify-end">
-          {mentors.map((name) => (
-            <InitialsAvatar key={name} name={name} size={64} />
-          ))}
-          <div className="h-16 w-16 rounded-full bg-cream-text/10 flex items-center justify-center font-mono text-xs text-cream-text">
-            +5
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-};
-
-// ── Section 6: Browse Programs ──
+// ── Section 5: Browse Programs ──
 const BrowsePrograms = () => {
   const [courses, setCourses] = useState<any[]>([]);
 
@@ -349,7 +381,7 @@ const BrowsePrograms = () => {
   );
 };
 
-// ── Section 7: New Members ──
+// ── Section 6: New Members ──
 const NewMembers = () => {
   const [members, setMembers] = useState<any[]>([]);
 
@@ -409,7 +441,6 @@ const Home = () => {
         <ContinueLearning />
         <PopularCommunity />
         <UpcomingEvents />
-        <MasterclassShowcase />
         <BrowsePrograms />
         <NewMembers />
       </div>

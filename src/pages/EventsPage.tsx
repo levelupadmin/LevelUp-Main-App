@@ -115,7 +115,7 @@ const EventsPage = () => {
                     <h3 className="text-base font-semibold line-clamp-2">{ev.title}</h3>
                     <div className="flex items-center justify-between mt-3">
                       <div className="flex items-center gap-2">
-                        <InitialsAvatar name={ev.host_name} size={28} />
+                        <InitialsAvatar name={ev.host_name} size={32} />
                         <span className="text-xs text-muted-foreground">{ev.host_name}</span>
                       </div>
                       <span className="text-xs text-muted-foreground flex items-center gap-1">

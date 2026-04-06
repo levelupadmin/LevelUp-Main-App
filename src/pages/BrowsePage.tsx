@@ -8,9 +8,9 @@ import { cn } from "@/lib/utils";
 import usePageTitle from "@/hooks/usePageTitle";
 
 const TIER_ORDER = ["live_cohort", "masterclass", "advanced_program", "workshop"] as const;
-const TIER_FILTERS = ["All", "Live Programs", "Masterclasses", "Programs", "Workshops"] as const;
+const TIER_FILTERS = ["All", "Mentorship Cohorts", "Masterclasses", "Programs", "Workshops"] as const;
 const TIER_MAP: Record<string, string> = {
-  "Live Programs": "live_cohort",
+  "Mentorship Cohorts": "live_cohort",
   Masterclasses: "masterclass",
   Programs: "advanced_program",
   Workshops: "workshop",

@@ -47,8 +47,16 @@ const HeroCarousel = () => {
       .from("hero_slides")
       .select("*")
       .eq("is_active", true)
+      .or("placement.eq.dashboard,placement.eq.both")
       .order("sort_order", { ascending: true })
-      .then(({ data }) => setSlides((data as HeroSlide[]) ?? []));
+      .then(({ data }) => {
+        const now = new Date();
+        const filtered = (data ?? []).filter((s: any) =>
+          (!s.starts_at || new Date(s.starts_at) <= now) &&
+          (!s.expires_at || new Date(s.expires_at) >= now)
+        );
+        setSlides(filtered as HeroSlide[]);
+      });
   }, []);
 
   const goTo = useCallback(

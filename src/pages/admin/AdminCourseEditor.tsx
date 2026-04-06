@@ -33,6 +33,8 @@ const AdminCourseEditor = () => {
     duration_minutes: 0,
     status: "draft",
     slug: "",
+    product_tier: "masterclass",
+    sort_order: 50,
   });
 
   useEffect(() => {
