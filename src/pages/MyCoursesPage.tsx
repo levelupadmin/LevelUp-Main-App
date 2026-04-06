@@ -19,6 +19,7 @@ interface EnrolledCourse {
 }
 
 const MyCoursesPage = () => {
+  usePageTitle("My Courses");
   const { user } = useAuth();
   const [courses, setCourses] = useState<EnrolledCourse[]>([]);
   const [loading, setLoading] = useState(true);

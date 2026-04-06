@@ -23,6 +23,7 @@ interface Enrolment {
 }
 
 const ProfilePage = () => {
+  usePageTitle("Profile");
   const { profile, user, signOut } = useAuth();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
