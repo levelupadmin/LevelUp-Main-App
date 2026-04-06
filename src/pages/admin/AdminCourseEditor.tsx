@@ -120,7 +120,7 @@ const AdminCourseEditor = () => {
 
     let error;
     if (isNew) {
-      const res = await supabase.from("courses").insert(payload).select("id").single();
+      const res = await supabase.from("courses").insert(payload as any).select("id").single();
       error = res.error;
       if (!error && res.data) {
         toast({ title: "Course created" });
