@@ -89,7 +89,7 @@ const ContinueLearning = () => {
               className="min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start"
             >
               <div className="aspect-video bg-surface-2 relative">
-                {resolveCourseThumbnail(c.slug, c.thumbnail_url) && <img src={resolveCourseThumbnail(c.slug, c.thumbnail_url)!} alt="" className="w-full h-full object-cover" />}
+                {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
               </div>
               <div className="p-4">
                 <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
