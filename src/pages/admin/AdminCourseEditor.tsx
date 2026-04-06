@@ -129,7 +129,7 @@ const AdminCourseEditor = () => {
         return;
       }
     } else {
-      const res = await supabase.from("courses").update(payload).eq("id", courseId!);
+      const res = await supabase.from("courses").update(payload as any).eq("id", courseId!);
       error = res.error;
     }
 
