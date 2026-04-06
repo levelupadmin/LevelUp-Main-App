@@ -146,6 +146,24 @@ const AdminCourseEditor = () => {
 
       <div className="max-w-2xl space-y-5">
         {field("Title", "title")}
+        {field("Slug", "slug")}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Product Tier</label>
+            <Select value={form.product_tier} onValueChange={(v) => setForm((f) => ({ ...f, product_tier: v }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="live_cohort">Mentorship Cohort</SelectItem>
+                <SelectItem value="masterclass">Masterclass</SelectItem>
+                <SelectItem value="advanced_program">Program</SelectItem>
+                <SelectItem value="workshop">Workshop</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {field("Sort Order", "sort_order", "number")}
+        </div>
+
         {field("Subtitle", "subtitle")}
         {field("Description", "description", "textarea")}
         {field("Instructor Display Name", "instructor_display_name")}
