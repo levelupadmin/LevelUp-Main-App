@@ -200,6 +200,7 @@ const AdminCourseCurriculum = () => {
             content_type: ch.content_type,
             description: ch.description || null,
             media_url: ch.media_url || null,
+            embed_url: ch.embed_url || null,
             article_body: ch.article_body || null,
             duration_seconds: ch.duration_seconds || 0,
             make_free: ch.make_free,
