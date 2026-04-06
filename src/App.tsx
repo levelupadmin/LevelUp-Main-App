@@ -15,13 +15,19 @@ import CheckoutPage from "@/pages/CheckoutPage";
 import BrowsePage from "@/pages/BrowsePage";
 import ProfilePage from "@/pages/ProfilePage";
 import MyCoursesPage from "@/pages/MyCoursesPage";
+
+// Admin pages
+import AdminDashboard from "@/pages/admin/AdminDashboard";
+import AdminCourses from "@/pages/admin/AdminCourses";
+import AdminCourseEditor from "@/pages/admin/AdminCourseEditor";
+import AdminCourseCurriculum from "@/pages/admin/AdminCourseCurriculum";
+import AdminOfferings from "@/pages/admin/AdminOfferings";
+import AdminEnrolments from "@/pages/admin/AdminEnrolments";
+import AdminUsers from "@/pages/admin/AdminUsers";
+import AdminCoupons from "@/pages/admin/AdminCoupons";
+
 import {
   CommunityPage,
-  AdminDashboard,
-  AdminCourses,
-  AdminOfferings,
-  AdminEnrolments,
-  AdminUsers,
   InstructorDashboard,
   NotFound,
 } from "@/pages/placeholders";
@@ -51,9 +57,12 @@ const App = () => (
           {/* Admin routes */}
           <Route path="/admin" element={<RequireAuth><RequireRole role="admin"><AdminDashboard /></RequireRole></RequireAuth>} />
           <Route path="/admin/courses" element={<RequireAuth><RequireRole role="admin"><AdminCourses /></RequireRole></RequireAuth>} />
+          <Route path="/admin/courses/:courseId/edit" element={<RequireAuth><RequireRole role="admin"><AdminCourseEditor /></RequireRole></RequireAuth>} />
+          <Route path="/admin/courses/:courseId/curriculum" element={<RequireAuth><RequireRole role="admin"><AdminCourseCurriculum /></RequireRole></RequireAuth>} />
           <Route path="/admin/offerings" element={<RequireAuth><RequireRole role="admin"><AdminOfferings /></RequireRole></RequireAuth>} />
           <Route path="/admin/enrolments" element={<RequireAuth><RequireRole role="admin"><AdminEnrolments /></RequireRole></RequireAuth>} />
           <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />
+          <Route path="/admin/coupons" element={<RequireAuth><RequireRole role="admin"><AdminCoupons /></RequireRole></RequireAuth>} />
 
           {/* Instructor */}
           <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />
