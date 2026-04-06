@@ -162,6 +162,7 @@ const UpcomingEvents = () => {
   const [events, setEvents] = useState<any[]>([]);
   const [myRegs, setMyRegs] = useState<Set<string>>(new Set());
   const [registering, setRegistering] = useState<string | null>(null);
+  const [speakerMap, setSpeakerMap] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -174,6 +175,22 @@ const UpcomingEvents = () => {
         .order("starts_at", { ascending: true })
         .limit(4);
       setEvents(data ?? []);
+
+      // Load speakers
+      const eventIds = (data ?? []).map((e: any) => e.id);
+      if (eventIds.length) {
+        const { data: allSpeakers } = await supabase
+          .from("event_speakers")
+          .select("event_id, name, title, avatar_url")
+          .in("event_id", eventIds)
+          .order("sort_order");
+        const map: Record<string, any[]> = {};
+        (allSpeakers ?? []).forEach((s: any) => {
+          if (!map[s.event_id]) map[s.event_id] = [];
+          map[s.event_id].push(s);
+        });
+        setSpeakerMap(map);
+      }
 
       if (user) {
         const { data: regs } = await supabase
@@ -204,6 +221,12 @@ const UpcomingEvents = () => {
     setRegistering(null);
   };
 
+  const getSpeaker = (ev: any) => {
+    const spks = speakerMap[ev.id];
+    if (spks && spks.length > 0) return { ...spks[0], count: spks.length };
+    return { name: ev.host_name, title: ev.host_title, avatar_url: ev.host_avatar_url, count: 1 };
+  };
+
   if (!events.length) {
     return (
       <section>
@@ -229,8 +252,13 @@ const UpcomingEvents = () => {
         {events.map((ev) => {
           const isRegistered = myRegs.has(ev.id);
           const isSoldOut = ev.status === "sold_out";
+          const speaker = getSpeaker(ev);
           return (
-            <div key={ev.id} className="min-w-[300px] max-w-[340px] lg:max-w-none bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start flex flex-col">
+            <Link
+              key={ev.id}
+              to={`/events/${ev.id}`}
+              className="min-w-[300px] max-w-[340px] lg:max-w-none bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start flex flex-col"
+            >
               {/* Banner with overlay title */}
               <div className="relative aspect-[4/3]">
                 {ev.image_url && <img src={ev.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />}
@@ -247,14 +275,17 @@ const UpcomingEvents = () => {
               {/* Host + meta row */}
               <div className="p-4 flex items-center justify-between mt-auto">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  {ev.host_avatar_url ? (
-                    <img src={ev.host_avatar_url} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0 border border-border" />
+                  {speaker.avatar_url ? (
+                    <img src={speaker.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0 border border-border" />
                   ) : (
-                    <InitialsAvatar name={ev.host_name} size={32} />
+                    <InitialsAvatar name={speaker.name} size={32} />
                   )}
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{ev.host_name}</p>
-                    {ev.host_title && <p className="text-[11px] text-muted-foreground truncate">{ev.host_title}</p>}
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {speaker.name}
+                      {speaker.count > 1 && <span className="text-muted-foreground"> +{speaker.count - 1}</span>}
+                    </p>
+                    {speaker.title && <p className="text-[11px] text-muted-foreground truncate">{speaker.title}</p>}
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-0.5 flex-shrink-0 ml-3">
@@ -270,7 +301,30 @@ const UpcomingEvents = () => {
                   </span>
                 </div>
               </div>
-            </div>
+              {/* CTA row */}
+              {!isSoldOut && (
+                <div className="px-4 pb-4 pt-0">
+                  <div className="pt-3 border-t border-border">
+                    {isRegistered ? (
+                      <span className="text-sm text-muted-foreground font-medium">Registered ✓</span>
+                    ) : ev.pricing_type === "free" ? (
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRegisterFree(ev.id); }}
+                        disabled={registering === ev.id}
+                        className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
+                      >
+                        {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                        Register Free
+                      </button>
+                    ) : (
+                      <span className="text-sm font-medium text-cream flex items-center gap-1">
+                        Register {ev.price_inr ? `· ₹${(ev.price_inr / 100).toLocaleString()}` : ""}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </Link>
           );
         })}
       </div>

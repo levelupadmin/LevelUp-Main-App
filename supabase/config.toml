@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.verify-razorpay-payment]
 verify_jwt = false
+
+[functions.verify-event-payment]
+verify_jwt = false
