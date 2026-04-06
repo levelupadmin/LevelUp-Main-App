@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
 import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { ArrowRight } from "lucide-react";
-import { resolveCourseThumbnail } from "@/lib/courseThumbnails";
+
 import { cn } from "@/lib/utils";
 import usePageTitle from "@/hooks/usePageTitle";
 
