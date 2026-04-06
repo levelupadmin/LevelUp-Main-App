@@ -115,6 +115,7 @@ const AdminCourseCurriculum = () => {
             content_type: "video",
             description: "",
             media_url: "",
+            embed_url: "",
             article_body: "",
             duration_seconds: 0,
             make_free: false,
