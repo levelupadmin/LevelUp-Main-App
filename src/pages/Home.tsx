@@ -286,7 +286,7 @@ const BrowsePrograms = () => {
     const load = async () => {
       const { data: coursesData } = await supabase
         .from("courses")
-        .select("id, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
+        .select("id, slug, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
         .in("status", ["published", "upcoming"])
         .order("sort_order", { ascending: true })
         .limit(6);
