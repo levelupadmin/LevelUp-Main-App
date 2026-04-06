@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useCallback, useEffect } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
+import usePageTitle from "@/hooks/usePageTitle";
 import slideBfp from "@/assets/carousel/slide-bfp.jpg";
 import slideVea from "@/assets/carousel/slide-vea.jpg";
 import slideUiux from "@/assets/carousel/slide-uiux.jpg";
@@ -57,11 +58,14 @@ const SLIDES = [
 
 const Login = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
+
+  usePageTitle("Sign In");
 
   const nextSlide = useCallback(() => {
     setActiveSlide((prev) => (prev + 1) % SLIDES.length);
@@ -82,7 +86,10 @@ const Login = () => {
       setLoading(false);
       return;
     }
-    navigate("/", { replace: true });
+
+    // Redirect back to the page the user was trying to visit
+    const from = (location.state as any)?.from?.pathname || "/";
+    navigate(from, { replace: true });
   };
 
   const slide = SLIDES[activeSlide];
@@ -90,7 +97,7 @@ const Login = () => {
   return (
     <div className="flex min-h-screen bg-canvas">
       {/* Left sidebar */}
-      <div className="w-full lg:w-[420px] lg:min-w-[420px] flex flex-col justify-between px-8 py-8 border-r border-border">
+      <div className="w-full lg:w-[420px] lg:min-w-[420px] flex flex-col justify-between px-6 sm:px-8 py-8 border-r border-border">
         <div>
           <LevelUpWordmark className="text-xl" />
         </div>
@@ -185,20 +192,18 @@ const Login = () => {
 
       {/* Right hero carousel */}
       <div className="hidden lg:flex flex-1 relative overflow-hidden">
-        {/* Slide background */}
         <div className={`absolute inset-0 bg-gradient-to-br ${slide.gradient} transition-all duration-700`}>
           {slide.image && (
             <img
               src={slide.image}
               alt=""
               className="absolute inset-0 w-full h-full object-cover"
+              loading="lazy"
             />
           )}
-          {/* Gradient overlay from bottom */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
         </div>
 
-        {/* Text overlay */}
         <div className="relative z-10 flex flex-col justify-end p-12 pb-24 w-full">
           <div className="max-w-[500px] ml-auto">
             <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground mb-4">
@@ -214,7 +219,6 @@ const Login = () => {
           </div>
         </div>
 
-        {/* Progress bars */}
         <div className="absolute bottom-8 left-12 flex gap-2 z-20">
           {SLIDES.map((_, i) => (
             <div key={i} className="w-16 h-0.5 bg-white/20 rounded-full overflow-hidden">

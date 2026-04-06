@@ -1,12 +1,7 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import ForbiddenScreen from "@/components/ForbiddenScreen";
 import { Loader2 } from "lucide-react";
-
-const roleHomeMap: Record<string, string> = {
-  admin: "/admin",
-  instructor: "/instructor",
-  student: "/home",
-};
 
 interface Props {
   role: "admin" | "instructor" | "student";
@@ -25,8 +20,7 @@ const RequireRole = ({ role, children }: Props) => {
   }
 
   if (profile.role !== role) {
-    const redirect = roleHomeMap[profile.role] || "/home";
-    return <Navigate to={redirect} replace />;
+    return <ForbiddenScreen />;
   }
 
   return <>{children}</>;
