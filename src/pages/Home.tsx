@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import HeroCarousel from "@/components/HeroCarousel";
+import { TierBadge } from "@/components/TierBadge";
 import { ArrowRight, Calendar, MessageSquare, ArrowUp } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
