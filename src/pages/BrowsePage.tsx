@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
 import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { ArrowRight } from "lucide-react";
-import { resolveCourseThumbnail } from "@/lib/courseThumbnails";
+
 import { cn } from "@/lib/utils";
 import usePageTitle from "@/hooks/usePageTitle";
 
@@ -157,9 +157,9 @@ const BrowsePage = () => {
                       className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
                     >
                       <div className="aspect-video bg-surface-2 relative">
-                        {(resolveCourseThumbnail(c.slug, c.thumbnail_url)) && (
+                        {c.thumbnail_url && (
                           <img
-                            src={resolveCourseThumbnail(c.slug, c.thumbnail_url)!}
+                            src={c.thumbnail_url}
                             alt={c.title}
                             className="w-full h-full object-cover"
                             loading="lazy"
