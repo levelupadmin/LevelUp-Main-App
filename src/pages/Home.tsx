@@ -61,7 +61,7 @@ const ContinueLearning = () => {
       const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
       const { data: coursesData } = await supabase
         .from("courses")
-        .select("id, title, description, instructor_display_name, thumbnail_url")
+        .select("id, slug, title, description, instructor_display_name, thumbnail_url")
         .in("id", courseIds);
 
       setCourses(coursesData ?? []);
