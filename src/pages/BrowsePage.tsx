@@ -19,6 +19,7 @@ const TIER_MAP: Record<string, string> = {
 interface CourseWithOffering {
   id: string;
   title: string;
+  slug: string;
   description: string | null;
   thumbnail_url: string | null;
   product_tier: string;
