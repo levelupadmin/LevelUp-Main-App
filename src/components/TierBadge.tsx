@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 const TIER_CONFIG: Record<string, { label: string; className: string }> = {
-  live_cohort: { label: "LIVE", className: "bg-red-600 text-white" },
+  live_cohort: { label: "COHORT", className: "bg-red-600 text-white" },
   masterclass: { label: "MASTERCLASS", className: "bg-amber-500 text-black" },
   advanced_program: { label: "PROGRAM", className: "bg-amber-700 text-white" },
   workshop: { label: "WORKSHOP", className: "bg-cream text-cream-text" },
@@ -23,8 +23,8 @@ export const TierBadge = ({ tier }: { tier: string }) => {
 };
 
 export const TIER_SECTION_CONFIG: Record<string, { heading: string; accentColor: string }> = {
-  live_cohort: { heading: "Live Programs", accentColor: "bg-red-600" },
+  live_cohort: { heading: "Mentorship Cohorts", accentColor: "bg-red-600" },
   masterclass: { heading: "Masterclasses", accentColor: "bg-amber-500" },
-  advanced_program: { heading: "Intensive Programs", accentColor: "bg-amber-700" },
+  advanced_program: { heading: "Programs", accentColor: "bg-amber-700" },
   workshop: { heading: "Workshops", accentColor: "bg-cream" },
 };

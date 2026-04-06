@@ -12,13 +12,17 @@ import {
   ArrowLeft,
   Menu,
   X,
+  Image,
+  CalendarDays,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
 
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/admin" },
+  { label: "Hero Slides", icon: Image, path: "/admin/hero-slides" },
   { label: "Courses", icon: BookOpen, path: "/admin/courses" },
   { label: "Offerings", icon: Package, path: "/admin/offerings" },
+  { label: "Events", icon: CalendarDays, path: "/admin/events" },
   { label: "Enrolments", icon: Users, path: "/admin/enrolments" },
   { label: "Users", icon: UserCog, path: "/admin/users" },
   { label: "Coupons", icon: Ticket, path: "/admin/coupons" },

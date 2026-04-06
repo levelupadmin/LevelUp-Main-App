@@ -13,48 +13,21 @@ import slideUiux from "@/assets/carousel/slide-uiux.jpg";
 import slideSmp from "@/assets/carousel/slide-smp.jpg";
 import slideMasterclasses from "@/assets/carousel/slide-masterclasses.jpg";
 
-const SLIDES = [
-  {
-    category: "LIVE COHORT",
-    title: "Make your first",
-    italic: "film",
-    subtitle: "12-week Breakthrough Filmmakers' Program with industry directors",
-    gradient: "from-red-900 to-black",
-    image: slideBfp,
-  },
-  {
-    category: "LIVE COHORT",
-    title: "Cut like a",
-    italic: "pro",
-    subtitle: "Video Editing Academy — Premiere, DaVinci, and the craft of rhythm",
-    gradient: "from-indigo-900 to-black",
-    image: slideVea,
-  },
-  {
-    category: "LIVE COHORT",
-    title: "Design that",
-    italic: "ships",
-    subtitle: "UI/UX Academy — from wireframe to production-ready interface",
-    gradient: "from-emerald-900 to-black",
-    image: slideUiux,
-  },
-  {
-    category: "LIVE COHORT",
-    title: "Write the",
-    italic: "story",
-    subtitle: "Screenwriting Mastery — structure, character, and the hand-written draft",
-    gradient: "from-amber-900 to-black",
-    image: slideSmp,
-  },
-  {
-    category: "ALL MASTERCLASSES",
-    title: "Learn from the",
-    italic: "greats",
-    subtitle: "One pass. Every masterclass. Karthik, Lokesh, Anthony, Nelson, Ravi & more.",
-    gradient: "from-violet-900 to-black",
-    image: slideMasterclasses,
-  },
+const FALLBACK_SLIDES = [
+  { category: "LIVE COHORT", title: "Make your first", italic: "film", subtitle: "12-week Breakthrough Filmmakers' Program", image: slideBfp },
+  { category: "LIVE COHORT", title: "Cut like a", italic: "pro", subtitle: "Video Editing Academy", image: slideVea },
+  { category: "LIVE COHORT", title: "Design that", italic: "ships", subtitle: "UI/UX Academy", image: slideUiux },
+  { category: "LIVE COHORT", title: "Write the", italic: "story", subtitle: "Screenwriting Mastery Program", image: slideSmp },
+  { category: "ALL MASTERCLASSES", title: "Learn from the", italic: "greats", subtitle: "Every masterclass. One pass.", image: slideMasterclasses },
 ];
+
+interface SlideData {
+  category: string;
+  title: string;
+  italic: string;
+  subtitle: string;
+  image: string;
+}
 
 const Login = () => {
   const navigate = useNavigate();
@@ -63,12 +36,41 @@ const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [slides, setSlides] = useState<SlideData[]>(FALLBACK_SLIDES);
   const [activeSlide, setActiveSlide] = useState(0);
 
   usePageTitle("Sign In");
 
+  // Fetch slides from DB
+  useEffect(() => {
+    supabase
+      .from("hero_slides")
+      .select("*")
+      .eq("is_active", true)
+      .or("placement.eq.login,placement.eq.both")
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const now = new Date();
+          const filtered = data.filter((s: any) =>
+            (!s.starts_at || new Date(s.starts_at) <= now) &&
+            (!s.expires_at || new Date(s.expires_at) >= now)
+          );
+          if (filtered.length > 0) {
+            setSlides(filtered.map((s: any) => ({
+              category: s.category_label || "",
+              title: s.title_prefix || "",
+              italic: s.title_accent || "",
+              subtitle: s.subtitle || "",
+              image: s.image_url || "",
+            })));
+          }
+        }
+      });
+  }, []);
+
   const nextSlide = useCallback(() => {
-    setActiveSlide((prev) => (prev + 1) % SLIDES.length);
+    setActiveSlide((prev) => (prev + 1) % slides.length);
   }, []);
 
   useEffect(() => {
@@ -92,7 +94,7 @@ const Login = () => {
     navigate(from, { replace: true });
   };
 
-  const slide = SLIDES[activeSlide];
+  const slide = slides[activeSlide];
 
   return (
     <div className="flex min-h-screen bg-canvas">
@@ -192,7 +194,7 @@ const Login = () => {
 
       {/* Right hero carousel */}
       <div className="hidden lg:flex flex-1 relative overflow-hidden">
-        <div className={`absolute inset-0 bg-gradient-to-br ${slide.gradient} transition-all duration-700`}>
+        <div className="absolute inset-0 bg-gradient-to-br from-black/60 to-transparent transition-all duration-700">
           {slide.image && (
             <img
               src={slide.image}
@@ -220,7 +222,7 @@ const Login = () => {
         </div>
 
         <div className="absolute bottom-8 left-12 flex gap-2 z-20">
-          {SLIDES.map((_, i) => (
+          {slides.map((_, i) => (
             <div key={i} className="w-16 h-0.5 bg-white/20 rounded-full overflow-hidden">
               <div
                 className={`h-full bg-white rounded-full ${
