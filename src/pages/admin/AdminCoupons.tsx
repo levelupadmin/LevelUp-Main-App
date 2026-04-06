@@ -199,7 +199,7 @@ const AdminCoupons = () => {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Applies To Offering (optional)</label>
-              <Select value={form.applies_to_offering_id} onValueChange={(v) => setForm((f) => ({ ...f, applies_to_offering_id: v }))}>
+              <Select value={form.applies_to_offering_id || "__all__"} onValueChange={(v) => setForm((f) => ({ ...f, applies_to_offering_id: v === "__all__" ? "" : v }))}>
                 <SelectTrigger><SelectValue placeholder="All offerings" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__all__">All offerings</SelectItem>
