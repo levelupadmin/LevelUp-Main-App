@@ -336,7 +336,7 @@ const BrowsePrograms = () => {
             className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
           >
             <div className="aspect-video bg-surface-2 relative">
-              {resolveCourseThumbnail(c.slug, c.thumbnail_url) && <img src={resolveCourseThumbnail(c.slug, c.thumbnail_url)!} alt="" className="w-full h-full object-cover" />}
+              {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
               <div className="absolute top-2 left-2">
                 <TierBadge tier={c.product_tier} />
               </div>
