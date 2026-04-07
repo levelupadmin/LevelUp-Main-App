@@ -293,6 +293,10 @@ const UpcomingEvents = () => {
           body: JSON.stringify({ event_id: eventId }),
         }
       );
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || `HTTP ${res.status}`);
+      }
       const data = await res.json();
 
       if (data.registered) {
