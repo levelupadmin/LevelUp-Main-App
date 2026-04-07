@@ -19,3 +19,7 @@ project_id = "twqagwleffjggoemzfqs"
     verify_jwt = false
   [functions.verify-razorpay-payment]
     verify_jwt = false
+  [functions.get-vdocipher-otp]
+    verify_jwt = false
+  [functions.vdocipher-upload-credential]
+    verify_jwt = false
