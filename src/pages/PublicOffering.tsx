@@ -406,6 +406,7 @@ function CheckoutCard({
           toast({ title: "Verification error", description: "Contact support.", variant: "destructive" });
         }
         setLoading(false);
+        setIsProcessing(false);
       },
       prefill: {
         name: session ? profile?.full_name : guestName,
