@@ -150,6 +150,11 @@ const AdminOfferings = () => {
 
   const handleSave = async () => {
     if (!form.title.trim()) { toast({ title: "Title is required", variant: "destructive" }); return; }
+    if (form.highlights) {
+      try { JSON.parse(form.highlights); } catch {
+        toast({ title: "Highlights must be valid JSON array", variant: "destructive" }); return;
+      }
+    }
     setSaving(true);
 
     const slug = form.slug || form.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");

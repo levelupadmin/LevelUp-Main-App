@@ -237,8 +237,8 @@ const ChapterViewer = () => {
     toast.success("Chapter completed!");
     setSubmitting(false);
 
-    // Auto-advance to next
-    if (currentIndex < siblings.length - 1) {
+    // Auto-advance to next (with safety check)
+    if (siblings && currentIndex >= 0 && currentIndex < siblings.length - 1 && siblings[currentIndex + 1]?.id) {
       setTimeout(() => navigate(`/chapters/${siblings[currentIndex + 1].id}`), 800);
     }
   };

@@ -13,6 +13,13 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (digits.length === 10) return digits;
+  return digits;
+}
+
 async function verifyHmac(
   orderId: string,
   paymentId: string,
@@ -137,6 +144,8 @@ Deno.serve(async (req) => {
         .single();
 
       if (poGuest?.guest_email) {
+        const normalizedPhone = poGuest.guest_phone ? normalizePhone(poGuest.guest_phone) : null;
+
         // Check if user already exists by email in public.users
         const { data: existingUser } = await admin
           .from("users")
@@ -158,7 +167,7 @@ Deno.serve(async (req) => {
               email_confirm: true,
               user_metadata: {
                 full_name: poGuest.guest_name,
-                phone: poGuest.guest_phone,
+                phone: normalizedPhone,
               },
             });
 
@@ -176,10 +185,10 @@ Deno.serve(async (req) => {
             .eq("id", payment_order_id);
 
           // Update users table with phone (handle_new_user trigger creates the row)
-          if (poGuest.guest_phone) {
+          if (normalizedPhone) {
             await admin
               .from("users")
-              .update({ phone: poGuest.guest_phone })
+              .update({ phone: normalizedPhone })
               .eq("id", userId);
           }
         }
@@ -204,40 +213,63 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Unable to resolve user for enrolment" }, 500);
     }
 
-    /* ── Create enrolment for main offering ── */
-    const { data: enrolment, error: enrolErr } = await admin
+    /* ── Create enrolment for main offering (with duplicate guard) ── */
+    const { data: existingEnrolment } = await admin
       .from("enrolments")
-      .insert({
-        user_id: userId,
-        offering_id: po.offering_id,
-        payment_order_id: po.id,
-        status: "active",
-        source: "checkout",
-      })
       .select("id")
-      .single();
+      .eq("user_id", userId)
+      .eq("offering_id", po.offering_id)
+      .maybeSingle();
 
-    if (enrolErr) {
-      console.error("Enrolment error:", enrolErr);
-      return jsonRes({ error: "Failed to create enrolment" }, 500);
+    let enrolmentId: string;
+
+    if (!existingEnrolment) {
+      const { data: enrolment, error: enrolErr } = await admin
+        .from("enrolments")
+        .insert({
+          user_id: userId,
+          offering_id: po.offering_id,
+          payment_order_id: po.id,
+          status: "active",
+          source: is_guest ? "purchase_guest" : "purchase",
+        })
+        .select("id")
+        .single();
+
+      if (enrolErr) {
+        console.error("Enrolment error:", enrolErr);
+        return jsonRes({ error: "Failed to create enrolment" }, 500);
+      }
+      enrolmentId = enrolment.id;
+    } else {
+      enrolmentId = existingEnrolment.id;
     }
 
     /* ── Enrol bump offerings ── */
     if (po.bump_offering_ids && po.bump_offering_ids.length > 0) {
       for (const bumpOffId of po.bump_offering_ids) {
-        await admin.from("enrolments").insert({
-          user_id: userId,
-          offering_id: bumpOffId,
-          payment_order_id: po.id,
-          status: "active",
-          source: "checkout",
-        });
+        const { data: existingBump } = await admin
+          .from("enrolments")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("offering_id", bumpOffId)
+          .maybeSingle();
+
+        if (!existingBump) {
+          await admin.from("enrolments").insert({
+            user_id: userId,
+            offering_id: bumpOffId,
+            payment_order_id: po.id,
+            status: "active",
+            source: is_guest ? "purchase_guest" : "purchase",
+          });
+        }
       }
     }
 
     /* ── Audit log ── */
     await admin.from("enrolment_audit_log").insert({
-      enrolment_id: enrolment.id,
+      enrolment_id: enrolmentId,
       action: "granted",
       actor_user_id: userId,
       metadata: {

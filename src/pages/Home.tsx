@@ -38,17 +38,22 @@ const HeroWelcome = () => {
 
 // ── Section 2: Continue Learning ──
 const ContinueLearning = () => {
+  const { user } = useAuth();
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [progressMap, setProgressMap] = useState<Record<string, number>>({});
 
-  useEffect(() => {
-    const fetchEnrolled = async () => {
-      try {
-        const { data: enrolments } = await supabase
-          .from("enrolments")
-          .select("id, offering_id, created_at")
-          .eq("status", "active");
+  const fetchEnrolled = async () => {
+    setError(false);
+    setLoading(true);
+    try {
+      if (!user) { setLoading(false); return; }
+      const { data: enrolments } = await supabase
+        .from("enrolments")
+        .select("id, offering_id, created_at")
+        .eq("user_id", user.id)
+        .eq("status", "active");
 
         if (!enrolments?.length) return;
 
@@ -102,16 +107,33 @@ const ContinueLearning = () => {
           }
           setProgressMap(pMap);
         }
-      } catch (err) {
-        console.error("Failed to load enrolled courses:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchEnrolled();
-  }, []);
+    } catch (err) {
+      console.error("Failed to load enrolled courses:", err);
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  if (loading) return null;
+  useEffect(() => {
+    fetchEnrolled();
+  }, [user]);
+
+  if (loading) return (
+    <section>
+      <h2 className="text-lg font-semibold mb-4">Continue Learning</h2>
+      <div className="flex gap-4 overflow-x-auto pb-2">
+        {[1,2,3].map(i => <div key={i} className="min-w-[300px] h-[240px] bg-surface border border-border rounded-xl animate-pulse flex-shrink-0" />)}
+      </div>
+    </section>
+  );
+
+  if (error) return (
+    <section>
+      <h2 className="text-lg font-semibold mb-4">Continue Learning</h2>
+      <p className="text-sm text-muted-foreground">Couldn't load this section. <button onClick={fetchEnrolled} className="text-cream hover:underline">Try again</button></p>
+    </section>
+  );
 
   return (
     <section>

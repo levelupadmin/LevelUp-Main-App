@@ -85,11 +85,17 @@ const Login = () => {
     return () => clearInterval(timer);
   }, [nextSlide]);
 
-  const redirectTarget = (location.state as any)?.from?.pathname || "/home";
+  const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  const rawFrom = (location.state as any)?.from?.pathname || "/home";
+  const redirectTarget = rawFrom.startsWith("/") && !rawFrom.includes("//") ? rawFrom : "/home";
 
   const handleForgotPassword = async () => {
     if (!email) {
       toast({ title: "Enter your email first", variant: "destructive" });
+      return;
+    }
+    if (!isValidEmail(email)) {
+      toast({ title: "Please enter a valid email address", variant: "destructive" });
       return;
     }
     setLoading(true);
@@ -109,6 +115,10 @@ const Login = () => {
       toast({ title: "Enter your email", variant: "destructive" });
       return;
     }
+    if (!isValidEmail(email)) {
+      toast({ title: "Please enter a valid email address", variant: "destructive" });
+      return;
+    }
     setLoading(true);
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -126,6 +136,12 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
 
+    if (!isValidEmail(email)) {
+      toast({ title: "Please enter a valid email address", variant: "destructive" });
+      setLoading(false);
+      return;
+    }
+
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       toast({ title: "Login failed", description: error.message, variant: "destructive" });
@@ -133,8 +149,7 @@ const Login = () => {
       return;
     }
 
-    const from = (location.state as any)?.from?.pathname || "/home";
-    navigate(from, { replace: true });
+    navigate(redirectTarget, { replace: true });
   };
 
   const slide = slides[activeSlide];

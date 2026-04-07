@@ -13,6 +13,13 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (digits.length === 10) return digits;
+  return digits;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -40,8 +47,8 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Invalid email format" }, 400);
     }
 
-    const phoneDigits = guest_phone.replace(/\D/g, "");
-    if (phoneDigits.length < 10) {
+    const normalizedPhone = normalizePhone(guest_phone);
+    if (normalizedPhone.length < 10) {
       return jsonRes({ error: "Invalid phone number" }, 400);
     }
 
@@ -71,14 +78,14 @@ Deno.serve(async (req) => {
     const { data: phoneUser } = await admin
       .from("users")
       .select("id, email")
-      .eq("phone", guest_phone)
+      .eq("phone", normalizedPhone)
       .maybeSingle();
 
     if (emailUser && phoneUser && emailUser.id !== phoneUser.id) {
       return jsonRes({ error: "Email and phone number are linked to different accounts. Please verify your identity." }, 403);
     }
 
-    if (emailUser && emailUser.phone && emailUser.phone !== guest_phone) {
+    if (emailUser && emailUser.phone && normalizePhone(emailUser.phone) !== normalizedPhone) {
       return jsonRes({ error: "Phone number doesn't match the account on file. Please verify your identity." }, 403);
     }
 
@@ -159,7 +166,7 @@ Deno.serve(async (req) => {
         status: totalInr <= 0 ? "captured" : "created",
         guest_name,
         guest_email,
-        guest_phone,
+        guest_phone: normalizedPhone,
         utm_source: utm_source || null,
         utm_medium: utm_medium || null,
         utm_campaign: utm_campaign || null,
@@ -187,7 +194,7 @@ Deno.serve(async (req) => {
 
       const { data: existingUser } = await admin
         .from("users")
-        .select("id")
+        .select("id, phone")
         .eq("email", guest_email)
         .maybeSingle();
 
@@ -204,7 +211,7 @@ Deno.serve(async (req) => {
             email_confirm: true,
             user_metadata: {
               full_name: guest_name,
-              phone: guest_phone,
+              phone: normalizedPhone,
             },
           });
 
@@ -219,22 +226,31 @@ Deno.serve(async (req) => {
           .update({ user_id: userId })
           .eq("id", po.id);
 
-        if (guest_phone) {
+        if (normalizedPhone) {
           await admin
             .from("users")
-            .update({ phone: guest_phone })
+            .update({ phone: normalizedPhone })
             .eq("id", userId);
         }
       }
 
-      // Create enrolment
-      await admin.from("enrolments").insert({
-        user_id: userId,
-        offering_id,
-        payment_order_id: po.id,
-        status: "active",
-        source: "checkout",
-      });
+      // Check for duplicate enrolment
+      const { data: existingEnrolment } = await admin
+        .from("enrolments")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("offering_id", offering_id)
+        .maybeSingle();
+
+      if (!existingEnrolment) {
+        await admin.from("enrolments").insert({
+          user_id: userId,
+          offering_id,
+          payment_order_id: po.id,
+          status: "active",
+          source: "checkout",
+        });
+      }
 
       // Send magic link
       try {

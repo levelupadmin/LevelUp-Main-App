@@ -154,11 +154,13 @@ function CheckoutCard({
   session,
   profile,
   razorpayReady,
+  razorpayError,
 }: {
   offering: Offering;
   session: any;
   profile: any;
   razorpayReady: boolean;
+  razorpayError: boolean;
 }) {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -352,12 +354,16 @@ function CheckoutCard({
 
   /* ── Pay: guest (scenarios A & B) ── */
   const handleGuestPay = async () => {
-    if (!guestName.trim() || !guestEmail.trim() || !guestPhone.trim()) {
+    if (isProcessing) return;
+    if (!guestName.trim()) {
+      toast({ title: "Please enter your name", variant: "destructive" });
+      return;
+    }
+    if (!guestEmail.trim() || !guestPhone.trim()) {
       toast({ title: "Please fill all fields", variant: "destructive" });
       return;
     }
     if (!validatePhone(guestPhone)) return;
-    if (isProcessing) return;
     setIsProcessing(true);
     setLoading(true);
     try {
@@ -537,7 +543,7 @@ function CheckoutCard({
           </p>
           <Button
             onClick={handleAuthPay}
-            disabled={loading || isProcessing || (!isFree && !razorpayReady)}
+            disabled={loading || isProcessing || razorpayError || (!isFree && !razorpayReady)}
             className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
           >
             {isProcessing ? (
@@ -555,6 +561,7 @@ function CheckoutCard({
             value={guestName}
             onChange={(e) => setGuestName(e.target.value)}
             className="bg-[hsl(var(--surface-2))] border-border"
+            required
           />
           <Input
             type="email"
@@ -671,7 +678,7 @@ function CheckoutCard({
             <>
               <Button
                 onClick={handleGuestPay}
-                disabled={loading || isProcessing || (!isFree && !razorpayReady)}
+                disabled={loading || isProcessing || razorpayError || (!isFree && !razorpayReady)}
                 className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
               >
                 {isProcessing ? (
@@ -842,13 +849,13 @@ export default function PublicOffering() {
           {/* Right: sticky checkout — desktop */}
           <div className="hidden lg:block lg:w-[40%]">
             <div className="sticky top-8">
-              <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} />
+              <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} razorpayError={razorpayError} />
             </div>
           </div>
 
           {/* Mobile: checkout below */}
           <div className="lg:hidden mt-8">
-            <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} />
+            <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} razorpayError={razorpayError} />
           </div>
         </div>
       </main>
