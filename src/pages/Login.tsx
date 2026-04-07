@@ -154,46 +154,106 @@ const Login = () => {
               Sign in to continue your craft
             </p>
 
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm text-muted-foreground">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="bg-surface border-border focus:border-foreground h-11"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm text-muted-foreground">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="bg-surface border-border focus:border-foreground h-11"
-                />
-              </div>
+            {loginMode === "password" ? (
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-sm text-muted-foreground">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="bg-surface border-border focus:border-foreground h-11"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-sm text-muted-foreground">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="bg-surface border-border focus:border-foreground h-11"
+                  />
+                </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full h-11 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                Sign in
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full h-11 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Sign in
+                </button>
+              </form>
+            ) : magicLinkSent ? (
+              <div className="text-center space-y-4 py-6">
+                <div className="w-12 h-12 rounded-full bg-[hsl(var(--accent-amber)/0.15)] flex items-center justify-center mx-auto">
+                  <Mail className="h-6 w-6 text-cream" />
+                </div>
+                <h2 className="text-lg font-semibold">Check your email</h2>
+                <p className="text-sm text-muted-foreground">
+                  We sent a login link to <span className="text-foreground font-medium">{email}</span>
+                </p>
+                <button
+                  onClick={() => { setMagicLinkSent(false); setLoginMode("password"); }}
+                  className="text-sm text-cream hover:underline"
+                >
+                  Back to password login
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="magic-email" className="text-sm text-muted-foreground">Email</Label>
+                  <Input
+                    id="magic-email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="bg-surface border-border focus:border-foreground h-11"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleMagicLink}
+                  disabled={loading}
+                  className="w-full h-11 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Send login link
+                </button>
+              </div>
+            )}
 
-            <div className="mt-4 text-center">
-              <button onClick={handleForgotPassword} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                Forgot password?
-              </button>
+            <div className="mt-4 flex items-center justify-center gap-2 text-sm">
+              {loginMode === "password" ? (
+                <>
+                  <button onClick={handleForgotPassword} className="text-muted-foreground hover:text-foreground transition-colors">
+                    Forgot password?
+                  </button>
+                  <span className="text-muted-foreground">·</span>
+                  <button
+                    onClick={() => setLoginMode("magic_link")}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Sign in with email link
+                  </button>
+                </>
+              ) : !magicLinkSent && (
+                <button
+                  onClick={() => setLoginMode("password")}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Sign in with password instead
+                </button>
+              )}
             </div>
 
           </div>

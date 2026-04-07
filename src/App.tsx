@@ -79,6 +79,7 @@ const App = () => (
             <Route path="/admin/enrolments" element={<RequireAuth><RequireRole role="admin"><AdminEnrolments /></RequireRole></RequireAuth>} />
             <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />
             <Route path="/admin/coupons" element={<RequireAuth><RequireRole role="admin"><AdminCoupons /></RequireRole></RequireAuth>} />
+            <Route path="/admin/revenue" element={<RequireAuth><RequireRole role="admin"><AdminRevenue /></RequireRole></RequireAuth>} />
 
             {/* Instructor */}
             <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />

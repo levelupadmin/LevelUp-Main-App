@@ -14,6 +14,7 @@ import {
   X,
   Image,
   CalendarDays,
+  IndianRupee,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
 

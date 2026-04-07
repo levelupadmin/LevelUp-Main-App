@@ -261,6 +261,18 @@ const ProfilePage = () => {
         {/* Divider */}
         <div className="border-t border-border" />
 
+        {/* Set Password */}
+        <section>
+          <h3 className="text-lg font-semibold mb-2">Set Password</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Set a password if you'd like to sign in with email and password instead of email links.
+          </p>
+          <SetPasswordForm />
+        </section>
+
+        {/* Divider */}
+        <div className="border-t border-border" />
+
         {/* Account */}
         <section>
           <h3 className="text-lg font-semibold mb-4">Account</h3>
