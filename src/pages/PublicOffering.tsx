@@ -675,7 +675,7 @@ function CheckoutCard({
             <>
               <Button
                 onClick={handleGuestPay}
-                disabled={loading || isProcessing || (!isFree && !razorpayReady)}
+                disabled={loading || isProcessing || razorpayError || (!isFree && !razorpayReady)}
                 className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
               >
                 {isProcessing ? (
