@@ -67,55 +67,67 @@ function firePixels(order: PaymentOrder) {
   const currency = "INR";
   const offering = order.offerings;
 
-  // 1. Meta Pixel
+  // 1. Meta Pixel — sanitize pixelId to numeric only
   if (offering?.meta_pixel_id) {
-    const pixelId = offering.meta_pixel_id;
-    const script = document.createElement("script");
-    script.innerHTML = `
-      !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-      n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
-      n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
-      t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
-      (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-      fbq('init', '${pixelId}');
-      fbq('track', 'Purchase', { value: ${revenue}, currency: '${currency}' });
-    `;
-    document.head.appendChild(script);
+    const pixelId = offering.meta_pixel_id.replace(/[^0-9]/g, "");
+    if (pixelId.length > 0) {
+      const script = document.createElement("script");
+      script.innerHTML = `
+        !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+        n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+        n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+        t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
+        (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+        fbq('init', '${pixelId}');
+        fbq('track', 'Purchase', { value: ${revenue}, currency: '${currency}' });
+      `;
+      document.head.appendChild(script);
+    }
   }
 
-  // 2. Google Ads Conversion
+  // 2. Google Ads Conversion — sanitize conversion string
   if (offering?.google_ads_conversion) {
-    const [conversionId] = offering.google_ads_conversion.split("/");
-    const gtagScript = document.createElement("script");
-    gtagScript.src = `https://www.googletagmanager.com/gtag/js?id=${conversionId}`;
-    gtagScript.async = true;
-    document.head.appendChild(gtagScript);
+    const conversionStr = offering.google_ads_conversion.replace(/[^a-zA-Z0-9_\-\/]/g, "");
+    if (conversionStr.length > 0) {
+      const [conversionId] = conversionStr.split("/");
+      const gtagScript = document.createElement("script");
+      gtagScript.src = `https://www.googletagmanager.com/gtag/js?id=${conversionId}`;
+      gtagScript.async = true;
+      document.head.appendChild(gtagScript);
 
-    const inlineScript = document.createElement("script");
-    inlineScript.innerHTML = `
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', '${conversionId}');
-      gtag('event', 'conversion', {
-        'send_to': '${offering.google_ads_conversion}',
-        'value': ${revenue},
-        'currency': '${currency}',
-        'transaction_id': '${order.razorpay_payment_id || ""}'
-      });
-    `;
-    document.head.appendChild(inlineScript);
+      const inlineScript = document.createElement("script");
+      inlineScript.innerHTML = `
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', '${conversionId}');
+        gtag('event', 'conversion', {
+          'send_to': '${conversionStr}',
+          'value': ${revenue},
+          'currency': '${currency}',
+          'transaction_id': '${(order.razorpay_payment_id || "").replace(/[^a-zA-Z0-9_\-]/g, "")}'
+        });
+      `;
+      document.head.appendChild(inlineScript);
+    }
   }
 
-  // 3. Custom tracking script
+  // 3. Custom tracking script — strip script tags and event handlers, allow only pixel tags
   if (offering?.custom_tracking_script) {
-    const customScript = document.createElement("script");
-    customScript.innerHTML = offering.custom_tracking_script
-      .replace(/\{\{value\}\}/g, String(revenue))
-      .replace(/\{\{currency\}\}/g, currency)
-      .replace(/\{\{transaction_id\}\}/g, order.razorpay_payment_id || "")
-      .replace(/\{\{order_id\}\}/g, order.id);
-    document.head.appendChild(customScript);
+    const sanitized = offering.custom_tracking_script
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/javascript:/gi, "")
+      .replace(/on\w+=/gi, "");
+
+    if (sanitized.trim()) {
+      const div = document.createElement("div");
+      div.innerHTML = sanitized
+        .replace(/\{\{value\}\}/g, String(revenue))
+        .replace(/\{\{currency\}\}/g, currency)
+        .replace(/\{\{transaction_id\}\}/g, (order.razorpay_payment_id || "").replace(/[^a-zA-Z0-9_\-]/g, ""))
+        .replace(/\{\{order_id\}\}/g, order.id.replace(/[^a-zA-Z0-9\-]/g, ""));
+      document.body.appendChild(div);
+    }
   }
 }
 
