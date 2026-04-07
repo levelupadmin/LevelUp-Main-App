@@ -430,6 +430,9 @@ export type Database = {
           thumbnail_url: string | null
           title: string
           updated_at: string
+          vdocipher_video_id: string | null
+          vdocipher_watermark_text: string | null
+          video_type: string
         }
         Insert: {
           article_body?: string | null
@@ -450,6 +453,9 @@ export type Database = {
           thumbnail_url?: string | null
           title: string
           updated_at?: string
+          vdocipher_video_id?: string | null
+          vdocipher_watermark_text?: string | null
+          video_type?: string
         }
         Update: {
           article_body?: string | null
@@ -470,6 +476,9 @@ export type Database = {
           thumbnail_url?: string | null
           title?: string
           updated_at?: string
+          vdocipher_video_id?: string | null
+          vdocipher_watermark_text?: string | null
+          video_type?: string
         }
         Relationships: [
           {
@@ -772,6 +781,7 @@ export type Database = {
         Row: {
           category_id: string | null
           created_at: string
+          default_video_type: string
           description: string | null
           drm_enabled: boolean
           duration_minutes: number | null
@@ -805,6 +815,7 @@ export type Database = {
         Insert: {
           category_id?: string | null
           created_at?: string
+          default_video_type?: string
           description?: string | null
           drm_enabled?: boolean
           duration_minutes?: number | null
@@ -838,6 +849,7 @@ export type Database = {
         Update: {
           category_id?: string | null
           created_at?: string
+          default_video_type?: string
           description?: string | null
           drm_enabled?: boolean
           duration_minutes?: number | null
@@ -2220,6 +2232,44 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      vdocipher_video_views: {
+        Row: {
+          chapter_id: string
+          id: string
+          ip_address: unknown
+          otp_issued_at: string
+          user_agent: string | null
+          user_id: string
+          vdocipher_video_id: string
+        }
+        Insert: {
+          chapter_id: string
+          id?: string
+          ip_address?: unknown
+          otp_issued_at?: string
+          user_agent?: string | null
+          user_id: string
+          vdocipher_video_id: string
+        }
+        Update: {
+          chapter_id?: string
+          id?: string
+          ip_address?: unknown
+          otp_issued_at?: string
+          user_agent?: string | null
+          user_id?: string
+          vdocipher_video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vdocipher_video_views_chapter_id_fkey"
+            columns: ["chapter_id"]
+            isOneToOne: false
+            referencedRelation: "chapters"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       workshop_attendance: {
         Row: {
