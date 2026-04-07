@@ -285,15 +285,28 @@ const AdminOfferings = () => {
               <tr key={o.id} className="border-b border-border last:border-0 hover:bg-secondary/30">
                 <td className="px-5 py-3">
                   <span className="font-medium">{o.title}</span>
-                  {o.is_public && (
-                    <a
-                      href={`/p/${o.slug}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-[hsl(var(--cream))] hover:underline mt-0.5"
-                    >
-                      /p/{o.slug} <ExternalLink className="h-3 w-3" />
-                    </a>
+                  {o.slug && (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <a
+                        href={`/p/${o.slug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-[hsl(var(--cream))] hover:underline flex items-center gap-1"
+                      >
+                        /p/{o.slug} <ExternalLink className="h-3 w-3" />
+                      </a>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(`https://app.leveluplearning.in/p/${o.slug}`);
+                          sonnerToast("Link copied!");
+                        }}
+                        className="p-0.5 rounded hover:bg-secondary"
+                        title="Copy public link"
+                      >
+                        <Copy className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                    </div>
                   )}
                 </td>
                 <td className="px-5 py-3 font-mono text-xs">{o.type}</td>
