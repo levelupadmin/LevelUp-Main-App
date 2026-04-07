@@ -30,6 +30,7 @@ import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminCoupons from "@/pages/admin/AdminCoupons";
 import AdminHeroSlides from "@/pages/admin/AdminHeroSlides";
 import AdminEvents from "@/pages/admin/AdminEvents";
+import AdminRevenue from "@/pages/admin/AdminRevenue";
 import EventsPage from "@/pages/EventsPage";
 import EventDetail from "@/pages/EventDetail";
 import PublicOffering from "@/pages/PublicOffering";
