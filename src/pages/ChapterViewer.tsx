@@ -18,6 +18,7 @@ import {
   Info,
   ArrowLeft,
 } from "lucide-react";
+import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 
 interface Chapter {
   id: string;
