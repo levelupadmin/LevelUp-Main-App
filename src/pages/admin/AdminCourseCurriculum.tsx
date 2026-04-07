@@ -69,7 +69,7 @@ const AdminCourseCurriculum = () => {
     const secIds = secs.map((s) => s.id);
     const { data: chs } = await supabase
       .from("chapters")
-      .select("id, title, content_type, description, media_url, embed_url, article_body, duration_seconds, make_free, sort_order, section_id")
+      .select("id, title, content_type, description, media_url, embed_url, article_body, duration_seconds, make_free, sort_order, section_id, video_type, vdocipher_video_id, vdocipher_watermark_text")
       .in("section_id", secIds)
       .order("sort_order");
 
