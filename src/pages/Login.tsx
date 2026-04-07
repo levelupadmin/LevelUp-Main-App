@@ -167,7 +167,7 @@ const Login = () => {
             </form>
 
             <div className="mt-4 text-center">
-              <button className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <button onClick={handleForgotPassword} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Forgot password?
               </button>
             </div>
