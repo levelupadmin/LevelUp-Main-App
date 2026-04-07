@@ -29,6 +29,7 @@ const ProfilePage = () => {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [enrolments, setEnrolments] = useState<Enrolment[]>([]);
+  const [courseMap, setCourseMap] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState({
     full_name: "",
