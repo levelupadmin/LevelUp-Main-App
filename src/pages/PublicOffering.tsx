@@ -304,7 +304,8 @@ function CheckoutCard({
 
   /* ── Pay: authenticated ── */
   const handleAuthPay = async () => {
-    if (!session) return;
+    if (!session || isProcessing) return;
+    setIsProcessing(true);
     setLoading(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/create-razorpay-order`, {
@@ -321,6 +322,7 @@ function CheckoutCard({
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
       setLoading(false);
+      setIsProcessing(false);
     }
   };
 
