@@ -613,7 +613,10 @@ const NewMembers = () => {
       .eq("role", "student")
       .order("created_at", { ascending: false })
       .limit(10)
-      .then(({ data }) => setMembers(data ?? []));
+      .then(({ data, error }) => {
+        if (error) console.error("Failed to load new members:", error);
+        setMembers(data ?? []);
+      });
   }, []);
 
   if (!members.length) {
