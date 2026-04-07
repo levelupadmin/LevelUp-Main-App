@@ -49,10 +49,15 @@ const Login = () => {
       .eq("is_active", true)
       .or("placement.eq.login,placement.eq.both")
       .order("sort_order", { ascending: true })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Failed to load hero slides:", error);
+          return;
+        }
         if (data && data.length > 0) {
           const now = new Date();
           const filtered = data.filter((s: any) =>
+            s.image_url &&
             (!s.starts_at || new Date(s.starts_at) <= now) &&
             (!s.expires_at || new Date(s.expires_at) >= now)
           );
