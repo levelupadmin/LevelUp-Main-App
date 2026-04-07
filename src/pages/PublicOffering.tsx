@@ -168,7 +168,12 @@ function CheckoutCard({
   const [couponApplied, setCouponApplied] = useState(false);
   const [couponLoading, setCouponLoading] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [existingUser, setExistingUser] = useState(false);
+
+  // Scenario state: null = not checked yet, A/B/C
+  const [scenario, setScenario] = useState<"A" | "B" | "C" | null>(null);
+  const [checkingIdentity, setCheckingIdentity] = useState(false);
+
+  // Scenario C inline auth
   const [loginMode, setLoginMode] = useState<"otp" | "password" | null>(null);
   const [password, setPassword] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -178,27 +183,39 @@ function CheckoutCard({
   const mrp = offering.mrp_inr ? Number(offering.mrp_inr) : null;
   const afterDiscount = Math.max(price - discountInr, 0);
 
-  /* ── Email blur: check if user exists ── */
-  const handleEmailBlur = useCallback(async () => {
-    if (!guestEmail || session) return;
+  /* ── Phone blur: check identity (only when both email + phone filled) ── */
+  const handlePhoneBlur = useCallback(async () => {
+    if (!guestEmail.trim() || !guestPhone.trim() || session) return;
+    setCheckingIdentity(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/check-user-exists`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: guestEmail }),
+        body: JSON.stringify({ email: guestEmail.trim(), phone: guestPhone.trim() }),
       });
-      if (!res.ok) return;
+      if (!res.ok) { setCheckingIdentity(false); return; }
       const data = await res.json();
-      if (data.exists) {
-        setExistingUser(true);
-      } else {
-        setExistingUser(false);
-        setLoginMode(null);
-      }
+      setScenario(data.scenario || null);
     } catch {
       /* silent */
+    } finally {
+      setCheckingIdentity(false);
     }
-  }, [guestEmail, session]);
+  }, [guestEmail, guestPhone, session]);
+
+  // Reset scenario when email/phone change
+  const handleEmailChange = (v: string) => {
+    setGuestEmail(v);
+    setScenario(null);
+    setLoginMode(null);
+    setOtpSent(false);
+  };
+  const handlePhoneChange = (v: string) => {
+    setGuestPhone(v);
+    setScenario(null);
+    setLoginMode(null);
+    setOtpSent(false);
+  };
 
   /* ── Coupon apply ── */
   const handleApplyCoupon = async () => {
@@ -247,10 +264,10 @@ function CheckoutCard({
     }
   };
 
-  /* ── Login via OTP ── */
-  const handleSendOtp = async () => {
+  /* ── Scenario C: Send magic link ── */
+  const handleSendMagicLink = async () => {
     setLoginLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ email: guestEmail });
+    const { error } = await supabase.auth.signInWithOtp({ email: guestEmail.trim() });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
@@ -260,14 +277,28 @@ function CheckoutCard({
     setLoginLoading(false);
   };
 
-  /* ── Login via password ── */
+  /* ── Scenario C: Password login ── */
   const handlePasswordLogin = async () => {
     setLoginLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: guestEmail, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: guestEmail.trim(),
+      password,
+    });
     if (error) {
       toast({ title: "Login failed", description: error.message, variant: "destructive" });
     }
+    // On success, AuthContext will update session/profile automatically
     setLoginLoading(false);
+  };
+
+  /* ── Scenario C: Forgot password ── */
+  const handleForgotPassword = async () => {
+    const { error } = await supabase.auth.resetPasswordForEmail(guestEmail.trim());
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Password reset email sent", description: "Check your email." });
+    }
   };
 
   /* ── Pay: authenticated ── */
@@ -281,14 +312,9 @@ function CheckoutCard({
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({
-          offering_id: offering.id,
-          coupon_id: null, // coupon handled server-side via code in guest; for auth we'd need coupon ID
-        }),
+        body: JSON.stringify({ offering_id: offering.id }),
       });
-      if (!res.ok) {
-        throw new Error(await res.text() || `HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
       const data = await res.json();
       openRazorpay(data, false);
     } catch (err: any) {
@@ -297,7 +323,7 @@ function CheckoutCard({
     }
   };
 
-  /* ── Pay: guest ── */
+  /* ── Pay: guest (scenarios A & B) ── */
   const handleGuestPay = async () => {
     if (!guestName.trim() || !guestEmail.trim() || !guestPhone.trim()) {
       toast({ title: "Please fill all fields", variant: "destructive" });
@@ -322,9 +348,7 @@ function CheckoutCard({
           utm_term: params.get("utm_term") || undefined,
         }),
       });
-      if (!res.ok) {
-        throw new Error(await res.text() || `HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
       const data = await res.json();
       openRazorpay(data, true);
     } catch (err: any) {
@@ -393,9 +417,13 @@ function CheckoutCard({
     rzp.open();
   };
 
+  /* ── Determine if pay button should show ── */
+  const canPay = session || scenario !== "C";
+  const isAuthenticated = !!session;
+
   /* ── Render ── */
   return (
-    <div className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-6 space-y-5">
+    <div id="checkout-card" className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-6 space-y-5">
       {/* Price */}
       <div>
         <div className="flex items-baseline gap-3">
@@ -441,12 +469,13 @@ function CheckoutCard({
 
       <Separator className="bg-border" />
 
-      {/* Checkout form — authenticated or guest */}
-      {session ? (
+      {/* If user is already authenticated (e.g. after Scenario C login) */}
+      {isAuthenticated ? (
         <div className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            Purchasing as <span className="text-foreground font-medium">{profile?.full_name || profile?.email}</span>
-          </div>
+          <p className="text-sm text-[hsl(var(--accent-emerald))] flex items-center gap-1.5">
+            <Check className="h-4 w-4" />
+            Welcome back, {profile?.full_name || profile?.email}!
+          </p>
           <Button
             onClick={handleAuthPay}
             disabled={loading}
@@ -457,65 +486,8 @@ function CheckoutCard({
             )}
           </Button>
         </div>
-      ) : existingUser ? (
-        /* Existing user detected */
-        <div className="space-y-4">
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-[hsl(var(--accent-amber)/0.1)] border border-[hsl(var(--accent-amber)/0.2)]">
-            <AlertCircle className="h-4 w-4 text-[hsl(var(--accent-amber))] mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-foreground">
-              Welcome back! You already have an account with <strong>{guestEmail}</strong>.
-            </p>
-          </div>
-
-          {otpSent ? (
-            <p className="text-sm text-center text-muted-foreground">
-              Check your email! Click the link to sign in, then this page will update automatically.
-            </p>
-          ) : loginMode === "password" ? (
-            <div className="space-y-3">
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="password"
-                  placeholder="Your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-9 bg-[hsl(var(--surface-2))] border-border"
-                />
-              </div>
-              <Button
-                onClick={handlePasswordLogin}
-                disabled={loginLoading}
-                className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
-              >
-                {loginLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in & continue"}
-              </Button>
-              <button onClick={() => { setLoginMode("otp"); handleSendOtp(); }} className="text-xs text-muted-foreground hover:text-foreground w-full text-center">
-                Send me a login link instead
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Button
-                onClick={() => { setLoginMode("otp"); handleSendOtp(); }}
-                disabled={loginLoading}
-                variant="outline"
-                className="w-full border-border"
-              >
-                <Mail className="h-4 w-4 mr-2" /> Send me a login link
-              </Button>
-              <Button
-                onClick={() => setLoginMode("password")}
-                variant="ghost"
-                className="w-full text-muted-foreground hover:text-foreground"
-              >
-                <Lock className="h-4 w-4 mr-2" /> Sign in with password
-              </Button>
-            </div>
-          )}
-        </div>
       ) : (
-        /* Guest form */
+        /* Guest form — always show name/email/phone */
         <div className="space-y-3">
           <Input
             placeholder="Full name"
@@ -527,8 +499,7 @@ function CheckoutCard({
             type="email"
             placeholder="Email address"
             value={guestEmail}
-            onChange={(e) => setGuestEmail(e.target.value)}
-            onBlur={handleEmailBlur}
+            onChange={(e) => handleEmailChange(e.target.value)}
             className="bg-[hsl(var(--surface-2))] border-border"
           />
           <div className="relative">
@@ -537,28 +508,118 @@ function CheckoutCard({
               type="tel"
               placeholder="Phone number"
               value={guestPhone}
-              onChange={(e) => setGuestPhone(e.target.value)}
+              onChange={(e) => handlePhoneChange(e.target.value)}
+              onBlur={handlePhoneBlur}
               className="pl-12 bg-[hsl(var(--surface-2))] border-border"
             />
           </div>
-          <Button
-            onClick={handleGuestPay}
-            disabled={loading}
-            className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
-          >
-            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : (
-              <>Pay ₹{afterDiscount.toLocaleString("en-IN")} <ArrowRight className="h-4 w-4 ml-2" /></>
-            )}
-          </Button>
-          <p className="text-xs text-muted-foreground text-center">
-            Secure payment via Razorpay. We'll create your account automatically.
-          </p>
+
+          {/* Identity check loading */}
+          {checkingIdentity && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" /> Checking...
+            </p>
+          )}
+
+          {/* Scenario A: Welcome back */}
+          {scenario === "A" && !checkingIdentity && (
+            <p className="text-sm text-[hsl(var(--accent-emerald))] flex items-center gap-1.5">
+              <Check className="h-4 w-4" /> Welcome back!
+            </p>
+          )}
+
+          {/* Scenario C: Mismatch — block payment */}
+          {scenario === "C" && !checkingIdentity && (
+            <div className="space-y-3">
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-[hsl(var(--accent-amber)/0.1)] border border-[hsl(var(--accent-amber)/0.2)]">
+                <AlertCircle className="h-4 w-4 text-[hsl(var(--accent-amber))] mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-foreground">
+                  This email or phone number is already linked to an existing account. Please verify your identity to continue.
+                </p>
+              </div>
+
+              {otpSent ? (
+                <p className="text-sm text-center text-muted-foreground">
+                  Check your email! Click the link to sign in, then this page will update automatically.
+                </p>
+              ) : loginMode === "password" ? (
+                <div className="space-y-3">
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="password"
+                      placeholder="Your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-9 bg-[hsl(var(--surface-2))] border-border"
+                    />
+                  </div>
+                  <Button
+                    onClick={handlePasswordLogin}
+                    disabled={loginLoading}
+                    className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
+                  >
+                    {loginLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in & continue"}
+                  </Button>
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={handleForgotPassword}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Forgot password?
+                    </button>
+                    <button
+                      onClick={() => { setLoginMode(null); }}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Button
+                    onClick={() => { setLoginMode("otp"); handleSendMagicLink(); }}
+                    disabled={loginLoading}
+                    variant="outline"
+                    className="w-full border-border"
+                  >
+                    <Mail className="h-4 w-4 mr-2" /> Send me a login link
+                  </Button>
+                  <Button
+                    onClick={() => setLoginMode("password")}
+                    variant="ghost"
+                    className="w-full text-muted-foreground hover:text-foreground"
+                  >
+                    <Lock className="h-4 w-4 mr-2" /> Sign in with password
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Pay button — hidden in Scenario C */}
+          {canPay && (
+            <>
+              <Button
+                onClick={handleGuestPay}
+                disabled={loading}
+                className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
+              >
+                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : (
+                  <>Pay ₹{afterDiscount.toLocaleString("en-IN")} <ArrowRight className="h-4 w-4 ml-2" /></>
+                )}
+              </Button>
+              <p className="text-xs text-muted-foreground text-center">
+                Secure payment via Razorpay. We'll create your account automatically.
+              </p>
+            </>
+          )}
         </div>
       )}
     </div>
   );
 }
-
 /* ────────────────────────────────────────────────── */
 /*  Main Page                                         */
 /* ────────────────────────────────────────────────── */
