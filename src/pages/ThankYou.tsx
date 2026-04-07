@@ -201,6 +201,7 @@ export default function ThankYou() {
   const { toast } = useToast();
 
   const [order, setOrder] = useState<PaymentOrder | null>(null);
+  const [originalGuestEmail, setOriginalGuestEmail] = useState<string | null>(null);
   const [upsells, setUpsells] = useState<Upsell[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
