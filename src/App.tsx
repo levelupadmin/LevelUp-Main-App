@@ -32,6 +32,7 @@ import AdminHeroSlides from "@/pages/admin/AdminHeroSlides";
 import AdminEvents from "@/pages/admin/AdminEvents";
 import EventsPage from "@/pages/EventsPage";
 import EventDetail from "@/pages/EventDetail";
+import PublicOffering from "@/pages/PublicOffering";
 
 import {
   CommunityPage,
