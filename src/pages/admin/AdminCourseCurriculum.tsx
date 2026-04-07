@@ -87,6 +87,9 @@ const AdminCourseCurriculum = () => {
         duration_seconds: ch.duration_seconds || 0,
         make_free: ch.make_free,
         sort_order: ch.sort_order,
+        video_type: (ch as any).video_type || "standard",
+        vdocipher_video_id: (ch as any).vdocipher_video_id || "",
+        vdocipher_watermark_text: (ch as any).vdocipher_watermark_text || "",
       });
     });
 
