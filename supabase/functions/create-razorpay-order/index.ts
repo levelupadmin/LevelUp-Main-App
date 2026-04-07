@@ -206,19 +206,9 @@ Deno.serve(async (req) => {
       .update({ razorpay_order_id: rpOrder.id })
       .eq("id", po.id);
 
-    /* Increment coupon usage */
+    /* Increment coupon usage (atomic) */
     if (couponDbId) {
-      const { data: couponRow } = await admin
-        .from("coupons")
-        .select("used_count")
-        .eq("id", couponDbId)
-        .single();
-      if (couponRow) {
-        await admin
-          .from("coupons")
-          .update({ used_count: couponRow.used_count + 1 })
-          .eq("id", couponDbId);
-      }
+      await admin.rpc("increment_coupon_usage", { p_coupon_id: couponDbId });
     }
 
     return jsonRes({

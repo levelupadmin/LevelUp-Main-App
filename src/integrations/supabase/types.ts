@@ -2342,6 +2342,10 @@ export type Database = {
         Returns: number
       }
       has_course_access: { Args: { p_course_id: string }; Returns: boolean }
+      increment_coupon_usage: {
+        Args: { p_coupon_id: string }
+        Returns: undefined
+      }
       is_admin: { Args: never; Returns: boolean }
       move_to_dlq: {
         Args: {
