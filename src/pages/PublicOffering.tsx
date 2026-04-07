@@ -849,7 +849,7 @@ export default function PublicOffering() {
           {/* Right: sticky checkout — desktop */}
           <div className="hidden lg:block lg:w-[40%]">
             <div className="sticky top-8">
-              <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} />
+              <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} razorpayError={razorpayError} />
             </div>
           </div>
 
