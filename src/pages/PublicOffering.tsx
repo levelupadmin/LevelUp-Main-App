@@ -168,6 +168,7 @@ function CheckoutCard({
   const [couponApplied, setCouponApplied] = useState(false);
   const [couponLoading, setCouponLoading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Scenario state: null = not checked yet, A/B/C
   const [scenario, setScenario] = useState<"A" | "B" | "C" | null>(null);
