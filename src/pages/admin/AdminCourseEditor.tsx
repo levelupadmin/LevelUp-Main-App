@@ -119,6 +119,7 @@ const AdminCourseEditor = () => {
       product_tier: form.product_tier,
       sort_order: form.sort_order,
       primary_offering_id: form.primary_offering_id || null,
+      default_video_type: form.default_video_type,
     };
 
     let error;
