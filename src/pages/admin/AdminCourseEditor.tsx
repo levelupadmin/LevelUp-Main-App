@@ -72,6 +72,7 @@ const AdminCourseEditor = () => {
             product_tier: data.product_tier || "masterclass",
             sort_order: data.sort_order || 50,
             primary_offering_id: (data as any).primary_offering_id || "",
+            default_video_type: (data as any).default_video_type || "standard",
           });
         }
 
