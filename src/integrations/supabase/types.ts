@@ -1542,14 +1542,74 @@ export type Database = {
           },
         ]
       }
+      offering_upsells: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          headline: string
+          id: string
+          is_active: boolean | null
+          parent_offering_id: string
+          sort_order: number | null
+          updated_at: string | null
+          upsell_offering_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          headline?: string
+          id?: string
+          is_active?: boolean | null
+          parent_offering_id: string
+          sort_order?: number | null
+          updated_at?: string | null
+          upsell_offering_id: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          headline?: string
+          id?: string
+          is_active?: boolean | null
+          parent_offering_id?: string
+          sort_order?: number | null
+          updated_at?: string | null
+          upsell_offering_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offering_upsells_parent_offering_id_fkey"
+            columns: ["parent_offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offering_upsells_upsell_offering_id_fkey"
+            columns: ["upsell_offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       offerings: {
         Row: {
+          banner_url: string | null
           created_at: string
           currency: string
+          custom_tracking_script: string | null
           description: string | null
+          google_ads_conversion: string | null
           gst_mode: string
           gst_rate: number | null
+          highlights: Json | null
           id: string
+          instructor_avatar_url: string | null
+          instructor_name: string | null
+          instructor_title: string | null
+          is_public: boolean | null
+          meta_pixel_id: string | null
           mrp_inr: number | null
           price_inr: number
           razorpay_plan_id: string | null
@@ -1557,6 +1617,7 @@ export type Database = {
           slug: string
           status: string
           subscription_period: string | null
+          subtitle: string | null
           thumbnail_url: string | null
           title: string
           type: string
@@ -1564,12 +1625,21 @@ export type Database = {
           validity_days: number | null
         }
         Insert: {
+          banner_url?: string | null
           created_at?: string
           currency?: string
+          custom_tracking_script?: string | null
           description?: string | null
+          google_ads_conversion?: string | null
           gst_mode?: string
           gst_rate?: number | null
+          highlights?: Json | null
           id?: string
+          instructor_avatar_url?: string | null
+          instructor_name?: string | null
+          instructor_title?: string | null
+          is_public?: boolean | null
+          meta_pixel_id?: string | null
           mrp_inr?: number | null
           price_inr: number
           razorpay_plan_id?: string | null
@@ -1577,6 +1647,7 @@ export type Database = {
           slug: string
           status?: string
           subscription_period?: string | null
+          subtitle?: string | null
           thumbnail_url?: string | null
           title: string
           type: string
@@ -1584,12 +1655,21 @@ export type Database = {
           validity_days?: number | null
         }
         Update: {
+          banner_url?: string | null
           created_at?: string
           currency?: string
+          custom_tracking_script?: string | null
           description?: string | null
+          google_ads_conversion?: string | null
           gst_mode?: string
           gst_rate?: number | null
+          highlights?: Json | null
           id?: string
+          instructor_avatar_url?: string | null
+          instructor_name?: string | null
+          instructor_title?: string | null
+          is_public?: boolean | null
+          meta_pixel_id?: string | null
           mrp_inr?: number | null
           price_inr?: number
           razorpay_plan_id?: string | null
@@ -1597,6 +1677,7 @@ export type Database = {
           slug?: string
           status?: string
           subscription_period?: string | null
+          subtitle?: string | null
           thumbnail_url?: string | null
           title?: string
           type?: string
@@ -1724,6 +1805,9 @@ export type Database = {
           custom_field_values: Json | null
           discount_inr: number
           gst_inr: number
+          guest_email: string | null
+          guest_name: string | null
+          guest_phone: string | null
           id: string
           offering_id: string
           razorpay_order_id: string | null
@@ -1734,7 +1818,12 @@ export type Database = {
           subtotal_inr: number
           total_inr: number
           updated_at: string
-          user_id: string
+          user_id: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
         }
         Insert: {
           bump_offering_ids?: string[] | null
@@ -1744,6 +1833,9 @@ export type Database = {
           custom_field_values?: Json | null
           discount_inr?: number
           gst_inr?: number
+          guest_email?: string | null
+          guest_name?: string | null
+          guest_phone?: string | null
           id?: string
           offering_id: string
           razorpay_order_id?: string | null
@@ -1754,7 +1846,12 @@ export type Database = {
           subtotal_inr: number
           total_inr: number
           updated_at?: string
-          user_id: string
+          user_id?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
         }
         Update: {
           bump_offering_ids?: string[] | null
@@ -1764,6 +1861,9 @@ export type Database = {
           custom_field_values?: Json | null
           discount_inr?: number
           gst_inr?: number
+          guest_email?: string | null
+          guest_name?: string | null
+          guest_phone?: string | null
           id?: string
           offering_id?: string
           razorpay_order_id?: string | null
@@ -1774,7 +1874,12 @@ export type Database = {
           subtotal_inr?: number
           total_inr?: number
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
         }
         Relationships: [
           {
