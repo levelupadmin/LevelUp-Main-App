@@ -160,7 +160,10 @@ const PopularCommunity = () => {
       .select("id, title, body, upvote_count, reply_count, created_at, user_id")
       .order("upvote_count", { ascending: false })
       .limit(8)
-      .then(({ data }) => setPosts(data ?? []));
+      .then(({ data, error }) => {
+        if (error) console.error("Failed to load community posts:", error);
+        setPosts(data ?? []);
+      });
   }, []);
 
   if (!posts.length) {
