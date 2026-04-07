@@ -16,6 +16,7 @@ import {
   CalendarDays,
   IndianRupee,
 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
 
 const NAV_ITEMS = [
