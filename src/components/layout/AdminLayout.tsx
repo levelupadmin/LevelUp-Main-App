@@ -36,10 +36,22 @@ interface Props {
 }
 
 const AdminLayout = ({ children, title }: Props) => {
-  const { profile } = useAuth();
+  const { profile, loading: authLoading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!profile || profile.role !== "admin") {
+    return <Navigate to="/home" replace />;
+  }
 
   const isActive = (path: string) =>
     path === "/admin"
