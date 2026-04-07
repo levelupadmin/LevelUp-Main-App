@@ -115,6 +115,10 @@ const Login = () => {
       toast({ title: "Enter your email", variant: "destructive" });
       return;
     }
+    if (!isValidEmail(email)) {
+      toast({ title: "Please enter a valid email address", variant: "destructive" });
+      return;
+    }
     setLoading(true);
     const { error } = await supabase.auth.signInWithOtp({
       email,
