@@ -107,14 +107,17 @@ const ContinueLearning = () => {
           }
           setProgressMap(pMap);
         }
-      } catch (err) {
-        console.error("Failed to load enrolled courses:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    } catch (err) {
+      console.error("Failed to load enrolled courses:", err);
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchEnrolled();
-  }, []);
+  }, [user]);
 
   if (loading) return null;
 
