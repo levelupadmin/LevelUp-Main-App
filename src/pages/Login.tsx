@@ -133,7 +133,7 @@ const Login = () => {
       return;
     }
 
-    const from = (location.state as any)?.from?.pathname || "/";
+    const from = (location.state as any)?.from?.pathname || "/home";
     navigate(from, { replace: true });
   };
 
