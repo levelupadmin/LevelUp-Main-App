@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Search, X, ExternalLink } from "lucide-react";
+import { Plus, Pencil, Search, X, ExternalLink, Copy } from "lucide-react";
+import { toast as sonnerToast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface OfferingRow {
