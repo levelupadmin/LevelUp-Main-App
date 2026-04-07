@@ -207,7 +207,7 @@ const AdminCourseCurriculum = () => {
 
         for (let cIdx = 0; cIdx < sec.chapters.length; cIdx++) {
           const ch = sec.chapters[cIdx];
-          const payload = {
+          const payload: Record<string, unknown> = {
             section_id: sectionId,
             title: ch.title,
             content_type: ch.content_type,
@@ -218,6 +218,9 @@ const AdminCourseCurriculum = () => {
             duration_seconds: ch.duration_seconds || 0,
             make_free: ch.make_free,
             sort_order: cIdx,
+            video_type: ch.video_type || "standard",
+            vdocipher_video_id: ch.vdocipher_video_id || null,
+            vdocipher_watermark_text: ch.vdocipher_watermark_text || null,
           };
 
           if (ch._isNew) {
