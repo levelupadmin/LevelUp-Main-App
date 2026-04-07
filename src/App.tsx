@@ -33,6 +33,7 @@ import AdminEvents from "@/pages/admin/AdminEvents";
 import EventsPage from "@/pages/EventsPage";
 import EventDetail from "@/pages/EventDetail";
 import PublicOffering from "@/pages/PublicOffering";
+import ThankYou from "@/pages/ThankYou";
 
 import {
   CommunityPage,
@@ -52,6 +53,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/p/:slug" element={<PublicOffering />} />
+            <Route path="/thank-you/:paymentOrderId" element={<ThankYou />} />
 
             {/* Student routes */}
             <Route path="/home" element={<RequireAuth><Home /></RequireAuth>} />
