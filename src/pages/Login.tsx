@@ -136,6 +136,12 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
 
+    if (!isValidEmail(email)) {
+      toast({ title: "Please enter a valid email address", variant: "destructive" });
+      setLoading(false);
+      return;
+    }
+
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       toast({ title: "Login failed", description: error.message, variant: "destructive" });
@@ -143,8 +149,7 @@ const Login = () => {
       return;
     }
 
-    const from = (location.state as any)?.from?.pathname || "/home";
-    navigate(from, { replace: true });
+    navigate(redirectTarget, { replace: true });
   };
 
   const slide = slides[activeSlide];

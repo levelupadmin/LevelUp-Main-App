@@ -559,6 +559,7 @@ function CheckoutCard({
             value={guestName}
             onChange={(e) => setGuestName(e.target.value)}
             className="bg-[hsl(var(--surface-2))] border-border"
+            required
           />
           <Input
             type="email"

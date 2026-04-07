@@ -133,11 +133,20 @@ const CourseDetail = () => {
       const { data: accessData, error: accessErr } = await supabase.rpc("has_course_access", {
         p_course_id: courseId!,
       });
-      if (accessErr) {
-        toast.error("Couldn't verify your access");
-      }
       const isAdmin = profile?.role === "admin";
-      setHasAccess(!!accessData || isAdmin);
+      if (accessErr) {
+        toast.error("Couldn't verify your access, retrying...");
+        // Fallback: check enrolments table directly
+        const { data: enrolmentCheck } = await supabase
+          .from("enrolments")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .limit(1);
+        setHasAccess(!!enrolmentCheck?.length || isAdmin);
+      } else {
+        setHasAccess(!!accessData || isAdmin);
+      }
 
       // Load progress
       const { data: prog } = await supabase

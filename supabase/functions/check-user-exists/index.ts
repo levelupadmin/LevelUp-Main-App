@@ -14,6 +14,13 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (digits.length === 10) return digits;
+  return digits;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -23,6 +30,8 @@ Deno.serve(async (req) => {
     if (!email || !phone) {
       return jsonRes({ error: "Both email and phone are required" }, 400);
     }
+
+    const normalizedPhone = normalizePhone(phone);
 
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -40,12 +49,12 @@ Deno.serve(async (req) => {
     const { data: phoneUser } = await admin
       .from("users")
       .select("id, email")
-      .eq("phone", phone)
+      .eq("phone", normalizedPhone)
       .maybeSingle();
 
     // Scenario A: email exists AND (user has no phone on file OR phone matches)
     if (emailUser) {
-      if (!emailUser.phone || emailUser.phone === phone) {
+      if (!emailUser.phone || normalizePhone(emailUser.phone) === normalizedPhone) {
         return jsonRes({ scenario: "A", user_id: emailUser.id });
       }
       // Email exists but phone doesn't match → mismatch

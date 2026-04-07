@@ -119,7 +119,21 @@ const ContinueLearning = () => {
     fetchEnrolled();
   }, [user]);
 
-  if (loading) return null;
+  if (loading) return (
+    <section>
+      <h2 className="text-lg font-semibold mb-4">Continue Learning</h2>
+      <div className="flex gap-4 overflow-x-auto pb-2">
+        {[1,2,3].map(i => <div key={i} className="min-w-[300px] h-[240px] bg-surface border border-border rounded-xl animate-pulse flex-shrink-0" />)}
+      </div>
+    </section>
+  );
+
+  if (error) return (
+    <section>
+      <h2 className="text-lg font-semibold mb-4">Continue Learning</h2>
+      <p className="text-sm text-muted-foreground">Couldn't load this section. <button onClick={fetchEnrolled} className="text-cream hover:underline">Try again</button></p>
+    </section>
+  );
 
   return (
     <section>
