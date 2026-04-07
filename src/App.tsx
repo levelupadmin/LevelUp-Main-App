@@ -51,6 +51,7 @@ const App = () => (
             <Route path="/" element={<RootRedirect />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            <Route path="/p/:slug" element={<PublicOffering />} />
 
             {/* Student routes */}
             <Route path="/home" element={<RequireAuth><Home /></RequireAuth>} />
