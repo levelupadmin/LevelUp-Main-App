@@ -32,6 +32,7 @@ import AdminHeroSlides from "@/pages/admin/AdminHeroSlides";
 import AdminEvents from "@/pages/admin/AdminEvents";
 import EventsPage from "@/pages/EventsPage";
 import EventDetail from "@/pages/EventDetail";
+import PublicOffering from "@/pages/PublicOffering";
 
 import {
   CommunityPage,
@@ -50,6 +51,7 @@ const App = () => (
             <Route path="/" element={<RootRedirect />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            <Route path="/p/:slug" element={<PublicOffering />} />
 
             {/* Student routes */}
             <Route path="/home" element={<RequireAuth><Home /></RequireAuth>} />
