@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
+import { Loader2, Mail } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import usePageTitle from "@/hooks/usePageTitle";
 import slideBfp from "@/assets/carousel/slide-bfp.jpg";
