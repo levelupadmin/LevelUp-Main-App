@@ -38,6 +38,8 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [slides, setSlides] = useState<SlideData[]>(FALLBACK_SLIDES);
   const [activeSlide, setActiveSlide] = useState(0);
+  const [loginMode, setLoginMode] = useState<"password" | "magic_link">("password");
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
   usePageTitle("Sign In");
 
