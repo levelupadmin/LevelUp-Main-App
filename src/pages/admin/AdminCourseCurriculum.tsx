@@ -224,10 +224,10 @@ const AdminCourseCurriculum = () => {
           };
 
           if (ch._isNew) {
-            const { error } = await supabase.from("chapters").insert(payload);
+            const { error } = await supabase.from("chapters").insert(payload as any);
             if (error) throw error;
           } else {
-            const { error } = await supabase.from("chapters").update(payload).eq("id", ch.id);
+            const { error } = await supabase.from("chapters").update(payload as any).eq("id", ch.id);
             if (error) throw error;
           }
         }
