@@ -40,32 +40,73 @@ const HeroWelcome = () => {
 const ContinueLearning = () => {
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [progressMap, setProgressMap] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const fetchEnrolled = async () => {
-      const { data: enrolments } = await supabase
-        .from("enrolments")
-        .select("id, offering_id, created_at")
-        .eq("status", "active");
+      try {
+        const { data: enrolments } = await supabase
+          .from("enrolments")
+          .select("id, offering_id, created_at")
+          .eq("status", "active");
 
-      if (!enrolments?.length) { setLoading(false); return; }
+        if (!enrolments?.length) return;
 
-      const offeringIds = enrolments.map((e) => e.offering_id);
-      const { data: ocs } = await supabase
-        .from("offering_courses")
-        .select("offering_id, course_id")
-        .in("offering_id", offeringIds);
+        const offeringIds = enrolments.map((e) => e.offering_id);
+        const { data: ocs } = await supabase
+          .from("offering_courses")
+          .select("offering_id, course_id")
+          .in("offering_id", offeringIds);
 
-      if (!ocs?.length) { setLoading(false); return; }
+        if (!ocs?.length) return;
 
-      const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
-      const { data: coursesData } = await supabase
-        .from("courses")
-        .select("id, slug, title, description, instructor_display_name, thumbnail_url")
-        .in("id", courseIds);
+        const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
+        const { data: coursesData } = await supabase
+          .from("courses")
+          .select("id, slug, title, description, instructor_display_name, thumbnail_url")
+          .in("id", courseIds);
 
-      setCourses(coursesData ?? []);
-      setLoading(false);
+        setCourses(coursesData ?? []);
+
+        // Calculate progress
+        if (coursesData?.length) {
+          const { data: allChapters } = await supabase
+            .from("chapters")
+            .select("id, section_id")
+            .in("section_id",
+              (await supabase.from("sections").select("id").in("course_id", courseIds)).data?.map((s: any) => s.id) ?? []
+            );
+
+          const { data: progressData } = await supabase
+            .from("chapter_progress")
+            .select("chapter_id, completed_at");
+
+          // Map section_id → course_id
+          const { data: sectionsData } = await supabase
+            .from("sections")
+            .select("id, course_id")
+            .in("course_id", courseIds);
+
+          const sectionCourseMap: Record<string, string> = {};
+          (sectionsData ?? []).forEach((s: any) => { sectionCourseMap[s.id] = s.course_id; });
+
+          const completedSet = new Set(
+            (progressData ?? []).filter((p: any) => p.completed_at).map((p: any) => p.chapter_id)
+          );
+
+          const pMap: Record<string, number> = {};
+          for (const cId of courseIds) {
+            const totalForCourse = (allChapters ?? []).filter((ch: any) => sectionCourseMap[ch.section_id] === cId).length;
+            const doneForCourse = (allChapters ?? []).filter((ch: any) => sectionCourseMap[ch.section_id] === cId && completedSet.has(ch.id)).length;
+            pMap[cId] = totalForCourse > 0 ? Math.round((doneForCourse / totalForCourse) * 100) : 0;
+          }
+          setProgressMap(pMap);
+        }
+      } catch (err) {
+        console.error("Failed to load enrolled courses:", err);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchEnrolled();
   }, []);
@@ -95,10 +136,10 @@ const ContinueLearning = () => {
                 <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
                 <p className="text-sm text-muted-foreground mt-1">{c.instructor_display_name}</p>
                 <div className="mt-3 h-1 bg-surface-2 rounded-full overflow-hidden">
-                  <div className="h-full bg-cream rounded-full" style={{ width: "0%" }} />
+                  <div className="h-full bg-cream rounded-full transition-all" style={{ width: `${progressMap[c.id] || 0}%` }} />
                 </div>
                 <p className="text-sm text-cream mt-3 flex items-center gap-1">
-                  Continue <ArrowRight className="h-3 w-3" />
+                  {(progressMap[c.id] || 0) > 0 ? `${progressMap[c.id]}% complete` : "Start learning"} <ArrowRight className="h-3 w-3" />
                 </p>
               </div>
             </Link>
@@ -119,7 +160,10 @@ const PopularCommunity = () => {
       .select("id, title, body, upvote_count, reply_count, created_at, user_id")
       .order("upvote_count", { ascending: false })
       .limit(8)
-      .then(({ data }) => setPosts(data ?? []));
+      .then(({ data, error }) => {
+        if (error) console.error("Failed to load community posts:", error);
+        setPosts(data ?? []);
+      });
   }, []);
 
   if (!posts.length) {
@@ -166,38 +210,42 @@ const UpcomingEvents = () => {
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
-        .from("events")
-        .select("*")
-        .eq("is_active", true)
-        .in("status", ["upcoming", "live"])
-        .gte("starts_at", new Date().toISOString())
-        .order("starts_at", { ascending: true })
-        .limit(4);
-      setEvents(data ?? []);
+      try {
+        const { data } = await supabase
+          .from("events")
+          .select("*")
+          .eq("is_active", true)
+          .in("status", ["upcoming", "live"])
+          .gte("starts_at", new Date().toISOString())
+          .order("starts_at", { ascending: true })
+          .limit(4);
+        setEvents(data ?? []);
 
-      // Load speakers
-      const eventIds = (data ?? []).map((e: any) => e.id);
-      if (eventIds.length) {
-        const { data: allSpeakers } = await supabase
-          .from("event_speakers")
-          .select("event_id, name, title, avatar_url")
-          .in("event_id", eventIds)
-          .order("sort_order");
-        const map: Record<string, any[]> = {};
-        (allSpeakers ?? []).forEach((s: any) => {
-          if (!map[s.event_id]) map[s.event_id] = [];
-          map[s.event_id].push(s);
-        });
-        setSpeakerMap(map);
-      }
+        // Load speakers
+        const eventIds = (data ?? []).map((e: any) => e.id);
+        if (eventIds.length) {
+          const { data: allSpeakers } = await supabase
+            .from("event_speakers")
+            .select("event_id, name, title, avatar_url")
+            .in("event_id", eventIds)
+            .order("sort_order");
+          const map: Record<string, any[]> = {};
+          (allSpeakers ?? []).forEach((s: any) => {
+            if (!map[s.event_id]) map[s.event_id] = [];
+            map[s.event_id].push(s);
+          });
+          setSpeakerMap(map);
+        }
 
-      if (user) {
-        const { data: regs } = await supabase
-          .from("event_registrations")
-          .select("event_id")
-          .eq("user_id", user.id);
-        setMyRegs(new Set((regs ?? []).map((r: any) => r.event_id)));
+        if (user) {
+          const { data: regs } = await supabase
+            .from("event_registrations")
+            .select("event_id")
+            .eq("user_id", user.id);
+          setMyRegs(new Set((regs ?? []).map((r: any) => r.event_id)));
+        }
+      } catch (err) {
+        console.error("Failed to load events:", err);
       }
     };
     load();
@@ -430,70 +478,72 @@ const BrowsePrograms = () => {
 
   useEffect(() => {
     const load = async () => {
-      const { data: coursesData } = await supabase
-        .from("courses")
-        .select("id, slug, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
-        .in("status", ["published", "upcoming"])
-        .order("sort_order", { ascending: true })
-        .limit(6);
+      try {
+        const { data: coursesData } = await supabase
+          .from("courses")
+          .select("id, slug, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
+          .in("status", ["published", "upcoming"])
+          .order("sort_order", { ascending: true })
+          .limit(6);
 
-      if (!coursesData?.length) return;
+        if (!coursesData?.length) return;
 
-      const courseIds = coursesData.map((c) => c.id);
+        const courseIds = coursesData.map((c) => c.id);
 
-      // Get primary_offering_id for each course
-      const { data: primaryData } = await supabase
-        .from("courses")
-        .select("id, primary_offering_id")
-        .in("id", courseIds) as any;
+        const { data: primaryData } = await supabase
+          .from("courses")
+          .select("id, primary_offering_id")
+          .in("id", courseIds) as any;
 
-      const primaryMap: Record<string, string | null> = {};
-      (primaryData ?? []).forEach((p: any) => { primaryMap[p.id] = p.primary_offering_id ?? null; });
+        const primaryMap: Record<string, string | null> = {};
+        (primaryData ?? []).forEach((p: any) => { primaryMap[p.id] = p.primary_offering_id ?? null; });
 
-      const primaryOfferingIds = [...new Set(
-        Object.values(primaryMap).filter(Boolean) as string[]
-      )];
+        const primaryOfferingIds = [...new Set(
+          Object.values(primaryMap).filter(Boolean) as string[]
+        )];
 
-      let offeringMap: Record<string, any> = {};
+        let offeringMap: Record<string, any> = {};
 
-      if (primaryOfferingIds.length) {
-        const { data: offs } = await supabase
-          .from("offerings")
-          .select("id, price_inr, mrp_inr")
-          .in("id", primaryOfferingIds)
-          .eq("status", "active");
-        (offs ?? []).forEach((o) => { offeringMap[o.id] = o; });
-      }
-
-      // Fallback for courses without primary_offering_id
-      const coursesWithoutPrimary = coursesData.filter((c) => !primaryMap[c.id]);
-      const fallbackOcMap: Record<string, string> = {};
-
-      if (coursesWithoutPrimary.length) {
-        const fallbackIds = coursesWithoutPrimary.map((c) => c.id);
-        const { data: ocs } = await supabase
-          .from("offering_courses")
-          .select("course_id, offering_id")
-          .in("course_id", fallbackIds);
-
-        const fallbackOffIds = [...new Set((ocs ?? []).map((oc) => oc.offering_id))];
-        if (fallbackOffIds.length) {
-          const { data: fallbackOffs } = await supabase
+        if (primaryOfferingIds.length) {
+          const { data: offs } = await supabase
             .from("offerings")
             .select("id, price_inr, mrp_inr")
-            .in("id", fallbackOffIds)
+            .in("id", primaryOfferingIds)
             .eq("status", "active");
-          (fallbackOffs ?? []).forEach((o) => { if (!offeringMap[o.id]) offeringMap[o.id] = o; });
+          (offs ?? []).forEach((o) => { offeringMap[o.id] = o; });
         }
 
-        (ocs ?? []).forEach((oc) => { if (!fallbackOcMap[oc.course_id]) fallbackOcMap[oc.course_id] = oc.offering_id; });
-      }
+        const coursesWithoutPrimary = coursesData.filter((c) => !primaryMap[c.id]);
+        const fallbackOcMap: Record<string, string> = {};
 
-      setCourses(coursesData.map((c) => {
-        const offId = primaryMap[c.id] || fallbackOcMap[c.id] || null;
-        const off = offId ? offeringMap[offId] : null;
-        return { ...c, offering_id: offId, price_inr: off?.price_inr, mrp_inr: off?.mrp_inr };
-      }));
+        if (coursesWithoutPrimary.length) {
+          const fallbackIds = coursesWithoutPrimary.map((c) => c.id);
+          const { data: ocs } = await supabase
+            .from("offering_courses")
+            .select("course_id, offering_id")
+            .in("course_id", fallbackIds);
+
+          const fallbackOffIds = [...new Set((ocs ?? []).map((oc) => oc.offering_id))];
+          if (fallbackOffIds.length) {
+            const { data: fallbackOffs } = await supabase
+              .from("offerings")
+              .select("id, price_inr, mrp_inr")
+              .in("id", fallbackOffIds)
+              .eq("status", "active");
+            (fallbackOffs ?? []).forEach((o) => { if (!offeringMap[o.id]) offeringMap[o.id] = o; });
+          }
+
+          (ocs ?? []).forEach((oc) => { if (!fallbackOcMap[oc.course_id]) fallbackOcMap[oc.course_id] = oc.offering_id; });
+        }
+
+        setCourses(coursesData.map((c) => {
+          const offId = primaryMap[c.id] || fallbackOcMap[c.id] || null;
+          const off = offId ? offeringMap[offId] : null;
+          return { ...c, offering_id: offId, price_inr: off?.price_inr, mrp_inr: off?.mrp_inr };
+        }));
+      } catch (err) {
+        console.error("Failed to load browse programs:", err);
+      }
     };
     load();
   }, []);
@@ -563,7 +613,10 @@ const NewMembers = () => {
       .eq("role", "student")
       .order("created_at", { ascending: false })
       .limit(10)
-      .then(({ data }) => setMembers(data ?? []));
+      .then(({ data, error }) => {
+        if (error) console.error("Failed to load new members:", error);
+        setMembers(data ?? []);
+      });
   }, []);
 
   if (!members.length) {
