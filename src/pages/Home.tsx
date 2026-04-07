@@ -210,38 +210,42 @@ const UpcomingEvents = () => {
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
-        .from("events")
-        .select("*")
-        .eq("is_active", true)
-        .in("status", ["upcoming", "live"])
-        .gte("starts_at", new Date().toISOString())
-        .order("starts_at", { ascending: true })
-        .limit(4);
-      setEvents(data ?? []);
+      try {
+        const { data } = await supabase
+          .from("events")
+          .select("*")
+          .eq("is_active", true)
+          .in("status", ["upcoming", "live"])
+          .gte("starts_at", new Date().toISOString())
+          .order("starts_at", { ascending: true })
+          .limit(4);
+        setEvents(data ?? []);
 
-      // Load speakers
-      const eventIds = (data ?? []).map((e: any) => e.id);
-      if (eventIds.length) {
-        const { data: allSpeakers } = await supabase
-          .from("event_speakers")
-          .select("event_id, name, title, avatar_url")
-          .in("event_id", eventIds)
-          .order("sort_order");
-        const map: Record<string, any[]> = {};
-        (allSpeakers ?? []).forEach((s: any) => {
-          if (!map[s.event_id]) map[s.event_id] = [];
-          map[s.event_id].push(s);
-        });
-        setSpeakerMap(map);
-      }
+        // Load speakers
+        const eventIds = (data ?? []).map((e: any) => e.id);
+        if (eventIds.length) {
+          const { data: allSpeakers } = await supabase
+            .from("event_speakers")
+            .select("event_id, name, title, avatar_url")
+            .in("event_id", eventIds)
+            .order("sort_order");
+          const map: Record<string, any[]> = {};
+          (allSpeakers ?? []).forEach((s: any) => {
+            if (!map[s.event_id]) map[s.event_id] = [];
+            map[s.event_id].push(s);
+          });
+          setSpeakerMap(map);
+        }
 
-      if (user) {
-        const { data: regs } = await supabase
-          .from("event_registrations")
-          .select("event_id")
-          .eq("user_id", user.id);
-        setMyRegs(new Set((regs ?? []).map((r: any) => r.event_id)));
+        if (user) {
+          const { data: regs } = await supabase
+            .from("event_registrations")
+            .select("event_id")
+            .eq("user_id", user.id);
+          setMyRegs(new Set((regs ?? []).map((r: any) => r.event_id)));
+        }
+      } catch (err) {
+        console.error("Failed to load events:", err);
       }
     };
     load();
