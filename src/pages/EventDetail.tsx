@@ -101,6 +101,10 @@ const EventDetail = () => {
           body: JSON.stringify({ event_id: event.id }),
         }
       );
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || `HTTP ${res.status}`);
+      }
       const data = await res.json();
 
       if (data.registered) {
