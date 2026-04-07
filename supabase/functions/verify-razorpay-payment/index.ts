@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
     /* ── Audit log ── */
     await admin.from("enrolment_audit_log").insert({
       enrolment_id: enrolment.id,
-      action: "created",
+      action: "granted",
       actor_user_id: userId,
       metadata: {
         payment_order_id: po.id,
