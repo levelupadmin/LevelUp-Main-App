@@ -40,32 +40,73 @@ const HeroWelcome = () => {
 const ContinueLearning = () => {
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [progressMap, setProgressMap] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const fetchEnrolled = async () => {
-      const { data: enrolments } = await supabase
-        .from("enrolments")
-        .select("id, offering_id, created_at")
-        .eq("status", "active");
+      try {
+        const { data: enrolments } = await supabase
+          .from("enrolments")
+          .select("id, offering_id, created_at")
+          .eq("status", "active");
 
-      if (!enrolments?.length) { setLoading(false); return; }
+        if (!enrolments?.length) return;
 
-      const offeringIds = enrolments.map((e) => e.offering_id);
-      const { data: ocs } = await supabase
-        .from("offering_courses")
-        .select("offering_id, course_id")
-        .in("offering_id", offeringIds);
+        const offeringIds = enrolments.map((e) => e.offering_id);
+        const { data: ocs } = await supabase
+          .from("offering_courses")
+          .select("offering_id, course_id")
+          .in("offering_id", offeringIds);
 
-      if (!ocs?.length) { setLoading(false); return; }
+        if (!ocs?.length) return;
 
-      const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
-      const { data: coursesData } = await supabase
-        .from("courses")
-        .select("id, slug, title, description, instructor_display_name, thumbnail_url")
-        .in("id", courseIds);
+        const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
+        const { data: coursesData } = await supabase
+          .from("courses")
+          .select("id, slug, title, description, instructor_display_name, thumbnail_url")
+          .in("id", courseIds);
 
-      setCourses(coursesData ?? []);
-      setLoading(false);
+        setCourses(coursesData ?? []);
+
+        // Calculate progress
+        if (coursesData?.length) {
+          const { data: allChapters } = await supabase
+            .from("chapters")
+            .select("id, section_id")
+            .in("section_id",
+              (await supabase.from("sections").select("id").in("course_id", courseIds)).data?.map((s: any) => s.id) ?? []
+            );
+
+          const { data: progressData } = await supabase
+            .from("chapter_progress")
+            .select("chapter_id, completed_at");
+
+          // Map section_id → course_id
+          const { data: sectionsData } = await supabase
+            .from("sections")
+            .select("id, course_id")
+            .in("course_id", courseIds);
+
+          const sectionCourseMap: Record<string, string> = {};
+          (sectionsData ?? []).forEach((s: any) => { sectionCourseMap[s.id] = s.course_id; });
+
+          const completedSet = new Set(
+            (progressData ?? []).filter((p: any) => p.completed_at).map((p: any) => p.chapter_id)
+          );
+
+          const pMap: Record<string, number> = {};
+          for (const cId of courseIds) {
+            const totalForCourse = (allChapters ?? []).filter((ch: any) => sectionCourseMap[ch.section_id] === cId).length;
+            const doneForCourse = (allChapters ?? []).filter((ch: any) => sectionCourseMap[ch.section_id] === cId && completedSet.has(ch.id)).length;
+            pMap[cId] = totalForCourse > 0 ? Math.round((doneForCourse / totalForCourse) * 100) : 0;
+          }
+          setProgressMap(pMap);
+        }
+      } catch (err) {
+        console.error("Failed to load enrolled courses:", err);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchEnrolled();
   }, []);
