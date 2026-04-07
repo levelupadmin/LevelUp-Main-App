@@ -855,7 +855,7 @@ export default function PublicOffering() {
 
           {/* Mobile: checkout below */}
           <div className="lg:hidden mt-8">
-            <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} />
+            <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} razorpayError={razorpayError} />
           </div>
         </div>
       </main>
