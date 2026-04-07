@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Mail,
   Lock,
+  X,
 } from "lucide-react";
 
 /* ────────────────────────────────────────────────── */
@@ -152,10 +153,12 @@ function CheckoutCard({
   offering,
   session,
   profile,
+  razorpayReady,
 }: {
   offering: Offering;
   session: any;
   profile: any;
+  razorpayReady: boolean;
 }) {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -163,6 +166,7 @@ function CheckoutCard({
   const [guestName, setGuestName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [couponCode, setCouponCode] = useState("");
   const [discountInr, setDiscountInr] = useState(0);
   const [couponApplied, setCouponApplied] = useState(false);
@@ -183,10 +187,23 @@ function CheckoutCard({
   const price = Number(offering.price_inr);
   const mrp = offering.mrp_inr ? Number(offering.mrp_inr) : null;
   const afterDiscount = Math.max(price - discountInr, 0);
+  const isFree = afterDiscount === 0;
+
+  /* ── Phone validation ── */
+  const validatePhone = (val: string): boolean => {
+    const digits = val.replace(/\D/g, "");
+    if (digits.length !== 10) {
+      setPhoneError("Please enter a valid 10-digit phone number");
+      return false;
+    }
+    setPhoneError("");
+    return true;
+  };
 
   /* ── Phone blur: check identity (only when both email + phone filled) ── */
   const handlePhoneBlur = useCallback(async () => {
     if (!guestEmail.trim() || !guestPhone.trim() || session) return;
+    if (!validatePhone(guestPhone)) return;
     setCheckingIdentity(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/check-user-exists`, {
@@ -213,6 +230,7 @@ function CheckoutCard({
   };
   const handlePhoneChange = (v: string) => {
     setGuestPhone(v);
+    setPhoneError("");
     setScenario(null);
     setLoginMode(null);
     setOtpSent(false);
@@ -265,6 +283,13 @@ function CheckoutCard({
     }
   };
 
+  /* ── Coupon remove ── */
+  const handleRemoveCoupon = () => {
+    setCouponApplied(false);
+    setCouponCode("");
+    setDiscountInr(0);
+  };
+
   /* ── Scenario C: Send magic link ── */
   const handleSendMagicLink = async () => {
     setLoginLoading(true);
@@ -288,7 +313,6 @@ function CheckoutCard({
     if (error) {
       toast({ title: "Login failed", description: error.message, variant: "destructive" });
     }
-    // On success, AuthContext will update session/profile automatically
     setLoginLoading(false);
   };
 
@@ -332,6 +356,7 @@ function CheckoutCard({
       toast({ title: "Please fill all fields", variant: "destructive" });
       return;
     }
+    if (!validatePhone(guestPhone)) return;
     if (isProcessing) return;
     setIsProcessing(true);
     setLoading(true);
@@ -353,8 +378,18 @@ function CheckoutCard({
           utm_term: params.get("utm_term") || undefined,
         }),
       });
-      if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(errBody || `HTTP ${res.status}`);
+      }
       const data = await res.json();
+
+      // Free offering: backend returns success directly
+      if (data.success && data.payment_order_id) {
+        navigate(`/thank-you/${data.payment_order_id}`);
+        return;
+      }
+
       openRazorpay(data, true);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -368,6 +403,7 @@ function CheckoutCard({
     if (!(window as any).Razorpay) {
       toast({ title: "Payment unavailable", description: "Please try again in a moment.", variant: "destructive" });
       setLoading(false);
+      setIsProcessing(false);
       return;
     }
 
@@ -429,6 +465,11 @@ function CheckoutCard({
   const canPay = session || scenario !== "C";
   const isAuthenticated = !!session;
 
+  /* ── Button label ── */
+  const payButtonLabel = isFree
+    ? "Enrol for Free"
+    : `Pay ₹${afterDiscount.toLocaleString("en-IN")}`;
+
   /* ── Render ── */
   return (
     <div id="checkout-card" className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-6 space-y-5">
@@ -436,44 +477,54 @@ function CheckoutCard({
       <div>
         <div className="flex items-baseline gap-3">
           <span className="text-3xl font-bold text-[hsl(var(--cream))]">
-            ₹{afterDiscount.toLocaleString("en-IN")}
+            {isFree ? "Free" : `₹${afterDiscount.toLocaleString("en-IN")}`}
           </span>
-          {mrp && mrp > price && (
+          {mrp && mrp > price && !isFree && (
             <span className="text-lg text-muted-foreground line-through">
               ₹{mrp.toLocaleString("en-IN")}
             </span>
           )}
         </div>
         {discountInr > 0 && (
-          <p className="text-sm text-[hsl(var(--accent-emerald))] mt-1">
-            You save ₹{discountInr.toLocaleString("en-IN")}!
-          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-sm text-[hsl(var(--accent-emerald))]">
+              You save ₹{discountInr.toLocaleString("en-IN")}!
+            </p>
+            <button
+              onClick={handleRemoveCoupon}
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5"
+            >
+              <X className="h-3 w-3" /> Remove
+            </button>
+          </div>
         )}
       </div>
 
       <Separator className="bg-border" />
 
       {/* Coupon */}
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Coupon code"
-            value={couponCode}
-            onChange={(e) => setCouponCode(e.target.value)}
-            className="pl-9 bg-[hsl(var(--surface-2))] border-border"
-            disabled={couponApplied}
-          />
+      {!isFree && (
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Coupon code"
+              value={couponCode}
+              onChange={(e) => setCouponCode(e.target.value)}
+              className="pl-9 bg-[hsl(var(--surface-2))] border-border"
+              disabled={couponApplied}
+            />
+          </div>
+          <Button
+            variant="outline"
+            onClick={handleApplyCoupon}
+            disabled={couponLoading || couponApplied}
+            className="border-border"
+          >
+            {couponLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : couponApplied ? "Applied" : "Apply"}
+          </Button>
         </div>
-        <Button
-          variant="outline"
-          onClick={handleApplyCoupon}
-          disabled={couponLoading || couponApplied}
-          className="border-border"
-        >
-          {couponLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : couponApplied ? "Applied" : "Apply"}
-        </Button>
-      </div>
+      )}
 
       <Separator className="bg-border" />
 
@@ -486,13 +537,13 @@ function CheckoutCard({
           </p>
           <Button
             onClick={handleAuthPay}
-            disabled={loading || isProcessing}
+            disabled={loading || isProcessing || (!isFree && !razorpayReady)}
             className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
           >
             {isProcessing ? (
               <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Processing...</>
             ) : (
-              <>Pay ₹{afterDiscount.toLocaleString("en-IN")} <ArrowRight className="h-4 w-4 ml-2" /></>
+              <>{payButtonLabel} <ArrowRight className="h-4 w-4 ml-2" /></>
             )}
           </Button>
         </div>
@@ -512,16 +563,23 @@ function CheckoutCard({
             onChange={(e) => handleEmailChange(e.target.value)}
             className="bg-[hsl(var(--surface-2))] border-border"
           />
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">+91</span>
-            <Input
-              type="tel"
-              placeholder="Phone number"
-              value={guestPhone}
-              onChange={(e) => handlePhoneChange(e.target.value)}
-              onBlur={handlePhoneBlur}
-              className="pl-12 bg-[hsl(var(--surface-2))] border-border"
-            />
+          <div>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">+91</span>
+              <Input
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="Phone number"
+                value={guestPhone}
+                onChange={(e) => handlePhoneChange(e.target.value)}
+                onBlur={handlePhoneBlur}
+                className="pl-12 bg-[hsl(var(--surface-2))] border-border"
+              />
+            </div>
+            {phoneError && (
+              <p className="text-xs text-destructive mt-1">{phoneError}</p>
+            )}
           </div>
 
           {/* Identity check loading */}
@@ -613,17 +671,19 @@ function CheckoutCard({
             <>
               <Button
                 onClick={handleGuestPay}
-                disabled={loading || isProcessing}
+                disabled={loading || isProcessing || (!isFree && !razorpayReady)}
                 className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
               >
                 {isProcessing ? (
                   <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Processing...</>
                 ) : (
-                  <>Pay ₹{afterDiscount.toLocaleString("en-IN")} <ArrowRight className="h-4 w-4 ml-2" /></>
+                  <>{payButtonLabel} <ArrowRight className="h-4 w-4 ml-2" /></>
                 )}
               </Button>
               <p className="text-xs text-muted-foreground text-center">
-                Secure payment via Razorpay. We'll create your account automatically.
+                {isFree
+                  ? "No payment required. We'll create your account automatically."
+                  : "Secure payment via Razorpay. We'll create your account automatically."}
               </p>
             </>
           )}
@@ -642,16 +702,29 @@ export default function PublicOffering() {
   const [offering, setOffering] = useState<Offering | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [razorpayReady, setRazorpayReady] = useState(false);
+  const [razorpayError, setRazorpayError] = useState(false);
 
   usePageTitle(offering?.title || "LevelUp Learning");
 
-  /* ── Load Razorpay script ── */
+  /* ── Load Razorpay script with error/timeout ── */
   useEffect(() => {
-    if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')) return;
+    if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')) {
+      setRazorpayReady(true);
+      return;
+    }
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
+    script.onload = () => setRazorpayReady(true);
+    script.onerror = () => setRazorpayError(true);
     document.body.appendChild(script);
+
+    const timeout = setTimeout(() => {
+      if (!razorpayReady) setRazorpayError(true);
+    }, 10000);
+
+    return () => clearTimeout(timeout);
   }, []);
 
   /* ── Fetch offering ── */
@@ -699,9 +772,20 @@ export default function PublicOffering() {
   }
 
   const highlights: string[] = Array.isArray(offering.highlights) ? offering.highlights : [];
+  const isFree = Number(offering.price_inr) === 0;
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Razorpay load error banner */}
+      {razorpayError && !isFree && (
+        <div className="bg-[hsl(var(--accent-amber)/0.15)] border-b border-[hsl(var(--accent-amber)/0.3)] px-4 py-3 text-center">
+          <p className="text-sm text-foreground">
+            <AlertCircle className="h-4 w-4 inline mr-1.5 text-[hsl(var(--accent-amber))]" />
+            Payment system is temporarily unavailable. Please refresh the page or try again later.
+          </p>
+        </div>
+      )}
+
       {/* Top bar */}
       <header className="border-b border-border bg-[hsl(var(--surface))]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
@@ -758,13 +842,13 @@ export default function PublicOffering() {
           {/* Right: sticky checkout — desktop */}
           <div className="hidden lg:block lg:w-[40%]">
             <div className="sticky top-8">
-              <CheckoutCard offering={offering} session={session} profile={profile} />
+              <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} />
             </div>
           </div>
 
           {/* Mobile: checkout below */}
           <div className="lg:hidden mt-8">
-            <CheckoutCard offering={offering} session={session} profile={profile} />
+            <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} />
           </div>
         </div>
       </main>
@@ -773,20 +857,26 @@ export default function PublicOffering() {
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))] p-4">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-xl font-bold text-[hsl(var(--cream))]">
-              ₹{Number(offering.price_inr).toLocaleString("en-IN")}
-            </span>
-            {offering.mrp_inr && Number(offering.mrp_inr) > Number(offering.price_inr) && (
-              <span className="text-sm text-muted-foreground line-through ml-2">
-                ₹{Number(offering.mrp_inr).toLocaleString("en-IN")}
-              </span>
+            {isFree ? (
+              <span className="text-xl font-bold text-[hsl(var(--accent-emerald))]">Free</span>
+            ) : (
+              <>
+                <span className="text-xl font-bold text-[hsl(var(--cream))]">
+                  ₹{Number(offering.price_inr).toLocaleString("en-IN")}
+                </span>
+                {offering.mrp_inr && Number(offering.mrp_inr) > Number(offering.price_inr) && (
+                  <span className="text-sm text-muted-foreground line-through ml-2">
+                    ₹{Number(offering.mrp_inr).toLocaleString("en-IN")}
+                  </span>
+                )}
+              </>
             )}
           </div>
           <Button
             onClick={() => document.getElementById("checkout-card")?.scrollIntoView({ behavior: "smooth" })}
             className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 font-semibold"
           >
-            Buy Now <ArrowRight className="h-4 w-4 ml-1" />
+            {isFree ? "Enrol Free" : "Buy Now"} <ArrowRight className="h-4 w-4 ml-1" />
           </Button>
         </div>
       </div>
