@@ -590,7 +590,6 @@ export default function PublicOffering() {
           .from("offerings")
           .select("*, offering_courses(course_id, courses(title, description, thumbnail_url, instructor_display_name))")
           .eq("slug", slug)
-          .eq("is_public", true)
           .eq("status", "active")
           .single();
 

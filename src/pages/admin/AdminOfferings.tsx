@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Search, X, ExternalLink } from "lucide-react";
+import { Plus, Pencil, Search, X, ExternalLink, Copy } from "lucide-react";
+import { toast as sonnerToast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface OfferingRow {
@@ -284,15 +285,28 @@ const AdminOfferings = () => {
               <tr key={o.id} className="border-b border-border last:border-0 hover:bg-secondary/30">
                 <td className="px-5 py-3">
                   <span className="font-medium">{o.title}</span>
-                  {o.is_public && (
-                    <a
-                      href={`/p/${o.slug}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-[hsl(var(--cream))] hover:underline mt-0.5"
-                    >
-                      /p/{o.slug} <ExternalLink className="h-3 w-3" />
-                    </a>
+                  {o.slug && (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <a
+                        href={`/p/${o.slug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-[hsl(var(--cream))] hover:underline flex items-center gap-1"
+                      >
+                        /p/{o.slug} <ExternalLink className="h-3 w-3" />
+                      </a>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(`https://app.leveluplearning.in/p/${o.slug}`);
+                          sonnerToast("Link copied!");
+                        }}
+                        className="p-0.5 rounded hover:bg-secondary"
+                        title="Copy public link"
+                      >
+                        <Copy className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                    </div>
                   )}
                 </td>
                 <td className="px-5 py-3 font-mono text-xs">{o.type}</td>
@@ -422,51 +436,41 @@ const AdminOfferings = () => {
             {/* Public Offering Settings */}
             <div className="border-t border-border pt-4 mt-4">
               <h4 className="text-sm font-semibold mb-3">Public Offering Page</h4>
-              <div className="flex items-center gap-3 mb-3">
-                <Checkbox
-                  id="is_public"
-                  checked={form.is_public}
-                  onCheckedChange={(checked) => setForm((f) => ({ ...f, is_public: !!checked }))}
-                />
-                <Label htmlFor="is_public">Make publicly accessible at /p/{form.slug || "slug"}</Label>
-              </div>
-
-              {form.is_public && (
-                <div className="space-y-3">
+              <p className="text-xs text-muted-foreground mb-3">All active offerings are publicly accessible at /p/{form.slug || "slug"}</p>
+              <div className="space-y-3">
+                <div>
+                  <Label>Subtitle</Label>
+                  <Input value={form.subtitle} onChange={(e) => setForm((f) => ({ ...f, subtitle: e.target.value }))} placeholder="e.g., 12-week intensive filmmaking program" />
+                </div>
+                <div>
+                  <Label>Banner Image URL</Label>
+                  <Input value={form.banner_url} onChange={(e) => setForm((f) => ({ ...f, banner_url: e.target.value }))} placeholder="Hero image for the public page" />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <Label>Subtitle</Label>
-                    <Input value={form.subtitle} onChange={(e) => setForm((f) => ({ ...f, subtitle: e.target.value }))} placeholder="e.g., 12-week intensive filmmaking program" />
+                    <Label>Instructor Name</Label>
+                    <Input value={form.instructor_name} onChange={(e) => setForm((f) => ({ ...f, instructor_name: e.target.value }))} />
                   </div>
                   <div>
-                    <Label>Banner Image URL</Label>
-                    <Input value={form.banner_url} onChange={(e) => setForm((f) => ({ ...f, banner_url: e.target.value }))} placeholder="Hero image for the public page" />
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <Label>Instructor Name</Label>
-                      <Input value={form.instructor_name} onChange={(e) => setForm((f) => ({ ...f, instructor_name: e.target.value }))} />
-                    </div>
-                    <div>
-                      <Label>Instructor Title</Label>
-                      <Input value={form.instructor_title} onChange={(e) => setForm((f) => ({ ...f, instructor_title: e.target.value }))} />
-                    </div>
-                    <div>
-                      <Label>Avatar URL</Label>
-                      <Input value={form.instructor_avatar_url} onChange={(e) => setForm((f) => ({ ...f, instructor_avatar_url: e.target.value }))} />
-                    </div>
+                    <Label>Instructor Title</Label>
+                    <Input value={form.instructor_title} onChange={(e) => setForm((f) => ({ ...f, instructor_title: e.target.value }))} />
                   </div>
                   <div>
-                    <Label>Highlights (JSON array)</Label>
-                    <Textarea
-                      value={form.highlights}
-                      onChange={(e) => setForm((f) => ({ ...f, highlights: e.target.value }))}
-                      placeholder='["12 live sessions", "Certificate of completion", "Lifetime access"]'
-                      rows={3}
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">JSON array of feature bullet points shown on the public page</p>
+                    <Label>Avatar URL</Label>
+                    <Input value={form.instructor_avatar_url} onChange={(e) => setForm((f) => ({ ...f, instructor_avatar_url: e.target.value }))} />
                   </div>
                 </div>
-              )}
+                <div>
+                  <Label>Highlights (JSON array)</Label>
+                  <Textarea
+                    value={form.highlights}
+                    onChange={(e) => setForm((f) => ({ ...f, highlights: e.target.value }))}
+                    placeholder='["12 live sessions", "Certificate of completion", "Lifetime access"]'
+                    rows={3}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">JSON array of feature bullet points shown on the public page</p>
+                </div>
+              </div>
             </div>
 
             {/* Conversion Tracking */}
