@@ -195,17 +195,16 @@ const Login = () => {
 
       {/* Right hero carousel */}
       <div className="hidden lg:flex flex-1 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-black/60 to-transparent transition-all duration-700">
-          {slide.image && (
-            <img
-              src={slide.image}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover"
-              loading="lazy"
-            />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-        </div>
+        {slide.image && (
+          <img
+            key={activeSlide}
+            src={slide.image}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover z-0"
+            loading="eager"
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/10 z-[1]" />
 
         <div className="relative z-10 flex flex-col justify-end p-12 pb-24 w-full">
           <div className="max-w-[500px] ml-auto">
