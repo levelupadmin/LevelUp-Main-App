@@ -328,6 +328,9 @@ const UpcomingEvents = () => {
                   }),
                 }
               );
+              if (!verifyRes.ok) {
+                throw new Error("Payment verification failed");
+              }
               const verifyData = await verifyRes.json();
               if (verifyData.registered) {
                 toast({ title: "Payment successful!", description: "You're registered for the event." });
