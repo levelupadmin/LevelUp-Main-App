@@ -85,6 +85,8 @@ const Login = () => {
     return () => clearInterval(timer);
   }, [nextSlide]);
 
+  const redirectTarget = (location.state as any)?.from?.pathname || "/home";
+
   const handleForgotPassword = async () => {
     if (!email) {
       toast({ title: "Enter your email first", variant: "destructive" });
@@ -92,7 +94,7 @@ const Login = () => {
     }
     setLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/login`,
+      redirectTo: `${window.location.origin}${redirectTarget}`,
     });
     setLoading(false);
     if (error) {
@@ -110,7 +112,7 @@ const Login = () => {
     setLoading(true);
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/home` },
+      options: { emailRedirectTo: `${window.location.origin}${redirectTarget}` },
     });
     setLoading(false);
     if (error) {
@@ -131,7 +133,7 @@ const Login = () => {
       return;
     }
 
-    const from = (location.state as any)?.from?.pathname || "/";
+    const from = (location.state as any)?.from?.pathname || "/home";
     navigate(from, { replace: true });
   };
 

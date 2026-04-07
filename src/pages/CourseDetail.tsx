@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import StudentLayout from "@/components/layout/StudentLayout";
@@ -130,9 +130,12 @@ const CourseDetail = () => {
 
     // Check access
     if (user) {
-      const { data: accessData } = await supabase.rpc("has_course_access", {
+      const { data: accessData, error: accessErr } = await supabase.rpc("has_course_access", {
         p_course_id: courseId!,
       });
+      if (accessErr) {
+        toast.error("Couldn't verify your access");
+      }
       const isAdmin = profile?.role === "admin";
       setHasAccess(!!accessData || isAdmin);
 
@@ -212,7 +215,18 @@ const CourseDetail = () => {
     );
   }
 
-  if (!course) return null;
+  if (!course) {
+    return (
+      <StudentLayout title="Not Found">
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <BookOpen className="h-12 w-12 text-muted-foreground" />
+          <h1 className="text-xl font-semibold text-foreground">Course not found</h1>
+          <p className="text-sm text-muted-foreground">This course doesn't exist or is no longer available.</p>
+          <Link to="/home" className="text-sm text-primary hover:underline">← Back to Home</Link>
+        </div>
+      </StudentLayout>
+    );
+  }
 
   const totalChapters = chapters.length;
   const completedCount = progress.filter((p) => p.completed_at).length;
