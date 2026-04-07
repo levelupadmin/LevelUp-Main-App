@@ -419,6 +419,7 @@ function CheckoutCard({
     rzp.on("payment.failed", () => {
       toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
       setLoading(false);
+      setIsProcessing(false);
     });
     rzp.open();
   };
