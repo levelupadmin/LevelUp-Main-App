@@ -22,6 +22,9 @@ interface Chapter {
   duration_seconds: number;
   make_free: boolean;
   sort_order: number;
+  video_type: string;
+  vdocipher_video_id: string;
+  vdocipher_watermark_text: string;
   _isNew?: boolean;
 }
 
