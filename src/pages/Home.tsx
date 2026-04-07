@@ -38,17 +38,22 @@ const HeroWelcome = () => {
 
 // ── Section 2: Continue Learning ──
 const ContinueLearning = () => {
+  const { user } = useAuth();
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [progressMap, setProgressMap] = useState<Record<string, number>>({});
 
-  useEffect(() => {
-    const fetchEnrolled = async () => {
-      try {
-        const { data: enrolments } = await supabase
-          .from("enrolments")
-          .select("id, offering_id, created_at")
-          .eq("status", "active");
+  const fetchEnrolled = async () => {
+    setError(false);
+    setLoading(true);
+    try {
+      if (!user) { setLoading(false); return; }
+      const { data: enrolments } = await supabase
+        .from("enrolments")
+        .select("id, offering_id, created_at")
+        .eq("user_id", user.id)
+        .eq("status", "active");
 
         if (!enrolments?.length) return;
 
