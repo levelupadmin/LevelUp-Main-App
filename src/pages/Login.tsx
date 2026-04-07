@@ -94,6 +94,10 @@ const Login = () => {
       toast({ title: "Enter your email first", variant: "destructive" });
       return;
     }
+    if (!isValidEmail(email)) {
+      toast({ title: "Please enter a valid email address", variant: "destructive" });
+      return;
+    }
     setLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}${redirectTarget}`,
