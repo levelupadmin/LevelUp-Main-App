@@ -613,10 +613,12 @@ function CheckoutCard({
             <>
               <Button
                 onClick={handleGuestPay}
-                disabled={loading}
+                disabled={loading || isProcessing}
                 className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
               >
-                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : (
+                {isProcessing ? (
+                  <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Processing...</>
+                ) : (
                   <>Pay ₹{afterDiscount.toLocaleString("en-IN")} <ArrowRight className="h-4 w-4 ml-2" /></>
                 )}
               </Button>
