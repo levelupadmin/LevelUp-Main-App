@@ -154,11 +154,13 @@ function CheckoutCard({
   session,
   profile,
   razorpayReady,
+  razorpayError,
 }: {
   offering: Offering;
   session: any;
   profile: any;
   razorpayReady: boolean;
+  razorpayError: boolean;
 }) {
   const navigate = useNavigate();
   const { toast } = useToast();
