@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.verify-event-payment]
 verify_jwt = false
+
+[functions.check-user-exists]
+verify_jwt = false
+
+[functions.guest-create-order]
+verify_jwt = false
