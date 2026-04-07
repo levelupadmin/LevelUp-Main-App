@@ -130,9 +130,12 @@ const CourseDetail = () => {
 
     // Check access
     if (user) {
-      const { data: accessData } = await supabase.rpc("has_course_access", {
+      const { data: accessData, error: accessErr } = await supabase.rpc("has_course_access", {
         p_course_id: courseId!,
       });
+      if (accessErr) {
+        toast.error("Couldn't verify your access");
+      }
       const isAdmin = profile?.role === "admin";
       setHasAccess(!!accessData || isAdmin);
 
