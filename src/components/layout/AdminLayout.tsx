@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { label: "Enrolments", icon: Users, path: "/admin/enrolments" },
   { label: "Users", icon: UserCog, path: "/admin/users" },
   { label: "Coupons", icon: Ticket, path: "/admin/coupons" },
+  { label: "Revenue", icon: IndianRupee, path: "/admin/revenue" },
 ];
 
 interface Props {
