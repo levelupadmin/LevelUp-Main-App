@@ -332,6 +332,8 @@ function CheckoutCard({
       toast({ title: "Please fill all fields", variant: "destructive" });
       return;
     }
+    if (isProcessing) return;
+    setIsProcessing(true);
     setLoading(true);
     try {
       const params = new URLSearchParams(window.location.search);
@@ -357,6 +359,7 @@ function CheckoutCard({
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
       setLoading(false);
+      setIsProcessing(false);
     }
   };
 
