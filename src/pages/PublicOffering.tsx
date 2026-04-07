@@ -352,12 +352,16 @@ function CheckoutCard({
 
   /* ── Pay: guest (scenarios A & B) ── */
   const handleGuestPay = async () => {
-    if (!guestName.trim() || !guestEmail.trim() || !guestPhone.trim()) {
+    if (isProcessing) return;
+    if (!guestName.trim()) {
+      toast({ title: "Please enter your name", variant: "destructive" });
+      return;
+    }
+    if (!guestEmail.trim() || !guestPhone.trim()) {
       toast({ title: "Please fill all fields", variant: "destructive" });
       return;
     }
     if (!validatePhone(guestPhone)) return;
-    if (isProcessing) return;
     setIsProcessing(true);
     setLoading(true);
     try {
