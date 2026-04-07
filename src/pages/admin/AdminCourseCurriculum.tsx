@@ -50,8 +50,9 @@ const AdminCourseCurriculum = () => {
 
   const load = useCallback(async () => {
     if (!courseId) return;
-    const { data: course } = await supabase.from("courses").select("title").eq("id", courseId).single();
+    const { data: course } = await supabase.from("courses").select("title, default_video_type").eq("id", courseId).single();
     setCourseTitle(course?.title || "");
+    setCourseDefaultVideoType((course as any)?.default_video_type || "standard");
 
     const { data: secs } = await supabase
       .from("sections")
