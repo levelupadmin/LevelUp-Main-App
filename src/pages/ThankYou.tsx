@@ -219,7 +219,7 @@ export default function ThankYou() {
       try {
         const { data: orderData, error } = await supabase
           .from("payment_orders")
-          .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script)")
+          .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script)")
           .eq("id", paymentOrderId)
           .eq("status", "captured")
           .single();
@@ -227,6 +227,31 @@ export default function ThankYou() {
         if (error || !orderData) {
           setNotFound(true);
           return;
+        }
+
+        // Ownership check
+        if (session) {
+          // Logged-in user must own this order
+          if (orderData.user_id && orderData.user_id !== session.user.id) {
+            setNotFound(true);
+            return;
+          }
+        } else {
+          // Guest: mask sensitive data if not coming from payment redirect
+          const fromPayment = document.referrer.includes("razorpay") ||
+            new URLSearchParams(window.location.search).has("razorpay_payment_id");
+          if (!fromPayment && orderData.guest_email) {
+            // Mask email: a***h@gmail.com
+            const [local, domain] = orderData.guest_email.split("@");
+            const masked = local.length > 2
+              ? local[0] + "***" + local[local.length - 1]
+              : "***";
+            (orderData as any).guest_email = `${masked}@${domain}`;
+          }
+          if (!fromPayment && orderData.guest_phone) {
+            // Show only last 4 digits
+            (orderData as any).guest_phone = "****" + orderData.guest_phone.slice(-4);
+          }
         }
 
         setOrder(orderData as any);
@@ -246,7 +271,7 @@ export default function ThankYou() {
         setLoading(false);
       }
     })();
-  }, [paymentOrderId]);
+  }, [paymentOrderId, session]);
 
   /* ── Fire pixels once ── */
   useEffect(() => {

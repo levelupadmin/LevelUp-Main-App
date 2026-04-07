@@ -168,6 +168,7 @@ function CheckoutCard({
   const [couponApplied, setCouponApplied] = useState(false);
   const [couponLoading, setCouponLoading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Scenario state: null = not checked yet, A/B/C
   const [scenario, setScenario] = useState<"A" | "B" | "C" | null>(null);
@@ -303,7 +304,8 @@ function CheckoutCard({
 
   /* ── Pay: authenticated ── */
   const handleAuthPay = async () => {
-    if (!session) return;
+    if (!session || isProcessing) return;
+    setIsProcessing(true);
     setLoading(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/create-razorpay-order`, {
@@ -320,6 +322,7 @@ function CheckoutCard({
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
       setLoading(false);
+      setIsProcessing(false);
     }
   };
 
@@ -329,6 +332,8 @@ function CheckoutCard({
       toast({ title: "Please fill all fields", variant: "destructive" });
       return;
     }
+    if (isProcessing) return;
+    setIsProcessing(true);
     setLoading(true);
     try {
       const params = new URLSearchParams(window.location.search);
@@ -354,6 +359,7 @@ function CheckoutCard({
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
       setLoading(false);
+      setIsProcessing(false);
     }
   };
 
@@ -400,6 +406,7 @@ function CheckoutCard({
           toast({ title: "Verification error", description: "Contact support.", variant: "destructive" });
         }
         setLoading(false);
+        setIsProcessing(false);
       },
       prefill: {
         name: session ? profile?.full_name : guestName,
@@ -413,6 +420,7 @@ function CheckoutCard({
     rzp.on("payment.failed", () => {
       toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
       setLoading(false);
+      setIsProcessing(false);
     });
     rzp.open();
   };
@@ -478,10 +486,12 @@ function CheckoutCard({
           </p>
           <Button
             onClick={handleAuthPay}
-            disabled={loading}
+            disabled={loading || isProcessing}
             className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
           >
-            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : (
+            {isProcessing ? (
+              <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Processing...</>
+            ) : (
               <>Pay ₹{afterDiscount.toLocaleString("en-IN")} <ArrowRight className="h-4 w-4 ml-2" /></>
             )}
           </Button>
@@ -603,10 +613,12 @@ function CheckoutCard({
             <>
               <Button
                 onClick={handleGuestPay}
-                disabled={loading}
+                disabled={loading || isProcessing}
                 className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
               >
-                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : (
+                {isProcessing ? (
+                  <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Processing...</>
+                ) : (
                   <>Pay ₹{afterDiscount.toLocaleString("en-IN")} <ArrowRight className="h-4 w-4 ml-2" /></>
                 )}
               </Button>

@@ -35,13 +35,11 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "offering_id, guest_name, guest_email, and guest_phone are required" }, 400);
     }
 
-    // Basic email format check
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(guest_email)) {
       return jsonRes({ error: "Invalid email format" }, 400);
     }
 
-    // Basic phone format check (at least 10 digits)
     const phoneDigits = guest_phone.replace(/\D/g, "");
     if (phoneDigits.length < 10) {
       return jsonRes({ error: "Invalid phone number" }, 400);
@@ -62,6 +60,31 @@ Deno.serve(async (req) => {
     if (offErr || !offering) return jsonRes({ error: "Offering not found" }, 404);
     if (offering.status !== "active") return jsonRes({ error: "Offering is not active" }, 400);
     if (!offering.is_public) return jsonRes({ error: "Offering is not available for public purchase" }, 400);
+
+    /* ── SCENARIO VALIDATION (server-side security gate) ── */
+    const { data: emailUser } = await admin
+      .from("users")
+      .select("id, phone")
+      .eq("email", guest_email)
+      .maybeSingle();
+
+    const { data: phoneUser } = await admin
+      .from("users")
+      .select("id, email")
+      .eq("phone", guest_phone)
+      .maybeSingle();
+
+    if (emailUser && phoneUser && emailUser.id !== phoneUser.id) {
+      return jsonRes({ error: "Email and phone number are linked to different accounts. Please verify your identity." }, 403);
+    }
+
+    if (emailUser && emailUser.phone && emailUser.phone !== guest_phone) {
+      return jsonRes({ error: "Phone number doesn't match the account on file. Please verify your identity." }, 403);
+    }
+
+    if (phoneUser && phoneUser.email !== guest_email) {
+      return jsonRes({ error: "This phone number is linked to a different account. Please verify your identity." }, 403);
+    }
 
     /* ── Coupon (by code, not ID) ── */
     let discountInr = 0;
@@ -104,7 +127,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    /* ── Totals (same logic as create-razorpay-order) ── */
+    /* ── Totals ── */
     const subtotalInr = Number(offering.price_inr);
     const afterDiscount = Math.max(subtotalInr - discountInr, 0);
     let gstInr = 0;
