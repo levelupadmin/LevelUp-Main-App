@@ -29,6 +29,7 @@ const ProfilePage = () => {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [enrolments, setEnrolments] = useState<Enrolment[]>([]);
+  const [courseMap, setCourseMap] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState({
     full_name: "",
@@ -65,6 +66,24 @@ const ProfilePage = () => {
         .in("id", enrs.map((e) => e.offering_id));
 
       const offMap = Object.fromEntries((offs ?? []).map((o) => [o.id, o]));
+
+      // Get the first course for each offering to build direct links
+      const offeringIds = enrs.map(e => e.offering_id).filter(Boolean);
+      const { data: offeringCourses } = await supabase
+        .from("offering_courses")
+        .select("offering_id, course_id")
+        .in("offering_id", offeringIds);
+
+      const cMap: Record<string, string> = {};
+      if (offeringCourses) {
+        for (const oc of offeringCourses) {
+          if (!cMap[oc.offering_id]) {
+            cMap[oc.offering_id] = oc.course_id;
+          }
+        }
+      }
+      setCourseMap(cMap);
+
       setEnrolments(
         enrs.map((e) => ({
           ...e,
@@ -228,7 +247,7 @@ const ProfilePage = () => {
                     {e.status}
                   </Badge>
                   <Link
-                    to="/my-courses"
+                    to={courseMap[e.offering_id] ? `/courses/${courseMap[e.offering_id]}` : "/my-courses"}
                     className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 flex-shrink-0"
                   >
                     Go to course <ArrowRight className="h-3 w-3" />

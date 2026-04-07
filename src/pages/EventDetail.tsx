@@ -101,6 +101,10 @@ const EventDetail = () => {
           body: JSON.stringify({ event_id: event.id }),
         }
       );
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || `HTTP ${res.status}`);
+      }
       const data = await res.json();
 
       if (data.registered) {
@@ -136,6 +140,9 @@ const EventDetail = () => {
                   }),
                 }
               );
+              if (!verifyRes.ok) {
+                throw new Error("Payment verification failed");
+              }
               const verifyData = await verifyRes.json();
               if (verifyData.registered) {
                 toast({ title: "Payment successful!", description: "You're registered for the event." });
@@ -154,6 +161,10 @@ const EventDetail = () => {
           },
           theme: { color: "#F5F1E8" },
         };
+        if (!(window as any).Razorpay) {
+          toast({ title: "Payment unavailable", description: "Payment system is loading. Please try again in a moment.", variant: "destructive" });
+          return;
+        }
         const rzp = new (window as any).Razorpay(options);
         rzp.on("payment.failed", () => {
           toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
