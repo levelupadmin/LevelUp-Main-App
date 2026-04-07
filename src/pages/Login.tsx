@@ -102,6 +102,24 @@ const Login = () => {
     }
   };
 
+  const handleMagicLink = async () => {
+    if (!email) {
+      toast({ title: "Enter your email", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/home` },
+    });
+    setLoading(false);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      setMagicLinkSent(true);
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -113,7 +131,6 @@ const Login = () => {
       return;
     }
 
-    // Redirect back to the page the user was trying to visit
     const from = (location.state as any)?.from?.pathname || "/";
     navigate(from, { replace: true });
   };
