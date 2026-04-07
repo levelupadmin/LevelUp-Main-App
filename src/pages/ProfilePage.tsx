@@ -247,7 +247,7 @@ const ProfilePage = () => {
                     {e.status}
                   </Badge>
                   <Link
-                    to="/my-courses"
+                    to={courseMap[e.offering_id] ? `/courses/${courseMap[e.offering_id]}` : "/my-courses"}
                     className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 flex-shrink-0"
                   >
                     Go to course <ArrowRight className="h-3 w-3" />

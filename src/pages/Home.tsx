@@ -348,6 +348,10 @@ const UpcomingEvents = () => {
           },
           theme: { color: "#F5F1E8" },
         };
+        if (!(window as any).Razorpay) {
+          toast({ title: "Payment unavailable", description: "Payment system is loading. Please try again in a moment.", variant: "destructive" });
+          return;
+        }
         const rzp = new (window as any).Razorpay(options);
         rzp.on("payment.failed", () => {
           toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
