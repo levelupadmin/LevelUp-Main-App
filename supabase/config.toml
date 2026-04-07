@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.guest-create-order]
 verify_jwt = false
+
+[functions.process-email-queue]
+verify_jwt = true
