@@ -136,10 +136,10 @@ const ContinueLearning = () => {
                 <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
                 <p className="text-sm text-muted-foreground mt-1">{c.instructor_display_name}</p>
                 <div className="mt-3 h-1 bg-surface-2 rounded-full overflow-hidden">
-                  <div className="h-full bg-cream rounded-full" style={{ width: "0%" }} />
+                  <div className="h-full bg-cream rounded-full transition-all" style={{ width: `${progressMap[c.id] || 0}%` }} />
                 </div>
                 <p className="text-sm text-cream mt-3 flex items-center gap-1">
-                  Continue <ArrowRight className="h-3 w-3" />
+                  {(progressMap[c.id] || 0) > 0 ? `${progressMap[c.id]}% complete` : "Start learning"} <ArrowRight className="h-3 w-3" />
                 </p>
               </div>
             </Link>
