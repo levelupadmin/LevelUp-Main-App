@@ -22,6 +22,63 @@ interface Enrolment {
   offering_id: string;
 }
 
+const SetPasswordForm = () => {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSetPassword = async () => {
+    if (newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setSaving(false);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Password set! You can now sign in with your password.");
+      setNewPassword("");
+      setConfirmPassword("");
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">New Password</label>
+        <Input
+          type="password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          placeholder="Minimum 6 characters"
+          className="bg-surface border-border"
+        />
+      </div>
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">Confirm Password</label>
+        <Input
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          placeholder="Re-enter password"
+          className="bg-surface border-border"
+        />
+      </div>
+      <div className="sm:col-span-2">
+        <Button size="sm" onClick={handleSetPassword} disabled={saving || !newPassword}>
+          {saving ? "Setting…" : "Set Password"}
+        </Button>
+      </div>
+    </div>
+  );
+};
+
 const ProfilePage = () => {
   usePageTitle("Profile");
   const { profile, user, signOut } = useAuth();
@@ -256,6 +313,18 @@ const ProfilePage = () => {
               ))}
             </div>
           )}
+        </section>
+
+        {/* Divider */}
+        <div className="border-t border-border" />
+
+        {/* Set Password */}
+        <section>
+          <h3 className="text-lg font-semibold mb-2">Set Password</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Set a password if you'd like to sign in with email and password instead of email links.
+          </p>
+          <SetPasswordForm />
         </section>
 
         {/* Divider */}

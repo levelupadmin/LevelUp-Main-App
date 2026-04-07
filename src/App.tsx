@@ -30,6 +30,7 @@ import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminCoupons from "@/pages/admin/AdminCoupons";
 import AdminHeroSlides from "@/pages/admin/AdminHeroSlides";
 import AdminEvents from "@/pages/admin/AdminEvents";
+import AdminRevenue from "@/pages/admin/AdminRevenue";
 import EventsPage from "@/pages/EventsPage";
 import EventDetail from "@/pages/EventDetail";
 import PublicOffering from "@/pages/PublicOffering";
@@ -78,6 +79,7 @@ const App = () => (
             <Route path="/admin/enrolments" element={<RequireAuth><RequireRole role="admin"><AdminEnrolments /></RequireRole></RequireAuth>} />
             <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />
             <Route path="/admin/coupons" element={<RequireAuth><RequireRole role="admin"><AdminCoupons /></RequireRole></RequireAuth>} />
+            <Route path="/admin/revenue" element={<RequireAuth><RequireRole role="admin"><AdminRevenue /></RequireRole></RequireAuth>} />
 
             {/* Instructor */}
             <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />
