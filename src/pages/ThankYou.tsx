@@ -249,11 +249,11 @@ export default function ThankYou() {
             return;
           }
         } else {
-          // Guest: mask sensitive data if not coming from payment redirect
+          // Guest: preserve original email for resend, then mask for display
+          setOriginalGuestEmail(orderData.guest_email);
           const fromPayment = document.referrer.includes("razorpay") ||
             new URLSearchParams(window.location.search).has("razorpay_payment_id");
           if (!fromPayment && orderData.guest_email) {
-            // Mask email: a***h@gmail.com
             const [local, domain] = orderData.guest_email.split("@");
             const masked = local.length > 2
               ? local[0] + "***" + local[local.length - 1]
@@ -261,7 +261,6 @@ export default function ThankYou() {
             (orderData as any).guest_email = `${masked}@${domain}`;
           }
           if (!fromPayment && orderData.guest_phone) {
-            // Show only last 4 digits
             (orderData as any).guest_phone = "****" + orderData.guest_phone.slice(-4);
           }
         }
