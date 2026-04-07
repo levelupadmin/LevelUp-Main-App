@@ -45,6 +45,8 @@ const AdminCourseCurriculum = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingChapter, setEditingChapter] = useState<{ sectionIdx: number; chapterIdx: number } | null>(null);
+  const [courseDefaultVideoType, setCourseDefaultVideoType] = useState("standard");
+  const [vdoUploadMode, setVdoUploadMode] = useState<Record<string, "upload" | "existing">>({});
 
   const load = useCallback(async () => {
     if (!courseId) return;
