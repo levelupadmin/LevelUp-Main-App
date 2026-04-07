@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, ChevronUp, ChevronDown, Trash2, GripVertical } from "lucide-react";
+import VdoCipherUploader from "@/components/admin/VdoCipherUploader";
 
 interface Chapter {
   id: string;
@@ -21,6 +22,9 @@ interface Chapter {
   duration_seconds: number;
   make_free: boolean;
   sort_order: number;
+  video_type: string;
+  vdocipher_video_id: string;
+  vdocipher_watermark_text: string;
   _isNew?: boolean;
 }
 
@@ -41,11 +45,14 @@ const AdminCourseCurriculum = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingChapter, setEditingChapter] = useState<{ sectionIdx: number; chapterIdx: number } | null>(null);
+  const [courseDefaultVideoType, setCourseDefaultVideoType] = useState("standard");
+  const [vdoUploadMode, setVdoUploadMode] = useState<Record<string, "upload" | "existing">>({});
 
   const load = useCallback(async () => {
     if (!courseId) return;
-    const { data: course } = await supabase.from("courses").select("title").eq("id", courseId).single();
+    const { data: course } = await supabase.from("courses").select("title, default_video_type").eq("id", courseId).single();
     setCourseTitle(course?.title || "");
+    setCourseDefaultVideoType((course as any)?.default_video_type || "standard");
 
     const { data: secs } = await supabase
       .from("sections")
@@ -62,7 +69,7 @@ const AdminCourseCurriculum = () => {
     const secIds = secs.map((s) => s.id);
     const { data: chs } = await supabase
       .from("chapters")
-      .select("id, title, content_type, description, media_url, embed_url, article_body, duration_seconds, make_free, sort_order, section_id")
+      .select("id, title, content_type, description, media_url, embed_url, article_body, duration_seconds, make_free, sort_order, section_id, video_type, vdocipher_video_id, vdocipher_watermark_text")
       .in("section_id", secIds)
       .order("sort_order");
 
@@ -80,6 +87,9 @@ const AdminCourseCurriculum = () => {
         duration_seconds: ch.duration_seconds || 0,
         make_free: ch.make_free,
         sort_order: ch.sort_order,
+        video_type: (ch as any).video_type || "standard",
+        vdocipher_video_id: (ch as any).vdocipher_video_id || "",
+        vdocipher_watermark_text: (ch as any).vdocipher_watermark_text || "",
       });
     });
 
@@ -120,6 +130,9 @@ const AdminCourseCurriculum = () => {
             duration_seconds: 0,
             make_free: false,
             sort_order: updated[sectionIdx].chapters.length,
+            video_type: courseDefaultVideoType,
+            vdocipher_video_id: "",
+            vdocipher_watermark_text: "",
             _isNew: true,
           },
         ],
@@ -194,7 +207,7 @@ const AdminCourseCurriculum = () => {
 
         for (let cIdx = 0; cIdx < sec.chapters.length; cIdx++) {
           const ch = sec.chapters[cIdx];
-          const payload = {
+          const payload: Record<string, unknown> = {
             section_id: sectionId,
             title: ch.title,
             content_type: ch.content_type,
@@ -205,13 +218,16 @@ const AdminCourseCurriculum = () => {
             duration_seconds: ch.duration_seconds || 0,
             make_free: ch.make_free,
             sort_order: cIdx,
+            video_type: ch.video_type || "standard",
+            vdocipher_video_id: ch.vdocipher_video_id || null,
+            vdocipher_watermark_text: ch.vdocipher_watermark_text || null,
           };
 
           if (ch._isNew) {
-            const { error } = await supabase.from("chapters").insert(payload);
+            const { error } = await supabase.from("chapters").insert(payload as any);
             if (error) throw error;
           } else {
-            const { error } = await supabase.from("chapters").update(payload).eq("id", ch.id);
+            const { error } = await supabase.from("chapters").update(payload as any).eq("id", ch.id);
             if (error) throw error;
           }
         }
@@ -306,20 +322,92 @@ const AdminCourseCurriculum = () => {
                           <label className="block text-xs font-medium mb-1">Description</label>
                           <Textarea value={ch.description} onChange={(e) => updateChapter(sIdx, cIdx, { description: e.target.value })} rows={2} />
                         </div>
-                        {(ch.content_type === "video" || ch.content_type === "pdf" || ch.content_type === "image") && (
+                        {/* Video type selector (only for video content) */}
+                        {ch.content_type === "video" && (
+                          <div>
+                            <label className="block text-xs font-medium mb-1">Video Type</label>
+                            <Select value={ch.video_type} onValueChange={(v) => updateChapter(sIdx, cIdx, { video_type: v })}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="standard">Standard upload</SelectItem>
+                                <SelectItem value="vdocipher">VdoCipher DRM video</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+
+                        {/* Standard video/media URL */}
+                        {ch.content_type === "video" && ch.video_type === "standard" && (
+                          <div>
+                            <label className="block text-xs font-medium mb-1">Video URL (Vimeo, YouTube, or embed URL)</label>
+                            <Input
+                              value={ch.media_url}
+                              onChange={(e) => updateChapter(sIdx, cIdx, { media_url: e.target.value })}
+                              placeholder="https://vimeo.com/123456789"
+                            />
+                          </div>
+                        )}
+
+                        {/* VdoCipher video fields */}
+                        {ch.content_type === "video" && ch.video_type === "vdocipher" && (
+                          <div className="space-y-3 border border-border rounded-lg p-3 bg-secondary/20">
+                            <div className="flex items-center gap-3">
+                              <button
+                                type="button"
+                                className={`text-xs px-2 py-1 rounded ${(vdoUploadMode[ch.id] || "existing") === "upload" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}
+                                onClick={() => setVdoUploadMode((m) => ({ ...m, [ch.id]: "upload" }))}
+                              >
+                                Upload new video
+                              </button>
+                              <button
+                                type="button"
+                                className={`text-xs px-2 py-1 rounded ${(vdoUploadMode[ch.id] || "existing") === "existing" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}
+                                onClick={() => setVdoUploadMode((m) => ({ ...m, [ch.id]: "existing" }))}
+                              >
+                                Use existing Video ID
+                              </button>
+                            </div>
+
+                            {(vdoUploadMode[ch.id] || "existing") === "upload" ? (
+                              <VdoCipherUploader
+                                onUploadComplete={(videoId) => updateChapter(sIdx, cIdx, { vdocipher_video_id: videoId })}
+                              />
+                            ) : (
+                              <div>
+                                <label className="block text-xs font-medium mb-1">VdoCipher Video ID</label>
+                                <Input
+                                  value={ch.vdocipher_video_id}
+                                  onChange={(e) => updateChapter(sIdx, cIdx, { vdocipher_video_id: e.target.value })}
+                                  placeholder="e.g. 1234567890abcdef"
+                                />
+                              </div>
+                            )}
+
+                            {ch.vdocipher_video_id && (
+                              <p className="text-xs text-muted-foreground">Video ID: {ch.vdocipher_video_id}</p>
+                            )}
+
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Watermark text</label>
+                              <Input
+                                value={ch.vdocipher_watermark_text}
+                                onChange={(e) => updateChapter(sIdx, cIdx, { vdocipher_watermark_text: e.target.value })}
+                                placeholder="(defaults to student email)"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* PDF / Image URL */}
+                        {(ch.content_type === "pdf" || ch.content_type === "image") && (
                           <div>
                             <label className="block text-xs font-medium mb-1">
-                              {ch.content_type === "video" ? "Video URL (Vimeo, YouTube, or embed URL)" :
-                               ch.content_type === "pdf" ? "PDF URL" : "Image URL"}
+                              {ch.content_type === "pdf" ? "PDF URL" : "Image URL"}
                             </label>
                             <Input
                               value={ch.media_url}
                               onChange={(e) => updateChapter(sIdx, cIdx, { media_url: e.target.value })}
-                              placeholder={
-                                ch.content_type === "video" ? "https://vimeo.com/123456789" :
-                                ch.content_type === "pdf" ? "https://example.com/document.pdf" :
-                                "https://example.com/image.jpg"
-                              }
+                              placeholder={ch.content_type === "pdf" ? "https://example.com/document.pdf" : "https://example.com/image.jpg"}
                             />
                           </div>
                         )}

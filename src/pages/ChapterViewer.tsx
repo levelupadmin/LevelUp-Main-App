@@ -18,6 +18,7 @@ import {
   Info,
   ArrowLeft,
 } from "lucide-react";
+import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 
 interface Chapter {
   id: string;
@@ -312,7 +313,9 @@ const ChapterViewer = () => {
         {/* Main content */}
         <div className="flex-1 p-4 lg:p-8 space-y-6 max-w-4xl">
           {/* Content renderer */}
-          {chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
+          {chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
+            <VdoCipherPlayer chapterId={chapter.id} />
+          ) : chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
             <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
               <iframe
                 src={(() => {
