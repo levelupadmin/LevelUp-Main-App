@@ -230,6 +230,21 @@ const AdminCourseEditor = () => {
           </div>
         )}
 
+        {/* Video Defaults */}
+        <div className="border border-border rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-semibold">Video Defaults</h3>
+          <div className="flex items-center gap-3">
+            <Switch
+              checked={form.default_video_type === "vdocipher"}
+              onCheckedChange={(v) => setForm((f) => ({ ...f, default_video_type: v ? "vdocipher" : "standard" }))}
+            />
+            <label className="text-sm">DRM video by default for this course (VdoCipher)</label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            When enabled, new chapters will default to VdoCipher DRM-protected video instead of standard upload.
+          </p>
+        </div>
+
         {field("Subtitle", "subtitle")}
         {field("Description", "description", "textarea")}
         {field("Instructor Display Name", "instructor_display_name")}
