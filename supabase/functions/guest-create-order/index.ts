@@ -143,10 +143,6 @@ Deno.serve(async (req) => {
     const totalInr =
       offering.gst_mode === "exclusive" ? afterDiscount + gstInr : afterDiscount;
 
-    if (totalInr <= 0) return jsonRes({ error: "Total must be > 0" }, 400);
-
-    const amountPaise = Math.round(totalInr * 100);
-
     /* ── payment_orders row (guest — no user_id) ── */
     const { data: po, error: poErr } = await admin
       .from("payment_orders")
@@ -160,7 +156,7 @@ Deno.serve(async (req) => {
         coupon_id: couponDbId,
         bump_offering_ids: [],
         custom_field_values: {},
-        status: "created",
+        status: totalInr <= 0 ? "captured" : "created",
         guest_name,
         guest_email,
         guest_phone,
@@ -169,6 +165,7 @@ Deno.serve(async (req) => {
         utm_campaign: utm_campaign || null,
         utm_content: utm_content || null,
         utm_term: utm_term || null,
+        captured_at: totalInr <= 0 ? new Date().toISOString() : null,
       })
       .select("id")
       .single();
@@ -193,7 +190,84 @@ Deno.serve(async (req) => {
       }
     }
 
-    /* ── Razorpay order ── */
+    /* ── FREE OFFERING: skip Razorpay, grant access immediately ── */
+    if (totalInr <= 0) {
+      // Create or find user account
+      let userId: string | null = null;
+
+      const { data: existingUser } = await admin
+        .from("users")
+        .select("id")
+        .eq("email", guest_email)
+        .maybeSingle();
+
+      if (existingUser) {
+        userId = existingUser.id;
+        await admin
+          .from("payment_orders")
+          .update({ user_id: userId })
+          .eq("id", po.id);
+      } else {
+        const { data: newUser, error: createError } =
+          await admin.auth.admin.createUser({
+            email: guest_email,
+            email_confirm: true,
+            user_metadata: {
+              full_name: guest_name,
+              phone: guest_phone,
+            },
+          });
+
+        if (createError) {
+          console.error("Guest user creation error:", createError);
+          return jsonRes({ error: "Failed to create user account" }, 500);
+        }
+
+        userId = newUser.user.id;
+        await admin
+          .from("payment_orders")
+          .update({ user_id: userId })
+          .eq("id", po.id);
+
+        if (guest_phone) {
+          await admin
+            .from("users")
+            .update({ phone: guest_phone })
+            .eq("id", userId);
+        }
+      }
+
+      // Create enrolment
+      await admin.from("enrolments").insert({
+        user_id: userId,
+        offering_id,
+        payment_order_id: po.id,
+        status: "active",
+        source: "checkout",
+      });
+
+      // Send magic link
+      try {
+        await admin.auth.admin.generateLink({
+          type: "magiclink",
+          email: guest_email,
+          options: {
+            redirectTo: `${Deno.env.get("SITE_URL") || "https://levelup-creator-os.lovable.app"}/home`,
+          },
+        });
+      } catch (linkErr) {
+        console.error("Magic link generation error:", linkErr);
+      }
+
+      return jsonRes({
+        success: true,
+        payment_order_id: po.id,
+        offering_title: offering.title,
+      });
+    }
+
+    /* ── Razorpay order (paid offerings) ── */
+    const amountPaise = Math.round(totalInr * 100);
     const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID")!;
     const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET")!;
 
