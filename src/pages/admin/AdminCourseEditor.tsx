@@ -47,6 +47,7 @@ const AdminCourseEditor = () => {
     product_tier: "masterclass",
     sort_order: 50,
     primary_offering_id: "" as string | null,
+    default_video_type: "standard",
   });
 
   useEffect(() => {
