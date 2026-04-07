@@ -66,6 +66,24 @@ const ProfilePage = () => {
         .in("id", enrs.map((e) => e.offering_id));
 
       const offMap = Object.fromEntries((offs ?? []).map((o) => [o.id, o]));
+
+      // Get the first course for each offering to build direct links
+      const offeringIds = enrs.map(e => e.offering_id).filter(Boolean);
+      const { data: offeringCourses } = await supabase
+        .from("offering_courses")
+        .select("offering_id, course_id")
+        .in("offering_id", offeringIds);
+
+      const cMap: Record<string, string> = {};
+      if (offeringCourses) {
+        for (const oc of offeringCourses) {
+          if (!cMap[oc.offering_id]) {
+            cMap[oc.offering_id] = oc.course_id;
+          }
+        }
+      }
+      setCourseMap(cMap);
+
       setEnrolments(
         enrs.map((e) => ({
           ...e,
