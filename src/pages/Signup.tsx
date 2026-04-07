@@ -12,6 +12,7 @@ const Signup = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,8 +25,8 @@ const Signup = () => {
       email,
       password,
       options: {
-        data: { full_name: fullName },
-        emailRedirectTo: window.location.origin,
+        data: { full_name: fullName, phone },
+        emailRedirectTo: `${window.location.origin}/login`,
       },
     });
 
@@ -63,6 +64,18 @@ const Signup = () => {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone Number</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="+91 98765 43210"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                required
+                className="bg-surface border-border focus:border-foreground h-11"
               />
             </div>
             <div className="space-y-2">
