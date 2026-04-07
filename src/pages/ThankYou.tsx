@@ -309,13 +309,14 @@ export default function ThankYou() {
 
   /* ── Resend magic link ── */
   const handleResendLink = async () => {
-    if (!order?.guest_email) return;
+    const emailToUse = originalGuestEmail || order?.guest_email;
+    if (!emailToUse) return;
     setResending(true);
-    const { error } = await supabase.auth.signInWithOtp({ email: order.guest_email });
+    const { error } = await supabase.auth.signInWithOtp({ email: emailToUse });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Login link sent!", description: `Check ${order.guest_email}` });
+      toast({ title: "Login link sent!", description: `Check your email` });
     }
     setResending(false);
   };

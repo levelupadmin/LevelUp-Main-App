@@ -20,7 +20,7 @@ interface Order {
   offerings: { title: string } | null;
 }
 
-const formatINR = (paise: number) => `₹${(paise / 100).toLocaleString("en-IN")}`;
+const formatINR = (rupees: number) => `₹${Number(rupees).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
 const PAGE_SIZE = 25;
 

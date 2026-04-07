@@ -140,7 +140,7 @@ Deno.serve(async (req) => {
         // Check if user already exists by email in public.users
         const { data: existingUser } = await admin
           .from("users")
-          .select("id")
+          .select("id, phone")
           .eq("email", poGuest.guest_email)
           .maybeSingle();
 

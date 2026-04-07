@@ -462,7 +462,7 @@ function CheckoutCard({
   };
 
   /* ── Determine if pay button should show ── */
-  const canPay = session || scenario !== "C";
+  const canPay = session || (scenario !== "C" && !(guestEmail.trim() && guestPhone.trim() && scenario === null && !checkingIdentity));
   const isAuthenticated = !!session;
 
   /* ── Button label ── */
