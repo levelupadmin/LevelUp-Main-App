@@ -85,7 +85,9 @@ const Login = () => {
     return () => clearInterval(timer);
   }, [nextSlide]);
 
-  const redirectTarget = (location.state as any)?.from?.pathname || "/home";
+  const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  const rawFrom = (location.state as any)?.from?.pathname || "/home";
+  const redirectTarget = rawFrom.startsWith("/") && !rawFrom.includes("//") ? rawFrom : "/home";
 
   const handleForgotPassword = async () => {
     if (!email) {
