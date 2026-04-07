@@ -215,7 +215,18 @@ const CourseDetail = () => {
     );
   }
 
-  if (!course) return null;
+  if (!course) {
+    return (
+      <StudentLayout title="Not Found">
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <BookOpen className="h-12 w-12 text-muted-foreground" />
+          <h1 className="text-xl font-semibold text-foreground">Course not found</h1>
+          <p className="text-sm text-muted-foreground">This course doesn't exist or is no longer available.</p>
+          <Link to="/home" className="text-sm text-primary hover:underline">← Back to Home</Link>
+        </div>
+      </StudentLayout>
+    );
+  }
 
   const totalChapters = chapters.length;
   const completedCount = progress.filter((p) => p.completed_at).length;
