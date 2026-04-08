@@ -502,13 +502,13 @@ const AdminSchedule = () => {
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent
-          className="max-w-lg"
+          className="max-w-lg max-h-[85vh] flex flex-col"
           onInteractOutside={(e) => e.preventDefault()}
         >
-          <DialogHeader>
+          <DialogHeader className="shrink-0">
             <DialogTitle>{editId ? "Edit Session" : "Add Session"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto pr-1 flex-1">
             <div>
               <Label>Course</Label>
               <Select value={form.course_id} onValueChange={(v) => f("course_id", v)}>
