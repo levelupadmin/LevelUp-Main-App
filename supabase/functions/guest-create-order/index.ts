@@ -182,9 +182,34 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Failed to create payment order" }, 500);
     }
 
-    /* ── Increment coupon usage (atomic) ── */
+    /* ── Atomically redeem coupon ──
+       Uses redeem_coupon() which enforces cap, dates, and active flag in a
+       single UPDATE. If it returns false, the coupon was exhausted or became
+       invalid between the read-check above and now (race condition). We
+       mark the payment order failed and return 409 so the client can retry. */
     if (couponDbId) {
-      await admin.rpc("increment_coupon_usage", { p_coupon_id: couponDbId });
+      const { data: redeemed, error: redeemErr } = await admin.rpc(
+        "redeem_coupon",
+        { p_coupon_id: couponDbId }
+      );
+      if (redeemErr || redeemed === false) {
+        console.warn(
+          "[guest-create-order] Coupon redemption failed (cap hit or invalid):",
+          couponDbId,
+          redeemErr
+        );
+        await admin
+          .from("payment_orders")
+          .update({ status: "failed" })
+          .eq("id", po.id);
+        return jsonRes(
+          {
+            error:
+              "This coupon has just reached its limit or become invalid. Please try again without the coupon.",
+          },
+          409
+        );
+      }
     }
 
     /* ── FREE OFFERING: skip Razorpay, grant access immediately ── */
