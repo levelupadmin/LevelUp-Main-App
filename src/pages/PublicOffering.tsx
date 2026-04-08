@@ -720,15 +720,19 @@ export default function PublicOffering() {
       setRazorpayReady(true);
       return;
     }
+    let scriptLoaded = false;
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
-    script.onload = () => setRazorpayReady(true);
+    script.onload = () => {
+      scriptLoaded = true;
+      setRazorpayReady(true);
+    };
     script.onerror = () => setRazorpayError(true);
     document.body.appendChild(script);
 
     const timeout = setTimeout(() => {
-      if (!razorpayReady) setRazorpayError(true);
+      if (!scriptLoaded) setRazorpayError(true);
     }, 10000);
 
     return () => clearTimeout(timeout);
