@@ -377,14 +377,65 @@ Deno.serve(async (req) => {
                       .update({ user_id: userId })
                       .eq("id", payment_order_id);
                   } else {
-                    throw new Error("Could not find or create user account");
+                    // Don't throw — the customer's payment was captured
+                    // and we cannot afford to lose them. Park the order
+                    // for ops review and tell the client to contact
+                    // support, instead of erroring out.
+                    console.error(
+                      "[verify] Fallback list found no user; parking order for review:",
+                      payment_order_id
+                    );
+                    await admin
+                      .from("payment_orders")
+                      .update({ status: "needs_review" })
+                      .eq("id", payment_order_id);
+                    return jsonRes(
+                      {
+                        success: false,
+                        needs_review: true,
+                        error:
+                          "Payment received but we couldn't create your account automatically. Our team will email you within a few hours.",
+                      },
+                      202
+                    );
                   }
                 } catch (fallbackErr) {
                   console.error("[verify] Fallback also failed:", fallbackErr);
-                  throw createError;
+                  await admin
+                    .from("payment_orders")
+                    .update({ status: "needs_review" })
+                    .eq("id", payment_order_id);
+                  return jsonRes(
+                    {
+                      success: false,
+                      needs_review: true,
+                      error:
+                        "Payment received but we couldn't create your account automatically. Our team will email you within a few hours.",
+                    },
+                    202
+                  );
                 }
               } else {
-                throw createError;
+                // Any other createUser error: don't drop the customer's
+                // money on the floor. Park for manual recovery.
+                console.error(
+                  "[verify] Non-duplicate createUser failure; parking order:",
+                  payment_order_id,
+                  createError.message
+                );
+                await admin
+                  .from("payment_orders")
+                  .update({ status: "needs_review" })
+                  .eq("id", payment_order_id);
+                return jsonRes(
+                  {
+                    success: false,
+                    needs_review: true,
+                    error:
+                      "Payment received but we couldn't create your account automatically. Our team will email you within a few hours.",
+                  },
+                  202
+                );
               }
             } else {
               userId = newUser.user.id;
