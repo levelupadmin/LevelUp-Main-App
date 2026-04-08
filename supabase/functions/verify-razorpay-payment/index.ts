@@ -55,6 +55,14 @@ Deno.serve(async (req) => {
       is_guest,
     } = await req.json();
 
+    console.log("[verify] Request received", {
+      has_payment_id: !!razorpay_payment_id,
+      has_order_id: !!razorpay_order_id,
+      has_signature: !!razorpay_signature,
+      has_po_id: !!payment_order_id,
+      is_guest
+    });
+
     if (
       !razorpay_payment_id ||
       !razorpay_order_id ||
