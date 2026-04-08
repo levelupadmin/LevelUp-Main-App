@@ -29,7 +29,7 @@ ALTER TABLE live_sessions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY live_sessions_admin_all ON live_sessions
   FOR ALL TO authenticated
   USING (
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
   );
 
 -- Students can read sessions for courses they are enrolled in
