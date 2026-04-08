@@ -1611,6 +1611,56 @@ export type Database = {
           },
         ]
       }
+      live_sessions: {
+        Row: {
+          id: string
+          course_id: string
+          title: string
+          description: string | null
+          scheduled_at: string
+          duration_minutes: number | null
+          zoom_link: string | null
+          recording_url: string | null
+          status: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          course_id: string
+          title: string
+          description?: string | null
+          scheduled_at: string
+          duration_minutes?: number | null
+          zoom_link?: string | null
+          recording_url?: string | null
+          status?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          course_id?: string
+          title?: string
+          description?: string | null
+          scheduled_at?: string
+          duration_minutes?: number | null
+          zoom_link?: string | null
+          recording_url?: string | null
+          status?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_sessions_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       offering_courses: {
         Row: {
           course_id: string

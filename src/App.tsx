@@ -30,10 +30,12 @@ import AdminEnrolments from "@/pages/admin/AdminEnrolments";
 import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminCoupons from "@/pages/admin/AdminCoupons";
 import AdminHeroSlides from "@/pages/admin/AdminHeroSlides";
+import AdminSchedule from "@/pages/admin/AdminSchedule";
 import AdminEvents from "@/pages/admin/AdminEvents";
 import AdminRevenue from "@/pages/admin/AdminRevenue";
 import AdminCoursePreview from "@/pages/admin/AdminCoursePreview";
 import AdminChapterPreview from "@/pages/admin/AdminChapterPreview";
+import MySessionsPage from "@/pages/MySessionsPage";
 import EventsPage from "@/pages/EventsPage";
 import EventDetail from "@/pages/EventDetail";
 import PublicOffering from "@/pages/PublicOffering";
@@ -68,6 +70,7 @@ const App = () => (
             <Route path="/browse" element={<RequireAuth><BrowsePage /></RequireAuth>} />
             <Route path="/community" element={<RequireAuth><CommunityPage /></RequireAuth>} />
             <Route path="/my-courses" element={<RequireAuth><MyCoursesPage /></RequireAuth>} />
+            <Route path="/my-sessions" element={<RequireAuth><MySessionsPage /></RequireAuth>} />
             <Route path="/events" element={<RequireAuth><EventsPage /></RequireAuth>} />
             <Route path="/events/:eventId" element={<RequireAuth><EventDetail /></RequireAuth>} />
 
@@ -81,6 +84,7 @@ const App = () => (
             <Route path="/admin/courses/:courseId/preview/:chapterId" element={<RequireAuth><RequireRole role="admin"><AdminChapterPreview /></RequireRole></RequireAuth>} />
             <Route path="/admin/offerings" element={<RequireAuth><RequireRole role="admin"><AdminOfferings /></RequireRole></RequireAuth>} />
             <Route path="/admin/offerings/:offeringId/edit" element={<RequireAuth><RequireRole role="admin"><AdminOfferingEditor /></RequireRole></RequireAuth>} />
+            <Route path="/admin/schedule" element={<RequireAuth><RequireRole role="admin"><AdminSchedule /></RequireRole></RequireAuth>} />
             <Route path="/admin/events" element={<RequireAuth><RequireRole role="admin"><AdminEvents /></RequireRole></RequireAuth>} />
             <Route path="/admin/enrolments" element={<RequireAuth><RequireRole role="admin"><AdminEnrolments /></RequireRole></RequireAuth>} />
             <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />

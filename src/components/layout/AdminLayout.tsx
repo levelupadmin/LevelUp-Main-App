@@ -14,6 +14,7 @@ import {
   X,
   Image,
   CalendarDays,
+  Video,
   IndianRupee,
   Loader2,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { label: "Hero Slides", icon: Image, path: "/admin/hero-slides" },
   { label: "Courses", icon: BookOpen, path: "/admin/courses" },
   { label: "Offerings", icon: Package, path: "/admin/offerings" },
+  { label: "Schedule Classes", icon: Video, path: "/admin/schedule" },
   { label: "Events", icon: CalendarDays, path: "/admin/events" },
   { label: "Enrolments", icon: Users, path: "/admin/enrolments" },
   { label: "Users", icon: UserCog, path: "/admin/users" },
