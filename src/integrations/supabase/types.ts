@@ -799,7 +799,6 @@ export type Database = {
           rating_avg: number | null
           rating_count: number | null
           show_as_locked: boolean
-          show_on_browse: boolean | null
           slug: string
           sort_order: number
           status: string
@@ -834,7 +833,6 @@ export type Database = {
           rating_avg?: number | null
           rating_count?: number | null
           show_as_locked?: boolean
-          show_on_browse?: boolean | null
           slug: string
           sort_order?: number
           status?: string
@@ -869,7 +867,6 @@ export type Database = {
           rating_avg?: number | null
           rating_count?: number | null
           show_as_locked?: boolean
-          show_on_browse?: boolean | null
           slug?: string
           sort_order?: number
           status?: string
@@ -1720,13 +1717,6 @@ export type Database = {
           status: string
           subscription_period: string | null
           subtitle: string | null
-          thankyou_auto_redirect: boolean | null
-          thankyou_body: string | null
-          thankyou_cta_label: string | null
-          thankyou_cta_url: string | null
-          thankyou_headline: string | null
-          thankyou_redirect_seconds: number | null
-          thankyou_thumbnail_url: string | null
           thumbnail_url: string | null
           title: string
           type: string
@@ -1757,13 +1747,6 @@ export type Database = {
           status?: string
           subscription_period?: string | null
           subtitle?: string | null
-          thankyou_auto_redirect?: boolean | null
-          thankyou_body?: string | null
-          thankyou_cta_label?: string | null
-          thankyou_cta_url?: string | null
-          thankyou_headline?: string | null
-          thankyou_redirect_seconds?: number | null
-          thankyou_thumbnail_url?: string | null
           thumbnail_url?: string | null
           title: string
           type: string
@@ -1794,13 +1777,6 @@ export type Database = {
           status?: string
           subscription_period?: string | null
           subtitle?: string | null
-          thankyou_auto_redirect?: boolean | null
-          thankyou_body?: string | null
-          thankyou_cta_label?: string | null
-          thankyou_cta_url?: string | null
-          thankyou_headline?: string | null
-          thankyou_redirect_seconds?: number | null
-          thankyou_thumbnail_url?: string | null
           thumbnail_url?: string | null
           title?: string
           type?: string
