@@ -113,6 +113,7 @@ Deno.serve(async (req) => {
 
     /* ── Auth: authenticated flow or guest flow ── */
     let userId: string | null = null;
+    let magicLinkToken: string | null = null;
 
     const authHeader = req.headers.get("Authorization");
     if (!is_guest) {
