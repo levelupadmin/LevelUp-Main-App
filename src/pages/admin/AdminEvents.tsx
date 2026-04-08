@@ -509,8 +509,8 @@ const AdminEvents = () => {
               </div>
               {form.pricing_type !== "free" && (
                 <div className="mt-3">
-                  {field("Price (₹)", "price_inr", "number")}
-                  <p className="text-xs text-muted-foreground mt-1">In paise (e.g. 49900 = ₹499)</p>
+                  {field("Price (in paise)", "price_inr", "number")}
+                  <p className="text-xs text-muted-foreground mt-1">Enter in paise — e.g. 49900 = ₹499. The label says ₹ on the customer-facing pages and divides by 100 for display.</p>
                 </div>
               )}
               {form.pricing_type === "free_for_enrolled" && (
