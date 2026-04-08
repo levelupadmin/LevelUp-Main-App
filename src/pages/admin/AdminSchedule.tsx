@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus,
@@ -29,8 +31,12 @@ import {
   XCircle,
   Clock,
   Loader2,
+  CalendarIcon,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { format, startOfDay, isBefore } from "date-fns";
 
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
@@ -57,7 +63,10 @@ const EMPTY_FORM = {
   course_id: "",
   title: "",
   description: "",
-  scheduled_at: "",
+  date: null as Date | null,
+  hour: 10,
+  minute: 0,
+  period: "AM" as "AM" | "PM",
   duration_minutes: 60,
   zoom_link: "",
   recording_url: "",
@@ -67,24 +76,77 @@ const EMPTY_FORM = {
 /* ────────────────────────────────────────────────── */
 /*  Helpers                                           */
 /* ────────────────────────────────────────────────── */
-function formatDateTime(iso: string) {
+function isoToFormFields(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleString("en-IN", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
+  let h = d.getHours();
+  const period: "AM" | "PM" = h >= 12 ? "PM" : "AM";
+  if (h === 0) h = 12;
+  else if (h > 12) h -= 12;
+  return { date: d, hour: h, minute: d.getMinutes(), period };
 }
 
-function toLocalDatetimeValue(iso: string) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+function formFieldsToIso(date: Date | null, hour: number, minute: number, period: "AM" | "PM"): string | null {
+  if (!date) return null;
+  let h24 = hour;
+  if (period === "AM" && hour === 12) h24 = 0;
+  else if (period === "PM" && hour !== 12) h24 = hour + 12;
+  const d = new Date(date);
+  d.setHours(h24, minute, 0, 0);
+  return d.toISOString();
+}
+
+/* ── Scroll-based time picker ── */
+function TimePicker({
+  hour,
+  minute,
+  period,
+  onHourChange,
+  onMinuteChange,
+  onPeriodChange,
+}: {
+  hour: number;
+  minute: number;
+  period: "AM" | "PM";
+  onHourChange: (h: number) => void;
+  onMinuteChange: (m: number) => void;
+  onPeriodChange: (p: "AM" | "PM") => void;
+}) {
+  const incHour = () => onHourChange(hour >= 12 ? 1 : hour + 1);
+  const decHour = () => onHourChange(hour <= 1 ? 12 : hour - 1);
+  const incMinute = () => onMinuteChange(minute >= 55 ? 0 : minute + 5);
+  const decMinute = () => onMinuteChange(minute <= 0 ? 55 : minute - 5);
+  const togglePeriod = () => onPeriodChange(period === "AM" ? "PM" : "AM");
+
+  const columnClass = "flex flex-col items-center gap-0.5";
+  const arrowBtn = "p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors";
+  const valueClass = "text-xl font-semibold tabular-nums w-10 text-center select-none";
+
+  return (
+    <div className="flex items-center gap-1 justify-center">
+      {/* Hour */}
+      <div className={columnClass}>
+        <button type="button" onClick={incHour} className={arrowBtn}><ChevronUp className="h-4 w-4" /></button>
+        <span className={valueClass}>{String(hour).padStart(2, "0")}</span>
+        <button type="button" onClick={decHour} className={arrowBtn}><ChevronDown className="h-4 w-4" /></button>
+      </div>
+
+      <span className="text-xl font-semibold select-none pb-0.5">:</span>
+
+      {/* Minute */}
+      <div className={columnClass}>
+        <button type="button" onClick={incMinute} className={arrowBtn}><ChevronUp className="h-4 w-4" /></button>
+        <span className={valueClass}>{String(minute).padStart(2, "0")}</span>
+        <button type="button" onClick={decMinute} className={arrowBtn}><ChevronDown className="h-4 w-4" /></button>
+      </div>
+
+      {/* AM / PM */}
+      <div className={columnClass + " ml-1"}>
+        <button type="button" onClick={togglePeriod} className={arrowBtn}><ChevronUp className="h-4 w-4" /></button>
+        <span className={cn(valueClass, "text-base font-medium w-10")}>{period}</span>
+        <button type="button" onClick={togglePeriod} className={arrowBtn}><ChevronDown className="h-4 w-4" /></button>
+      </div>
+    </div>
+  );
 }
 
 /* ────────────────────────────────────────────────── */
@@ -145,11 +207,15 @@ const AdminSchedule = () => {
   };
 
   const openEdit = (s: LiveSession) => {
+    const { date, hour, minute, period } = isoToFormFields(s.scheduled_at);
     setForm({
       course_id: s.course_id,
       title: s.title,
       description: s.description || "",
-      scheduled_at: toLocalDatetimeValue(s.scheduled_at),
+      date,
+      hour,
+      minute,
+      period,
       duration_minutes: s.duration_minutes || 60,
       zoom_link: s.zoom_link || "",
       recording_url: s.recording_url || "",
@@ -169,8 +235,20 @@ const AdminSchedule = () => {
       toast({ title: "Title is required", variant: "destructive" });
       return;
     }
-    if (!form.scheduled_at) {
+    if (!form.date) {
+      toast({ title: "Pick a date", variant: "destructive" });
+      return;
+    }
+
+    const scheduledIso = formFieldsToIso(form.date, form.hour, form.minute, form.period);
+    if (!scheduledIso) {
       toast({ title: "Date & time is required", variant: "destructive" });
+      return;
+    }
+
+    // Block scheduling in the past
+    if (new Date(scheduledIso) < new Date()) {
+      toast({ title: "Cannot schedule in the past", description: "Pick a future date and time.", variant: "destructive" });
       return;
     }
 
@@ -179,7 +257,7 @@ const AdminSchedule = () => {
       course_id: form.course_id,
       title: form.title.trim(),
       description: form.description.trim() || null,
-      scheduled_at: new Date(form.scheduled_at).toISOString(),
+      scheduled_at: scheduledIso,
       duration_minutes: form.duration_minutes || 60,
       zoom_link: form.zoom_link.trim() || null,
       recording_url: form.recording_url.trim() || null,
@@ -459,15 +537,48 @@ const AdminSchedule = () => {
                 placeholder="Notes for students"
               />
             </div>
+            {/* Date picker */}
+            <div>
+              <Label>Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !form.date && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {form.date ? format(form.date, "EEE, MMM d, yyyy") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={form.date ?? undefined}
+                    onSelect={(day) => f("date", day ?? null)}
+                    disabled={(day) => isBefore(day, startOfDay(new Date()))}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Time + Duration row */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Date & Time</Label>
-                <input
-                  type="datetime-local"
-                  value={form.scheduled_at}
-                  onChange={(e) => f("scheduled_at", e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
-                />
+                <Label>Time</Label>
+                <div className="border border-input rounded-md px-3 py-2 bg-background">
+                  <TimePicker
+                    hour={form.hour}
+                    minute={form.minute}
+                    period={form.period}
+                    onHourChange={(h) => f("hour", h)}
+                    onMinuteChange={(m) => f("minute", m)}
+                    onPeriodChange={(p) => f("period", p)}
+                  />
+                </div>
               </div>
               <div>
                 <Label>Duration (minutes)</Label>
