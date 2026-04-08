@@ -113,6 +113,7 @@ Deno.serve(async (req) => {
 
     /* ── Auth: authenticated flow or guest flow ── */
     let userId: string | null = null;
+    let magicLinkToken: string | null = null;
 
     const authHeader = req.headers.get("Authorization");
     if (!is_guest) {
@@ -349,14 +350,19 @@ Deno.serve(async (req) => {
         }
 
         try {
-          await admin.auth.admin.generateLink({
+          const linkResult = await admin.auth.admin.generateLink({
             type: "magiclink",
             email: poGuest.guest_email,
             options: {
               redirectTo: `${Deno.env.get("SITE_URL") || "https://levelup-creator-os.lovable.app"}/home`,
             },
           });
-          console.log("[verify] Magic link generated for:", poGuest.guest_email);
+          if (linkResult.data?.properties?.hashed_token) {
+            magicLinkToken = linkResult.data.properties.hashed_token;
+            console.log("[verify] Magic link token captured for:", poGuest.guest_email);
+          } else {
+            console.log("[verify] Magic link generated (no token in response) for:", poGuest.guest_email);
+          }
         } catch (linkErr) {
           console.error("[verify] Magic link error (non-fatal):", linkErr);
         }
@@ -441,11 +447,24 @@ Deno.serve(async (req) => {
       .eq("id", po.offering_id)
       .single();
 
+    // Fetch guest email for response if needed
+    let responseGuestEmail: string | null = null;
+    if (is_guest) {
+      const { data: poForEmail } = await admin
+        .from("payment_orders")
+        .select("guest_email")
+        .eq("id", payment_order_id)
+        .single();
+      responseGuestEmail = poForEmail?.guest_email || null;
+    }
+
     return jsonRes({
       success: true,
       offering_title: off?.title ?? "your program",
       is_guest: is_guest || false,
       magic_link_sent: is_guest || false,
+      magic_link_token: magicLinkToken || null,
+      guest_email: responseGuestEmail,
     });
   } catch (err: any) {
     console.error("[verify] UNHANDLED ERROR:", err?.message || err, err?.stack);

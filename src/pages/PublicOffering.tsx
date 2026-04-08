@@ -392,7 +392,32 @@ function CheckoutCard({
 
       // Free offering: backend returns success directly
       if (data.success && data.payment_order_id) {
-        navigate(`/thank-you/${data.payment_order_id}`);
+        navigate(`/thank-you/${data.payment_order_id}`, {
+          state: {
+            fromPayment: true,
+            orderData: {
+              id: data.payment_order_id,
+              offering_id: offering.id,
+              total_inr: 0,
+              status: "captured",
+              razorpay_payment_id: null,
+              guest_email: guestEmail || null,
+              guest_name: guestName || null,
+              guest_phone: guestPhone || null,
+              user_id: session?.user?.id || null,
+              offerings: {
+                title: offering.title,
+                subtitle: offering.subtitle || null,
+                thumbnail_url: offering.thumbnail_url || null,
+                meta_pixel_id: null,
+                google_ads_conversion: null,
+                custom_tracking_script: null,
+              },
+            },
+            magicLinkToken: data.magic_link_token || null,
+            guestEmail: guestEmail || null,
+          },
+        });
         return;
       }
 
@@ -454,7 +479,32 @@ function CheckoutCard({
 
           const verifyData = await verifyRes.json();
           if (verifyData.success) {
-            navigate(`/thank-you/${data.payment_order_id}`);
+            navigate(`/thank-you/${data.payment_order_id}`, {
+              state: {
+                fromPayment: true,
+                orderData: {
+                  id: data.payment_order_id,
+                  offering_id: offering.id,
+                  total_inr: afterDiscount,
+                  status: "captured",
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  guest_email: isGuest ? guestEmail : null,
+                  guest_name: isGuest ? guestName : null,
+                  guest_phone: isGuest ? guestPhone : null,
+                  user_id: session?.user?.id || null,
+                  offerings: {
+                    title: offering.title,
+                    subtitle: offering.subtitle || null,
+                    thumbnail_url: offering.thumbnail_url || null,
+                    meta_pixel_id: null,
+                    google_ads_conversion: null,
+                    custom_tracking_script: null,
+                  },
+                },
+                magicLinkToken: verifyData.magic_link_token || null,
+                guestEmail: isGuest ? guestEmail : null,
+              },
+            });
           } else {
             console.error("[PublicOffering] Verification returned success=false:", verifyData);
             toast({ title: "Verification failed", description: verifyData.error || "Please contact support.", variant: "destructive" });

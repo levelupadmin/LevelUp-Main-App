@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
@@ -197,6 +197,7 @@ function UpsellCard({
 export default function ThankYou() {
   const { paymentOrderId } = useParams<{ paymentOrderId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { session } = useAuth();
   const { toast } = useToast();
 
@@ -205,10 +206,11 @@ export default function ThankYou() {
   const [upsells, setUpsells] = useState<Upsell[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(10);
   const [purchasedUpsells, setPurchasedUpsells] = useState<Set<string>>(new Set());
   const [buyingUpsell, setBuyingUpsell] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
 
   const pixelsFired = useRef(false);
 
@@ -230,6 +232,27 @@ export default function ThankYou() {
     if (!paymentOrderId) return;
     (async () => {
       try {
+        // Priority 1: Use data passed from PublicOffering via navigate state
+        const navState = location.state as any;
+        if (navState?.fromPayment && navState?.orderData) {
+          const stateOrder = navState.orderData;
+          setOriginalGuestEmail(stateOrder.guest_email);
+          setOrder(stateOrder as any);
+
+          // Fetch upsells
+          const { data: upsellData } = await supabase
+            .from("offering_upsells")
+            .select("id, headline, description, sort_order, upsell_offering:offerings!upsell_offering_id(id, title, subtitle, price_inr, mrp_inr, thumbnail_url, slug)")
+            .eq("parent_offering_id", stateOrder.offering_id)
+            .eq("is_active", true)
+            .order("sort_order", { ascending: true });
+
+          if (upsellData) setUpsells(upsellData as any);
+          setLoading(false);
+          return;
+        }
+
+        // Priority 2: Query database (works for logged-in users only)
         const { data: orderData, error } = await supabase
           .from("payment_orders")
           .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script)")
@@ -242,33 +265,17 @@ export default function ThankYou() {
           return;
         }
 
-        // Ownership check
         if (session) {
-          // Logged-in user must own this order
           if (orderData.user_id && orderData.user_id !== session.user.id) {
             setNotFound(true);
             return;
           }
         } else {
-          // Guest: preserve original email for resend, then mask for display
           setOriginalGuestEmail(orderData.guest_email);
-          const fromPayment = document.referrer.includes("razorpay") ||
-            new URLSearchParams(window.location.search).has("razorpay_payment_id");
-          if (!fromPayment && orderData.guest_email) {
-            const [local, domain] = orderData.guest_email.split("@");
-            const masked = local.length > 2
-              ? local[0] + "***" + local[local.length - 1]
-              : "***";
-            (orderData as any).guest_email = `${masked}@${domain}`;
-          }
-          if (!fromPayment && orderData.guest_phone) {
-            (orderData as any).guest_phone = "****" + orderData.guest_phone.slice(-4);
-          }
         }
 
         setOrder(orderData as any);
 
-        // Fetch upsells
         const { data: upsellData } = await supabase
           .from("offering_upsells")
           .select("id, headline, description, sort_order, upsell_offering:offerings!upsell_offering_id(id, title, subtitle, price_inr, mrp_inr, thumbnail_url, slug)")
@@ -283,7 +290,7 @@ export default function ThankYou() {
         setLoading(false);
       }
     })();
-  }, [paymentOrderId, session]);
+  }, [paymentOrderId, session, location.state]);
 
   /* ── Fire pixels once ── */
   useEffect(() => {
@@ -292,21 +299,23 @@ export default function ThankYou() {
     firePixels(order);
   }, [order]);
 
-  /* ── Countdown redirect for logged-in users ── */
+  /* ── Countdown — auto-redirect only for logged-in users after timer ── */
   useEffect(() => {
-    if (!order || !session || isGuest) return;
+    if (!order) return;
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          navigate("/home");
+          if (session) {
+            navigate("/home");
+          }
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [order, session, isGuest, navigate]);
+  }, [order, session, navigate]);
 
   /* ── Resend magic link ── */
   const handleResendLink = async () => {
@@ -322,7 +331,52 @@ export default function ThankYou() {
     setResending(false);
   };
 
-  /* ── Buy upsell ── */
+  /* ── Go to Dashboard (auto-login for guests) ── */
+  const handleGoToDashboard = async () => {
+    if (session) {
+      navigate("/home");
+      return;
+    }
+
+    const navState = location.state as any;
+    const token = navState?.magicLinkToken;
+    const email = originalGuestEmail || navState?.guestEmail;
+
+    if (token && email) {
+      setLoggingIn(true);
+      try {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: token,
+          type: "magiclink",
+        });
+        if (!error) {
+          navigate("/home");
+          return;
+        }
+        console.error("[ThankYou] Auto-login failed:", error.message);
+        toast({
+          title: "Login link sent!",
+          description: "Check your email to sign in and access your dashboard.",
+        });
+      } catch (err) {
+        console.error("[ThankYou] Auto-login error:", err);
+      }
+      setLoggingIn(false);
+    } else if (email) {
+      setLoggingIn(true);
+      const { error } = await supabase.auth.signInWithOtp({ email });
+      if (!error) {
+        toast({
+          title: "Login link sent!",
+          description: "Check your email to sign in.",
+        });
+      } else {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
+      setLoggingIn(false);
+    }
+  };
+
   const handleBuyUpsell = useCallback(async (upsell: Upsell) => {
     setBuyingUpsell(upsell.id);
     try {
@@ -469,41 +523,49 @@ export default function ThankYou() {
             </p>
           </div>
 
-          {/* Guest info card */}
-          {isGuest ? (
-            <div className="max-w-md mx-auto rounded-xl border border-border bg-[hsl(var(--surface))] p-6 space-y-4">
-              <div className="flex items-center gap-3">
-                <Mail className="h-5 w-5 text-[hsl(var(--cream))]" />
-                <p className="text-sm text-foreground">
-                  We've sent a login link to <strong className="text-[hsl(var(--cream))]">{order.guest_email}</strong>
+          {/* Action card — same for guest and logged-in */}
+          <div className="max-w-md mx-auto rounded-xl border border-border bg-[hsl(var(--surface))] p-6 space-y-4">
+            {isGuest && (
+              <>
+                <div className="flex items-center gap-3">
+                  <Mail className="h-5 w-5 text-[hsl(var(--cream))]" />
+                  <p className="text-sm text-foreground">
+                    We've also sent a login link to <strong className="text-[hsl(var(--cream))]">{order.guest_email}</strong>
+                  </p>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  You can also access your course anytime via the link in your email.
                 </p>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Click the link in your email to access your course. No password needed!
+              </>
+            )}
+            {!isGuest && session && countdown > 0 && (
+              <p className="text-sm text-muted-foreground text-center">
+                Redirecting in <span className="text-foreground font-bold">{countdown}</span> seconds…
               </p>
+            )}
+            <Button
+              onClick={handleGoToDashboard}
+              disabled={loggingIn}
+              className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
+            >
+              {loggingIn ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Signing you in…</>
+              ) : (
+                <>Go to Dashboard <ArrowRight className="h-4 w-4 ml-2" /></>
+              )}
+            </Button>
+            {isGuest && (
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={handleResendLink}
                 disabled={resending}
-                className="border-border text-sm"
+                className="w-full text-sm text-muted-foreground"
               >
                 {resending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
-                Resend login link
+                Resend login link to email
               </Button>
-            </div>
-          ) : session ? (
-            <div className="max-w-md mx-auto rounded-xl border border-border bg-[hsl(var(--surface))] p-6 space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Redirecting to your dashboard in <span className="text-foreground font-bold">{countdown}</span> seconds…
-              </p>
-              <Button
-                onClick={() => navigate("/home")}
-                className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
-              >
-                Go to dashboard now <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
-            </div>
-          ) : null}
+            )}
+          </div>
         </div>
 
         {/* Post-purchase upsells */}
