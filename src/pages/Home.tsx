@@ -82,9 +82,13 @@ const ContinueLearning = () => {
               (await supabase.from("sections").select("id").in("course_id", courseIds)).data?.map((s: any) => s.id) ?? []
             );
 
+          // Always scope chapter_progress to the current user — relying
+          // solely on RLS is a footgun if a future migration loosens
+          // the policy or a SECURITY DEFINER view is added.
           const { data: progressData } = await supabase
             .from("chapter_progress")
-            .select("chapter_id, completed_at");
+            .select("chapter_id, completed_at")
+            .eq("user_id", user.id);
 
           // Map section_id → course_id
           const { data: sectionsData } = await supabase
