@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -199,15 +200,16 @@ const AdminCoupons = () => {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Applies To Offering (optional)</label>
-              <Select value={form.applies_to_offering_id || "__all__"} onValueChange={(v) => setForm((f) => ({ ...f, applies_to_offering_id: v === "__all__" ? "" : v }))}>
-                <SelectTrigger><SelectValue placeholder="All offerings" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">All offerings</SelectItem>
-                  {offerings.map((o) => (
-                    <SelectItem key={o.id} value={o.id}>{o.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={[
+                  { value: "__all__", label: "All offerings" },
+                  ...offerings.map((o) => ({ value: o.id, label: o.title })),
+                ]}
+                value={form.applies_to_offering_id || "__all__"}
+                onValueChange={(v) => setForm((f) => ({ ...f, applies_to_offering_id: v === "__all__" ? "" : v }))}
+                placeholder="All offerings"
+                searchPlaceholder="Search offerings…"
+              />
             </div>
             <div className="flex items-center gap-3">
               <Switch checked={form.is_active} onCheckedChange={(v) => setForm((f) => ({ ...f, is_active: v }))} />

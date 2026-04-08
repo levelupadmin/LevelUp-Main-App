@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -241,20 +242,19 @@ const AdminCourseEditor = () => {
                 No active offerings linked to this course yet. Create an offering first, then come back to set it.
               </p>
             ) : (
-              <Select
+              <SearchableSelect
+                options={[
+                  { value: "none", label: "None (hide price on Browse)" },
+                  ...availableOfferings.map((off) => ({
+                    value: off.id,
+                    label: `${off.title} — ₹${formatPrice(off.price_inr)}`,
+                  })),
+                ]}
                 value={form.primary_offering_id || "none"}
                 onValueChange={(v) => setForm((f) => ({ ...f, primary_offering_id: v === "none" ? null : v }))}
-              >
-                <SelectTrigger><SelectValue placeholder="Select the offering to show on Browse page" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None (hide price on Browse)</SelectItem>
-                  {availableOfferings.map((off) => (
-                    <SelectItem key={off.id} value={off.id}>
-                      {off.title} — ₹{formatPrice(off.price_inr)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Select the offering to show on Browse page"
+                searchPlaceholder="Search offerings…"
+              />
             )}
             <p className="text-xs text-muted-foreground mt-1">
               This controls which price and checkout link students see when browsing. Changing this doesn't affect existing enrolments.

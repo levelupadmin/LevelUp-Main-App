@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -404,19 +405,17 @@ const AdminSchedule = () => {
       {/* Top bar */}
       <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
         <div className="flex items-center gap-3">
-          <Select value={filterCourse} onValueChange={setFilterCourse}>
-            <SelectTrigger className="w-56">
-              <SelectValue placeholder="All courses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All courses</SelectItem>
-              {courses.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            options={[
+              { value: "all", label: "All courses" },
+              ...courses.map((c) => ({ value: c.id, label: c.title })),
+            ]}
+            value={filterCourse}
+            onValueChange={setFilterCourse}
+            placeholder="All courses"
+            searchPlaceholder="Search courses…"
+            triggerClassName="w-56"
+          />
         </div>
         <div className="flex items-center gap-2">
           <input
@@ -511,14 +510,13 @@ const AdminSchedule = () => {
           <div className="space-y-4 overflow-y-auto pr-1 flex-1">
             <div>
               <Label>Course</Label>
-              <Select value={form.course_id} onValueChange={(v) => f("course_id", v)}>
-                <SelectTrigger><SelectValue placeholder="Select course" /></SelectTrigger>
-                <SelectContent>
-                  {courses.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={courses.map((c) => ({ value: c.id, label: c.title }))}
+                value={form.course_id}
+                onValueChange={(v) => f("course_id", v)}
+                placeholder="Select course"
+                searchPlaceholder="Search courses…"
+              />
             </div>
             <div>
               <Label>Title</Label>

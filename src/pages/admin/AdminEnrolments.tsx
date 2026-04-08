@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search } from "lucide-react";
@@ -178,25 +179,23 @@ const AdminEnrolments = () => {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-1">User</label>
-              <Select value={manualUserId} onValueChange={setManualUserId}>
-                <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
-                <SelectContent>
-                  {allUsers.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>{u.full_name || u.email}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={allUsers.map((u) => ({ value: u.id, label: u.full_name || u.email }))}
+                value={manualUserId}
+                onValueChange={setManualUserId}
+                placeholder="Select user"
+                searchPlaceholder="Search users…"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Offering</label>
-              <Select value={manualOfferingId} onValueChange={setManualOfferingId}>
-                <SelectTrigger><SelectValue placeholder="Select offering" /></SelectTrigger>
-                <SelectContent>
-                  {allOfferings.map((o) => (
-                    <SelectItem key={o.id} value={o.id}>{o.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={allOfferings.map((o) => ({ value: o.id, label: o.title }))}
+                value={manualOfferingId}
+                onValueChange={setManualOfferingId}
+                placeholder="Select offering"
+                searchPlaceholder="Search offerings…"
+              />
             </div>
             <Button onClick={handleManualEnrol} disabled={saving} className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
               {saving ? "Enrolling…" : "Enrol User"}

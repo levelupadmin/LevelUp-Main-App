@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -755,24 +756,19 @@ const AdminOfferingEditor = () => {
                   </div>
                 )}
 
-                <Select onValueChange={addUpsell}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Add an upsell offering..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allOfferingsForUpsell
-                      .filter(
-                        (o) =>
-                          o.id !== offeringId &&
-                          !upsells.find((u) => u.upsell_offering_id === o.id)
-                      )
-                      .map((o) => (
-                        <SelectItem key={o.id} value={o.id}>
-                          {o.title} — ₹{o.price_inr}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={allOfferingsForUpsell
+                    .filter(
+                      (o) =>
+                        o.id !== offeringId &&
+                        !upsells.find((u) => u.upsell_offering_id === o.id)
+                    )
+                    .map((o) => ({ value: o.id, label: `${o.title} — ₹${o.price_inr}` }))}
+                  value=""
+                  onValueChange={addUpsell}
+                  placeholder="Add an upsell offering…"
+                  searchPlaceholder="Search offerings…"
+                />
               </>
             )}
           </div>
