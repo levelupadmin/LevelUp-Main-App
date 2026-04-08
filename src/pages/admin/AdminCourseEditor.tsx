@@ -304,7 +304,7 @@ const AdminCourseEditor = () => {
               <Button variant="outline" onClick={() => navigate(`/admin/courses/${courseId}/curriculum`)}>
                 Manage Curriculum
               </Button>
-              <Button variant="outline" onClick={() => window.open(`/courses/${courseId}`, '_blank')}>
+              <Button variant="outline" onClick={() => navigate(`/admin/courses/${courseId}/preview`)}>
                 <Eye className="h-4 w-4 mr-2" />
                 Student Preview
               </Button>

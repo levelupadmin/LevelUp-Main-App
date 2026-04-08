@@ -158,7 +158,7 @@ const AdminCourses = () => {
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => window.open(`/courses/${c.id}`, '_blank')}
+                        onClick={() => navigate(`/admin/courses/${c.id}/preview`)}
                         className="p-1.5 rounded hover:bg-secondary"
                         title="Student Preview"
                       >
