@@ -416,7 +416,7 @@ Deno.serve(async (req) => {
             offering_id: bumpOffId,
             payment_order_id: po.id,
             status: "active",
-            source: is_guest ? "purchase_guest" : "purchase",
+            source: "checkout",
           });
         }
       }
