@@ -175,6 +175,8 @@ Deno.serve(async (req) => {
           .eq("email", poGuest.guest_email)
           .maybeSingle();
 
+        console.log("[verify] User lookup result:", { found: !!existingUser, userId: existingUser?.id });
+
         let matchedUserId: string | null = null;
         if (existingUser) {
           // If user has phone on file, verify it matches (defense-in-depth)
