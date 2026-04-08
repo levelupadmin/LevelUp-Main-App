@@ -44,14 +44,20 @@ const BrowsePage = () => {
 
   useEffect(() => {
     const load = async () => {
-      const { data: coursesData } = await supabase
+      // Use select("*") and client-side filter for show_on_browse so the
+      // query doesn't fail if the migration hasn't run yet
+      const { data: rawCourses } = await supabase
         .from("courses")
-        .select("id, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status, show_on_browse")
+        .select("*")
         .in("status", ["published", "upcoming"])
-        .neq("show_on_browse", false)
         .order("sort_order", { ascending: true });
 
-      if (!coursesData?.length) { setLoading(false); return; }
+      // Filter out courses hidden from browse (default to shown if column doesn't exist yet)
+      const coursesData = (rawCourses || []).filter(
+        (c: any) => c.show_on_browse !== false
+      );
+
+      if (!coursesData.length) { setLoading(false); return; }
 
       // Read primary_offering_id via a separate raw query since types may not be regenerated yet
       const courseIds = coursesData.map((c) => c.id);

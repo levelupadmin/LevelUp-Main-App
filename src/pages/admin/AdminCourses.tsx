@@ -59,9 +59,11 @@ const AdminCourses = () => {
   /* ── Load ── */
   const load = async () => {
     setLoading(true);
+    // Use select("*") so the query doesn't fail if show_on_browse column
+    // hasn't been created by the migration yet
     const { data } = await supabase
       .from("courses")
-      .select("id, title, description, thumbnail_url, instructor_display_name, product_tier, sort_order, status, show_on_browse")
+      .select("*")
       .order("sort_order", { ascending: true });
 
     if (!data) {
@@ -134,11 +136,19 @@ const AdminCourses = () => {
       .update({ show_on_browse: next } as any)
       .eq("id", courseId);
     if (error) {
-      // Revert on failure
+      // Revert on failure — column may not exist yet if migration hasn't run
       setCourses((prev) =>
         prev.map((c) => (c.id === courseId ? { ...c, show_on_browse: current } : c))
       );
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      if (error.message.includes("show_on_browse")) {
+        toast({
+          title: "Migration pending",
+          description: "The show_on_browse feature will be available after the next deploy.",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
     } else {
       toast({
         title: next ? "Shown on Browse" : "Hidden from Browse",
