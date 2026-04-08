@@ -1,10 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-razorpay-signature",
-};
+// Razorpay webhooks are server-to-server, so browsers never hit this
+// function with credentialed CORS. We intentionally do NOT echo
+// Access-Control-Allow-Origin: *, which would let any cross-origin page
+// POST here and read the response in the (unlikely) event Razorpay ever
+// changed delivery semantics. Leaving CORS off entirely is the correct
+// posture for a webhook.
+const corsHeaders: Record<string, string> = {};
 
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -143,8 +145,10 @@ async function resolveGuestUserId(
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  // No CORS preflight path — this endpoint is only hit by Razorpay's
+  // delivery workers, not by browsers.
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
   }
 
   try {

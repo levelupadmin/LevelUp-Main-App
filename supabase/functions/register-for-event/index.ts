@@ -125,6 +125,10 @@ Deno.serve(async (req) => {
     const keyId = Deno.env.get("RAZORPAY_KEY_ID")!;
     const keySecret = Deno.env.get("RAZORPAY_KEY_SECRET")!;
 
+    if (!event.price_inr || typeof event.price_inr !== "number" || event.price_inr <= 0) {
+      return new Response(JSON.stringify({ error: "Event price is not configured" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const rzpRes = await fetch("https://api.razorpay.com/v1/orders", {
       method: "POST",
       headers: {
@@ -132,12 +136,30 @@ Deno.serve(async (req) => {
         Authorization: `Basic ${btoa(`${keyId}:${keySecret}`)}`,
       },
       body: JSON.stringify({
+        // event.price_inr is stored in paise (see migration
+        // 20260408151100 / verify-event-payment comparison). Do NOT
+        // multiply here.
         amount: event.price_inr,
         currency: "INR",
         notes: { event_id, user_id: user.id },
       }),
     });
+
+    // Previously we called .json() unconditionally, so a Razorpay 4xx/5xx
+    // (bad credentials, merchant suspended, etc.) would return
+    // razorpay_order_id: undefined to the client and the browser would open
+    // a broken Razorpay checkout. Fail loud instead.
+    if (!rzpRes.ok) {
+      const errText = await rzpRes.text().catch(() => "");
+      console.error("[register-for-event] Razorpay order create failed:", rzpRes.status, errText);
+      return new Response(JSON.stringify({ error: "Payment gateway unavailable. Please try again." }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const rzpOrder = await rzpRes.json();
+    if (!rzpOrder?.id) {
+      console.error("[register-for-event] Razorpay response missing id:", rzpOrder);
+      return new Response(JSON.stringify({ error: "Payment gateway returned an invalid response" }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     return new Response(JSON.stringify({
       registered: false,
