@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,13 @@ const AdminUsers = () => {
   const [editForm, setEditForm] = useState({ full_name: "", bio: "", role: "student" });
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
+  // True when the row being edited is the currently logged-in admin. We
+  // disable the role selector in this case so an admin cannot demote
+  // themselves and lock themselves out of the admin panel. A DB trigger
+  // (20260408160200_admin_role_guard.sql) enforces this too, but the UI
+  // should never even try.
+  const isEditingSelf = editUser?.id === currentUser?.id;
 
   const load = async () => {
     setLoading(true);
@@ -58,11 +66,19 @@ const AdminUsers = () => {
   const handleSave = async () => {
     if (!editUser) return;
     setSaving(true);
-    const { error } = await supabase.from("users").update({
+    // Defense in depth: even if the select was somehow enabled, never
+    // submit a role change for the currently signed-in admin.
+    const updatePayload: Record<string, unknown> = {
       full_name: editForm.full_name || null,
       bio: editForm.bio || null,
-      role: editForm.role,
-    }).eq("id", editUser.id);
+    };
+    if (!isEditingSelf) {
+      updatePayload.role = editForm.role;
+    }
+    const { error } = await supabase
+      .from("users")
+      .update(updatePayload)
+      .eq("id", editUser.id);
 
     if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
     else { toast({ title: "User updated" }); setEditUser(null); load(); }
@@ -140,7 +156,11 @@ const AdminUsers = () => {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Role</label>
-              <Select value={editForm.role} onValueChange={(v) => setEditForm((f) => ({ ...f, role: v }))}>
+              <Select
+                value={editForm.role}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, role: v }))}
+                disabled={isEditingSelf}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="student">Student</SelectItem>
@@ -148,6 +168,11 @@ const AdminUsers = () => {
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>
+              {isEditingSelf && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  You can't change your own role — ask another admin.
+                </p>
+              )}
             </div>
             <Button onClick={handleSave} disabled={saving} className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
               {saving ? "Saving…" : "Save Changes"}

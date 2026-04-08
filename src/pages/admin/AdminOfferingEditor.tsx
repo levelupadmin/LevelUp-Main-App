@@ -186,6 +186,41 @@ const AdminOfferingEditor = () => {
       return;
     }
 
+    // Validate thank-you CTA URL — this value gets written into
+    // window.location.href on the ThankYou page (see ThankYou.tsx). Accept
+    // only http/https absolute URLs. Empty string = default dashboard.
+    if (form.thankyou_cta_url && form.thankyou_cta_url.trim()) {
+      try {
+        const parsed = new URL(form.thankyou_cta_url.trim());
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          toast({
+            title: "CTA URL must start with http:// or https://",
+            variant: "destructive",
+          });
+          return;
+        }
+        if (form.thankyou_cta_url.length > 500) {
+          toast({ title: "CTA URL is too long (max 500 chars)", variant: "destructive" });
+          return;
+        }
+      } catch {
+        toast({ title: "CTA URL is not a valid URL", variant: "destructive" });
+        return;
+      }
+    }
+
+    // Cap lengths on free-form admin fields that get rendered into the
+    // sandboxed ThankYou iframe. The DB also CHECKs these, but failing
+    // early in the UI is a better experience than a 400 from Postgres.
+    if (form.thankyou_body && form.thankyou_body.length > 5000) {
+      toast({ title: "Thank you body is too long (max 5000 chars)", variant: "destructive" });
+      return;
+    }
+    if (form.custom_tracking_script && form.custom_tracking_script.length > 10000) {
+      toast({ title: "Custom tracking script is too long (max 10,000 chars)", variant: "destructive" });
+      return;
+    }
+
     setSaving(true);
 
     const slug =

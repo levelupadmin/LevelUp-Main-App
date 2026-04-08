@@ -52,34 +52,44 @@ Deno.serve(async (req) => {
     if (offering.status !== "active")
       return jsonRes({ error: "Offering is not active" }, 400);
 
-    /* ── Bumps ── */
+    /* ── Bumps ──
+       Parentage + price in a single join so a client cannot (a) claim a
+       bump that belongs to a *different* parent offering to smuggle it in
+       cheap, or (b) race price changes between the two separate queries
+       the old code made. We also require the underlying bump offering to
+       be active — otherwise a draft/archived offering could be added via
+       someone else's bump_ids list. */
     let bumpTotal = 0;
     const validBumpIds: string[] = [];
     if (bump_ids && Array.isArray(bump_ids) && bump_ids.length > 0) {
       const { data: bumps } = await admin
         .from("offering_bumps")
-        .select("bump_offering_id, bump_price_override_inr")
+        .select(
+          "bump_offering_id, bump_price_override_inr, bump_offering:offerings!offering_bumps_bump_offering_id_fkey(id, price_inr, status)"
+        )
         .eq("parent_offering_id", offering_id)
         .in("bump_offering_id", bump_ids);
 
       if (bumps) {
-        for (const b of bumps) {
+        for (const b of bumps as any[]) {
+          const bo = b.bump_offering;
+          if (!bo || bo.status !== "active") continue;
           if (b.bump_price_override_inr != null) {
             bumpTotal += Number(b.bump_price_override_inr);
           } else {
-            const { data: bo } = await admin
-              .from("offerings")
-              .select("price_inr")
-              .eq("id", b.bump_offering_id)
-              .single();
-            if (bo) bumpTotal += Number(bo.price_inr);
+            bumpTotal += Number(bo.price_inr);
           }
           validBumpIds.push(b.bump_offering_id);
         }
       }
     }
 
-    /* ── Coupon ── */
+    /* ── Coupon ──
+       Previously, a coupon that was expired, over cap, or tied to a
+       different offering would SILENTLY set discountInr = 0 — the user
+       thought their coupon applied, but it didn't. We now fail loudly on
+       mismatches so the frontend can show a proper error. Only a null
+       coupon is treated as "no coupon." */
     let discountInr = 0;
     let couponDbId: string | null = null;
     if (coupon_id) {
@@ -88,35 +98,42 @@ Deno.serve(async (req) => {
         .select("*")
         .eq("id", coupon_id)
         .eq("is_active", true)
-        .single();
+        .maybeSingle();
 
-      if (coupon) {
-        const now = new Date();
-        const validFrom = coupon.valid_from ? new Date(coupon.valid_from) : null;
-        const validUntil = coupon.valid_until ? new Date(coupon.valid_until) : null;
-        const withinDates =
-          (!validFrom || now >= validFrom) && (!validUntil || now <= validUntil);
-        const underMax =
-          !coupon.max_redemptions || coupon.used_count < coupon.max_redemptions;
-        const appliesToThis =
-          !coupon.applies_to_offering_id ||
-          coupon.applies_to_offering_id === offering_id;
+      if (!coupon) {
+        return jsonRes({ error: "Coupon is not valid" }, 400);
+      }
 
-        if (withinDates && underMax && appliesToThis) {
-          couponDbId = coupon.id;
-          const subtotalBeforeDiscount =
-            Number(offering.price_inr) + bumpTotal;
-          if (coupon.discount_type === "percent") {
-            discountInr = Math.round(
-              (subtotalBeforeDiscount * Number(coupon.discount_value)) / 100
-            );
-          } else {
-            discountInr = Math.min(
-              Number(coupon.discount_value),
-              subtotalBeforeDiscount
-            );
-          }
-        }
+      const now = new Date();
+      const validFrom = coupon.valid_from ? new Date(coupon.valid_from) : null;
+      const validUntil = coupon.valid_until ? new Date(coupon.valid_until) : null;
+      if (validFrom && now < validFrom) {
+        return jsonRes({ error: "Coupon is not yet active" }, 400);
+      }
+      if (validUntil && now > validUntil) {
+        return jsonRes({ error: "Coupon has expired" }, 400);
+      }
+      if (coupon.max_redemptions && coupon.used_count >= coupon.max_redemptions) {
+        return jsonRes({ error: "Coupon has reached its usage limit" }, 400);
+      }
+      if (
+        coupon.applies_to_offering_id &&
+        coupon.applies_to_offering_id !== offering_id
+      ) {
+        return jsonRes({ error: "Coupon does not apply to this offering" }, 400);
+      }
+
+      couponDbId = coupon.id;
+      const subtotalBeforeDiscount = Number(offering.price_inr) + bumpTotal;
+      if (coupon.discount_type === "percent") {
+        discountInr = Math.round(
+          (subtotalBeforeDiscount * Number(coupon.discount_value)) / 100
+        );
+      } else {
+        discountInr = Math.min(
+          Number(coupon.discount_value),
+          subtotalBeforeDiscount
+        );
       }
     }
 

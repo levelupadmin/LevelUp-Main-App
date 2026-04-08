@@ -327,6 +327,11 @@ const AdminSchedule = () => {
 
       const rows: { course_id: string; title: string; scheduled_at: string; zoom_link: string | null }[] = [];
       const errors: string[] = [];
+      // CSV upload used to skip the past-date + URL-shape checks that the
+      // single-session form runs, so an admin typo (or a stale CSV from
+      // last term) would quietly create sessions in the past. We now
+      // apply the same guards inline.
+      const nowMs = Date.now();
 
       for (let i = startIdx; i < lines.length; i++) {
         // Support both comma and tab delimited
@@ -341,12 +346,35 @@ const AdminSchedule = () => {
 
         const title = parts[0].trim();
         const dateStr = parts[1].trim();
-        const zoomLink = parts[2]?.trim() || null;
+        const zoomLinkRaw = parts[2]?.trim() || null;
 
         const parsed = new Date(dateStr);
         if (isNaN(parsed.getTime())) {
           errors.push(`Row ${i + 1}: invalid date "${dateStr}"`);
           continue;
+        }
+        if (parsed.getTime() < nowMs) {
+          errors.push(`Row ${i + 1}: "${dateStr}" is in the past`);
+          continue;
+        }
+
+        // Validate zoom URL if provided — must be http/https and ideally
+        // a zoom.us or levelupadmin-hosted host. We do a soft protocol
+        // check here so bad values don't slip into live_sessions.zoom_link
+        // where they're later rendered into anchor tags.
+        let zoomLink: string | null = null;
+        if (zoomLinkRaw) {
+          try {
+            const u = new URL(zoomLinkRaw);
+            if (u.protocol !== "http:" && u.protocol !== "https:") {
+              errors.push(`Row ${i + 1}: zoom_link must be http(s)`);
+              continue;
+            }
+            zoomLink = u.toString();
+          } catch {
+            errors.push(`Row ${i + 1}: invalid zoom_link`);
+            continue;
+          }
         }
 
         rows.push({
