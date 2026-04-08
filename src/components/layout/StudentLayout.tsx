@@ -5,7 +5,7 @@ import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import {
   Home, BookOpen, Compass, MessageSquare, User, Settings,
-  Menu, X, Search, Bell, LogOut, ChevronDown
+  Menu, X, Search, Bell, LogOut, ChevronDown, Shield
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +58,19 @@ const StudentLayout = ({ children, title }: Props) => {
               </Link>
             );
           })}
+
+          {profile?.role === "admin" && (
+            <>
+              <div className="my-3 border-t border-border" />
+              <Link
+                to="/admin"
+                className="flex items-center gap-3 px-3 py-3 rounded-md text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-colors"
+              >
+                <Shield className="h-[18px] w-[18px]" />
+                Admin Dashboard
+              </Link>
+            </>
+          )}
         </nav>
 
         <div className="p-4 border-t border-border">
@@ -105,6 +118,20 @@ const StudentLayout = ({ children, title }: Props) => {
                   </Link>
                 );
               })}
+
+              {profile?.role === "admin" && (
+                <>
+                  <div className="my-3 border-t border-border" />
+                  <Link
+                    to="/admin"
+                    onClick={() => setSidebarOpen(false)}
+                    className="flex items-center gap-3 px-3 py-3 rounded-md text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-colors"
+                  >
+                    <Shield className="h-[18px] w-[18px]" />
+                    Admin Dashboard
+                  </Link>
+                </>
+              )}
             </nav>
           </aside>
         </div>
@@ -145,6 +172,15 @@ const StudentLayout = ({ children, title }: Props) => {
                 <>
                   <div className="fixed inset-0" onClick={() => setDropdownOpen(false)} />
                   <div className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-lg shadow-lg py-1 z-50">
+                    {profile?.role === "admin" && (
+                      <button
+                        onClick={() => { setDropdownOpen(false); navigate("/admin"); }}
+                        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-[hsl(var(--accent-amber))] hover:bg-surface-2 transition-colors min-h-[44px]"
+                      >
+                        <Shield className="h-4 w-4" />
+                        Admin Dashboard
+                      </button>
+                    )}
                     <button
                       onClick={async () => { await signOut(); navigate("/login"); }}
                       className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors min-h-[44px]"
