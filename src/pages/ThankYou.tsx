@@ -232,6 +232,27 @@ export default function ThankYou() {
     if (!paymentOrderId) return;
     (async () => {
       try {
+        // Priority 1: Use data passed from PublicOffering via navigate state
+        const navState = location.state as any;
+        if (navState?.fromPayment && navState?.orderData) {
+          const stateOrder = navState.orderData;
+          setOriginalGuestEmail(stateOrder.guest_email);
+          setOrder(stateOrder as any);
+
+          // Fetch upsells
+          const { data: upsellData } = await supabase
+            .from("offering_upsells")
+            .select("id, headline, description, sort_order, upsell_offering:offerings!upsell_offering_id(id, title, subtitle, price_inr, mrp_inr, thumbnail_url, slug)")
+            .eq("parent_offering_id", stateOrder.offering_id)
+            .eq("is_active", true)
+            .order("sort_order", { ascending: true });
+
+          if (upsellData) setUpsells(upsellData as any);
+          setLoading(false);
+          return;
+        }
+
+        // Priority 2: Query database (works for logged-in users only)
         const { data: orderData, error } = await supabase
           .from("payment_orders")
           .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script)")
@@ -244,33 +265,17 @@ export default function ThankYou() {
           return;
         }
 
-        // Ownership check
         if (session) {
-          // Logged-in user must own this order
           if (orderData.user_id && orderData.user_id !== session.user.id) {
             setNotFound(true);
             return;
           }
         } else {
-          // Guest: preserve original email for resend, then mask for display
           setOriginalGuestEmail(orderData.guest_email);
-          const fromPayment = document.referrer.includes("razorpay") ||
-            new URLSearchParams(window.location.search).has("razorpay_payment_id");
-          if (!fromPayment && orderData.guest_email) {
-            const [local, domain] = orderData.guest_email.split("@");
-            const masked = local.length > 2
-              ? local[0] + "***" + local[local.length - 1]
-              : "***";
-            (orderData as any).guest_email = `${masked}@${domain}`;
-          }
-          if (!fromPayment && orderData.guest_phone) {
-            (orderData as any).guest_phone = "****" + orderData.guest_phone.slice(-4);
-          }
         }
 
         setOrder(orderData as any);
 
-        // Fetch upsells
         const { data: upsellData } = await supabase
           .from("offering_upsells")
           .select("id, headline, description, sort_order, upsell_offering:offerings!upsell_offering_id(id, title, subtitle, price_inr, mrp_inr, thumbnail_url, slug)")
@@ -285,7 +290,7 @@ export default function ThankYou() {
         setLoading(false);
       }
     })();
-  }, [paymentOrderId, session]);
+  }, [paymentOrderId, session, location.state]);
 
   /* ── Fire pixels once ── */
   useEffect(() => {
