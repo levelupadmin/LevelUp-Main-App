@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -201,31 +201,38 @@ function CheckoutCard({
   const afterDiscount = Math.max(price - discountInr, 0);
   const isFree = afterDiscount === 0;
 
-  /* ── Phone validation ── */
-  const validatePhone = (val: string): boolean => {
+  /* ── Phone validation (returns boolean, only sets error when explicitly asked) ── */
+  const validatePhone = (val: string, showError = true): boolean => {
     const digits = val.replace(/\D/g, "");
     if (digits.length !== 10) {
-      setPhoneError("Please enter a valid 10-digit phone number");
+      if (showError) setPhoneError("Please enter a valid 10-digit phone number");
       return false;
     }
     setPhoneError("");
     return true;
   };
 
-  /* ── Phone blur: check identity (only when both email + phone filled) ── */
-  const handlePhoneBlur = useCallback(async () => {
-    if (!guestEmail.trim() || !guestPhone.trim() || session) return;
-    if (!validatePhone(guestPhone)) return;
+  /* ── Debounced identity check ──
+   *
+   * Fires 600ms after the user stops typing, but ONLY when both email
+   * and a valid 10-digit phone are present. The CTA button stays visible
+   * the entire time — we just show a subtle "Checking..." indicator and
+   * disable the button while the lookup is in-flight.
+   */
+  const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const runIdentityCheck = useCallback(async (email: string, phone: string) => {
+    if (!email.trim() || !phone.trim() || session) return;
+    if (phone.replace(/\D/g, "").length !== 10) return;
+
     setCheckingIdentity(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/check-user-exists`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: guestEmail.trim(),
-          phone: guestPhone.trim(),
-          // offering_id is now required as a proof-of-intent check so
-          // this endpoint cannot be used as a public enumeration oracle.
+          email: email.trim(),
+          phone: phone.trim(),
           offering_id: offering?.id,
         }),
       });
@@ -233,18 +240,29 @@ function CheckoutCard({
       const data = await res.json();
       setScenario(data.scenario || null);
     } catch {
-      /* silent */
+      /* silent — leave scenario as-is, don't block the user */
     } finally {
       setCheckingIdentity(false);
     }
-  }, [guestEmail, guestPhone, session]);
+  }, [session, offering?.id]);
 
-  // Reset scenario when email/phone change
+  const scheduleLookup = useCallback((email: string, phone: string) => {
+    if (lookupTimer.current) clearTimeout(lookupTimer.current);
+    // Only schedule if both fields look complete
+    if (!email.trim() || phone.replace(/\D/g, "").length !== 10) return;
+    lookupTimer.current = setTimeout(() => runIdentityCheck(email, phone), 600);
+  }, [runIdentityCheck]);
+
+  // Cleanup timer on unmount
+  useEffect(() => () => { if (lookupTimer.current) clearTimeout(lookupTimer.current); }, []);
+
+  // Change handlers — reset scenario and schedule a fresh lookup
   const handleEmailChange = (v: string) => {
     setGuestEmail(v);
     setScenario(null);
     setLoginMode(null);
     setOtpSent(false);
+    scheduleLookup(v, guestPhone);
   };
   const handlePhoneChange = (v: string) => {
     setGuestPhone(v);
@@ -252,6 +270,7 @@ function CheckoutCard({
     setScenario(null);
     setLoginMode(null);
     setOtpSent(false);
+    scheduleLookup(guestEmail, v);
   };
 
   /* ── Coupon apply ──
@@ -558,8 +577,16 @@ function CheckoutCard({
     rzp.open();
   };
 
-  /* ── Determine if pay button should show ── */
-  const canPay = session || (scenario !== "C" && !(guestEmail.trim() && guestPhone.trim() && scenario === null && !checkingIdentity));
+  /* ── Determine if pay button should show ──
+   *
+   * The button is ALWAYS visible once the guest has filled name+email+phone.
+   * It is disabled (not hidden) while we check identity or if scenario is C.
+   * This prevents the jarring "disappearing CTA" that confused users.
+   */
+  const guestFormFilled = !!(guestName.trim() && guestEmail.trim() && guestPhone.trim());
+  const phoneIsValid = guestPhone.replace(/\D/g, "").length === 10;
+  const canPay = session || (guestFormFilled && scenario !== "C");
+  const payDisabled = loading || isProcessing || razorpayError || (!isFree && !razorpayReady) || checkingIdentity || (guestFormFilled && !phoneIsValid);
   const isAuthenticated = !!session;
 
   /* ── Button label ── */
@@ -671,7 +698,6 @@ function CheckoutCard({
                 placeholder="Phone number"
                 value={guestPhone}
                 onChange={(e) => handlePhoneChange(e.target.value)}
-                onBlur={handlePhoneBlur}
                 className="pl-12 bg-[hsl(var(--surface-2))] border-border"
               />
             </div>
@@ -764,16 +790,18 @@ function CheckoutCard({
             </div>
           )}
 
-          {/* Pay button — hidden in Scenario C */}
-          {canPay && (
+          {/* Pay button — always visible once form is filled, disabled during check or scenario C */}
+          {(canPay || (guestFormFilled && scenario === "C")) && (
             <>
               <Button
                 onClick={handleGuestPay}
-                disabled={loading || isProcessing || razorpayError || (!isFree && !razorpayReady)}
-                className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
+                disabled={payDisabled || scenario === "C"}
+                className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold disabled:opacity-50"
               >
                 {isProcessing ? (
                   <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Processing...</>
+                ) : checkingIdentity ? (
+                  <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Verifying...</>
                 ) : (
                   <>{payButtonLabel} <ArrowRight className="h-4 w-4 ml-2" /></>
                 )}
