@@ -14,7 +14,6 @@ interface SessionRow {
   description: string | null;
   scheduled_at: string;
   duration_minutes: number;
-  zoom_link: string | null;
   recording_url: string | null;
   status: string;
   course_title: string;
@@ -50,10 +49,12 @@ const MySessionsPage = () => {
 
         const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
 
-        // Get all sessions for enrolled courses
+        // Get all sessions for enrolled courses. zoom_link is fetched on
+        // click via get_live_session_zoom_link so the link is only handed
+        // out in the narrow window around the actual session.
         const { data: sessionsData } = await supabase
-          .from("live_sessions")
-          .select("id, course_id, title, description, scheduled_at, duration_minutes, zoom_link, recording_url, status")
+          .from("live_sessions_safe")
+          .select("id, course_id, title, description, scheduled_at, duration_minutes, recording_url, status")
           .in("course_id", courseIds)
           .order("scheduled_at", { ascending: true });
 
@@ -163,17 +164,28 @@ const MySessionsPage = () => {
                           </div>
                         </div>
 
-                        {/* Join button */}
-                        {s.zoom_link && (
-                          <a
-                            href={s.zoom_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex-shrink-0 self-center px-4 py-2 rounded-lg bg-[hsl(var(--accent-amber))] text-background text-sm font-medium flex items-center gap-1.5 hover:opacity-90 transition-opacity"
-                          >
-                            Join <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
-                        )}
+                        {/* Join button — link is fetched on click via the
+                            gated RPC, which only returns a value in a narrow
+                            window around the session start. */}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const { data: link, error } = await supabase.rpc(
+                              "get_live_session_zoom_link",
+                              { p_session_id: s.id }
+                            );
+                            if (error || !link) {
+                              alert(
+                                "The join link for this session isn't available yet. It unlocks an hour before the session starts."
+                              );
+                              return;
+                            }
+                            window.open(link as string, "_blank", "noopener,noreferrer");
+                          }}
+                          className="flex-shrink-0 self-center px-4 py-2 rounded-lg bg-[hsl(var(--accent-amber))] text-background text-sm font-medium flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+                        >
+                          Join <ExternalLink className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     );
                   })}
