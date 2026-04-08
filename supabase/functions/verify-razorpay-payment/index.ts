@@ -350,14 +350,19 @@ Deno.serve(async (req) => {
         }
 
         try {
-          await admin.auth.admin.generateLink({
+          const linkResult = await admin.auth.admin.generateLink({
             type: "magiclink",
             email: poGuest.guest_email,
             options: {
               redirectTo: `${Deno.env.get("SITE_URL") || "https://levelup-creator-os.lovable.app"}/home`,
             },
           });
-          console.log("[verify] Magic link generated for:", poGuest.guest_email);
+          if (linkResult.data?.properties?.hashed_token) {
+            magicLinkToken = linkResult.data.properties.hashed_token;
+            console.log("[verify] Magic link token captured for:", poGuest.guest_email);
+          } else {
+            console.log("[verify] Magic link generated (no token in response) for:", poGuest.guest_email);
+          }
         } catch (linkErr) {
           console.error("[verify] Magic link error (non-fatal):", linkErr);
         }
