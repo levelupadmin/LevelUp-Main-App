@@ -42,6 +42,46 @@ async function verifyHmac(
   return computed === signature;
 }
 
+async function verifyViaApi(
+  paymentId: string,
+  expectedOrderId: string,
+  keyId: string,
+  keySecret: string
+): Promise<{ verified: boolean; status?: string; error?: string }> {
+  try {
+    const res = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
+      headers: {
+        Authorization: "Basic " + btoa(`${keyId}:${keySecret}`),
+      },
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("[verify] Razorpay API check failed:", res.status, errText);
+      return { verified: false, error: `Razorpay API ${res.status}` };
+    }
+    const payment = await res.json();
+    console.log("[verify] Razorpay API payment:", {
+      id: payment.id,
+      status: payment.status,
+      order_id: payment.order_id,
+      amount: payment.amount,
+    });
+    if (
+      (payment.status === "captured" || payment.status === "authorized") &&
+      payment.order_id === expectedOrderId
+    ) {
+      return { verified: true, status: payment.status };
+    }
+    return {
+      verified: false,
+      error: `Payment status: ${payment.status}, order mismatch: ${payment.order_id !== expectedOrderId}`,
+    };
+  } catch (err: any) {
+    console.error("[verify] Razorpay API error:", err.message);
+    return { verified: false, error: err.message };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
