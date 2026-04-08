@@ -635,9 +635,13 @@ const BrowsePrograms = () => {
   );
 };
 
-// ── Section 6: New Members ──
+// ── Section 6: New Members (admin-only) ──
 const NewMembers = () => {
+  const { profile } = useAuth();
   const [members, setMembers] = useState<any[]>([]);
+
+  // Only show for admins — RLS restricts users table reads to own row
+  if (profile?.role !== "admin") return null;
 
   useEffect(() => {
     supabase
