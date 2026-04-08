@@ -55,6 +55,14 @@ Deno.serve(async (req) => {
       is_guest,
     } = await req.json();
 
+    console.log("[verify] Request received", {
+      has_payment_id: !!razorpay_payment_id,
+      has_order_id: !!razorpay_order_id,
+      has_signature: !!razorpay_signature,
+      has_po_id: !!payment_order_id,
+      is_guest
+    });
+
     if (
       !razorpay_payment_id ||
       !razorpay_order_id ||
@@ -91,7 +99,18 @@ Deno.serve(async (req) => {
     );
 
     /* ── Verify signature ── */
-    const secret = Deno.env.get("RAZORPAY_KEY_SECRET")!;
+    const secret = Deno.env.get("RAZORPAY_KEY_SECRET")?.trim();
+    if (!secret) {
+      console.error("[verify] RAZORPAY_KEY_SECRET is not set!");
+      return jsonRes({ error: "Payment verification misconfigured" }, 500);
+    }
+    console.log("[verify] HMAC check", {
+      has_secret: !!secret,
+      secret_length: secret.length,
+      order_id: razorpay_order_id,
+      payment_id: razorpay_payment_id
+    });
+
     const valid = await verifyHmac(
       razorpay_order_id,
       razorpay_payment_id,
@@ -99,12 +118,14 @@ Deno.serve(async (req) => {
       secret
     );
 
+    console.log("[verify] HMAC result:", valid);
     if (!valid) {
+      console.error("[verify] HMAC FAILED — secret may be mismatched (test vs live)");
       await admin
         .from("payment_orders")
         .update({ status: "failed" })
         .eq("id", payment_order_id);
-      return jsonRes({ error: "Invalid payment signature" }, 400);
+      return jsonRes({ error: "Invalid payment signature. Ensure Razorpay test/live key pair matches." }, 400);
     }
 
     /* ── Get payment order ── */
@@ -144,6 +165,7 @@ Deno.serve(async (req) => {
         .single();
 
       if (poGuest?.guest_email) {
+        console.log("[verify] Looking up guest user by email:", poGuest.guest_email);
         const normalizedPhone = poGuest.guest_phone ? normalizePhone(poGuest.guest_phone) : null;
 
         // Check if user already exists by email in public.users
@@ -152,6 +174,8 @@ Deno.serve(async (req) => {
           .select("id, phone")
           .eq("email", poGuest.guest_email)
           .maybeSingle();
+
+        console.log("[verify] User lookup result:", { found: !!existingUser, userId: existingUser?.id });
 
         let matchedUserId: string | null = null;
         if (existingUser) {
@@ -177,6 +201,7 @@ Deno.serve(async (req) => {
             .eq("id", payment_order_id);
         } else {
           // Create new user account (no password — magic link only)
+          console.log("[verify] Creating new guest user for:", poGuest.guest_email);
           const { data: newUser, error: createError } =
             await admin.auth.admin.createUser({
               email: poGuest.guest_email,
@@ -188,7 +213,7 @@ Deno.serve(async (req) => {
             });
 
           if (createError) {
-            console.error("Guest user creation error:", createError);
+            console.error("[verify] User creation failed:", createError);
             throw createError;
           }
 
@@ -229,6 +254,7 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Unable to resolve user for enrolment" }, 500);
     }
 
+    console.log("[verify] Creating enrolment for user:", userId, "offering:", po.offering_id);
     /* ── Create enrolment for main offering (with duplicate guard) ── */
     const { data: existingEnrolment } = await admin
       .from("enrolments")
@@ -309,7 +335,7 @@ Deno.serve(async (req) => {
       magic_link_sent: is_guest || false,
     });
   } catch (err) {
-    console.error("Error:", err);
+    console.error("[verify] Unhandled error:", err.message, err.stack);
     return jsonRes({ error: "Internal server error" }, 500);
   }
 });
