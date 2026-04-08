@@ -99,7 +99,18 @@ Deno.serve(async (req) => {
     );
 
     /* ── Verify signature ── */
-    const secret = Deno.env.get("RAZORPAY_KEY_SECRET")!;
+    const secret = Deno.env.get("RAZORPAY_KEY_SECRET")?.trim();
+    if (!secret) {
+      console.error("[verify] RAZORPAY_KEY_SECRET is not set!");
+      return jsonRes({ error: "Payment verification misconfigured" }, 500);
+    }
+    console.log("[verify] HMAC check", {
+      has_secret: !!secret,
+      secret_length: secret.length,
+      order_id: razorpay_order_id,
+      payment_id: razorpay_payment_id
+    });
+
     const valid = await verifyHmac(
       razorpay_order_id,
       razorpay_payment_id,
@@ -107,12 +118,14 @@ Deno.serve(async (req) => {
       secret
     );
 
+    console.log("[verify] HMAC result:", valid);
     if (!valid) {
+      console.error("[verify] HMAC FAILED — secret may be mismatched (test vs live)");
       await admin
         .from("payment_orders")
         .update({ status: "failed" })
         .eq("id", payment_order_id);
-      return jsonRes({ error: "Invalid payment signature" }, 400);
+      return jsonRes({ error: "Invalid payment signature. Ensure Razorpay test/live key pair matches." }, 400);
     }
 
     /* ── Get payment order ── */
