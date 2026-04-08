@@ -42,12 +42,39 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Event not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Reject if the event has been disabled or is no longer accepting registrations.
+    if (event.is_active === false) {
+      return new Response(JSON.stringify({ error: "This event is no longer available" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    if (event.status === "cancelled") {
+      return new Response(JSON.stringify({ error: "This event has been cancelled" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    if (event.status === "completed") {
+      return new Response(JSON.stringify({ error: "This event has already ended" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    if (event.status === "sold_out") {
+      return new Response(JSON.stringify({ error: "Event is sold out" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // Check capacity
     if (event.max_capacity) {
       const { count } = await admin.from("event_registrations").select("id", { count: "exact", head: true }).eq("event_id", event_id).eq("status", "registered");
       if ((count ?? 0) >= event.max_capacity) {
         return new Response(JSON.stringify({ error: "Event is sold out" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+    }
+
+    // If the user previously cancelled, reactivate that row instead of
+    // inserting a fresh one (the partial unique index allows this).
+    const { data: existingReg } = await admin
+      .from("event_registrations")
+      .select("id, status")
+      .eq("event_id", event_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (existingReg && existingReg.status === "registered") {
+      return new Response(JSON.stringify({ registered: true, already: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // Determine if free
@@ -75,12 +102,23 @@ Deno.serve(async (req) => {
     }
 
     if (isFree || event.pricing_type === "free") {
-      const { error: regErr } = await admin.from("event_registrations").insert({
-        event_id,
-        user_id: user.id,
-        status: "registered",
-        amount_paid: 0,
-      });
+      let regErr;
+      if (existingReg) {
+        // Reactivate the cancelled row
+        const res = await admin
+          .from("event_registrations")
+          .update({ status: "registered", amount_paid: 0, registered_at: new Date().toISOString() })
+          .eq("id", existingReg.id);
+        regErr = res.error;
+      } else {
+        const res = await admin.from("event_registrations").insert({
+          event_id,
+          user_id: user.id,
+          status: "registered",
+          amount_paid: 0,
+        });
+        regErr = res.error;
+      }
       if (regErr) {
         return new Response(JSON.stringify({ error: regErr.message }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
