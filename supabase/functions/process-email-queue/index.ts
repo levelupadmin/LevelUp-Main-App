@@ -99,12 +99,36 @@ Deno.serve(async (req) => {
     )
   }
 
-  // Defense in depth: verify_jwt=true already requires a valid JWT at the
-  // gateway layer. This adds an explicit role check so only service-role
-  // callers can trigger queue processing.
+  // Defense in depth: don't trust the JWT claims without verifying the
+  // signature. parseJwtClaims is base64-decode only and an attacker could
+  // craft `{"role":"service_role"}` and call this function directly. We
+  // require the caller to supply the actual SUPABASE_SERVICE_ROLE_KEY
+  // (which is itself a signed JWT) byte-for-byte. constant-time compare
+  // to avoid timing leaks.
   const token = authHeader.slice('Bearer '.length).trim()
-  const claims = parseJwtClaims(token)
-  if (claims?.role !== 'service_role') {
+  const expectedToken = supabaseServiceKey
+  function constantTimeEquals(a: string, b: string): boolean {
+    if (a.length !== b.length) return false
+    let mismatch = 0
+    for (let i = 0; i < a.length; i++) {
+      mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i)
+    }
+    return mismatch === 0
+  }
+  if (!constantTimeEquals(token, expectedToken)) {
+    // Sanity-check the parsed claim too — service_role is the only
+    // accepted caller. If a future change rotates the key without
+    // restarting this function, fail closed.
+    const claims = parseJwtClaims(token)
+    if (claims?.role !== 'service_role') {
+      return new Response(
+        JSON.stringify({ error: 'Forbidden' }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+    // Token is not the current service key but claims service_role:
+    // refuse. The only legitimate caller is pg_cron which uses the
+    // current service_role key.
     return new Response(
       JSON.stringify({ error: 'Forbidden' }),
       { status: 403, headers: { 'Content-Type': 'application/json' } }
