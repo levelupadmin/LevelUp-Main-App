@@ -523,41 +523,49 @@ export default function ThankYou() {
             </p>
           </div>
 
-          {/* Guest info card */}
-          {isGuest ? (
-            <div className="max-w-md mx-auto rounded-xl border border-border bg-[hsl(var(--surface))] p-6 space-y-4">
-              <div className="flex items-center gap-3">
-                <Mail className="h-5 w-5 text-[hsl(var(--cream))]" />
-                <p className="text-sm text-foreground">
-                  We've sent a login link to <strong className="text-[hsl(var(--cream))]">{order.guest_email}</strong>
+          {/* Action card — same for guest and logged-in */}
+          <div className="max-w-md mx-auto rounded-xl border border-border bg-[hsl(var(--surface))] p-6 space-y-4">
+            {isGuest && (
+              <>
+                <div className="flex items-center gap-3">
+                  <Mail className="h-5 w-5 text-[hsl(var(--cream))]" />
+                  <p className="text-sm text-foreground">
+                    We've also sent a login link to <strong className="text-[hsl(var(--cream))]">{order.guest_email}</strong>
+                  </p>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  You can also access your course anytime via the link in your email.
                 </p>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Click the link in your email to access your course. No password needed!
+              </>
+            )}
+            {!isGuest && session && countdown > 0 && (
+              <p className="text-sm text-muted-foreground text-center">
+                Redirecting in <span className="text-foreground font-bold">{countdown}</span> seconds…
               </p>
+            )}
+            <Button
+              onClick={handleGoToDashboard}
+              disabled={loggingIn}
+              className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
+            >
+              {loggingIn ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Signing you in…</>
+              ) : (
+                <>Go to Dashboard <ArrowRight className="h-4 w-4 ml-2" /></>
+              )}
+            </Button>
+            {isGuest && (
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={handleResendLink}
                 disabled={resending}
-                className="border-border text-sm"
+                className="w-full text-sm text-muted-foreground"
               >
                 {resending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
-                Resend login link
+                Resend login link to email
               </Button>
-            </div>
-          ) : session ? (
-            <div className="max-w-md mx-auto rounded-xl border border-border bg-[hsl(var(--surface))] p-6 space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Redirecting to your dashboard in <span className="text-foreground font-bold">{countdown}</span> seconds…
-              </p>
-              <Button
-                onClick={() => navigate("/home")}
-                className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
-              >
-                Go to dashboard now <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
-            </div>
-          ) : null}
+            )}
+          </div>
         </div>
 
         {/* Post-purchase upsells */}
