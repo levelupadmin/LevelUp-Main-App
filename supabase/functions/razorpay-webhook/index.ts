@@ -37,8 +37,8 @@ Deno.serve(async (req) => {
 
     const webhookSecret = Deno.env.get("RAZORPAY_WEBHOOK_SECRET");
     if (!webhookSecret) {
-      console.error("RAZORPAY_WEBHOOK_SECRET not configured");
-      return new Response(JSON.stringify({ error: "Server misconfigured" }), {
+      console.error("RAZORPAY_WEBHOOK_SECRET not configured. This is separate from RAZORPAY_KEY_SECRET. Set it in Supabase Edge Function Secrets.");
+      return new Response(JSON.stringify({ error: "Webhook secret not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

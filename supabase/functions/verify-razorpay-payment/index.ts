@@ -138,55 +138,56 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    /* ── Verify signature ── */
+    /* ── Verify signature (HMAC first, API fallback) ── */
     const secret = Deno.env.get("RAZORPAY_KEY_SECRET")?.trim();
-    if (!secret) {
-      console.error("[verify] RAZORPAY_KEY_SECRET is not set!");
-      return jsonRes({ error: "Payment verification misconfigured" }, 500);
+    const keyId = Deno.env.get("RAZORPAY_KEY_ID")?.trim();
+    if (!secret || !keyId) {
+      console.error("[verify] RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is not set!");
+      return jsonRes({ error: "Payment system misconfigured. Contact admin." }, 500);
     }
-    console.log("[verify] HMAC check:", {
-      orderId: razorpay_order_id,
-      paymentId: razorpay_payment_id,
-      signatureLength: razorpay_signature?.length,
-      secretLength: secret.length,
-    });
 
-    const valid = await verifyHmac(
+    console.log("[verify] Starting verification for order:", razorpay_order_id, "payment:", razorpay_payment_id);
+
+    let paymentVerified = false;
+
+    // Try HMAC first
+    const hmacValid = await verifyHmac(
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
       secret
     );
 
-    console.log("[verify] HMAC result:", valid);
-    if (!valid) {
-      const enc = new TextEncoder();
-      const key = await crypto.subtle.importKey(
-        "raw",
-        enc.encode(secret),
-        { name: "HMAC", hash: "SHA-256" },
-        false,
-        ["sign"]
+    if (hmacValid) {
+      console.log("[verify] HMAC verification passed");
+      paymentVerified = true;
+    } else {
+      console.warn("[verify] HMAC verification failed, trying Razorpay API fallback...");
+
+      const apiResult = await verifyViaApi(
+        razorpay_payment_id,
+        razorpay_order_id,
+        keyId,
+        secret
       );
-      const data = `${razorpay_order_id}|${razorpay_payment_id}`;
-      const sig = await crypto.subtle.sign("HMAC", key, enc.encode(data));
-      const computed = Array.from(new Uint8Array(sig))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join("");
-      console.error(
-        "[verify] HMAC MISMATCH — expected:",
-        razorpay_signature?.substring(0, 12) + "...",
-        "computed:",
-        computed.substring(0, 12) + "..."
-      );
+
+      if (apiResult.verified) {
+        console.log("[verify] Razorpay API verification passed (status:", apiResult.status, ")");
+        paymentVerified = true;
+      } else {
+        console.error("[verify] Both HMAC and API verification failed:", apiResult.error);
+      }
+    }
+
+    if (!paymentVerified) {
       await admin
         .from("payment_orders")
         .update({ status: "failed" })
         .eq("id", payment_order_id);
-      return jsonRes({ error: "Invalid payment signature. Key pair may be mismatched." }, 400);
+      return jsonRes({ error: "Payment verification failed. Please contact support." }, 400);
     }
 
-    console.log("[verify] HMAC passed, looking up payment order:", payment_order_id);
+    console.log("[verify] Payment verified, looking up payment order:", payment_order_id);
 
     /* ── Get payment order ── */
     let poQuery = admin
