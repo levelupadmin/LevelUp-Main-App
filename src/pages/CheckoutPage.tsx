@@ -47,7 +47,17 @@ export default function CheckoutPage() {
   // User selections
   const [selectedBumps, setSelectedBumps] = useState<Set<string>>(new Set());
   const [couponCode, setCouponCode] = useState("");
-  const [appliedCoupon, setAppliedCoupon] = useState<Tables<"coupons"> | null>(null);
+  // Coupon preview returned by the validate-coupon edge function.
+  // We deliberately do NOT reuse Tables<"coupons"> here — the coupons
+  // table is locked down and we should only ever hold the discount
+  // preview fields in client state. id/code are safe because
+  // create-razorpay-order re-fetches and re-validates the full row.
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    id: string;
+    code: string;
+    discount_type: "percent" | "flat" | string;
+    discount_value: number;
+  } | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [paying, setPaying] = useState(false);
@@ -147,49 +157,45 @@ export default function CheckoutPage() {
   const total =
     offering?.gst_mode === "exclusive" ? afterDiscount + gstAmount : afterDiscount;
 
-  /* ── Apply coupon ── */
+  /* ── Apply coupon ──
+   *
+   * The coupons table is locked down to admin reads only (see the
+   * coupons_read_lockdown migration), so this page can no longer
+   * SELECT from it directly. All validation goes through the
+   * validate-coupon edge function, which runs with service-role
+   * privileges and returns only a discount preview (never used_count
+   * / max_redemptions / other sensitive columns). create-razorpay-order
+   * will re-validate the full coupon row at order creation time, so
+   * nothing here is authoritative.
+   */
   const applyCoupon = useCallback(async () => {
-    if (!couponCode.trim()) return;
+    if (!couponCode.trim() || !offeringId) return;
     setCouponLoading(true);
-    const { data, error } = await supabase
-      .from("coupons")
-      .select("*")
-      .eq("code", couponCode.trim().toUpperCase())
-      .eq("is_active", true)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase.functions.invoke("validate-coupon", {
+        body: {
+          coupon_code: couponCode.trim().toUpperCase(),
+          offering_id: offeringId,
+        },
+      });
 
-    if (error || !data) {
-      toast.error("Invalid coupon code");
-      setCouponLoading(false);
-      return;
-    }
+      if (error || !data?.valid) {
+        toast.error(data?.error || "Invalid coupon code");
+        return;
+      }
 
-    // Check validity
-    const now = new Date();
-    if (data.valid_from && new Date(data.valid_from) > now) {
-      toast.error("Coupon is not yet valid");
+      setAppliedCoupon({
+        id: data.id,
+        code: data.code,
+        discount_type: data.discount_type,
+        discount_value: Number(data.discount_value),
+      });
+      toast.success("Coupon applied!");
+    } catch {
+      toast.error("Error applying coupon");
+    } finally {
       setCouponLoading(false);
-      return;
     }
-    if (data.valid_until && new Date(data.valid_until) < now) {
-      toast.error("Coupon has expired");
-      setCouponLoading(false);
-      return;
-    }
-    if (data.max_redemptions && data.used_count >= data.max_redemptions) {
-      toast.error("Coupon usage limit reached");
-      setCouponLoading(false);
-      return;
-    }
-    if (data.applies_to_offering_id && data.applies_to_offering_id !== offeringId) {
-      toast.error("Coupon does not apply to this offering");
-      setCouponLoading(false);
-      return;
-    }
-
-    setAppliedCoupon(data);
-    toast.success("Coupon applied!");
-    setCouponLoading(false);
   }, [couponCode, offeringId]);
 
   /* ── Load Razorpay script ── */

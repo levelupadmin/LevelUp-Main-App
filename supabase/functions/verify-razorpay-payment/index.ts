@@ -1,10 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -18,6 +13,49 @@ function normalizePhone(phone: string): string {
   if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
   if (digits.length === 10) return digits;
   return digits;
+}
+
+/**
+ * O(1) lookup of an auth.users row by email via the GoTrue admin REST API.
+ *
+ * The supabase-js client's admin.auth.admin.listUsers() does not accept a
+ * filter parameter in v2 and always returns a full page (default 50) from
+ * the top of auth.users. On a large user base this drops the target user
+ * off the page and returns null, causing guest checkouts to fail-over to
+ * needs_review even when the user exists. The REST endpoint accepts
+ * ?email=<email> and returns exactly one record (or empty).
+ */
+async function findAuthUserByEmail(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  email: string
+): Promise<{ id: string; email?: string } | null> {
+  try {
+    const url = `${supabaseUrl}/auth/v1/admin/users?email=${encodeURIComponent(email)}`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey,
+      },
+    });
+    if (!res.ok) {
+      console.warn("[findAuthUserByEmail] HTTP", res.status);
+      return null;
+    }
+    const body = await res.json();
+    // The endpoint returns either { users: [...] } or a single user object
+    // depending on GoTrue version; handle both.
+    if (Array.isArray(body?.users) && body.users.length > 0) {
+      return body.users[0];
+    }
+    if (body?.id && body?.email?.toLowerCase() === email.toLowerCase()) {
+      return body;
+    }
+    return null;
+  } catch (err) {
+    console.warn("[findAuthUserByEmail] fetch failed:", err);
+    return null;
+  }
 }
 
 async function verifyHmac(
@@ -45,6 +83,7 @@ async function verifyHmac(
 async function verifyViaApi(
   paymentId: string,
   expectedOrderId: string,
+  expectedAmountPaise: number | null,
   keyId: string,
   keySecret: string
 ): Promise<{ verified: boolean; status?: string; error?: string }> {
@@ -65,16 +104,28 @@ async function verifyViaApi(
       status: payment.status,
       order_id: payment.order_id,
       amount: payment.amount,
+      expected_amount: expectedAmountPaise,
     });
-    if (
-      (payment.status === "captured" || payment.status === "authorized") &&
-      payment.order_id === expectedOrderId
-    ) {
+
+    const statusOk =
+      payment.status === "captured" || payment.status === "authorized";
+    const orderOk = payment.order_id === expectedOrderId;
+    // Amount must exactly match the payment_orders.total_inr in paise.
+    // This prevents an attacker from verifying a cheap payment against an
+    // expensive order even if they obtained a signature for a matching
+    // order_id. If expectedAmountPaise is null (caller had no order yet),
+    // we skip this check — the caller must perform it later.
+    const amountOk =
+      expectedAmountPaise === null ||
+      (typeof payment.amount === "number" && payment.amount === expectedAmountPaise);
+
+    if (statusOk && orderOk && amountOk) {
       return { verified: true, status: payment.status };
     }
+
     return {
       verified: false,
-      error: `Payment status: ${payment.status}, order mismatch: ${payment.order_id !== expectedOrderId}`,
+      error: `status=${payment.status} orderOk=${orderOk} amountOk=${amountOk} (got=${payment.amount} expected=${expectedAmountPaise})`,
     };
   } catch (err: any) {
     console.error("[verify] Razorpay API error:", err.message);
@@ -147,7 +198,50 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Payment system misconfigured. Contact admin." }, 500);
     }
 
-    console.log("[verify] Starting verification for order:", razorpay_order_id, "payment:", razorpay_payment_id);
+    console.log("[verify] Looking up payment order first:", payment_order_id);
+
+    /* ── Get payment order BEFORE signature verification so we know the
+       expected amount and can defend against an attacker reusing a
+       signature for a cheaper order. ── */
+    let poQuery = admin
+      .from("payment_orders")
+      .select("*")
+      .eq("id", payment_order_id);
+
+    // For authenticated users, scope to their user_id
+    if (userId) {
+      poQuery = poQuery.eq("user_id", userId);
+    }
+
+    const { data: po, error: poErr } = await poQuery.single();
+
+    if (poErr || !po) return jsonRes({ error: "Payment order not found" }, 404);
+    if (po.status === "captured")
+      return jsonRes({ success: true, already_captured: true });
+
+    // Defense in depth: the order_id presented by the client must match the
+    // razorpay_order_id we stored when we created the order. This prevents
+    // an attacker from pairing an unrelated (cheaper) razorpay order with
+    // our payment_order row.
+    if (po.razorpay_order_id && po.razorpay_order_id !== razorpay_order_id) {
+      console.error(
+        "[verify] razorpay_order_id mismatch:",
+        "expected", po.razorpay_order_id,
+        "got", razorpay_order_id
+      );
+      await admin
+        .from("payment_orders")
+        .update({ status: "failed" })
+        .eq("id", payment_order_id);
+      return jsonRes({ error: "Payment verification failed. Please contact support." }, 400);
+    }
+
+    const expectedAmountPaise = Math.round(Number(po.total_inr) * 100);
+    console.log(
+      "[verify] Starting verification for order:", razorpay_order_id,
+      "payment:", razorpay_payment_id,
+      "expected amount (paise):", expectedAmountPaise
+    );
 
     let paymentVerified = false;
 
@@ -160,14 +254,31 @@ Deno.serve(async (req) => {
     );
 
     if (hmacValid) {
-      console.log("[verify] HMAC verification passed");
-      paymentVerified = true;
+      console.log("[verify] HMAC verification passed; cross-checking amount via Razorpay API");
+      // Even when HMAC passes, fetch the payment from Razorpay to confirm
+      // the captured amount matches the expected total. Without this an
+      // attacker who re-uses an HMAC pair from a cheaper order on the
+      // same merchant account could verify a low-value payment against a
+      // high-value payment_order.
+      const apiCheck = await verifyViaApi(
+        razorpay_payment_id,
+        razorpay_order_id,
+        expectedAmountPaise,
+        keyId,
+        secret
+      );
+      if (apiCheck.verified) {
+        paymentVerified = true;
+      } else {
+        console.error("[verify] HMAC ok but API amount check failed:", apiCheck.error);
+      }
     } else {
       console.warn("[verify] HMAC verification failed, trying Razorpay API fallback...");
 
       const apiResult = await verifyViaApi(
         razorpay_payment_id,
         razorpay_order_id,
+        expectedAmountPaise,
         keyId,
         secret
       );
@@ -188,24 +299,39 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Payment verification failed. Please contact support." }, 400);
     }
 
-    console.log("[verify] Payment verified, looking up payment order:", payment_order_id);
+    console.log("[verify] Payment verified");
 
-    /* ── Get payment order ── */
-    let poQuery = admin
-      .from("payment_orders")
-      .select("*")
-      .eq("id", payment_order_id);
-
-    // For authenticated users, scope to their user_id
-    if (userId) {
-      poQuery = poQuery.eq("user_id", userId);
+    /* ── Capture-time coupon redemption ──
+       Redemption is intentionally deferred from order-creation to here so
+       that abandoned / failed payments do not burn coupon usage. We use
+       the atomic redeem_coupon() RPC which enforces the cap inside a
+       single UPDATE — if it returns false the coupon was exhausted by a
+       parallel checkout and we park the order for ops review (the
+       customer's money is already with Razorpay). */
+    if (po.coupon_id) {
+      const { data: redeemed, error: redeemErr } = await admin.rpc(
+        "redeem_coupon",
+        { p_coupon_id: po.coupon_id }
+      );
+      if (redeemErr || redeemed === false) {
+        console.error(
+          "[verify] coupon redemption failed at capture for", po.coupon_id, redeemErr
+        );
+        await admin
+          .from("payment_orders")
+          .update({ status: "needs_review" })
+          .eq("id", payment_order_id);
+        return jsonRes(
+          {
+            success: false,
+            needs_review: true,
+            error:
+              "Payment received but a promo conflict needs manual review. Our team will email you within a few hours.",
+          },
+          202
+        );
+      }
     }
-
-    const { data: po, error: poErr } = await poQuery.single();
-
-    if (poErr || !po) return jsonRes({ error: "Payment order not found" }, 404);
-    if (po.status === "captured")
-      return jsonRes({ success: true, already_captured: true });
 
     /* ── Update payment order ── */
     await admin
@@ -251,14 +377,23 @@ Deno.serve(async (req) => {
             .update({ user_id: userId })
             .eq("id", payment_order_id);
         } else {
+          // Previously this called admin.auth.admin.listUsers() with no
+          // pagination — an unbounded scan of the entire auth.users
+          // table on every guest checkout. On a large user base this
+          // can time out or return a truncated page (missing the user
+          // we care about) and drop the order to needs_review.
+          //
+          // Use the GoTrue admin REST endpoint directly with the
+          // ?email=<email> filter for an O(1) lookup.
           let existingAuthUser: any = null;
           try {
-            const { data: usersList } = await admin.auth.admin.listUsers();
-            existingAuthUser = usersList?.users?.find(
-              (u: any) => u.email?.toLowerCase() === poGuest.guest_email.toLowerCase()
+            existingAuthUser = await findAuthUserByEmail(
+              Deno.env.get("SUPABASE_URL")!,
+              Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+              poGuest.guest_email
             );
           } catch (listErr) {
-            console.warn("[verify] Could not list auth users:", listErr);
+            console.warn("[verify] Could not look up auth user:", listErr);
           }
 
           if (existingAuthUser) {
@@ -297,9 +432,10 @@ Deno.serve(async (req) => {
               if (createError.message?.includes("already") || createError.message?.includes("exists")) {
                 console.log("[verify] Attempting fallback: fetching existing auth user");
                 try {
-                  const { data: fallbackList } = await admin.auth.admin.listUsers();
-                  const fallbackUser = fallbackList?.users?.find(
-                    (u: any) => u.email?.toLowerCase() === poGuest.guest_email.toLowerCase()
+                  const fallbackUser = await findAuthUserByEmail(
+                    Deno.env.get("SUPABASE_URL")!,
+                    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+                    poGuest.guest_email
                   );
 
                   if (fallbackUser) {
@@ -321,14 +457,65 @@ Deno.serve(async (req) => {
                       .update({ user_id: userId })
                       .eq("id", payment_order_id);
                   } else {
-                    throw new Error("Could not find or create user account");
+                    // Don't throw — the customer's payment was captured
+                    // and we cannot afford to lose them. Park the order
+                    // for ops review and tell the client to contact
+                    // support, instead of erroring out.
+                    console.error(
+                      "[verify] Fallback list found no user; parking order for review:",
+                      payment_order_id
+                    );
+                    await admin
+                      .from("payment_orders")
+                      .update({ status: "needs_review" })
+                      .eq("id", payment_order_id);
+                    return jsonRes(
+                      {
+                        success: false,
+                        needs_review: true,
+                        error:
+                          "Payment received but we couldn't create your account automatically. Our team will email you within a few hours.",
+                      },
+                      202
+                    );
                   }
                 } catch (fallbackErr) {
                   console.error("[verify] Fallback also failed:", fallbackErr);
-                  throw createError;
+                  await admin
+                    .from("payment_orders")
+                    .update({ status: "needs_review" })
+                    .eq("id", payment_order_id);
+                  return jsonRes(
+                    {
+                      success: false,
+                      needs_review: true,
+                      error:
+                        "Payment received but we couldn't create your account automatically. Our team will email you within a few hours.",
+                    },
+                    202
+                  );
                 }
               } else {
-                throw createError;
+                // Any other createUser error: don't drop the customer's
+                // money on the floor. Park for manual recovery.
+                console.error(
+                  "[verify] Non-duplicate createUser failure; parking order:",
+                  payment_order_id,
+                  createError.message
+                );
+                await admin
+                  .from("payment_orders")
+                  .update({ status: "needs_review" })
+                  .eq("id", payment_order_id);
+                return jsonRes(
+                  {
+                    success: false,
+                    needs_review: true,
+                    error:
+                      "Payment received but we couldn't create your account automatically. Our team will email you within a few hours.",
+                  },
+                  202
+                );
               }
             } else {
               userId = newUser.user.id;

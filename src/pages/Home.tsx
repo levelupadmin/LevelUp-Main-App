@@ -82,9 +82,13 @@ const ContinueLearning = () => {
               (await supabase.from("sections").select("id").in("course_id", courseIds)).data?.map((s: any) => s.id) ?? []
             );
 
+          // Always scope chapter_progress to the current user — relying
+          // solely on RLS is a footgun if a future migration loosens
+          // the policy or a SECURITY DEFINER view is added.
           const { data: progressData } = await supabase
             .from("chapter_progress")
-            .select("chapter_id, completed_at");
+            .select("chapter_id, completed_at")
+            .eq("user_id", user.id);
 
           // Map section_id → course_id
           const { data: sectionsData } = await supabase
@@ -234,7 +238,7 @@ const UpcomingEvents = () => {
     const load = async () => {
       try {
         const { data } = await supabase
-          .from("events")
+          .from("events_safe")
           .select("*")
           .eq("is_active", true)
           .in("status", ["upcoming", "live"])
@@ -536,10 +540,13 @@ const UpcomingSessions = () => {
 
         const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
 
-        // Get upcoming sessions for those courses
+        // Get upcoming sessions for those courses. Read from the
+        // zoom_link-free view; the link is fetched on demand through
+        // get_live_session_zoom_link so it's only handed out in the
+        // narrow window around the actual session.
         const { data: sessionsData } = await supabase
-          .from("live_sessions")
-          .select("id, course_id, title, scheduled_at, duration_minutes, zoom_link, status")
+          .from("live_sessions_safe")
+          .select("id, course_id, title, scheduled_at, duration_minutes, status")
           .in("course_id", courseIds)
           .eq("status", "scheduled")
           .gte("scheduled_at", new Date().toISOString())
@@ -617,17 +624,28 @@ const UpcomingSessions = () => {
                 </div>
               </div>
 
-              {/* Join CTA */}
-              {s.zoom_link && (
-                <a
-                  href={s.zoom_link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-shrink-0 self-center px-3 py-1.5 rounded-lg bg-[hsl(var(--accent-amber))] text-background text-xs font-medium flex items-center gap-1 hover:opacity-90 transition-opacity"
-                >
-                  Join <ExternalLink className="h-3 w-3" />
-                </a>
-              )}
+              {/* Join CTA — link is fetched on click via the gated RPC,
+                  which only returns a value in a narrow window around the
+                  actual session start time. */}
+              <button
+                type="button"
+                onClick={async () => {
+                  const { data: link, error } = await supabase.rpc(
+                    "get_live_session_zoom_link",
+                    { p_session_id: s.id }
+                  );
+                  if (error || !link) {
+                    alert(
+                      "The join link for this session isn't available yet. It unlocks an hour before the session starts."
+                    );
+                    return;
+                  }
+                  window.open(link as string, "_blank", "noopener,noreferrer");
+                }}
+                className="flex-shrink-0 self-center px-3 py-1.5 rounded-lg bg-[hsl(var(--accent-amber))] text-background text-xs font-medium flex items-center gap-1 hover:opacity-90 transition-opacity"
+              >
+                Join <ExternalLink className="h-3 w-3" />
+              </button>
             </div>
           );
         })}

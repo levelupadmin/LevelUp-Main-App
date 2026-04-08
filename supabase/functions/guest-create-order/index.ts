@@ -1,10 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -182,9 +177,33 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Failed to create payment order" }, 500);
     }
 
-    /* ── Increment coupon usage (atomic) ── */
-    if (couponDbId) {
-      await admin.rpc("increment_coupon_usage", { p_coupon_id: couponDbId });
+    /* Coupon redemption is deferred to capture-time (verify-razorpay-payment
+       for paid orders, or right below for free orders that are auto-captured).
+       This ensures used_count only goes up on real conversions. */
+    if (couponDbId && totalInr <= 0) {
+      // Free offering — capture is happening right now, redeem the coupon.
+      const { data: redeemed, error: redeemErr } = await admin.rpc(
+        "redeem_coupon",
+        { p_coupon_id: couponDbId }
+      );
+      if (redeemErr || redeemed === false) {
+        console.warn(
+          "[guest-create-order] Coupon redemption failed at free-capture:",
+          couponDbId,
+          redeemErr
+        );
+        await admin
+          .from("payment_orders")
+          .update({ status: "failed" })
+          .eq("id", po.id);
+        return jsonRes(
+          {
+            error:
+              "This coupon has just reached its limit or become invalid. Please try again without the coupon.",
+          },
+          409
+        );
+      }
     }
 
     /* ── FREE OFFERING: skip Razorpay, grant access immediately ── */

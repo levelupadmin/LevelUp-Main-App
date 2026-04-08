@@ -1,10 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -146,6 +141,50 @@ Deno.serve(async (req) => {
 
     const amountPaise = Math.round(totalInr * 100);
 
+    /* ── Idempotency ──
+       If the user already has a recent 'created' payment_order for the
+       same offering + total + bump set + coupon that hasn't been captured
+       or failed yet, reuse the already-placed Razorpay order instead of
+       creating a duplicate. Stops double-click / retry storms from
+       littering payment_orders and razorpay with zombie rows and lets
+       the user land on a consistent payment modal state. */
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const { data: existingPending } = await admin
+      .from("payment_orders")
+      .select("id, total_inr, razorpay_order_id, bump_offering_ids, coupon_id")
+      .eq("user_id", userId)
+      .eq("offering_id", offering_id)
+      .eq("status", "created")
+      .gte("created_at", tenMinAgo)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (existingPending && existingPending.length > 0) {
+      const sortedNewBumps = [...validBumpIds].sort().join(",");
+      const match = existingPending.find((row: any) => {
+        const rowBumps = Array.isArray(row.bump_offering_ids)
+          ? [...row.bump_offering_ids].sort().join(",")
+          : "";
+        return (
+          Number(row.total_inr) === totalInr &&
+          rowBumps === sortedNewBumps &&
+          (row.coupon_id ?? null) === (couponDbId ?? null) &&
+          row.razorpay_order_id
+        );
+      });
+      if (match) {
+        return jsonRes({
+          razorpay_order_id: match.razorpay_order_id,
+          amount: amountPaise,
+          currency: "INR",
+          key_id: Deno.env.get("RAZORPAY_KEY_ID")?.trim(),
+          payment_order_id: match.id,
+          offering_title: offering.title,
+          reused: true,
+        });
+      }
+    }
+
     /* ── payment_orders row ── */
     const { data: po, error: poErr } = await admin
       .from("payment_orders")
@@ -210,10 +249,12 @@ Deno.serve(async (req) => {
       .update({ razorpay_order_id: rpOrder.id })
       .eq("id", po.id);
 
-    /* Increment coupon usage (atomic) */
-    if (couponDbId) {
-      await admin.rpc("increment_coupon_usage", { p_coupon_id: couponDbId });
-    }
+    /* Coupon redemption is deferred to verify-razorpay-payment so the
+       used_count only increments on successfully captured payments. If
+       Razorpay fails after this point, or the buyer abandons the modal,
+       no coupon usage is consumed and they can retry. The atomic
+       redeem_coupon() RPC is still called at capture time and will
+       enforce the cap there. */
 
     return jsonRes({
       razorpay_order_id: rpOrder.id,

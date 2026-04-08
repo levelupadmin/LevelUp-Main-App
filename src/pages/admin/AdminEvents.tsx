@@ -54,25 +54,30 @@ const AdminEvents = () => {
   const [regCounts, setRegCounts] = useState<Record<string, number>>({});
 
   const load = async () => {
+    // venue_link is column-revoked from authenticated; read the safe view.
+    // Admin pulls each event's venue_link via the get_event_venue_link RPC
+    // when opening the edit dialog.
     const { data } = await supabase
-      .from("events")
+      .from("events_safe")
       .select("*")
       .order("starts_at", { ascending: false });
     setEvents(data ?? []);
     setLoading(false);
 
-    // Fetch registration counts
+    // Fetch registration counts via the gated RPC so the numbers are
+    // accurate (RLS on event_registrations would otherwise hide rows
+    // belonging to other users).
     const eventIds = (data ?? []).map((e: any) => e.id);
     if (eventIds.length) {
-      const { data: regs } = await supabase
-        .from("event_registrations")
-        .select("event_id")
-        .in("event_id", eventIds)
-        .eq("status", "registered");
       const countMap: Record<string, number> = {};
-      (regs ?? []).forEach((r: any) => {
-        countMap[r.event_id] = (countMap[r.event_id] || 0) + 1;
-      });
+      await Promise.all(
+        eventIds.map(async (eid: string) => {
+          const { data: c } = await supabase.rpc("get_event_registration_count", {
+            p_event_id: eid,
+          });
+          countMap[eid] = (c as number | null) ?? 0;
+        })
+      );
       setRegCounts(countMap);
     }
   };
@@ -93,6 +98,10 @@ const AdminEvents = () => {
 
   const openEdit = async (ev: any) => {
     setEditingId(ev.id);
+    // venue_link is not in events_safe — fetch via the gated RPC.
+    const { data: linkData } = await supabase.rpc("get_event_venue_link", {
+      p_event_id: ev.id,
+    });
     setForm({
       title: ev.title || "",
       description: ev.description || "",
@@ -103,7 +112,7 @@ const AdminEvents = () => {
       duration_minutes: ev.duration_minutes || 60,
       venue_type: ev.venue_type || "zoom",
       venue_label: ev.venue_label || "",
-      venue_link: ev.venue_link || "",
+      venue_link: (linkData as string | null) || "",
       city: ev.city || "",
       pricing_type: ev.pricing_type || "free",
       price_inr: ev.price_inr || 0,
@@ -500,8 +509,8 @@ const AdminEvents = () => {
               </div>
               {form.pricing_type !== "free" && (
                 <div className="mt-3">
-                  {field("Price (₹)", "price_inr", "number")}
-                  <p className="text-xs text-muted-foreground mt-1">In paise (e.g. 49900 = ₹499)</p>
+                  {field("Price (in paise)", "price_inr", "number")}
+                  <p className="text-xs text-muted-foreground mt-1">Enter in paise — e.g. 49900 = ₹499. The label says ₹ on the customer-facing pages and divides by 100 for display.</p>
                 </div>
               )}
               {form.pricing_type === "free_for_enrolled" && (

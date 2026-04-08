@@ -221,7 +221,13 @@ function CheckoutCard({
       const res = await fetch(`${SUPABASE_URL}/functions/v1/check-user-exists`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: guestEmail.trim(), phone: guestPhone.trim() }),
+        body: JSON.stringify({
+          email: guestEmail.trim(),
+          phone: guestPhone.trim(),
+          // offering_id is now required as a proof-of-intent check so
+          // this endpoint cannot be used as a public enumeration oracle.
+          offering_id: offering?.id,
+        }),
       });
       if (!res.ok) { setCheckingIdentity(false); return; }
       const data = await res.json();
@@ -248,44 +254,35 @@ function CheckoutCard({
     setOtpSent(false);
   };
 
-  /* ── Coupon apply ── */
+  /* ── Coupon apply ──
+   *
+   * Guests no longer have SELECT on the coupons table (see
+   * coupons_read_lockdown migration). Validation now goes through the
+   * validate-coupon edge function which runs with service-role privileges
+   * and only returns the discount preview — never used_count /
+   * max_redemptions or any other sensitive row data.
+   */
   const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) return;
+    if (!couponCode.trim() || !offering) return;
     setCouponLoading(true);
     try {
-      const { data: coupon } = await supabase
-        .from("coupons")
-        .select("*")
-        .eq("code", couponCode.toUpperCase().trim())
-        .eq("is_active", true)
-        .maybeSingle();
+      const { data, error } = await supabase.functions.invoke("validate-coupon", {
+        body: {
+          coupon_code: couponCode.toUpperCase().trim(),
+          offering_id: offering.id,
+        },
+      });
 
-      if (!coupon) {
-        toast({ title: "Invalid coupon", variant: "destructive" });
+      if (error || !data?.valid) {
+        toast({
+          title: data?.error || "Invalid coupon",
+          variant: "destructive",
+        });
         setCouponLoading(false);
         return;
       }
 
-      const now = new Date();
-      const validFrom = coupon.valid_from ? new Date(coupon.valid_from) : null;
-      const validUntil = coupon.valid_until ? new Date(coupon.valid_until) : null;
-      const withinDates = (!validFrom || now >= validFrom) && (!validUntil || now <= validUntil);
-      const underMax = !coupon.max_redemptions || coupon.used_count < coupon.max_redemptions;
-      const appliesToThis = !coupon.applies_to_offering_id || coupon.applies_to_offering_id === offering.id;
-
-      if (!withinDates || !underMax || !appliesToThis) {
-        toast({ title: "Coupon not valid for this offering", variant: "destructive" });
-        setCouponLoading(false);
-        return;
-      }
-
-      let disc = 0;
-      if (coupon.discount_type === "percent") {
-        disc = Math.round((price * Number(coupon.discount_value)) / 100);
-      } else {
-        disc = Math.min(Number(coupon.discount_value), price);
-      }
-      setDiscountInr(disc);
+      setDiscountInr(Number(data.discount_inr) || 0);
       setCouponApplied(true);
       toast({ title: "Coupon applied!" });
     } catch {
