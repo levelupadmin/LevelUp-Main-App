@@ -386,7 +386,7 @@ Deno.serve(async (req) => {
           offering_id: po.offering_id,
           payment_order_id: po.id,
           status: "active",
-          source: is_guest ? "purchase_guest" : "purchase",
+          source: "checkout",
         })
         .select("id")
         .single();
