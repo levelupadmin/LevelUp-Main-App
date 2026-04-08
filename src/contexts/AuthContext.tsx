@@ -46,30 +46,45 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let isMounted = true;
     let hadSession = false;
+    let initialLoadDone = false;
 
     const syncAuthState = async (nextSession: Session | null) => {
       if (!isMounted) return;
 
-      setLoading(true);
+      // Only show the loading spinner on initial page load.
+      // Subsequent auth events (token refresh on tab switch) update
+      // session/profile silently so form state is never lost.
+      if (!initialLoadDone) {
+        setLoading(true);
+      }
+
       setSession(nextSession);
 
       if (!nextSession?.user) {
-        // If we previously had a session and now don't, it expired
         if (hadSession) {
           toast.error("Your session has expired. Please sign in again.");
         }
         setProfile(null);
         setLoading(false);
+        initialLoadDone = true;
         return;
       }
 
       hadSession = true;
+
+      // If this is a background token refresh and the user id hasn't
+      // changed, skip the profile refetch entirely — nothing to update.
+      if (initialLoadDone && session?.user?.id === nextSession.user.id) {
+        return;
+      }
+
       const nextProfile = await fetchProfile(nextSession.user.id);
 
       if (!isMounted) return;
 
       setProfile(nextProfile);
       setLoading(false);
+      initialLoadDone = true;
     };
 
     void supabase.auth.getSession().then(({ data: { session: currentSession } }) =>

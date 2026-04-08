@@ -46,7 +46,14 @@ import {
   InstructorDashboard,
 } from "@/pages/placeholders";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,   // prevent data refetches on tab switch
+      staleTime: 5 * 60 * 1000,     // treat data as fresh for 5 minutes
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
