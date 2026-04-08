@@ -45,6 +45,7 @@ async function verifyHmac(
 async function verifyViaApi(
   paymentId: string,
   expectedOrderId: string,
+  expectedAmountPaise: number | null,
   keyId: string,
   keySecret: string
 ): Promise<{ verified: boolean; status?: string; error?: string }> {
@@ -65,16 +66,28 @@ async function verifyViaApi(
       status: payment.status,
       order_id: payment.order_id,
       amount: payment.amount,
+      expected_amount: expectedAmountPaise,
     });
-    if (
-      (payment.status === "captured" || payment.status === "authorized") &&
-      payment.order_id === expectedOrderId
-    ) {
+
+    const statusOk =
+      payment.status === "captured" || payment.status === "authorized";
+    const orderOk = payment.order_id === expectedOrderId;
+    // Amount must exactly match the payment_orders.total_inr in paise.
+    // This prevents an attacker from verifying a cheap payment against an
+    // expensive order even if they obtained a signature for a matching
+    // order_id. If expectedAmountPaise is null (caller had no order yet),
+    // we skip this check — the caller must perform it later.
+    const amountOk =
+      expectedAmountPaise === null ||
+      (typeof payment.amount === "number" && payment.amount === expectedAmountPaise);
+
+    if (statusOk && orderOk && amountOk) {
       return { verified: true, status: payment.status };
     }
+
     return {
       verified: false,
-      error: `Payment status: ${payment.status}, order mismatch: ${payment.order_id !== expectedOrderId}`,
+      error: `status=${payment.status} orderOk=${orderOk} amountOk=${amountOk} (got=${payment.amount} expected=${expectedAmountPaise})`,
     };
   } catch (err: any) {
     console.error("[verify] Razorpay API error:", err.message);
@@ -147,7 +160,50 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Payment system misconfigured. Contact admin." }, 500);
     }
 
-    console.log("[verify] Starting verification for order:", razorpay_order_id, "payment:", razorpay_payment_id);
+    console.log("[verify] Looking up payment order first:", payment_order_id);
+
+    /* ── Get payment order BEFORE signature verification so we know the
+       expected amount and can defend against an attacker reusing a
+       signature for a cheaper order. ── */
+    let poQuery = admin
+      .from("payment_orders")
+      .select("*")
+      .eq("id", payment_order_id);
+
+    // For authenticated users, scope to their user_id
+    if (userId) {
+      poQuery = poQuery.eq("user_id", userId);
+    }
+
+    const { data: po, error: poErr } = await poQuery.single();
+
+    if (poErr || !po) return jsonRes({ error: "Payment order not found" }, 404);
+    if (po.status === "captured")
+      return jsonRes({ success: true, already_captured: true });
+
+    // Defense in depth: the order_id presented by the client must match the
+    // razorpay_order_id we stored when we created the order. This prevents
+    // an attacker from pairing an unrelated (cheaper) razorpay order with
+    // our payment_order row.
+    if (po.razorpay_order_id && po.razorpay_order_id !== razorpay_order_id) {
+      console.error(
+        "[verify] razorpay_order_id mismatch:",
+        "expected", po.razorpay_order_id,
+        "got", razorpay_order_id
+      );
+      await admin
+        .from("payment_orders")
+        .update({ status: "failed" })
+        .eq("id", payment_order_id);
+      return jsonRes({ error: "Payment verification failed. Please contact support." }, 400);
+    }
+
+    const expectedAmountPaise = Math.round(Number(po.total_inr) * 100);
+    console.log(
+      "[verify] Starting verification for order:", razorpay_order_id,
+      "payment:", razorpay_payment_id,
+      "expected amount (paise):", expectedAmountPaise
+    );
 
     let paymentVerified = false;
 
@@ -160,14 +216,31 @@ Deno.serve(async (req) => {
     );
 
     if (hmacValid) {
-      console.log("[verify] HMAC verification passed");
-      paymentVerified = true;
+      console.log("[verify] HMAC verification passed; cross-checking amount via Razorpay API");
+      // Even when HMAC passes, fetch the payment from Razorpay to confirm
+      // the captured amount matches the expected total. Without this an
+      // attacker who re-uses an HMAC pair from a cheaper order on the
+      // same merchant account could verify a low-value payment against a
+      // high-value payment_order.
+      const apiCheck = await verifyViaApi(
+        razorpay_payment_id,
+        razorpay_order_id,
+        expectedAmountPaise,
+        keyId,
+        secret
+      );
+      if (apiCheck.verified) {
+        paymentVerified = true;
+      } else {
+        console.error("[verify] HMAC ok but API amount check failed:", apiCheck.error);
+      }
     } else {
       console.warn("[verify] HMAC verification failed, trying Razorpay API fallback...");
 
       const apiResult = await verifyViaApi(
         razorpay_payment_id,
         razorpay_order_id,
+        expectedAmountPaise,
         keyId,
         secret
       );
@@ -188,24 +261,7 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Payment verification failed. Please contact support." }, 400);
     }
 
-    console.log("[verify] Payment verified, looking up payment order:", payment_order_id);
-
-    /* ── Get payment order ── */
-    let poQuery = admin
-      .from("payment_orders")
-      .select("*")
-      .eq("id", payment_order_id);
-
-    // For authenticated users, scope to their user_id
-    if (userId) {
-      poQuery = poQuery.eq("user_id", userId);
-    }
-
-    const { data: po, error: poErr } = await poQuery.single();
-
-    if (poErr || !po) return jsonRes({ error: "Payment order not found" }, 404);
-    if (po.status === "captured")
-      return jsonRes({ success: true, already_captured: true });
+    console.log("[verify] Payment verified");
 
     /* ── Update payment order ── */
     await admin
