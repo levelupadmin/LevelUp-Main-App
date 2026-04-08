@@ -27,6 +27,13 @@ interface OrderOffering {
   meta_pixel_id: string | null;
   google_ads_conversion: string | null;
   custom_tracking_script: string | null;
+  thankyou_thumbnail_url: string | null;
+  thankyou_headline: string | null;
+  thankyou_body: string | null;
+  thankyou_cta_label: string | null;
+  thankyou_cta_url: string | null;
+  thankyou_auto_redirect: boolean | null;
+  thankyou_redirect_seconds: number | null;
 }
 
 interface PaymentOrder {
@@ -255,7 +262,7 @@ export default function ThankYou() {
         // Priority 2: Query database (works for logged-in users only)
         const { data: orderData, error } = await supabase
           .from("payment_orders")
-          .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script)")
+          .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds)")
           .eq("id", paymentOrderId)
           .eq("status", "captured")
           .single();
@@ -299,15 +306,26 @@ export default function ThankYou() {
     firePixels(order);
   }, [order]);
 
-  /* ── Countdown — auto-redirect only for logged-in users after timer ── */
+  /* ── Countdown — respects custom thank you page settings ── */
+  const autoRedirect = order?.offerings?.thankyou_auto_redirect ?? true;
+  const redirectSeconds = order?.offerings?.thankyou_redirect_seconds ?? 10;
+  const customCtaUrl = order?.offerings?.thankyou_cta_url || null;
+
   useEffect(() => {
     if (!order) return;
+    if (!autoRedirect || redirectSeconds <= 0) return;
+
+    setCountdown(redirectSeconds);
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
           if (session) {
-            navigate("/home");
+            if (customCtaUrl) {
+              window.location.href = customCtaUrl;
+            } else {
+              navigate("/home");
+            }
           }
           return 0;
         }
@@ -315,7 +333,7 @@ export default function ThankYou() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [order, session, navigate]);
+  }, [order, session, navigate, autoRedirect, redirectSeconds, customCtaUrl]);
 
   /* ── Resend magic link ── */
   const handleResendLink = async () => {
@@ -331,10 +349,16 @@ export default function ThankYou() {
     setResending(false);
   };
 
-  /* ── Go to Dashboard (auto-login for guests) ── */
+  /* ── Go to Dashboard / Custom CTA (auto-login for guests) ── */
   const handleGoToDashboard = async () => {
+    const ctaUrl = order?.offerings?.thankyou_cta_url;
+
     if (session) {
-      navigate("/home");
+      if (ctaUrl) {
+        window.location.href = ctaUrl;
+      } else {
+        navigate("/home");
+      }
       return;
     }
 
@@ -509,18 +533,34 @@ export default function ThankYou() {
       <main className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
         {/* Success confirmation */}
         <div className="text-center space-y-6 mb-12">
-          <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] mx-auto">
-            <CheckCircle2 className="h-10 w-10 text-[hsl(var(--accent-emerald))]" />
-          </div>
+          {order.offerings?.thankyou_thumbnail_url ? (
+            <img
+              src={order.offerings.thankyou_thumbnail_url}
+              alt="Thank you"
+              className="w-full max-h-64 object-cover rounded-xl mx-auto"
+            />
+          ) : (
+            <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] mx-auto">
+              <CheckCircle2 className="h-10 w-10 text-[hsl(var(--accent-emerald))]" />
+            </div>
+          )}
 
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Payment Successful!</h1>
-            <p className="mt-2 text-lg text-muted-foreground">
-              You're enrolled in{" "}
-              <span className="text-[hsl(var(--cream))] font-medium font-['Instrument_Serif'] italic">
-                {order.offerings?.title || "your program"}
-              </span>
-            </p>
+            <h1 className="text-3xl font-bold text-foreground">
+              {order.offerings?.thankyou_headline || "Payment Successful!"}
+            </h1>
+            {order.offerings?.thankyou_body ? (
+              <p className="mt-2 text-lg text-muted-foreground whitespace-pre-line">
+                {order.offerings.thankyou_body}
+              </p>
+            ) : (
+              <p className="mt-2 text-lg text-muted-foreground">
+                You're enrolled in{" "}
+                <span className="text-[hsl(var(--cream))] font-medium font-['Instrument_Serif'] italic">
+                  {order.offerings?.title || "your program"}
+                </span>
+              </p>
+            )}
           </div>
 
           {/* Action card — same for guest and logged-in */}
@@ -538,7 +578,7 @@ export default function ThankYou() {
                 </p>
               </>
             )}
-            {!isGuest && session && countdown > 0 && (
+            {!isGuest && session && autoRedirect && countdown > 0 && (
               <p className="text-sm text-muted-foreground text-center">
                 Redirecting in <span className="text-foreground font-bold">{countdown}</span> seconds…
               </p>
@@ -551,7 +591,7 @@ export default function ThankYou() {
               {loggingIn ? (
                 <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Signing you in…</>
               ) : (
-                <>Go to Dashboard <ArrowRight className="h-4 w-4 ml-2" /></>
+                <>{order.offerings?.thankyou_cta_label || "Go to Dashboard"} <ArrowRight className="h-4 w-4 ml-2" /></>
               )}
             </Button>
             {isGuest && (

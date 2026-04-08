@@ -50,6 +50,16 @@ interface Offering {
   instructor_title: string | null;
   instructor_avatar_url: string | null;
   highlights: string[] | null;
+  meta_pixel_id: string | null;
+  google_ads_conversion: string | null;
+  custom_tracking_script: string | null;
+  thankyou_thumbnail_url: string | null;
+  thankyou_headline: string | null;
+  thankyou_body: string | null;
+  thankyou_cta_label: string | null;
+  thankyou_cta_url: string | null;
+  thankyou_auto_redirect: boolean | null;
+  thankyou_redirect_seconds: number | null;
   offering_courses: OfferingCourse[];
 }
 
@@ -409,9 +419,16 @@ function CheckoutCard({
                 title: offering.title,
                 subtitle: offering.subtitle || null,
                 thumbnail_url: offering.thumbnail_url || null,
-                meta_pixel_id: null,
-                google_ads_conversion: null,
-                custom_tracking_script: null,
+                meta_pixel_id: offering.meta_pixel_id || null,
+                google_ads_conversion: offering.google_ads_conversion || null,
+                custom_tracking_script: offering.custom_tracking_script || null,
+                thankyou_thumbnail_url: offering.thankyou_thumbnail_url || null,
+                thankyou_headline: offering.thankyou_headline || null,
+                thankyou_body: offering.thankyou_body || null,
+                thankyou_cta_label: offering.thankyou_cta_label || null,
+                thankyou_cta_url: offering.thankyou_cta_url || null,
+                thankyou_auto_redirect: offering.thankyou_auto_redirect ?? true,
+                thankyou_redirect_seconds: offering.thankyou_redirect_seconds ?? 10,
               },
             },
             magicLinkToken: data.magic_link_token || null,
@@ -496,9 +513,16 @@ function CheckoutCard({
                     title: offering.title,
                     subtitle: offering.subtitle || null,
                     thumbnail_url: offering.thumbnail_url || null,
-                    meta_pixel_id: null,
-                    google_ads_conversion: null,
-                    custom_tracking_script: null,
+                    meta_pixel_id: offering.meta_pixel_id || null,
+                    google_ads_conversion: offering.google_ads_conversion || null,
+                    custom_tracking_script: offering.custom_tracking_script || null,
+                    thankyou_thumbnail_url: offering.thankyou_thumbnail_url || null,
+                    thankyou_headline: offering.thankyou_headline || null,
+                    thankyou_body: offering.thankyou_body || null,
+                    thankyou_cta_label: offering.thankyou_cta_label || null,
+                    thankyou_cta_url: offering.thankyou_cta_url || null,
+                    thankyou_auto_redirect: offering.thankyou_auto_redirect ?? true,
+                    thankyou_redirect_seconds: offering.thankyou_redirect_seconds ?? 10,
                   },
                 },
                 magicLinkToken: verifyData.magic_link_token || null,

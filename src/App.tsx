@@ -25,6 +25,7 @@ import AdminCourses from "@/pages/admin/AdminCourses";
 import AdminCourseEditor from "@/pages/admin/AdminCourseEditor";
 import AdminCourseCurriculum from "@/pages/admin/AdminCourseCurriculum";
 import AdminOfferings from "@/pages/admin/AdminOfferings";
+import AdminOfferingEditor from "@/pages/admin/AdminOfferingEditor";
 import AdminEnrolments from "@/pages/admin/AdminEnrolments";
 import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminCoupons from "@/pages/admin/AdminCoupons";
@@ -79,6 +80,7 @@ const App = () => (
             <Route path="/admin/courses/:courseId/preview" element={<RequireAuth><RequireRole role="admin"><AdminCoursePreview /></RequireRole></RequireAuth>} />
             <Route path="/admin/courses/:courseId/preview/:chapterId" element={<RequireAuth><RequireRole role="admin"><AdminChapterPreview /></RequireRole></RequireAuth>} />
             <Route path="/admin/offerings" element={<RequireAuth><RequireRole role="admin"><AdminOfferings /></RequireRole></RequireAuth>} />
+            <Route path="/admin/offerings/:offeringId/edit" element={<RequireAuth><RequireRole role="admin"><AdminOfferingEditor /></RequireRole></RequireAuth>} />
             <Route path="/admin/events" element={<RequireAuth><RequireRole role="admin"><AdminEvents /></RequireRole></RequireAuth>} />
             <Route path="/admin/enrolments" element={<RequireAuth><RequireRole role="admin"><AdminEnrolments /></RequireRole></RequireAuth>} />
             <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />
