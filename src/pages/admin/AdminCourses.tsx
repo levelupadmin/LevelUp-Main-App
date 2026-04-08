@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Eye } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -157,6 +157,13 @@ const AdminCourses = () => {
                   <td className="px-5 py-3 font-mono text-xs">{new Date(c.created_at).toLocaleDateString("en-IN")}</td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => window.open(`/courses/${c.id}`, '_blank')}
+                        className="p-1.5 rounded hover:bg-secondary"
+                        title="Student Preview"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
                       <button
                         onClick={() => navigate(`/admin/courses/${c.id}/edit`)}
                         className="p-1.5 rounded hover:bg-secondary"

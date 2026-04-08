@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Eye } from "lucide-react";
 
 interface Category {
   id: string;
@@ -300,9 +300,15 @@ const AdminCourseEditor = () => {
             {saving ? "Saving…" : "Save Course"}
           </Button>
           {!isNew && (
-            <Button variant="outline" onClick={() => navigate(`/admin/courses/${courseId}/curriculum`)}>
-              Manage Curriculum
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => navigate(`/admin/courses/${courseId}/curriculum`)}>
+                Manage Curriculum
+              </Button>
+              <Button variant="outline" onClick={() => window.open(`/courses/${courseId}`, '_blank')}>
+                <Eye className="h-4 w-4 mr-2" />
+                Student Preview
+              </Button>
+            </>
           )}
         </div>
       </div>
