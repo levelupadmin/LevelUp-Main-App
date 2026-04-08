@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,10 @@ const AdminUsers = () => {
   const [enrolmentMap, setEnrolmentMap] = useState<Record<string, string[]>>({}); // user_id -> offering_ids
   const { toast } = useToast();
   const { profile: currentUser } = useAuth();
+  // We block admin self-demotion: the role selector below is replaced with a
+  // notice when editing the currently logged-in admin's row. A DB trigger
+  // (20260408160200_admin_role_guard.sql) enforces this too, but the UI
+  // should never even try.
 
   // Load offerings for the filter
   useEffect(() => {
@@ -116,11 +121,13 @@ const AdminUsers = () => {
   const doSave = async () => {
     if (!editUser) return;
     setSaving(true);
+    // Defense in depth: even if the select was somehow enabled, never
+    // submit a role change for the currently signed-in admin. A DB trigger
+    // (20260408160200_admin_role_guard.sql) blocks it server-side too.
     const updates: Record<string, unknown> = {
       full_name: editForm.full_name || null,
       bio: editForm.bio || null,
     };
-    // Never allow self role change — backend trigger blocks it too
     if (!isSelf) updates.role = editForm.role;
 
     const { error } = await supabase.from("users").update(updates).eq("id", editUser.id);
@@ -260,7 +267,7 @@ const AdminUsers = () => {
             <div>
               <label className="block text-sm font-medium mb-1">Role</label>
               {isSelf ? (
-                <p className="text-sm text-muted-foreground py-2">You cannot change your own role.</p>
+                <p className="text-sm text-muted-foreground py-2">You can't change your own role — ask another admin.</p>
               ) : (
                 <Select value={editForm.role} onValueChange={(v) => setEditForm((f) => ({ ...f, role: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
