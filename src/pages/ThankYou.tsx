@@ -197,6 +197,7 @@ function UpsellCard({
 export default function ThankYou() {
   const { paymentOrderId } = useParams<{ paymentOrderId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { session } = useAuth();
   const { toast } = useToast();
 
@@ -205,10 +206,11 @@ export default function ThankYou() {
   const [upsells, setUpsells] = useState<Upsell[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(10);
   const [purchasedUpsells, setPurchasedUpsells] = useState<Set<string>>(new Set());
   const [buyingUpsell, setBuyingUpsell] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
 
   const pixelsFired = useRef(false);
 
