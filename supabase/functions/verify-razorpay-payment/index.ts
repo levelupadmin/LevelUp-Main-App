@@ -165,6 +165,7 @@ Deno.serve(async (req) => {
         .single();
 
       if (poGuest?.guest_email) {
+        console.log("[verify] Looking up guest user by email:", poGuest.guest_email);
         const normalizedPhone = poGuest.guest_phone ? normalizePhone(poGuest.guest_phone) : null;
 
         // Check if user already exists by email in public.users
