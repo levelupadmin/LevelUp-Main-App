@@ -423,7 +423,10 @@ const AdminSchedule = () => {
 
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent
+          className="max-w-lg"
+          onInteractOutside={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>{editId ? "Edit Session" : "Add Session"}</DialogTitle>
           </DialogHeader>
@@ -459,10 +462,11 @@ const AdminSchedule = () => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Date & Time</Label>
-                <Input
+                <input
                   type="datetime-local"
                   value={form.scheduled_at}
                   onChange={(e) => f("scheduled_at", e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
                 />
               </div>
               <div>
