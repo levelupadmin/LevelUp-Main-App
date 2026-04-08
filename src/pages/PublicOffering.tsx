@@ -392,7 +392,32 @@ function CheckoutCard({
 
       // Free offering: backend returns success directly
       if (data.success && data.payment_order_id) {
-        navigate(`/thank-you/${data.payment_order_id}`);
+        navigate(`/thank-you/${data.payment_order_id}`, {
+          state: {
+            fromPayment: true,
+            orderData: {
+              id: data.payment_order_id,
+              offering_id: offering.id,
+              total_inr: 0,
+              status: "captured",
+              razorpay_payment_id: null,
+              guest_email: guestEmail || null,
+              guest_name: guestName || null,
+              guest_phone: guestPhone || null,
+              user_id: session?.user?.id || null,
+              offerings: {
+                title: offering.title,
+                subtitle: offering.subtitle || null,
+                thumbnail_url: offering.thumbnail_url || null,
+                meta_pixel_id: offering.meta_pixel_id || null,
+                google_ads_conversion: offering.google_ads_conversion || null,
+                custom_tracking_script: offering.custom_tracking_script || null,
+              },
+            },
+            magicLinkToken: data.magic_link_token || null,
+            guestEmail: guestEmail || null,
+          },
+        });
         return;
       }
 
