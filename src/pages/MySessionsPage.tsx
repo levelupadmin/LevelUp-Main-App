@@ -77,7 +77,7 @@ const MySessionsPage = () => {
           }))
         );
       } catch (err) {
-        console.error("Failed to load sessions:", err);
+        if (import.meta.env.DEV) console.error("Failed to load sessions:", err);
       } finally {
         setLoading(false);
       }

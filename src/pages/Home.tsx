@@ -112,7 +112,7 @@ const ContinueLearning = () => {
           setProgressMap(pMap);
         }
     } catch (err) {
-      console.error("Failed to load enrolled courses:", err);
+      if (import.meta.env.DEV) console.error("Failed to load enrolled courses:", err);
       setError(true);
     } finally {
       setLoading(false);
@@ -187,7 +187,7 @@ const PopularCommunity = () => {
       .order("upvote_count", { ascending: false })
       .limit(8)
       .then(({ data, error }) => {
-        if (error) console.error("Failed to load community posts:", error);
+        if (error) if (import.meta.env.DEV) console.error("Failed to load community posts:", error);
         setPosts(data ?? []);
       });
   }, []);
@@ -271,7 +271,7 @@ const UpcomingEvents = () => {
           setMyRegs(new Set((regs ?? []).map((r: any) => r.event_id)));
         }
       } catch (err) {
-        console.error("Failed to load events:", err);
+        if (import.meta.env.DEV) console.error("Failed to load events:", err);
       }
     };
     load();
@@ -567,7 +567,7 @@ const UpcomingSessions = () => {
 
         setSessions(sessionsData.map((s) => ({ ...s, course_title: courseMap[s.course_id] || "Course" })));
       } catch (err) {
-        console.error("Failed to load upcoming sessions:", err);
+        if (import.meta.env.DEV) console.error("Failed to load upcoming sessions:", err);
       } finally {
         setLoading(false);
       }
@@ -724,7 +724,7 @@ const BrowsePrograms = () => {
           return { ...c, offering_id: offId, price_inr: off?.price_inr, mrp_inr: off?.mrp_inr };
         }));
       } catch (err) {
-        console.error("Failed to load browse programs:", err);
+        if (import.meta.env.DEV) console.error("Failed to load browse programs:", err);
       }
     };
     load();
@@ -799,7 +799,7 @@ const NewMembers = () => {
       .order("created_at", { ascending: false })
       .limit(10)
       .then(({ data, error }) => {
-        if (error) console.error("Failed to load new members:", error);
+        if (error) if (import.meta.env.DEV) console.error("Failed to load new members:", error);
         setMembers(data ?? []);
       });
   }, [isAdmin]);

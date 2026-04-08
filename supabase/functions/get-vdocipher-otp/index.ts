@@ -110,7 +110,19 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Video service not configured" }, 500);
     }
 
-    const watermarkText = chapter.vdocipher_watermark_text || user.email || "viewer";
+    // Use member number or user ID for watermark — never expose email
+    let watermarkFallback = "viewer";
+    const { data: userRow } = await admin
+      .from("users")
+      .select("member_number, full_name")
+      .eq("id", user.id)
+      .single();
+    if (userRow?.member_number) {
+      watermarkFallback = `#${userRow.member_number}`;
+    } else if (userRow?.full_name) {
+      watermarkFallback = userRow.full_name;
+    }
+    const watermarkText = chapter.vdocipher_watermark_text || watermarkFallback;
 
     const vdoRes = await fetch(
       `https://dev.vdocipher.com/api/videos/${chapter.vdocipher_video_id}/otp`,

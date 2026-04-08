@@ -137,6 +137,15 @@ Deno.serve(async (req) => {
         notes: { event_id, user_id: user.id },
       }),
     });
+    if (!rzpRes.ok) {
+      const errText = await rzpRes.text();
+      console.error("[register-for-event] Razorpay order creation failed:", rzpRes.status, errText);
+      return new Response(
+        JSON.stringify({ error: "Failed to create payment order. Please try again." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const rzpOrder = await rzpRes.json();
 
     return new Response(JSON.stringify({

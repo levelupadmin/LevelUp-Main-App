@@ -17,6 +17,18 @@ import {
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
+/** Only allow relative paths or same-origin URLs to prevent open-redirect phishing */
+function isSafeRedirectUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  if (url.startsWith("/")) return true;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    return parsed.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
 /* ────────────────────────────────────────────────── */
@@ -342,8 +354,8 @@ export default function ThankYou() {
         if (prev <= 1) {
           clearInterval(timer);
           if (session) {
-            if (customCtaUrl) {
-              window.location.href = customCtaUrl;
+            if (isSafeRedirectUrl(customCtaUrl)) {
+              window.location.href = customCtaUrl!;
             } else {
               navigate("/home");
             }
@@ -375,8 +387,8 @@ export default function ThankYou() {
     const ctaUrl = order?.offerings?.thankyou_cta_url;
 
     if (session) {
-      if (ctaUrl) {
-        window.location.href = ctaUrl;
+      if (isSafeRedirectUrl(ctaUrl)) {
+        window.location.href = ctaUrl!;
       } else {
         navigate("/home");
       }
@@ -398,13 +410,13 @@ export default function ThankYou() {
           navigate("/home");
           return;
         }
-        console.error("[ThankYou] Auto-login failed:", error.message);
+        if (import.meta.env.DEV) console.error("[ThankYou] Auto-login failed:", error.message);
         toast({
           title: "Login link sent!",
           description: "Check your email to sign in and access your dashboard.",
         });
       } catch (err) {
-        console.error("[ThankYou] Auto-login error:", err);
+        if (import.meta.env.DEV) console.error("[ThankYou] Auto-login error:", err);
       }
       setLoggingIn(false);
     } else if (email) {

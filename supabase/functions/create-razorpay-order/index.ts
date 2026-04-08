@@ -55,6 +55,8 @@ Deno.serve(async (req) => {
     /* ── Bumps ── */
     let bumpTotal = 0;
     const validBumpIds: string[] = [];
+    if (bump_ids && Array.isArray(bump_ids) && bump_ids.length > 20)
+      return jsonRes({ error: "Too many bump selections" }, 400);
     if (bump_ids && Array.isArray(bump_ids) && bump_ids.length > 0) {
       const { data: bumps } = await admin
         .from("offering_bumps")

@@ -91,7 +91,7 @@ const CourseDetail = () => {
     ]);
 
     if (courseRes.error) {
-      console.error("[CourseDetail] course fetch error:", courseRes.error);
+      if (import.meta.env.DEV) console.error("[CourseDetail] course fetch error:", courseRes.error);
       toast.error("Could not load this course right now");
       setLoading(false);
       return;

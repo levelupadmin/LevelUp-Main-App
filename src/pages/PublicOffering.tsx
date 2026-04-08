@@ -487,7 +487,7 @@ function CheckoutCard({
                 errMsg = (await verifyRes.text()) || errMsg;
               } catch {}
             }
-            console.error("[PublicOffering] Verification failed:", verifyRes.status, errMsg);
+            if (import.meta.env.DEV) console.error("[PublicOffering] Verification failed:", verifyRes.status, errMsg);
             throw new Error(errMsg);
           }
 
@@ -527,11 +527,11 @@ function CheckoutCard({
               },
             });
           } else {
-            console.error("[PublicOffering] Verification returned success=false:", verifyData);
+            if (import.meta.env.DEV) console.error("[PublicOffering] Verification returned success=false:", verifyData);
             toast({ title: "Verification failed", description: verifyData.error || "Please contact support.", variant: "destructive" });
           }
         } catch (err: any) {
-          console.error("[PublicOffering] Verification error:", err);
+          if (import.meta.env.DEV) console.error("[PublicOffering] Verification error:", err);
           toast({
             title: "Verification error",
             description: err.message && err.message !== "Payment verification failed" ? err.message : "Please contact support.",

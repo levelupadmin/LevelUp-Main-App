@@ -53,7 +53,7 @@ const Login = () => {
       .order("sort_order", { ascending: true })
       .then(({ data, error }) => {
         if (error) {
-          console.error("Failed to load hero slides:", error);
+          if (import.meta.env.DEV) console.error("Failed to load hero slides:", error);
           return;
         }
         if (data && data.length > 0) {
