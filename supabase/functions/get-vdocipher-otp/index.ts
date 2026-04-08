@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
       .eq("user_id", user.id)
       .gte("otp_issued_at", oneHourAgo);
 
-    if ((count ?? 0) > 60) {
+    if ((count ?? 0) >= 60) {
       return jsonRes({ error: "Too many requests. Please wait a moment and refresh." }, 429);
     }
 
