@@ -7,6 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Eye } from "lucide-react";
 
@@ -21,6 +23,13 @@ interface OfferingOption {
   price_inr: number;
 }
 
+interface AllOffering {
+  id: string;
+  title: string;
+  price_inr: number;
+  status: string;
+}
+
 const formatPrice = (amount: number) =>
   new Intl.NumberFormat("en-IN").format(amount);
 
@@ -32,6 +41,8 @@ const AdminCourseEditor = () => {
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [availableOfferings, setAvailableOfferings] = useState<OfferingOption[]>([]);
+  const [allOfferings, setAllOfferings] = useState<AllOffering[]>([]);
+  const [linkedOfferingIds, setLinkedOfferingIds] = useState<string[]>([]);
 
   const [form, setForm] = useState({
     title: "",
@@ -48,16 +59,26 @@ const AdminCourseEditor = () => {
     sort_order: 50,
     primary_offering_id: "" as string | null,
     default_video_type: "standard",
+    show_on_browse: true,
   });
 
   useEffect(() => {
     const load = async () => {
-      const { data: cats } = await supabase.from("course_categories").select("id, name").order("sort_order");
-      setCategories(cats || []);
+      const [catsRes, allOffsRes] = await Promise.all([
+        supabase.from("course_categories").select("id, name").order("sort_order"),
+        supabase.from("offerings").select("id, title, price_inr, status").order("title"),
+      ]);
+      setCategories(catsRes.data || []);
+      setAllOfferings(allOffsRes.data || []);
 
       if (!isNew && courseId) {
-        const { data } = await supabase.from("courses").select("*").eq("id", courseId).single();
-        if (data) {
+        const [courseRes, ocsRes] = await Promise.all([
+          supabase.from("courses").select("*").eq("id", courseId).single(),
+          supabase.from("offering_courses").select("offering_id").eq("course_id", courseId),
+        ]);
+
+        if (courseRes.data) {
+          const data = courseRes.data as any;
           setForm({
             title: data.title || "",
             subtitle: data.subtitle || "",
@@ -71,26 +92,21 @@ const AdminCourseEditor = () => {
             slug: data.slug || "",
             product_tier: data.product_tier || "masterclass",
             sort_order: data.sort_order || 50,
-            primary_offering_id: (data as any).primary_offering_id || "",
-            default_video_type: (data as any).default_video_type || "standard",
+            primary_offering_id: data.primary_offering_id || "",
+            default_video_type: data.default_video_type || "standard",
+            show_on_browse: data.show_on_browse ?? true,
           });
         }
 
-        // Load offerings linked to this course
-        const { data: ocs } = await supabase
-          .from("offering_courses")
-          .select("offering_id")
-          .eq("course_id", courseId);
+        const linkedIds = (ocsRes.data || []).map((oc) => oc.offering_id);
+        setLinkedOfferingIds(linkedIds);
 
-        if (ocs?.length) {
-          const offIds = ocs.map((oc) => oc.offering_id);
-          const { data: offs } = await supabase
-            .from("offerings")
-            .select("id, title, price_inr")
-            .in("id", offIds)
-            .eq("status", "active")
-            .order("price_inr", { ascending: true });
-          setAvailableOfferings(offs ?? []);
+        // For primary offering dropdown, show only active linked offerings
+        if (linkedIds.length) {
+          const activeLinked = (allOffsRes.data || []).filter(
+            (o) => linkedIds.includes(o.id) && o.status === "active"
+          );
+          setAvailableOfferings(activeLinked.map((o) => ({ id: o.id, title: o.title, price_inr: o.price_inr })));
         }
       }
     };
@@ -120,17 +136,17 @@ const AdminCourseEditor = () => {
       sort_order: form.sort_order,
       primary_offering_id: form.primary_offering_id || null,
       default_video_type: form.default_video_type,
+      show_on_browse: form.show_on_browse,
     };
 
+    let savedCourseId = courseId;
     let error;
+
     if (isNew) {
       const res = await supabase.from("courses").insert(payload as any).select("id").single();
       error = res.error;
       if (!error && res.data) {
-        toast({ title: "Course created" });
-        navigate(`/admin/courses/${res.data.id}/edit`);
-        setSaving(false);
-        return;
+        savedCourseId = res.data.id;
       }
     } else {
       const res = await supabase.from("courses").update(payload as any).eq("id", courseId!);
@@ -139,8 +155,24 @@ const AdminCourseEditor = () => {
 
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Course saved" });
+      setSaving(false);
+      return;
+    }
+
+    // Sync offering_courses (bidirectional linking)
+    if (savedCourseId) {
+      await supabase.from("offering_courses").delete().eq("course_id", savedCourseId);
+      if (linkedOfferingIds.length > 0) {
+        await supabase.from("offering_courses").insert(
+          linkedOfferingIds.map((oid) => ({ offering_id: oid, course_id: savedCourseId! }))
+        );
+      }
+    }
+
+    toast({ title: "Course saved" });
+
+    if (isNew && savedCourseId) {
+      navigate(`/admin/courses/${savedCourseId}/edit`);
     }
     setSaving(false);
   };
@@ -230,6 +262,21 @@ const AdminCourseEditor = () => {
           </div>
         )}
 
+        {/* Browse Visibility */}
+        <div className="border border-border rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-semibold">Browse Visibility</h3>
+          <div className="flex items-center gap-3">
+            <Switch
+              checked={form.show_on_browse}
+              onCheckedChange={(v) => setForm((f) => ({ ...f, show_on_browse: v }))}
+            />
+            <label className="text-sm">Show on Browse Programs page</label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            When off, this course won't appear on the student Browse page but enrolled students still have full access. Useful for old batches or internal courses.
+          </p>
+        </div>
+
         {/* Video Defaults */}
         <div className="border border-border rounded-xl p-4 space-y-3">
           <h3 className="text-sm font-semibold">Video Defaults</h3>
@@ -243,6 +290,51 @@ const AdminCourseEditor = () => {
           <p className="text-xs text-muted-foreground">
             When enabled, new chapters will default to VdoCipher DRM-protected video instead of standard upload.
           </p>
+        </div>
+
+        {/* Linked Offerings (bidirectional) */}
+        <div className="border border-border rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-semibold">Linked Offerings</h3>
+          <p className="text-xs text-muted-foreground">
+            Select which offerings grant access to this course. This is the same link you see from the Offerings editor — managed from both sides.
+          </p>
+          <div className="space-y-2 max-h-48 overflow-y-auto border border-border rounded-lg p-3">
+            {allOfferings.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No offerings found. Create offerings first.</p>
+            ) : (
+              allOfferings.map((o) => (
+                <label key={o.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <Checkbox
+                    checked={linkedOfferingIds.includes(o.id)}
+                    onCheckedChange={(checked) => {
+                      setLinkedOfferingIds((prev) =>
+                        checked ? [...prev, o.id] : prev.filter((id) => id !== o.id)
+                      );
+                      // Also update availableOfferings for primary offering dropdown
+                      if (checked && o.status === "active") {
+                        setAvailableOfferings((prev) =>
+                          prev.find((p) => p.id === o.id) ? prev : [...prev, { id: o.id, title: o.title, price_inr: o.price_inr }]
+                        );
+                      } else if (!checked) {
+                        setAvailableOfferings((prev) => prev.filter((p) => p.id !== o.id));
+                        // Clear primary if unlinked
+                        if (form.primary_offering_id === o.id) {
+                          setForm((f) => ({ ...f, primary_offering_id: null }));
+                        }
+                      }
+                    }}
+                  />
+                  <span className="flex-1">{o.title}</span>
+                  <span className="text-xs text-muted-foreground font-mono">₹{o.price_inr}</span>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                    o.status === "active"
+                      ? "bg-[hsl(var(--accent-emerald)/0.15)] text-[hsl(var(--accent-emerald))]"
+                      : "bg-secondary text-muted-foreground"
+                  }`}>{o.status}</span>
+                </label>
+              ))
+            )}
+          </div>
         </div>
 
         {field("Subtitle", "subtitle")}

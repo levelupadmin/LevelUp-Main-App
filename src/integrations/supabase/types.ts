@@ -799,6 +799,7 @@ export type Database = {
           rating_avg: number | null
           rating_count: number | null
           show_as_locked: boolean
+          show_on_browse: boolean | null
           slug: string
           sort_order: number
           status: string
@@ -833,6 +834,7 @@ export type Database = {
           rating_avg?: number | null
           rating_count?: number | null
           show_as_locked?: boolean
+          show_on_browse?: boolean | null
           slug: string
           sort_order?: number
           status?: string
@@ -867,6 +869,7 @@ export type Database = {
           rating_avg?: number | null
           rating_count?: number | null
           show_as_locked?: boolean
+          show_on_browse?: boolean | null
           slug?: string
           sort_order?: number
           status?: string

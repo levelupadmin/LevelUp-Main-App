@@ -46,8 +46,9 @@ const BrowsePage = () => {
     const load = async () => {
       const { data: coursesData } = await supabase
         .from("courses")
-        .select("id, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status")
+        .select("id, title, description, thumbnail_url, product_tier, sort_order, duration_text, instructor_display_name, status, show_on_browse")
         .in("status", ["published", "upcoming"])
+        .neq("show_on_browse", false)
         .order("sort_order", { ascending: true });
 
       if (!coursesData?.length) { setLoading(false); return; }
