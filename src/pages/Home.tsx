@@ -234,7 +234,7 @@ const UpcomingEvents = () => {
     const load = async () => {
       try {
         const { data } = await supabase
-          .from("events")
+          .from("events_safe")
           .select("*")
           .eq("is_active", true)
           .in("status", ["upcoming", "live"])

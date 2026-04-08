@@ -39,7 +39,7 @@ const EventsPage = () => {
 
   const fetchEvents = async () => {
     const { data } = await supabase
-      .from("events")
+      .from("events_safe")
       .select("*")
       .eq("is_active", true)
       .order("starts_at", { ascending: true });

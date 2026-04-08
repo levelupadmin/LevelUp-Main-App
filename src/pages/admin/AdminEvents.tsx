@@ -54,8 +54,11 @@ const AdminEvents = () => {
   const [regCounts, setRegCounts] = useState<Record<string, number>>({});
 
   const load = async () => {
+    // venue_link is column-revoked from authenticated; read the safe view.
+    // Admin pulls each event's venue_link via the get_event_venue_link RPC
+    // when opening the edit dialog.
     const { data } = await supabase
-      .from("events")
+      .from("events_safe")
       .select("*")
       .order("starts_at", { ascending: false });
     setEvents(data ?? []);
@@ -93,6 +96,10 @@ const AdminEvents = () => {
 
   const openEdit = async (ev: any) => {
     setEditingId(ev.id);
+    // venue_link is not in events_safe — fetch via the gated RPC.
+    const { data: linkData } = await supabase.rpc("get_event_venue_link", {
+      p_event_id: ev.id,
+    });
     setForm({
       title: ev.title || "",
       description: ev.description || "",
@@ -103,7 +110,7 @@ const AdminEvents = () => {
       duration_minutes: ev.duration_minutes || 60,
       venue_type: ev.venue_type || "zoom",
       venue_label: ev.venue_label || "",
-      venue_link: ev.venue_link || "",
+      venue_link: (linkData as string | null) || "",
       city: ev.city || "",
       pricing_type: ev.pricing_type || "free",
       price_inr: ev.price_inr || 0,

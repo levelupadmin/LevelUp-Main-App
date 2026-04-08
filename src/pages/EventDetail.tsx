@@ -44,7 +44,7 @@ const EventDetail = () => {
     if (!eventId) return;
     const load = async () => {
       const [{ data: ev }, { data: spks }, { count }] = await Promise.all([
-        supabase.from("events").select("*").eq("id", eventId).single(),
+        supabase.from("events_safe").select("*").eq("id", eventId).single(),
         supabase.from("event_speakers").select("*").eq("event_id", eventId).order("sort_order"),
         supabase.from("event_registrations").select("id", { count: "exact", head: true }).eq("event_id", eventId).eq("status", "registered"),
       ]);
