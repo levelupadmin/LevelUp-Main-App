@@ -64,18 +64,20 @@ const AdminEvents = () => {
     setEvents(data ?? []);
     setLoading(false);
 
-    // Fetch registration counts
+    // Fetch registration counts via the gated RPC so the numbers are
+    // accurate (RLS on event_registrations would otherwise hide rows
+    // belonging to other users).
     const eventIds = (data ?? []).map((e: any) => e.id);
     if (eventIds.length) {
-      const { data: regs } = await supabase
-        .from("event_registrations")
-        .select("event_id")
-        .in("event_id", eventIds)
-        .eq("status", "registered");
       const countMap: Record<string, number> = {};
-      (regs ?? []).forEach((r: any) => {
-        countMap[r.event_id] = (countMap[r.event_id] || 0) + 1;
-      });
+      await Promise.all(
+        eventIds.map(async (eid: string) => {
+          const { data: c } = await supabase.rpc("get_event_registration_count", {
+            p_event_id: eid,
+          });
+          countMap[eid] = (c as number | null) ?? 0;
+        })
+      );
       setRegCounts(countMap);
     }
   };

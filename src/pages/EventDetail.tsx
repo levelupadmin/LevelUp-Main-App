@@ -43,15 +43,17 @@ const EventDetail = () => {
   useEffect(() => {
     if (!eventId) return;
     const load = async () => {
-      const [{ data: ev }, { data: spks }, { count }] = await Promise.all([
+      const [{ data: ev }, { data: spks }, { data: regCountData }] = await Promise.all([
         supabase.from("events_safe").select("*").eq("id", eventId).single(),
         supabase.from("event_speakers").select("*").eq("event_id", eventId).order("sort_order"),
-        supabase.from("event_registrations").select("id", { count: "exact", head: true }).eq("event_id", eventId).eq("status", "registered"),
+        // Use the SECURITY DEFINER RPC so we get the true aggregate count.
+        // RLS on event_registrations would otherwise return 0 or 1 only.
+        supabase.rpc("get_event_registration_count", { p_event_id: eventId }),
       ]);
 
       setEvent(ev);
       setSpeakers(spks ?? []);
-      setRegCount(count ?? 0);
+      setRegCount((regCountData as number | null) ?? 0);
 
       if (user) {
         const { data: myReg } = await supabase
