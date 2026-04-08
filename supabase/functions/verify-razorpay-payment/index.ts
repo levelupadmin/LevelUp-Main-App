@@ -213,7 +213,7 @@ Deno.serve(async (req) => {
             });
 
           if (createError) {
-            console.error("Guest user creation error:", createError);
+            console.error("[verify] User creation failed:", createError);
             throw createError;
           }
 
