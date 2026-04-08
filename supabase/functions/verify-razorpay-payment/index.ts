@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
       is_guest,
     } = await req.json();
 
-    console.log("[verify] Request received", {
+    console.log("[verify] Request received:", {
       has_payment_id: !!razorpay_payment_id,
       has_order_id: !!razorpay_order_id,
       has_signature: !!razorpay_signature,
@@ -104,11 +104,11 @@ Deno.serve(async (req) => {
       console.error("[verify] RAZORPAY_KEY_SECRET is not set!");
       return jsonRes({ error: "Payment verification misconfigured" }, 500);
     }
-    console.log("[verify] HMAC check", {
-      has_secret: !!secret,
-      secret_length: secret.length,
-      order_id: razorpay_order_id,
-      payment_id: razorpay_payment_id
+    console.log("[verify] HMAC check:", {
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      signatureLength: razorpay_signature?.length,
+      secretLength: secret.length,
     });
 
     const valid = await verifyHmac(
@@ -120,13 +120,33 @@ Deno.serve(async (req) => {
 
     console.log("[verify] HMAC result:", valid);
     if (!valid) {
-      console.error("[verify] HMAC FAILED — secret may be mismatched (test vs live)");
+      const enc = new TextEncoder();
+      const key = await crypto.subtle.importKey(
+        "raw",
+        enc.encode(secret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+      const data = `${razorpay_order_id}|${razorpay_payment_id}`;
+      const sig = await crypto.subtle.sign("HMAC", key, enc.encode(data));
+      const computed = Array.from(new Uint8Array(sig))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      console.error(
+        "[verify] HMAC MISMATCH — expected:",
+        razorpay_signature?.substring(0, 12) + "...",
+        "computed:",
+        computed.substring(0, 12) + "..."
+      );
       await admin
         .from("payment_orders")
         .update({ status: "failed" })
         .eq("id", payment_order_id);
-      return jsonRes({ error: "Invalid payment signature. Ensure Razorpay test/live key pair matches." }, 400);
+      return jsonRes({ error: "Invalid payment signature. Key pair may be mismatched." }, 400);
     }
+
+    console.log("[verify] HMAC passed, looking up payment order:", payment_order_id);
 
     /* ── Get payment order ── */
     let poQuery = admin
@@ -165,32 +185,21 @@ Deno.serve(async (req) => {
         .single();
 
       if (poGuest?.guest_email) {
-        console.log("[verify] Looking up guest user by email:", poGuest.guest_email);
         const normalizedPhone = poGuest.guest_phone ? normalizePhone(poGuest.guest_phone) : null;
 
-        // Check if user already exists by email in public.users
+        // Step 1: Check public.users table for existing user by email
         const { data: existingUser } = await admin
           .from("users")
           .select("id, phone")
           .eq("email", poGuest.guest_email)
           .maybeSingle();
 
-        console.log("[verify] User lookup result:", { found: !!existingUser, userId: existingUser?.id });
-
         let matchedUserId: string | null = null;
+
         if (existingUser) {
-          // If user has phone on file, verify it matches (defense-in-depth)
-          if (!existingUser.phone || !normalizedPhone || normalizePhone(existingUser.phone) === normalizedPhone) {
-            matchedUserId = existingUser.id;
-          } else {
-            // Phone mismatch — still link by email since guest-create-order already validated
-            console.warn("Phone mismatch for existing user, linking by email anyway", {
-              email: poGuest.guest_email,
-              existingPhone: existingUser.phone,
-              guestPhone: normalizedPhone,
-            });
-            matchedUserId = existingUser.id;
-          }
+          // Existing user found in public.users — use them
+          console.log("[verify] Found existing user in public.users:", existingUser.id);
+          matchedUserId = existingUser.id;
         }
 
         if (matchedUserId) {
@@ -200,41 +209,104 @@ Deno.serve(async (req) => {
             .update({ user_id: userId })
             .eq("id", payment_order_id);
         } else {
-          // Create new user account (no password — magic link only)
-          console.log("[verify] Creating new guest user for:", poGuest.guest_email);
-          const { data: newUser, error: createError } =
-            await admin.auth.admin.createUser({
-              email: poGuest.guest_email,
-              email_confirm: true,
-              user_metadata: {
+          let existingAuthUser: any = null;
+          try {
+            const { data: usersList } = await admin.auth.admin.listUsers();
+            existingAuthUser = usersList?.users?.find(
+              (u: any) => u.email?.toLowerCase() === poGuest.guest_email.toLowerCase()
+            );
+          } catch (listErr) {
+            console.warn("[verify] Could not list auth users:", listErr);
+          }
+
+          if (existingAuthUser) {
+            console.log("[verify] Found existing auth user:", existingAuthUser.id);
+            userId = existingAuthUser.id;
+
+            await admin.from("users").upsert(
+              {
+                id: userId,
+                email: poGuest.guest_email,
                 full_name: poGuest.guest_name,
                 phone: normalizedPhone,
               },
-            });
+              { onConflict: "id" }
+            );
 
-          if (createError) {
-            console.error("[verify] User creation failed:", createError);
-            throw createError;
-          }
-
-          userId = newUser.user.id;
-
-          // Update payment_orders with the new user_id
-          await admin
-            .from("payment_orders")
-            .update({ user_id: userId })
-            .eq("id", payment_order_id);
-
-          // Update users table with phone (handle_new_user trigger creates the row)
-          if (normalizedPhone) {
             await admin
-              .from("users")
-              .update({ phone: normalizedPhone })
-              .eq("id", userId);
+              .from("payment_orders")
+              .update({ user_id: userId })
+              .eq("id", payment_order_id);
+          } else {
+            console.log("[verify] Creating new auth user for:", poGuest.guest_email);
+            const { data: newUser, error: createError } =
+              await admin.auth.admin.createUser({
+                email: poGuest.guest_email,
+                email_confirm: true,
+                user_metadata: {
+                  full_name: poGuest.guest_name,
+                  phone: normalizedPhone,
+                },
+              });
+
+            if (createError) {
+              console.error("[verify] createUser failed:", createError.message);
+
+              if (createError.message?.includes("already") || createError.message?.includes("exists")) {
+                console.log("[verify] Attempting fallback: fetching existing auth user");
+                try {
+                  const { data: fallbackList } = await admin.auth.admin.listUsers();
+                  const fallbackUser = fallbackList?.users?.find(
+                    (u: any) => u.email?.toLowerCase() === poGuest.guest_email.toLowerCase()
+                  );
+
+                  if (fallbackUser) {
+                    userId = fallbackUser.id;
+                    console.log("[verify] Fallback succeeded, user:", userId);
+
+                    await admin.from("users").upsert(
+                      {
+                        id: userId,
+                        email: poGuest.guest_email,
+                        full_name: poGuest.guest_name,
+                        phone: normalizedPhone,
+                      },
+                      { onConflict: "id" }
+                    );
+
+                    await admin
+                      .from("payment_orders")
+                      .update({ user_id: userId })
+                      .eq("id", payment_order_id);
+                  } else {
+                    throw new Error("Could not find or create user account");
+                  }
+                } catch (fallbackErr) {
+                  console.error("[verify] Fallback also failed:", fallbackErr);
+                  throw createError;
+                }
+              } else {
+                throw createError;
+              }
+            } else {
+              userId = newUser.user.id;
+              console.log("[verify] New user created:", userId);
+
+              await admin
+                .from("payment_orders")
+                .update({ user_id: userId })
+                .eq("id", payment_order_id);
+
+              if (normalizedPhone) {
+                await admin
+                  .from("users")
+                  .update({ phone: normalizedPhone })
+                  .eq("id", userId);
+              }
+            }
           }
         }
 
-        // Generate magic link for the guest to log in
         try {
           await admin.auth.admin.generateLink({
             type: "magiclink",
@@ -243,9 +315,9 @@ Deno.serve(async (req) => {
               redirectTo: `${Deno.env.get("SITE_URL") || "https://levelup-creator-os.lovable.app"}/home`,
             },
           });
+          console.log("[verify] Magic link generated for:", poGuest.guest_email);
         } catch (linkErr) {
-          console.error("Magic link generation error:", linkErr);
-          // Non-fatal — enrolment still proceeds
+          console.error("[verify] Magic link error (non-fatal):", linkErr);
         }
       }
     }
@@ -334,8 +406,8 @@ Deno.serve(async (req) => {
       is_guest: is_guest || false,
       magic_link_sent: is_guest || false,
     });
-  } catch (err) {
-    console.error("[verify] Unhandled error:", err.message, err.stack);
-    return jsonRes({ error: "Internal server error" }, 500);
+  } catch (err: any) {
+    console.error("[verify] UNHANDLED ERROR:", err?.message || err, err?.stack);
+    return jsonRes({ error: `Internal server error: ${err?.message || "unknown"}` }, 500);
   }
 });

@@ -274,8 +274,12 @@ Deno.serve(async (req) => {
 
     /* ── Razorpay order (paid offerings) ── */
     const amountPaise = Math.round(totalInr * 100);
-    const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID")?.trim()!;
-    const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET")?.trim()!;
+    const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID")?.trim();
+    const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET")?.trim();
+    if (!razorpayKeyId || !razorpayKeySecret) {
+      console.error("Razorpay keys not configured");
+      return jsonRes({ error: "Payment system not configured" }, 500);
+    }
 
     const rpRes = await fetch("https://api.razorpay.com/v1/orders", {
       method: "POST",

@@ -437,15 +437,18 @@ function CheckoutCard({
               is_guest: isGuest,
             }),
           });
+
           if (!verifyRes.ok) {
             let errMsg = `HTTP ${verifyRes.status}`;
             try {
               const errBody = await verifyRes.json();
               errMsg = errBody.error || errMsg;
             } catch {
-              try { errMsg = await verifyRes.text() || errMsg; } catch {}
+              try {
+                errMsg = (await verifyRes.text()) || errMsg;
+              } catch {}
             }
-            console.error("Payment verification failed:", verifyRes.status, errMsg);
+            console.error("[PublicOffering] Verification failed:", verifyRes.status, errMsg);
             throw new Error(errMsg);
           }
 
@@ -453,14 +456,14 @@ function CheckoutCard({
           if (verifyData.success) {
             navigate(`/thank-you/${data.payment_order_id}`);
           } else {
-            console.error("Verification returned success=false:", verifyData);
-            toast({ title: "Verification failed", description: verifyData.error || "Contact support.", variant: "destructive" });
+            console.error("[PublicOffering] Verification returned success=false:", verifyData);
+            toast({ title: "Verification failed", description: verifyData.error || "Please contact support.", variant: "destructive" });
           }
         } catch (err: any) {
-          console.error("Verification error:", err);
+          console.error("[PublicOffering] Verification error:", err);
           toast({
             title: "Verification error",
-            description: err.message || "Contact support.",
+            description: err.message && err.message !== "Payment verification failed" ? err.message : "Please contact support.",
             variant: "destructive"
           });
         }
