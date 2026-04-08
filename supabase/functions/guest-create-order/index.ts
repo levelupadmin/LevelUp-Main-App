@@ -182,19 +182,18 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Failed to create payment order" }, 500);
     }
 
-    /* ── Atomically redeem coupon ──
-       Uses redeem_coupon() which enforces cap, dates, and active flag in a
-       single UPDATE. If it returns false, the coupon was exhausted or became
-       invalid between the read-check above and now (race condition). We
-       mark the payment order failed and return 409 so the client can retry. */
-    if (couponDbId) {
+    /* Coupon redemption is deferred to capture-time (verify-razorpay-payment
+       for paid orders, or right below for free orders that are auto-captured).
+       This ensures used_count only goes up on real conversions. */
+    if (couponDbId && totalInr <= 0) {
+      // Free offering — capture is happening right now, redeem the coupon.
       const { data: redeemed, error: redeemErr } = await admin.rpc(
         "redeem_coupon",
         { p_coupon_id: couponDbId }
       );
       if (redeemErr || redeemed === false) {
         console.warn(
-          "[guest-create-order] Coupon redemption failed (cap hit or invalid):",
+          "[guest-create-order] Coupon redemption failed at free-capture:",
           couponDbId,
           redeemErr
         );

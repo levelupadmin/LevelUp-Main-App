@@ -263,6 +263,38 @@ Deno.serve(async (req) => {
 
     console.log("[verify] Payment verified");
 
+    /* ── Capture-time coupon redemption ──
+       Redemption is intentionally deferred from order-creation to here so
+       that abandoned / failed payments do not burn coupon usage. We use
+       the atomic redeem_coupon() RPC which enforces the cap inside a
+       single UPDATE — if it returns false the coupon was exhausted by a
+       parallel checkout and we park the order for ops review (the
+       customer's money is already with Razorpay). */
+    if (po.coupon_id) {
+      const { data: redeemed, error: redeemErr } = await admin.rpc(
+        "redeem_coupon",
+        { p_coupon_id: po.coupon_id }
+      );
+      if (redeemErr || redeemed === false) {
+        console.error(
+          "[verify] coupon redemption failed at capture for", po.coupon_id, redeemErr
+        );
+        await admin
+          .from("payment_orders")
+          .update({ status: "needs_review" })
+          .eq("id", payment_order_id);
+        return jsonRes(
+          {
+            success: false,
+            needs_review: true,
+            error:
+              "Payment received but a promo conflict needs manual review. Our team will email you within a few hours.",
+          },
+          202
+        );
+      }
+    }
+
     /* ── Update payment order ── */
     await admin
       .from("payment_orders")

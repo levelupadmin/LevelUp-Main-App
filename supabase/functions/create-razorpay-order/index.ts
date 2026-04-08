@@ -210,34 +210,12 @@ Deno.serve(async (req) => {
       .update({ razorpay_order_id: rpOrder.id })
       .eq("id", po.id);
 
-    /* Atomically redeem coupon (cap + dates enforced inside the function).
-       If it returns false, the coupon was exhausted or became invalid
-       between when we computed the discount and now (race condition).
-       We abort the order and let the client retry. */
-    if (couponDbId) {
-      const { data: redeemed, error: redeemErr } = await admin.rpc(
-        "redeem_coupon",
-        { p_coupon_id: couponDbId }
-      );
-      if (redeemErr || redeemed === false) {
-        console.warn(
-          "[create-razorpay-order] Coupon redemption failed (cap hit or invalid):",
-          couponDbId,
-          redeemErr
-        );
-        await admin
-          .from("payment_orders")
-          .update({ status: "failed" })
-          .eq("id", po.id);
-        return jsonRes(
-          {
-            error:
-              "This coupon has just reached its limit or become invalid. Please try again without the coupon.",
-          },
-          409
-        );
-      }
-    }
+    /* Coupon redemption is deferred to verify-razorpay-payment so the
+       used_count only increments on successfully captured payments. If
+       Razorpay fails after this point, or the buyer abandons the modal,
+       no coupon usage is consumed and they can retry. The atomic
+       redeem_coupon() RPC is still called at capture time and will
+       enforce the cap there. */
 
     return jsonRes({
       razorpay_order_id: rpOrder.id,

@@ -214,6 +214,28 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Amount mismatch" }, 400);
     }
 
+    // Capture-time coupon redemption (deferred from order creation so
+    // abandoned payments do not burn coupon usage). If the cap was hit
+    // by a parallel checkout, park for review — the customer paid.
+    if (po.coupon_id) {
+      const { data: redeemed, error: redeemErr } = await admin.rpc(
+        "redeem_coupon",
+        { p_coupon_id: po.coupon_id }
+      );
+      if (redeemErr || redeemed === false) {
+        console.error(
+          "[razorpay-webhook] coupon redemption failed for",
+          po.coupon_id,
+          redeemErr
+        );
+        await admin
+          .from("payment_orders")
+          .update({ status: "needs_review" })
+          .eq("id", po.id);
+        return jsonRes({ error: "Coupon redemption failed" }, 409);
+      }
+    }
+
     // Mark captured
     await admin
       .from("payment_orders")
