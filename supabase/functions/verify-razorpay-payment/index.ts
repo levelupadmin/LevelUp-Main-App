@@ -254,6 +254,7 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Unable to resolve user for enrolment" }, 500);
     }
 
+    console.log("[verify] Creating enrolment for user:", userId, "offering:", po.offering_id);
     /* ── Create enrolment for main offering (with duplicate guard) ── */
     const { data: existingEnrolment } = await admin
       .from("enrolments")
