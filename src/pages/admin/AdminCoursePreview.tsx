@@ -172,7 +172,7 @@ export default function AdminCoursePreview() {
                   size="lg"
                   onClick={() => {
                     const firstChapter = chapters.sort((a, b) => a.sort_order - b.sort_order)[0];
-                    if (firstChapter) navigate(`/chapters/${firstChapter.id}`);
+                    if (firstChapter) navigate(`/admin/courses/${courseId}/preview/${firstChapter.id}`);
                   }}
                   disabled={totalChapters === 0}
                 >
@@ -226,7 +226,7 @@ export default function AdminCoursePreview() {
                         {sectionChapters.map((chapter, idx) => (
                           <button
                             key={chapter.id}
-                            onClick={() => navigate(`/chapters/${chapter.id}`)}
+                            onClick={() => navigate(`/admin/courses/${courseId}/preview/${chapter.id}`)}
                             className="w-full flex items-center gap-3 h-10 px-4 rounded-lg text-left text-sm transition-colors hover:bg-accent/50 group cursor-pointer"
                           >
                             <span className="w-5 h-5 flex items-center justify-center shrink-0">
