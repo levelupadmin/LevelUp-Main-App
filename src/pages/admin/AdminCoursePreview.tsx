@@ -168,7 +168,14 @@ export default function AdminCoursePreview() {
                 </span>
               </div>
               <div className="flex items-center gap-3 mt-2">
-                <Button size="lg" disabled className="opacity-60 cursor-default">
+                <Button
+                  size="lg"
+                  onClick={() => {
+                    const firstChapter = chapters.sort((a, b) => a.sort_order - b.sort_order)[0];
+                    if (firstChapter) navigate(`/chapters/${firstChapter.id}`);
+                  }}
+                  disabled={totalChapters === 0}
+                >
                   Continue Learning →
                 </Button>
                 <span className="text-sm text-muted-foreground">
@@ -217,12 +224,13 @@ export default function AdminCoursePreview() {
                     <AccordionContent className="px-2 pb-2">
                       <div className="space-y-0.5">
                         {sectionChapters.map((chapter, idx) => (
-                          <div
+                          <button
                             key={chapter.id}
-                            className="w-full flex items-center gap-3 h-10 px-4 rounded-lg text-left text-sm"
+                            onClick={() => navigate(`/chapters/${chapter.id}`)}
+                            className="w-full flex items-center gap-3 h-10 px-4 rounded-lg text-left text-sm transition-colors hover:bg-accent/50 group cursor-pointer"
                           >
                             <span className="w-5 h-5 flex items-center justify-center shrink-0">
-                              <Play className="h-3.5 w-3.5 text-muted-foreground" />
+                              <Play className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground" />
                             </span>
                             <span className="flex-1 truncate text-foreground">
                               {idx + 1}. {chapter.title}
@@ -237,7 +245,7 @@ export default function AdminCoursePreview() {
                                 {formatDuration(chapter.duration_seconds)}
                               </span>
                             )}
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </AccordionContent>
