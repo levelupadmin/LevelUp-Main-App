@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -327,10 +327,29 @@ export default function ThankYou() {
     firePixels(order);
   }, [order]);
 
-  /* ── Countdown — respects custom thank you page settings ── */
+  /* ── Countdown — respects custom thank you page settings ──
+     thankyou_cta_url is admin-authored and gets shoved directly into
+     window.location.href. We validate it client-side to prevent an admin
+     (or a stolen admin session) from using it as an open redirect:
+       - must parse as a URL
+       - must be http: or https: (blocks javascript:, data:, file:)
+       - absolute URLs only
+     The DB CHECK constraint in 20260408160300 enforces the same, but
+     we double-check here so existing rows that predate the migration
+     don't break the page. */
+  const rawCtaUrl = order?.offerings?.thankyou_cta_url || null;
+  const customCtaUrl = useMemo(() => {
+    if (!rawCtaUrl) return null;
+    try {
+      const parsed = new URL(rawCtaUrl);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+      return parsed.toString();
+    } catch {
+      return null;
+    }
+  }, [rawCtaUrl]);
   const autoRedirect = order?.offerings?.thankyou_auto_redirect ?? true;
   const redirectSeconds = order?.offerings?.thankyou_redirect_seconds ?? 10;
-  const customCtaUrl = order?.offerings?.thankyou_cta_url || null;
 
   useEffect(() => {
     if (!order) return;
@@ -372,11 +391,12 @@ export default function ThankYou() {
 
   /* ── Go to Dashboard / Custom CTA (auto-login for guests) ── */
   const handleGoToDashboard = async () => {
-    const ctaUrl = order?.offerings?.thankyou_cta_url;
-
+    // Use the already-validated customCtaUrl (see useMemo above) — never
+    // the raw DB value — so open-redirect guards can't be skipped on the
+    // manual-click path.
     if (session) {
-      if (ctaUrl) {
-        window.location.href = ctaUrl;
+      if (customCtaUrl) {
+        window.location.href = customCtaUrl;
       } else {
         navigate("/home");
       }
