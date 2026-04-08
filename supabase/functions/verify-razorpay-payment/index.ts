@@ -201,6 +201,7 @@ Deno.serve(async (req) => {
             .eq("id", payment_order_id);
         } else {
           // Create new user account (no password — magic link only)
+          console.log("[verify] Creating new guest user for:", poGuest.guest_email);
           const { data: newUser, error: createError } =
             await admin.auth.admin.createUser({
               email: poGuest.guest_email,
