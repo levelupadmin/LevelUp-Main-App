@@ -20,6 +20,49 @@ function normalizePhone(phone: string): string {
   return digits;
 }
 
+/**
+ * O(1) lookup of an auth.users row by email via the GoTrue admin REST API.
+ *
+ * The supabase-js client's admin.auth.admin.listUsers() does not accept a
+ * filter parameter in v2 and always returns a full page (default 50) from
+ * the top of auth.users. On a large user base this drops the target user
+ * off the page and returns null, causing guest checkouts to fail-over to
+ * needs_review even when the user exists. The REST endpoint accepts
+ * ?email=<email> and returns exactly one record (or empty).
+ */
+async function findAuthUserByEmail(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  email: string
+): Promise<{ id: string; email?: string } | null> {
+  try {
+    const url = `${supabaseUrl}/auth/v1/admin/users?email=${encodeURIComponent(email)}`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey,
+      },
+    });
+    if (!res.ok) {
+      console.warn("[findAuthUserByEmail] HTTP", res.status);
+      return null;
+    }
+    const body = await res.json();
+    // The endpoint returns either { users: [...] } or a single user object
+    // depending on GoTrue version; handle both.
+    if (Array.isArray(body?.users) && body.users.length > 0) {
+      return body.users[0];
+    }
+    if (body?.id && body?.email?.toLowerCase() === email.toLowerCase()) {
+      return body;
+    }
+    return null;
+  } catch (err) {
+    console.warn("[findAuthUserByEmail] fetch failed:", err);
+    return null;
+  }
+}
+
 async function verifyHmac(
   orderId: string,
   paymentId: string,
@@ -339,14 +382,23 @@ Deno.serve(async (req) => {
             .update({ user_id: userId })
             .eq("id", payment_order_id);
         } else {
+          // Previously this called admin.auth.admin.listUsers() with no
+          // pagination — an unbounded scan of the entire auth.users
+          // table on every guest checkout. On a large user base this
+          // can time out or return a truncated page (missing the user
+          // we care about) and drop the order to needs_review.
+          //
+          // Use the GoTrue admin REST endpoint directly with the
+          // ?email=<email> filter for an O(1) lookup.
           let existingAuthUser: any = null;
           try {
-            const { data: usersList } = await admin.auth.admin.listUsers();
-            existingAuthUser = usersList?.users?.find(
-              (u: any) => u.email?.toLowerCase() === poGuest.guest_email.toLowerCase()
+            existingAuthUser = await findAuthUserByEmail(
+              Deno.env.get("SUPABASE_URL")!,
+              Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+              poGuest.guest_email
             );
           } catch (listErr) {
-            console.warn("[verify] Could not list auth users:", listErr);
+            console.warn("[verify] Could not look up auth user:", listErr);
           }
 
           if (existingAuthUser) {
@@ -385,9 +437,10 @@ Deno.serve(async (req) => {
               if (createError.message?.includes("already") || createError.message?.includes("exists")) {
                 console.log("[verify] Attempting fallback: fetching existing auth user");
                 try {
-                  const { data: fallbackList } = await admin.auth.admin.listUsers();
-                  const fallbackUser = fallbackList?.users?.find(
-                    (u: any) => u.email?.toLowerCase() === poGuest.guest_email.toLowerCase()
+                  const fallbackUser = await findAuthUserByEmail(
+                    Deno.env.get("SUPABASE_URL")!,
+                    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+                    poGuest.guest_email
                   );
 
                   if (fallbackUser) {

@@ -20,6 +20,32 @@ function normalizePhone(phone: string): string {
   return digits;
 }
 
+/**
+ * O(1) lookup of auth.users by email via the GoTrue admin REST API.
+ * See the same helper in verify-razorpay-payment for rationale — the
+ * supabase-js listUsers() call does not accept a filter and scans the
+ * entire table with a default page size of 50, losing records past it.
+ */
+async function findAuthUserByEmail(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  email: string
+): Promise<{ id: string; email?: string } | null> {
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/auth/v1/admin/users?email=${encodeURIComponent(email)}`,
+      { headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey } }
+    );
+    if (!res.ok) return null;
+    const body = await res.json();
+    if (Array.isArray(body?.users) && body.users.length > 0) return body.users[0];
+    if (body?.id && body?.email?.toLowerCase() === email.toLowerCase()) return body;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function verifySignature(
   body: string,
   signature: string,
@@ -66,15 +92,16 @@ async function resolveGuestUserId(
     return { userId: existingUser.id };
   }
 
-  // 2. existing auth.users by email
+  // 2. existing auth.users by email — O(1) via REST, see helper
   let existingAuthUser: any = null;
   try {
-    const { data: usersList } = await admin.auth.admin.listUsers();
-    existingAuthUser = usersList?.users?.find(
-      (u: any) => u.email?.toLowerCase() === po.guest_email.toLowerCase()
+    existingAuthUser = await findAuthUserByEmail(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      po.guest_email
     );
   } catch (err) {
-    console.warn("[razorpay-webhook] listUsers failed:", err);
+    console.warn("[razorpay-webhook] findAuthUserByEmail failed:", err);
   }
 
   if (existingAuthUser) {
