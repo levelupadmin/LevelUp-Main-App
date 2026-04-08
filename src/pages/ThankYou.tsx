@@ -119,22 +119,43 @@ function firePixels(order: PaymentOrder) {
     }
   }
 
-  // 3. Custom tracking script — strip script tags and event handlers, allow only pixel tags
+  // 3. Custom tracking script — render inside a sandboxed iframe so any
+  // remaining XSS in the admin-supplied snippet cannot read cookies, the
+  // current session, localStorage, or DOM of the parent ThankYou page.
+  //
+  // Previously this used innerHTML on a div in the parent document with a
+  // regex sanitiser that stripped <script>, on*= and javascript:. Regex
+  // sanitisers for HTML are notoriously bypassable (e.g. <img src=x
+  // onerror​=...> with zero-width chars, <svg/onload>, mutation XSS), and
+  // anything that did slip through ran in the same origin as the user's
+  // logged-in session and could exfiltrate the auth token.
+  //
+  // The sandbox attribute with no allow-* tokens gives the iframe a
+  // unique origin with no script execution, no top navigation, no form
+  // submission, and no same-origin DOM access. We *do* re-add
+  // allow-scripts because the whole point is to fire pixel/tracking
+  // scripts — but without allow-same-origin those scripts cannot reach
+  // back into the parent or read its cookies.
   if (offering?.custom_tracking_script) {
-    const sanitized = offering.custom_tracking_script
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/javascript:/gi, "")
-      .replace(/on\w+=/gi, "");
+    const safeTxId = (order.razorpay_payment_id || "").replace(/[^a-zA-Z0-9_\-]/g, "");
+    const safeOrderId = order.id.replace(/[^a-zA-Z0-9\-]/g, "");
+    const interpolated = offering.custom_tracking_script
+      .replace(/\{\{value\}\}/g, String(revenue))
+      .replace(/\{\{currency\}\}/g, currency)
+      .replace(/\{\{transaction_id\}\}/g, safeTxId)
+      .replace(/\{\{order_id\}\}/g, safeOrderId);
 
-    if (sanitized.trim()) {
-      const div = document.createElement("div");
-      div.innerHTML = sanitized
-        .replace(/\{\{value\}\}/g, String(revenue))
-        .replace(/\{\{currency\}\}/g, currency)
-        .replace(/\{\{transaction_id\}\}/g, (order.razorpay_payment_id || "").replace(/[^a-zA-Z0-9_\-]/g, ""))
-        .replace(/\{\{order_id\}\}/g, order.id.replace(/[^a-zA-Z0-9\-]/g, ""));
-      document.body.appendChild(div);
-    }
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("sandbox", "allow-scripts");
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.setAttribute("title", "tracking");
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.style.position = "absolute";
+    iframe.style.left = "-9999px";
+    iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"></head><body>${interpolated}</body></html>`;
+    document.body.appendChild(iframe);
   }
 }
 
