@@ -81,8 +81,13 @@ Deno.serve(async (req) => {
     }
 
     // Only return fields the UI needs — never expose used_count / max_redemptions.
+    // id and code are safe: create-razorpay-order re-fetches and re-validates
+    // the coupon row before writing it to payment_orders, so nothing trusts
+    // this value alone.
     return jsonRes({
       valid: true,
+      id: coupon.id,
+      code: coupon.code,
       discount_inr: discountInr,
       discount_type: coupon.discount_type,
       discount_value: coupon.discount_value,
