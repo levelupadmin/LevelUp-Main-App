@@ -331,7 +331,52 @@ export default function ThankYou() {
     setResending(false);
   };
 
-  /* ── Buy upsell ── */
+  /* ── Go to Dashboard (auto-login for guests) ── */
+  const handleGoToDashboard = async () => {
+    if (session) {
+      navigate("/home");
+      return;
+    }
+
+    const navState = location.state as any;
+    const token = navState?.magicLinkToken;
+    const email = originalGuestEmail || navState?.guestEmail;
+
+    if (token && email) {
+      setLoggingIn(true);
+      try {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: token,
+          type: "magiclink",
+        });
+        if (!error) {
+          navigate("/home");
+          return;
+        }
+        console.error("[ThankYou] Auto-login failed:", error.message);
+        toast({
+          title: "Login link sent!",
+          description: "Check your email to sign in and access your dashboard.",
+        });
+      } catch (err) {
+        console.error("[ThankYou] Auto-login error:", err);
+      }
+      setLoggingIn(false);
+    } else if (email) {
+      setLoggingIn(true);
+      const { error } = await supabase.auth.signInWithOtp({ email });
+      if (!error) {
+        toast({
+          title: "Login link sent!",
+          description: "Check your email to sign in.",
+        });
+      } else {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
+      setLoggingIn(false);
+    }
+  };
+
   const handleBuyUpsell = useCallback(async (upsell: Upsell) => {
     setBuyingUpsell(upsell.id);
     try {
