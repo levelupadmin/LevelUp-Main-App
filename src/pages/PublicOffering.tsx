@@ -221,7 +221,13 @@ function CheckoutCard({
       const res = await fetch(`${SUPABASE_URL}/functions/v1/check-user-exists`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: guestEmail.trim(), phone: guestPhone.trim() }),
+        body: JSON.stringify({
+          email: guestEmail.trim(),
+          phone: guestPhone.trim(),
+          // offering_id is now required as a proof-of-intent check so
+          // this endpoint cannot be used as a public enumeration oracle.
+          offering_id: offering?.id,
+        }),
       });
       if (!res.ok) { setCheckingIdentity(false); return; }
       const data = await res.json();
