@@ -335,7 +335,7 @@ Deno.serve(async (req) => {
       magic_link_sent: is_guest || false,
     });
   } catch (err) {
-    console.error("Error:", err);
+    console.error("[verify] Unhandled error:", err.message, err.stack);
     return jsonRes({ error: "Internal server error" }, 500);
   }
 });

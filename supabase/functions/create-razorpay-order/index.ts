@@ -168,8 +168,8 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Failed to create payment order" }, 500);
 
     /* ── Razorpay order ── */
-    const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID")!;
-    const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET")!;
+    const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID")?.trim()!;
+    const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET")?.trim()!;
 
     const rpRes = await fetch("https://api.razorpay.com/v1/orders", {
       method: "POST",

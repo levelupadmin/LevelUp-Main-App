@@ -437,15 +437,32 @@ function CheckoutCard({
               is_guest: isGuest,
             }),
           });
-          if (!verifyRes.ok) throw new Error("Payment verification failed");
+          if (!verifyRes.ok) {
+            let errMsg = `HTTP ${verifyRes.status}`;
+            try {
+              const errBody = await verifyRes.json();
+              errMsg = errBody.error || errMsg;
+            } catch {
+              try { errMsg = await verifyRes.text() || errMsg; } catch {}
+            }
+            console.error("Payment verification failed:", verifyRes.status, errMsg);
+            throw new Error(errMsg);
+          }
+
           const verifyData = await verifyRes.json();
           if (verifyData.success) {
             navigate(`/thank-you/${data.payment_order_id}`);
           } else {
-            toast({ title: "Verification failed", description: "Contact support.", variant: "destructive" });
+            console.error("Verification returned success=false:", verifyData);
+            toast({ title: "Verification failed", description: verifyData.error || "Contact support.", variant: "destructive" });
           }
-        } catch {
-          toast({ title: "Verification error", description: "Contact support.", variant: "destructive" });
+        } catch (err: any) {
+          console.error("Verification error:", err);
+          toast({
+            title: "Verification error",
+            description: err.message || "Contact support.",
+            variant: "destructive"
+          });
         }
         setLoading(false);
         setIsProcessing(false);
