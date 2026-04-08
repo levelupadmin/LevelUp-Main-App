@@ -635,11 +635,14 @@ const BrowsePrograms = () => {
   );
 };
 
-// ── Section 6: New Members ──
+// ── Section 6: New Members (admin-only) ──
 const NewMembers = () => {
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === "admin";
   const [members, setMembers] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!isAdmin) return;
     supabase
       .from("users")
       .select("id, full_name, bio, member_number, avatar_url")
@@ -650,7 +653,10 @@ const NewMembers = () => {
         if (error) console.error("Failed to load new members:", error);
         setMembers(data ?? []);
       });
-  }, []);
+  }, [isAdmin]);
+
+  // Only show for admins — RLS restricts users table reads to own row
+  if (!isAdmin) return null;
 
   if (!members.length) {
     return (

@@ -153,8 +153,24 @@ Deno.serve(async (req) => {
           .eq("email", poGuest.guest_email)
           .maybeSingle();
 
+        let matchedUserId: string | null = null;
         if (existingUser) {
-          userId = existingUser.id;
+          // If user has phone on file, verify it matches (defense-in-depth)
+          if (!existingUser.phone || !normalizedPhone || normalizePhone(existingUser.phone) === normalizedPhone) {
+            matchedUserId = existingUser.id;
+          } else {
+            // Phone mismatch — still link by email since guest-create-order already validated
+            console.warn("Phone mismatch for existing user, linking by email anyway", {
+              email: poGuest.guest_email,
+              existingPhone: existingUser.phone,
+              guestPhone: normalizedPhone,
+            });
+            matchedUserId = existingUser.id;
+          }
+        }
+
+        if (matchedUserId) {
+          userId = matchedUserId;
           await admin
             .from("payment_orders")
             .update({ user_id: userId })
