@@ -299,21 +299,23 @@ export default function ThankYou() {
     firePixels(order);
   }, [order]);
 
-  /* ── Countdown redirect for logged-in users ── */
+  /* ── Countdown — auto-redirect only for logged-in users after timer ── */
   useEffect(() => {
-    if (!order || !session || isGuest) return;
+    if (!order) return;
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          navigate("/home");
+          if (session) {
+            navigate("/home");
+          }
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [order, session, isGuest, navigate]);
+  }, [order, session, navigate]);
 
   /* ── Resend magic link ── */
   const handleResendLink = async () => {
