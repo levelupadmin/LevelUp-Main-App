@@ -101,6 +101,16 @@ Deno.serve(async (req) => {
     }
     if (trigger_type.length > 100) return jsonRes({ error: "Invalid trigger_type" }, 400);
 
+    // ── Rate limit: max 100 notifications per user per hour ─────
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentCount } = await admin
+      .from("scheduled_notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user_id)
+      .gte("scheduled_for", oneHourAgo);
+    if ((recentCount ?? 0) >= 100)
+      return jsonRes({ error: "Rate limited — too many notifications for this user" }, 429);
+
     // ── Profile lookup ────────────────────────────────────────────
     const { data: profile } = await admin
       .from("users")

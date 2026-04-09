@@ -35,6 +35,12 @@ Deno.serve(async (req) => {
       await req.json();
     if (!offering_id)
       return jsonRes({ error: "offering_id is required" }, 400);
+    if (
+      custom_field_values &&
+      typeof custom_field_values === "object" &&
+      JSON.stringify(custom_field_values).length > 10000
+    )
+      return jsonRes({ error: "custom_field_values too large" }, 400);
 
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -66,14 +72,17 @@ Deno.serve(async (req) => {
 
       if (bumps) {
         for (const b of bumps) {
+          // Verify the bump offering itself is active
+          const { data: bo } = await admin
+            .from("offerings")
+            .select("price_inr, status")
+            .eq("id", b.bump_offering_id)
+            .single();
+          if (!bo || bo.status !== "active") continue; // skip inactive bumps
+
           if (b.bump_price_override_inr != null) {
             bumpTotal += Number(b.bump_price_override_inr);
           } else {
-            const { data: bo } = await admin
-              .from("offerings")
-              .select("price_inr")
-              .eq("id", b.bump_offering_id)
-              .single();
             if (bo) bumpTotal += Number(bo.price_inr);
           }
           validBumpIds.push(b.bump_offering_id);
