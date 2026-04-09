@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Upload } from "lucide-react";
 
 interface EnrolmentRow {
   id: string;
@@ -20,25 +21,40 @@ interface EnrolmentRow {
 }
 
 const AdminEnrolments = () => {
+  const PAGE_SIZE = 50;
   const [enrolments, setEnrolments] = useState<EnrolmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const [manualOpen, setManualOpen] = useState(false);
   const [allUsers, setAllUsers] = useState<{ id: string; full_name: string; email: string }[]>([]);
   const [allOfferings, setAllOfferings] = useState<{ id: string; title: string }[]>([]);
   const [manualUserId, setManualUserId] = useState("");
   const [manualOfferingId, setManualOfferingId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkOfferingId, setBulkOfferingId] = useState("");
+  const [bulkEmails, setBulkEmails] = useState("");
+  const [bulkResult, setBulkResult] = useState<{ success: number; failed: string[] } | null>(null);
   const { toast } = useToast();
 
-  const load = async () => {
+  const load = async (p = page) => {
     setLoading(true);
+    const from = p * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const { count } = await supabase
+      .from("enrolments")
+      .select("id", { count: "exact", head: true });
+    setTotalCount(count ?? 0);
+
     const { data: enrols } = await supabase
       .from("enrolments")
       .select("id, status, created_at, user_id, offering_id, payment_order_id")
       .order("created_at", { ascending: false })
-      .limit(200);
+      .range(from, to);
 
     if (!enrols) { setLoading(false); return; }
 
@@ -65,7 +81,7 @@ const AdminEnrolments = () => {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(page); }, [page]);
 
   const handleStatusChange = async (enrolId: string, newStatus: string) => {
     const { error } = await supabase.from("enrolments").update({ status: newStatus }).eq("id", enrolId);
@@ -102,6 +118,65 @@ const AdminEnrolments = () => {
     setSaving(false);
   };
 
+  const openBulkEnrol = async () => {
+    const { data } = await supabase.from("offerings").select("id, title").order("title");
+    setAllOfferings(data || []);
+    setBulkEmails("");
+    setBulkOfferingId("");
+    setBulkResult(null);
+    setBulkOpen(true);
+  };
+
+  const handleBulkEnrol = async () => {
+    if (!bulkOfferingId || !bulkEmails.trim()) {
+      toast({ title: "Select an offering and enter emails", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    setBulkResult(null);
+
+    const emails = bulkEmails
+      .split(/[\n,;]+/)
+      .map((e) => e.trim().toLowerCase())
+      .filter((e) => e.includes("@"));
+
+    let success = 0;
+    const failed: string[] = [];
+
+    for (const email of emails) {
+      const { data: user } = await supabase
+        .from("users")
+        .select("id")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (!user) {
+        failed.push(`${email} — user not found`);
+        continue;
+      }
+
+      const { error } = await supabase.from("enrolments").insert({
+        user_id: user.id,
+        offering_id: bulkOfferingId,
+        source: "admin_manual",
+        status: "active",
+      });
+
+      if (error) {
+        failed.push(`${email} — ${error.message}`);
+      } else {
+        success++;
+      }
+    }
+
+    setBulkResult({ success, failed });
+    if (success > 0) {
+      toast({ title: `${success} users enrolled` });
+      load(page);
+    }
+    setSaving(false);
+  };
+
   const filtered = enrolments.filter((e) => {
     const matchesSearch = e.user_name.toLowerCase().includes(search.toLowerCase()) ||
       e.user_email.toLowerCase().includes(search.toLowerCase());
@@ -127,6 +202,9 @@ const AdminEnrolments = () => {
         </Select>
         <Button onClick={openManualEnrol} className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
           <Plus className="h-4 w-4 mr-2" /> Manual Enrol
+        </Button>
+        <Button variant="outline" onClick={openBulkEnrol}>
+          <Upload className="h-4 w-4 mr-2" /> Bulk Enrol
         </Button>
       </div>
 
@@ -173,6 +251,16 @@ const AdminEnrolments = () => {
         </table>
       </div>
 
+      {totalCount > PAGE_SIZE && (
+        <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+          <span>Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCount)} of {totalCount}</span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+            <Button variant="outline" size="sm" disabled={(page + 1) * PAGE_SIZE >= totalCount} onClick={() => setPage((p) => p + 1)}>Next</Button>
+          </div>
+        </div>
+      )}
+
       <Dialog open={manualOpen} onOpenChange={setManualOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Manual Enrolment</DialogTitle></DialogHeader>
@@ -199,6 +287,49 @@ const AdminEnrolments = () => {
             </div>
             <Button onClick={handleManualEnrol} disabled={saving} className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
               {saving ? "Enrolling…" : "Enrol User"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Bulk Enrol Users</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Offering</label>
+              <SearchableSelect
+                options={allOfferings.map((o) => ({ value: o.id, label: o.title }))}
+                value={bulkOfferingId}
+                onValueChange={setBulkOfferingId}
+                placeholder="Select offering"
+                searchPlaceholder="Search offerings…"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Email addresses (one per line or comma-separated)</label>
+              <Textarea
+                value={bulkEmails}
+                onChange={(e) => setBulkEmails(e.target.value)}
+                rows={6}
+                placeholder={"student1@example.com\nstudent2@example.com"}
+              />
+            </div>
+            {bulkResult && (
+              <div className="text-sm space-y-1">
+                <p className="text-green-400">{bulkResult.success} enrolled successfully</p>
+                {bulkResult.failed.length > 0 && (
+                  <div className="text-red-400">
+                    <p>{bulkResult.failed.length} failed:</p>
+                    <ul className="list-disc list-inside text-xs mt-1 max-h-32 overflow-y-auto">
+                      {bulkResult.failed.map((f, i) => <li key={i}>{f}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+            <Button onClick={handleBulkEnrol} disabled={saving} className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
+              {saving ? "Enrolling…" : "Enrol All"}
             </Button>
           </div>
         </DialogContent>

@@ -6,8 +6,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Search } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { Search, AlertTriangle } from "lucide-react";
 
 interface UserRow {
   id: string;
@@ -20,21 +22,34 @@ interface UserRow {
 }
 
 const AdminUsers = () => {
+  const PAGE_SIZE = 50;
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const [editUser, setEditUser] = useState<UserRow | null>(null);
   const [editForm, setEditForm] = useState({ full_name: "", bio: "", role: "student" });
   const [saving, setSaving] = useState(false);
+  const [confirmRoleChange, setConfirmRoleChange] = useState(false);
   const { toast } = useToast();
+  const { profile: currentUser } = useAuth();
 
-  const load = async () => {
+  const load = async (p = page) => {
     setLoading(true);
+    const from = p * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const { count } = await supabase
+      .from("users")
+      .select("id", { count: "exact", head: true });
+    setTotalCount(count ?? 0);
+
     const { data: usersData } = await supabase
       .from("users")
       .select("id, full_name, email, role, member_number, created_at")
       .order("created_at", { ascending: false })
-      .limit(500);
+      .range(from, to);
 
     if (!usersData) { setLoading(false); return; }
 
@@ -47,7 +62,7 @@ const AdminUsers = () => {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(page); }, [page]);
 
   const openEdit = async (user: UserRow) => {
     const { data } = await supabase.from("users").select("full_name, bio, role").eq("id", user.id).single();
@@ -55,18 +70,33 @@ const AdminUsers = () => {
     setEditUser(user);
   };
 
-  const handleSave = async () => {
+  const isSelf = editUser?.id === currentUser?.id;
+  const roleChanged = editUser && editForm.role !== editUser.role;
+
+  const doSave = async () => {
     if (!editUser) return;
     setSaving(true);
-    const { error } = await supabase.from("users").update({
+    const updates: Record<string, unknown> = {
       full_name: editForm.full_name || null,
       bio: editForm.bio || null,
-      role: editForm.role,
-    }).eq("id", editUser.id);
+    };
+    // Never allow self role change — backend trigger blocks it too
+    if (!isSelf) updates.role = editForm.role;
+
+    const { error } = await supabase.from("users").update(updates).eq("id", editUser.id);
 
     if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
     else { toast({ title: "User updated" }); setEditUser(null); load(); }
     setSaving(false);
+    setConfirmRoleChange(false);
+  };
+
+  const handleSave = () => {
+    if (roleChanged && !isSelf) {
+      setConfirmRoleChange(true);
+    } else {
+      doSave();
+    }
   };
 
   const filtered = users.filter((u) =>
@@ -126,6 +156,16 @@ const AdminUsers = () => {
         </table>
       </div>
 
+      {totalCount > PAGE_SIZE && (
+        <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+          <span>Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCount)} of {totalCount}</span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+            <Button variant="outline" size="sm" disabled={(page + 1) * PAGE_SIZE >= totalCount} onClick={() => setPage((p) => p + 1)}>Next</Button>
+          </div>
+        </div>
+      )}
+
       <Dialog open={!!editUser} onOpenChange={() => setEditUser(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Edit User</DialogTitle></DialogHeader>
@@ -140,14 +180,18 @@ const AdminUsers = () => {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Role</label>
-              <Select value={editForm.role} onValueChange={(v) => setEditForm((f) => ({ ...f, role: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="student">Student</SelectItem>
-                  <SelectItem value="instructor">Instructor</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
+              {isSelf ? (
+                <p className="text-sm text-muted-foreground py-2">You cannot change your own role.</p>
+              ) : (
+                <Select value={editForm.role} onValueChange={(v) => setEditForm((f) => ({ ...f, role: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="student">Student</SelectItem>
+                    <SelectItem value="instructor">Instructor</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <Button onClick={handleSave} disabled={saving} className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
               {saving ? "Saving…" : "Save Changes"}
@@ -155,6 +199,28 @@ const AdminUsers = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmRoleChange} onOpenChange={setConfirmRoleChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" /> Confirm Role Change
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              You are changing <strong>{editUser?.full_name || editUser?.email}</strong>'s role
+              from <strong>{editUser?.role}</strong> to <strong>{editForm.role}</strong>.
+              {editForm.role === "admin" && " This will grant full admin access to the platform."}
+              {editUser?.role === "admin" && editForm.role !== "admin" && " This will revoke their admin privileges."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={doSave} disabled={saving}>
+              {saving ? "Saving…" : "Confirm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 };
