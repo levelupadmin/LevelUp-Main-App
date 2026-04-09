@@ -35,6 +35,7 @@ import AdminEvents from "@/pages/admin/AdminEvents";
 import AdminRevenue from "@/pages/admin/AdminRevenue";
 import AdminAuditLogs from "@/pages/admin/AdminAuditLogs";
 import AdminAnalytics from "@/pages/admin/AdminAnalytics";
+import AdminCohorts from "@/pages/admin/AdminCohorts";
 import AdminCoursePreview from "@/pages/admin/AdminCoursePreview";
 import AdminChapterPreview from "@/pages/admin/AdminChapterPreview";
 import MySessionsPage from "@/pages/MySessionsPage";
@@ -93,6 +94,7 @@ const App = () => (
             <Route path="/admin/offerings/:offeringId/edit" element={<RequireAuth><RequireRole role="admin"><AdminOfferingEditor /></RequireRole></RequireAuth>} />
             <Route path="/admin/schedule" element={<RequireAuth><RequireRole role="admin"><AdminSchedule /></RequireRole></RequireAuth>} />
             <Route path="/admin/events" element={<RequireAuth><RequireRole role="admin"><AdminEvents /></RequireRole></RequireAuth>} />
+            <Route path="/admin/cohorts" element={<RequireAuth><RequireRole role="admin"><AdminCohorts /></RequireRole></RequireAuth>} />
             <Route path="/admin/enrolments" element={<RequireAuth><RequireRole role="admin"><AdminEnrolments /></RequireRole></RequireAuth>} />
             <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />
             <Route path="/admin/coupons" element={<RequireAuth><RequireRole role="admin"><AdminCoupons /></RequireRole></RequireAuth>} />
