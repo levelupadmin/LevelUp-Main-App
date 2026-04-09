@@ -35,6 +35,7 @@ import {
   CalendarIcon,
   ChevronUp,
   ChevronDown,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, startOfDay, isBefore } from "date-fns";
@@ -53,6 +54,7 @@ interface LiveSession {
   recording_url: string | null;
   status: string;
   course_title?: string;
+  attendance_count?: number;
 }
 
 interface CourseOption {
@@ -166,6 +168,10 @@ const AdminSchedule = () => {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [csvUploading, setCsvUploading] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
+  const [attendanceSession, setAttendanceSession] = useState<LiveSession | null>(null);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [enrolledStudents, setEnrolledStudents] = useState<{id: string; name: string; email: string}[]>([]);
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, string>>({});
   const { toast } = useToast();
 
   const f = (key: keyof typeof EMPTY_FORM, value: any) =>
@@ -188,12 +194,25 @@ const AdminSchedule = () => {
     });
     setCourses(courseRes.data || []);
 
-    setSessions(
-      (sessRes.data || []).map((s: any) => ({
-        ...s,
-        course_title: courseMap[s.course_id] || "Unknown course",
-      }))
-    );
+    const sessionsList = (sessRes.data || []).map((s: any) => ({
+      ...s,
+      course_title: courseMap[s.course_id] || "Unknown course",
+    }));
+
+    // Fetch attendance counts for sessions
+    const sessionIds = sessionsList.map((s: any) => s.id);
+    if (sessionIds.length > 0) {
+      const { data: attCounts } = await (supabase as any)
+        .from("session_attendance")
+        .select("session_id")
+        .eq("status", "present")
+        .in("session_id", sessionIds);
+      const countMap: Record<string, number> = {};
+      (attCounts || []).forEach((a: any) => { countMap[a.session_id] = (countMap[a.session_id] || 0) + 1; });
+      sessionsList.forEach((s: any) => { s.attendance_count = countMap[s.id] || 0; });
+    }
+
+    setSessions(sessionsList);
     setLoading(false);
   };
 
@@ -248,8 +267,8 @@ const AdminSchedule = () => {
       return;
     }
 
-    // Block scheduling in the past
-    if (new Date(scheduledIso) < new Date()) {
+    // Block scheduling in the past (only for new sessions — allow edits to past sessions)
+    if (!editId && new Date(scheduledIso) < new Date()) {
       toast({ title: "Cannot schedule in the past", description: "Pick a future date and time.", variant: "destructive" });
       return;
     }
@@ -300,13 +319,44 @@ const AdminSchedule = () => {
         toast({ title: "Session updated" });
       }
     } else if (form.repeat_weeks > 0) {
-      // Create recurring sessions
+      // Create recurring sessions — check conflicts for all weeks
       const rows = [];
       for (let w = 0; w <= form.repeat_weeks; w++) {
         const dt = new Date(scheduledIso);
         dt.setDate(dt.getDate() + w * 7);
         rows.push({ ...payload, scheduled_at: dt.toISOString() });
       }
+
+      // Check all recurring dates for conflicts
+      const firstStart = new Date(rows[0].scheduled_at);
+      const lastEnd = new Date(new Date(rows[rows.length - 1].scheduled_at).getTime() + (form.duration_minutes || 60) * 60000);
+      const { data: allConflicts } = await supabase
+        .from("live_sessions")
+        .select("id, title, scheduled_at, duration_minutes")
+        .eq("course_id", form.course_id)
+        .gte("scheduled_at", new Date(firstStart.getTime() - 24 * 60 * 60000).toISOString())
+        .lte("scheduled_at", lastEnd.toISOString());
+
+      const conflictingWeek = rows.find((row) => {
+        const rStart = new Date(row.scheduled_at);
+        const rEnd = new Date(rStart.getTime() + (form.duration_minutes || 60) * 60000);
+        return (allConflicts || []).some((s) => {
+          const sStart = new Date(s.scheduled_at);
+          const sEnd = new Date(sStart.getTime() + (s.duration_minutes || 60) * 60000);
+          return rStart < sEnd && rEnd > sStart;
+        });
+      });
+
+      if (conflictingWeek) {
+        toast({
+          title: "Schedule conflict in recurring series",
+          description: `Session on ${new Date(conflictingWeek.scheduled_at).toLocaleDateString("en-IN")} overlaps with an existing session`,
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+
       const { error } = await supabase.from("live_sessions").insert(rows);
       if (error) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -338,6 +388,75 @@ const AdminSchedule = () => {
       load();
     }
     setDeleteId(null);
+  };
+
+  /* ── Attendance ── */
+  const openAttendance = async (session: LiveSession) => {
+    setAttendanceSession(session);
+    setAttendanceLoading(true);
+    setEnrolledStudents([]);
+    setAttendanceMap({});
+
+    try {
+      // Get offering_ids for this course
+      const { data: offeringCourses } = await (supabase as any)
+        .from("offering_courses")
+        .select("offering_id")
+        .eq("course_id", session.course_id);
+      const offeringIds = (offeringCourses || []).map((oc: any) => oc.offering_id);
+
+      let students: {id: string; name: string; email: string}[] = [];
+      if (offeringIds.length > 0) {
+        // Get active enrolments
+        const { data: enrolments } = await (supabase as any)
+          .from("enrolments")
+          .select("user_id")
+          .in("offering_id", offeringIds)
+          .eq("status", "active");
+        const userIds = [...new Set((enrolments || []).map((e: any) => e.user_id))] as string[];
+
+        if (userIds.length > 0) {
+          const { data: users } = await (supabase as any)
+            .from("users")
+            .select("id, full_name, email")
+            .in("id", userIds);
+          students = (users || []).map((u: any) => ({ id: u.id, name: u.full_name || "", email: u.email || "" }));
+        }
+      }
+
+      // Fetch existing attendance
+      const { data: existing } = await (supabase as any)
+        .from("session_attendance")
+        .select("user_id, status")
+        .eq("session_id", session.id);
+      const map: Record<string, string> = {};
+      (existing || []).forEach((a: any) => { map[a.user_id] = a.status; });
+
+      setEnrolledStudents(students);
+      setAttendanceMap(map);
+    } catch (err: any) {
+      toast({ title: "Error loading attendance", description: err.message, variant: "destructive" });
+    }
+    setAttendanceLoading(false);
+  };
+
+  const saveAttendance = async () => {
+    if (!attendanceSession) return;
+    setSaving(true);
+    const records = enrolledStudents.map(s => ({
+      session_id: attendanceSession.id,
+      user_id: s.id,
+      status: attendanceMap[s.id] || "absent",
+    }));
+    const { error } = await (supabase as any).from("session_attendance").upsert(records, { onConflict: "session_id,user_id" });
+    if (error) {
+      toast({ title: "Error saving attendance", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Attendance saved" });
+      setAttendanceSession(null);
+      load();
+    }
+    setSaving(false);
   };
 
   /* ── CSV Upload ── */
@@ -512,6 +631,7 @@ const AdminSchedule = () => {
                     badge={statusBadge(s.status, s.scheduled_at)}
                     onEdit={() => openEdit(s)}
                     onDelete={() => setDeleteId(s.id)}
+                    onAttendance={() => openAttendance(s)}
                   />
                 ))}
               </div>
@@ -531,6 +651,7 @@ const AdminSchedule = () => {
                     badge={statusBadge(s.status, s.scheduled_at)}
                     onEdit={() => openEdit(s)}
                     onDelete={() => setDeleteId(s.id)}
+                    onAttendance={() => openAttendance(s)}
                   />
                 ))}
               </div>
@@ -683,6 +804,54 @@ const AdminSchedule = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Attendance Dialog */}
+      <Dialog open={!!attendanceSession} onOpenChange={() => setAttendanceSession(null)}>
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Attendance: {attendanceSession?.title}</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-muted-foreground">
+              {Object.values(attendanceMap).filter(s => s === 'present').length} / {enrolledStudents.length} present
+            </span>
+            <Button variant="outline" size="sm" onClick={() => {
+              const newMap: Record<string, string> = {};
+              enrolledStudents.forEach(s => { newMap[s.id] = 'present'; });
+              setAttendanceMap(newMap);
+            }}>
+              Mark All Present
+            </Button>
+          </div>
+          {attendanceLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
+          ) : enrolledStudents.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No enrolled students found</p>
+          ) : (
+            <div className="space-y-1 overflow-y-auto flex-1">
+              {enrolledStudents.map(s => (
+                <div key={s.id} className="flex items-center justify-between py-2 px-3 rounded hover:bg-secondary/50">
+                  <div>
+                    <p className="text-sm font-medium">{s.name || 'Unnamed'}</p>
+                    <p className="text-xs text-muted-foreground">{s.email}</p>
+                  </div>
+                  <Select value={attendanceMap[s.id] || 'absent'} onValueChange={(v) => setAttendanceMap(prev => ({...prev, [s.id]: v}))}>
+                    <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="present">Present</SelectItem>
+                      <SelectItem value="absent">Absent</SelectItem>
+                      <SelectItem value="excused">Excused</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
+          <Button onClick={saveAttendance} disabled={saving} className="w-full mt-3 bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
+            {saving ? 'Saving…' : 'Save Attendance'}
+          </Button>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
@@ -715,13 +884,16 @@ function SessionRow({
   badge,
   onEdit,
   onDelete,
+  onAttendance,
 }: {
   session: LiveSession;
   badge: { label: string; color: string; icon: any };
   onEdit: () => void;
   onDelete: () => void;
+  onAttendance: () => void;
 }) {
   const Icon = badge.icon;
+  const isPastOrCompleted = s.status === "completed" || s.status === "cancelled" || new Date(s.scheduled_at) < new Date();
   return (
     <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
       {/* Date block */}
@@ -745,6 +917,12 @@ function SessionRow({
             <Icon className="h-3 w-3" />
             {badge.label}
           </span>
+          {isPastOrCompleted && s.attendance_count !== undefined && s.attendance_count > 0 && (
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--accent-emerald)/0.15)] text-[hsl(var(--accent-emerald))] flex items-center gap-1">
+              <Users className="h-3 w-3" />
+              {s.attendance_count} attended
+            </span>
+          )}
         </div>
         <p className="text-xs text-muted-foreground">
           {s.course_title} · {new Date(s.scheduled_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}
@@ -776,6 +954,11 @@ function SessionRow({
 
       {/* Actions */}
       <div className="flex items-center gap-1 shrink-0">
+        {isPastOrCompleted && (
+          <button onClick={onAttendance} className="p-1.5 rounded hover:bg-secondary" title="Attendance">
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </button>
+        )}
         <button onClick={onEdit} className="p-1.5 rounded hover:bg-secondary" title="Edit">
           <Pencil className="h-4 w-4 text-muted-foreground" />
         </button>

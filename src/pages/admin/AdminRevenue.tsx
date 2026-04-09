@@ -35,7 +35,8 @@ const AdminRevenue = () => {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [page, setPage] = useState(0);
-  const { sort, toggle, comparator } = useSort<Order>("captured_at");
+  const { sort, toggle: rawToggle, comparator } = useSort<Order>("captured_at");
+  const toggle = (field: keyof Order) => { rawToggle(field); setPage(0); };
   const [userMap, setUserMap] = useState<Record<string, { full_name: string | null; email: string | null }>>({});
 
   useEffect(() => {
@@ -45,7 +46,8 @@ const AdminRevenue = () => {
         .from("payment_orders")
         .select("id, offering_id, total_inr, subtotal_inr, discount_inr, gst_inr, captured_at, guest_email, user_id, offerings(title)")
         .eq("status", "captured")
-        .order("captured_at", { ascending: false });
+        .order("captured_at", { ascending: false })
+        .limit(10000);
 
       if (error) { console.error(error); setLoading(false); return; }
 
@@ -58,7 +60,8 @@ const AdminRevenue = () => {
         const { data: users } = await supabase
           .from("users")
           .select("id, full_name, email")
-          .in("id", userIds);
+          .in("id", userIds)
+          .limit(10000);
         if (users) {
           const m: typeof userMap = {};
           users.forEach(u => { m[u.id] = { full_name: u.full_name, email: u.email }; });
@@ -93,14 +96,21 @@ const AdminRevenue = () => {
   });
 
   const exportCSV = () => {
+    // Escape CSV fields: wrap in quotes, escape internal quotes, neutralize formula injection
+    const esc = (v: string) => {
+      let s = v.replace(/"/g, '""');
+      // Neutralize formula injection (=, +, -, @, tab, CR)
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return `"${s}"`;
+    };
     const header = "Date,Customer,Email,Offering,Subtotal,Discount,GST,Total";
     const rows = filtered.map(o => {
       const u = o.user_id ? userMap[o.user_id] : null;
-      const name = (u?.full_name || o.guest_email || "").replace(/,/g, " ");
-      const email = (u?.email || o.guest_email || "").replace(/,/g, " ");
-      const offering = (o.offerings?.title || "").replace(/,/g, " ");
+      const name = u?.full_name || o.guest_email || "";
+      const email = u?.email || o.guest_email || "";
+      const offering = o.offerings?.title || "";
       const date = new Date(o.captured_at).toLocaleDateString("en-IN");
-      return `${date},${name},${email},${offering},${o.subtotal_inr},${o.discount_inr},${o.gst_inr},${o.total_inr}`;
+      return `${esc(date)},${esc(name)},${esc(email)},${esc(offering)},${o.subtotal_inr},${o.discount_inr},${o.gst_inr},${o.total_inr}`;
     });
     const csv = [header, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });

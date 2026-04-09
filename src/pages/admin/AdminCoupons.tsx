@@ -52,7 +52,8 @@ const AdminCoupons = () => {
         .from("payment_orders")
         .select("coupon_code, discount_inr")
         .eq("status", "captured")
-        .in("coupon_code", couponCodes);
+        .in("coupon_code", couponCodes)
+        .limit(10000);
       (orders || []).forEach((o: any) => {
         if (o.coupon_code) {
           discountMap[o.coupon_code] = (discountMap[o.coupon_code] || 0) + Number(o.discount_inr || 0);

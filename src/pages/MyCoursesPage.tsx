@@ -4,8 +4,9 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
+import { TierBadge } from "@/components/TierBadge";
 import { Progress } from "@/components/ui/progress";
-import { ArrowRight, BookOpen } from "lucide-react";
+import { ArrowRight, BookOpen, Sparkles } from "lucide-react";
 
 interface EnrolledCourse {
   enrolment_id: string;
@@ -18,10 +19,22 @@ interface EnrolledCourse {
   progress_pct: number;
 }
 
+interface RecommendedCourse {
+  id: string;
+  title: string;
+  description: string | null;
+  thumbnail_url: string | null;
+  product_tier: string;
+  instructor_display_name: string | null;
+  offering_id: string | null;
+  price_inr: number | null;
+}
+
 const MyCoursesPage = () => {
   usePageTitle("My Courses");
   const { user } = useAuth();
   const [courses, setCourses] = useState<EnrolledCourse[]>([]);
+  const [recommendations, setRecommendations] = useState<RecommendedCourse[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -139,6 +152,55 @@ const MyCoursesPage = () => {
       });
 
       setCourses(result);
+
+      // ── Recommendations: courses the user hasn't enrolled in ──
+      const enrolledCourseIds = new Set(result.map((c) => c.course_id));
+      const enrolledTiers = [...new Set(
+        (await supabase.from("courses").select("product_tier").in("id", [...enrolledCourseIds])).data?.map((c: any) => c.product_tier) || []
+      )];
+
+      const { data: recCourses } = await supabase
+        .from("courses")
+        .select("id, title, description, thumbnail_url, product_tier, instructor_display_name, primary_offering_id")
+        .eq("status", "published")
+        .neq("show_on_browse", false)
+        .order("sort_order", { ascending: true });
+
+      const candidates = (recCourses || [])
+        .filter((c: any) => !enrolledCourseIds.has(c.id))
+        // Prioritize same tier, then others
+        .sort((a: any, b: any) => {
+          const aMatch = enrolledTiers.includes(a.product_tier) ? 0 : 1;
+          const bMatch = enrolledTiers.includes(b.product_tier) ? 0 : 1;
+          return aMatch - bMatch;
+        })
+        .slice(0, 6);
+
+      // Fetch prices for primary offerings
+      const recOfferingIds = candidates.map((c: any) => c.primary_offering_id).filter(Boolean);
+      let recOfferingMap: Record<string, number> = {};
+      if (recOfferingIds.length) {
+        const { data: recOffs } = await supabase
+          .from("offerings")
+          .select("id, price_inr")
+          .in("id", recOfferingIds)
+          .eq("status", "active");
+        (recOffs || []).forEach((o) => { recOfferingMap[o.id] = o.price_inr; });
+      }
+
+      setRecommendations(
+        candidates.map((c: any) => ({
+          id: c.id,
+          title: c.title,
+          description: c.description,
+          thumbnail_url: c.thumbnail_url,
+          product_tier: c.product_tier,
+          instructor_display_name: c.instructor_display_name,
+          offering_id: c.primary_offering_id || null,
+          price_inr: c.primary_offering_id ? (recOfferingMap[c.primary_offering_id] ?? null) : null,
+        }))
+      );
+
       setLoading(false);
     };
     fetch();
@@ -203,6 +265,54 @@ const MyCoursesPage = () => {
               </Link>
             ))}
           </div>
+        )}
+        {/* Recommendations */}
+        {!loading && recommendations.length > 0 && (
+          <section className="pt-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Sparkles className="h-5 w-5 text-cream" />
+              <h2 className="text-xl font-semibold">Recommended for You</h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {recommendations.map((c) => (
+                <Link
+                  key={c.id}
+                  to={c.offering_id ? `/checkout/${c.offering_id}` : `/courses/${c.id}`}
+                  className="bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
+                >
+                  <div className="aspect-video bg-surface-2 relative">
+                    {c.thumbnail_url && (
+                      <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    )}
+                    <div className="absolute top-2 left-2">
+                      <TierBadge tier={c.product_tier} />
+                    </div>
+                  </div>
+                  <div className="p-4 space-y-1.5">
+                    <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
+                    {c.instructor_display_name && (
+                      <p className="text-sm text-muted-foreground">{c.instructor_display_name}</p>
+                    )}
+                    {c.description && (
+                      <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>
+                    )}
+                    <div className="flex items-center justify-between pt-2 border-t border-border mt-2">
+                      {c.price_inr != null ? (
+                        <span className="text-base font-semibold">
+                          ₹{new Intl.NumberFormat("en-IN").format(c.price_inr)}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">View details</span>
+                      )}
+                      <span className="text-sm font-medium text-cream flex items-center gap-1">
+                        Explore <ArrowRight className="h-3 w-3" />
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
         )}
       </div>
     </StudentLayout>

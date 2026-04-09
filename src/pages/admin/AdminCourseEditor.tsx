@@ -11,8 +11,9 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Eye } from "lucide-react";
+import { ArrowLeft, Eye, ArrowRight } from "lucide-react";
 import AdminBreadcrumbs from "@/components/admin/AdminBreadcrumbs";
+import { TierBadge } from "@/components/TierBadge";
 
 interface Category {
   id: string;
@@ -210,7 +211,9 @@ const AdminCourseEditor = () => {
         { label: isNew ? "New Course" : (form.title || "Edit") },
       ]} />
 
-      <div className="max-w-2xl space-y-5">
+      <div className="flex gap-8">
+      {/* ── Left: Form ── */}
+      <div className="max-w-2xl flex-1 space-y-5">
         {field("Title", "title")}
         {field("Slug", "slug")}
 
@@ -402,6 +405,60 @@ const AdminCourseEditor = () => {
             </>
           )}
         </div>
+      </div>
+
+      {/* ── Right: Live Preview ── */}
+      <div className="hidden lg:block w-80 shrink-0">
+        <div className="sticky top-6">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+            Browse Page Preview
+          </p>
+          <div className="bg-surface border border-border rounded-xl overflow-hidden">
+            <div className="aspect-video bg-surface-2 relative">
+              {form.thumbnail_url ? (
+                <img src={form.thumbnail_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
+                  No thumbnail
+                </div>
+              )}
+              <div className="absolute top-2 left-2">
+                <TierBadge tier={form.product_tier} />
+              </div>
+            </div>
+            <div className="p-4 space-y-1.5">
+              <h3 className="text-lg font-semibold line-clamp-1">
+                {form.title || "Course Title"}
+              </h3>
+              {form.instructor_display_name && (
+                <p className="text-sm text-muted-foreground line-clamp-1">
+                  {form.instructor_display_name}
+                </p>
+              )}
+              {form.description && (
+                <p className="text-sm text-muted-foreground line-clamp-2">
+                  {form.description}
+                </p>
+              )}
+              <div className="flex items-center justify-between pt-2 border-t border-border mt-2">
+                {form.primary_offering_id && availableOfferings.find((o) => o.id === form.primary_offering_id) ? (
+                  <span className="text-base font-semibold">
+                    ₹{formatPrice(availableOfferings.find((o) => o.id === form.primary_offering_id)!.price_inr)}
+                  </span>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Price TBA</span>
+                )}
+                <span className="text-sm font-medium text-cream flex items-center gap-1">
+                  Enroll <ArrowRight className="h-3 w-3" />
+                </span>
+              </div>
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-2 text-center">
+            Live preview — updates as you type
+          </p>
+        </div>
+      </div>
       </div>
     </AdminLayout>
   );

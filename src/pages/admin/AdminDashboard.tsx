@@ -32,7 +32,7 @@ const AdminDashboard = () => {
         supabase.from("users").select("id", { count: "exact", head: true }).eq("role", "student"),
         supabase.from("enrolments").select("id", { count: "exact", head: true }).eq("status", "active"),
         supabase.from("offerings").select("id", { count: "exact", head: true }).eq("status", "active"),
-        supabase.from("payment_orders").select("total_inr").eq("status", "captured"),
+        supabase.from("payment_orders").select("total_inr").eq("status", "captured").limit(10000),
       ]);
 
       const revenue = (payRes.data || []).reduce((sum, r) => sum + Number(r.total_inr || 0), 0);

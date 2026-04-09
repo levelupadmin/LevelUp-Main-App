@@ -34,6 +34,7 @@ const NAV_ITEMS = [
   { label: "Courses", icon: BookOpen, path: "/admin/courses" },
   { label: "Offerings", icon: Package, path: "/admin/offerings" },
   { label: "Schedule Classes", icon: Video, path: "/admin/schedule" },
+  { label: "Cohorts", icon: Users, path: "/admin/cohorts" },
   { label: "Events", icon: CalendarDays, path: "/admin/events" },
   { label: "Enrolments", icon: Users, path: "/admin/enrolments" },
   { label: "Users", icon: UserCog, path: "/admin/users" },
@@ -65,7 +66,9 @@ const AdminLayout = ({ children, title }: Props) => {
       setSearchResults([]);
       return;
     }
-    const pattern = `%${q.trim()}%`;
+    // Escape LIKE wildcards to prevent unintended matches
+    const escaped = q.trim().replace(/%/g, "\\%").replace(/_/g, "\\_");
+    const pattern = `%${escaped}%`;
     const [usersRes, coursesRes, offeringsRes] = await Promise.all([
       supabase.from("users").select("id, full_name, email, role").ilike("full_name", pattern).limit(5),
       supabase.from("courses").select("id, title, status").ilike("title", pattern).limit(5),
@@ -86,10 +89,20 @@ const AdminLayout = ({ children, title }: Props) => {
 
   const handleSearchChange = (v: string) => {
     setSearchQuery(v);
-    setSearchOpen(true);
     if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!v.trim() || v.trim().length < 2) {
+      setSearchResults([]);
+      setSearchOpen(false);
+      return;
+    }
+    setSearchOpen(true);
     searchTimer.current = setTimeout(() => runSearch(v), 300);
   };
+
+  // Cleanup search timer on unmount
+  useEffect(() => {
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, []);
 
   // Close search dropdown on click outside
   useEffect(() => {
