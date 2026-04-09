@@ -3,9 +3,11 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
 import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
-import { ArrowRight } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ArrowRight, Search, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
 import usePageTitle from "@/hooks/usePageTitle";
+import { useWishlist } from "@/hooks/useWishlist";
 
 const TIER_ORDER = ["live_cohort", "masterclass", "advanced_program", "workshop"] as const;
 const TIER_FILTERS = ["All", "Mentorship Cohorts", "Masterclasses", "Programs", "Workshops"] as const;
@@ -39,6 +41,8 @@ const BrowsePage = () => {
   const [courses, setCourses] = useState<CourseWithOffering[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const { wishlistedIds, toggle: toggleWishlist } = useWishlist();
 
   usePageTitle("Browse Programs");
 
@@ -133,10 +137,17 @@ const BrowsePage = () => {
     load();
   }, []);
 
-  const filtered =
-    activeFilter === "All"
-      ? courses
-      : courses.filter((c) => c.product_tier === TIER_MAP[activeFilter]);
+  const filtered = courses.filter((c) => {
+    const matchesTier = activeFilter === "All" || c.product_tier === TIER_MAP[activeFilter];
+    if (!matchesTier) return false;
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      c.title.toLowerCase().includes(q) ||
+      (c.description || "").toLowerCase().includes(q) ||
+      (c.instructor_display_name || "").toLowerCase().includes(q)
+    );
+  });
 
   const groupedByTier = TIER_ORDER
     .map((tier) => ({
@@ -152,6 +163,16 @@ const BrowsePage = () => {
         <div>
           <h1 className="text-[28px] sm:text-[32px] font-semibold leading-tight">Browse Programs</h1>
           <p className="text-base text-muted-foreground mt-1">Find your next creative skill</p>
+        </div>
+
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search courses..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 bg-surface border-border"
+          />
         </div>
 
         <div className="flex gap-2 flex-wrap">
@@ -214,11 +235,21 @@ const BrowsePage = () => {
                         <div className="absolute top-2 left-2">
                           <TierBadge tier={c.product_tier} />
                         </div>
-                        {c.status === "upcoming" && (
-                          <div className="absolute top-2 right-2 bg-foreground/80 text-background text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded font-mono">
-                            Coming Soon
-                          </div>
-                        )}
+                        <div className="absolute top-2 right-2 flex items-center gap-1">
+                          {c.status === "upcoming" && (
+                            <span className="bg-foreground/80 text-background text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded font-mono">
+                              Coming Soon
+                            </span>
+                          )}
+                          {c.offering_id && (
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleWishlist(c.offering_id!); }}
+                              className="p-1.5 rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-colors"
+                            >
+                              <Heart className={`h-4 w-4 ${wishlistedIds.has(c.offering_id!) ? "fill-red-400 text-red-400" : "text-white"}`} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div className="p-4 flex flex-col gap-1.5">
                         <h3 className={cn(

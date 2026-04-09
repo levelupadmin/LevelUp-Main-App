@@ -43,7 +43,7 @@ import EventDetail from "@/pages/EventDetail";
 import PublicOffering from "@/pages/PublicOffering";
 import ThankYou from "@/pages/ThankYou";
 
-import { CommunityPage } from "@/pages/placeholders";
+import CommunityPage from "@/pages/CommunityPage";
 import InstructorDashboard from "@/pages/InstructorDashboard";
 
 const queryClient = new QueryClient({

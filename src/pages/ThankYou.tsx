@@ -596,6 +596,14 @@ export default function ThankYou() {
             )}
           </div>
 
+          {/* Order reference */}
+          <p className="text-xs text-muted-foreground font-mono">
+            Order ID: {order.id.slice(0, 8).toUpperCase()}
+            {order.razorpay_payment_id && (
+              <> &middot; Payment: {order.razorpay_payment_id}</>
+            )}
+          </p>
+
           {/* Action card — same for guest and logged-in */}
           <div className="max-w-md mx-auto rounded-xl border border-border bg-[hsl(var(--surface))] p-6 space-y-4">
             {isGuest && (

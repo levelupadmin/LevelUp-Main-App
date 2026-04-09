@@ -256,6 +256,22 @@ function CheckoutCard({
   // Cleanup timer on unmount
   useEffect(() => () => { if (lookupTimer.current) clearTimeout(lookupTimer.current); }, []);
 
+  // Restore coupon state after magic-link redirect (Scenario C)
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("lu_checkout_coupon");
+      if (saved) {
+        const { code, discount } = JSON.parse(saved);
+        if (code && discount) {
+          setCouponCode(code);
+          setDiscountInr(Number(discount));
+          setCouponApplied(true);
+        }
+        sessionStorage.removeItem("lu_checkout_coupon");
+      }
+    } catch { /* ignore parse errors */ }
+  }, []);
+
   // Change handlers — reset scenario and schedule a fresh lookup
   const handleEmailChange = (v: string) => {
     setGuestEmail(v);
@@ -265,12 +281,18 @@ function CheckoutCard({
     scheduleLookup(v, guestPhone);
   };
   const handlePhoneChange = (v: string) => {
-    setGuestPhone(v);
+    // Normalize: strip country code if user pastes +91… or 91…
+    let digits = v.replace(/\D/g, "");
+    if (digits.length > 10 && digits.startsWith("91")) {
+      digits = digits.slice(2);
+    }
+    digits = digits.slice(0, 10);
+    setGuestPhone(digits);
     setPhoneError("");
     setScenario(null);
     setLoginMode(null);
     setOtpSent(false);
-    scheduleLookup(guestEmail, v);
+    scheduleLookup(guestEmail, digits);
   };
 
   /* ── Coupon apply ──
@@ -321,7 +343,19 @@ function CheckoutCard({
   /* ── Scenario C: Send magic link ── */
   const handleSendMagicLink = async () => {
     setLoginLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ email: guestEmail.trim() });
+    // Preserve checkout state so it survives the magic-link redirect
+    if (couponApplied && couponCode) {
+      try {
+        sessionStorage.setItem(
+          "lu_checkout_coupon",
+          JSON.stringify({ code: couponCode, discount: discountInr }),
+        );
+      } catch { /* storage full — non-critical */ }
+    }
+    const { error } = await supabase.auth.signInWithOtp({
+      email: guestEmail.trim(),
+      options: { emailRedirectTo: window.location.href },
+    });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
@@ -346,7 +380,9 @@ function CheckoutCard({
 
   /* ── Scenario C: Forgot password ── */
   const handleForgotPassword = async () => {
-    const { error } = await supabase.auth.resetPasswordForEmail(guestEmail.trim());
+    const { error } = await supabase.auth.resetPasswordForEmail(guestEmail.trim(), {
+      redirectTo: window.location.href,
+    });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
@@ -670,6 +706,11 @@ function CheckoutCard({
               <>{payButtonLabel} <ArrowRight className="h-4 w-4 ml-2" /></>
             )}
           </Button>
+          {!isFree && (
+            <p className="text-[10px] text-muted-foreground/70 text-center">
+              7-day refund policy. No questions asked.
+            </p>
+          )}
         </div>
       ) : (
         /* Guest form — always show name/email/phone */
@@ -811,6 +852,11 @@ function CheckoutCard({
                   ? "No payment required. We'll create your account automatically."
                   : "Secure payment via Razorpay. We'll create your account automatically."}
               </p>
+              {!isFree && (
+                <p className="text-[10px] text-muted-foreground/70 text-center">
+                  7-day refund policy. No questions asked.
+                </p>
+              )}
             </>
           )}
         </div>

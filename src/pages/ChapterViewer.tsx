@@ -123,7 +123,7 @@ const ChapterViewer = () => {
           p_course_id: cid,
         });
         if (!access) {
-          toast.error("Enrol to access this chapter");
+          toast.error("You need to enrol in this course to access this chapter.");
           navigate(`/courses/${cid}`);
           return;
         }
@@ -416,6 +416,9 @@ const ChapterViewer = () => {
               </TabsTrigger>
               <TabsTrigger value="qna" className="text-xs gap-1">
                 <HelpCircle className="h-3 w-3" /> Q&A
+                {qna.some((q) => q.replies.some((r) => r.is_instructor_reply) && q.user_id === user?.id && !q.is_resolved) && (
+                  <span className="ml-0.5 h-2 w-2 rounded-full bg-[hsl(var(--accent-emerald))] animate-pulse" />
+                )}
               </TabsTrigger>
               <TabsTrigger value="comments" className="text-xs gap-1">
                 <MessageSquare className="h-3 w-3" /> Chat
@@ -491,6 +494,9 @@ const ChapterViewer = () => {
                       <span className="text-xs text-muted-foreground">
                         {new Date(q.created_at).toLocaleDateString()}
                         {q.is_resolved && " · ✅ Resolved"}
+                        {!q.is_resolved && q.replies.some((r) => r.is_instructor_reply) && (
+                          <span className="ml-1 text-[hsl(var(--accent-emerald))]">· Answered</span>
+                        )}
                       </span>
                       {q.replies.map((r) => (
                         <div
