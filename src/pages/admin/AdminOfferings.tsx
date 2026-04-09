@@ -4,6 +4,7 @@ import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Pencil, Search, Copy } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
@@ -25,6 +26,7 @@ const AdminOfferings = () => {
   const [offerings, setOfferings] = useState<OfferingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const navigate = useNavigate();
 
   const load = async () => {
@@ -68,9 +70,11 @@ const AdminOfferings = () => {
     load();
   }, []);
 
-  const filtered = offerings.filter((o) =>
-    o.title.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = offerings.filter((o) => {
+    const matchesSearch = o.title.toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = statusFilter === "all" || o.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   const copyLink = (slug: string) => {
     navigator.clipboard.writeText(`https://app.leveluplearning.in/p/${slug}`);
@@ -79,7 +83,7 @@ const AdminOfferings = () => {
 
   return (
     <AdminLayout title="Offerings">
-      <div className="flex items-center justify-between gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-4 mb-6">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -89,6 +93,15 @@ const AdminOfferings = () => {
             className="pl-9"
           />
         </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="archived">Archived</SelectItem>
+          </SelectContent>
+        </Select>
         <Button
           onClick={() => navigate("/admin/offerings/new/edit")}
           className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"

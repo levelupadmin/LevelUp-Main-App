@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Save, Loader2, X } from "lucide-react";
+import AdminBreadcrumbs from "@/components/admin/AdminBreadcrumbs";
 
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
@@ -341,11 +342,12 @@ const AdminOfferingEditor = () => {
 
   return (
     <AdminLayout title={isNew ? "New Offering" : "Edit Offering"}>
+      <AdminBreadcrumbs items={[
+        { label: "Offerings", to: "/admin/offerings" },
+        { label: isNew ? "New Offering" : (form.title || "Edit") },
+      ]} />
       {/* Top bar */}
-      <div className="flex items-center justify-between gap-4 mb-6">
-        <Button variant="ghost" onClick={() => navigate("/admin/offerings")} className="gap-2">
-          <ArrowLeft className="h-4 w-4" /> Back to Offerings
-        </Button>
+      <div className="flex items-center justify-end gap-4 mb-6">
         <Button
           onClick={handleSave}
           disabled={saving}

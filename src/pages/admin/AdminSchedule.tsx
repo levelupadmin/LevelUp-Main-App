@@ -72,6 +72,7 @@ const EMPTY_FORM = {
   zoom_link: "",
   recording_url: "",
   status: "scheduled",
+  repeat_weeks: 0,
 };
 
 /* ────────────────────────────────────────────────── */
@@ -253,6 +254,32 @@ const AdminSchedule = () => {
       return;
     }
 
+    // Conflict check: look for overlapping sessions on the same course
+    const sessionStart = new Date(scheduledIso);
+    const sessionEnd = new Date(sessionStart.getTime() + (form.duration_minutes || 60) * 60000);
+    const { data: conflicts } = await supabase
+      .from("live_sessions")
+      .select("id, title, scheduled_at, duration_minutes")
+      .eq("course_id", form.course_id)
+      .neq("id", editId || "00000000-0000-0000-0000-000000000000")
+      .gte("scheduled_at", new Date(sessionStart.getTime() - 24 * 60 * 60000).toISOString())
+      .lte("scheduled_at", sessionEnd.toISOString());
+
+    const overlapping = (conflicts || []).filter((s) => {
+      const sStart = new Date(s.scheduled_at);
+      const sEnd = new Date(sStart.getTime() + (s.duration_minutes || 60) * 60000);
+      return sessionStart < sEnd && sessionEnd > sStart;
+    });
+
+    if (overlapping.length > 0) {
+      toast({
+        title: "Schedule conflict",
+        description: `Overlaps with "${overlapping[0].title}" at ${new Date(overlapping[0].scheduled_at).toLocaleString("en-IN")}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSaving(true);
     const payload = {
       course_id: form.course_id,
@@ -271,6 +298,20 @@ const AdminSchedule = () => {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       } else {
         toast({ title: "Session updated" });
+      }
+    } else if (form.repeat_weeks > 0) {
+      // Create recurring sessions
+      const rows = [];
+      for (let w = 0; w <= form.repeat_weeks; w++) {
+        const dt = new Date(scheduledIso);
+        dt.setDate(dt.getDate() + w * 7);
+        rows.push({ ...payload, scheduled_at: dt.toISOString() });
+      }
+      const { error } = await supabase.from("live_sessions").insert(rows);
+      if (error) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: `${rows.length} sessions created` });
       }
     } else {
       const { error } = await supabase.from("live_sessions").insert(payload);
@@ -587,6 +628,23 @@ const AdminSchedule = () => {
                 />
               </div>
             </div>
+            {!editId && (
+              <div>
+                <Label>Repeat weekly for</Label>
+                <Select
+                  value={String(form.repeat_weeks)}
+                  onValueChange={(v) => f("repeat_weeks", Number(v))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">No repeat (single session)</SelectItem>
+                    <SelectItem value="3">4 weeks</SelectItem>
+                    <SelectItem value="7">8 weeks</SelectItem>
+                    <SelectItem value="11">12 weeks</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <Label>Zoom Link</Label>
               <Input

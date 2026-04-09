@@ -11,6 +11,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { ArrowLeft, Eye, Play, Lock, Clock, BookOpen } from "lucide-react";
+import AdminBreadcrumbs from "@/components/admin/AdminBreadcrumbs";
 
 interface Course {
   id: string;
@@ -100,6 +101,11 @@ export default function AdminCoursePreview() {
 
   return (
     <AdminLayout title="Student Preview">
+      <AdminBreadcrumbs items={[
+        { label: "Courses", to: "/admin/courses" },
+        { label: course?.title || "Course", to: `/admin/courses/${courseId}/edit` },
+        { label: "Preview" },
+      ]} />
       {/* Preview banner */}
       <div className="mb-6 flex items-center justify-between">
         <button

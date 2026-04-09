@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Eye } from "lucide-react";
+import AdminBreadcrumbs from "@/components/admin/AdminBreadcrumbs";
 
 interface Category {
   id: string;
@@ -204,12 +205,10 @@ const AdminCourseEditor = () => {
 
   return (
     <AdminLayout title={isNew ? "New Course" : "Edit Course"}>
-      <button
-        onClick={() => navigate("/admin/courses")}
-        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to courses
-      </button>
+      <AdminBreadcrumbs items={[
+        { label: "Courses", to: "/admin/courses" },
+        { label: isNew ? "New Course" : (form.title || "Edit") },
+      ]} />
 
       <div className="max-w-2xl space-y-5">
         {field("Title", "title")}

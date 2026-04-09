@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Search, Upload } from "lucide-react";
 
 interface EnrolmentRow {
@@ -34,6 +35,7 @@ const AdminEnrolments = () => {
   const [manualUserId, setManualUserId] = useState("");
   const [manualOfferingId, setManualOfferingId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkOfferingId, setBulkOfferingId] = useState("");
   const [bulkEmails, setBulkEmails] = useState("");
@@ -177,6 +179,35 @@ const AdminEnrolments = () => {
     setSaving(false);
   };
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map((e) => e.id)));
+    }
+  };
+
+  const handleBulkStatusChange = async (newStatus: string) => {
+    if (selectedIds.size === 0) return;
+    const ids = [...selectedIds];
+    const { error } = await supabase.from("enrolments").update({ status: newStatus }).in("id", ids);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: `${ids.length} enrolment(s) updated to ${newStatus}` });
+      setSelectedIds(new Set());
+      load();
+    }
+  };
+
   const filtered = enrolments.filter((e) => {
     const matchesSearch = e.user_name.toLowerCase().includes(search.toLowerCase()) ||
       e.user_email.toLowerCase().includes(search.toLowerCase());
@@ -208,10 +239,31 @@ const AdminEnrolments = () => {
         </Button>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 mb-3 p-3 bg-surface border border-border rounded-lg">
+          <span className="text-sm font-medium">{selectedIds.size} selected</span>
+          <Select onValueChange={handleBulkStatusChange}>
+            <SelectTrigger className="w-40 h-8 text-xs"><SelectValue placeholder="Bulk set status…" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Set Active</SelectItem>
+              <SelectItem value="expired">Set Expired</SelectItem>
+              <SelectItem value="cancelled">Set Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+          <button onClick={() => setSelectedIds(new Set())} className="text-xs text-muted-foreground hover:text-foreground ml-auto">Clear</button>
+        </div>
+      )}
+
       <div className="bg-card border border-border rounded-xl overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left text-muted-foreground">
+              <th className="px-3 py-3 w-10">
+                <Checkbox
+                  checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                  onCheckedChange={toggleSelectAll}
+                />
+              </th>
               <th className="px-5 py-3 font-medium">Student</th>
               <th className="px-5 py-3 font-medium">Offering</th>
               <th className="px-5 py-3 font-medium">Status</th>
@@ -221,11 +273,17 @@ const AdminEnrolments = () => {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={5} className="px-5 py-12 text-center text-muted-foreground">Loading…</td></tr>
+              <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={5} className="px-5 py-12 text-center text-muted-foreground">No enrolments found</td></tr>
+              <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">No enrolments found</td></tr>
             ) : filtered.map((e) => (
               <tr key={e.id} className="border-b border-border last:border-0 hover:bg-secondary/30">
+                <td className="px-3 py-3">
+                  <Checkbox
+                    checked={selectedIds.has(e.id)}
+                    onCheckedChange={() => toggleSelect(e.id)}
+                  />
+                </td>
                 <td className="px-5 py-3">
                   <p className="font-medium">{e.user_name}</p>
                   <p className="text-xs text-muted-foreground">{e.user_email}</p>

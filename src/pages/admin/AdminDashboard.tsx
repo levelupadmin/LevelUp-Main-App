@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, ShoppingCart, Package, IndianRupee } from "lucide-react";
+import { Users, ShoppingCart, Package, IndianRupee, ArrowRight } from "lucide-react";
 
 interface Stats {
   total_students: number;
@@ -80,10 +81,10 @@ const AdminDashboard = () => {
   }, []);
 
   const statCards = [
-    { label: "Total Students", value: stats.total_students, icon: Users, color: "var(--accent-indigo)" },
-    { label: "Active Enrolments", value: stats.active_enrolments, icon: ShoppingCart, color: "var(--accent-emerald)" },
-    { label: "Active Offerings", value: stats.active_offerings, icon: Package, color: "var(--accent-amber)" },
-    { label: "Total Revenue", value: `₹${stats.total_revenue.toLocaleString("en-IN")}`, icon: IndianRupee, color: "var(--accent-crimson)" },
+    { label: "Total Students", value: stats.total_students, icon: Users, color: "var(--accent-indigo)", link: "/admin/users" },
+    { label: "Active Enrolments", value: stats.active_enrolments, icon: ShoppingCart, color: "var(--accent-emerald)", link: "/admin/enrolments" },
+    { label: "Active Offerings", value: stats.active_offerings, icon: Package, color: "var(--accent-amber)", link: "/admin/offerings" },
+    { label: "Total Revenue", value: `₹${stats.total_revenue.toLocaleString("en-IN")}`, icon: IndianRupee, color: "var(--accent-crimson)", link: "/admin/revenue" },
   ];
 
   return (
@@ -97,28 +98,33 @@ const AdminDashboard = () => {
           {/* Stat cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             {statCards.map((card) => (
-              <div
+              <Link
                 key={card.label}
-                className="bg-card border border-border rounded-xl p-5"
+                to={card.link}
+                className="bg-card border border-border rounded-xl p-5 hover:border-border-hover transition-colors group"
               >
-                <div className="flex items-center gap-3 mb-3">
+                <div className="flex items-center justify-between mb-3">
                   <div
                     className="h-10 w-10 rounded-lg flex items-center justify-center"
                     style={{ background: `hsl(${card.color} / 0.15)` }}
                   >
                     <card.icon className="h-5 w-5" style={{ color: `hsl(${card.color})` }} />
                   </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
                 <p className="text-[32px] font-bold leading-tight">{card.value}</p>
                 <p className="text-sm text-muted-foreground mt-1">{card.label}</p>
-              </div>
+              </Link>
             ))}
           </div>
 
           {/* Recent enrolments */}
           <div className="bg-card border border-border rounded-xl">
-            <div className="px-5 py-4 border-b border-border">
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
               <h2 className="text-base font-semibold">Recent Enrolments</h2>
+              <Link to="/admin/enrolments" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
+                View all <ArrowRight className="h-3 w-3" />
+              </Link>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

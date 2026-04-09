@@ -1,7 +1,9 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useRef, useCallback, useEffect } from "react";
 import { useNavigate, useLocation, Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 import {
   LayoutDashboard,
   BookOpen,
@@ -21,6 +23,7 @@ import {
   ChevronDown,
   BarChart3,
   ScrollText,
+  Search,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
@@ -51,6 +54,51 @@ const AdminLayout = ({ children, title }: Props) => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<{ type: string; label: string; sub: string; path: string }[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  const runSearch = useCallback(async (q: string) => {
+    if (!q.trim() || q.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const pattern = `%${q.trim()}%`;
+    const [usersRes, coursesRes, offeringsRes] = await Promise.all([
+      supabase.from("users").select("id, full_name, email, role").ilike("full_name", pattern).limit(5),
+      supabase.from("courses").select("id, title, status").ilike("title", pattern).limit(5),
+      supabase.from("offerings").select("id, title, status").ilike("title", pattern).limit(5),
+    ]);
+    const results: typeof searchResults = [];
+    (usersRes.data || []).forEach((u) =>
+      results.push({ type: "User", label: u.full_name || u.email, sub: u.role, path: "/admin/users" }),
+    );
+    (coursesRes.data || []).forEach((c) =>
+      results.push({ type: "Course", label: c.title, sub: c.status, path: `/admin/courses/${c.id}/edit` }),
+    );
+    (offeringsRes.data || []).forEach((o) =>
+      results.push({ type: "Offering", label: o.title, sub: o.status, path: `/admin/offerings/${o.id}/edit` }),
+    );
+    setSearchResults(results);
+  }, []);
+
+  const handleSearchChange = (v: string) => {
+    setSearchQuery(v);
+    setSearchOpen(true);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => runSearch(v), 300);
+  };
+
+  // Close search dropdown on click outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSearchOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   if (authLoading) {
     return (
@@ -194,6 +242,38 @@ const AdminLayout = ({ children, title }: Props) => {
               <Menu className="h-5 w-5" />
             </button>
             <h1 className="text-lg font-semibold">{title || ""}</h1>
+          </div>
+
+          {/* Global search */}
+          <div ref={searchRef} className="hidden md:block relative flex-1 max-w-xs mx-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search users, courses, offerings…"
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onFocus={() => searchQuery.trim().length >= 2 && setSearchOpen(true)}
+              className="pl-9 h-9 bg-surface border-border text-sm"
+            />
+            {searchOpen && searchResults.length > 0 && (
+              <div className="absolute top-full mt-1 left-0 right-0 bg-surface border border-border rounded-lg shadow-lg py-1 z-50 max-h-72 overflow-y-auto">
+                {searchResults.map((r, i) => (
+                  <button
+                    key={i}
+                    onClick={() => { navigate(r.path); setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }}
+                    className="flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-surface-2 transition-colors text-left"
+                  >
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground w-14 shrink-0">{r.type}</span>
+                    <span className="truncate flex-1">{r.label}</span>
+                    <span className="text-xs text-muted-foreground">{r.sub}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {searchOpen && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+              <div className="absolute top-full mt-1 left-0 right-0 bg-surface border border-border rounded-lg shadow-lg py-3 z-50 text-center text-sm text-muted-foreground">
+                No results found
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">

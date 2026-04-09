@@ -3,9 +3,12 @@ import AdminLayout from "@/components/layout/AdminLayout";
 import usePageTitle from "@/hooks/usePageTitle";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
-import { IndianRupee, ShoppingCart, TrendingUp, CalendarDays } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { IndianRupee, ShoppingCart, TrendingUp, CalendarDays, Download } from "lucide-react";
+import SortableHeader, { useSort } from "@/components/admin/SortableHeader";
 
-type DateFilter = "today" | "7d" | "30d" | "all";
+type DateFilter = "today" | "7d" | "30d" | "all" | "custom";
 
 interface Order {
   id: string;
@@ -29,7 +32,10 @@ const AdminRevenue = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<DateFilter>("30d");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [page, setPage] = useState(0);
+  const { sort, toggle, comparator } = useSort<Order>("captured_at");
   const [userMap, setUserMap] = useState<Record<string, { full_name: string | null; email: string | null }>>({});
 
   useEffect(() => {
@@ -74,8 +80,37 @@ const AdminRevenue = () => {
     if (dateRange === "today") return d >= startOfToday;
     if (dateRange === "7d") return d >= new Date(now.getTime() - 7 * 86400000);
     if (dateRange === "30d") return d >= new Date(now.getTime() - 30 * 86400000);
+    if (dateRange === "custom") {
+      if (customFrom && d < new Date(customFrom)) return false;
+      if (customTo) {
+        const end = new Date(customTo);
+        end.setDate(end.getDate() + 1);
+        if (d >= end) return false;
+      }
+      return true;
+    }
     return true;
   });
+
+  const exportCSV = () => {
+    const header = "Date,Customer,Email,Offering,Subtotal,Discount,GST,Total";
+    const rows = filtered.map(o => {
+      const u = o.user_id ? userMap[o.user_id] : null;
+      const name = (u?.full_name || o.guest_email || "").replace(/,/g, " ");
+      const email = (u?.email || o.guest_email || "").replace(/,/g, " ");
+      const offering = (o.offerings?.title || "").replace(/,/g, " ");
+      const date = new Date(o.captured_at).toLocaleDateString("en-IN");
+      return `${date},${name},${email},${offering},${o.subtotal_inr},${o.discount_inr},${o.gst_inr},${o.total_inr}`;
+    });
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `levelup-revenue-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const totalRevenue = filtered.reduce((s, o) => s + Number(o.total_inr), 0);
   const todayRevenue = orders.filter(o => new Date(o.captured_at) >= startOfToday).reduce((s, o) => s + Number(o.total_inr), 0);
@@ -91,20 +126,22 @@ const AdminRevenue = () => {
   });
   const offeringList = Object.values(byOffering).sort((a, b) => b.revenue - a.revenue);
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const sorted = [...filtered].sort(comparator);
+  const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
+  const paged = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   const filters: { label: string; value: DateFilter }[] = [
     { label: "Today", value: "today" },
     { label: "7 Days", value: "7d" },
     { label: "30 Days", value: "30d" },
     { label: "All Time", value: "all" },
+    { label: "Custom", value: "custom" },
   ];
 
   return (
     <AdminLayout title="Revenue">
-      {/* Date filters */}
-      <div className="flex gap-2 mb-6">
+      {/* Date filters + export */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         {filters.map(f => (
           <button
             key={f.value}
@@ -118,6 +155,18 @@ const AdminRevenue = () => {
             {f.label}
           </button>
         ))}
+        {dateRange === "custom" && (
+          <>
+            <Input type="date" value={customFrom} onChange={(e) => { setCustomFrom(e.target.value); setPage(0); }} className="w-36 h-9 text-sm" />
+            <span className="text-xs text-muted-foreground">to</span>
+            <Input type="date" value={customTo} onChange={(e) => { setCustomTo(e.target.value); setPage(0); }} className="w-36 h-9 text-sm" />
+          </>
+        )}
+        <div className="ml-auto">
+          <Button variant="outline" size="sm" onClick={exportCSV} disabled={filtered.length === 0}>
+            <Download className="h-4 w-4 mr-2" /> Export CSV
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -178,10 +227,10 @@ const AdminRevenue = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">Date</th>
+                  <SortableHeader label="Date" field="captured_at" current={sort} onSort={toggle} className="px-4 py-3" />
                   <th className="px-4 py-3 font-medium">Customer</th>
                   <th className="px-4 py-3 font-medium">Offering</th>
-                  <th className="px-4 py-3 font-medium text-right">Amount</th>
+                  <SortableHeader label="Amount" field="total_inr" current={sort} onSort={toggle} className="px-4 py-3 text-right" />
                   <th className="px-4 py-3 font-medium text-right">Discount</th>
                   <th className="px-4 py-3 font-medium text-right">GST</th>
                   <th className="px-4 py-3 font-medium">Status</th>

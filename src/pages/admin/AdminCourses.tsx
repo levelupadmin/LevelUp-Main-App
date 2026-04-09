@@ -6,6 +6,7 @@ import { Plus, Search, Eye, Pencil, Trash2, MoreVertical, Globe } from "lucide-r
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +53,7 @@ const AdminCourses = () => {
   const [courses, setCourses] = useState<CourseCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -160,11 +162,13 @@ const AdminCourses = () => {
   };
 
   /* ── Filter & Group ── */
-  const filtered = courses.filter(
-    (c) =>
+  const filtered = courses.filter((c) => {
+    const matchesSearch =
       c.title.toLowerCase().includes(search.toLowerCase()) ||
-      (c.instructor_display_name || "").toLowerCase().includes(search.toLowerCase())
-  );
+      (c.instructor_display_name || "").toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = statusFilter === "all" || c.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   const groupedByTier = TIER_ORDER.map((tier) => ({
     tier,
@@ -180,7 +184,7 @@ const AdminCourses = () => {
   return (
     <AdminLayout title="Courses">
       {/* Top bar */}
-      <div className="flex items-center justify-between gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-4 mb-6">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -190,6 +194,16 @@ const AdminCourses = () => {
             className="pl-9"
           />
         </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="published">Published</SelectItem>
+            <SelectItem value="upcoming">Upcoming</SelectItem>
+            <SelectItem value="archived">Archived</SelectItem>
+          </SelectContent>
+        </Select>
         <Button
           onClick={() => navigate("/admin/courses/new")}
           className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"

@@ -19,6 +19,7 @@ interface CouponRow {
   max_redemptions: number | null;
   valid_until: string | null;
   is_active: boolean;
+  total_discount_given: number;
 }
 
 const EMPTY_FORM = {
@@ -31,6 +32,7 @@ const AdminCoupons = () => {
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [editOpen, setEditOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -41,7 +43,27 @@ const AdminCoupons = () => {
   const load = async () => {
     setLoading(true);
     const { data } = await supabase.from("coupons").select("id, code, discount_type, discount_value, used_count, max_redemptions, valid_until, is_active").order("created_at", { ascending: false });
-    setCoupons(data || []);
+
+    // Calculate total discount given per coupon from payment_orders
+    const couponCodes = (data || []).map((c) => c.code);
+    let discountMap: Record<string, number> = {};
+    if (couponCodes.length > 0) {
+      const { data: orders } = await supabase
+        .from("payment_orders")
+        .select("coupon_code, discount_inr")
+        .eq("status", "captured")
+        .in("coupon_code", couponCodes);
+      (orders || []).forEach((o: any) => {
+        if (o.coupon_code) {
+          discountMap[o.coupon_code] = (discountMap[o.coupon_code] || 0) + Number(o.discount_inr || 0);
+        }
+      });
+    }
+
+    setCoupons((data || []).map((c) => ({
+      ...c,
+      total_discount_given: discountMap[c.code] || 0,
+    })));
     setLoading(false);
   };
 
@@ -101,15 +123,29 @@ const AdminCoupons = () => {
     load();
   };
 
-  const filtered = coupons.filter((c) => c.code.toLowerCase().includes(search.toLowerCase()));
+  const filtered = coupons.filter((c) => {
+    const matchesSearch = c.code.toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = statusFilter === "all"
+      ? true
+      : statusFilter === "active" ? c.is_active : !c.is_active;
+    return matchesSearch && matchesStatus;
+  });
 
   return (
     <AdminLayout title="Coupons">
-      <div className="flex items-center justify-between gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-4 mb-6">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search coupons..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
         <Button onClick={() => openEditor()} className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
           <Plus className="h-4 w-4 mr-2" /> New Coupon
         </Button>
@@ -124,14 +160,15 @@ const AdminCoupons = () => {
               <th className="px-5 py-3 font-medium">Used / Max</th>
               <th className="px-5 py-3 font-medium">Valid Until</th>
               <th className="px-5 py-3 font-medium">Status</th>
+              <th className="px-5 py-3 font-medium text-right">Discount Given</th>
               <th className="px-5 py-3 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading…</td></tr>
+              <tr><td colSpan={7} className="px-5 py-12 text-center text-muted-foreground">Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">No coupons found</td></tr>
+              <tr><td colSpan={7} className="px-5 py-12 text-center text-muted-foreground">No coupons found</td></tr>
             ) : filtered.map((c) => (
               <tr key={c.id} className="border-b border-border last:border-0 hover:bg-secondary/30">
                 <td className="px-5 py-3 font-mono font-medium">{c.code}</td>
@@ -148,6 +185,9 @@ const AdminCoupons = () => {
                   <span className={`text-xs font-mono px-2 py-0.5 rounded ${c.is_active ? "bg-[hsl(var(--accent-emerald)/0.15)] text-[hsl(var(--accent-emerald))]" : "bg-secondary text-muted-foreground"}`}>
                     {c.is_active ? "active" : "inactive"}
                   </span>
+                </td>
+                <td className="px-5 py-3 text-right font-mono text-xs">
+                  {c.total_discount_given > 0 ? `₹${c.total_discount_given.toLocaleString("en-IN")}` : "—"}
                 </td>
                 <td className="px-5 py-3">
                   <button onClick={() => openEditor(c)} className="p-1.5 rounded hover:bg-secondary">
