@@ -19,6 +19,8 @@ import {
   Loader2,
   LogOut,
   ChevronDown,
+  BarChart3,
+  ScrollText,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
@@ -34,6 +36,8 @@ const NAV_ITEMS = [
   { label: "Users", icon: UserCog, path: "/admin/users" },
   { label: "Coupons", icon: Ticket, path: "/admin/coupons" },
   { label: "Revenue", icon: IndianRupee, path: "/admin/revenue" },
+  { label: "Analytics", icon: BarChart3, path: "/admin/analytics" },
+  { label: "Audit Logs", icon: ScrollText, path: "/admin/audit-logs" },
 ];
 
 interface Props {

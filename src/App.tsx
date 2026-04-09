@@ -33,6 +33,8 @@ import AdminHeroSlides from "@/pages/admin/AdminHeroSlides";
 import AdminSchedule from "@/pages/admin/AdminSchedule";
 import AdminEvents from "@/pages/admin/AdminEvents";
 import AdminRevenue from "@/pages/admin/AdminRevenue";
+import AdminAuditLogs from "@/pages/admin/AdminAuditLogs";
+import AdminAnalytics from "@/pages/admin/AdminAnalytics";
 import AdminCoursePreview from "@/pages/admin/AdminCoursePreview";
 import AdminChapterPreview from "@/pages/admin/AdminChapterPreview";
 import MySessionsPage from "@/pages/MySessionsPage";
@@ -41,10 +43,8 @@ import EventDetail from "@/pages/EventDetail";
 import PublicOffering from "@/pages/PublicOffering";
 import ThankYou from "@/pages/ThankYou";
 
-import {
-  CommunityPage,
-  InstructorDashboard,
-} from "@/pages/placeholders";
+import { CommunityPage } from "@/pages/placeholders";
+import InstructorDashboard from "@/pages/InstructorDashboard";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -97,6 +97,8 @@ const App = () => (
             <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />
             <Route path="/admin/coupons" element={<RequireAuth><RequireRole role="admin"><AdminCoupons /></RequireRole></RequireAuth>} />
             <Route path="/admin/revenue" element={<RequireAuth><RequireRole role="admin"><AdminRevenue /></RequireRole></RequireAuth>} />
+            <Route path="/admin/audit-logs" element={<RequireAuth><RequireRole role="admin"><AdminAuditLogs /></RequireRole></RequireAuth>} />
+            <Route path="/admin/analytics" element={<RequireAuth><RequireRole role="admin"><AdminAnalytics /></RequireRole></RequireAuth>} />
 
             {/* Instructor */}
             <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />
