@@ -33,7 +33,7 @@ const CommunityPage = () => {
   const [posting, setPosting] = useState(false);
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, { id: string; comment_text: string; user_name: string; created_at: string }[]>>({});
-  const [newComment, setNewComment] = useState("");
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [commentLoading, setCommentLoading] = useState(false);
 
   const loadPosts = useCallback(async () => {
@@ -109,9 +109,7 @@ const CommunityPage = () => {
     ));
   };
 
-  const loadComments = async (postId: string) => {
-    if (expandedPost === postId) { setExpandedPost(null); return; }
-    setExpandedPost(postId);
+  const fetchComments = async (postId: string) => {
     const { data } = await supabase
       .from("community_post_comments")
       .select("id, comment_text, user_id, created_at")
@@ -129,22 +127,27 @@ const CommunityPage = () => {
     }
   };
 
+  const toggleComments = async (postId: string) => {
+    if (expandedPost === postId) { setExpandedPost(null); return; }
+    setExpandedPost(postId);
+    await fetchComments(postId);
+  };
+
   const handleComment = async (postId: string) => {
-    if (!newComment.trim() || !user) return;
+    const draft = (commentDrafts[postId] || "").trim();
+    if (!draft || !user) return;
     setCommentLoading(true);
     const { error } = await supabase.from("community_post_comments").insert({
       post_id: postId,
-      comment_text: newComment.trim(),
+      comment_text: draft,
       user_id: user.id,
     });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      setNewComment("");
-      loadComments(postId);
+      setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
+      await fetchComments(postId);
       setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comment_count: p.comment_count + 1 } : p));
-      // Force expandedPost to stay open
-      setExpandedPost(postId);
     }
     setCommentLoading(false);
   };
@@ -237,7 +240,7 @@ const CommunityPage = () => {
                     {post.like_count > 0 && post.like_count}
                   </button>
                   <button
-                    onClick={() => loadComments(post.id)}
+                    onClick={() => toggleComments(post.id)}
                     className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <MessageCircle className="h-4 w-4" />
@@ -261,8 +264,8 @@ const CommunityPage = () => {
                     <div className="flex gap-2">
                       <Textarea
                         placeholder="Write a comment..."
-                        value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
+                        value={commentDrafts[post.id] || ""}
+                        onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [post.id]: e.target.value }))}
                         rows={1}
                         className="text-sm bg-surface-2 border-border resize-none flex-1"
                       />
@@ -270,7 +273,7 @@ const CommunityPage = () => {
                         size="sm"
                         variant="ghost"
                         onClick={() => handleComment(post.id)}
-                        disabled={commentLoading || !newComment.trim()}
+                        disabled={commentLoading || !(commentDrafts[post.id] || "").trim()}
                       >
                         <Send className="h-4 w-4" />
                       </Button>

@@ -28,16 +28,22 @@ export function useWishlist() {
       isWishlisted ? next.delete(offeringId) : next.add(offeringId);
       return next;
     });
-    if (isWishlisted) {
-      await (supabase as any)
-        .from("wishlisted_offerings")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("offering_id", offeringId);
-    } else {
-      await (supabase as any)
-        .from("wishlisted_offerings")
-        .insert({ user_id: user.id, offering_id: offeringId });
+    const { error } = isWishlisted
+      ? await (supabase as any)
+          .from("wishlisted_offerings")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("offering_id", offeringId)
+      : await (supabase as any)
+          .from("wishlisted_offerings")
+          .insert({ user_id: user.id, offering_id: offeringId });
+    // Revert on failure
+    if (error) {
+      setWishlistedIds((prev) => {
+        const next = new Set(prev);
+        isWishlisted ? next.add(offeringId) : next.delete(offeringId);
+        return next;
+      });
     }
   }, [user, wishlistedIds]);
 
