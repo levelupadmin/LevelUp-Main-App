@@ -326,7 +326,9 @@ const EventDetail = () => {
                 className="w-full py-3 rounded-lg bg-cream text-cream-text font-mono text-sm uppercase tracking-widest font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2 min-h-[48px]"
               >
                 {registering && <Loader2 className="h-4 w-4 animate-spin" />}
-                Register →
+                {event.pricing_type === "free"
+                  ? "Register — Free"
+                  : `Register · ₹${event.price_inr ? (event.price_inr / 100).toLocaleString("en-IN") : ""}`}
               </button>
             )}
           </div>
@@ -430,7 +432,9 @@ const EventDetail = () => {
             className="px-6 py-2.5 rounded-lg bg-cream text-cream-text font-mono text-sm uppercase tracking-widest font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2 min-h-[44px]"
           >
             {registering && <Loader2 className="h-4 w-4 animate-spin" />}
-            Register →
+            {event.pricing_type === "free"
+              ? "Register — Free"
+              : `Register · ₹${event.price_inr ? (event.price_inr / 100).toLocaleString("en-IN") : ""}`}
           </button>
         </div>
       )}

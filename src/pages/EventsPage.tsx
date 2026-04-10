@@ -365,7 +365,7 @@ const EventsPage = () => {
                             className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
                           >
                             {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                            Register Free
+                            Register — Free
                           </button>
                         ) : (
                           <button
@@ -374,7 +374,7 @@ const EventsPage = () => {
                             className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
                           >
                             {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                            Register · ₹{ev.price_inr ? (ev.price_inr / 100).toLocaleString() : ""}
+                            Register · ₹{ev.price_inr ? (ev.price_inr / 100).toLocaleString("en-IN") : ""}
                           </button>
                         )}
                       </div>
