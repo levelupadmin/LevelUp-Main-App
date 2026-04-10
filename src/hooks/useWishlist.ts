@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 export function useWishlist() {
   const { user } = useAuth();
@@ -20,7 +21,10 @@ export function useWishlist() {
   useEffect(() => { load(); }, [load]);
 
   const toggle = useCallback(async (offeringId: string) => {
-    if (!user) return;
+    if (!user) {
+      toast("Sign in to save courses", { description: "Create a free account to build your wishlist." });
+      return;
+    }
     const isWishlisted = wishlistedIds.has(offeringId);
     // Optimistic update
     setWishlistedIds((prev) => {

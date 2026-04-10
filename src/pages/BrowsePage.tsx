@@ -200,8 +200,8 @@ const BrowsePage = () => {
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-lg font-serif-italic text-cream mb-2">No programs found</p>
-            <p className="text-muted-foreground text-sm">Try a different filter to explore more.</p>
+            <p className="text-lg font-serif-italic text-cream mb-2">Nothing here yet</p>
+            <p className="text-muted-foreground text-sm">Try a different search or filter — your next skill is waiting.</p>
           </div>
         ) : (
           <div className="space-y-12">
@@ -228,7 +228,7 @@ const BrowsePage = () => {
                           <img
                             src={c.thumbnail_url}
                             alt={c.title}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover dark-img"
                             loading="lazy"
                           />
                         )}
@@ -246,7 +246,7 @@ const BrowsePage = () => {
                               onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleWishlist(c.offering_id!); }}
                               className="p-1.5 rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-colors"
                             >
-                              <Heart className={`h-4 w-4 ${wishlistedIds.has(c.offering_id!) ? "fill-red-400 text-red-400" : "text-white"}`} />
+                              <Heart className={`h-4 w-4 transition-transform ${wishlistedIds.has(c.offering_id!) ? "fill-red-400 text-red-400 heart-bounce" : "text-white"}`} />
                             </button>
                           )}
                         </div>

@@ -117,8 +117,8 @@ const MySessionsPage = () => {
         ) : !sessions.length ? (
           <div className="text-center py-16">
             <Video className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-lg font-medium">No sessions yet</p>
-            <p className="text-sm text-muted-foreground mt-1">Live sessions for your enrolled courses will appear here.</p>
+            <p className="text-lg font-medium">No live sessions on the calendar</p>
+            <p className="text-sm text-muted-foreground mt-1">Check back soon — your instructors are planning something great.</p>
           </div>
         ) : (
           <>

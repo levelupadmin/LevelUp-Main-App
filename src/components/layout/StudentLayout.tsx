@@ -197,7 +197,7 @@ const StudentLayout = ({ children, title }: Props) => {
 
         {/* Content area */}
         <main className="flex-1 grain pb-20 md:pb-0">
-          <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-6 md:py-10 relative z-10">
+          <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-6 md:py-10 relative z-10 page-enter">
             {children}
           </div>
         </main>

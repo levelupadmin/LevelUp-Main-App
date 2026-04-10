@@ -19,6 +19,8 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
+import Confetti from "@/components/Confetti";
+import { checkMilestone } from "@/hooks/useMilestone";
 
 interface Chapter {
   id: string;
@@ -85,6 +87,8 @@ const ChapterViewer = () => {
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [milestone, setMilestone] = useState<{ pct: number; title: string; subtitle: string } | null>(null);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   const loadChapter = useCallback(async () => {
     if (!chapterId || !user) return;
@@ -188,19 +192,49 @@ const ChapterViewer = () => {
     setIsCompleted(!!progressRes.data?.completed_at);
     setResources((resourcesRes.data || []) as Resource[]);
 
-    // Enrich QnA with user names and replies
+    // Batch-fetch all QnA replies (fixes N+1 sequential query issue)
     const qnaItems = (qnaRes.data || []) as any[];
-    const qnaWithReplies: QnaItem[] = [];
-    for (const q of qnaItems) {
-      const { data: replies } = await supabase
+    const qnaIds = qnaItems.map((q) => q.id);
+    let allReplies: any[] = [];
+    if (qnaIds.length > 0) {
+      const { data: repliesData } = await supabase
         .from("chapter_qna_replies")
-        .select("id, reply_text, user_id, is_instructor_reply, created_at")
-        .eq("qna_id", q.id)
+        .select("id, reply_text, user_id, is_instructor_reply, created_at, qna_id")
+        .in("qna_id", qnaIds)
         .order("created_at");
-      qnaWithReplies.push({ ...q, replies: replies || [] });
+      allReplies = repliesData || [];
     }
+    const repliesByQna: Record<string, QnaReply[]> = {};
+    allReplies.forEach((r: any) => {
+      if (!repliesByQna[r.qna_id]) repliesByQna[r.qna_id] = [];
+      repliesByQna[r.qna_id].push(r);
+    });
+
+    // Batch-fetch user names for QnA, replies, and comments
+    const allUserIds = new Set<string>();
+    qnaItems.forEach((q: any) => allUserIds.add(q.user_id));
+    allReplies.forEach((r: any) => allUserIds.add(r.user_id));
+    ((commentsRes.data || []) as any[]).forEach((c: any) => allUserIds.add(c.user_id));
+    let userNameMap: Record<string, string> = {};
+    if (allUserIds.size > 0) {
+      const { data: users } = await supabase
+        .from("users").select("id, full_name").in("id", [...allUserIds]);
+      (users || []).forEach((u) => { userNameMap[u.id] = u.full_name || "Anonymous"; });
+    }
+
+    const qnaWithReplies: QnaItem[] = qnaItems.map((q) => ({
+      ...q,
+      user_name: userNameMap[q.user_id] || "Anonymous",
+      replies: (repliesByQna[q.id] || []).map((r: any) => ({
+        ...r,
+        user_name: userNameMap[r.user_id] || "Anonymous",
+      })),
+    }));
     setQna(qnaWithReplies);
-    setComments((commentsRes.data || []) as Comment[]);
+    setComments(((commentsRes.data || []) as any[]).map((c) => ({
+      ...c,
+      user_name: userNameMap[c.user_id] || "Anonymous",
+    })));
     setLoading(false);
   }, [chapterId, user, profile, navigate]);
 
@@ -235,12 +269,32 @@ const ChapterViewer = () => {
     }
 
     setIsCompleted(true);
-    toast.success("Chapter completed!");
     setSubmitting(false);
 
-    // Auto-advance to next (with safety check)
+    // Check for milestone (progress celebration)
+    const { data: allProgress } = await supabase
+      .from("chapter_progress")
+      .select("chapter_id, completed_at")
+      .eq("user_id", user.id)
+      .eq("course_id", courseId);
+    const completedCount = (allProgress || []).filter((p) => p.completed_at).length;
+    const totalCount = siblings.length || 1;
+    // completedBefore = completedCount - 1 (we just completed one)
+    const hit = checkMilestone(completedCount - 1, completedCount, totalCount);
+
+    if (hit) {
+      setShowConfetti(true);
+      setMilestone(hit);
+      toast.success(hit.title, { description: hit.subtitle, duration: 4000 });
+      setTimeout(() => { setShowConfetti(false); setMilestone(null); }, 4000);
+    } else {
+      toast.success("Nice work! Chapter done.");
+    }
+
+    // Auto-advance to next (with safety check) — delay longer if milestone shown
+    const advanceDelay = hit ? 2500 : 800;
     if (siblings && currentIndex >= 0 && currentIndex < siblings.length - 1 && siblings[currentIndex + 1]?.id) {
-      setTimeout(() => navigate(`/chapters/${siblings[currentIndex + 1].id}`), 800);
+      setTimeout(() => navigate(`/chapters/${siblings[currentIndex + 1].id}`), advanceDelay);
     }
   };
 
@@ -254,7 +308,7 @@ const ChapterViewer = () => {
     });
     if (error) toast.error("Failed to post question");
     else {
-      toast.success("Question posted");
+      toast.success("Question sent — your instructor will see it.");
       setQuestionText("");
       loadChapter();
     }
@@ -271,7 +325,7 @@ const ChapterViewer = () => {
     });
     if (error) toast.error("Failed to post comment");
     else {
-      toast.success("Comment posted");
+      toast.success("Comment added!");
       setCommentText("");
       loadChapter();
     }
@@ -290,6 +344,18 @@ const ChapterViewer = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <Confetti active={showConfetti} />
+      {milestone && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[9998] milestone-banner">
+          <div className="bg-card border border-border rounded-2xl px-6 py-4 shadow-2xl text-center max-w-sm">
+            <p className="text-lg font-semibold">{milestone.title}</p>
+            <p className="text-sm text-muted-foreground mt-1">{milestone.subtitle}</p>
+            <div className="mt-2 h-1.5 bg-surface-2 rounded-full overflow-hidden">
+              <div className="h-full bg-[hsl(var(--cream))] rounded-full transition-all duration-700" style={{ width: `${milestone.pct}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
       {/* Top bar */}
       <div className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 h-14 flex items-center gap-3">
         <Button
@@ -432,7 +498,7 @@ const ChapterViewer = () => {
                   {chapter.description}
                 </p>
               ) : (
-                <p className="text-sm text-muted-foreground/60">No description available.</p>
+                <p className="text-sm text-muted-foreground/60">No description for this chapter.</p>
               )}
               {chapter.article_body && (
                 <div className="prose prose-invert prose-sm max-w-none">
@@ -444,7 +510,7 @@ const ChapterViewer = () => {
             {/* Resources */}
             <TabsContent value="resources" className="mt-4 space-y-2">
               {resources.length === 0 ? (
-                <p className="text-sm text-muted-foreground/60">No resources for this chapter.</p>
+                <p className="text-sm text-muted-foreground/60">No downloadable files for this chapter.</p>
               ) : (
                 resources.map((r) => (
                   <a
@@ -486,18 +552,19 @@ const ChapterViewer = () => {
               </div>
               <div className="space-y-3">
                 {qna.length === 0 ? (
-                  <p className="text-sm text-muted-foreground/60">No questions yet. Be the first!</p>
+                  <p className="text-sm text-muted-foreground/60">No questions yet — ask away, your instructor's listening.</p>
                 ) : (
                   qna.map((q) => (
                     <div key={q.id} className="border border-border rounded-lg p-3 space-y-2">
-                      <p className="text-sm">{q.question_text}</p>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(q.created_at).toLocaleDateString()}
-                        {q.is_resolved && " · ✅ Resolved"}
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-medium">{q.user_name || "Anonymous"}</span>
+                        <span className="text-xs text-muted-foreground">{new Date(q.created_at).toLocaleDateString()}</span>
+                        {q.is_resolved && <span className="text-xs text-[hsl(var(--accent-emerald))]">Resolved</span>}
                         {!q.is_resolved && q.replies.some((r) => r.is_instructor_reply) && (
-                          <span className="ml-1 text-[hsl(var(--accent-emerald))]">· Answered</span>
+                          <span className="text-xs text-[hsl(var(--accent-emerald))]">Answered</span>
                         )}
-                      </span>
+                      </div>
+                      <p className="text-sm">{q.question_text}</p>
                       {q.replies.map((r) => (
                         <div
                           key={r.id}
@@ -509,8 +576,8 @@ const ChapterViewer = () => {
                         >
                           <p>{r.reply_text}</p>
                           <span className="text-xs opacity-60">
-                            {r.is_instructor_reply ? "Instructor" : ""}{" "}
-                            {new Date(r.created_at).toLocaleDateString()}
+                            {r.is_instructor_reply ? "Instructor" : (r.user_name || "")}{" "}
+                            · {new Date(r.created_at).toLocaleDateString()}
                           </span>
                         </div>
                       ))}
@@ -540,14 +607,15 @@ const ChapterViewer = () => {
               </div>
               <div className="space-y-3">
                 {comments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground/60">No comments yet.</p>
+                  <p className="text-sm text-muted-foreground/60">Be the first to start the conversation.</p>
                 ) : (
                   comments.map((c) => (
                     <div key={c.id} className="border border-border rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-medium">{c.user_name || "Anonymous"}</span>
+                        <span className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleDateString()}</span>
+                      </div>
                       <p className="text-sm">{c.comment_text}</p>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(c.created_at).toLocaleDateString()}
-                      </span>
                     </div>
                   ))
                 )}

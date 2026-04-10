@@ -81,7 +81,7 @@ const EventDetail = () => {
     if (error) {
       toast({ title: "Registration failed", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Registered! ✓" });
+      toast({ title: "You're in! See you there." });
       setIsRegistered(true);
       setRegCount((c) => c + 1);
     }
@@ -147,7 +147,7 @@ const EventDetail = () => {
               }
               const verifyData = await verifyRes.json();
               if (verifyData.registered) {
-                toast({ title: "Payment successful!", description: "You're registered for the event." });
+                toast({ title: "All set! You're registered.", description: "You're registered for the event." });
                 setIsRegistered(true);
                 setRegCount((c) => c + 1);
               } else {

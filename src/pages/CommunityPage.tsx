@@ -202,7 +202,8 @@ const CommunityPage = () => {
         ) : posts.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <MessageCircle className="h-8 w-8 mx-auto mb-2 opacity-40" />
-            <p>No posts yet. Be the first to share!</p>
+            <p>The stage is yours.</p>
+            <p className="text-sm mt-1">Drop a thought, share your work, or start a conversation.</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -236,7 +237,7 @@ const CommunityPage = () => {
                       post.liked_by_me ? "text-red-400" : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    <Heart className={`h-4 w-4 ${post.liked_by_me ? "fill-current" : ""}`} />
+                    <Heart className={`h-4 w-4 ${post.liked_by_me ? "fill-current heart-bounce" : ""}`} />
                     {post.like_count > 0 && post.like_count}
                   </button>
                   <button

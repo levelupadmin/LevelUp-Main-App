@@ -274,7 +274,7 @@ const ProfilePage = () => {
           <h3 className="text-lg font-semibold mb-4">My Enrolments</h3>
           {enrolments.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No enrolments yet.{" "}
+              No enrolments yet — your first course is just a click away.{" "}
               <Link to="/browse" className="text-cream hover:underline">
                 Browse programs →
               </Link>

@@ -196,7 +196,7 @@ const PopularCommunity = () => {
     return (
       <section>
         <h2 className="text-lg font-semibold mb-4">Popular in Community</h2>
-        <p className="text-sm text-muted-foreground">No community posts yet.</p>
+        <p className="text-sm text-muted-foreground">The community feed is warming up — check back soon.</p>
       </section>
     );
   }
@@ -406,7 +406,7 @@ const UpcomingEvents = () => {
           <h2 className="text-lg font-semibold">Upcoming Events</h2>
           <Link to="/events" className="text-sm text-cream flex items-center gap-1">View all <ArrowRight className="h-3 w-3" /></Link>
         </div>
-        <p className="text-sm text-muted-foreground">No upcoming events scheduled.</p>
+        <p className="text-sm text-muted-foreground">No events on the horizon yet.</p>
       </section>
     );
   }

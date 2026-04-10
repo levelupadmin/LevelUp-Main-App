@@ -127,4 +127,49 @@
   .hide-scrollbar::-webkit-scrollbar {
     display: none;
   }
+
+  /* Heart bounce on like */
+  .heart-bounce {
+    animation: heart-pop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  /* Smooth page content fade-in */
+  .page-enter {
+    animation: fade-in-up 0.3s ease-out;
+  }
+
+  /* Skeleton shimmer for loading states */
+  .skeleton-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--surface)) 25%,
+      hsl(var(--surface-2)) 50%,
+      hsl(var(--surface)) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  /* Milestone toast banner */
+  .milestone-banner {
+    animation: milestone-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .milestone-banner.leaving {
+    animation: milestone-out 0.4s ease-in forwards;
+  }
+
+  /* Subtle glow on interactive focus */
+  .glow-focus:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px hsl(var(--cream) / 0.3);
+  }
+
+  /* Dark mode image polish — slight brightness reduction for thumbnails */
+  .dark-img {
+    filter: brightness(0.92) contrast(1.02);
+    transition: filter 240ms ease;
+  }
+  .dark-img:hover {
+    filter: brightness(1) contrast(1);
+  }
 }

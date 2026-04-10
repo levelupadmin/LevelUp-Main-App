@@ -226,9 +226,11 @@ const MyCoursesPage = () => {
           <div className="text-center py-16">
             <BookOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
             <p className="text-muted-foreground">
-              No courses yet.{" "}
+              Your creative journey starts here.
+            </p>
+            <p className="text-muted-foreground mt-1">
               <Link to="/browse" className="text-cream hover:underline">
-                Browse programs to get started →
+                Browse programs and find your next skill →
               </Link>
             </p>
           </div>
@@ -242,7 +244,7 @@ const MyCoursesPage = () => {
               >
                 <div className="aspect-video bg-surface-2">
                   {c.thumbnail_url && (
-                    <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                    <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover dark-img" />
                   )}
                 </div>
                 <div className="p-4 space-y-2">
@@ -282,7 +284,7 @@ const MyCoursesPage = () => {
                 >
                   <div className="aspect-video bg-surface-2 relative">
                     {c.thumbnail_url && (
-                      <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                      <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover dark-img" loading="lazy" />
                     )}
                     <div className="absolute top-2 left-2">
                       <TierBadge tier={c.product_tier} />
