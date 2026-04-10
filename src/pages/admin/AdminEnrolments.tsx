@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Search, Upload } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useDebounce } from "@/hooks/useDebounce";
 
 interface EnrolmentRow {
   id: string;
@@ -37,6 +38,7 @@ const AdminEnrolments = () => {
   const [enrolments, setEnrolments] = useState<EnrolmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
@@ -303,8 +305,8 @@ const AdminEnrolments = () => {
   };
 
   const filtered = enrolments.filter((e) => {
-    const matchesSearch = e.user_name.toLowerCase().includes(search.toLowerCase()) ||
-      e.user_email.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = e.user_name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+      e.user_email.toLowerCase().includes(debouncedSearch.toLowerCase());
     const matchesStatus = statusFilter === "all" || e.status === statusFilter;
     return matchesSearch && matchesStatus;
   });

@@ -27,6 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { cn } from "@/lib/utils";
+import { useDebounce } from "@/hooks/useDebounce";
 
 /* ────────────────────────────────────────────────── */
 /*  Types & Constants                                 */
@@ -53,6 +54,7 @@ const AdminCourses = () => {
   const [courses, setCourses] = useState<CourseCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteCascadeInfo, setDeleteCascadeInfo] = useState<{
@@ -219,8 +221,8 @@ const AdminCourses = () => {
   /* ── Filter & Group ── */
   const filtered = courses.filter((c) => {
     const matchesSearch =
-      c.title.toLowerCase().includes(search.toLowerCase()) ||
-      (c.instructor_display_name || "").toLowerCase().includes(search.toLowerCase());
+      c.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+      (c.instructor_display_name || "").toLowerCase().includes(debouncedSearch.toLowerCase());
     const matchesStatus = statusFilter === "all" || c.status === statusFilter;
     return matchesSearch && matchesStatus;
   });

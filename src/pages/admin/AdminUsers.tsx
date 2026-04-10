@@ -10,6 +10,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Search, AlertTriangle } from "lucide-react";
+import { useDebounce } from "@/hooks/useDebounce";
 
 interface UserRow {
   id: string;
@@ -26,6 +27,7 @@ const AdminUsers = () => {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [editUser, setEditUser] = useState<UserRow | null>(null);
@@ -118,8 +120,8 @@ const AdminUsers = () => {
   };
 
   const filtered = users.filter((u) =>
-    (u.full_name || "").toLowerCase().includes(search.toLowerCase()) ||
-    (u.email || "").toLowerCase().includes(search.toLowerCase())
+    (u.full_name || "").toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    (u.email || "").toLowerCase().includes(debouncedSearch.toLowerCase())
   );
 
   return (

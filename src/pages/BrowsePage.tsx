@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useWishlist } from "@/hooks/useWishlist";
 import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/useEnrolmentCounts";
+import { useDebounce } from "@/hooks/useDebounce";
 
 const TIER_ORDER = ["live_cohort", "masterclass", "advanced_program", "workshop"] as const;
 const TIER_FILTERS = ["All", "Mentorship Cohorts", "Masterclasses", "Programs", "Workshops"] as const;
@@ -45,6 +46,7 @@ const BrowsePage = () => {
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebounce(searchQuery, 300);
   const { wishlistedIds, toggle: toggleWishlist } = useWishlist();
 
   usePageTitle("Browse Programs");
@@ -150,8 +152,8 @@ const BrowsePage = () => {
   const filtered = courses.filter((c) => {
     const matchesTier = activeFilter === "All" || c.product_tier === TIER_MAP[activeFilter];
     if (!matchesTier) return false;
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
+    if (!debouncedSearch.trim()) return true;
+    const q = debouncedSearch.toLowerCase();
     return (
       c.title.toLowerCase().includes(q) ||
       (c.description || "").toLowerCase().includes(q) ||

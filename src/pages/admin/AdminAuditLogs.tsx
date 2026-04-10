@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Search, Shield, UserCheck, CreditCard } from "lucide-react";
+import { useDebounce } from "@/hooks/useDebounce";
 
 type LogTab = "admin" | "enrolment";
 
@@ -38,6 +39,7 @@ const AdminAuditLogs = () => {
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [userMap, setUserMap] = useState<Record<string, { full_name: string; email: string }>>({});
 
   const loadAdminLogs = async (p: number) => {
@@ -133,15 +135,15 @@ const AdminAuditLogs = () => {
   };
 
   const filteredAdmin = adminLogs.filter((l) =>
-    l.action.toLowerCase().includes(search.toLowerCase()) ||
-    actorName(l.actor_user_id).toLowerCase().includes(search.toLowerCase()) ||
-    (l.target_table || "").toLowerCase().includes(search.toLowerCase())
+    l.action.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    actorName(l.actor_user_id).toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    (l.target_table || "").toLowerCase().includes(debouncedSearch.toLowerCase())
   );
 
   const filteredEnrolment = enrolmentLogs.filter((l) =>
-    l.action.toLowerCase().includes(search.toLowerCase()) ||
-    actorName(l.actor_user_id).toLowerCase().includes(search.toLowerCase()) ||
-    (l.reason || "").toLowerCase().includes(search.toLowerCase())
+    l.action.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    actorName(l.actor_user_id).toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    (l.reason || "").toLowerCase().includes(debouncedSearch.toLowerCase())
   );
 
   return (

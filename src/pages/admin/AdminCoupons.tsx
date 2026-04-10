@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { useDebounce } from "@/hooks/useDebounce";
 
 interface CouponRow {
   id: string;
@@ -42,6 +43,7 @@ const AdminCoupons = () => {
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState("all");
   const [editOpen, setEditOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -148,7 +150,7 @@ const AdminCoupons = () => {
   };
 
   const filtered = coupons.filter((c) => {
-    const matchesSearch = c.code.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = c.code.toLowerCase().includes(debouncedSearch.toLowerCase());
     const matchesStatus = statusFilter === "all"
       ? true
       : statusFilter === "active" ? c.is_active : !c.is_active;
