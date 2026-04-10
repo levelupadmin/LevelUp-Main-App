@@ -93,10 +93,10 @@ export function useVideoProgress(
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
       }
-      // Fire one last save on unmount
+      // Fire one last save on unmount / chapter change
       flushSave();
     };
-  }, [flushSave]);
+  }, [flushSave, chapterId]);
 
   const updateProgress = useCallback(
     (current: number, total: number) => {
