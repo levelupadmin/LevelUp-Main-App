@@ -6,7 +6,7 @@ import LevelUpWordmark from "@/components/LevelUpWordmark";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
-  Home, BookOpen, Compass, MessageSquare, User, Settings,
+  Home, BookOpen, Compass, MessageSquare, User,
   Menu, X, Search, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -107,9 +107,6 @@ const StudentLayout = ({ children, title }: Props) => {
                 #{profile?.member_number ?? "—"}
               </p>
             </div>
-            <button className="text-muted-foreground hover:text-foreground">
-              <Settings className="h-4 w-4" />
-            </button>
           </div>
         </div>
       </aside>
