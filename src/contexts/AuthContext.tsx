@@ -62,7 +62,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       .select("id, email, full_name, role, avatar_url, member_number")
       .eq("id", userId)
       .single();
-    if (error) console.error("[AuthContext] fetchProfile error:", error);
+    if (error && import.meta.env.DEV) console.error("[AuthContext] fetchProfile error:", error);
     return (data as UserProfile | null) ?? null;
   };
 
