@@ -126,6 +126,19 @@ const AdminCourseEditor = () => {
 
     setSaving(true);
     const slug = form.slug || form.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+    // Check slug uniqueness
+    let slugQuery = supabase.from("courses").select("id").eq("slug", slug);
+    if (!isNew && courseId) {
+      slugQuery = slugQuery.neq("id", courseId);
+    }
+    const { data: slugConflicts } = await slugQuery;
+    if (slugConflicts && slugConflicts.length > 0) {
+      toast({ title: "Slug already exists", description: `Another course is already using the slug "${slug}". Please choose a different slug.`, variant: "destructive" });
+      setSaving(false);
+      return;
+    }
+
     const payload: Record<string, any> = {
       title: form.title,
       subtitle: form.subtitle || null,
@@ -391,7 +404,15 @@ const AdminCourseEditor = () => {
           {field("Duration (minutes)", "duration_minutes", "number")}
           <div>
             <label className="block text-sm font-medium mb-1.5">Status</label>
-            <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v }))}>
+            <Select value={form.status} onValueChange={(v) => {
+              if (form.status === "published" && v === "draft") {
+                const confirmed = window.confirm(
+                  "Changing status from Published to Draft will hide this course from students immediately. Are you sure?"
+                );
+                if (!confirmed) return;
+              }
+              setForm((f) => ({ ...f, status: v }));
+            }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="draft">Draft</SelectItem>
