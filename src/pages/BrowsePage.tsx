@@ -221,14 +221,15 @@ const BrowsePage = () => {
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-lg font-serif-italic text-cream mb-2">Nothing here yet</p>
-            <p className="text-muted-foreground text-sm">Try a different search or filter — your next skill is waiting.</p>
+            <Search className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-lg font-medium text-foreground mb-1">No programs match your filters</p>
+            <p className="text-muted-foreground text-sm">Try a different search term or adjust your filters.</p>
             {(activeFilter !== "All" || searchQuery.trim()) && (
               <button
                 onClick={() => { setActiveFilter("All"); setSearchQuery(""); }}
-                className="mt-4 px-4 py-2 rounded-lg border border-border text-sm text-cream hover:bg-surface transition-colors"
+                className="mt-4 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
               >
-                Clear filters
+                Clear all filters
               </button>
             )}
           </div>
@@ -277,7 +278,7 @@ const BrowsePage = () => {
                           {c.offering_id && (
                             <button
                               onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleWishlist(c.offering_id!); }}
-                              className="p-1.5 rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-colors"
+                              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-colors"
                             >
                               <Heart className={`h-4 w-4 transition-transform ${wishlistedIds.has(c.offering_id!) ? "fill-red-400 text-red-400 heart-bounce" : "text-white"}`} />
                             </button>

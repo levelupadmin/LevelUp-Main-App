@@ -259,9 +259,35 @@ const EventsPage = () => {
             ))}
           </div>
         ) : displayed.length === 0 ? (
-          <p className="text-muted-foreground text-center py-12">
-            {tab === "my" ? "You haven't registered for any events yet" : `No ${tab} events`}
-          </p>
+          <div className="text-center py-16">
+            <Calendar className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-lg font-medium text-foreground mb-1">
+              {tab === "upcoming" ? "No upcoming events" : tab === "past" ? "No past events" : "You haven't registered for any events yet"}
+            </p>
+            <p className="text-muted-foreground text-sm">
+              {tab === "upcoming"
+                ? "New events are added regularly — check back soon."
+                : tab === "past"
+                ? "Past events will appear here once they conclude."
+                : "Browse upcoming events and register to save your spot."}
+            </p>
+            {tab === "my" && upcoming.length > 0 && (
+              <button
+                onClick={() => setTab("upcoming")}
+                className="mt-4 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
+              >
+                View Upcoming Events
+              </button>
+            )}
+            {tab === "upcoming" && past.length > 0 && (
+              <button
+                onClick={() => setTab("past")}
+                className="mt-4 px-5 py-2.5 rounded-lg border border-border text-sm text-foreground hover:bg-surface transition-colors"
+              >
+                View Past Events
+              </button>
+            )}
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {displayed.map((ev) => {

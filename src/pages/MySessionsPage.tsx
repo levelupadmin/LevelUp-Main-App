@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
@@ -148,9 +149,15 @@ const MySessionsPage = () => {
           </div>
         ) : !sessions.length ? (
           <div className="text-center py-16">
-            <Video className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-lg font-medium">No live sessions on the calendar</p>
-            <p className="text-sm text-muted-foreground mt-1">Check back soon — your instructors are planning something great.</p>
+            <Video className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-lg font-medium text-foreground mb-1">No sessions scheduled</p>
+            <p className="text-sm text-muted-foreground">Enroll in a program to access live sessions with instructors.</p>
+            <Link
+              to="/browse"
+              className="inline-flex items-center gap-1.5 mt-4 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
+            >
+              Browse Programs <ExternalLink className="h-4 w-4" />
+            </Link>
           </div>
         ) : (
           <>

@@ -6,7 +6,7 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import InitialsAvatar from "@/components/InitialsAvatar";
-import { Heart, MessageCircle, Pin, Send, Loader2 } from "lucide-react";
+import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { toast } from "sonner";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
@@ -37,6 +37,26 @@ const CommunityPage = () => {
   const [comments, setComments] = useState<Record<string, { id: string; comment_text: string; user_name: string; created_at: string }[]>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [commentLoading, setCommentLoading] = useState(false);
+
+  // Muted threads — stored in localStorage so muted state persists
+  const [mutedThreads, setMutedThreads] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem("muted_threads");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+
+  const toggleMute = (postId: string) => {
+    setMutedThreads((prev) => {
+      const next = new Set(prev);
+      if (next.has(postId)) next.delete(postId);
+      else next.add(postId);
+      localStorage.setItem("muted_threads", JSON.stringify([...next]));
+      return next;
+    });
+  };
+
+  const isThreadMuted = (postId: string) => mutedThreads.has(postId);
 
   const loadPosts = useCallback(async () => {
     setLoading(true);
@@ -152,9 +172,9 @@ const CommunityPage = () => {
     if (error) {
       showToast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      // Notify the post author about the reply (skip if commenting on own post)
+      // Notify the post author about the reply (skip if commenting on own post or thread is muted)
       const post = posts.find((p) => p.id === postId);
-      if (post && post.user_id !== user.id) {
+      if (post && post.user_id !== user.id && !isThreadMuted(postId)) {
         await (supabase as any).from("notifications").insert({
           user_id: post.user_id,
           type: "community_reply",
@@ -251,10 +271,19 @@ const CommunityPage = () => {
             ))}
           </div>
         ) : posts.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <MessageCircle className="h-8 w-8 mx-auto mb-2 opacity-40" />
-            <p>The stage is yours.</p>
-            <p className="text-sm mt-1">Drop a thought, share your work, or start a conversation.</p>
+          <div className="text-center py-12">
+            <MessageCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-lg font-medium text-foreground mb-1">No posts yet — be the first!</p>
+            <p className="text-muted-foreground text-sm">Share a thought, your work, or start a conversation.</p>
+            <button
+              onClick={() => {
+                const textarea = document.querySelector<HTMLTextAreaElement>('textarea[placeholder="Share something with the community..."]');
+                if (textarea) { textarea.focus(); textarea.scrollIntoView({ behavior: "smooth", block: "center" }); }
+              }}
+              className="mt-4 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity inline-flex items-center gap-1.5"
+            >
+              <Send className="h-4 w-4" /> Write a Post
+            </button>
           </div>
         ) : (
           <div className="space-y-4">
@@ -298,6 +327,18 @@ const CommunityPage = () => {
                     <MessageCircle className="h-4 w-4" />
                     {post.comment_count > 0 && post.comment_count}
                   </button>
+                  {user && post.user_id === user.id && (
+                    <button
+                      onClick={() => toggleMute(post.id)}
+                      className={`flex items-center gap-1.5 text-xs transition-colors ${
+                        isThreadMuted(post.id) ? "text-amber-400" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      title={isThreadMuted(post.id) ? "Unmute this thread" : "Mute this thread"}
+                    >
+                      {isThreadMuted(post.id) ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+                      {isThreadMuted(post.id) ? "Muted" : "Mute"}
+                    </button>
+                  )}
                 </div>
 
                 {/* Comments */}

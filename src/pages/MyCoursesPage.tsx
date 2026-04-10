@@ -226,14 +226,18 @@ const MyCoursesPage = () => {
         ) : courses.length === 0 ? (
           <div className="text-center py-16">
             <BookOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">
-              Your creative journey starts here.
+            <p className="text-lg font-medium text-foreground mb-1">
+              You haven't enrolled in any courses yet
             </p>
-            <p className="text-muted-foreground mt-1">
-              <Link to="/browse" className="text-cream hover:underline">
-                Browse programs and find your next skill →
-              </Link>
+            <p className="text-muted-foreground text-sm">
+              Explore our catalog and find the perfect program for you.
             </p>
+            <Link
+              to="/browse"
+              className="inline-flex items-center gap-1.5 mt-4 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
+            >
+              Browse Programs <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
