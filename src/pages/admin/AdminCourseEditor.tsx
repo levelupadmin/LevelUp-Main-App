@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Eye, ArrowRight } from "lucide-react";
 import AdminBreadcrumbs from "@/components/admin/AdminBreadcrumbs";
 import { TierBadge } from "@/components/TierBadge";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Category {
   id: string;
@@ -41,6 +42,7 @@ const AdminCourseEditor = () => {
   const isNew = courseId === "new";
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { profile } = useAuth();
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [availableOfferings, setAvailableOfferings] = useState<OfferingOption[]>([]);
@@ -170,6 +172,17 @@ const AdminCourseEditor = () => {
           linkedOfferingIds.map((oid) => ({ offering_id: oid, course_id: savedCourseId! }))
         );
       }
+    }
+
+    // Audit log
+    if (profile?.id && savedCourseId) {
+      await (supabase as any).from("admin_audit_logs").insert({
+        admin_user_id: profile.id,
+        action: isNew ? "create" : "update",
+        entity_type: "course",
+        entity_id: savedCourseId,
+        details: { title: form.title, status: form.status },
+      });
     }
 
     toast({ title: "Course saved" });

@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Save, Loader2, X } from "lucide-react";
 import AdminBreadcrumbs from "@/components/admin/AdminBreadcrumbs";
+import { useAuth } from "@/contexts/AuthContext";
 
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
@@ -83,6 +84,7 @@ const AdminOfferingEditor = () => {
   const isNew = !offeringId || offeringId === "new";
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { profile } = useAuth();
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [allCourses, setAllCourses] = useState<CourseOption[]>([]);
@@ -294,6 +296,17 @@ const AdminOfferingEditor = () => {
           }))
         );
       }
+    }
+
+    // Audit log
+    if (profile?.id && offId) {
+      await (supabase as any).from("admin_audit_logs").insert({
+        admin_user_id: profile.id,
+        action: isNew ? "create" : "update",
+        entity_type: "offering",
+        entity_id: offId,
+        details: { title: form.title, status: form.status, price_inr: form.price_inr },
+      });
     }
 
     toast({ title: "Offering saved" });

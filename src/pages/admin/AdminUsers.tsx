@@ -85,8 +85,26 @@ const AdminUsers = () => {
 
     const { error } = await supabase.from("users").update(updates).eq("id", editUser.id);
 
-    if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else { toast({ title: "User updated" }); setEditUser(null); load(); }
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      // Audit log
+      if (currentUser?.id) {
+        await (supabase as any).from("admin_audit_logs").insert({
+          admin_user_id: currentUser.id,
+          action: "update",
+          entity_type: "user",
+          entity_id: editUser.id,
+          details: {
+            full_name: editForm.full_name,
+            role_changed: !isSelf && roleChanged ? { from: editUser.role, to: editForm.role } : undefined,
+          },
+        });
+      }
+      toast({ title: "User updated" });
+      setEditUser(null);
+      load();
+    }
     setSaving(false);
     setConfirmRoleChange(false);
   };
