@@ -513,13 +513,18 @@ export default function CheckoutPage() {
               </div>
             ) : (
               <div className="flex gap-2">
-                <Input
-                  value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                  placeholder="Have a promo code?"
-                  className="bg-surface-2 border-border flex-1"
-                  onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
-                />
+                <div className="relative flex-1">
+                  <Input
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    placeholder="Have a promo code?"
+                    className="bg-surface-2 border-border w-full"
+                    onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+                  />
+                  {couponLoading && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
