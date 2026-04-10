@@ -11,12 +11,20 @@ import { Loader2, CheckCircle2, Mail } from "lucide-react";
 
 const Signup = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user) navigate("/home", { replace: true });
-  }, [user, navigate]);
+    if (!authLoading && user) navigate("/home", { replace: true });
+  }, [user, authLoading, navigate]);
+
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (user) return null;
   const [fullName, setFullName] = useState("");

@@ -34,7 +34,7 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -47,8 +47,16 @@ const Login = () => {
 
   // Redirect if already authenticated (e.g. dev bypass)
   useEffect(() => {
-    if (user) navigate("/home", { replace: true });
-  }, [user, navigate]);
+    if (!authLoading && user) navigate("/home", { replace: true });
+  }, [user, authLoading, navigate]);
+
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (user) return null;
 
