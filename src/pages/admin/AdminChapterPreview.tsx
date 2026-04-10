@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -142,6 +142,9 @@ export default function AdminChapterPreview() {
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <Play className="h-12 w-12 text-muted-foreground" />
           <h1 className="text-xl font-semibold text-foreground">Chapter not found</h1>
+          <Link to="/admin/courses" className="text-sm text-cream hover:underline mt-2 inline-block">
+            ← Back to Courses
+          </Link>
         </div>
       ) : (
         <div className="flex flex-col lg:flex-row gap-6">

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
@@ -943,6 +943,9 @@ export default function PublicOffering() {
         <AlertCircle className="h-12 w-12 text-muted-foreground" />
         <h1 className="text-xl font-semibold text-foreground">Offering not found</h1>
         <p className="text-muted-foreground text-sm">This page doesn't exist or is no longer available.</p>
+        <Link to="/" className="inline-flex items-center gap-2 mt-4 text-sm text-cream hover:underline">
+          ← Browse programs
+        </Link>
       </div>
     );
   }

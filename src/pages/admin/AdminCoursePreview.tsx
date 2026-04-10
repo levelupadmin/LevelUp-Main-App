@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -129,6 +129,9 @@ export default function AdminCoursePreview() {
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <BookOpen className="h-12 w-12 text-muted-foreground" />
           <h1 className="text-xl font-semibold text-foreground">Course not found</h1>
+          <Link to="/admin/courses" className="text-sm text-cream hover:underline mt-2 inline-block">
+            ← Back to Courses
+          </Link>
         </div>
       ) : (
         <div className="max-w-4xl mx-auto space-y-8">

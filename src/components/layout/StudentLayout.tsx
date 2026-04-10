@@ -5,11 +5,22 @@ import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import {
   Home, BookOpen, Compass, MessageSquare, User, Settings,
-  Menu, X, Search, Bell, LogOut, ChevronDown, Shield
+  Menu, X, Search, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
+  { label: "Home", icon: Home, path: "/home" },
+  { label: "My Courses", icon: BookOpen, path: "/my-courses" },
+  { label: "Sessions", icon: Video, path: "/my-sessions" },
+  { label: "Browse", icon: Compass, path: "/browse" },
+  { label: "Events", icon: Calendar, path: "/events" },
+  { label: "Community", icon: MessageSquare, path: "/community" },
+  { label: "Profile", icon: User, path: "/profile" },
+];
+
+// Mobile bottom bar: max 5 items to avoid cramping on small screens
+const MOBILE_NAV_ITEMS = [
   { label: "Home", icon: Home, path: "/home" },
   { label: "My Courses", icon: BookOpen, path: "/my-courses" },
   { label: "Browse", icon: Compass, path: "/browse" },
@@ -71,6 +82,16 @@ const StudentLayout = ({ children, title }: Props) => {
               </Link>
             </>
           )}
+
+          {profile?.role === "instructor" && (
+            <>
+              <div className="my-3 border-t border-border" />
+              <Link to="/instructor" className="flex items-center gap-3 px-3 py-3 rounded-md text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-colors">
+                <BarChart3 className="h-[18px] w-[18px]" />
+                Instructor Dashboard
+              </Link>
+            </>
+          )}
         </nav>
 
         <div className="p-4 border-t border-border">
@@ -129,6 +150,20 @@ const StudentLayout = ({ children, title }: Props) => {
                   >
                     <Shield className="h-[18px] w-[18px]" />
                     Admin Dashboard
+                  </Link>
+                </>
+              )}
+
+              {profile?.role === "instructor" && (
+                <>
+                  <div className="my-3 border-t border-border" />
+                  <Link
+                    to="/instructor"
+                    onClick={() => setSidebarOpen(false)}
+                    className="flex items-center gap-3 px-3 py-3 rounded-md text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-colors"
+                  >
+                    <BarChart3 className="h-[18px] w-[18px]" />
+                    Instructor Dashboard
                   </Link>
                 </>
               )}
@@ -205,7 +240,7 @@ const StudentLayout = ({ children, title }: Props) => {
 
       {/* Mobile bottom tab bar */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas border-t border-border flex items-stretch">
-        {NAV_ITEMS.map((item) => {
+        {MOBILE_NAV_ITEMS.map((item) => {
           const active = location.pathname === item.path || location.pathname.startsWith(item.path + "/");
           return (
             <Link

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
@@ -548,6 +548,9 @@ export default function ThankYou() {
         <p className="text-muted-foreground text-sm text-center max-w-md">
           This order doesn't exist or hasn't been confirmed yet. If you just completed a payment, please wait a moment and refresh.
         </p>
+        <Link to="/home" className="inline-flex items-center gap-2 mt-4 text-sm text-cream hover:underline">
+          ← Back to Home
+        </Link>
       </div>
     );
   }

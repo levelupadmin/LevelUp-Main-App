@@ -202,6 +202,14 @@ const BrowsePage = () => {
           <div className="text-center py-16">
             <p className="text-lg font-serif-italic text-cream mb-2">Nothing here yet</p>
             <p className="text-muted-foreground text-sm">Try a different search or filter — your next skill is waiting.</p>
+            {(activeFilter !== "All" || searchQuery.trim()) && (
+              <button
+                onClick={() => { setActiveFilter("All"); setSearchQuery(""); }}
+                className="mt-4 px-4 py-2 rounded-lg border border-border text-sm text-cream hover:bg-surface transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-12">

@@ -6,6 +6,7 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
 import { Calendar, Clock, Video, ExternalLink, PlayCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface SessionRow {
   id: string;
@@ -175,7 +176,7 @@ const MySessionsPage = () => {
                               { p_session_id: s.id }
                             );
                             if (error || !link) {
-                              alert(
+                              toast.error(
                                 "The join link for this session isn't available yet. It unlocks an hour before the session starts."
                               );
                               return;
@@ -232,7 +233,7 @@ const MySessionsPage = () => {
                         </div>
 
                         {/* Recording link */}
-                        {s.recording_url && (
+                        {s.recording_url ? (
                           <a
                             href={s.recording_url}
                             target="_blank"
@@ -241,6 +242,10 @@ const MySessionsPage = () => {
                           >
                             <PlayCircle className="h-3.5 w-3.5" /> Watch
                           </a>
+                        ) : (
+                          <span className="flex-shrink-0 self-center text-xs text-muted-foreground italic">
+                            Recording not available
+                          </span>
                         )}
                       </div>
                     );

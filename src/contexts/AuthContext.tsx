@@ -28,10 +28,33 @@ export const useAuth = () => {
   return ctx;
 };
 
+// DEV-ONLY: skip auth and act as admin when VITE_DEV_ADMIN_BYPASS is set
+const DEV_BYPASS = import.meta.env.DEV && import.meta.env.VITE_DEV_ADMIN_BYPASS === "true";
+
+const DEV_PROFILE: UserProfile = {
+  id: "00000000-0000-0000-0000-000000000000",
+  email: "rahul@rahul.com",
+  full_name: "Rahul (Dev)",
+  role: "admin",
+  avatar_url: null,
+  member_number: 1,
+};
+
+const DEV_USER = { id: DEV_PROFILE.id, email: DEV_PROFILE.email } as User;
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Dev bypass — skip Supabase auth entirely
+  if (DEV_BYPASS) {
+    return (
+      <AuthContext.Provider value={{ session: null, user: DEV_USER, profile: DEV_PROFILE, loading: false, signOut: async () => {} }}>
+        {children}
+      </AuthContext.Provider>
+    );
+  }
 
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase

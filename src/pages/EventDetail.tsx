@@ -222,7 +222,7 @@ const EventDetail = () => {
       : "Free";
 
   return (
-    <StudentLayout title="">
+    <StudentLayout title={event?.title ?? "Event"}>
       {/* Breadcrumb */}
       <div className="mb-6">
         <Link to="/events" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5">

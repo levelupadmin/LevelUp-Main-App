@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Tag, ShieldCheck, BookOpen } from "lucide-react";
+import { Loader2, Tag, ShieldCheck, BookOpen, ArrowLeft } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
 /* ── Razorpay global type ── */
@@ -326,6 +326,15 @@ export default function CheckoutPage() {
     <div className="min-h-screen bg-canvas flex items-start justify-center px-4 py-12 md:py-20">
       <Card className="w-full max-w-[560px] border-border bg-surface">
         <CardContent className="p-6 md:p-8 space-y-6">
+          {/* ── Back link ── */}
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors -mb-3"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </button>
+
           {/* ── Header ── */}
           <div>
             <h1 className="text-xl font-semibold text-foreground">

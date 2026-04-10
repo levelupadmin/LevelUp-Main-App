@@ -192,7 +192,9 @@ const CourseDetail = () => {
 
   const handleChapterClick = (chapter: Chapter, sectionChapters: Chapter[]) => {
     if (isChapterLocked(chapter, sectionChapters)) {
-      toast.error("Enrol to unlock this chapter");
+      toast("This chapter is locked", {
+        description: "Enrol in this course to unlock all chapters.",
+      });
       return;
     }
     navigate(`/chapters/${chapter.id}`);

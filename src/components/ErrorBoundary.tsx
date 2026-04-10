@@ -23,12 +23,20 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State
             <p className="text-muted-foreground mb-6">
               We're working on fixing this. Please try refreshing the page.
             </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-6 py-3 bg-cream text-cream-text rounded-lg font-medium hover:opacity-90 transition-opacity"
-            >
-              Refresh Page
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="px-6 py-3 bg-cream text-cream-text rounded-lg font-medium hover:opacity-90 transition-opacity"
+              >
+                Refresh Page
+              </button>
+              <a
+                href="/home"
+                className="px-6 py-3 border border-cream text-cream rounded-lg font-medium hover:opacity-90 transition-opacity"
+              >
+                Back to Home
+              </a>
+            </div>
           </div>
         </div>
       );
