@@ -233,7 +233,7 @@ const MySessionsPage = () => {
                                   scheduleReminder(s.id, s.title, s.scheduled_at);
                                   toast.success("Reminder set for 15 min before");
                                 } else {
-                                  toast.error("Please allow notifications in your browser settings");
+                                  toast.error("Notifications are blocked. To re-enable, click the lock icon next to the URL in your browser's address bar, set Notifications to \"Allow\", then reload this page.");
                                 }
                               }
                               setReminderToggle((prev) => !prev);
