@@ -68,6 +68,24 @@ export function useVideoProgress(
       );
   }, [userId, chapterId, courseId]);
 
+  // Flush progress when tab is hidden or page is closing
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushSave();
+      }
+    };
+    const handleBeforeUnload = () => {
+      flushSave();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [flushSave]);
+
   // Clean up timer and flush on unmount or chapter change
   useEffect(() => {
     return () => {
