@@ -94,6 +94,7 @@ const ChapterViewer = () => {
   const [commentLimit, setCommentLimit] = useState(20);
   const [milestone, setMilestone] = useState<{ pct: number; title: string; subtitle: string } | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showCompletionBanner, setShowCompletionBanner] = useState(false);
 
   const { updateProgress, lastPosition } = useVideoProgress(chapterId, courseId, user?.id);
 
@@ -348,6 +349,12 @@ const ChapterViewer = () => {
       toast.success("Nice work! Chapter done.");
     }
 
+    // If this was the last chapter, show the course completion banner
+    if (currentIndex === siblings.length - 1) {
+      setShowCompletionBanner(true);
+      return;
+    }
+
     // Auto-advance to next (with safety check) — delay longer if milestone shown
     const advanceDelay = hit ? 2500 : 800;
     if (siblings && currentIndex >= 0 && currentIndex < siblings.length - 1 && siblings[currentIndex + 1]?.id) {
@@ -435,6 +442,34 @@ const ChapterViewer = () => {
           </div>
         </div>
       )}
+      {/* Course completion banner */}
+      {showCompletionBanner && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-card border border-border rounded-2xl px-8 py-8 shadow-2xl text-center max-w-md mx-4">
+            <div className="text-5xl mb-4">🎉</div>
+            <h2 className="text-xl font-bold text-foreground">
+              You've completed {courseTitle || "this course"}!
+            </h2>
+            <p className="text-muted-foreground mt-2">
+              Ready for the next step?
+            </p>
+            <div className="flex flex-col gap-3 mt-6">
+              <Button onClick={() => navigate("/browse")} size="lg" className="w-full">
+                Browse More Courses
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCompletionBanner(false)}
+                className="w-full"
+              >
+                Stay Here
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top bar */}
       <div className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 h-14 flex items-center gap-3">
         <Button
