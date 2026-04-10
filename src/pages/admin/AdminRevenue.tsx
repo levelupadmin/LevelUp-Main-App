@@ -49,7 +49,7 @@ const AdminRevenue = () => {
         .order("captured_at", { ascending: false })
         .limit(10000);
 
-      if (error) { console.error(error); setLoading(false); return; }
+      if (error) { if (import.meta.env.DEV) console.error(error); setLoading(false); return; }
 
       const rows = (data ?? []) as unknown as Order[];
       setOrders(rows);

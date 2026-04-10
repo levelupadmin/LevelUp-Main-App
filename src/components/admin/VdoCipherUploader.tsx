@@ -73,7 +73,7 @@ const VdoCipherUploader = ({ onUploadComplete }: Props) => {
       toast({ title: "Video uploaded to VdoCipher" });
       onUploadComplete(videoId);
     } catch (err: any) {
-      console.error("VdoCipher upload error:", err);
+      if (import.meta.env.DEV) console.error("VdoCipher upload error:", err);
       setError(err.message || "Upload failed");
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
     } finally {
