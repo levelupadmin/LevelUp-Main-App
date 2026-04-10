@@ -60,6 +60,7 @@ export default function CheckoutPage() {
   } | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+  const [fieldTouched, setFieldTouched] = useState<Record<string, boolean>>({});
   const [paying, setPaying] = useState(false);
 
   /* ── Load offering data ── */
@@ -212,12 +213,19 @@ export default function CheckoutPage() {
   const handlePay = async () => {
     if (!offering || !user) return;
 
-    // Validate custom fields
+    // Validate custom fields — mark all as touched so inline errors appear
+    const touchAll: Record<string, boolean> = {};
+    let hasFieldError = false;
     for (const field of customFields) {
+      touchAll[field.id] = true;
       if (field.is_required && !customFieldValues[field.id]?.trim()) {
-        toast.error(`Please fill in "${field.label}"`);
-        return;
+        hasFieldError = true;
       }
+    }
+    setFieldTouched((prev) => ({ ...prev, ...touchAll }));
+    if (hasFieldError) {
+      toast.error("Please fill in all required fields");
+      return;
     }
 
     setPaying(true);
@@ -379,27 +387,40 @@ export default function CheckoutPage() {
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Your details
               </p>
-              {customFields.map((field) => (
-                <div key={field.id}>
-                  <label className="text-sm text-foreground mb-1 block">
-                    {field.label}
-                    {field.is_required && (
-                      <span className="text-destructive ml-0.5">*</span>
+              {customFields.map((field) => {
+                const isTouched = fieldTouched[field.id];
+                const isEmpty = !customFieldValues[field.id]?.trim();
+                const showError = field.is_required && isTouched && isEmpty;
+                return (
+                  <div key={field.id}>
+                    <label className="text-sm text-foreground mb-1 block">
+                      {field.label}
+                      {field.is_required && (
+                        <span className="text-destructive ml-0.5">*</span>
+                      )}
+                    </label>
+                    <Input
+                      value={customFieldValues[field.id] ?? ""}
+                      onChange={(e) =>
+                        setCustomFieldValues((v) => ({
+                          ...v,
+                          [field.id]: e.target.value,
+                        }))
+                      }
+                      onBlur={() =>
+                        setFieldTouched((prev) => ({ ...prev, [field.id]: true }))
+                      }
+                      placeholder={field.label}
+                      className={`bg-surface-2 ${showError ? "border-destructive focus-visible:ring-destructive" : "border-border"}`}
+                    />
+                    {showError && (
+                      <p className="text-xs text-destructive mt-1">
+                        {field.label} is required
+                      </p>
                     )}
-                  </label>
-                  <Input
-                    value={customFieldValues[field.id] ?? ""}
-                    onChange={(e) =>
-                      setCustomFieldValues((v) => ({
-                        ...v,
-                        [field.id]: e.target.value,
-                      }))
-                    }
-                    placeholder={field.label}
-                    className="bg-surface-2 border-border"
-                  />
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           )}
 
