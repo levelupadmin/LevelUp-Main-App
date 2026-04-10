@@ -650,7 +650,7 @@ const ChapterViewer = () => {
               )}
               {chapter.article_body && (
                 <div className="prose prose-invert prose-sm max-w-none">
-                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(chapter.article_body) }} />
+                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(chapter.article_body, { ALLOWED_TAGS: ['p','br','strong','b','em','i','u','h1','h2','h3','h4','h5','h6','ul','ol','li','a','code','pre','blockquote','img','table','thead','tbody','tr','th','td','hr','span','div','figure','figcaption','sup','sub'], ALLOWED_ATTR: ['href','target','rel','src','alt','width','height','class','id','style'] }) }} />
                 </div>
               )}
             </TabsContent>
