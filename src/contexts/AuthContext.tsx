@@ -10,6 +10,9 @@ interface UserProfile {
   role: string;
   avatar_url: string | null;
   member_number: number | null;
+  bio: string | null;
+  city: string | null;
+  occupation: string | null;
 }
 
 interface AuthContextValue {
@@ -38,6 +41,9 @@ const DEV_PROFILE: UserProfile = {
   role: "admin",
   avatar_url: null,
   member_number: 1,
+  bio: null,
+  city: null,
+  occupation: null,
 };
 
 const DEV_USER = { id: DEV_PROFILE.id, email: DEV_PROFILE.email } as User;
@@ -60,7 +66,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
       .from("users")
-      .select("id, email, full_name, role, avatar_url, member_number")
+      .select("id, email, full_name, role, avatar_url, member_number, bio, city, occupation")
       .eq("id", userId)
       .single();
     if (error && import.meta.env.DEV) console.error("[AuthContext] fetchProfile error:", error);

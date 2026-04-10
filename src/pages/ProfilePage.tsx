@@ -113,9 +113,9 @@ const ProfilePage = () => {
     } else if (profile) {
       setForm({
         full_name: profile.full_name ?? "",
-        bio: (profile as any).bio ?? "",
-        city: (profile as any).city ?? "",
-        occupation: (profile as any).occupation ?? "",
+        bio: profile.bio ?? "",
+        city: profile.city ?? "",
+        occupation: profile.occupation ?? "",
       });
     }
   }, [profile, localProfile]);
@@ -207,7 +207,7 @@ const ProfilePage = () => {
         <div className="bg-surface border border-border rounded-xl p-6">
           <div className="flex items-start gap-5">
             <InitialsAvatar
-              name={(displayProfile as any)?.full_name ?? "U"}
+              name={displayProfile?.full_name ?? "U"}
               photoUrl={displayProfile?.avatar_url}
               size={96}
             />
@@ -257,7 +257,7 @@ const ProfilePage = () => {
               ) : (
                 <>
                   <h2 className="text-[28px] font-semibold leading-tight">
-                    {(displayProfile as any)?.full_name ?? "—"}
+                    {displayProfile?.full_name ?? "—"}
                   </h2>
                   <p className="text-sm text-muted-foreground mt-0.5">
                     {displayProfile?.email}
@@ -265,9 +265,9 @@ const ProfilePage = () => {
                   <p className="font-mono text-xs text-muted-foreground mt-1">
                     Member #{displayProfile?.member_number ?? "—"}
                   </p>
-                  {(displayProfile as any)?.bio && (
+                  {displayProfile?.bio && (
                     <p className="text-sm text-muted-foreground mt-3">
-                      {(displayProfile as any).bio}
+                      {displayProfile.bio}
                     </p>
                   )}
                   <Button
