@@ -9,6 +9,16 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Plus, Search, Upload } from "lucide-react";
 
 interface EnrolmentRow {
@@ -40,6 +50,7 @@ const AdminEnrolments = () => {
   const [bulkOfferingId, setBulkOfferingId] = useState("");
   const [bulkEmails, setBulkEmails] = useState("");
   const [bulkResult, setBulkResult] = useState<{ success: number; failed: string[] } | null>(null);
+  const [bulkStatusConfirm, setBulkStatusConfirm] = useState<string | null>(null);
   const { toast } = useToast();
 
   const load = async (p = page) => {
@@ -195,9 +206,16 @@ const AdminEnrolments = () => {
     }
   };
 
-  const handleBulkStatusChange = async (newStatus: string) => {
+  const requestBulkStatusChange = (newStatus: string) => {
     if (selectedIds.size === 0) return;
+    setBulkStatusConfirm(newStatus);
+  };
+
+  const confirmBulkStatusChange = async () => {
+    if (!bulkStatusConfirm || selectedIds.size === 0) return;
     const ids = [...selectedIds];
+    const newStatus = bulkStatusConfirm;
+    setBulkStatusConfirm(null);
     const { error } = await supabase.from("enrolments").update({ status: newStatus }).in("id", ids);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -242,7 +260,7 @@ const AdminEnrolments = () => {
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 mb-3 p-3 bg-surface border border-border rounded-lg">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
-          <Select onValueChange={handleBulkStatusChange}>
+          <Select onValueChange={requestBulkStatusChange}>
             <SelectTrigger className="w-40 h-8 text-xs"><SelectValue placeholder="Bulk set status…" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Set Active</SelectItem>
@@ -349,6 +367,24 @@ const AdminEnrolments = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk status change confirmation */}
+      <AlertDialog open={!!bulkStatusConfirm} onOpenChange={() => setBulkStatusConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm bulk status change</AlertDialogTitle>
+            <AlertDialogDescription>
+              You are about to set <span className="font-mono font-semibold">{selectedIds.size}</span> enrolment{selectedIds.size !== 1 ? "s" : ""} to <span className="font-semibold">{bulkStatusConfirm}</span>. This action will take effect immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmBulkStatusChange}>
+              Update {selectedIds.size} Enrolment{selectedIds.size !== 1 ? "s" : ""}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
         <DialogContent className="max-w-lg">
