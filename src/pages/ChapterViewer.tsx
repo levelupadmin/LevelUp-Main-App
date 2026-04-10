@@ -89,6 +89,7 @@ const ChapterViewer = () => {
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [milestone, setMilestone] = useState<{ pct: number; title: string; subtitle: string } | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
 
@@ -133,7 +134,7 @@ const ChapterViewer = () => {
       setCourseTitle(courseData?.title || null);
     }
 
-    // Access check — if not free, verify access
+    // Access check — if not free, verify access before rendering content
     if (!ch.make_free && cid) {
       const isAdmin = profile?.role === "admin";
       if (!isAdmin) {
@@ -141,12 +142,13 @@ const ChapterViewer = () => {
           p_course_id: cid,
         });
         if (!access) {
-          toast.error("You need to enrol in this course to access this chapter.");
-          navigate(`/courses/${cid}`);
+          setAccessDenied(true);
+          setLoading(false);
           return;
         }
       }
     }
+    setAccessDenied(false);
 
     // Load all chapter siblings in same course for nav
     if (cid) {
@@ -389,6 +391,28 @@ const ChapterViewer = () => {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground border-t-foreground" />
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background text-center px-4">
+        <div className="w-16 h-16 rounded-full bg-surface-2 flex items-center justify-center mb-4">
+          <Info className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h2 className="text-xl font-semibold mb-2">Enrolment required</h2>
+        <p className="text-muted-foreground mb-6 max-w-md">
+          You need to enrol in this course to access this chapter.
+        </p>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={() => navigate("/my-courses")}>
+            My Courses
+          </Button>
+          <Button onClick={() => navigate(courseId ? `/courses/${courseId}` : "/browse")}>
+            View Course
+          </Button>
+        </div>
       </div>
     );
   }
