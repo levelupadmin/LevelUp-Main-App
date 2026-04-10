@@ -357,6 +357,21 @@ const AdminCohorts = () => {
 
   const handleAddStudents = async () => {
     if (selectedEnrolmentIds.size === 0 || !expandedBatchId) return;
+
+    // Fix 28: Check batch capacity before adding
+    const currentBatch = batches.find((b) => b.id === expandedBatchId);
+    if (currentBatch && currentBatch.max_students) {
+      const newTotal = currentBatch.member_count + selectedEnrolmentIds.size;
+      if (newTotal > currentBatch.max_students) {
+        toast({
+          title: "Batch at capacity",
+          description: `This batch allows ${currentBatch.max_students} students and already has ${currentBatch.member_count}. You are trying to add ${selectedEnrolmentIds.size}, which would exceed the limit.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setSaving(true);
 
     const rows = [...selectedEnrolmentIds].map((enrolment_id) => ({
@@ -404,6 +419,20 @@ const AdminCohorts = () => {
 
   const handleMoveMember = async () => {
     if (!moveTargetBatchId || !moveMembershipId) return;
+
+    // Fix 28: Check target batch capacity before moving
+    const targetBatch = batches.find((b) => b.id === moveTargetBatchId);
+    if (targetBatch && targetBatch.max_students) {
+      if (targetBatch.member_count + 1 > targetBatch.max_students) {
+        toast({
+          title: "Target batch at capacity",
+          description: `"${targetBatch.name}" already has ${targetBatch.member_count}/${targetBatch.max_students} students.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setSaving(true);
 
     const { error } = await (supabase as any)
