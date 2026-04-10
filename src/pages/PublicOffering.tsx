@@ -621,14 +621,14 @@ function CheckoutCard({
    */
   const guestFormFilled = !!(guestName.trim() && guestEmail.trim() && guestPhone.trim());
   const phoneIsValid = guestPhone.replace(/\D/g, "").length === 10;
-  const canPay = session || (guestFormFilled && scenario !== "C");
+  const canPay = session || guestFormFilled;
   const payDisabled = loading || isProcessing || razorpayError || (!isFree && !razorpayReady) || checkingIdentity || (guestFormFilled && !phoneIsValid);
   const isAuthenticated = !!session;
 
   /* ── Button label ── */
   const payButtonLabel = isFree
-    ? "Enrol for Free"
-    : `Pay ₹${afterDiscount.toLocaleString("en-IN")}`;
+    ? "Start Learning \u2014 Free"
+    : `Enrol Now \u2014 Full Access \u00b7 \u20b9${afterDiscount.toLocaleString("en-IN")}`;
 
   /* ── Render ── */
   return (
@@ -754,89 +754,24 @@ function CheckoutCard({
             </p>
           )}
 
-          {/* Scenario A: Welcome back */}
-          {scenario === "A" && !checkingIdentity && (
-            <p className="text-sm text-[hsl(var(--accent-emerald))] flex items-center gap-1.5">
-              <Check className="h-4 w-4" /> Welcome back!
-            </p>
-          )}
-
-          {/* Scenario C: Mismatch — block payment */}
-          {scenario === "C" && !checkingIdentity && (
-            <div className="space-y-3">
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-[hsl(var(--accent-amber)/0.1)] border border-[hsl(var(--accent-amber)/0.2)]">
-                <AlertCircle className="h-4 w-4 text-[hsl(var(--accent-amber))] mt-0.5 flex-shrink-0" />
-                <p className="text-sm text-foreground">
-                  This email or phone number is already linked to an existing account. Please verify your identity to continue.
-                </p>
-              </div>
-
-              {otpSent ? (
-                <p className="text-sm text-center text-muted-foreground">
-                  Check your email! Click the link to sign in, then this page will update automatically.
-                </p>
-              ) : loginMode === "password" ? (
-                <div className="space-y-3">
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="password"
-                      placeholder="Your password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pl-9 bg-[hsl(var(--surface-2))] border-border"
-                    />
-                  </div>
-                  <Button
-                    onClick={handlePasswordLogin}
-                    disabled={loginLoading}
-                    className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
-                  >
-                    {loginLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in & continue"}
-                  </Button>
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={handleForgotPassword}
-                      className="text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      Forgot password?
-                    </button>
-                    <button
-                      onClick={() => { setLoginMode(null); }}
-                      className="text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      Back
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Button
-                    onClick={() => { setLoginMode("otp"); handleSendMagicLink(); }}
-                    disabled={loginLoading}
-                    variant="outline"
-                    className="w-full border-border"
-                  >
-                    <Mail className="h-4 w-4 mr-2" /> Send me a login link
-                  </Button>
-                  <Button
-                    onClick={() => setLoginMode("password")}
-                    variant="ghost"
-                    className="w-full text-muted-foreground hover:text-foreground"
-                  >
-                    <Lock className="h-4 w-4 mr-2" /> Sign in with password
-                  </Button>
-                </div>
-              )}
+          {/* Scenario A/C: Existing account detected — soft info banner, does NOT block checkout */}
+          {(scenario === "A" || scenario === "C") && !checkingIdentity && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-[hsl(var(--accent-amber)/0.1)] border border-[hsl(var(--accent-amber)/0.2)]">
+              <AlertCircle className="h-4 w-4 text-[hsl(var(--accent-amber))] mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-foreground">
+                This email is linked to an existing account.{" "}
+                <a href="/login" className="font-semibold text-[hsl(var(--cream))] hover:underline">Sign in</a>{" "}
+                for the best experience, or continue as guest.
+              </p>
             </div>
           )}
 
-          {/* Pay button — always visible once form is filled, disabled during check or scenario C */}
-          {(canPay || (guestFormFilled && scenario === "C")) && (
+          {/* Pay button — always visible once form is filled */}
+          {canPay && (
             <>
               <Button
                 onClick={handleGuestPay}
-                disabled={payDisabled || scenario === "C"}
+                disabled={payDisabled}
                 className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold disabled:opacity-50"
               >
                 {isProcessing ? (
@@ -1055,7 +990,7 @@ export default function PublicOffering() {
             onClick={() => document.getElementById("checkout-card")?.scrollIntoView({ behavior: "smooth" })}
             className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 font-semibold"
           >
-            {isFree ? "Enrol Free" : "Buy Now"} <ArrowRight className="h-4 w-4 ml-1" />
+            {isFree ? "Start Learning \u2014 Free" : "Enrol Now \u2014 Full Access"} <ArrowRight className="h-4 w-4 ml-1" />
           </Button>
         </div>
       </div>
