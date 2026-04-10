@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mail } from "lucide-react";
+import { Loader2, Mail, ArrowRight } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import usePageTitle from "@/hooks/usePageTitle";
 import slideBfp from "@/assets/carousel/slide-bfp.jpg";
@@ -331,6 +331,12 @@ const Login = () => {
             <p className="text-base text-muted-foreground max-w-[400px]">
               {slide.subtitle}
             </p>
+            <div className="flex items-center gap-4 mt-5">
+              <span className="text-sm font-medium text-cream flex items-center gap-1 opacity-80">
+                Explore <ArrowRight className="h-3 w-3" />
+              </span>
+              <span className="text-xs text-muted-foreground font-mono">5,000+ students</span>
+            </div>
           </div>
         </div>
 
