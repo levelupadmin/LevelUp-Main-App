@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
@@ -237,7 +237,6 @@ function UpsellCard({
 export default function ThankYou() {
   const { paymentOrderId } = useParams<{ paymentOrderId: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
   const { session } = useAuth();
   const [order, setOrder] = useState<PaymentOrder | null>(null);
   const [originalGuestEmail, setOriginalGuestEmail] = useState<string | null>(null);
@@ -375,28 +374,9 @@ export default function ThankYou() {
       return;
     }
 
-    const navState = location.state as any;
-    const token = navState?.magicLinkToken;
-    const email = originalGuestEmail || navState?.guestEmail;
+    const email = originalGuestEmail || order?.guest_email;
 
-    if (token && email) {
-      setLoggingIn(true);
-      try {
-        const { error } = await supabase.auth.verifyOtp({
-          token_hash: token,
-          type: "magiclink",
-        });
-        if (!error) {
-          navigate("/home");
-          return;
-        }
-        if (import.meta.env.DEV) console.error("[ThankYou] Auto-login failed:", error.message);
-        toast.success("Login link sent! Check your email to sign in and access your dashboard.");
-      } catch (err) {
-        if (import.meta.env.DEV) console.error("[ThankYou] Auto-login error:", err);
-      }
-      setLoggingIn(false);
-    } else if (email) {
+    if (email) {
       setLoggingIn(true);
       const { error } = await supabase.auth.signInWithOtp({ email });
       if (!error) {
