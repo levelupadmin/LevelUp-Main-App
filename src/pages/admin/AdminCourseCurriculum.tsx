@@ -182,6 +182,31 @@ const AdminCourseCurriculum = () => {
 
   const handleSave = async () => {
     if (!courseId) return;
+
+    // Validate chapter video fields before saving
+    for (const sec of sections) {
+      for (const ch of sec.chapters) {
+        if (ch.content_type === "video") {
+          if (ch.video_type === "vdocipher" && !ch.vdocipher_video_id?.trim()) {
+            toast({
+              title: "Validation Error",
+              description: `Chapter "${ch.title}" in "${sec.title}" uses VdoCipher but has no Video ID.`,
+              variant: "destructive",
+            });
+            return;
+          }
+          if (ch.video_type === "standard" && !ch.media_url?.trim()) {
+            toast({
+              title: "Validation Error",
+              description: `Chapter "${ch.title}" in "${sec.title}" uses standard video but has no media URL.`,
+              variant: "destructive",
+            });
+            return;
+          }
+        }
+      }
+    }
+
     setSaving(true);
 
     try {
