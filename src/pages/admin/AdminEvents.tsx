@@ -246,8 +246,21 @@ const AdminEvents = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this event?")) return;
-    await supabase.from("events").delete().eq("id", id);
+    // Check for existing registrations before deleting
+    const { count } = await supabase
+      .from("event_registrations")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", id);
+    const regCount = count ?? 0;
+    const msg = regCount > 0
+      ? `This event has ${regCount} registration${regCount !== 1 ? "s" : ""}. Delete anyway?`
+      : "Delete this event?";
+    if (!confirm(msg)) return;
+    const { error } = await supabase.from("events").delete().eq("id", id);
+    if (error) {
+      toast({ title: "Failed to delete event", description: error.message, variant: "destructive" });
+      return;
+    }
     toast({ title: "Event deleted" });
     load();
   };
