@@ -319,9 +319,14 @@ const BrowsePage = () => {
                                   ₹{formatPrice(Number(c.price_inr))}
                                 </span>
                                 {c.mrp_inr && Number(c.mrp_inr) > Number(c.price_inr) && (
-                                  <span className="text-sm text-muted-foreground line-through">
-                                    ₹{formatPrice(Number(c.mrp_inr))}
-                                  </span>
+                                  <>
+                                    <span className="text-sm text-muted-foreground line-through">
+                                      ₹{formatPrice(Number(c.mrp_inr))}
+                                    </span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
+                                      Save {Math.round((1 - Number(c.price_inr) / Number(c.mrp_inr)) * 100)}%
+                                    </span>
+                                  </>
                                 )}
                               </>
                             ) : (
