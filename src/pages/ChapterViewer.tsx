@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -96,7 +96,29 @@ const ChapterViewer = () => {
   const [showConfetti, setShowConfetti] = useState(false);
   const [showCompletionBanner, setShowCompletionBanner] = useState(false);
 
+  const confettiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const { updateProgress, lastPosition } = useVideoProgress(chapterId, courseId, user?.id);
+
+  // Clean up confetti and auto-advance timers on unmount
+  useEffect(() => {
+    return () => {
+      if (confettiTimerRef.current) clearTimeout(confettiTimerRef.current);
+      if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
+    };
+  }, []);
+
+  // Lock body scroll when completion banner is shown
+  useEffect(() => {
+    if (showCompletionBanner) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = prev;
+      };
+    }
+  }, [showCompletionBanner]);
 
   const loadChapter = useCallback(async () => {
     if (!chapterId || !user) return;
@@ -344,7 +366,7 @@ const ChapterViewer = () => {
       setShowConfetti(true);
       setMilestone(hit);
       toast.success(hit.title, { description: hit.subtitle, duration: 4000 });
-      setTimeout(() => { setShowConfetti(false); setMilestone(null); }, 4000);
+      confettiTimerRef.current = setTimeout(() => { setShowConfetti(false); setMilestone(null); }, 4000);
     } else {
       toast.success("Nice work! Chapter done.");
     }
@@ -358,7 +380,7 @@ const ChapterViewer = () => {
     // Auto-advance to next (with safety check) — delay longer if milestone shown
     const advanceDelay = hit ? 2500 : 800;
     if (siblings && currentIndex >= 0 && currentIndex < siblings.length - 1 && siblings[currentIndex + 1]?.id) {
-      setTimeout(() => navigate(`/chapters/${siblings[currentIndex + 1].id}`), advanceDelay);
+      autoAdvanceTimerRef.current = setTimeout(() => navigate(`/chapters/${siblings[currentIndex + 1].id}`), advanceDelay);
     }
   };
 
