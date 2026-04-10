@@ -566,6 +566,12 @@ export default function CheckoutPage() {
             </div>
           </div>
 
+          {/* ── Trust signals ── */}
+          <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            7-day refund policy · Secure payment
+          </div>
+
           {/* ── Pay button ── */}
           <Button
             size="xl"
@@ -584,8 +590,7 @@ export default function CheckoutPage() {
           </Button>
 
           <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            Secured by Razorpay
+            Powered by Razorpay
           </div>
         </CardContent>
       </Card>
