@@ -208,25 +208,45 @@ const MySessionsPage = () => {
                           {/* Join button — link is fetched on click via the
                               gated RPC, which only returns a value in a narrow
                               window around the session start. */}
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const { data: link, error } = await supabase.rpc(
-                                "get_live_session_zoom_link",
-                                { p_session_id: s.id }
-                              );
-                              if (error || !link) {
-                                toast.error(
-                                  "The join link for this session isn't available yet. It unlocks an hour before the session starts."
-                                );
-                                return;
-                              }
-                              window.open(link as string, "_blank", "noopener,noreferrer");
-                            }}
-                            className="px-4 py-2 rounded-lg bg-[hsl(var(--accent-amber))] text-background text-sm font-medium flex items-center gap-1.5 hover:opacity-90 transition-opacity"
-                          >
-                            Join <ExternalLink className="h-3.5 w-3.5" />
-                          </button>
+                          {(() => {
+                            const msUntil = dt.getTime() - Date.now();
+                            const hoursUntil = Math.ceil(msUntil / (1000 * 60 * 60));
+                            const joinAvailable = msUntil <= 60 * 60 * 1000; // 1 hour before
+                            return joinAvailable ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const { data: link, error } = await supabase.rpc(
+                                    "get_live_session_zoom_link",
+                                    { p_session_id: s.id }
+                                  );
+                                  if (error || !link) {
+                                    toast.error(
+                                      "The join link for this session isn't available yet. It unlocks an hour before the session starts."
+                                    );
+                                    return;
+                                  }
+                                  window.open(link as string, "_blank", "noopener,noreferrer");
+                                }}
+                                className="px-4 py-2 rounded-lg bg-[hsl(var(--accent-amber))] text-background text-sm font-medium flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+                              >
+                                Join <ExternalLink className="h-3.5 w-3.5" />
+                              </button>
+                            ) : (
+                              <div className="flex flex-col items-end gap-1">
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="px-4 py-2 rounded-lg bg-[hsl(var(--accent-amber)/0.3)] text-muted-foreground text-sm font-medium flex items-center gap-1.5 cursor-not-allowed"
+                                >
+                                  Join <ExternalLink className="h-3.5 w-3.5" />
+                                </button>
+                                <span className="text-[10px] text-muted-foreground text-right max-w-[140px]">
+                                  Join link available {hoursUntil}h before session
+                                </span>
+                              </div>
+                            );
+                          })()}
 
                           {/* Remind Me toggle */}
                           <button
