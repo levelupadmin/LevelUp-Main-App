@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -239,8 +239,6 @@ export default function ThankYou() {
   const navigate = useNavigate();
   const location = useLocation();
   const { session } = useAuth();
-  const { toast } = useToast();
-
   const [order, setOrder] = useState<PaymentOrder | null>(null);
   const [originalGuestEmail, setOriginalGuestEmail] = useState<string | null>(null);
   const [upsells, setUpsells] = useState<Upsell[]>([]);
@@ -273,27 +271,7 @@ export default function ThankYou() {
     if (!paymentOrderId) return;
     (async () => {
       try {
-        // Priority 1: Use data passed from PublicOffering via navigate state
-        const navState = location.state as any;
-        if (navState?.fromPayment && navState?.orderData) {
-          const stateOrder = navState.orderData;
-          setOriginalGuestEmail(stateOrder.guest_email);
-          setOrder(stateOrder as any);
-
-          // Fetch upsells
-          const { data: upsellData } = await supabase
-            .from("offering_upsells")
-            .select("id, headline, description, sort_order, upsell_offering:offerings!upsell_offering_id(id, title, subtitle, price_inr, mrp_inr, thumbnail_url, slug)")
-            .eq("parent_offering_id", stateOrder.offering_id)
-            .eq("is_active", true)
-            .order("sort_order", { ascending: true });
-
-          if (upsellData) setUpsells(upsellData as any);
-          setLoading(false);
-          return;
-        }
-
-        // Priority 2: Query database (works for logged-in users only)
+        // Always verify payment from database — never trust client-side state
         const { data: orderData, error } = await supabase
           .from("payment_orders")
           .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds)")
@@ -331,7 +309,7 @@ export default function ThankYou() {
         setLoading(false);
       }
     })();
-  }, [paymentOrderId, session, location.state]);
+  }, [paymentOrderId, session]);
 
   /* ── Fire pixels once ── */
   useEffect(() => {
@@ -377,9 +355,9 @@ export default function ThankYou() {
     setResending(true);
     const { error } = await supabase.auth.signInWithOtp({ email: emailToUse });
     if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast.error(error.message);
     } else {
-      toast({ title: "Login link sent!", description: `Check your email` });
+      toast.success("Login link sent! Check your email");
     }
     setResending(false);
   };
@@ -413,10 +391,7 @@ export default function ThankYou() {
           return;
         }
         if (import.meta.env.DEV) console.error("[ThankYou] Auto-login failed:", error.message);
-        toast({
-          title: "Login link sent!",
-          description: "Check your email to sign in and access your dashboard.",
-        });
+        toast.success("Login link sent! Check your email to sign in and access your dashboard.");
       } catch (err) {
         if (import.meta.env.DEV) console.error("[ThankYou] Auto-login error:", err);
       }
@@ -425,12 +400,9 @@ export default function ThankYou() {
       setLoggingIn(true);
       const { error } = await supabase.auth.signInWithOtp({ email });
       if (!error) {
-        toast({
-          title: "Login link sent!",
-          description: "Check your email to sign in.",
-        });
+        toast.success("Login link sent! Check your email to sign in.");
       } else {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        toast.error(error.message);
       }
       setLoggingIn(false);
     }
@@ -468,13 +440,13 @@ export default function ThankYou() {
         if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
         data = await res.json();
       } else {
-        toast({ title: "Cannot purchase", description: "Please log in first.", variant: "destructive" });
+        toast.error("Cannot purchase. Please log in first.");
         setBuyingUpsell(null);
         return;
       }
 
       if (!(window as any).Razorpay) {
-        toast({ title: "Payment unavailable", description: "Please try again in a moment.", variant: "destructive" });
+        toast.error("Payment unavailable. Please try again in a moment.");
         setBuyingUpsell(null);
         return;
       }
@@ -506,10 +478,10 @@ export default function ThankYou() {
             const verifyData = await verifyRes.json();
             if (verifyData.success) {
               setPurchasedUpsells((prev) => new Set(prev).add(upsell.id));
-              toast({ title: "Added!", description: `${upsell.upsell_offering.title} has been added to your account.` });
+              toast.success(`Added! ${upsell.upsell_offering.title} has been added to your account.`);
             }
           } catch {
-            toast({ title: "Verification error", variant: "destructive" });
+            toast.error("Verification error");
           }
           setBuyingUpsell(null);
         },
@@ -523,15 +495,15 @@ export default function ThankYou() {
 
       const rzp = new (window as any).Razorpay(options);
       rzp.on("payment.failed", () => {
-        toast({ title: "Payment failed", variant: "destructive" });
+        toast.error("Payment failed");
         setBuyingUpsell(null);
       });
       rzp.open();
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast.error(err.message);
       setBuyingUpsell(null);
     }
-  }, [session, order, toast]);
+  }, [session, order]);
 
   /* ── Loading / Error states ── */
   if (loading) {
