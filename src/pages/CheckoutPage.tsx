@@ -411,10 +411,12 @@ export default function CheckoutPage() {
                         setFieldTouched((prev) => ({ ...prev, [field.id]: true }))
                       }
                       placeholder={field.label}
+                      aria-invalid={showError}
+                      aria-describedby={`error-${field.id}`}
                       className={`bg-surface-2 ${showError ? "border-destructive focus-visible:ring-destructive" : "border-border"}`}
                     />
                     {showError && (
-                      <p className="text-xs text-destructive mt-1">
+                      <p id={`error-${field.id}`} className="text-xs text-destructive mt-1">
                         {field.label} is required
                       </p>
                     )}
@@ -479,13 +481,25 @@ export default function CheckoutPage() {
               Coupon code
             </p>
             {appliedCoupon ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="secondary" className="gap-1">
                   <Tag className="h-3 w-3" />
                   {appliedCoupon.code}
                 </Badge>
+                {discount > 0 && (
+                  <span className="text-sm font-semibold text-emerald-500">
+                    You save ₹{discount.toLocaleString("en-IN")}
+                  </span>
+                )}
                 <button
                   onClick={() => {
+                    const extra = discount;
+                    if (
+                      !window.confirm(
+                        `Remove coupon? You'll pay ₹${extra.toLocaleString("en-IN")} more.`
+                      )
+                    )
+                      return;
                     setAppliedCoupon(null);
                     setCouponCode("");
                   }}
@@ -502,7 +516,7 @@ export default function CheckoutPage() {
                 <Input
                   value={couponCode}
                   onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                  placeholder="Enter code"
+                  placeholder="Have a promo code?"
                   className="bg-surface-2 border-border flex-1"
                   onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
                 />
