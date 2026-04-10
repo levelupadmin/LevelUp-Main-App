@@ -46,8 +46,7 @@ const AdminRevenue = () => {
         .from("payment_orders")
         .select("id, offering_id, total_inr, subtotal_inr, discount_inr, gst_inr, captured_at, guest_email, user_id, offerings(title)")
         .eq("status", "captured")
-        .order("captured_at", { ascending: false })
-        .limit(10000);
+        .order("captured_at", { ascending: false });
 
       if (error) { if (import.meta.env.DEV) console.error(error); setLoading(false); return; }
 
@@ -60,8 +59,7 @@ const AdminRevenue = () => {
         const { data: users } = await supabase
           .from("users")
           .select("id, full_name, email")
-          .in("id", userIds)
-          .limit(10000);
+          .in("id", userIds);
         if (users) {
           const m: typeof userMap = {};
           users.forEach(u => { m[u.id] = { full_name: u.full_name, email: u.email }; });
