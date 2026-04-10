@@ -144,13 +144,21 @@ const AdminHeroSlides = () => {
   };
 
   const handleToggleActive = async (id: string, active: boolean) => {
-    await supabase.from("hero_slides").update({ is_active: active }).eq("id", id);
+    const { error } = await supabase.from("hero_slides").update({ is_active: active }).eq("id", id);
+    if (error) {
+      toast({ title: "Failed to update slide", description: error.message, variant: "destructive" });
+      return;
+    }
     setSlides((prev) => prev.map((s) => (s.id === id ? { ...s, is_active: active } : s)));
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this slide?")) return;
-    await supabase.from("hero_slides").delete().eq("id", id);
+    const { error } = await supabase.from("hero_slides").delete().eq("id", id);
+    if (error) {
+      toast({ title: "Failed to delete slide", description: error.message, variant: "destructive" });
+      return;
+    }
     toast({ title: "Slide deleted" });
     load();
   };
