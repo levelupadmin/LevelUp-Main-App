@@ -220,10 +220,16 @@ function CheckoutCard({
    * disable the button while the lookup is in-flight.
    */
   const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lookupAbort = useRef<AbortController | null>(null);
 
   const runIdentityCheck = useCallback(async (email: string, phone: string) => {
     if (!email.trim() || !phone.trim() || session) return;
     if (phone.replace(/\D/g, "").length !== 10) return;
+
+    // Abort any previous in-flight request
+    if (lookupAbort.current) lookupAbort.current.abort();
+    const controller = new AbortController();
+    lookupAbort.current = controller;
 
     setCheckingIdentity(true);
     try {
@@ -235,14 +241,18 @@ function CheckoutCard({
           phone: phone.trim(),
           offering_id: offering?.id,
         }),
+        signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
       if (!res.ok) { setCheckingIdentity(false); return; }
       const data = await res.json();
+      if (controller.signal.aborted) return;
       setScenario(data.scenario || null);
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       /* silent — leave scenario as-is, don't block the user */
     } finally {
-      setCheckingIdentity(false);
+      if (!controller.signal.aborted) setCheckingIdentity(false);
     }
   }, [session, offering?.id]);
 
@@ -253,8 +263,11 @@ function CheckoutCard({
     lookupTimer.current = setTimeout(() => runIdentityCheck(email, phone), 600);
   }, [runIdentityCheck]);
 
-  // Cleanup timer on unmount
-  useEffect(() => () => { if (lookupTimer.current) clearTimeout(lookupTimer.current); }, []);
+  // Cleanup timer and abort controller on unmount
+  useEffect(() => () => {
+    if (lookupTimer.current) clearTimeout(lookupTimer.current);
+    if (lookupAbort.current) lookupAbort.current.abort();
+  }, []);
 
   // Restore coupon state after magic-link redirect (Scenario C)
   useEffect(() => {
@@ -961,7 +974,7 @@ export default function PublicOffering() {
           </div>
 
           {/* Mobile: checkout below */}
-          <div className="lg:hidden mt-8">
+          <div id="checkout-section" className="lg:hidden mt-8">
             <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} razorpayError={razorpayError} />
           </div>
         </div>
@@ -987,7 +1000,7 @@ export default function PublicOffering() {
             )}
           </div>
           <Button
-            onClick={() => document.getElementById("checkout-card")?.scrollIntoView({ behavior: "smooth" })}
+            onClick={() => document.getElementById("checkout-section")?.scrollIntoView({ behavior: "smooth" })}
             className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 font-semibold"
           >
             {isFree ? "Start Learning \u2014 Free" : "Enrol Now \u2014 Full Access"} <ArrowRight className="h-4 w-4 ml-1" />
