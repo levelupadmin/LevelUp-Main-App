@@ -241,7 +241,7 @@ const MySessionsPage = () => {
                                 >
                                   Join <ExternalLink className="h-3.5 w-3.5" />
                                 </button>
-                                <span className="text-[10px] text-muted-foreground text-right max-w-[140px]">
+                                <span className="text-xs text-muted-foreground text-right max-w-[140px]">
                                   Join link available {hoursUntil}h before session
                                 </span>
                               </div>

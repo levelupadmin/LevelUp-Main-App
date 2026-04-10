@@ -720,7 +720,7 @@ function CheckoutCard({
             )}
           </Button>
           {!isFree && (
-            <p className="text-[10px] text-muted-foreground/70 text-center">
+            <p className="text-xs text-muted-foreground/70 text-center">
               7-day refund policy. No questions asked.
             </p>
           )}
@@ -801,7 +801,7 @@ function CheckoutCard({
                   : "Secure payment via Razorpay. We'll create your account automatically."}
               </p>
               {!isFree && (
-                <p className="text-[10px] text-muted-foreground/70 text-center">
+                <p className="text-xs text-muted-foreground/70 text-center">
                   7-day refund policy. No questions asked.
                 </p>
               )}
