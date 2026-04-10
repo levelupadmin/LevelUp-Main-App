@@ -6,7 +6,17 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Search, Copy } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Plus, Pencil, Search, Copy, Archive, Trash2 } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 
 interface OfferingRow {
@@ -27,7 +37,9 @@ const AdminOfferings = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const load = async () => {
     setLoading(true);
@@ -69,6 +81,42 @@ const AdminOfferings = () => {
   useEffect(() => {
     load();
   }, []);
+
+  const toggleArchive = async (offering: OfferingRow) => {
+    const newStatus = offering.status === "archived" ? "active" : "archived";
+    const { error } = await supabase
+      .from("offerings")
+      .update({ status: newStatus })
+      .eq("id", offering.id);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: newStatus === "archived" ? "Offering archived" : "Offering restored" });
+      load();
+    }
+  };
+
+  const handleDeleteOffering = async () => {
+    if (!deleteId) return;
+    const offering = offerings.find((o) => o.id === deleteId);
+    if (offering && offering.enrolment_count > 0) {
+      toast({
+        title: "Cannot delete",
+        description: "This offering has active enrolments. Archive it instead.",
+        variant: "destructive",
+      });
+      setDeleteId(null);
+      return;
+    }
+    const { error } = await supabase.from("offerings").delete().eq("id", deleteId);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Offering deleted" });
+      load();
+    }
+    setDeleteId(null);
+  };
 
   const filtered = offerings.filter((o) => {
     const matchesSearch = o.title.toLowerCase().includes(search.toLowerCase());
@@ -191,6 +239,20 @@ const AdminOfferings = () => {
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
+                      <button
+                        onClick={() => toggleArchive(o)}
+                        className="p-1.5 rounded hover:bg-secondary text-muted-foreground"
+                        title={o.status === "archived" ? "Restore offering" : "Archive offering"}
+                      >
+                        <Archive className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteId(o.id)}
+                        className="p-1.5 rounded hover:bg-secondary text-destructive"
+                        title="Delete offering"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -199,6 +261,33 @@ const AdminOfferings = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete offering?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const offering = offerings.find((o) => o.id === deleteId);
+                if (offering && offering.enrolment_count > 0) {
+                  return `This offering has ${offering.enrolment_count} enrolment(s). It cannot be deleted while students are enrolled. Consider archiving it instead.`;
+                }
+                return "This will permanently delete this offering and its course associations. This action cannot be undone.";
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteOffering}
+              className="bg-destructive text-destructive-foreground"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 };
