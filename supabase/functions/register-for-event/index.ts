@@ -1,6 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
+function encodeBase64(str: string): string {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -129,7 +133,7 @@ Deno.serve(async (req) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Basic ${btoa(`${keyId}:${keySecret}`)}`,
+        Authorization: `Basic ${encodeBase64(`${keyId}:${keySecret}`)}`,
       },
       body: JSON.stringify({
         amount: event.price_inr,

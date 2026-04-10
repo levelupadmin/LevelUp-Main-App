@@ -1,6 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
+function encodeBase64(str: string): string {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
+}
+
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -90,7 +94,7 @@ async function verifyViaApi(
   try {
     const res = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
       headers: {
-        Authorization: "Basic " + btoa(`${keyId}:${keySecret}`),
+        Authorization: "Basic " + encodeBase64(`${keyId}:${keySecret}`),
       },
     });
     if (!res.ok) {

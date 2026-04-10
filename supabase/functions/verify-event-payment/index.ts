@@ -1,6 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
+function encodeBase64(str: string): string {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
+}
+
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -93,7 +97,7 @@ Deno.serve(async (req) => {
     const rpRes = await fetch(
       `https://api.razorpay.com/v1/payments/${razorpay_payment_id}`,
       {
-        headers: { Authorization: "Basic " + btoa(`${razorpayKeyId}:${razorpaySecret}`) },
+        headers: { Authorization: "Basic " + encodeBase64(`${razorpayKeyId}:${razorpaySecret}`) },
       }
     );
     if (!rpRes.ok) {
