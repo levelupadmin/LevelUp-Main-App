@@ -179,14 +179,24 @@ const AdminEnrolments = () => {
     setSaving(true);
     setBulkResult(null);
 
-    const emails = bulkEmails
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const rawEntries = bulkEmails
       .split(/[\n,;]+/)
       .map((e) => e.trim().toLowerCase())
-      .filter((e) => e.includes("@"));
+      .filter((e) => e.length > 0);
 
+    const emails: string[] = [];
     let success = 0;
     const failed: string[] = [];
     const skipped: string[] = [];
+
+    for (const entry of rawEntries) {
+      if (!emailRegex.test(entry)) {
+        failed.push(`${entry} — invalid format`);
+      } else {
+        emails.push(entry);
+      }
+    }
 
     for (const email of emails) {
       const { data: user } = await supabase
