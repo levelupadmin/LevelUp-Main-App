@@ -251,6 +251,7 @@ const MySessionsPage = () => {
                           {/* Remind Me toggle */}
                           <button
                             type="button"
+                            aria-label={isReminderSet(s.id) ? "Reminder set" : "Set reminder"}
                             onClick={async () => {
                               if (isReminderSet(s.id)) {
                                 cancelReminder(s.id);

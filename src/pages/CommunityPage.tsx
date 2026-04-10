@@ -312,6 +312,7 @@ const CommunityPage = () => {
                 {/* Actions */}
                 <div className="flex items-center gap-4 pt-1">
                   <button
+                    aria-label="Like post"
                     onClick={() => toggleLike(post.id, post.liked_by_me)}
                     className={`flex items-center gap-1.5 text-xs transition-colors ${
                       post.liked_by_me ? "text-red-400" : "text-muted-foreground hover:text-foreground"
@@ -365,6 +366,7 @@ const CommunityPage = () => {
                       <Button
                         size="sm"
                         variant="ghost"
+                        aria-label="Send comment"
                         onClick={() => handleComment(post.id)}
                         disabled={commentLoading || !(commentDrafts[post.id] || "").trim()}
                       >

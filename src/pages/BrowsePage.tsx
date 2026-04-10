@@ -277,6 +277,7 @@ const BrowsePage = () => {
                           )}
                           {c.offering_id && (
                             <button
+                              aria-label={wishlistedIds.has(c.offering_id!) ? "Remove from wishlist" : "Add to wishlist"}
                               onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleWishlist(c.offering_id!); }}
                               className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-colors"
                             >

@@ -118,7 +118,7 @@ const StudentLayout = ({ children, title }: Props) => {
           <aside className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex flex-col">
             <div className="flex items-center justify-between p-6">
               <LevelUpWordmark />
-              <button onClick={() => setSidebarOpen(false)}>
+              <button aria-label="Close menu" onClick={() => setSidebarOpen(false)}>
                 <X className="h-5 w-5 text-muted-foreground" />
               </button>
             </div>
@@ -131,7 +131,7 @@ const StudentLayout = ({ children, title }: Props) => {
                     to={item.path}
                     onClick={() => setSidebarOpen(false)}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-3 rounded-md text-sm transition-colors",
+                      "flex items-center gap-3 px-3 py-3 rounded-md text-sm transition-colors focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2",
                       active ? "text-foreground bg-surface-2" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -178,7 +178,7 @@ const StudentLayout = ({ children, title }: Props) => {
         {/* Top bar */}
         <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg">
           <div className="flex items-center gap-3">
-            <button className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center" onClick={() => setSidebarOpen(true)}>
+            <button aria-label="Open menu" className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
             </button>
             <h2 className="text-lg font-semibold">{title}</h2>
@@ -193,15 +193,18 @@ const StudentLayout = ({ children, title }: Props) => {
 
             <div className="relative">
               <button
+                aria-label="Notifications"
                 onClick={() => setNotifOpen(!notifOpen)}
                 className="relative text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"
               >
                 <Bell className="h-5 w-5" />
-                {unreadCount > 0 && (
+                {notifLoading ? (
+                  <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-gray-400" />
+                ) : unreadCount > 0 ? (
                   <span className="absolute top-1.5 right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold leading-none text-white bg-red-500 rounded-full">
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
-                )}
+                ) : null}
               </button>
               <NotificationDropdown
                 open={notifOpen}
@@ -267,7 +270,7 @@ const StudentLayout = ({ children, title }: Props) => {
               key={item.path}
               to={item.path}
               className={cn(
-                "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors",
+                "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2",
                 active ? "text-cream" : "text-muted-foreground"
               )}
             >
