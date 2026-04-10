@@ -44,9 +44,15 @@ const Signup = () => {
   const passwordValid = hasMinLength && hasLetter && hasNumber;
 
   const validatePhone = (val: string) => {
-    const digits = val.replace(/\D/g, "");
+    let digits = val.replace(/\D/g, "");
+    // Strip common prefixes: +91, 91, or leading 0
+    if (digits.startsWith("91") && digits.length > 10) {
+      digits = digits.slice(2);
+    } else if (digits.startsWith("0") && digits.length > 10) {
+      digits = digits.slice(1);
+    }
     if (digits.length !== 10) {
-      setPhoneError("Please enter a valid 10-digit phone number");
+      setPhoneError("Please enter a valid 10-digit mobile number (without country code)");
       return false;
     }
     setPhoneError("");
@@ -146,6 +152,7 @@ const Signup = () => {
           </div>
           <h1 className="text-xl font-bold text-foreground">Create your account</h1>
           <p className="text-sm text-muted-foreground">Join LevelUp and start learning filmmaking</p>
+          <p className="text-xs text-muted-foreground/70 font-mono">Join 5,000+ creators learning new skills</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSignup} className="space-y-4">
@@ -173,6 +180,7 @@ const Signup = () => {
                 required
                 className="bg-surface border-border focus:border-foreground h-11"
               />
+              <p className="text-xs text-muted-foreground">10-digit mobile number (without country code)</p>
               {phoneError && (
                 <p className="text-xs text-destructive">{phoneError}</p>
               )}
