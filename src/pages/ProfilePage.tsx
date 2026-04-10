@@ -169,14 +169,18 @@ const ProfilePage = () => {
 
   const handleSave = async () => {
     if (!user) return;
+    if (form.full_name.length > 100) { toast.error("Name must be 100 characters or less"); return; }
+    if (form.bio.length > 500) { toast.error("Bio must be 500 characters or less"); return; }
+    if (form.city.length > 100) { toast.error("City must be 100 characters or less"); return; }
+    if (form.occupation.length > 100) { toast.error("Occupation must be 100 characters or less"); return; }
     setSaving(true);
     const { error } = await supabase
       .from("users")
       .update({
-        full_name: form.full_name,
-        bio: form.bio,
-        city: form.city,
-        occupation: form.occupation,
+        full_name: form.full_name.trim(),
+        bio: form.bio.trim(),
+        city: form.city.trim(),
+        occupation: form.occupation.trim(),
       })
       .eq("id", user.id);
 
