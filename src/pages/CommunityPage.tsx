@@ -124,16 +124,24 @@ const CommunityPage = () => {
 
   const toggleLike = async (postId: string, liked: boolean) => {
     if (!user) return;
-    if (liked) {
-      await supabase.from("community_post_likes").delete().eq("post_id", postId).eq("user_id", user.id);
-    } else {
-      await supabase.from("community_post_likes").insert({ post_id: postId, user_id: user.id });
-    }
+    // Optimistic update
     setPosts((prev) => prev.map((p) =>
       p.id === postId
         ? { ...p, liked_by_me: !liked, like_count: p.like_count + (liked ? -1 : 1) }
         : p
     ));
+    const { error } = liked
+      ? await supabase.from("community_post_likes").delete().eq("post_id", postId).eq("user_id", user.id)
+      : await supabase.from("community_post_likes").insert({ post_id: postId, user_id: user.id });
+    if (error) {
+      // Revert optimistic update
+      setPosts((prev) => prev.map((p) =>
+        p.id === postId
+          ? { ...p, liked_by_me: liked, like_count: p.like_count + (liked ? 1 : -1) }
+          : p
+      ));
+      toast.error("Failed to update like");
+    }
   };
 
   const fetchComments = async (postId: string) => {
