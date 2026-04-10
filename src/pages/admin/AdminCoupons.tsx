@@ -8,7 +8,17 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Search } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Plus, Pencil, Trash2, Search } from "lucide-react";
 
 interface CouponRow {
   id: string;
@@ -38,7 +48,20 @@ const AdminCoupons = () => {
   const [form, setForm] = useState(EMPTY_FORM);
   const [offerings, setOfferings] = useState<{ id: string; title: string }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  const handleDeleteCoupon = async () => {
+    if (!deleteId) return;
+    const { error } = await supabase.from("coupons").delete().eq("id", deleteId);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Coupon deleted" });
+      load();
+    }
+    setDeleteId(null);
+  };
 
   const load = async () => {
     setLoading(true);
@@ -191,15 +214,41 @@ const AdminCoupons = () => {
                   {c.total_discount_given > 0 ? `₹${c.total_discount_given.toLocaleString("en-IN")}` : "—"}
                 </td>
                 <td className="px-5 py-3">
-                  <button onClick={() => openEditor(c)} className="p-1.5 rounded hover:bg-secondary">
-                    <Pencil className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => openEditor(c)} className="p-1.5 rounded hover:bg-secondary" title="Edit coupon">
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => setDeleteId(c.id)} className="p-1.5 rounded hover:bg-secondary text-destructive" title="Delete coupon">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete coupon?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this coupon. Any existing orders that used this coupon will not be affected, but the code will no longer be usable.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCoupon}
+              className="bg-destructive text-destructive-foreground"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-md">
