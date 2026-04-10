@@ -178,11 +178,13 @@ const Signup = () => {
                 value={phone}
                 onChange={(e) => { setPhone(e.target.value); setPhoneError(""); }}
                 required
+                aria-invalid={!!phoneError}
+                aria-describedby="phone-error"
                 className="bg-surface border-border focus:border-foreground h-11"
               />
               <p className="text-xs text-muted-foreground">10-digit mobile number (without country code)</p>
               {phoneError && (
-                <p className="text-xs text-destructive">{phoneError}</p>
+                <p id="phone-error" className="text-xs text-destructive">{phoneError}</p>
               )}
             </div>
             <div className="space-y-2">
@@ -205,9 +207,10 @@ const Signup = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                aria-describedby="password-requirements"
               />
               {password.length > 0 && (
-                <div className="space-y-1 text-xs">
+                <div id="password-requirements" className="space-y-1 text-xs">
                   <p className={hasMinLength ? "text-[hsl(var(--accent-emerald))]" : "text-muted-foreground"}>
                     {hasMinLength ? "✓" : "○"} At least 8 characters
                   </p>
