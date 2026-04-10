@@ -11,7 +11,7 @@ export default function LazyImage({ src, alt = "", className = "" }: Props) {
 
   return (
     <div className={`relative overflow-hidden ${className}`}>
-      {!loaded && <div className="absolute inset-0 bg-surface-2 animate-pulse" />}
+      {!loaded && <div className="absolute inset-0 animate-pulse bg-surface-2 rounded" />}
       <img
         src={src}
         alt={alt}
