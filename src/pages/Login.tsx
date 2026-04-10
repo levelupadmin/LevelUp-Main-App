@@ -312,7 +312,7 @@ const Login = () => {
           <img
             key={activeSlide}
             src={slide.image}
-            alt=""
+            alt={slide.title + " " + slide.italic}
             className="absolute inset-0 w-full h-full object-cover z-0"
             loading="eager"
           />
