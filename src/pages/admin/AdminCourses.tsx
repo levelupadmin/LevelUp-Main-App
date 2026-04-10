@@ -55,6 +55,12 @@ const AdminCourses = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteCascadeInfo, setDeleteCascadeInfo] = useState<{
+    sectionCount: number;
+    chapterCount: number;
+    enrolmentCount: number;
+  } | null>(null);
+  const [loadingCascade, setLoadingCascade] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -112,6 +118,55 @@ const AdminCourses = () => {
   useEffect(() => {
     load();
   }, []);
+
+  /* ── Open delete dialog with cascade info ── */
+  const openDeleteDialog = async (courseId: string) => {
+    setDeleteId(courseId);
+    setDeleteCascadeInfo(null);
+    setLoadingCascade(true);
+
+    try {
+      // Fetch sections
+      const { data: secs } = await supabase
+        .from("sections")
+        .select("id")
+        .eq("course_id", courseId);
+      const sectionCount = secs?.length || 0;
+
+      // Fetch chapters
+      let chapterCount = 0;
+      if (secs && secs.length > 0) {
+        const secIds = secs.map((s) => s.id);
+        const { data: chaps } = await supabase
+          .from("chapters")
+          .select("id")
+          .in("section_id", secIds);
+        chapterCount = chaps?.length || 0;
+      }
+
+      // Fetch active enrolments via offering_courses
+      let enrolmentCount = 0;
+      const { data: ocs } = await supabase
+        .from("offering_courses")
+        .select("offering_id")
+        .eq("course_id", courseId);
+      if (ocs && ocs.length > 0) {
+        const offIds = [...new Set(ocs.map((oc) => oc.offering_id))];
+        const { data: enrols } = await supabase
+          .from("enrolments")
+          .select("id")
+          .in("offering_id", offIds)
+          .eq("status", "active");
+        enrolmentCount = enrols?.length || 0;
+      }
+
+      setDeleteCascadeInfo({ sectionCount, chapterCount, enrolmentCount });
+    } catch {
+      // If fetch fails, still show the dialog with a generic warning
+      setDeleteCascadeInfo(null);
+    }
+    setLoadingCascade(false);
+  };
 
   /* ── Delete ── */
   const handleDelete = async () => {
@@ -252,7 +307,7 @@ const AdminCourses = () => {
                     tier={tier}
                     onEdit={() => navigate(`/admin/courses/${c.id}/edit`)}
                     onPreview={() => navigate(`/admin/courses/${c.id}/preview`)}
-                    onDelete={() => setDeleteId(c.id)}
+                    onDelete={() => openDeleteDialog(c.id)}
                     onToggleBrowse={() => toggleBrowse(c.id, c.show_on_browse)}
                   />
                 ))}
@@ -276,7 +331,7 @@ const AdminCourses = () => {
                     tier={c.product_tier}
                     onEdit={() => navigate(`/admin/courses/${c.id}/edit`)}
                     onPreview={() => navigate(`/admin/courses/${c.id}/preview`)}
-                    onDelete={() => setDeleteId(c.id)}
+                    onDelete={() => openDeleteDialog(c.id)}
                     onToggleBrowse={() => toggleBrowse(c.id, c.show_on_browse)}
                   />
                 ))}
@@ -287,13 +342,30 @@ const AdminCourses = () => {
       )}
 
       {/* Delete confirmation */}
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+      <AlertDialog open={!!deleteId} onOpenChange={() => { setDeleteId(null); setDeleteCascadeInfo(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete course?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete this course and all associated sections
-              and chapters.
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  This will permanently delete all sections, chapters, resources,
+                  and revoke access for enrolled students. This action cannot be undone.
+                </p>
+                {loadingCascade ? (
+                  <p className="text-xs text-muted-foreground">Loading impact details...</p>
+                ) : deleteCascadeInfo ? (
+                  <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm space-y-1">
+                    <p><span className="font-mono font-semibold">{deleteCascadeInfo.sectionCount}</span> section{deleteCascadeInfo.sectionCount !== 1 ? "s" : ""} will be deleted</p>
+                    <p><span className="font-mono font-semibold">{deleteCascadeInfo.chapterCount}</span> chapter{deleteCascadeInfo.chapterCount !== 1 ? "s" : ""} will be deleted</p>
+                    {deleteCascadeInfo.enrolmentCount > 0 && (
+                      <p className="text-destructive font-medium">
+                        <span className="font-mono font-semibold">{deleteCascadeInfo.enrolmentCount}</span> active enrolment{deleteCascadeInfo.enrolmentCount !== 1 ? "s" : ""} will be affected
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
