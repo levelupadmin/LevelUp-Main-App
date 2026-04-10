@@ -249,7 +249,7 @@ const EventDetail = () => {
           {/* Banner */}
           {event.image_url && (
             <div className="aspect-[4/3] rounded-xl overflow-hidden bg-surface-2">
-              <img src={event.image_url} alt="" className="w-full h-full object-cover" />
+              <img src={event.image_url} alt={event.title} className="w-full h-full object-cover" />
             </div>
           )}
 
