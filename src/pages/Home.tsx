@@ -176,47 +176,51 @@ const ContinueLearning = () => {
   return (
     <section>
       <h2 className="text-lg font-semibold mb-4">Continue Learning</h2>
-      <div className="flex gap-4 overflow-x-auto snap-x hide-scrollbar pb-2">
-        {!courses.length ? (
-          <div className="min-w-[320px] max-w-[320px] h-[200px] bg-cream rounded-xl p-6 flex flex-col justify-center flex-shrink-0 snap-start">
-            <p className="text-cream-text font-medium text-sm">You're not enrolled in any courses yet.</p>
-            <p className="text-cream-text/70 text-xs mt-1">Browse programs below to get started.</p>
-          </div>
-        ) : (
-          courses.map((c) => {
-            const allComplete = progressMap[c.id] === 100 || (nextChapterMap[c.id] === null && (progressMap[c.id] || 0) > 0);
-            const linkTo = allComplete
-              ? `/courses/${c.id}`
-              : nextChapterMap[c.id]
-                ? `/chapters/${nextChapterMap[c.id]}`
-                : `/courses/${c.id}`;
-            return (
-              <Link
-                key={c.id}
-                to={linkTo}
-                className="min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start"
-              >
-                <div className="aspect-video bg-surface-2 relative">
-                  {c.thumbnail_url && <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />}
-                </div>
-                <div className="p-4">
-                  <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{c.instructor_display_name}</p>
-                  <div className="mt-3 h-1 bg-surface-2 rounded-full overflow-hidden">
-                    <div className="h-full bg-cream rounded-full transition-all" style={{ width: `${progressMap[c.id] || 0}%` }} />
+      <div className="relative">
+        <div className="flex gap-4 overflow-x-auto snap-x hide-scrollbar pb-2">
+          {!courses.length ? (
+            <div className="min-w-[320px] max-w-[320px] h-[200px] bg-cream rounded-xl p-6 flex flex-col justify-center flex-shrink-0 snap-start">
+              <p className="text-cream-text font-medium text-sm">You're not enrolled in any courses yet.</p>
+              <p className="text-cream-text/70 text-xs mt-1">Browse programs below to get started.</p>
+            </div>
+          ) : (
+            courses.map((c) => {
+              const allComplete = progressMap[c.id] === 100 || (nextChapterMap[c.id] === null && (progressMap[c.id] || 0) > 0);
+              const linkTo = allComplete
+                ? `/courses/${c.id}`
+                : nextChapterMap[c.id]
+                  ? `/chapters/${nextChapterMap[c.id]}`
+                  : `/courses/${c.id}`;
+              return (
+                <Link
+                  key={c.id}
+                  to={linkTo}
+                  className="min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start"
+                >
+                  <div className="aspect-video bg-surface-2 relative">
+                    {c.thumbnail_url && <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />}
                   </div>
-                  <p className="text-sm text-cream mt-3 flex items-center gap-1">
-                    {allComplete
-                      ? "Review"
-                      : (progressMap[c.id] || 0) > 0
-                        ? `${progressMap[c.id]}% complete`
-                        : "Start learning"} <ArrowRight className="h-3 w-3" />
-                  </p>
-                </div>
-              </Link>
-            );
-          })
-        )}
+                  <div className="p-4">
+                    <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
+                    <p className="text-sm text-muted-foreground mt-1">{c.instructor_display_name}</p>
+                    <div className="mt-3 h-1 bg-surface-2 rounded-full overflow-hidden">
+                      <div className="h-full bg-cream rounded-full transition-all" style={{ width: `${progressMap[c.id] || 0}%` }} />
+                    </div>
+                    <p className="text-sm text-cream mt-3 flex items-center gap-1">
+                      {allComplete
+                        ? "Review"
+                        : (progressMap[c.id] || 0) > 0
+                          ? `${progressMap[c.id]}% complete`
+                          : "Start learning"} <ArrowRight className="h-3 w-3" />
+                    </p>
+                  </div>
+                </Link>
+              );
+            })
+          )}
+        </div>
+        {/* Right-edge fade gradient to hint more content exists */}
+        <div className="pointer-events-none absolute top-0 right-0 bottom-0 w-12 bg-gradient-to-l from-canvas to-transparent" />
       </div>
     </section>
   );
