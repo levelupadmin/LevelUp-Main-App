@@ -247,6 +247,7 @@ export default function ThankYou() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [countdown, setCountdown] = useState(10);
+  const [redirectCancelled, setRedirectCancelled] = useState(false);
   const [purchasedUpsells, setPurchasedUpsells] = useState<Set<string>>(new Set());
   const [buyingUpsell, setBuyingUpsell] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
@@ -347,6 +348,7 @@ export default function ThankYou() {
   useEffect(() => {
     if (!order) return;
     if (!autoRedirect || redirectSeconds <= 0) return;
+    if (redirectCancelled) return;
 
     setCountdown(redirectSeconds);
     const timer = setInterval(() => {
@@ -366,7 +368,7 @@ export default function ThankYou() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [order, session, navigate, autoRedirect, redirectSeconds, customCtaUrl]);
+  }, [order, session, navigate, autoRedirect, redirectSeconds, customCtaUrl, redirectCancelled]);
 
   /* ── Resend magic link ── */
   const handleResendLink = async () => {
@@ -622,10 +624,19 @@ export default function ThankYou() {
                 </p>
               </>
             )}
-            {!isGuest && session && autoRedirect && countdown > 0 && (
-              <p className="text-sm text-muted-foreground text-center">
-                Redirecting in <span className="text-foreground font-bold">{countdown}</span> seconds…
-              </p>
+            {!isGuest && session && autoRedirect && !redirectCancelled && countdown > 0 && (
+              <div className="text-center space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Redirecting in <span className="text-foreground font-bold">{countdown}s</span>...
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setRedirectCancelled(true)}
+                  className="text-xs text-muted-foreground hover:text-foreground underline transition-colors"
+                >
+                  Stay on this page
+                </button>
+              </div>
             )}
             <Button
               onClick={handleGoToDashboard}
