@@ -142,7 +142,7 @@ const AdminLayout = ({ children, title }: Props) => {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 space-y-1">
+      <nav aria-label="Admin navigation" className="flex-1 px-3 space-y-1">
         {NAV_ITEMS.map((item) => (
           <Link
             key={item.path}
@@ -189,6 +189,7 @@ const AdminLayout = ({ children, title }: Props) => {
 
   return (
     <div className="flex min-h-screen bg-canvas">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[9999] focus:bg-surface focus:text-foreground focus:px-4 focus:py-2 focus:rounded-lg">Skip to content</a>
       {/* Desktop sidebar */}
       <aside className="hidden md:flex flex-col w-[260px] min-w-[260px] border-r border-border bg-canvas sticky top-0 h-screen">
         <SidebarContent />
@@ -210,7 +211,7 @@ const AdminLayout = ({ children, title }: Props) => {
                 <X className="h-5 w-5 text-muted-foreground" />
               </button>
             </div>
-            <nav className="flex-1 px-3 space-y-1">
+            <nav aria-label="Admin navigation" className="flex-1 px-3 space-y-1">
               {NAV_ITEMS.map((item) => (
                 <Link
                   key={item.path}
@@ -333,7 +334,7 @@ const AdminLayout = ({ children, title }: Props) => {
         </header>
 
         {/* Content area */}
-        <main className="flex-1 grain">
+        <main id="main-content" className="flex-1 grain">
           <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-6 md:py-10 relative z-10">
             {children}
           </div>

@@ -48,13 +48,14 @@ const StudentLayout = ({ children, title }: Props) => {
 
   return (
     <div className="flex min-h-screen bg-canvas">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[9999] focus:bg-surface focus:text-foreground focus:px-4 focus:py-2 focus:rounded-lg">Skip to content</a>
       {/* Desktop sidebar - visible at md+ (768px) */}
       <aside className="hidden md:flex flex-col w-[260px] min-w-[260px] border-r border-border bg-canvas sticky top-0 h-screen">
         <div className="p-6">
           <LevelUpWordmark />
         </div>
 
-        <nav className="flex-1 px-3 space-y-1">
+        <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1">
           {NAV_ITEMS.map((item) => {
             const active = location.pathname === item.path || location.pathname.startsWith(item.path + "/");
             return (
@@ -122,7 +123,7 @@ const StudentLayout = ({ children, title }: Props) => {
                 <X className="h-5 w-5 text-muted-foreground" />
               </button>
             </div>
-            <nav className="flex-1 px-3 space-y-1">
+            <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1">
               {NAV_ITEMS.map((item) => {
                 const active = location.pathname === item.path;
                 return (
@@ -254,7 +255,7 @@ const StudentLayout = ({ children, title }: Props) => {
         </header>
 
         {/* Content area */}
-        <main className="flex-1 grain pb-20 md:pb-0">
+        <main id="main-content" className="flex-1 grain pb-20 md:pb-0">
           <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-6 md:py-10 relative z-10 page-enter">
             {children}
           </div>
@@ -262,7 +263,7 @@ const StudentLayout = ({ children, title }: Props) => {
       </div>
 
       {/* Mobile bottom tab bar */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas border-t border-border flex items-stretch">
+      <nav aria-label="Mobile navigation" className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas border-t border-border flex items-stretch">
         {MOBILE_NAV_ITEMS.map((item) => {
           const active = location.pathname === item.path || location.pathname.startsWith(item.path + "/");
           return (
