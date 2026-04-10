@@ -207,6 +207,7 @@ export default function CheckoutPage() {
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
+    script.onerror = () => toast.error("Failed to load payment gateway. Please refresh the page.");
     document.body.appendChild(script);
   }, []);
 

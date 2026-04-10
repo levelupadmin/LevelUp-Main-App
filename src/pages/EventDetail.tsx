@@ -38,6 +38,7 @@ const EventDetail = () => {
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
+    script.onerror = () => toast({ title: "Failed to load payment gateway", description: "Please refresh the page.", variant: "destructive" });
     document.body.appendChild(script);
   }, []);
 
