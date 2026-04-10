@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 import { toast } from "sonner";
@@ -46,6 +46,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const currentUserIdRef = useRef<string | null>(null);
 
   // Dev bypass — skip Supabase auth entirely
   if (DEV_BYPASS) {
@@ -87,6 +88,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (hadSession) {
           toast.error("Your session has expired. Please sign in again.");
         }
+        currentUserIdRef.current = null;
         setProfile(null);
         setLoading(false);
         initialLoadDone = true;
@@ -97,9 +99,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       // If this is a background token refresh and the user id hasn't
       // changed, skip the profile refetch entirely — nothing to update.
-      if (initialLoadDone && session?.user?.id === nextSession.user.id) {
+      if (initialLoadDone && currentUserIdRef.current === nextSession.user.id) {
         return;
       }
+      currentUserIdRef.current = nextSession.user.id;
 
       const nextProfile = await fetchProfile(nextSession.user.id);
 
