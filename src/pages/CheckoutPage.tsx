@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -62,6 +62,7 @@ export default function CheckoutPage() {
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [fieldTouched, setFieldTouched] = useState<Record<string, boolean>>({});
   const [paying, setPaying] = useState(false);
+  const paymentInFlightRef = useRef(false);
 
   /* ── Load offering data ── */
   useEffect(() => {
@@ -212,6 +213,8 @@ export default function CheckoutPage() {
   /* ── Pay ── */
   const handlePay = async () => {
     if (!offering || !user) return;
+    if (paymentInFlightRef.current) return;
+    paymentInFlightRef.current = true;
 
     // Validate custom fields — mark all as touched so inline errors appear
     const touchAll: Record<string, boolean> = {};
@@ -245,7 +248,7 @@ export default function CheckoutPage() {
 
       if (error || !data?.razorpay_order_id) {
         toast.error(data?.error ?? "Failed to create order");
-        setPaying(false);
+        setPaying(false); paymentInFlightRef.current = false;
         return;
       }
 
@@ -287,7 +290,7 @@ export default function CheckoutPage() {
 
           if (verifyErr || !verifyData?.success) {
             toast.error("Payment verification failed, please contact support");
-            setPaying(false);
+            setPaying(false); paymentInFlightRef.current = false;
             return;
           }
 
@@ -298,7 +301,7 @@ export default function CheckoutPage() {
         },
         modal: {
           ondismiss: () => {
-            setPaying(false);
+            setPaying(false); paymentInFlightRef.current = false;
           },
         },
       };
@@ -306,12 +309,12 @@ export default function CheckoutPage() {
       const rzp = new window.Razorpay(options);
       rzp.on("payment.failed", () => {
         toast.error("Payment failed, please try again");
-        setPaying(false);
+        setPaying(false); paymentInFlightRef.current = false;
       });
       rzp.open();
     } catch {
       toast.error("Something went wrong, please try again");
-      setPaying(false);
+      setPaying(false); paymentInFlightRef.current = false;
     }
   };
 
