@@ -8,6 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import { Heart, MessageCircle, Pin, Send, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 
 interface Post {
   id: string;
@@ -25,7 +27,7 @@ interface Post {
 const CommunityPage = () => {
   usePageTitle("Community");
   const { user, profile } = useAuth();
-  const { toast } = useToast();
+  const { toast: showToast } = useToast();
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +78,10 @@ const CommunityPage = () => {
     setLoading(false);
   }, [user]);
 
+  const { isRefreshing, pullProgress, pullDistance } = usePullToRefresh({
+    onRefresh: async () => { await loadPosts(); },
+  });
+
   useEffect(() => { loadPosts(); }, [loadPosts]);
 
   const handlePost = async () => {
@@ -87,10 +93,11 @@ const CommunityPage = () => {
       is_admin_post: profile?.role === "admin",
     });
     if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      showToast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
       setNewPost("");
       loadPosts();
+      toast.success("Post shared");
     }
     setPosting(false);
   };
@@ -143,11 +150,24 @@ const CommunityPage = () => {
       user_id: user.id,
     });
     if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      showToast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
+      // Notify the post author about the reply (skip if commenting on own post)
+      const post = posts.find((p) => p.id === postId);
+      if (post && post.user_id !== user.id) {
+        await (supabase as any).from("notifications").insert({
+          user_id: post.user_id,
+          type: "community_reply",
+          title: "New comment on your post",
+          body: draft.slice(0, 100),
+          link: "/community",
+        });
+      }
+
       setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
       await fetchComments(postId);
       setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comment_count: p.comment_count + 1 } : p));
+      toast.success("Comment added");
     }
     setCommentLoading(false);
   };
@@ -166,6 +186,19 @@ const CommunityPage = () => {
   return (
     <StudentLayout title="Community">
       <div className="max-w-2xl mx-auto space-y-6">
+        {/* Pull-to-refresh indicator */}
+        {(pullDistance > 0 || isRefreshing) && (
+          <div className="flex justify-center" style={{ height: pullDistance > 0 ? pullDistance : 40 }}>
+            <Loader2
+              className="h-5 w-5 text-muted-foreground"
+              style={{
+                opacity: isRefreshing ? 1 : pullProgress,
+                transform: `rotate(${pullProgress * 360}deg)`,
+                animation: isRefreshing ? "spin 1s linear infinite" : "none",
+              }}
+            />
+          </div>
+        )}
         <div>
           <h1 className="text-[28px] sm:text-[32px] font-semibold leading-tight">Community</h1>
           <p className="text-base text-muted-foreground mt-1">Connect with fellow creators</p>
@@ -195,9 +228,27 @@ const CommunityPage = () => {
 
         {/* Posts */}
         {loading ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-            Loading posts...
+          <div className="space-y-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-surface border border-border rounded-xl p-4 space-y-3 animate-pulse">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-surface-2 flex-shrink-0" />
+                  <div className="space-y-1.5 flex-1">
+                    <div className="h-3 bg-surface-2 rounded w-28" />
+                    <div className="h-2 bg-surface-2 rounded w-16" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3 bg-surface-2 rounded w-full" />
+                  <div className="h-3 bg-surface-2 rounded w-5/6" />
+                  <div className="h-3 bg-surface-2 rounded w-2/3" />
+                </div>
+                <div className="flex items-center gap-4 pt-1">
+                  <div className="h-3 bg-surface-2 rounded w-10" />
+                  <div className="h-3 bg-surface-2 rounded w-10" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : posts.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">

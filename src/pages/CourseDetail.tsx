@@ -51,6 +51,7 @@ interface Chapter {
 interface ChapterProgress {
   chapter_id: string;
   completed_at: string | null;
+  last_position_seconds: number;
 }
 
 const isNotFoundError = (code?: string | null) => code === "PGRST116";
@@ -151,7 +152,7 @@ const CourseDetail = () => {
       // Load progress
       const { data: prog } = await supabase
         .from("chapter_progress")
-        .select("chapter_id, completed_at")
+        .select("chapter_id, completed_at, last_position_seconds")
         .eq("user_id", user.id)
         .eq("course_id", courseId!);
       setProgress((prog || []) as ChapterProgress[]);
@@ -162,6 +163,9 @@ const CourseDetail = () => {
 
   const isChapterCompleted = (chapterId: string) =>
     progress.some((p) => p.chapter_id === chapterId && p.completed_at);
+
+  const getChapterProgress = (chapterId: string) =>
+    progress.find((p) => p.chapter_id === chapterId);
 
   const isChapterLocked = (chapter: Chapter, sectionChapters: Chapter[]) => {
     if (chapter.make_free) return false;
@@ -245,6 +249,12 @@ const CourseDetail = () => {
   return (
     <StudentLayout title={course.title}>
       <div className="max-w-4xl mx-auto space-y-8">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
+          <Link to="/my-courses" className="hover:text-foreground transition-colors">My Courses</Link>
+          <span>&rsaquo;</span>
+          <span className="text-foreground truncate">{course.title}</span>
+        </div>
         {/* Hero */}
         <div className="relative rounded-[20px] overflow-hidden bg-card border border-border">
           {course.hero_image_url && (
@@ -344,39 +354,52 @@ const CourseDetail = () => {
                         const locked = isChapterLocked(chapter, sectionChapters);
                         const completed = isChapterCompleted(chapter.id);
 
+                        const chapterProg = getChapterProgress(chapter.id);
+                        const posSeconds = chapterProg?.last_position_seconds || 0;
+                        const showProgressBar = posSeconds > 0 && !completed;
+
                         return (
-                          <button
-                            key={chapter.id}
-                            onClick={() => handleChapterClick(chapter, sectionChapters)}
-                            className="w-full flex items-center gap-3 h-10 px-4 rounded-lg text-left text-sm transition-colors hover:bg-accent/50 group"
-                          >
-                            <span className="w-5 h-5 flex items-center justify-center shrink-0">
-                              {completed ? (
-                                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                              ) : locked ? (
-                                <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-                              ) : (
-                                <Play className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground" />
-                              )}
-                            </span>
-                            <span
-                              className={`flex-1 truncate ${
-                                locked ? "text-muted-foreground" : "text-foreground"
-                              }`}
+                          <div key={chapter.id}>
+                            <button
+                              onClick={() => handleChapterClick(chapter, sectionChapters)}
+                              className="w-full flex items-center gap-3 h-10 px-4 rounded-lg text-left text-sm transition-colors hover:bg-accent/50 group"
                             >
-                              {idx + 1}. {chapter.title}
-                            </span>
-                            {chapter.make_free && !hasAccess && (
-                              <Badge variant="outline" className="text-[10px] h-5 px-1.5">
-                                Free
-                              </Badge>
-                            )}
-                            {chapter.duration_seconds && (
-                              <span className="text-xs text-muted-foreground font-mono shrink-0">
-                                {formatDuration(chapter.duration_seconds)}
+                              <span className="w-5 h-5 flex items-center justify-center shrink-0">
+                                {completed ? (
+                                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                ) : locked ? (
+                                  <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                                ) : (
+                                  <Play className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground" />
+                                )}
                               </span>
+                              <span
+                                className={`flex-1 truncate ${
+                                  locked ? "text-muted-foreground" : "text-foreground"
+                                }`}
+                              >
+                                {idx + 1}. {chapter.title}
+                              </span>
+                              {chapter.make_free && !hasAccess && (
+                                <Badge variant="outline" className="text-[10px] h-5 px-1.5">
+                                  Free
+                                </Badge>
+                              )}
+                              {chapter.duration_seconds && (
+                                <span className="text-xs text-muted-foreground font-mono shrink-0">
+                                  {formatDuration(chapter.duration_seconds)}
+                                </span>
+                              )}
+                            </button>
+                            {showProgressBar && (
+                              <div className="h-0.5 bg-surface-2 rounded-full overflow-hidden mx-4 mt-0.5">
+                                <div
+                                  className="h-full bg-[hsl(var(--cream))] rounded-full transition-all"
+                                  style={{ width: `${Math.min((posSeconds / (chapter.duration_seconds || 600)) * 100, 100)}%` }}
+                                />
+                              </div>
                             )}
-                          </button>
+                          </div>
                         );
                       })}
                     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import {
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 import Confetti from "@/components/Confetti";
 import { checkMilestone } from "@/hooks/useMilestone";
+import { useVideoProgress } from "@/hooks/useVideoProgress";
 
 interface Chapter {
   id: string;
@@ -77,6 +78,7 @@ const ChapterViewer = () => {
 
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [courseId, setCourseId] = useState<string | null>(null);
+  const [courseTitle, setCourseTitle] = useState<string | null>(null);
   const [siblings, setSiblings] = useState<{ id: string; title: string }[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -89,6 +91,8 @@ const ChapterViewer = () => {
   const [loading, setLoading] = useState(true);
   const [milestone, setMilestone] = useState<{ pct: number; title: string; subtitle: string } | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
+
+  const { updateProgress, lastPosition } = useVideoProgress(chapterId, courseId, user?.id);
 
   const loadChapter = useCallback(async () => {
     if (!chapterId || !user) return;
@@ -118,6 +122,16 @@ const ChapterViewer = () => {
 
     const cid = sec?.course_id;
     setCourseId(cid || null);
+
+    // Fetch course title for breadcrumb
+    if (cid) {
+      const { data: courseData } = await supabase
+        .from("courses")
+        .select("title")
+        .eq("id", cid)
+        .maybeSingle();
+      setCourseTitle(courseData?.title || null);
+    }
 
     // Access check — if not free, verify access
     if (!ch.make_free && cid) {
@@ -241,6 +255,45 @@ const ChapterViewer = () => {
   useEffect(() => {
     loadChapter();
   }, [loadChapter]);
+
+  // Listen for YouTube / Vimeo / generic iframe progress messages
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      try {
+        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+
+        // YouTube IFrame API sends infoDelivery with playerState and currentTime
+        if (data?.event === "infoDelivery" && data?.info?.currentTime !== undefined) {
+          updateProgress(
+            Math.floor(data.info.currentTime),
+            Math.floor(data.info.duration || 0)
+          );
+          return;
+        }
+
+        // Vimeo player.js sends events with method "timeupdate"
+        if (data?.method === "timeupdate" && data?.value?.seconds !== undefined) {
+          updateProgress(
+            Math.floor(data.value.seconds),
+            Math.floor(data.value.duration || 0)
+          );
+          return;
+        }
+
+        // Generic fallback: any message with currentTime
+        if (data?.currentTime !== undefined) {
+          updateProgress(
+            Math.floor(data.currentTime),
+            Math.floor(data.duration || 0)
+          );
+        }
+      } catch {
+        // ignore non-JSON messages
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [updateProgress]);
 
   const handleMarkComplete = async () => {
     if (!user || !chapterId || !courseId) return;
@@ -378,9 +431,21 @@ const ChapterViewer = () => {
       <div className="flex flex-col lg:flex-row">
         {/* Main content */}
         <div className="flex-1 p-4 lg:p-8 space-y-6 max-w-4xl">
+          {/* Breadcrumb */}
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
+            <Link to="/my-courses" className="hover:text-foreground transition-colors">My Courses</Link>
+            <span>&rsaquo;</span>
+            {courseId && courseTitle && (
+              <>
+                <Link to={`/courses/${courseId}`} className="hover:text-foreground transition-colors truncate">{courseTitle}</Link>
+                <span>&rsaquo;</span>
+              </>
+            )}
+            <span className="text-foreground truncate">{chapter.title}</span>
+          </div>
           {/* Content renderer */}
           {chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
-            <VdoCipherPlayer chapterId={chapter.id} />
+            <VdoCipherPlayer chapterId={chapter.id} onProgress={updateProgress} startPosition={lastPosition} />
           ) : chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
             <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
               <iframe

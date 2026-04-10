@@ -4,9 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
 import usePageTitle from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
-import { Calendar, Clock, Video, ExternalLink, PlayCircle } from "lucide-react";
+import { Bell, Calendar, Clock, Video, ExternalLink, PlayCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useSessionReminder } from "@/hooks/useSessionReminder";
 
 interface SessionRow {
   id: string;
@@ -25,6 +26,9 @@ const MySessionsPage = () => {
   const { user } = useAuth();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reminderToggle, setReminderToggle] = useState(false);
+  const { requestPermission, scheduleReminder, cancelReminder, isReminderSet } =
+    useSessionReminder();
 
   useEffect(() => {
     const load = async () => {
@@ -86,6 +90,21 @@ const MySessionsPage = () => {
     load();
   }, [user]);
 
+  // Re-schedule browser notifications for any sessions the user previously opted into
+  useEffect(() => {
+    if (!sessions.length) return;
+    const now = Date.now();
+    sessions.forEach((s) => {
+      if (
+        isReminderSet(s.id) &&
+        s.status === "scheduled" &&
+        new Date(s.scheduled_at).getTime() > now
+      ) {
+        scheduleReminder(s.id, s.title, s.scheduled_at);
+      }
+    });
+  }, [sessions, isReminderSet, scheduleReminder]);
+
   const now = new Date();
   const upcoming = sessions.filter(
     (s) => s.status === "scheduled" && !isPast(new Date(s.scheduled_at))
@@ -112,7 +131,19 @@ const MySessionsPage = () => {
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-24 bg-surface border border-border rounded-xl animate-pulse" />
+              <div key={i} className="bg-surface border border-border rounded-xl p-4 flex items-start gap-4 animate-pulse">
+                <div className="flex-shrink-0 w-14 h-14 rounded-lg bg-surface-2" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-surface-2 rounded w-1/2" />
+                  <div className="h-3 bg-surface-2 rounded w-1/3" />
+                  <div className="flex items-center gap-3 mt-2">
+                    <div className="h-3 bg-surface-2 rounded w-20" />
+                    <div className="h-3 bg-surface-2 rounded w-16" />
+                    <div className="h-3 bg-surface-2 rounded w-12" />
+                  </div>
+                </div>
+                <div className="h-8 bg-surface-2 rounded-lg w-16 flex-shrink-0 self-center" />
+              </div>
             ))}
           </div>
         ) : !sessions.length ? (
@@ -165,28 +196,59 @@ const MySessionsPage = () => {
                           </div>
                         </div>
 
-                        {/* Join button — link is fetched on click via the
-                            gated RPC, which only returns a value in a narrow
-                            window around the session start. */}
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const { data: link, error } = await supabase.rpc(
-                              "get_live_session_zoom_link",
-                              { p_session_id: s.id }
-                            );
-                            if (error || !link) {
-                              toast.error(
-                                "The join link for this session isn't available yet. It unlocks an hour before the session starts."
+                        {/* Action buttons */}
+                        <div className="flex-shrink-0 self-center flex flex-col gap-2 items-end">
+                          {/* Join button — link is fetched on click via the
+                              gated RPC, which only returns a value in a narrow
+                              window around the session start. */}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const { data: link, error } = await supabase.rpc(
+                                "get_live_session_zoom_link",
+                                { p_session_id: s.id }
                               );
-                              return;
-                            }
-                            window.open(link as string, "_blank", "noopener,noreferrer");
-                          }}
-                          className="flex-shrink-0 self-center px-4 py-2 rounded-lg bg-[hsl(var(--accent-amber))] text-background text-sm font-medium flex items-center gap-1.5 hover:opacity-90 transition-opacity"
-                        >
-                          Join <ExternalLink className="h-3.5 w-3.5" />
-                        </button>
+                              if (error || !link) {
+                                toast.error(
+                                  "The join link for this session isn't available yet. It unlocks an hour before the session starts."
+                                );
+                                return;
+                              }
+                              window.open(link as string, "_blank", "noopener,noreferrer");
+                            }}
+                            className="px-4 py-2 rounded-lg bg-[hsl(var(--accent-amber))] text-background text-sm font-medium flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+                          >
+                            Join <ExternalLink className="h-3.5 w-3.5" />
+                          </button>
+
+                          {/* Remind Me toggle */}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (isReminderSet(s.id)) {
+                                cancelReminder(s.id);
+                              } else {
+                                const granted = await requestPermission();
+                                if (granted) {
+                                  scheduleReminder(s.id, s.title, s.scheduled_at);
+                                  toast.success("Reminder set for 15 min before");
+                                } else {
+                                  toast.error("Please allow notifications in your browser settings");
+                                }
+                              }
+                              setReminderToggle((prev) => !prev);
+                            }}
+                            className={cn(
+                              "flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors",
+                              isReminderSet(s.id)
+                                ? "border-cream/30 text-cream bg-cream/10"
+                                : "border-border text-muted-foreground hover:text-foreground hover:border-border-hover"
+                            )}
+                          >
+                            <Bell className="h-3.5 w-3.5" />
+                            {isReminderSet(s.id) ? "Reminder set" : "Remind me"}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}

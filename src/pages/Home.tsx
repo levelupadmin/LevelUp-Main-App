@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useAuth } from "@/contexts/AuthContext";
@@ -7,10 +7,13 @@ import StudentLayout from "@/components/layout/StudentLayout";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import HeroCarousel from "@/components/HeroCarousel";
 import { TierBadge } from "@/components/TierBadge";
+import LazyImage from "@/components/LazyImage";
 import { ArrowRight, Calendar, MessageSquare, ArrowUp, Globe, MapPin, Loader2, Video, Clock, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
+import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/useEnrolmentCounts";
 
 
 // ── Section 1: Hero Welcome ──
@@ -43,6 +46,7 @@ const ContinueLearning = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [progressMap, setProgressMap] = useState<Record<string, number>>({});
+  const [nextChapterMap, setNextChapterMap] = useState<Record<string, string | null>>({});
 
   const fetchEnrolled = async () => {
     setError(false);
@@ -73,43 +77,63 @@ const ContinueLearning = () => {
 
         setCourses(coursesData ?? []);
 
-        // Calculate progress
+        // Calculate progress and find next uncompleted chapter
         if (coursesData?.length) {
-          const { data: allChapters } = await supabase
-            .from("chapters")
-            .select("id, section_id")
-            .in("section_id",
-              (await supabase.from("sections").select("id").in("course_id", courseIds)).data?.map((s: any) => s.id) ?? []
-            );
+          // Map section_id → course_id and get section sort orders
+          const { data: sectionsData } = await supabase
+            .from("sections")
+            .select("id, course_id, sort_order")
+            .in("course_id", courseIds)
+            .order("sort_order");
 
-          // Always scope chapter_progress to the current user — relying
-          // solely on RLS is a footgun if a future migration loosens
-          // the policy or a SECURITY DEFINER view is added.
+          const sectionCourseMap: Record<string, string> = {};
+          const sectionSortMap: Record<string, number> = {};
+          (sectionsData ?? []).forEach((s: any) => {
+            sectionCourseMap[s.id] = s.course_id;
+            sectionSortMap[s.id] = s.sort_order;
+          });
+
+          const sectionIds = (sectionsData ?? []).map((s: any) => s.id);
+
+          const { data: allChapters } = sectionIds.length
+            ? await supabase
+                .from("chapters")
+                .select("id, section_id, sort_order")
+                .in("section_id", sectionIds)
+                .order("sort_order")
+            : { data: [] };
+
+          // Always scope chapter_progress to the current user
           const { data: progressData } = await supabase
             .from("chapter_progress")
             .select("chapter_id, completed_at")
             .eq("user_id", user.id);
-
-          // Map section_id → course_id
-          const { data: sectionsData } = await supabase
-            .from("sections")
-            .select("id, course_id")
-            .in("course_id", courseIds);
-
-          const sectionCourseMap: Record<string, string> = {};
-          (sectionsData ?? []).forEach((s: any) => { sectionCourseMap[s.id] = s.course_id; });
 
           const completedSet = new Set(
             (progressData ?? []).filter((p: any) => p.completed_at).map((p: any) => p.chapter_id)
           );
 
           const pMap: Record<string, number> = {};
+          const ncMap: Record<string, string | null> = {};
+
           for (const cId of courseIds) {
-            const totalForCourse = (allChapters ?? []).filter((ch: any) => sectionCourseMap[ch.section_id] === cId).length;
-            const doneForCourse = (allChapters ?? []).filter((ch: any) => sectionCourseMap[ch.section_id] === cId && completedSet.has(ch.id)).length;
+            const courseChapters = (allChapters ?? [])
+              .filter((ch: any) => sectionCourseMap[ch.section_id] === cId)
+              .sort((a: any, b: any) => {
+                const sa = sectionSortMap[a.section_id] ?? 0;
+                const sb = sectionSortMap[b.section_id] ?? 0;
+                return sa !== sb ? sa - sb : a.sort_order - b.sort_order;
+              });
+            const totalForCourse = courseChapters.length;
+            const doneForCourse = courseChapters.filter((ch: any) => completedSet.has(ch.id)).length;
             pMap[cId] = totalForCourse > 0 ? Math.round((doneForCourse / totalForCourse) * 100) : 0;
+
+            // Find first uncompleted chapter
+            const nextChapter = courseChapters.find((ch: any) => !completedSet.has(ch.id));
+            ncMap[cId] = nextChapter ? nextChapter.id : null; // null means all complete
           }
           setProgressMap(pMap);
+          setNextChapterMap(ncMap);
         }
     } catch (err) {
       if (import.meta.env.DEV) console.error("Failed to load enrolled courses:", err);
@@ -127,7 +151,17 @@ const ContinueLearning = () => {
     <section>
       <h2 className="text-lg font-semibold mb-4">Continue Learning</h2>
       <div className="flex gap-4 overflow-x-auto pb-2">
-        {[1,2,3].map(i => <div key={i} className="min-w-[300px] h-[240px] bg-surface border border-border rounded-xl animate-pulse flex-shrink-0" />)}
+        {[1,2,3].map(i => (
+          <div key={i} className="min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden animate-pulse flex-shrink-0">
+            <div className="aspect-video bg-surface-2" />
+            <div className="p-4 space-y-3">
+              <div className="h-4 bg-surface-2 rounded w-3/4" />
+              <div className="h-3 bg-surface-2 rounded w-1/2" />
+              <div className="h-1 bg-surface-2 rounded-full w-full mt-3" />
+              <div className="h-3 bg-surface-2 rounded w-1/3" />
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -149,27 +183,39 @@ const ContinueLearning = () => {
             <p className="text-cream-text/70 text-xs mt-1">Browse programs below to get started.</p>
           </div>
         ) : (
-          courses.map((c) => (
-            <Link
-              key={c.id}
-              to={`/courses/${c.id}`}
-              className="min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start"
-            >
-              <div className="aspect-video bg-surface-2 relative">
-                {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
-              </div>
-              <div className="p-4">
-                <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
-                <p className="text-sm text-muted-foreground mt-1">{c.instructor_display_name}</p>
-                <div className="mt-3 h-1 bg-surface-2 rounded-full overflow-hidden">
-                  <div className="h-full bg-cream rounded-full transition-all" style={{ width: `${progressMap[c.id] || 0}%` }} />
+          courses.map((c) => {
+            const allComplete = progressMap[c.id] === 100 || (nextChapterMap[c.id] === null && (progressMap[c.id] || 0) > 0);
+            const linkTo = allComplete
+              ? `/courses/${c.id}`
+              : nextChapterMap[c.id]
+                ? `/chapters/${nextChapterMap[c.id]}`
+                : `/courses/${c.id}`;
+            return (
+              <Link
+                key={c.id}
+                to={linkTo}
+                className="min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start"
+              >
+                <div className="aspect-video bg-surface-2 relative">
+                  {c.thumbnail_url && <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />}
                 </div>
-                <p className="text-sm text-cream mt-3 flex items-center gap-1">
-                  {(progressMap[c.id] || 0) > 0 ? `${progressMap[c.id]}% complete` : "Start learning"} <ArrowRight className="h-3 w-3" />
-                </p>
-              </div>
-            </Link>
-          ))
+                <div className="p-4">
+                  <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{c.instructor_display_name}</p>
+                  <div className="mt-3 h-1 bg-surface-2 rounded-full overflow-hidden">
+                    <div className="h-full bg-cream rounded-full transition-all" style={{ width: `${progressMap[c.id] || 0}%` }} />
+                  </div>
+                  <p className="text-sm text-cream mt-3 flex items-center gap-1">
+                    {allComplete
+                      ? "Review"
+                      : (progressMap[c.id] || 0) > 0
+                        ? `${progressMap[c.id]}% complete`
+                        : "Start learning"} <ArrowRight className="h-3 w-3" />
+                  </p>
+                </div>
+              </Link>
+            );
+          })
         )}
       </div>
     </section>
@@ -658,6 +704,12 @@ const UpcomingSessions = () => {
 const BrowsePrograms = () => {
   const [courses, setCourses] = useState<any[]>([]);
 
+  const offeringIds = useMemo(
+    () => courses.map((c: any) => c.offering_id).filter(Boolean) as string[],
+    [courses]
+  );
+  const { counts: enrolmentCounts, popularIds } = useEnrolmentCounts(offeringIds);
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -748,15 +800,28 @@ const BrowsePrograms = () => {
             className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
           >
             <div className="aspect-video bg-surface-2 relative">
-              {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
-              <div className="absolute top-2 left-2">
+              {c.thumbnail_url && <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />}
+              <div className="absolute top-2 left-2 flex items-center gap-1.5">
                 <TierBadge tier={c.product_tier} />
+                {c.offering_id && popularIds.has(c.offering_id) && (
+                  <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase font-mono bg-orange-500 text-white">
+                    Popular
+                  </span>
+                )}
               </div>
             </div>
             <div className="p-4">
               <h3 className="text-base font-semibold mt-1 line-clamp-1">{c.title}</h3>
               {c.instructor_display_name && (
                 <p className="text-xs text-muted-foreground mt-0.5">{c.instructor_display_name}</p>
+              )}
+              {c.offering_id && formatEnrolmentLabel(enrolmentCounts[c.offering_id]) && (
+                <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                  {isHotCourse(enrolmentCounts[c.offering_id]) && (
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500" />
+                  )}
+                  {formatEnrolmentLabel(enrolmentCounts[c.offering_id])}
+                </p>
               )}
               {c.duration_text && (
                 <p className="text-xs font-mono text-muted-foreground mt-1">{c.duration_text}</p>
@@ -845,17 +910,37 @@ const NewMembers = () => {
 // ── Main Home Page ──
 const Home = () => {
   usePageTitle("Dashboard");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { isRefreshing, pullProgress, pullDistance } = usePullToRefresh({
+    onRefresh: async () => {
+      setRefreshKey((k) => k + 1);
+    },
+  });
+
   return (
     <StudentLayout title="">
       <div className="space-y-8">
+        {/* Pull-to-refresh indicator */}
+        {(pullDistance > 0 || isRefreshing) && (
+          <div className="flex justify-center" style={{ height: pullDistance > 0 ? pullDistance : 40 }}>
+            <Loader2
+              className="h-5 w-5 text-muted-foreground"
+              style={{
+                opacity: isRefreshing ? 1 : pullProgress,
+                transform: `rotate(${pullProgress * 360}deg)`,
+                animation: isRefreshing ? "spin 1s linear infinite" : "none",
+              }}
+            />
+          </div>
+        )}
         <HeroCarousel />
         <HeroWelcome />
-        <ContinueLearning />
-        <PopularCommunity />
-        <UpcomingEvents />
-        <UpcomingSessions />
-        <BrowsePrograms />
-        <NewMembers />
+        <ContinueLearning key={`cl-${refreshKey}`} />
+        <PopularCommunity key={`pc-${refreshKey}`} />
+        <UpcomingEvents key={`ue-${refreshKey}`} />
+        <UpcomingSessions key={`us-${refreshKey}`} />
+        <BrowsePrograms key={`bp-${refreshKey}`} />
+        <NewMembers key={`nm-${refreshKey}`} />
       </div>
     </StudentLayout>
   );

@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
 import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { Input } from "@/components/ui/input";
+import LazyImage from "@/components/LazyImage";
 import { ArrowRight, Search, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useWishlist } from "@/hooks/useWishlist";
+import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/useEnrolmentCounts";
 
 const TIER_ORDER = ["live_cohort", "masterclass", "advanced_program", "workshop"] as const;
 const TIER_FILTERS = ["All", "Mentorship Cohorts", "Masterclasses", "Programs", "Workshops"] as const;
@@ -45,6 +47,13 @@ const BrowsePage = () => {
   const { wishlistedIds, toggle: toggleWishlist } = useWishlist();
 
   usePageTitle("Browse Programs");
+
+  // Batch-fetch enrolment counts for all offering IDs
+  const offeringIds = useMemo(
+    () => courses.map((c) => c.offering_id).filter(Boolean) as string[],
+    [courses]
+  );
+  const { counts: enrolmentCounts, popularIds } = useEnrolmentCounts(offeringIds);
 
   useEffect(() => {
     const load = async () => {
@@ -195,7 +204,19 @@ const BrowsePage = () => {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="bg-surface border border-border rounded-xl h-[340px] animate-pulse" />
+              <div key={i} className="bg-surface border border-border rounded-xl overflow-hidden animate-pulse">
+                <div className="aspect-video bg-surface-2" />
+                <div className="p-4 space-y-2">
+                  <div className="h-4 bg-surface-2 rounded w-3/4" />
+                  <div className="h-3 bg-surface-2 rounded w-1/2" />
+                  <div className="h-3 bg-surface-2 rounded w-full" />
+                  <div className="h-3 bg-surface-2 rounded w-2/3" />
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
+                    <div className="h-4 bg-surface-2 rounded w-20" />
+                    <div className="h-3 bg-surface-2 rounded w-14" />
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         ) : filtered.length === 0 ? (
@@ -233,15 +254,19 @@ const BrowsePage = () => {
                     >
                       <div className="aspect-video bg-surface-2 relative">
                         {c.thumbnail_url && (
-                          <img
+                          <LazyImage
                             src={c.thumbnail_url}
                             alt={c.title}
-                            className="w-full h-full object-cover dark-img"
-                            loading="lazy"
+                            className="w-full h-full"
                           />
                         )}
-                        <div className="absolute top-2 left-2">
+                        <div className="absolute top-2 left-2 flex items-center gap-1.5">
                           <TierBadge tier={c.product_tier} />
+                          {c.offering_id && popularIds.has(c.offering_id) && (
+                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase font-mono bg-orange-500 text-white">
+                              Popular
+                            </span>
+                          )}
                         </div>
                         <div className="absolute top-2 right-2 flex items-center gap-1">
                           {c.status === "upcoming" && (
@@ -268,6 +293,14 @@ const BrowsePage = () => {
                         </h3>
                         {c.instructor_display_name && (
                           <p className="text-sm text-muted-foreground line-clamp-1">{c.instructor_display_name}</p>
+                        )}
+                        {c.offering_id && formatEnrolmentLabel(enrolmentCounts[c.offering_id]) && (
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            {isHotCourse(enrolmentCounts[c.offering_id]) && (
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500" />
+                            )}
+                            {formatEnrolmentLabel(enrolmentCounts[c.offering_id])}
+                          </p>
                         )}
                         {tier !== "workshop" && c.description && (
                           <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>

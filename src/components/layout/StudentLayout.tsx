@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
+import NotificationDropdown from "@/components/NotificationDropdown";
+import { useNotifications } from "@/hooks/useNotifications";
 import {
   Home, BookOpen, Compass, MessageSquare, User, Settings,
   Menu, X, Search, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3
@@ -39,6 +41,8 @@ const StudentLayout = ({ children, title }: Props) => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const { notifications, unreadCount, loading: notifLoading, markRead, markAllRead } = useNotifications();
 
   const firstName = profile?.full_name?.split(" ")[0] ?? "Student";
 
@@ -190,9 +194,28 @@ const StudentLayout = ({ children, title }: Props) => {
               <kbd className="font-mono text-xs text-muted-foreground ml-2">⌘K</kbd>
             </button>
 
-            <button className="relative text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center">
-              <Bell className="h-5 w-5" />
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setNotifOpen(!notifOpen)}
+                className="relative text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"
+              >
+                <Bell className="h-5 w-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1.5 right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold leading-none text-white bg-red-500 rounded-full">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+              <NotificationDropdown
+                open={notifOpen}
+                onClose={() => setNotifOpen(false)}
+                notifications={notifications}
+                unreadCount={unreadCount}
+                loading={notifLoading}
+                onMarkRead={markRead}
+                onMarkAllRead={markAllRead}
+              />
+            </div>
 
             <div className="relative">
               <button

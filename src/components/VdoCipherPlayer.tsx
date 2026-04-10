@@ -6,9 +6,11 @@ import { AlertCircle, Lock, Clock } from "lucide-react";
 interface Props {
   chapterId: string;
   height?: number;
+  onProgress?: (currentSeconds: number, totalSeconds: number) => void;
+  startPosition?: number;
 }
 
-const VdoCipherPlayer = ({ chapterId }: Props) => {
+const VdoCipherPlayer = ({ chapterId, onProgress, startPosition }: Props) => {
   const [otp, setOtp] = useState<string | null>(null);
   const [playbackInfo, setPlaybackInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +65,24 @@ const VdoCipherPlayer = ({ chapterId }: Props) => {
     return () => { cancelled = true; };
   }, [chapterId]);
 
+  // Listen for VdoCipher postMessage progress events
+  useEffect(() => {
+    if (!onProgress) return;
+    const handler = (event: MessageEvent) => {
+      if (event.origin !== "https://player.vdocipher.com") return;
+      try {
+        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (data.currentTime !== undefined) {
+          onProgress(Math.floor(data.currentTime), Math.floor(data.duration || 0));
+        }
+      } catch {
+        // ignore non-JSON messages
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [onProgress]);
+
   if (loading) {
     return (
       <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
@@ -86,7 +106,7 @@ const VdoCipherPlayer = ({ chapterId }: Props) => {
   return (
     <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
       <iframe
-        src={`https://player.vdocipher.com/v2/?otp=${otp}&playbackInfo=${playbackInfo}`}
+        src={`https://player.vdocipher.com/v2/?otp=${otp}&playbackInfo=${playbackInfo}${startPosition ? `&t=${startPosition}` : ""}`}
         style={{ border: 0, width: "100%", height: "100%" }}
         allow="encrypted-media"
         allowFullScreen

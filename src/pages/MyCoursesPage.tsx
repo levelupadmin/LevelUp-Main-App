@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import StudentLayout from "@/components/layout/StudentLayout";
 import { TierBadge } from "@/components/TierBadge";
 import { Progress } from "@/components/ui/progress";
+import LazyImage from "@/components/LazyImage";
 import { ArrowRight, BookOpen, Sparkles } from "lucide-react";
 
 interface EnrolledCourse {
@@ -244,7 +245,7 @@ const MyCoursesPage = () => {
               >
                 <div className="aspect-video bg-surface-2">
                   {c.thumbnail_url && (
-                    <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover dark-img" />
+                    <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />
                   )}
                 </div>
                 <div className="p-4 space-y-2">
@@ -284,7 +285,7 @@ const MyCoursesPage = () => {
                 >
                   <div className="aspect-video bg-surface-2 relative">
                     {c.thumbnail_url && (
-                      <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover dark-img" loading="lazy" />
+                      <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />
                     )}
                     <div className="absolute top-2 left-2">
                       <TierBadge tier={c.product_tier} />
