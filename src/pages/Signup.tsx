@@ -176,7 +176,21 @@ const Signup = () => {
                 pattern="[0-9]*"
                 placeholder="9876543210"
                 value={phone}
-                onChange={(e) => { setPhone(e.target.value); setPhoneError(""); }}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setPhone(val);
+                  if (phoneError) {
+                    let digits = val.replace(/\D/g, "");
+                    if (digits.startsWith("91") && digits.length > 10) {
+                      digits = digits.slice(2);
+                    } else if (digits.startsWith("0") && digits.length > 10) {
+                      digits = digits.slice(1);
+                    }
+                    if (digits.length >= 10) {
+                      setPhoneError("");
+                    }
+                  }
+                }}
                 required
                 aria-invalid={!!phoneError}
                 aria-describedby="phone-error"
