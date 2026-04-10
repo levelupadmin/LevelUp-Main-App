@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import StudentLayout from "@/components/layout/StudentLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -28,6 +28,7 @@ const EventDetail = () => {
   const [isRegistered, setIsRegistered] = useState(false);
   const [regCount, setRegCount] = useState(0);
   const [registering, setRegistering] = useState(false);
+  const paymentInFlightRef = useRef(false);
 
   usePageTitle(event?.title ?? "Event");
 
@@ -90,6 +91,8 @@ const EventDetail = () => {
 
   const handleRegisterPaid = async () => {
     if (!session?.access_token || !event) return;
+    if (paymentInFlightRef.current) return;
+    paymentInFlightRef.current = true;
     setRegistering(true);
     try {
       const res = await fetch(
@@ -113,6 +116,7 @@ const EventDetail = () => {
         toast({ title: "Registered! ✓", description: "You're in — see you there." });
         setIsRegistered(true);
         setRegCount((c) => c + 1);
+        paymentInFlightRef.current = false;
         return;
       }
 
@@ -155,6 +159,8 @@ const EventDetail = () => {
               }
             } catch {
               toast({ title: "Verification failed", description: "Contact support if you were charged.", variant: "destructive" });
+            } finally {
+              paymentInFlightRef.current = false;
             }
           },
           prefill: {
@@ -169,14 +175,20 @@ const EventDetail = () => {
         }
         const rzp = new (window as any).Razorpay(options);
         rzp.on("payment.failed", () => {
+          paymentInFlightRef.current = false;
           toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
+        });
+        rzp.on("modal.ondismiss", () => {
+          paymentInFlightRef.current = false;
         });
         rzp.open();
       } else if (data.error) {
         toast({ title: "Error", description: data.error, variant: "destructive" });
+        paymentInFlightRef.current = false;
       }
     } catch {
       toast({ title: "Error", description: "Something went wrong.", variant: "destructive" });
+      paymentInFlightRef.current = false;
     } finally {
       setRegistering(false);
     }
