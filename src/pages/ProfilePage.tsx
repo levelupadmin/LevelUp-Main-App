@@ -88,6 +88,18 @@ const ProfilePage = () => {
   const [enrolments, setEnrolments] = useState<Enrolment[]>([]);
   const [courseMap, setCourseMap] = useState<Record<string, string>>({});
 
+  // Local display overrides so we can update the UI after save without a full reload
+  const [localProfile, setLocalProfile] = useState<{
+    full_name: string;
+    bio: string;
+    city: string;
+    occupation: string;
+  } | null>(null);
+
+  const displayProfile = localProfile
+    ? { ...profile, full_name: localProfile.full_name, bio: localProfile.bio, city: localProfile.city, occupation: localProfile.occupation }
+    : profile;
+
   const [form, setForm] = useState({
     full_name: "",
     bio: "",
@@ -96,7 +108,9 @@ const ProfilePage = () => {
   });
 
   useEffect(() => {
-    if (profile) {
+    if (localProfile) {
+      setForm({ ...localProfile });
+    } else if (profile) {
       setForm({
         full_name: profile.full_name ?? "",
         bio: (profile as any).bio ?? "",
@@ -104,7 +118,7 @@ const ProfilePage = () => {
         occupation: (profile as any).occupation ?? "",
       });
     }
-  }, [profile]);
+  }, [profile, localProfile]);
 
   useEffect(() => {
     if (!user) return;
@@ -172,8 +186,8 @@ const ProfilePage = () => {
     } else {
       toast.success("Profile updated");
       setEditing(false);
-      // Reload page to refresh auth context
-      window.location.reload();
+      // Update local display state instead of reloading the page
+      setLocalProfile({ ...form });
     }
   };
 
@@ -189,8 +203,8 @@ const ProfilePage = () => {
         <div className="bg-surface border border-border rounded-xl p-6">
           <div className="flex items-start gap-5">
             <InitialsAvatar
-              name={profile?.full_name ?? "U"}
-              photoUrl={profile?.avatar_url}
+              name={(displayProfile as any)?.full_name ?? "U"}
+              photoUrl={displayProfile?.avatar_url}
               size={96}
             />
             <div className="flex-1 min-w-0">
@@ -239,17 +253,17 @@ const ProfilePage = () => {
               ) : (
                 <>
                   <h2 className="text-[28px] font-semibold leading-tight">
-                    {profile?.full_name ?? "—"}
+                    {(displayProfile as any)?.full_name ?? "—"}
                   </h2>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    {profile?.email}
+                    {displayProfile?.email}
                   </p>
                   <p className="font-mono text-xs text-muted-foreground mt-1">
-                    Member #{profile?.member_number ?? "—"}
+                    Member #{displayProfile?.member_number ?? "—"}
                   </p>
-                  {(profile as any)?.bio && (
+                  {(displayProfile as any)?.bio && (
                     <p className="text-sm text-muted-foreground mt-3">
-                      {(profile as any).bio}
+                      {(displayProfile as any).bio}
                     </p>
                   )}
                   <Button
