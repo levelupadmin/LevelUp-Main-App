@@ -87,6 +87,7 @@ const AdminOfferingEditor = () => {
   const { profile } = useAuth();
 
   const [form, setForm] = useState(EMPTY_FORM);
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [allCourses, setAllCourses] = useState<CourseOption[]>([]);
   const [linkedCourseIds, setLinkedCourseIds] = useState<string[]>([]);
   const [upsells, setUpsells] = useState<UpsellRow[]>([]);
@@ -154,6 +155,9 @@ const AdminOfferingEditor = () => {
           });
         }
 
+        if (offeringRes.data && (offeringRes.data as any).slug) {
+          setSlugManuallyEdited(true);
+        }
         setLinkedCourseIds((ocsRes.data || []).map((oc) => oc.course_id));
 
         const upsellData = (upsellsRes.data || []).map((u) => {
@@ -190,6 +194,34 @@ const AdminOfferingEditor = () => {
       return;
     }
 
+    // Fix 23: Prevent publishing with no linked courses
+    if (form.status === "active" && linkedCourseIds.length === 0) {
+      toast({ title: "Cannot publish offering", description: "At least one course must be linked before setting status to Active.", variant: "destructive" });
+      return;
+    }
+
+    // Fix 24: Field validations
+    if (form.mrp_inr && Number(form.mrp_inr) < form.price_inr) {
+      toast({ title: "MRP must be >= Price", description: "MRP (strikethrough price) cannot be less than the selling price.", variant: "destructive" });
+      return;
+    }
+
+    if (form.gst_rate && (form.gst_rate < 0 || form.gst_rate > 100)) {
+      toast({ title: "Invalid GST rate", description: "GST rate must be between 0 and 100.", variant: "destructive" });
+      return;
+    }
+
+    const urlPattern = /^https?:\/\//;
+    if (form.thumbnail_url && !urlPattern.test(form.thumbnail_url)) {
+      toast({ title: "Invalid Thumbnail URL", description: "Thumbnail URL must start with http:// or https://.", variant: "destructive" });
+      return;
+    }
+
+    if (form.banner_url && !urlPattern.test(form.banner_url)) {
+      toast({ title: "Invalid Banner URL", description: "Banner URL must start with http:// or https://.", variant: "destructive" });
+      return;
+    }
+
     setSaving(true);
 
     const slug =
@@ -198,6 +230,18 @@ const AdminOfferingEditor = () => {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)/g, "");
+
+    // Fix 27: Check slug uniqueness
+    let slugQuery = supabase.from("offerings").select("id").eq("slug", slug);
+    if (!isNew && offeringId) {
+      slugQuery = slugQuery.neq("id", offeringId);
+    }
+    const { data: slugConflicts } = await slugQuery;
+    if (slugConflicts && slugConflicts.length > 0) {
+      toast({ title: "Slug already exists", description: `Another offering is already using the slug "${slug}". Please choose a different slug.`, variant: "destructive" });
+      setSaving(false);
+      return;
+    }
 
     let parsedHighlights: any = [];
     try {
@@ -388,13 +432,24 @@ const AdminOfferingEditor = () => {
           <div className="bg-card border border-border rounded-xl p-6 space-y-5">
             <div>
               <Label>Title</Label>
-              <Input value={form.title} onChange={(e) => f("title", e.target.value)} />
+              <Input value={form.title} onChange={(e) => {
+                const newTitle = e.target.value;
+                f("title", newTitle);
+                // Auto-generate slug from title when slug hasn't been manually edited
+                if (!slugManuallyEdited) {
+                  const autoSlug = newTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+                  f("slug", autoSlug);
+                }
+              }} />
             </div>
             <div>
               <Label>Slug</Label>
               <Input
                 value={form.slug}
-                onChange={(e) => f("slug", e.target.value)}
+                onChange={(e) => {
+                  f("slug", e.target.value);
+                  setSlugManuallyEdited(true);
+                }}
                 placeholder="auto-generated from title if empty"
               />
               {form.slug && (
