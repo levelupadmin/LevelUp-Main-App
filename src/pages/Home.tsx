@@ -237,7 +237,10 @@ const PopularCommunity = () => {
       .order("upvote_count", { ascending: false })
       .limit(8)
       .then(({ data, error }) => {
-        if (error) if (import.meta.env.DEV) console.error("Failed to load community posts:", error);
+        if (error) {
+          if (import.meta.env.DEV) console.error("Failed to load community posts:", error);
+          return;
+        }
         setPosts(data ?? []);
       });
   }, []);
