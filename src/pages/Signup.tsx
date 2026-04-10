@@ -13,6 +13,15 @@ const Signup = () => {
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [signupComplete, setSignupComplete] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [phoneError, setPhoneError] = useState("");
+  const [signupError, setSignupError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && user) navigate("/home", { replace: true });
@@ -27,15 +36,6 @@ const Signup = () => {
   }
 
   if (user) return null;
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [signupComplete, setSignupComplete] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [phoneError, setPhoneError] = useState("");
-  const [signupError, setSignupError] = useState<string | null>(null);
 
   /* Password validation */
   const hasMinLength = password.length >= 8;
