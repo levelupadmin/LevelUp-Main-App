@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import LazyImage from "@/components/LazyImage";
 import { ArrowRight, Search, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useWishlist } from "@/hooks/useWishlist";
 import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/useEnrolmentCounts";
@@ -278,7 +279,17 @@ const BrowsePage = () => {
                           {c.offering_id && (
                             <button
                               aria-label={wishlistedIds.has(c.offering_id!) ? "Remove from wishlist" : "Add to wishlist"}
-                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleWishlist(c.offering_id!); }}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const wasWishlisted = wishlistedIds.has(c.offering_id!);
+                                toggleWishlist(c.offering_id!);
+                                if (wasWishlisted) {
+                                  toast("Removed from wishlist");
+                                } else {
+                                  toast.success("Added to wishlist");
+                                }
+                              }}
                               className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-colors"
                             >
                               <Heart className={`h-4 w-4 transition-transform ${wishlistedIds.has(c.offering_id!) ? "fill-red-400 text-red-400 heart-bounce" : "text-white"}`} />
