@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Plus, Search, Upload } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface EnrolmentRow {
   id: string;
@@ -49,9 +50,10 @@ const AdminEnrolments = () => {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkOfferingId, setBulkOfferingId] = useState("");
   const [bulkEmails, setBulkEmails] = useState("");
-  const [bulkResult, setBulkResult] = useState<{ success: number; failed: string[] } | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ success: number; failed: string[]; skipped: string[] } | null>(null);
   const [bulkStatusConfirm, setBulkStatusConfirm] = useState<string | null>(null);
   const { toast } = useToast();
+  const { profile } = useAuth();
 
   const load = async (p = page) => {
     setLoading(true);
@@ -98,8 +100,22 @@ const AdminEnrolments = () => {
 
   const handleStatusChange = async (enrolId: string, newStatus: string) => {
     const { error } = await supabase.from("enrolments").update({ status: newStatus }).eq("id", enrolId);
-    if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else { toast({ title: "Status updated" }); load(); }
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      // Audit log
+      if (profile?.id) {
+        await (supabase as any).from("admin_audit_logs").insert({
+          admin_user_id: profile.id,
+          action: "update",
+          entity_type: "enrolment",
+          entity_id: enrolId,
+          details: { new_status: newStatus },
+        });
+      }
+      toast({ title: "Status updated" });
+      load();
+    }
   };
 
   const openManualEnrol = async () => {
@@ -126,8 +142,23 @@ const AdminEnrolments = () => {
       source: "admin_manual",
       status: "active",
     });
-    if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else { toast({ title: "User enrolled" }); setManualOpen(false); load(); }
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      // Audit log
+      if (profile?.id) {
+        await (supabase as any).from("admin_audit_logs").insert({
+          admin_user_id: profile.id,
+          action: "create",
+          entity_type: "enrolment",
+          entity_id: `${manualUserId}:${manualOfferingId}`,
+          details: { user_id: manualUserId, offering_id: manualOfferingId, source: "admin_manual" },
+        });
+      }
+      toast({ title: "User enrolled" });
+      setManualOpen(false);
+      load();
+    }
     setSaving(false);
   };
 
@@ -155,6 +186,7 @@ const AdminEnrolments = () => {
 
     let success = 0;
     const failed: string[] = [];
+    const skipped: string[] = [];
 
     for (const email of emails) {
       const { data: user } = await supabase
@@ -165,6 +197,20 @@ const AdminEnrolments = () => {
 
       if (!user) {
         failed.push(`${email} — user not found`);
+        continue;
+      }
+
+      // Check for existing active enrolment to avoid duplicates
+      const { data: existing } = await supabase
+        .from("enrolments")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("offering_id", bulkOfferingId)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (existing) {
+        skipped.push(`${email} — already has active enrolment`);
         continue;
       }
 
@@ -182,8 +228,18 @@ const AdminEnrolments = () => {
       }
     }
 
-    setBulkResult({ success, failed });
+    setBulkResult({ success, failed, skipped });
     if (success > 0) {
+      // Audit log
+      if (profile?.id) {
+        await (supabase as any).from("admin_audit_logs").insert({
+          admin_user_id: profile.id,
+          action: "bulk_create",
+          entity_type: "enrolment",
+          entity_id: bulkOfferingId,
+          details: { offering_id: bulkOfferingId, success, failed: failed.length, skipped: skipped.length },
+        });
+      }
       toast({ title: `${success} users enrolled` });
       load(page);
     }
@@ -220,6 +276,16 @@ const AdminEnrolments = () => {
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
+      // Audit log
+      if (profile?.id) {
+        await (supabase as any).from("admin_audit_logs").insert({
+          admin_user_id: profile.id,
+          action: "bulk_update",
+          entity_type: "enrolment",
+          entity_id: ids.join(","),
+          details: { enrolment_ids: ids, new_status: newStatus, count: ids.length },
+        });
+      }
       toast({ title: `${ids.length} enrolment(s) updated to ${newStatus}` });
       setSelectedIds(new Set());
       load();
@@ -412,6 +478,14 @@ const AdminEnrolments = () => {
             {bulkResult && (
               <div className="text-sm space-y-1">
                 <p className="text-green-400">{bulkResult.success} enrolled successfully</p>
+                {bulkResult.skipped.length > 0 && (
+                  <div className="text-yellow-400">
+                    <p>{bulkResult.skipped.length} skipped (duplicates):</p>
+                    <ul className="list-disc list-inside text-xs mt-1 max-h-32 overflow-y-auto">
+                      {bulkResult.skipped.map((s, i) => <li key={i}>{s}</li>)}
+                    </ul>
+                  </div>
+                )}
                 {bulkResult.failed.length > 0 && (
                   <div className="text-red-400">
                     <p>{bulkResult.failed.length} failed:</p>
