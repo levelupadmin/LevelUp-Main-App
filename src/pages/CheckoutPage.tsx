@@ -340,7 +340,7 @@ export default function CheckoutPage() {
           {/* ── Back link ── */}
           <button
             onClick={() => {
-              if (offering?.slug) navigate(`/programs/${offering.slug}`);
+              if (offering?.slug) navigate(`/p/${offering.slug}`);
               else if (offeringId) navigate(`/browse`);
               else navigate(-1);
             }}
