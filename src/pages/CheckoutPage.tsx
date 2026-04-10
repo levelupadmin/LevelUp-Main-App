@@ -328,7 +328,11 @@ export default function CheckoutPage() {
         <CardContent className="p-6 md:p-8 space-y-6">
           {/* ── Back link ── */}
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => {
+              if (offering?.slug) navigate(`/programs/${offering.slug}`);
+              else if (offeringId) navigate(`/browse`);
+              else navigate(-1);
+            }}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors -mb-3"
           >
             <ArrowLeft className="h-4 w-4" />
