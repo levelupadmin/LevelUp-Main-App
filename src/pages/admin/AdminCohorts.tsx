@@ -6,6 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, ChevronDown, ChevronRight, ArrowRightLeft } from "lucide-react";
@@ -77,6 +87,9 @@ const AdminCohorts = () => {
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveMembershipId, setMoveMembershipId] = useState("");
   const [moveTargetBatchId, setMoveTargetBatchId] = useState("");
+
+  // Delete batch
+  const [deleteBatchId, setDeleteBatchId] = useState<string | null>(null);
 
   /* ── Load offerings ─────────────────────────────────────── */
 
@@ -410,6 +423,28 @@ const AdminCohorts = () => {
     setSaving(false);
   };
 
+  /* ── Delete batch ────────────────────────────────────────── */
+
+  const handleDeleteBatch = async () => {
+    if (!deleteBatchId) return;
+    const { error } = await (supabase as any)
+      .from("cohort_batches")
+      .delete()
+      .eq("id", deleteBatchId);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Batch deleted" });
+      if (expandedBatchId === deleteBatchId) {
+        setExpandedBatchId(null);
+        setMembers([]);
+      }
+      loadBatches(selectedOfferingId);
+      loadUnassignedCount(selectedOfferingId);
+    }
+    setDeleteBatchId(null);
+  };
+
   /* ── Toggle selection helpers ───────────────────────────── */
 
   const toggleEnrolment = (id: string) => {
@@ -494,6 +529,18 @@ const AdminCohorts = () => {
                       <span className="font-mono text-xs text-muted-foreground">
                         {new Date(batch.created_at).toLocaleDateString("en-IN")}
                       </span>
+                      {batch.member_count === 0 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteBatchId(batch.id);
+                          }}
+                          className="p-1 rounded hover:bg-secondary text-destructive"
+                          title="Delete empty batch"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </button>
 
@@ -661,6 +708,27 @@ const AdminCohorts = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ── Delete Batch Confirmation ────────────────────── */}
+      <AlertDialog open={!!deleteBatchId} onOpenChange={() => setDeleteBatchId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete batch?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this batch. Only empty batches (with no members) can be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteBatch}
+              className="bg-destructive text-destructive-foreground"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── Move to Batch Dialog ──────────────────────────── */}
       <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
