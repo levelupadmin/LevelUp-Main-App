@@ -26,7 +26,7 @@ const MOBILE_NAV_ITEMS = [
   { label: "Home", icon: Home, path: "/home" },
   { label: "My Courses", icon: BookOpen, path: "/my-courses" },
   { label: "Browse", icon: Compass, path: "/browse" },
-  { label: "Community", icon: MessageSquare, path: "/community" },
+  { label: "Sessions", icon: Video, path: "/my-sessions" },
   { label: "Profile", icon: User, path: "/profile" },
 ];
 
