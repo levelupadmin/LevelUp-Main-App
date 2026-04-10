@@ -90,6 +90,8 @@ const ChapterViewer = () => {
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [qnaLimit, setQnaLimit] = useState(20);
+  const [commentLimit, setCommentLimit] = useState(20);
   const [milestone, setMilestone] = useState<{ pct: number; title: string; subtitle: string } | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
 
@@ -643,7 +645,7 @@ const ChapterViewer = () => {
                 {qna.length === 0 ? (
                   <p className="text-sm text-muted-foreground/60">No questions yet — ask away, your instructor's listening.</p>
                 ) : (
-                  qna.map((q) => (
+                  qna.slice(0, qnaLimit).map((q) => (
                     <div key={q.id} className="border border-border rounded-lg p-3 space-y-2">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-medium">{q.user_name || "Anonymous"}</span>
@@ -673,6 +675,16 @@ const ChapterViewer = () => {
                     </div>
                   ))
                 )}
+                {qna.length > qnaLimit && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setQnaLimit((prev) => prev + 20)}
+                  >
+                    Show more questions ({qna.length - qnaLimit} remaining)
+                  </Button>
+                )}
               </div>
             </TabsContent>
 
@@ -698,7 +710,7 @@ const ChapterViewer = () => {
                 {comments.length === 0 ? (
                   <p className="text-sm text-muted-foreground/60">Be the first to start the conversation.</p>
                 ) : (
-                  comments.map((c) => (
+                  comments.slice(0, commentLimit).map((c) => (
                     <div key={c.id} className="border border-border rounded-lg p-3">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-medium">{c.user_name || "Anonymous"}</span>
@@ -707,6 +719,16 @@ const ChapterViewer = () => {
                       <p className="text-sm">{c.comment_text}</p>
                     </div>
                   ))
+                )}
+                {comments.length > commentLimit && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setCommentLimit((prev) => prev + 20)}
+                  >
+                    Show more comments ({comments.length - commentLimit} remaining)
+                  </Button>
                 )}
               </div>
             </TabsContent>
