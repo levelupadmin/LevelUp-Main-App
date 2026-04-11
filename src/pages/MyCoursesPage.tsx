@@ -7,7 +7,7 @@ import StudentLayout from "@/components/layout/StudentLayout";
 import { TierBadge } from "@/components/TierBadge";
 import { Progress } from "@/components/ui/progress";
 import LazyImage from "@/components/LazyImage";
-import { ArrowRight, BookOpen, Sparkles } from "lucide-react";
+import { ArrowRight, BookOpen, Sparkles, Award } from "lucide-react";
 
 interface EnrolledCourse {
   enrolment_id: string;
@@ -266,7 +266,16 @@ const MyCoursesPage = () => {
                     <Progress value={c.progress_pct} className="h-1.5" />
                   </div>
                   <div className="flex items-center gap-1 text-sm text-cream pt-1">
-                    Continue <ArrowRight className="h-3 w-3" />
+                    {c.progress_pct >= 100 ? (
+                      <>
+                        <Award className="h-3.5 w-3.5" />
+                        Completed
+                      </>
+                    ) : (
+                      <>
+                        Continue <ArrowRight className="h-3 w-3" />
+                      </>
+                    )}
                   </div>
                 </div>
               </Link>

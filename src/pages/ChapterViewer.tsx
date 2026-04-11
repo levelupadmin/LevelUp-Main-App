@@ -22,6 +22,7 @@ import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 import Confetti from "@/components/Confetti";
 import { checkMilestone } from "@/hooks/useMilestone";
 import { useVideoProgress } from "@/hooks/useVideoProgress";
+import { checkAndGenerateCertificate } from "@/hooks/useCertificateAutoGenerate";
 
 interface Chapter {
   id: string;
@@ -370,6 +371,23 @@ const ChapterViewer = () => {
     } else {
       toast.success("Nice work! Chapter done.");
     }
+
+    // Auto-generate certificate if threshold reached
+    checkAndGenerateCertificate(
+      user.id,
+      courseId,
+      completedCount,
+      totalCount,
+      profile?.full_name ?? "Student",
+      profile?.member_number ?? null
+    ).then((cert) => {
+      if (cert) {
+        toast.success("Certificate earned!", {
+          description: `Certificate ${cert.certificateNumber} has been generated.`,
+          duration: 6000,
+        });
+      }
+    });
 
     // If this was the last chapter, show the course completion banner
     if (currentIndex === siblings.length - 1) {

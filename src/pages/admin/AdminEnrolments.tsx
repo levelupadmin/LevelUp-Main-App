@@ -19,7 +19,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Upload } from "lucide-react";
+import { Plus, Search, Upload, Award } from "lucide-react";
+import { generateAndSaveCertificate, VariablePosition } from "@/lib/certificate-generator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDebounce } from "@/hooks/useDebounce";
 
@@ -27,8 +28,10 @@ interface EnrolmentRow {
   id: string;
   status: string;
   created_at: string;
+  user_id: string;
   user_name: string;
   user_email: string;
+  offering_id: string;
   offering_title: string;
   payment_order_id: string | null;
 }
@@ -90,8 +93,10 @@ const AdminEnrolments = () => {
       id: e.id,
       status: e.status,
       created_at: e.created_at,
+      user_id: e.user_id,
       user_name: uMap[e.user_id]?.full_name || "Unknown",
       user_email: uMap[e.user_id]?.email || "",
+      offering_id: e.offering_id,
       offering_title: oMap[e.offering_id]?.title || "Unknown",
       payment_order_id: e.payment_order_id,
     })));
@@ -304,6 +309,81 @@ const AdminEnrolments = () => {
     }
   };
 
+  const [generatingCertFor, setGeneratingCertFor] = useState<string | null>(null);
+
+  const handleGenerateCertificate = async (enrolment: EnrolmentRow) => {
+    setGeneratingCertFor(enrolment.id);
+    try {
+      // Find courses linked to this offering
+      const { data: ocs } = await supabase
+        .from("offering_courses")
+        .select("course_id")
+        .eq("offering_id", enrolment.offering_id);
+
+      if (!ocs || ocs.length === 0) {
+        toast({ title: "No courses linked to this offering", variant: "destructive" });
+        setGeneratingCertFor(null);
+        return;
+      }
+
+      let generated = 0;
+      for (const oc of ocs) {
+        // Check if template exists
+        const { data: template } = await (supabase as any)
+          .from("certificate_templates")
+          .select("id, background_image_url, variable_positions, completion_threshold, is_active")
+          .eq("course_id", oc.course_id)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (!template) continue;
+
+        // Check if already generated
+        const { data: existing } = await (supabase as any)
+          .from("certificates")
+          .select("id")
+          .eq("user_id", enrolment.user_id)
+          .eq("course_id", oc.course_id)
+          .maybeSingle();
+
+        if (existing) continue;
+
+        const { data: course } = await supabase
+          .from("courses")
+          .select("title")
+          .eq("id", oc.course_id)
+          .maybeSingle();
+
+        await generateAndSaveCertificate({
+          templateId: template.id,
+          templateImageUrl: template.background_image_url,
+          variablePositions: (template.variable_positions || []) as VariablePosition[],
+          variableValues: {
+            student_name: enrolment.user_name,
+            member_id: "",
+            batch_number: enrolment.offering_title,
+            course_name: course?.title ?? "",
+            completion_date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }),
+            certificate_number: "",
+          },
+          userId: enrolment.user_id,
+          courseId: oc.course_id,
+          generatedBy: "admin",
+        });
+        generated++;
+      }
+
+      if (generated === 0) {
+        toast({ title: "No certificate templates found", description: "Set up a certificate template for the course first.", variant: "destructive" });
+      } else {
+        toast({ title: `${generated} certificate(s) generated for ${enrolment.user_name}` });
+      }
+    } catch (err: any) {
+      toast({ title: "Certificate generation failed", description: err?.message || "Unknown error", variant: "destructive" });
+    }
+    setGeneratingCertFor(null);
+  };
+
   const filtered = enrolments.filter((e) => {
     const matchesSearch = e.user_name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
       e.user_email.toLowerCase().includes(debouncedSearch.toLowerCase());
@@ -396,8 +476,22 @@ const AdminEnrolments = () => {
                   </Select>
                 </td>
                 <td className="px-5 py-3 font-mono text-xs">{new Date(e.created_at).toLocaleDateString("en-IN")}</td>
-                <td className="px-5 py-3 text-xs text-muted-foreground">
-                  {e.payment_order_id ? "Paid" : "Manual"}
+                <td className="px-5 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{e.payment_order_id ? "Paid" : "Manual"}</span>
+                    {e.status === "active" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2"
+                        disabled={generatingCertFor === e.id}
+                        onClick={() => handleGenerateCertificate(e)}
+                        title="Generate Certificate"
+                      >
+                        <Award className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

@@ -24,6 +24,7 @@ import {
   BarChart3,
   ScrollText,
   Search,
+  Award,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { label: "Enrolments", icon: Users, path: "/admin/enrolments" },
   { label: "Users", icon: UserCog, path: "/admin/users" },
   { label: "Coupons", icon: Ticket, path: "/admin/coupons" },
+  { label: "Certificates", icon: Award, path: "/admin/certificates" },
   { label: "Revenue", icon: IndianRupee, path: "/admin/revenue" },
   { label: "Analytics", icon: BarChart3, path: "/admin/analytics" },
   { label: "Audit Logs", icon: ScrollText, path: "/admin/audit-logs" },

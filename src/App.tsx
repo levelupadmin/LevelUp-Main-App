@@ -49,6 +49,8 @@ const AdminAnalytics = lazy(() => import("@/pages/admin/AdminAnalytics"));
 const AdminCohorts = lazy(() => import("@/pages/admin/AdminCohorts"));
 const AdminCoursePreview = lazy(() => import("@/pages/admin/AdminCoursePreview"));
 const AdminChapterPreview = lazy(() => import("@/pages/admin/AdminChapterPreview"));
+const AdminCertificates = lazy(() => import("@/pages/admin/AdminCertificates"));
+const AdminCertificateTemplateEditor = lazy(() => import("@/pages/admin/AdminCertificateTemplateEditor"));
 
 const LoadingFallback = () => (
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
@@ -120,6 +122,8 @@ const App = () => (
               <Route path="/admin/coupons" element={<RequireAuth><RequireRole role="admin"><AdminCoupons /></RequireRole></RequireAuth>} />
               <Route path="/admin/revenue" element={<RequireAuth><RequireRole role="admin"><AdminRevenue /></RequireRole></RequireAuth>} />
               <Route path="/admin/audit-logs" element={<RequireAuth><RequireRole role="admin"><AdminAuditLogs /></RequireRole></RequireAuth>} />
+              <Route path="/admin/certificates" element={<RequireAuth><RequireRole role="admin"><AdminCertificates /></RequireRole></RequireAuth>} />
+              <Route path="/admin/courses/:courseId/certificate" element={<RequireAuth><RequireRole role="admin"><AdminCertificateTemplateEditor /></RequireRole></RequireAuth>} />
               <Route path="/admin/analytics" element={<RequireAuth><RequireRole role="admin"><AdminAnalytics /></RequireRole></RequireAuth>} />
 
               {/* Instructor */}

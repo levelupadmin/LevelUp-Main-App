@@ -9,8 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Pencil, X } from "lucide-react";
+import { ArrowRight, Pencil, X, Award } from "lucide-react";
 import { toast } from "sonner";
+import CertificateGallery from "@/components/certificates/CertificateGallery";
 
 interface Enrolment {
   id: string;
@@ -283,6 +284,20 @@ const ProfilePage = () => {
             </div>
           </div>
         </div>
+
+        {/* Certificates */}
+        {user && (
+          <>
+            <div className="border-t border-border" />
+            <section>
+              <div className="flex items-center gap-2 mb-4">
+                <Award className="h-5 w-5 text-cream" />
+                <h3 className="text-lg font-semibold">My Certificates</h3>
+              </div>
+              <CertificateGallery userId={user.id} />
+            </section>
+          </>
+        )}
 
         {/* Divider */}
         <div className="border-t border-border" />

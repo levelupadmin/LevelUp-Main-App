@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Eye, ArrowRight } from "lucide-react";
+import { ArrowLeft, Eye, ArrowRight, Award } from "lucide-react";
 import AdminBreadcrumbs from "@/components/admin/AdminBreadcrumbs";
 import { TierBadge } from "@/components/TierBadge";
 import { useAuth } from "@/contexts/AuthContext";
@@ -435,6 +435,10 @@ const AdminCourseEditor = () => {
               <Button variant="outline" onClick={() => navigate(`/admin/courses/${courseId}/preview`)}>
                 <Eye className="h-4 w-4 mr-2" />
                 Student Preview
+              </Button>
+              <Button variant="outline" onClick={() => navigate(`/admin/courses/${courseId}/certificate`)}>
+                <Award className="h-4 w-4 mr-2" />
+                Certificate Template
               </Button>
             </>
           )}
