@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useWishlist } from "@/hooks/useWishlist";
 import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/useEnrolmentCounts";
+import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
 import { useDebounce } from "@/hooks/useDebounce";
 
 const TIER_ORDER = ["live_cohort", "masterclass", "advanced_program", "workshop"] as const;
@@ -309,6 +310,7 @@ const BrowsePage = () => {
                         {c.instructor_display_name && (
                           <p className="text-sm text-muted-foreground line-clamp-1">{c.instructor_display_name}</p>
                         )}
+                        <CourseRatingBadge courseId={c.id} />
                         {c.offering_id && formatEnrolmentLabel(enrolmentCounts[c.offering_id]) && (
                           <p className="text-xs text-muted-foreground flex items-center gap-1">
                             {isHotCourse(enrolmentCounts[c.offering_id]) && (

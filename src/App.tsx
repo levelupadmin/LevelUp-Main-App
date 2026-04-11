@@ -50,7 +50,12 @@ const AdminCohorts = lazy(() => import("@/pages/admin/AdminCohorts"));
 const AdminCoursePreview = lazy(() => import("@/pages/admin/AdminCoursePreview"));
 const AdminChapterPreview = lazy(() => import("@/pages/admin/AdminChapterPreview"));
 const AdminCertificates = lazy(() => import("@/pages/admin/AdminCertificates"));
+const AdminRefunds = lazy(() => import("@/pages/admin/AdminRefunds"));
 const AdminCertificateTemplateEditor = lazy(() => import("@/pages/admin/AdminCertificateTemplateEditor"));
+const AdminReviews = lazy(() => import("@/pages/admin/AdminReviews"));
+const AdminAnnouncements = lazy(() => import("@/pages/admin/AdminAnnouncements"));
+const AdminEmailTemplates = lazy(() => import("@/pages/admin/AdminEmailTemplates"));
+const AdminEmailCampaigns = lazy(() => import("@/pages/admin/AdminEmailCampaigns"));
 
 const LoadingFallback = () => (
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
@@ -125,6 +130,11 @@ const App = () => (
               <Route path="/admin/certificates" element={<RequireAuth><RequireRole role="admin"><AdminCertificates /></RequireRole></RequireAuth>} />
               <Route path="/admin/courses/:courseId/certificate" element={<RequireAuth><RequireRole role="admin"><AdminCertificateTemplateEditor /></RequireRole></RequireAuth>} />
               <Route path="/admin/analytics" element={<RequireAuth><RequireRole role="admin"><AdminAnalytics /></RequireRole></RequireAuth>} />
+              <Route path="/admin/reviews" element={<RequireAuth><RequireRole role="admin"><AdminReviews /></RequireRole></RequireAuth>} />
+              <Route path="/admin/refunds" element={<RequireAuth><RequireRole role="admin"><AdminRefunds /></RequireRole></RequireAuth>} />
+              <Route path="/admin/announcements" element={<RequireAuth><RequireRole role="admin"><AdminAnnouncements /></RequireRole></RequireAuth>} />
+              <Route path="/admin/email-templates" element={<RequireAuth><RequireRole role="admin"><AdminEmailTemplates /></RequireRole></RequireAuth>} />
+              <Route path="/admin/email-campaigns" element={<RequireAuth><RequireRole role="admin"><AdminEmailCampaigns /></RequireRole></RequireAuth>} />
 
               {/* Instructor */}
               <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />

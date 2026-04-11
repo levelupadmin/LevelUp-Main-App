@@ -25,6 +25,11 @@ import {
   ScrollText,
   Search,
   Award,
+  Star,
+  RotateCcw,
+  Megaphone,
+  Mail,
+  Send,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
@@ -41,6 +46,11 @@ const NAV_ITEMS = [
   { label: "Users", icon: UserCog, path: "/admin/users" },
   { label: "Coupons", icon: Ticket, path: "/admin/coupons" },
   { label: "Certificates", icon: Award, path: "/admin/certificates" },
+  { label: "Reviews", icon: Star, path: "/admin/reviews" },
+  { label: "Refunds", icon: RotateCcw, path: "/admin/refunds" },
+  { label: "Announcements", icon: Megaphone, path: "/admin/announcements" },
+  { label: "Email Templates", icon: Mail, path: "/admin/email-templates" },
+  { label: "Email Campaigns", icon: Send, path: "/admin/email-campaigns" },
   { label: "Revenue", icon: IndianRupee, path: "/admin/revenue" },
   { label: "Analytics", icon: BarChart3, path: "/admin/analytics" },
   { label: "Audit Logs", icon: ScrollText, path: "/admin/audit-logs" },

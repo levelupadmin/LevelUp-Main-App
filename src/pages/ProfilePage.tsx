@@ -12,6 +12,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, Pencil, X, Award } from "lucide-react";
 import { toast } from "sonner";
 import CertificateGallery from "@/components/certificates/CertificateGallery";
+import NotificationPreferences from "@/components/notifications/NotificationPreferences";
 
 interface Enrolment {
   id: string;
@@ -296,6 +297,14 @@ const ProfilePage = () => {
               </div>
               <CertificateGallery userId={user.id} />
             </section>
+          </>
+        )}
+
+        {/* Notification Preferences */}
+        {user && (
+          <>
+            <div className="border-t border-border" />
+            <NotificationPreferences />
           </>
         )}
 

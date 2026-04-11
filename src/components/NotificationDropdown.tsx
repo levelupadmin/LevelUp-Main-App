@@ -7,6 +7,11 @@ import {
   BookOpen,
   CheckCheck,
   Inbox,
+  Award,
+  RotateCcw,
+  CheckCircle,
+  Star,
+  Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Notification } from "@/hooks/useNotifications";
@@ -15,8 +20,14 @@ const TYPE_ICONS: Record<string, typeof Bell> = {
   community_reply: MessageSquare,
   session_reminder: Calendar,
   course_update: BookOpen,
-  admin_announcement: Bell,
+  admin_announcement: Megaphone,
   assignment_feedback: BookOpen,
+  review_reply: Star,
+  refund_processed: RotateCcw,
+  enrollment_confirmed: CheckCircle,
+  course_completed: Award,
+  certificate_ready: Award,
+  new_course_available: BookOpen,
 };
 
 function timeAgo(date: string) {

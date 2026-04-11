@@ -14,6 +14,7 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/useEnrolmentCounts";
+import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
 
 
 // ── Section 1: Hero Welcome ──
@@ -822,6 +823,7 @@ const BrowsePrograms = () => {
               {c.instructor_display_name && (
                 <p className="text-xs text-muted-foreground mt-0.5">{c.instructor_display_name}</p>
               )}
+              <CourseRatingBadge courseId={c.id} />
               {c.offering_id && formatEnrolmentLabel(enrolmentCounts[c.offering_id]) && (
                 <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
                   {isHotCourse(enrolmentCounts[c.offering_id]) && (

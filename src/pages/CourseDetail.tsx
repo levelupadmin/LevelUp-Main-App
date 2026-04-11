@@ -13,7 +13,9 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { toast } from "sonner";
-import { CheckCircle2, Lock, Play, Clock, BookOpen } from "lucide-react";
+import { CheckCircle2, Lock, Play, Clock, BookOpen, Star } from "lucide-react";
+import RatingDistribution from "@/components/reviews/RatingDistribution";
+import ReviewList from "@/components/reviews/ReviewList";
 
 interface Course {
   id: string;
@@ -318,6 +320,16 @@ const CourseDetail = () => {
             </p>
           </div>
         )}
+
+        {/* Ratings & Reviews */}
+        <div className="bg-card border border-border rounded-[16px] p-6 space-y-6">
+          <div className="flex items-center gap-2">
+            <Star className="h-5 w-5 text-yellow-400 fill-yellow-400" />
+            <h2 className="text-lg font-semibold">Ratings & Reviews</h2>
+          </div>
+          <RatingDistribution courseId={courseId!} />
+          <ReviewList courseId={courseId!} userId={user?.id} hasAccess={hasAccess} />
+        </div>
 
         {/* Sections + Chapters */}
         <div className="bg-card border border-border rounded-[16px] overflow-hidden">
