@@ -1,43 +1,50 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Download, Trash2, Plus, Search } from "lucide-react";
-import SortableHeader, { useSort } from "@/components/admin/SortableHeader";
+import {
+  Search,
+  Plus,
+  Pencil,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Award,
+  ToggleLeft,
+  ToggleRight,
+} from "lucide-react";
 import { generateAndSaveCertificate, type VariablePosition } from "@/lib/certificate-generator";
 import { useDebounce } from "@/hooks/useDebounce";
 
-interface CertificateRow {
+interface TemplateRow {
+  id: string;
+  course_id: string;
+  course_title: string;
+  is_active: boolean;
+  completion_threshold: number;
+  auto_generate: boolean;
+  background_image_url: string;
+  preview_url: string;
+  variable_positions: VariablePosition[];
+  total_issued: number;
+  auto_count: number;
+  manual_count: number;
+}
+
+interface CertificateDetail {
   id: string;
   user_id: string;
-  course_id: string;
+  user_name: string;
+  user_email: string;
   certificate_number: string;
   image_url: string;
   generated_by: string;
   created_at: string;
-  user_name: string;
-  user_email: string;
-  course_title: string;
-}
-
-interface CourseOption {
-  id: string;
-  title: string;
 }
 
 interface UserOption {
@@ -46,129 +53,167 @@ interface UserOption {
   email: string;
 }
 
-interface CourseWithTemplate {
-  id: string;
-  title: string;
-  template_id: string;
-  template_image_url: string;
-  variable_positions: VariablePosition[];
-}
-
-const PAGE_SIZE = 25;
-
 const AdminCertificates = () => {
-  const [certificates, setCertificates] = useState<CertificateRow[]>([]);
+  const navigate = useNavigate();
+
+  // Template list state
+  const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
-  const [courseFilter, setCourseFilter] = useState("all");
-  const [courses, setCourses] = useState<CourseOption[]>([]);
-  const [page, setPage] = useState(0);
-  const [totalCount, setTotalCount] = useState(0);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Generate dialog state
-  const [generateOpen, setGenerateOpen] = useState(false);
+  // Expanded template detail
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [detailCerts, setDetailCerts] = useState<CertificateDetail[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  // Issue certificate dialog
+  const [issueDialogOpen, setIssueDialogOpen] = useState(false);
+  const [issueTemplate, setIssueTemplate] = useState<TemplateRow | null>(null);
   const [userSearch, setUserSearch] = useState("");
   const debouncedUserSearch = useDebounce(userSearch, 300);
   const [userResults, setUserResults] = useState<UserOption[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserOption | null>(null);
-  const [coursesWithTemplates, setCoursesWithTemplates] = useState<CourseWithTemplate[]>([]);
-  const [selectedCourseId, setSelectedCourseId] = useState("");
-  const [generating, setGenerating] = useState(false);
+  const [issuing, setIssuing] = useState(false);
 
-  const { sort, toggle, comparator } = useSort<CertificateRow>("created_at");
+  // Load all templates with certificate counts
+  const loadTemplates = async () => {
+    setLoading(true);
+    try {
+      // Fetch all certificate templates
+      const { data: tmplData, error: tmplErr } = await (supabase as any)
+        .from("certificate_templates")
+        .select("id, course_id, is_active, completion_threshold, auto_generate, background_image_url, variable_positions, preview_url");
 
-  // Load courses for filter dropdown
+      if (tmplErr) throw tmplErr;
+      if (!tmplData || tmplData.length === 0) {
+        setTemplates([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch course titles
+      const courseIds = tmplData.map((t: any) => t.course_id);
+      const { data: courses } = await supabase
+        .from("courses")
+        .select("id, title")
+        .in("id", courseIds);
+
+      const courseMap: Record<string, string> = {};
+      (courses || []).forEach((c: any) => {
+        courseMap[c.id] = c.title;
+      });
+
+      // Fetch certificate counts per course (total, auto, manual)
+      const { data: certCounts } = await (supabase as any)
+        .from("certificates")
+        .select("course_id, generated_by")
+        .in("course_id", courseIds);
+
+      // Aggregate counts
+      const countMap: Record<string, { total: number; auto: number; manual: number }> = {};
+      (certCounts || []).forEach((c: any) => {
+        if (!countMap[c.course_id]) {
+          countMap[c.course_id] = { total: 0, auto: 0, manual: 0 };
+        }
+        countMap[c.course_id].total += 1;
+        if (c.generated_by === "auto") {
+          countMap[c.course_id].auto += 1;
+        } else {
+          countMap[c.course_id].manual += 1;
+        }
+      });
+
+      const rows: TemplateRow[] = tmplData.map((t: any) => ({
+        id: t.id,
+        course_id: t.course_id,
+        course_title: courseMap[t.course_id] || "Unknown Course",
+        is_active: t.is_active ?? true,
+        completion_threshold: t.completion_threshold ?? 100,
+        auto_generate: t.auto_generate ?? false,
+        background_image_url: t.background_image_url || "",
+        preview_url: t.preview_url || "",
+        variable_positions: t.variable_positions || [],
+        total_issued: countMap[t.course_id]?.total ?? 0,
+        auto_count: countMap[t.course_id]?.auto ?? 0,
+        manual_count: countMap[t.course_id]?.manual ?? 0,
+      }));
+
+      // Sort by course title
+      rows.sort((a, b) => a.course_title.localeCompare(b.course_title));
+      setTemplates(rows);
+    } catch (err: any) {
+      console.error("Failed to load templates", err);
+      toast.error("Failed to load certificate templates");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("courses").select("id, title").order("title");
-      setCourses(data || []);
-    })();
+    loadTemplates();
   }, []);
 
-  // Load certificates
-  const load = async (p = page) => {
-    setLoading(true);
-    const from = p * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+  // Filter templates by search
+  const filtered = templates.filter((t) => {
+    if (!debouncedSearch) return true;
+    return t.course_title.toLowerCase().includes(debouncedSearch.toLowerCase());
+  });
 
-    // Get total count
-    let countQuery = (supabase as any).from("certificates").select("id", { count: "exact", head: true });
-    if (courseFilter !== "all") countQuery = countQuery.eq("course_id", courseFilter);
-    const { count } = await countQuery;
-    setTotalCount(count ?? 0);
+  // Load issued certificates for an expanded template
+  const loadCertificateDetails = async (template: TemplateRow) => {
+    setDetailLoading(true);
+    setDetailCerts([]);
+    try {
+      const { data: certs } = await (supabase as any)
+        .from("certificates")
+        .select("id, user_id, certificate_number, image_url, generated_by, created_at")
+        .eq("course_id", template.course_id)
+        .order("created_at", { ascending: false });
 
-    // Fetch certificates
-    const { data: certs } = await (supabase as any)
-      .from("certificates")
-      .select("id, user_id, course_id, certificate_number, image_url, generated_by, created_at")
-      .order("created_at", { ascending: false })
-      .range(from, to);
+      if (!certs || certs.length === 0) {
+        setDetailCerts([]);
+        setDetailLoading(false);
+        return;
+      }
 
-    if (!certs || certs.length === 0) {
-      setCertificates([]);
-      setLoading(false);
-      return;
-    }
+      const userIds = [...new Set(certs.map((c: any) => c.user_id))] as string[];
+      const { data: users } = await supabase
+        .from("users")
+        .select("id, full_name, email")
+        .in("id", userIds);
 
-    // Fetch related user & course info
-    const userIds = [...new Set(certs.map((c: any) => c.user_id))] as string[];
-    const courseIds = [...new Set(certs.map((c: any) => c.course_id))] as string[];
+      const userMap: Record<string, { full_name: string; email: string }> = {};
+      (users || []).forEach((u: any) => {
+        userMap[u.id] = u;
+      });
 
-    const [{ data: users }, { data: coursesData }] = await Promise.all([
-      supabase.from("users").select("id, full_name, email").in("id", userIds),
-      supabase.from("courses").select("id, title").in("id", courseIds),
-    ]);
-
-    const userMap: Record<string, { full_name: string; email: string }> = {};
-    (users || []).forEach((u: any) => { userMap[u.id] = u; });
-
-    const courseMap: Record<string, string> = {};
-    (coursesData || []).forEach((c: any) => { courseMap[c.id] = c.title; });
-
-    setCertificates(
-      certs.map((c: any) => ({
-        ...c,
-        user_name: userMap[c.user_id]?.full_name || "Unknown",
-        user_email: userMap[c.user_id]?.email || "",
-        course_title: courseMap[c.course_id] || "Unknown",
-      }))
-    );
-    setLoading(false);
-  };
-
-  useEffect(() => { setPage(0); load(0); }, [courseFilter]);
-  useEffect(() => { load(); }, [page]);
-
-  // Client-side search + sort
-  const filtered = certificates
-    .filter((c) => {
-      if (!debouncedSearch) return true;
-      const q = debouncedSearch.toLowerCase();
-      return (
-        c.user_name.toLowerCase().includes(q) ||
-        c.user_email.toLowerCase().includes(q)
+      setDetailCerts(
+        certs.map((c: any) => ({
+          ...c,
+          user_name: userMap[c.user_id]?.full_name || "Unknown",
+          user_email: userMap[c.user_id]?.email || "",
+        }))
       );
-    })
-    .sort(comparator);
-
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-
-  // Delete handler
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    const { error } = await (supabase as any).from("certificates").delete().eq("id", deleteId);
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success("Certificate deleted");
-      load();
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Failed to load certificate details");
+    } finally {
+      setDetailLoading(false);
     }
-    setDeleteId(null);
   };
 
-  // Search users for generate dialog
+  const toggleExpand = (template: TemplateRow) => {
+    if (expandedId === template.id) {
+      setExpandedId(null);
+      setDetailCerts([]);
+    } else {
+      setExpandedId(template.id);
+      loadCertificateDetails(template);
+    }
+  };
+
+  // User search for issue dialog
   useEffect(() => {
     if (!debouncedUserSearch || debouncedUserSearch.length < 2) {
       setUserResults([]);
@@ -184,81 +229,57 @@ const AdminCertificates = () => {
     })();
   }, [debouncedUserSearch]);
 
-  // Load courses with certificate templates when generate dialog opens
-  const openGenerateDialog = async () => {
+  const openIssueDialog = (template: TemplateRow) => {
+    setIssueTemplate(template);
     setSelectedUser(null);
     setUserSearch("");
     setUserResults([]);
-    setSelectedCourseId("");
-
-    // Fetch courses that have certificate templates
-    const { data: templates } = await (supabase as any)
-      .from("certificate_templates")
-      .select("id, course_id, template_image_url, variable_positions");
-
-    if (templates && templates.length > 0) {
-      const courseIds = templates.map((t: any) => t.course_id);
-      const { data: courseData } = await supabase
-        .from("courses")
-        .select("id, title")
-        .in("id", courseIds);
-
-      const courseDataMap: Record<string, string> = {};
-      (courseData || []).forEach((c: any) => { courseDataMap[c.id] = c.title; });
-
-      setCoursesWithTemplates(
-        templates.map((t: any) => ({
-          id: t.course_id,
-          title: courseDataMap[t.course_id] || "Unknown",
-          template_id: t.id,
-          template_image_url: t.template_image_url,
-          variable_positions: t.variable_positions || [],
-        }))
-      );
-    } else {
-      setCoursesWithTemplates([]);
-    }
-
-    setGenerateOpen(true);
+    setIssueDialogOpen(true);
   };
 
-  const handleGenerate = async () => {
-    if (!selectedUser || !selectedCourseId) {
-      toast.error("Please select a student and a course");
+  const handleIssueCertificate = async () => {
+    if (!selectedUser || !issueTemplate) {
+      toast.error("Please select a student");
       return;
     }
 
-    const course = coursesWithTemplates.find((c) => c.id === selectedCourseId);
-    if (!course) return;
+    if (!issueTemplate.background_image_url) {
+      toast.error("This template has no background image. Please configure the template first.");
+      return;
+    }
 
-    setGenerating(true);
+    setIssuing(true);
     try {
       const result = await generateAndSaveCertificate({
-        templateId: course.template_id,
-        templateImageUrl: course.template_image_url,
-        variablePositions: course.variable_positions,
+        templateId: issueTemplate.id,
+        templateImageUrl: issueTemplate.background_image_url,
+        variablePositions: issueTemplate.variable_positions,
         variableValues: {
           student_name: selectedUser.full_name,
           member_id: "",
           batch_number: "",
-          course_name: course.title,
+          course_name: issueTemplate.course_title,
           completion_date: new Date().toLocaleDateString("en-IN"),
-          certificate_number: "", // will be generated
+          certificate_number: "",
         },
         userId: selectedUser.id,
-        courseId: course.id,
+        courseId: issueTemplate.course_id,
         generatedBy: "admin_manual",
       });
 
       if (result) {
-        toast.success(`Certificate generated: ${result.certificateNumber}`);
-        setGenerateOpen(false);
-        load();
+        toast.success(`Certificate issued: ${result.certificateNumber}`);
+        setIssueDialogOpen(false);
+        // Refresh data
+        loadTemplates();
+        if (expandedId === issueTemplate.id) {
+          loadCertificateDetails(issueTemplate);
+        }
       }
     } catch (err: any) {
-      toast.error(err.message || "Failed to generate certificate");
+      toast.error(err.message || "Failed to issue certificate");
     } finally {
-      setGenerating(false);
+      setIssuing(false);
     }
   };
 
@@ -269,248 +290,285 @@ const AdminCertificates = () => {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by student name or email..."
+            placeholder="Search templates by course name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
           />
         </div>
-        <Select value={courseFilter} onValueChange={setCourseFilter}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="All Courses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Courses</SelectItem>
-            {courses.map((c) => (
-              <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <Button
-          onClick={openGenerateDialog}
+          onClick={() => navigate("/admin/courses")}
           className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
         >
-          <Plus className="h-4 w-4 mr-2" /> Generate Certificate
+          <Plus className="h-4 w-4 mr-2" /> Create Template
         </Button>
       </div>
 
-      {/* Table */}
-      <div className="bg-card border border-border rounded-xl overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-muted-foreground">
-              <th className="px-5 py-3 font-medium">Student Name</th>
-              <th className="px-5 py-3 font-medium">Email</th>
-              <th className="px-5 py-3 font-medium">Course</th>
-              <SortableHeader
-                label="Certificate #"
-                field="certificate_number"
-                current={sort}
-                onSort={toggle}
-                className="px-5 py-3"
-              />
-              <SortableHeader
-                label="Generated"
-                field="created_at"
-                current={sort}
-                onSort={toggle}
-                className="px-5 py-3"
-              />
-              <th className="px-5 py-3 font-medium">By</th>
-              <th className="px-5 py-3 font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={7} className="px-5 py-12 text-center text-muted-foreground">
-                  Loading...
-                </td>
-              </tr>
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-5 py-12 text-center text-muted-foreground">
-                  No certificates found
-                </td>
-              </tr>
-            ) : (
-              filtered.map((c) => (
-                <tr key={c.id} className="border-b border-border last:border-0 hover:bg-secondary/30">
-                  <td className="px-5 py-3 font-medium">{c.user_name}</td>
-                  <td className="px-5 py-3 text-muted-foreground">{c.user_email}</td>
-                  <td className="px-5 py-3">{c.course_title}</td>
-                  <td className="px-5 py-3 font-mono text-xs">{c.certificate_number}</td>
-                  <td className="px-5 py-3 font-mono text-xs">
-                    {new Date(c.created_at).toLocaleDateString("en-IN")}
-                  </td>
-                  <td className="px-5 py-3">
-                    <span
-                      className={`text-xs font-mono px-2 py-0.5 rounded ${
-                        c.generated_by === "auto"
-                          ? "bg-[hsl(var(--accent-emerald)/0.15)] text-[hsl(var(--accent-emerald))]"
-                          : "bg-secondary text-muted-foreground"
-                      }`}
-                    >
-                      {c.generated_by === "auto" ? "auto" : "manual"}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => window.open(c.image_url, "_blank")}
-                        className="p-1.5 rounded hover:bg-secondary"
-                        title="Download certificate"
-                      >
-                        <Download className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => setDeleteId(c.id)}
-                        className="p-1.5 rounded hover:bg-secondary text-destructive"
-                        title="Delete certificate"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* Templates list */}
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading templates...</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <Card className="p-12 text-center">
+          <Award className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+          <p className="text-muted-foreground">
+            {debouncedSearch
+              ? "No templates match your search."
+              : "No certificate templates created yet."}
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Go to a course's settings to create a certificate template.
+          </p>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((t) => {
+            const isExpanded = expandedId === t.id;
+            return (
+              <div
+                key={t.id}
+                className="bg-card border border-border rounded-xl overflow-hidden"
+              >
+                {/* Template summary row */}
+                <div className="flex items-center gap-4 px-5 py-4">
+                  {/* Thumbnail preview */}
+                  <div className="shrink-0 w-24 h-[68px] rounded-md overflow-hidden bg-secondary border border-border">
+                    {t.preview_url ? (
+                      <img
+                        src={t.preview_url}
+                        alt={`${t.course_title} certificate`}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Award className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
-          <span className="text-sm text-muted-foreground">
-            Page {page + 1} of {totalPages} ({totalCount} total)
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page === 0}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages - 1}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </Button>
-          </div>
+                  {/* Course name + status */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-sm truncate">
+                        {t.course_title}
+                      </h3>
+                      <span
+                        className={`shrink-0 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                          t.is_active
+                            ? "bg-[hsl(var(--accent-emerald)/0.15)] text-[hsl(var(--accent-emerald))]"
+                            : "bg-secondary text-muted-foreground"
+                        }`}
+                      >
+                        {t.is_active ? "Active" : "Inactive"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                      <span>Threshold: {t.completion_threshold}%</span>
+                      <span className="flex items-center gap-1">
+                        {t.auto_generate ? (
+                          <ToggleRight className="h-3.5 w-3.5 text-[hsl(var(--accent-emerald))]" />
+                        ) : (
+                          <ToggleLeft className="h-3.5 w-3.5" />
+                        )}
+                        Auto-generate: {t.auto_generate ? "On" : "Off"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Counts */}
+                  <div className="shrink-0 text-right mr-2">
+                    <p className="text-sm font-semibold">{t.total_issued}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {t.auto_count} auto / {t.manual_count} manual
+                    </p>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openIssueDialog(t)}
+                      title="Manually issue certificate"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Issue
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        navigate(`/admin/courses/${t.course_id}/certificate`)
+                      }
+                    >
+                      <Pencil className="h-3.5 w-3.5 mr-1" /> Edit Template
+                    </Button>
+                    <button
+                      onClick={() => toggleExpand(t)}
+                      className="p-2 rounded-md hover:bg-secondary text-muted-foreground"
+                      title={isExpanded ? "Collapse" : "View issued certificates"}
+                    >
+                      {isExpanded ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded: issued certificates */}
+                {isExpanded && (
+                  <div className="border-t border-border">
+                    {detailLoading ? (
+                      <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                        Loading certificates...
+                      </div>
+                    ) : detailCerts.length === 0 ? (
+                      <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                        No certificates issued for this course yet.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border text-left text-muted-foreground">
+                              <th className="px-5 py-2.5 font-medium">Student</th>
+                              <th className="px-5 py-2.5 font-medium">Email</th>
+                              <th className="px-5 py-2.5 font-medium">Certificate #</th>
+                              <th className="px-5 py-2.5 font-medium">Date Issued</th>
+                              <th className="px-5 py-2.5 font-medium">Generated By</th>
+                              <th className="px-5 py-2.5 font-medium">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detailCerts.map((cert) => (
+                              <tr
+                                key={cert.id}
+                                className="border-b border-border last:border-0 hover:bg-secondary/30"
+                              >
+                                <td className="px-5 py-2.5 font-medium">
+                                  {cert.user_name}
+                                </td>
+                                <td className="px-5 py-2.5 text-muted-foreground">
+                                  {cert.user_email}
+                                </td>
+                                <td className="px-5 py-2.5 font-mono text-xs">
+                                  {cert.certificate_number}
+                                </td>
+                                <td className="px-5 py-2.5 font-mono text-xs">
+                                  {new Date(cert.created_at).toLocaleDateString("en-IN")}
+                                </td>
+                                <td className="px-5 py-2.5">
+                                  <span
+                                    className={`text-xs font-mono px-2 py-0.5 rounded ${
+                                      cert.generated_by === "auto"
+                                        ? "bg-[hsl(var(--accent-emerald)/0.15)] text-[hsl(var(--accent-emerald))]"
+                                        : "bg-secondary text-muted-foreground"
+                                    }`}
+                                  >
+                                    {cert.generated_by === "auto" ? "auto" : "manual"}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-2.5">
+                                  {cert.image_url && (
+                                    <button
+                                      onClick={() => window.open(cert.image_url, "_blank")}
+                                      className="p-1.5 rounded hover:bg-secondary"
+                                      title="Download certificate"
+                                    >
+                                      <Download className="h-4 w-4" />
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Delete confirmation */}
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete certificate?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete this certificate record. The student will no longer be able to access it.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Generate Certificate Dialog */}
-      <Dialog open={generateOpen} onOpenChange={setGenerateOpen}>
+      {/* Issue Certificate Dialog */}
+      <Dialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Generate Certificate</DialogTitle>
+            <DialogTitle>Issue Certificate</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            {/* Student search */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Student</label>
-              {selectedUser ? (
-                <Card className="p-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">{selectedUser.full_name}</p>
-                    <p className="text-xs text-muted-foreground">{selectedUser.email}</p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedUser(null);
-                      setUserSearch("");
-                    }}
-                  >
-                    Change
-                  </Button>
-                </Card>
-              ) : (
-                <>
-                  <Input
-                    placeholder="Search by name or email..."
-                    value={userSearch}
-                    onChange={(e) => setUserSearch(e.target.value)}
-                  />
-                  {userResults.length > 0 && (
-                    <div className="border border-border rounded-md mt-1 max-h-40 overflow-y-auto">
-                      {userResults.map((u) => (
-                        <button
-                          key={u.id}
-                          className="w-full text-left px-3 py-2 hover:bg-secondary/50 text-sm"
-                          onClick={() => {
-                            setSelectedUser(u);
-                            setUserResults([]);
-                          }}
-                        >
-                          <span className="font-medium">{u.full_name}</span>
-                          <span className="text-muted-foreground ml-2">{u.email}</span>
-                        </button>
-                      ))}
+          {issueTemplate && (
+            <div className="space-y-4">
+              <div className="rounded-md bg-secondary/50 px-3 py-2">
+                <p className="text-xs text-muted-foreground">Course</p>
+                <p className="text-sm font-medium">{issueTemplate.course_title}</p>
+              </div>
+
+              {/* Student search */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Student</label>
+                {selectedUser ? (
+                  <Card className="p-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">{selectedUser.full_name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedUser.email}
+                      </p>
                     </div>
-                  )}
-                </>
-              )}
-            </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedUser(null);
+                        setUserSearch("");
+                      }}
+                    >
+                      Change
+                    </Button>
+                  </Card>
+                ) : (
+                  <>
+                    <Input
+                      placeholder="Search by name or email..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                    />
+                    {userResults.length > 0 && (
+                      <div className="border border-border rounded-md mt-1 max-h-40 overflow-y-auto">
+                        {userResults.map((u) => (
+                          <button
+                            key={u.id}
+                            className="w-full text-left px-3 py-2 hover:bg-secondary/50 text-sm"
+                            onClick={() => {
+                              setSelectedUser(u);
+                              setUserResults([]);
+                            }}
+                          >
+                            <span className="font-medium">{u.full_name}</span>
+                            <span className="text-muted-foreground ml-2">
+                              {u.email}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
 
-            {/* Course selection */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Course</label>
-              {coursesWithTemplates.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No courses with certificate templates found.
-                </p>
-              ) : (
-                <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a course" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {coursesWithTemplates.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              <Button
+                onClick={handleIssueCertificate}
+                disabled={issuing || !selectedUser}
+                className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
+              >
+                {issuing ? "Issuing..." : "Issue Certificate"}
+              </Button>
             </div>
-
-            <Button
-              onClick={handleGenerate}
-              disabled={generating || !selectedUser || !selectedCourseId}
-              className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
-            >
-              {generating ? "Generating..." : "Generate"}
-            </Button>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </AdminLayout>

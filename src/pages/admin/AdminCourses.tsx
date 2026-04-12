@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Search, Eye, Pencil, Trash2, MoreVertical, Globe } from "lucide-react";
+import { Plus, Search, Eye, Pencil, Trash2, MoreVertical, Globe, Star } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -45,6 +45,8 @@ interface CourseCard {
   status: string;
   show_on_browse: boolean;
   chapter_count: number;
+  avg_rating: number | null;
+  total_reviews: number;
 }
 
 /* ────────────────────────────────────────────────── */
@@ -107,11 +109,23 @@ const AdminCourses = () => {
       });
     }
 
+    // Fetch course rating stats
+    const { data: ratingStats } = await (supabase as any)
+      .from("course_rating_stats")
+      .select("course_id, avg_rating, total_reviews")
+      .in("course_id", courseIds);
+    const ratingMap: Record<string, { avg_rating: number; total_reviews: number }> = {};
+    (ratingStats || []).forEach((r: any) => {
+      ratingMap[r.course_id] = { avg_rating: r.avg_rating, total_reviews: r.total_reviews };
+    });
+
     setCourses(
       data.map((c: any) => ({
         ...c,
         show_on_browse: c.show_on_browse ?? true,
         chapter_count: chapterCounts[c.id] || 0,
+        avg_rating: ratingMap[c.id]?.avg_rating ?? null,
+        total_reviews: ratingMap[c.id]?.total_reviews ?? 0,
       }))
     );
     setLoading(false);
@@ -311,6 +325,7 @@ const AdminCourses = () => {
                     onPreview={() => navigate(`/admin/courses/${c.id}/preview`)}
                     onDelete={() => openDeleteDialog(c.id)}
                     onToggleBrowse={() => toggleBrowse(c.id, c.show_on_browse)}
+                    onReviews={() => navigate(`/admin/courses/${c.id}/reviews`)}
                   />
                 ))}
               </div>
@@ -335,6 +350,7 @@ const AdminCourses = () => {
                     onPreview={() => navigate(`/admin/courses/${c.id}/preview`)}
                     onDelete={() => openDeleteDialog(c.id)}
                     onToggleBrowse={() => toggleBrowse(c.id, c.show_on_browse)}
+                    onReviews={() => navigate(`/admin/courses/${c.id}/reviews`)}
                   />
                 ))}
               </div>
@@ -395,6 +411,7 @@ function CourseCardComponent({
   onPreview,
   onDelete,
   onToggleBrowse,
+  onReviews,
 }: {
   course: CourseCard;
   tier: string;
@@ -402,6 +419,7 @@ function CourseCardComponent({
   onPreview: () => void;
   onDelete: () => void;
   onToggleBrowse: () => void;
+  onReviews: () => void;
 }) {
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden group relative">
@@ -481,11 +499,24 @@ function CourseCardComponent({
           <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>
         )}
 
-        {/* Footer: chapter count + browse toggle */}
+        {/* Footer: rating + chapter count + browse toggle */}
         <div className="flex items-center justify-between pt-2 border-t border-border">
-          <span className="text-xs text-muted-foreground font-mono">
-            {c.chapter_count} chapter{c.chapter_count !== 1 ? "s" : ""}
-          </span>
+          <div className="flex items-center gap-3">
+            {c.avg_rating !== null && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onReviews(); }}
+                className="flex items-center gap-1 text-xs hover:opacity-70 transition-opacity"
+                title="View reviews"
+              >
+                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                <span className="font-semibold">{c.avg_rating.toFixed(1)}</span>
+                <span className="text-muted-foreground">({c.total_reviews})</span>
+              </button>
+            )}
+            <span className="text-xs text-muted-foreground font-mono">
+              {c.chapter_count} ch.
+            </span>
+          </div>
           <div className="flex items-center gap-2">
             <Globe className="h-3.5 w-3.5 text-muted-foreground" />
             <Switch

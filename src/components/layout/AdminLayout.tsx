@@ -21,44 +21,94 @@ import {
   Loader2,
   LogOut,
   ChevronDown,
-  BarChart3,
+  ChevronRight,
   ScrollText,
   Search,
   Award,
-  Star,
-  RotateCcw,
   Megaphone,
   Mail,
   Send,
+  type LucideIcon,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 
-const NAV_ITEMS = [
-  { label: "Dashboard", icon: LayoutDashboard, path: "/admin" },
-  { label: "Hero Slides", icon: Image, path: "/admin/hero-slides" },
-  { label: "Courses", icon: BookOpen, path: "/admin/courses" },
-  { label: "Offerings", icon: Package, path: "/admin/offerings" },
-  { label: "Schedule Classes", icon: Video, path: "/admin/schedule" },
-  { label: "Cohorts", icon: Users, path: "/admin/cohorts" },
-  { label: "Events", icon: CalendarDays, path: "/admin/events" },
-  { label: "Enrolments", icon: Users, path: "/admin/enrolments" },
-  { label: "Users", icon: UserCog, path: "/admin/users" },
-  { label: "Coupons", icon: Ticket, path: "/admin/coupons" },
-  { label: "Certificates", icon: Award, path: "/admin/certificates" },
-  { label: "Reviews", icon: Star, path: "/admin/reviews" },
-  { label: "Refunds", icon: RotateCcw, path: "/admin/refunds" },
-  { label: "Announcements", icon: Megaphone, path: "/admin/announcements" },
-  { label: "Email Templates", icon: Mail, path: "/admin/email-templates" },
-  { label: "Email Campaigns", icon: Send, path: "/admin/email-campaigns" },
-  { label: "Revenue", icon: IndianRupee, path: "/admin/revenue" },
-  { label: "Analytics", icon: BarChart3, path: "/admin/analytics" },
-  { label: "Audit Logs", icon: ScrollText, path: "/admin/audit-logs" },
+interface NavItem {
+  label: string;
+  icon: LucideIcon;
+  path: string;
+}
+
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Overview",
+    items: [
+      { label: "Dashboard", icon: LayoutDashboard, path: "/admin" },
+      { label: "Revenue", icon: IndianRupee, path: "/admin/revenue" },
+    ],
+  },
+  {
+    label: "Content",
+    items: [
+      { label: "Hero Slides", icon: Image, path: "/admin/hero-slides" },
+      { label: "Courses", icon: BookOpen, path: "/admin/courses" },
+      { label: "Offerings", icon: Package, path: "/admin/offerings" },
+    ],
+  },
+  {
+    label: "Scheduling",
+    items: [
+      { label: "Schedule Classes", icon: Video, path: "/admin/schedule" },
+      { label: "Events", icon: CalendarDays, path: "/admin/events" },
+    ],
+  },
+  {
+    label: "People",
+    items: [
+      { label: "Enrolments", icon: Users, path: "/admin/enrolments" },
+      { label: "Users", icon: UserCog, path: "/admin/users" },
+      { label: "Coupons", icon: Ticket, path: "/admin/coupons" },
+      { label: "Certificates", icon: Award, path: "/admin/certificates" },
+    ],
+  },
+  {
+    label: "Communications",
+    items: [
+      { label: "Announcements", icon: Megaphone, path: "/admin/announcements" },
+      { label: "Email Templates", icon: Mail, path: "/admin/email-templates" },
+      { label: "Email Campaigns", icon: Send, path: "/admin/email-campaigns" },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { label: "Audit Logs", icon: ScrollText, path: "/admin/audit-logs" },
+    ],
+  },
 ];
 
 interface Props {
   children: ReactNode;
   title?: string;
+}
+
+// Determine which groups should be expanded initially based on current path
+function getInitialExpanded(pathname: string): Record<string, boolean> {
+  const expanded: Record<string, boolean> = {};
+  NAV_GROUPS.forEach((group) => {
+    const isActive = group.items.some((item) =>
+      item.path === "/admin"
+        ? pathname === "/admin"
+        : pathname.startsWith(item.path),
+    );
+    expanded[group.label] = isActive;
+  });
+  return expanded;
 }
 
 const AdminLayout = ({ children, title }: Props) => {
@@ -67,11 +117,16 @@ const AdminLayout = ({ children, title }: Props) => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => getInitialExpanded(location.pathname));
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<{ type: string; label: string; sub: string; path: string }[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
+
+  const toggleGroup = (label: string) => {
+    setExpanded((prev) => ({ ...prev, [label]: !prev[label] }));
+  };
 
   const runSearch = useCallback(async (q: string) => {
     if (!q.trim() || q.trim().length < 2) {
@@ -154,32 +209,60 @@ const AdminLayout = ({ children, title }: Props) => {
       </div>
 
       {/* Nav */}
-      <nav aria-label="Admin navigation" className="flex-1 px-3 space-y-1">
-        {NAV_ITEMS.map((item) => (
-          <Link
-            key={item.path}
-            to={item.path}
-            onClick={() => setSidebarOpen(false)}
-            className={cn(
-              "flex items-center gap-3 px-3 py-3 rounded-md text-sm transition-colors",
-              isActive(item.path)
-                ? "text-foreground bg-surface-2 border-l-2 border-cream"
-                : "text-muted-foreground hover:text-foreground hover:bg-surface"
-            )}
-          >
-            <item.icon className="h-[18px] w-[18px] shrink-0" />
-            {item.label}
-          </Link>
-        ))}
+      <nav aria-label="Admin navigation" className="flex-1 px-3 space-y-0.5 overflow-y-auto">
+        {NAV_GROUPS.map((group) => {
+          const isGroupExpanded = expanded[group.label] ?? false;
+          const hasActiveItem = group.items.some((item) => isActive(item.path));
+
+          return (
+            <div key={group.label}>
+              <button
+                type="button"
+                onClick={() => toggleGroup(group.label)}
+                className={cn(
+                  "flex items-center justify-between w-full px-3 py-2 rounded-md text-[11px] font-mono uppercase tracking-wider transition-colors",
+                  hasActiveItem ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <span>{group.label}</span>
+                {isGroupExpanded
+                  ? <ChevronDown className="h-3 w-3 opacity-50" />
+                  : <ChevronRight className="h-3 w-3 opacity-50" />
+                }
+              </button>
+
+              {isGroupExpanded && (
+                <div className="space-y-0.5 mb-1">
+                  {group.items.map((item) => (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => setSidebarOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ml-1",
+                        isActive(item.path)
+                          ? "text-foreground bg-surface-2 border-l-2 border-cream"
+                          : "text-muted-foreground hover:text-foreground hover:bg-surface"
+                      )}
+                    >
+                      <item.icon className="h-[16px] w-[16px] shrink-0" />
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         <div className="my-3 border-t border-border" />
 
         <Link
           to="/home"
           onClick={() => setSidebarOpen(false)}
-          className="flex items-center gap-3 px-3 py-3 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-surface transition-colors"
+          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-surface transition-colors"
         >
-          <ArrowLeft className="h-[18px] w-[18px]" />
+          <ArrowLeft className="h-[16px] w-[16px]" />
           Student View
         </Link>
       </nav>
@@ -223,32 +306,60 @@ const AdminLayout = ({ children, title }: Props) => {
                 <X className="h-5 w-5 text-muted-foreground" />
               </button>
             </div>
-            <nav aria-label="Admin navigation" className="flex-1 px-3 space-y-1">
-              {NAV_ITEMS.map((item) => (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-3 rounded-md text-sm transition-colors",
-                    isActive(item.path)
-                      ? "text-foreground bg-surface-2 border-l-2 border-cream"
-                      : "text-muted-foreground hover:text-foreground hover:bg-surface"
-                  )}
-                >
-                  <item.icon className="h-[18px] w-[18px] shrink-0" />
-                  {item.label}
-                </Link>
-              ))}
+            <nav aria-label="Admin navigation" className="flex-1 px-3 space-y-0.5 overflow-y-auto">
+              {NAV_GROUPS.map((group) => {
+                const isGroupExpanded = expanded[group.label] ?? false;
+                const hasActiveItem = group.items.some((item) => isActive(item.path));
+
+                return (
+                  <div key={group.label}>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.label)}
+                      className={cn(
+                        "flex items-center justify-between w-full px-3 py-2 rounded-md text-[11px] font-mono uppercase tracking-wider transition-colors",
+                        hasActiveItem ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <span>{group.label}</span>
+                      {isGroupExpanded
+                        ? <ChevronDown className="h-3 w-3 opacity-50" />
+                        : <ChevronRight className="h-3 w-3 opacity-50" />
+                      }
+                    </button>
+
+                    {isGroupExpanded && (
+                      <div className="space-y-0.5 mb-1">
+                        {group.items.map((item) => (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            onClick={() => setSidebarOpen(false)}
+                            className={cn(
+                              "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ml-1",
+                              isActive(item.path)
+                                ? "text-foreground bg-surface-2 border-l-2 border-cream"
+                                : "text-muted-foreground hover:text-foreground hover:bg-surface"
+                            )}
+                          >
+                            <item.icon className="h-[16px] w-[16px] shrink-0" />
+                            {item.label}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
               <div className="my-3 border-t border-border" />
 
               <Link
                 to="/home"
                 onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-3 px-3 py-3 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-surface transition-colors"
+                className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-surface transition-colors"
               >
-                <ArrowLeft className="h-[18px] w-[18px]" />
+                <ArrowLeft className="h-[16px] w-[16px]" />
                 Student View
               </Link>
             </nav>

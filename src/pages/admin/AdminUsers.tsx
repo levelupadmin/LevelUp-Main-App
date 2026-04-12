@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { MultiSelect, type OptionGroup } from "@/components/ui/multi-select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Search, AlertTriangle } from "lucide-react";
@@ -34,8 +35,40 @@ const AdminUsers = () => {
   const [editForm, setEditForm] = useState({ full_name: "", bio: "", role: "student" });
   const [saving, setSaving] = useState(false);
   const [confirmRoleChange, setConfirmRoleChange] = useState(false);
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [offeringFilter, setOfferingFilter] = useState<string[]>([]);
+  const [allOfferings, setAllOfferings] = useState<{ id: string; title: string; product_tier: string }[]>([]);
+  const [enrolmentMap, setEnrolmentMap] = useState<Record<string, string[]>>({}); // user_id -> offering_ids
   const { toast } = useToast();
   const { profile: currentUser } = useAuth();
+
+  // Load offerings for the filter
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("offerings").select("id, title, product_tier");
+      setAllOfferings((data || []).map((o: any) => ({ id: o.id, title: o.title, product_tier: o.product_tier || "other" })));
+    })();
+  }, []);
+
+  const TIER_LABELS: Record<string, string> = {
+    live_cohort: "Live Cohort",
+    masterclass: "Masterclass",
+    advanced_program: "Advanced Program",
+    workshop: "Workshop",
+    other: "Other",
+  };
+
+  const offeringGroups: OptionGroup[] = useMemo(() => {
+    const tierMap: Record<string, { value: string; label: string }[]> = {};
+    allOfferings.forEach((o) => {
+      if (!tierMap[o.product_tier]) tierMap[o.product_tier] = [];
+      tierMap[o.product_tier].push({ value: o.id, label: o.title });
+    });
+    return Object.entries(tierMap).map(([tier, options]) => ({
+      label: TIER_LABELS[tier] || tier,
+      options,
+    }));
+  }, [allOfferings]);
 
   const load = async (p = page) => {
     setLoading(true);
@@ -56,9 +89,15 @@ const AdminUsers = () => {
     if (!usersData) { setLoading(false); return; }
 
     const uids = usersData.map((u) => u.id);
-    const { data: enrols } = await supabase.from("enrolments").select("user_id").in("user_id", uids);
+    const { data: enrols } = await supabase.from("enrolments").select("user_id, offering_id").in("user_id", uids);
     const eCounts: Record<string, number> = {};
-    (enrols || []).forEach((e) => { eCounts[e.user_id] = (eCounts[e.user_id] || 0) + 1; });
+    const eMap: Record<string, string[]> = {};
+    (enrols || []).forEach((e: any) => {
+      eCounts[e.user_id] = (eCounts[e.user_id] || 0) + 1;
+      if (!eMap[e.user_id]) eMap[e.user_id] = [];
+      if (!eMap[e.user_id].includes(e.offering_id)) eMap[e.user_id].push(e.offering_id);
+    });
+    setEnrolmentMap(eMap);
 
     setUsers(usersData.map((u) => ({ ...u, enrolment_count: eCounts[u.id] || 0 })));
     setLoading(false);
@@ -119,18 +158,39 @@ const AdminUsers = () => {
     }
   };
 
-  const filtered = users.filter((u) =>
-    (u.full_name || "").toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-    (u.email || "").toLowerCase().includes(debouncedSearch.toLowerCase())
-  );
+  const filtered = users.filter((u) => {
+    const matchSearch = !debouncedSearch ||
+      (u.full_name || "").toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+      (u.email || "").toLowerCase().includes(debouncedSearch.toLowerCase());
+    const matchRole = roleFilter === "all" || u.role === roleFilter;
+    const matchOffering = offeringFilter.length === 0 ||
+      (enrolmentMap[u.id] || []).some((oid) => offeringFilter.includes(oid));
+    return matchSearch && matchRole && matchOffering;
+  });
 
   return (
     <AdminLayout title="Users">
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-4 mb-6">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search users..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
+        <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Roles</SelectItem>
+            <SelectItem value="admin">Admin</SelectItem>
+            <SelectItem value="instructor">Instructor</SelectItem>
+            <SelectItem value="student">Student</SelectItem>
+          </SelectContent>
+        </Select>
+        <MultiSelect
+          groups={offeringGroups}
+          selected={offeringFilter}
+          onChange={setOfferingFilter}
+          placeholder="All Offerings"
+          className="w-56"
+        />
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-x-auto">

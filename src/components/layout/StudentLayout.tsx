@@ -7,7 +7,7 @@ import NotificationDropdown from "@/components/NotificationDropdown";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
   Home, BookOpen, Compass, MessageSquare, User,
-  Menu, X, Search, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3
+  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -186,12 +186,6 @@ const StudentLayout = ({ children, title }: Props) => {
           </div>
 
           <div className="flex items-center gap-3">
-            <button className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-surface border border-border rounded-md text-sm text-muted-foreground hover:border-border-hover transition-colors">
-              <Search className="h-4 w-4" />
-              <span>Search</span>
-              <kbd className="font-mono text-xs text-muted-foreground ml-2">⌘K</kbd>
-            </button>
-
             <div className="relative">
               <button
                 aria-label="Notifications"

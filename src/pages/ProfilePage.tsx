@@ -24,59 +24,165 @@ interface Enrolment {
   offering_id: string;
 }
 
-const SetPasswordForm = () => {
+// NOTE: In DEV_BYPASS mode (VITE_DEV_ADMIN_BYPASS === "true"), the supabase client
+// is a mock, so signInWithPassword verification will not work. The form still renders
+// and validates locally; only the Supabase calls will fail silently in dev mode.
+const ChangePasswordSection = ({ email }: { email: string }) => {
+  const [open, setOpen] = useState(false);
+  const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<{
+    oldPassword?: string;
+    newPassword?: string;
+    confirmPassword?: string;
+  }>({});
 
-  const handleSetPassword = async () => {
+  const resetForm = () => {
+    setOldPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setErrors({});
+  };
+
+  const handleCancel = () => {
+    resetForm();
+    setOpen(false);
+  };
+
+  const validate = (): boolean => {
+    const next: typeof errors = {};
+    if (!oldPassword) {
+      next.oldPassword = "Current password is required";
+    }
     if (newPassword.length < 8) {
-      toast.error("Password must be at least 8 characters");
-      return;
+      next.newPassword = "Password must be at least 8 characters";
+    } else if (!/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      next.newPassword = "Password must contain at least one letter and one number";
     }
-    if (newPassword !== confirmPassword) {
-      toast.error("Passwords do not match");
-      return;
+    if (confirmPassword !== newPassword) {
+      next.confirmPassword = "Passwords do not match";
     }
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const handleChangePassword = async () => {
+    if (!validate()) return;
+
     setSaving(true);
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+    // Verify old password by attempting a sign-in
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password: oldPassword,
+    });
+
+    if (signInError) {
+      setSaving(false);
+      setErrors((prev) => ({ ...prev, oldPassword: "Current password is incorrect" }));
+      return;
+    }
+
+    // Update to new password
+    const { error: updateError } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
     setSaving(false);
-    if (error) {
-      toast.error(error.message);
+
+    if (updateError) {
+      toast.error(updateError.message);
     } else {
-      toast.success("Password set! You can now sign in with your password.");
-      setNewPassword("");
-      setConfirmPassword("");
+      toast.success("Password changed successfully");
+      resetForm();
+      setOpen(false);
     }
   };
 
+  const handleForgotPassword = async () => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Password reset email sent");
+    }
+  };
+
+  if (!open) {
+    return (
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        Change Password
+      </Button>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">Current Password</label>
+        <Input
+          type="password"
+          value={oldPassword}
+          onChange={(e) => {
+            setOldPassword(e.target.value);
+            setErrors((prev) => ({ ...prev, oldPassword: undefined }));
+          }}
+          placeholder="Enter current password"
+          className="bg-surface border-border"
+        />
+        {errors.oldPassword && (
+          <p className="text-xs text-destructive mt-1">{errors.oldPassword}</p>
+        )}
+      </div>
       <div>
         <label className="text-xs text-muted-foreground mb-1 block">New Password</label>
         <Input
           type="password"
           value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          placeholder="Minimum 6 characters"
+          onChange={(e) => {
+            setNewPassword(e.target.value);
+            setErrors((prev) => ({ ...prev, newPassword: undefined }));
+          }}
+          placeholder="Min 8 chars, letter + number"
           className="bg-surface border-border"
         />
+        {errors.newPassword && (
+          <p className="text-xs text-destructive mt-1">{errors.newPassword}</p>
+        )}
       </div>
       <div>
-        <label className="text-xs text-muted-foreground mb-1 block">Confirm Password</label>
+        <label className="text-xs text-muted-foreground mb-1 block">Confirm New Password</label>
         <Input
           type="password"
           value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          placeholder="Re-enter password"
+          onChange={(e) => {
+            setConfirmPassword(e.target.value);
+            setErrors((prev) => ({ ...prev, confirmPassword: undefined }));
+          }}
+          placeholder="Re-enter new password"
           className="bg-surface border-border"
         />
+        {errors.confirmPassword && (
+          <p className="text-xs text-destructive mt-1">{errors.confirmPassword}</p>
+        )}
       </div>
-      <div className="sm:col-span-2">
-        <Button size="sm" onClick={handleSetPassword} disabled={saving || !newPassword}>
-          {saving ? "Setting…" : "Set Password"}
+      <div className="flex gap-2 pt-1">
+        <Button size="sm" onClick={handleChangePassword} disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={handleCancel}>
+          Cancel
         </Button>
       </div>
+      <button
+        type="button"
+        onClick={handleForgotPassword}
+        className="text-xs text-muted-foreground hover:text-cream underline cursor-pointer bg-transparent border-none p-0"
+      >
+        Forgot your password?
+      </button>
     </div>
   );
 };
@@ -360,13 +466,13 @@ const ProfilePage = () => {
         {/* Divider */}
         <div className="border-t border-border" />
 
-        {/* Set Password */}
+        {/* Change Password */}
         <section>
-          <h3 className="text-lg font-semibold mb-2">Set Password</h3>
+          <h3 className="text-lg font-semibold mb-2">Change Password</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            Set a password if you'd like to sign in with email and password instead of email links.
+            Update your account password.
           </p>
-          <SetPasswordForm />
+          <ChangePasswordSection email={displayProfile?.email ?? user?.email ?? ""} />
         </section>
 
         {/* Divider */}

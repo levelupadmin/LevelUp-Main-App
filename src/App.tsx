@@ -45,14 +45,14 @@ const AdminSchedule = lazy(() => import("@/pages/admin/AdminSchedule"));
 const AdminEvents = lazy(() => import("@/pages/admin/AdminEvents"));
 const AdminRevenue = lazy(() => import("@/pages/admin/AdminRevenue"));
 const AdminAuditLogs = lazy(() => import("@/pages/admin/AdminAuditLogs"));
-const AdminAnalytics = lazy(() => import("@/pages/admin/AdminAnalytics"));
-const AdminCohorts = lazy(() => import("@/pages/admin/AdminCohorts"));
+// Analytics merged into Dashboard
+// Cohorts removed per product decision
 const AdminCoursePreview = lazy(() => import("@/pages/admin/AdminCoursePreview"));
 const AdminChapterPreview = lazy(() => import("@/pages/admin/AdminChapterPreview"));
 const AdminCertificates = lazy(() => import("@/pages/admin/AdminCertificates"));
-const AdminRefunds = lazy(() => import("@/pages/admin/AdminRefunds"));
+// Refunds merged into Revenue page
 const AdminCertificateTemplateEditor = lazy(() => import("@/pages/admin/AdminCertificateTemplateEditor"));
-const AdminReviews = lazy(() => import("@/pages/admin/AdminReviews"));
+const AdminCourseReviews = lazy(() => import("@/pages/admin/AdminCourseReviews"));
 const AdminAnnouncements = lazy(() => import("@/pages/admin/AdminAnnouncements"));
 const AdminEmailTemplates = lazy(() => import("@/pages/admin/AdminEmailTemplates"));
 const AdminEmailCampaigns = lazy(() => import("@/pages/admin/AdminEmailCampaigns"));
@@ -117,11 +117,12 @@ const App = () => (
               <Route path="/admin/courses/:courseId/curriculum" element={<RequireAuth><RequireRole role="admin"><AdminCourseCurriculum /></RequireRole></RequireAuth>} />
               <Route path="/admin/courses/:courseId/preview" element={<RequireAuth><RequireRole role="admin"><AdminCoursePreview /></RequireRole></RequireAuth>} />
               <Route path="/admin/courses/:courseId/preview/:chapterId" element={<RequireAuth><RequireRole role="admin"><AdminChapterPreview /></RequireRole></RequireAuth>} />
+              <Route path="/admin/courses/:courseId/reviews" element={<RequireAuth><RequireRole role="admin"><AdminCourseReviews /></RequireRole></RequireAuth>} />
               <Route path="/admin/offerings" element={<RequireAuth><RequireRole role="admin"><AdminOfferings /></RequireRole></RequireAuth>} />
               <Route path="/admin/offerings/:offeringId/edit" element={<RequireAuth><RequireRole role="admin"><AdminOfferingEditor /></RequireRole></RequireAuth>} />
               <Route path="/admin/schedule" element={<RequireAuth><RequireRole role="admin"><AdminSchedule /></RequireRole></RequireAuth>} />
               <Route path="/admin/events" element={<RequireAuth><RequireRole role="admin"><AdminEvents /></RequireRole></RequireAuth>} />
-              <Route path="/admin/cohorts" element={<RequireAuth><RequireRole role="admin"><AdminCohorts /></RequireRole></RequireAuth>} />
+              {/* Cohorts removed */}
               <Route path="/admin/enrolments" element={<RequireAuth><RequireRole role="admin"><AdminEnrolments /></RequireRole></RequireAuth>} />
               <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />
               <Route path="/admin/coupons" element={<RequireAuth><RequireRole role="admin"><AdminCoupons /></RequireRole></RequireAuth>} />
@@ -129,9 +130,7 @@ const App = () => (
               <Route path="/admin/audit-logs" element={<RequireAuth><RequireRole role="admin"><AdminAuditLogs /></RequireRole></RequireAuth>} />
               <Route path="/admin/certificates" element={<RequireAuth><RequireRole role="admin"><AdminCertificates /></RequireRole></RequireAuth>} />
               <Route path="/admin/courses/:courseId/certificate" element={<RequireAuth><RequireRole role="admin"><AdminCertificateTemplateEditor /></RequireRole></RequireAuth>} />
-              <Route path="/admin/analytics" element={<RequireAuth><RequireRole role="admin"><AdminAnalytics /></RequireRole></RequireAuth>} />
-              <Route path="/admin/reviews" element={<RequireAuth><RequireRole role="admin"><AdminReviews /></RequireRole></RequireAuth>} />
-              <Route path="/admin/refunds" element={<RequireAuth><RequireRole role="admin"><AdminRefunds /></RequireRole></RequireAuth>} />
+              {/* Reviews accessible per-course at /admin/courses/:courseId/reviews */}
               <Route path="/admin/announcements" element={<RequireAuth><RequireRole role="admin"><AdminAnnouncements /></RequireRole></RequireAuth>} />
               <Route path="/admin/email-templates" element={<RequireAuth><RequireRole role="admin"><AdminEmailTemplates /></RequireRole></RequireAuth>} />
               <Route path="/admin/email-campaigns" element={<RequireAuth><RequireRole role="admin"><AdminEmailCampaigns /></RequireRole></RequireAuth>} />
