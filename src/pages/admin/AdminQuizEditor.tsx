@@ -251,6 +251,41 @@ const AdminQuizEditor = () => {
 
   const handleSave = async () => {
     if (!chapterId) return;
+
+    // Validate before saving
+    for (let qi = 0; qi < quizzes.length; qi++) {
+      const quiz = quizzes[qi];
+      if (!quiz.title.trim()) {
+        toast({ title: `Quiz ${qi + 1} needs a title`, variant: "destructive" });
+        return;
+      }
+      if (quiz.quiz_questions.length === 0) {
+        toast({ title: `Quiz "${quiz.title}" has no questions`, variant: "destructive" });
+        return;
+      }
+      for (let qqi = 0; qqi < quiz.quiz_questions.length; qqi++) {
+        const q = quiz.quiz_questions[qqi];
+        if (!q.question_text.trim()) {
+          toast({ title: `Quiz "${quiz.title}", Q${qqi + 1}: question text is empty`, variant: "destructive" });
+          return;
+        }
+        if (q.quiz_options.length < 2) {
+          toast({ title: `Quiz "${quiz.title}", Q${qqi + 1}: needs at least 2 options`, variant: "destructive" });
+          return;
+        }
+        const hasCorrect = q.quiz_options.some((o) => o.is_correct);
+        if (!hasCorrect) {
+          toast({ title: `Quiz "${quiz.title}", Q${qqi + 1}: no correct answer selected`, variant: "destructive" });
+          return;
+        }
+        const hasEmpty = q.quiz_options.some((o) => !o.option_text.trim());
+        if (hasEmpty) {
+          toast({ title: `Quiz "${quiz.title}", Q${qqi + 1}: has blank option text`, variant: "destructive" });
+          return;
+        }
+      }
+    }
+
     setSaving(true);
 
     try {

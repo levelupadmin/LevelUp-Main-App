@@ -145,7 +145,7 @@ export default function CheckoutPage() {
       setLoading(false);
     }
     load();
-  }, [authLoading, user, offeringId, navigate]);
+  }, [authLoading, user, offeringId, applicationId, paymentType, navigate]);
 
   const isStaged = paymentType !== "full" && (offering as any)?.payment_mode === "staged";
   const stagedLabel = paymentType === "app_fee" ? "Application Fee"
@@ -267,6 +267,7 @@ export default function CheckoutPage() {
     setFieldTouched((prev) => ({ ...prev, ...touchAll }));
     if (hasFieldError) {
       toast.error("Please fill in all required fields");
+      paymentInFlightRef.current = false;
       return;
     }
 

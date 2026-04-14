@@ -2,6 +2,23 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const tallySigningSecret = Deno.env.get("TALLY_SIGNING_SECRET") || "";
+
+async function verifyTallySignature(body: string, signature: string | null): Promise<boolean> {
+  if (!tallySigningSecret) return true; // Skip if not configured (dev)
+  if (!signature) return false;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(tallySigningSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
+  const computed = btoa(String.fromCharCode(...new Uint8Array(sig)));
+  return computed === signature;
+}
 
 function extractField(fields: any[], label: string): string {
   const field = fields.find(
@@ -19,7 +36,19 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const payload = await req.json();
+    const rawBody = await req.text();
+
+    // Verify Tally webhook signature
+    const signature = req.headers.get("tally-signature");
+    const isValid = await verifyTallySignature(rawBody, signature);
+    if (!isValid) {
+      return new Response(JSON.stringify({ error: "Invalid signature" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const payload = JSON.parse(rawBody);
     if (payload.eventType !== "FORM_RESPONSE") {
       return new Response(JSON.stringify({ ok: true, skipped: true }), {
         headers: { "Content-Type": "application/json" },

@@ -75,6 +75,21 @@ function statusLabel(s: string) {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/* ── Valid forward transitions (prevents backward moves) ── */
+const VALID_TRANSITIONS: Record<string, AppStatus[]> = {
+  submitted: ["app_fee_paid", "rejected", "waitlisted"],
+  app_fee_paid: ["interview_scheduled", "accepted", "rejected", "waitlisted"],
+  interview_scheduled: ["interview_done", "rejected", "waitlisted"],
+  interview_done: ["accepted", "rejected", "waitlisted"],
+  accepted: ["confirmation_paid", "rejected", "withdrawn"],
+  confirmation_paid: ["balance_paid", "withdrawn"],
+  balance_paid: ["enrolled", "withdrawn"],
+  enrolled: ["withdrawn"],
+  rejected: ["submitted"], // allow re-open
+  withdrawn: ["submitted"],
+  waitlisted: ["accepted", "rejected"],
+};
+
 /* ── Interfaces ── */
 interface ApplicationRow {
   id: string;
@@ -143,26 +158,23 @@ const AdminApplications = () => {
 
   /* ── Fetch stats ── */
   const fetchStats = useCallback(async () => {
-    const { data, error } = await (supabase as any)
-      .from("cohort_applications")
-      .select("status");
-    if (error || !data) return;
-    const s = {
-      total: data.length,
-      submitted: 0,
-      app_fee_paid: 0,
-      accepted: 0,
-      confirmation_paid: 0,
-      enrolled: 0,
-    };
-    data.forEach((r: { status: string }) => {
-      if (r.status === "submitted") s.submitted++;
-      else if (r.status === "app_fee_paid") s.app_fee_paid++;
-      else if (r.status === "accepted") s.accepted++;
-      else if (r.status === "confirmation_paid") s.confirmation_paid++;
-      else if (r.status === "enrolled") s.enrolled++;
+    // Use count queries instead of fetching all rows
+    const [totalRes, submittedRes, appFeeRes, acceptedRes, confirmRes, enrolledRes] = await Promise.all([
+      (supabase as any).from("cohort_applications").select("id", { count: "exact", head: true }),
+      (supabase as any).from("cohort_applications").select("id", { count: "exact", head: true }).eq("status", "submitted"),
+      (supabase as any).from("cohort_applications").select("id", { count: "exact", head: true }).eq("status", "app_fee_paid"),
+      (supabase as any).from("cohort_applications").select("id", { count: "exact", head: true }).eq("status", "accepted"),
+      (supabase as any).from("cohort_applications").select("id", { count: "exact", head: true }).eq("status", "confirmation_paid"),
+      (supabase as any).from("cohort_applications").select("id", { count: "exact", head: true }).eq("status", "enrolled"),
+    ]);
+    setStats({
+      total: totalRes.count ?? 0,
+      submitted: submittedRes.count ?? 0,
+      app_fee_paid: appFeeRes.count ?? 0,
+      accepted: acceptedRes.count ?? 0,
+      confirmation_paid: confirmRes.count ?? 0,
+      enrolled: enrolledRes.count ?? 0,
     });
-    setStats(s);
   }, []);
 
   /* ── Fetch applications ── */
@@ -208,6 +220,11 @@ const AdminApplications = () => {
 
   /* ── Actions ── */
   const updateStatus = async (app: ApplicationRow, newStatus: AppStatus) => {
+    const allowed = VALID_TRANSITIONS[app.status] || [];
+    if (!allowed.includes(newStatus)) {
+      toast.error(`Cannot transition from "${statusLabel(app.status)}" to "${statusLabel(newStatus)}"`);
+      return;
+    }
     const { error } = await (supabase as any)
       .from("cohort_applications")
       .update({ status: newStatus })
@@ -470,9 +487,7 @@ const AdminApplications = () => {
                             <StickyNote className="h-4 w-4 mr-2" />
                             Interview Notes
                           </DropdownMenuItem>
-                          {app.status !== "accepted" &&
-                            app.status !== "enrolled" &&
-                            app.status !== "rejected" && (
+                          {(VALID_TRANSITIONS[app.status] || []).includes("accepted") && (
                               <DropdownMenuItem
                                 onClick={() => updateStatus(app, "accepted")}
                               >
@@ -480,8 +495,7 @@ const AdminApplications = () => {
                                 Accept
                               </DropdownMenuItem>
                             )}
-                          {app.status !== "rejected" &&
-                            app.status !== "enrolled" && (
+                          {(VALID_TRANSITIONS[app.status] || []).includes("rejected") && (
                               <DropdownMenuItem
                                 onClick={() => {
                                   setRejectReason("");

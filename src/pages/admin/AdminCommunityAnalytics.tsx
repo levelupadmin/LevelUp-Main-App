@@ -92,15 +92,16 @@ const AdminCommunityAnalytics = () => {
     });
 
     // Top 10 contributors (aggregate posts + comments + messages)
-    const { data: allPosts } = await (supabase as any)
-      .from("community_posts")
-      .select("user_id");
-    const { data: allComments } = await (supabase as any)
-      .from("community_comments")
-      .select("user_id");
-    const { data: allMessages } = await (supabase as any)
-      .from("community_messages")
-      .select("user_id");
+    // Limit to last 90 days to avoid fetching entire history
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
+    const [allPostsRes, allCommentsRes, allMessagesRes] = await Promise.all([
+      (supabase as any).from("community_posts").select("user_id").gte("created_at", ninetyDaysAgo),
+      (supabase as any).from("community_comments").select("user_id").gte("created_at", ninetyDaysAgo),
+      (supabase as any).from("community_messages").select("user_id").gte("created_at", ninetyDaysAgo),
+    ]);
+    const allPosts = allPostsRes.data;
+    const allComments = allCommentsRes.data;
+    const allMessages = allMessagesRes.data;
 
     const userAgg: Record<string, { posts: number; comments: number; messages: number }> = {};
     (allPosts || []).forEach((r: any) => {
@@ -149,15 +150,12 @@ const AdminCommunityAnalytics = () => {
 
     if (spacesData && spacesData.length > 0) {
       const spaceIds = spacesData.map((s: any) => s.id);
-      const { data: spacePosts } = await (supabase as any)
-        .from("community_posts")
-        .select("space_id")
-        .in("space_id", spaceIds);
-
-      const { data: spaceMembers } = await (supabase as any)
-        .from("community_space_members")
-        .select("space_id")
-        .in("space_id", spaceIds);
+      const [spacePostsRes, spaceMembersRes] = await Promise.all([
+        (supabase as any).from("community_posts").select("space_id").in("space_id", spaceIds),
+        (supabase as any).from("community_space_members").select("space_id").in("space_id", spaceIds),
+      ]);
+      const spacePosts = spacePostsRes.data;
+      const spaceMembers = spaceMembersRes.data;
 
       const postCountMap: Record<string, number> = {};
       (spacePosts || []).forEach((p: any) => {

@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS cohort_applications (
   occupation text,
   bio text,
   status text NOT NULL DEFAULT 'submitted'
-    CHECK (status IN ('submitted','app_fee_pending','app_fee_paid','interview_scheduled','interview_done','accepted','rejected','confirmation_pending','confirmed','balance_pending','enrolled')),
+    CHECK (status IN ('submitted','app_fee_paid','interview_scheduled','interview_done','accepted','rejected','confirmation_paid','balance_paid','enrolled','withdrawn','waitlisted')),
+  app_fee_paid_at timestamptz,
   tally_response_id text,
   tally_data jsonb,
   interview_notes text,

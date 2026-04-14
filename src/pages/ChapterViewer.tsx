@@ -111,8 +111,15 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
     })();
   }, [quiz.id, userId]);
 
+  const answeredCount = Object.keys(answers).length;
+
   const handleSubmit = async () => {
     if (questions.length === 0) return;
+    // Require at least one answer before submitting
+    if (answeredCount === 0) {
+      toast.error("Please answer at least one question before submitting.");
+      return;
+    }
     let score = 0;
     const total = questions.length;
 
@@ -123,7 +130,7 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
       if (selectedOption?.is_correct) score++;
     });
 
-    const pct = (score / total) * 100;
+    const pct = total > 0 ? (score / total) * 100 : 0;
     const passed = pct >= (quiz.pass_percentage || 70);
 
     setResult({ score, total, passed });

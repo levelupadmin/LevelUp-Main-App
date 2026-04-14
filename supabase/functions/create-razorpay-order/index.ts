@@ -65,17 +65,43 @@ Deno.serve(async (req) => {
     // Staged payment amount calculation
     let stagedAmountInr: number | null = null;
     if (offering.payment_mode === "staged" && payment_type) {
-      if (payment_type === "app_fee") {
-        stagedAmountInr = Number(offering.app_fee_inr || 0);
-      } else if (payment_type === "confirmation") {
-        stagedAmountInr = Number(offering.confirmation_amount_inr || 0);
-      } else if (payment_type === "balance" && application_id) {
-        // Calculate remaining balance
-        const { data: app } = await admin
+      if (!application_id && payment_type !== "app_fee")
+        return jsonRes({ error: "application_id is required for this payment stage" }, 400);
+
+      // Verify application ownership and load state
+      let app: any = null;
+      if (application_id) {
+        const { data: appRow } = await admin
           .from("cohort_applications")
-          .select("app_fee_payment_id, confirmation_payment_id")
+          .select("id, user_id, status, app_fee_payment_id, confirmation_payment_id, balance_payment_id")
           .eq("id", application_id)
           .single();
+        if (!appRow)
+          return jsonRes({ error: "Application not found" }, 404);
+        // Security: verify the application belongs to the requesting user
+        if (appRow.user_id && appRow.user_id !== userId)
+          return jsonRes({ error: "Not your application" }, 403);
+        app = appRow;
+      }
+
+      if (payment_type === "app_fee") {
+        // Prevent double-payment on app_fee
+        if (app?.app_fee_payment_id)
+          return jsonRes({ error: "Application fee already paid" }, 400);
+        stagedAmountInr = Number(offering.app_fee_inr || 0);
+      } else if (payment_type === "confirmation") {
+        // Must have paid app_fee first
+        if (!app?.app_fee_payment_id)
+          return jsonRes({ error: "Application fee must be paid before confirmation" }, 400);
+        if (app?.confirmation_payment_id)
+          return jsonRes({ error: "Confirmation already paid" }, 400);
+        stagedAmountInr = Number(offering.confirmation_amount_inr || 0);
+      } else if (payment_type === "balance") {
+        // Must have paid confirmation first
+        if (!app?.confirmation_payment_id)
+          return jsonRes({ error: "Confirmation must be paid before balance" }, 400);
+        if (app?.balance_payment_id)
+          return jsonRes({ error: "Balance already paid" }, 400);
         let previouslyPaid = 0;
         if (app?.app_fee_payment_id) previouslyPaid += Number(offering.app_fee_inr || 0);
         if (app?.confirmation_payment_id) previouslyPaid += Number(offering.confirmation_amount_inr || 0);

@@ -211,7 +211,9 @@ const AdminUsers = () => {
     if (!file) return;
     setImporting(true);
     try {
-      const text = await file.text();
+      let text = await file.text();
+      // Strip UTF-8 BOM if present
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
       const lines = text.split("\n").filter((l) => l.trim());
       if (lines.length < 2) throw new Error("CSV must have a header row and at least one data row");
       const headers = lines[0].split(",").map((h) => h.replace(/"/g, "").trim().toLowerCase());
@@ -219,10 +221,10 @@ const AdminUsers = () => {
       if (emailIdx === -1) throw new Error("CSV must contain an 'email' column");
       const nameIdx = headers.indexOf("full name") !== -1 ? headers.indexOf("full name") : headers.indexOf("full_name");
       const phoneIdx = headers.indexOf("phone");
-      const roleIdx = headers.indexOf("role");
       const cityIdx = headers.indexOf("city");
       const occIdx = headers.indexOf("occupation");
       const bioIdx = headers.indexOf("bio");
+      // Security: role column is intentionally ignored to prevent escalation via CSV
 
       let success = 0;
       let failed = 0;
@@ -239,13 +241,12 @@ const AdminUsers = () => {
         }
         cols.push(cur.trim());
 
-        const email = cols[emailIdx];
-        if (!email) { failed++; continue; }
+        const email = cols[emailIdx]?.toLowerCase().trim();
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { failed++; continue; }
 
         const updates: Record<string, any> = {};
         if (nameIdx >= 0 && cols[nameIdx]) updates.full_name = cols[nameIdx];
         if (phoneIdx >= 0 && cols[phoneIdx]) updates.phone = cols[phoneIdx];
-        if (roleIdx >= 0 && cols[roleIdx]) updates.role = cols[roleIdx];
         if (cityIdx >= 0 && cols[cityIdx]) updates.city = cols[cityIdx];
         if (occIdx >= 0 && cols[occIdx]) updates.occupation = cols[occIdx];
         if (bioIdx >= 0 && cols[bioIdx]) updates.bio = cols[bioIdx];
