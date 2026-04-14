@@ -5,7 +5,10 @@ const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const tallySigningSecret = Deno.env.get("TALLY_SIGNING_SECRET") || "";
 
 async function verifyTallySignature(body: string, signature: string | null): Promise<boolean> {
-  if (!tallySigningSecret) return true; // Skip if not configured (dev)
+  if (!tallySigningSecret) {
+    console.error("TALLY_SIGNING_SECRET is not configured — rejecting webhook");
+    return false;
+  }
   if (!signature) return false;
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(

@@ -8,11 +8,11 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
-function normalizePhone(phone: string): string {
+function normalizePhone(phone: string): string | null {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
   if (digits.length === 10) return digits;
-  return digits;
+  return null; // Invalid phone length
 }
 
 /**
@@ -293,56 +293,98 @@ Deno.serve(async (req) => {
         .eq("id", po.id);
     }
 
-    // Main enrolment (idempotent)
-    const { data: existing } = await admin
-      .from("enrolments")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("offering_id", po.offering_id)
-      .eq("status", "active")
-      .maybeSingle();
-
-    let enrolmentId: string | null = existing?.id ?? null;
-
-    if (!existing) {
-      const { data: enrolment, error: enrolErr } = await admin
-        .from("enrolments")
-        .insert({
-          user_id: userId,
-          offering_id: po.offering_id,
-          payment_order_id: po.id,
-          status: "active",
-          source: "checkout",
-        })
-        .select("id")
-        .single();
-
-      if (enrolErr) {
-        console.error("[razorpay-webhook] enrolment insert failed:", enrolErr);
-        return jsonRes({ error: "Enrolment creation failed" }, 500);
+    // ── Staged payment: update cohort_applications ──
+    if (po.payment_type && po.application_id) {
+      const appUpdate: Record<string, unknown> = {};
+      if (po.payment_type === "app_fee") {
+        appUpdate.status = "app_fee_paid";
+        appUpdate.app_fee_payment_id = po.id;
+        appUpdate.app_fee_paid_at = new Date().toISOString();
+        if (userId) appUpdate.user_id = userId;
+      } else if (po.payment_type === "confirmation") {
+        appUpdate.status = "confirmation_paid";
+        appUpdate.confirmation_payment_id = po.id;
+      } else if (po.payment_type === "balance") {
+        appUpdate.status = "balance_paid";
+        appUpdate.balance_payment_id = po.id;
       }
-      enrolmentId = enrolment.id;
+      if (Object.keys(appUpdate).length > 0) {
+        const { error: appErr } = await admin
+          .from("cohort_applications")
+          .update(appUpdate)
+          .eq("id", po.application_id);
+        if (appErr) console.error("[razorpay-webhook] cohort_applications update failed:", appErr);
+        else console.log("[razorpay-webhook] Application", po.application_id, "→", appUpdate.status);
+      }
     }
 
-    // Bump offerings (idempotent)
-    if (po.bump_offering_ids && Array.isArray(po.bump_offering_ids)) {
-      for (const bumpOffId of po.bump_offering_ids) {
-        const { data: existingBump } = await admin
+    // Main enrolment (idempotent)
+    // For staged payments, only enrol on balance or confirmation (not app_fee)
+    const isStaged = !!po.payment_type;
+    const shouldEnrol = !isStaged || po.payment_type === "balance" || po.payment_type === "confirmation";
+
+    let enrolmentId: string | null = null;
+
+    if (shouldEnrol) {
+      const { data: existing } = await admin
+        .from("enrolments")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("offering_id", po.offering_id)
+        .eq("status", "active")
+        .maybeSingle();
+
+      enrolmentId = existing?.id ?? null;
+
+      if (!existing) {
+        const { data: enrolment, error: enrolErr } = await admin
           .from("enrolments")
-          .select("id")
-          .eq("user_id", userId)
-          .eq("offering_id", bumpOffId)
-          .eq("status", "active")
-          .maybeSingle();
-        if (!existingBump) {
-          await admin.from("enrolments").insert({
+          .insert({
             user_id: userId,
-            offering_id: bumpOffId,
+            offering_id: po.offering_id,
             payment_order_id: po.id,
             status: "active",
             source: "checkout",
-          });
+            application_id: po.application_id || null,
+          })
+          .select("id")
+          .single();
+
+        if (enrolErr) {
+          console.error("[razorpay-webhook] enrolment insert failed:", enrolErr);
+          return jsonRes({ error: "Enrolment creation failed" }, 500);
         }
+        enrolmentId = enrolment.id;
+      }
+
+      // Bump offerings (idempotent)
+      if (po.bump_offering_ids && Array.isArray(po.bump_offering_ids)) {
+        for (const bumpOffId of po.bump_offering_ids) {
+          const { data: existingBump } = await admin
+            .from("enrolments")
+            .select("id")
+            .eq("user_id", userId)
+            .eq("offering_id", bumpOffId)
+            .eq("status", "active")
+            .maybeSingle();
+          if (!existingBump) {
+            await admin.from("enrolments").insert({
+              user_id: userId,
+              offering_id: bumpOffId,
+              payment_order_id: po.id,
+              status: "active",
+              source: "checkout",
+            });
+          }
+        }
+      }
+
+      // For balance payments, mark application as enrolled
+      if (po.payment_type === "balance" && po.application_id) {
+        await admin
+          .from("cohort_applications")
+          .update({ status: "enrolled" })
+          .eq("id", po.application_id);
       }
     }
 

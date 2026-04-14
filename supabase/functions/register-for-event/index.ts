@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
         Authorization: `Basic ${encodeBase64(`${keyId}:${keySecret}`)}`,
       },
       body: JSON.stringify({
-        amount: event.price_inr,
+        amount: Math.round(Number(event.price_inr) * 100), // Convert INR to paise
         currency: "INR",
         notes: { event_id, user_id: user.id },
       }),
@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       registered: false,
       razorpay_order_id: rzpOrder.id,
-      amount: event.price_inr,
+      amount: Math.round(Number(event.price_inr) * 100), // Paise for Razorpay client
       key_id: keyId,
       event_id,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });

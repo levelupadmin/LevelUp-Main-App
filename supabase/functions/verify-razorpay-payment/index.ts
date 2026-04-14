@@ -12,11 +12,11 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
-function normalizePhone(phone: string): string {
+function normalizePhone(phone: string): string | null {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
   if (digits.length === 10) return digits;
-  return digits;
+  return null; // Invalid phone length
 }
 
 /**
@@ -564,72 +564,148 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Unable to resolve user for enrolment" }, 500);
     }
 
-    console.log("[verify] Creating enrolment for user:", userId, "offering:", po.offering_id);
-    /* ── Create enrolment for main offering (with duplicate guard) ── */
-    const { data: existingEnrolment } = await admin
-      .from("enrolments")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("offering_id", po.offering_id)
-      .maybeSingle();
+    /* ── Staged payment: update cohort_applications ── */
+    if (po.payment_type && po.application_id) {
+      const appUpdate: Record<string, unknown> = {};
 
-    let enrolmentId: string;
-
-    if (!existingEnrolment) {
-      const { data: enrolment, error: enrolErr } = await admin
-        .from("enrolments")
-        .insert({
-          user_id: userId,
-          offering_id: po.offering_id,
-          payment_order_id: po.id,
-          status: "active",
-          source: "checkout",
-        })
-        .select("id")
-        .single();
-
-      if (enrolErr) {
-        console.error("Enrolment error:", enrolErr);
-        return jsonRes({ error: "Failed to create enrolment" }, 500);
+      if (po.payment_type === "app_fee") {
+        appUpdate.status = "app_fee_paid";
+        appUpdate.app_fee_payment_id = po.id;
+        appUpdate.app_fee_paid_at = new Date().toISOString();
+        // Link application to user if not already linked
+        if (userId) appUpdate.user_id = userId;
+      } else if (po.payment_type === "confirmation") {
+        appUpdate.status = "confirmation_paid";
+        appUpdate.confirmation_payment_id = po.id;
+      } else if (po.payment_type === "balance") {
+        appUpdate.status = "balance_paid";
+        appUpdate.balance_payment_id = po.id;
       }
-      enrolmentId = enrolment.id;
-    } else {
-      enrolmentId = existingEnrolment.id;
-    }
 
-    /* ── Enrol bump offerings ── */
-    if (po.bump_offering_ids && po.bump_offering_ids.length > 0) {
-      for (const bumpOffId of po.bump_offering_ids) {
-        const { data: existingBump } = await admin
+      if (Object.keys(appUpdate).length > 0) {
+        const { error: appErr } = await admin
+          .from("cohort_applications")
+          .update(appUpdate)
+          .eq("id", po.application_id);
+        if (appErr) {
+          console.error("[verify] Failed to update cohort_applications:", appErr);
+        } else {
+          console.log("[verify] Updated application", po.application_id, "→", appUpdate.status);
+        }
+      }
+
+      // Update enrolment tracking on the application
+      if (po.payment_type === "balance" || po.payment_type === "confirmation") {
+        // Track cumulative paid amount on enrolment (if exists)
+        const { data: existingEnrol } = await admin
           .from("enrolments")
-          .select("id")
+          .select("id, total_paid_inr")
           .eq("user_id", userId)
-          .eq("offering_id", bumpOffId)
+          .eq("offering_id", po.offering_id)
           .maybeSingle();
 
-        if (!existingBump) {
-          await admin.from("enrolments").insert({
-            user_id: userId,
-            offering_id: bumpOffId,
-            payment_order_id: po.id,
-            status: "active",
-            source: "checkout",
-          });
+        if (existingEnrol) {
+          const newTotal = Number(existingEnrol.total_paid_inr || 0) + Number(po.total_inr);
+          await admin
+            .from("enrolments")
+            .update({
+              total_paid_inr: newTotal,
+              application_id: po.application_id,
+            })
+            .eq("id", existingEnrol.id);
         }
       }
     }
 
+    console.log("[verify] Creating enrolment for user:", userId, "offering:", po.offering_id);
+
+    /* ── Create enrolment for main offering (with duplicate guard) ──
+         For staged payments: enrol only after balance is paid (or after
+         confirmation if there is no balance stage). For non-staged,
+         enrol immediately. ── */
+    const isStaged = !!po.payment_type;
+    const shouldEnrol = !isStaged || po.payment_type === "balance" || po.payment_type === "confirmation";
+
+    let enrolmentId: string | null = null;
+
+    if (shouldEnrol) {
+      const { data: existingEnrolment } = await admin
+        .from("enrolments")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("offering_id", po.offering_id)
+        .maybeSingle();
+
+      if (!existingEnrolment) {
+        const { data: enrolment, error: enrolErr } = await admin
+          .from("enrolments")
+          .insert({
+            user_id: userId,
+            offering_id: po.offering_id,
+            payment_order_id: po.id,
+            status: "active",
+            source: "checkout",
+            application_id: po.application_id || null,
+            total_paid_inr: Number(po.total_inr),
+          })
+          .select("id")
+          .single();
+
+        if (enrolErr) {
+          console.error("Enrolment error:", enrolErr);
+          return jsonRes({ error: "Failed to create enrolment" }, 500);
+        }
+        enrolmentId = enrolment.id;
+      } else {
+        enrolmentId = existingEnrolment.id;
+      }
+
+      /* ── Enrol bump offerings (only for non-staged or final payment) ── */
+      if (po.bump_offering_ids && po.bump_offering_ids.length > 0) {
+        for (const bumpOffId of po.bump_offering_ids) {
+          const { data: existingBump } = await admin
+            .from("enrolments")
+            .select("id")
+            .eq("user_id", userId)
+            .eq("offering_id", bumpOffId)
+            .maybeSingle();
+
+          if (!existingBump) {
+            await admin.from("enrolments").insert({
+              user_id: userId,
+              offering_id: bumpOffId,
+              payment_order_id: po.id,
+              status: "active",
+              source: "checkout",
+            });
+          }
+        }
+      }
+
+      // For staged balance payments, also update application to enrolled
+      if (po.payment_type === "balance" && po.application_id) {
+        await admin
+          .from("cohort_applications")
+          .update({ status: "enrolled" })
+          .eq("id", po.application_id);
+        console.log("[verify] Application", po.application_id, "→ enrolled");
+      }
+    }
+
     /* ── Audit log ── */
-    await admin.from("enrolment_audit_log").insert({
-      enrolment_id: enrolmentId,
-      action: "granted",
-      actor_user_id: userId,
-      metadata: {
-        payment_order_id: po.id,
-        razorpay_payment_id,
-        total_inr: po.total_inr,
-      },
-    });
+    if (enrolmentId) {
+      await admin.from("enrolment_audit_log").insert({
+        enrolment_id: enrolmentId,
+        action: "granted",
+        actor_user_id: userId,
+        metadata: {
+          payment_order_id: po.id,
+          razorpay_payment_id,
+          total_inr: po.total_inr,
+          payment_type: po.payment_type || "full",
+        },
+      });
+    }
 
     /* ── Get offering title for client ── */
     const { data: off } = await admin

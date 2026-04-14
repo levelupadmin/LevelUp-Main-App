@@ -12,11 +12,11 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
-function normalizePhone(phone: string): string {
+function normalizePhone(phone: string): string | null {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
   if (digits.length === 10) return digits;
-  return digits;
+  return null; // Invalid phone length
 }
 
 Deno.serve(async (req) => {
@@ -47,8 +47,8 @@ Deno.serve(async (req) => {
     }
 
     const normalizedPhone = normalizePhone(guest_phone);
-    if (normalizedPhone.length < 10) {
-      return jsonRes({ error: "Invalid phone number" }, 400);
+    if (!normalizedPhone) {
+      return jsonRes({ error: "Invalid phone number — must be 10 digits" }, 400);
     }
 
     const admin = createClient(
