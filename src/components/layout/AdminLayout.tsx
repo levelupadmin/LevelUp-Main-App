@@ -28,10 +28,14 @@ import {
   Megaphone,
   Mail,
   Send,
+  ClipboardList,
+  MessageSquare,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
+import { ADMIN_ROLES, canAccessRoute } from "@/lib/permissions";
 
 interface NavItem {
   label: string;
@@ -70,6 +74,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "People",
     items: [
+      { label: "Applications", icon: ClipboardList, path: "/admin/applications" },
       { label: "Enrolments", icon: Users, path: "/admin/enrolments" },
       { label: "Users", icon: UserCog, path: "/admin/users" },
       { label: "Coupons", icon: Ticket, path: "/admin/coupons" },
@@ -85,9 +90,16 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "Community",
+    items: [
+      { label: "Community", icon: MessageSquare, path: "/admin/community" },
+    ],
+  },
+  {
     label: "System",
     items: [
       { label: "Audit Logs", icon: ScrollText, path: "/admin/audit-logs" },
+      { label: "Roles", icon: Shield, path: "/admin/roles" },
     ],
   },
 ];
@@ -188,7 +200,7 @@ const AdminLayout = ({ children, title }: Props) => {
     );
   }
 
-  if (!profile || profile.role !== "admin") {
+  if (!profile || !ADMIN_ROLES.includes(profile.role)) {
     return <Navigate to="/home" replace />;
   }
 
@@ -196,6 +208,12 @@ const AdminLayout = ({ children, title }: Props) => {
     path === "/admin"
       ? location.pathname === "/admin"
       : location.pathname.startsWith(path);
+
+  // Filter nav items by role permissions
+  const filteredNavGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => canAccessRoute(profile.role, item.path)),
+  })).filter((group) => group.items.length > 0);
 
   /* ─── Sidebar content (shared between desktop & mobile) ─── */
   const SidebarContent = () => (
@@ -210,7 +228,7 @@ const AdminLayout = ({ children, title }: Props) => {
 
       {/* Nav */}
       <nav aria-label="Admin navigation" className="flex-1 px-3 space-y-0.5 overflow-y-auto">
-        {NAV_GROUPS.map((group) => {
+        {filteredNavGroups.map((group) => {
           const isGroupExpanded = expanded[group.label] ?? false;
           const hasActiveItem = group.items.some((item) => isActive(item.path));
 
@@ -307,7 +325,7 @@ const AdminLayout = ({ children, title }: Props) => {
               </button>
             </div>
             <nav aria-label="Admin navigation" className="flex-1 px-3 space-y-0.5 overflow-y-auto">
-              {NAV_GROUPS.map((group) => {
+              {filteredNavGroups.map((group) => {
                 const isGroupExpanded = expanded[group.label] ?? false;
                 const hasActiveItem = group.items.some((item) => isActive(item.path));
 

@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Info,
   ArrowLeft,
+  RotateCcw,
 } from "lucide-react";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 import Confetti from "@/components/Confetti";
@@ -72,6 +73,192 @@ interface Comment {
   user_name?: string;
 }
 
+/* ─── QuizBlock component ─── */
+const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitted, setSubmitted] = useState(false);
+  const [result, setResult] = useState<{ score: number; total: number; passed: boolean } | null>(null);
+  const [loadingAttempt, setLoadingAttempt] = useState(true);
+
+  const questions: any[] = (quiz.quiz_questions || [])
+    .sort((a: any, b: any) => a.sort_order - b.sort_order)
+    .map((q: any) => ({
+      ...q,
+      quiz_options: (q.quiz_options || []).sort((a: any, b: any) => a.sort_order - b.sort_order),
+    }));
+
+  // Load previous attempt on mount
+  useEffect(() => {
+    if (!userId || !quiz.id) { setLoadingAttempt(false); return; }
+    (async () => {
+      const { data: attempt } = await (supabase as any)
+        .from("quiz_attempts")
+        .select("id, score, total_questions, passed, answers")
+        .eq("quiz_id", quiz.id)
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (attempt && attempt.passed) {
+        // Pre-fill answers and show results
+        if (attempt.answers && typeof attempt.answers === "object") {
+          setAnswers(attempt.answers as Record<string, string>);
+        }
+        setResult({ score: attempt.score, total: attempt.total_questions, passed: attempt.passed });
+        setSubmitted(true);
+      }
+      setLoadingAttempt(false);
+    })();
+  }, [quiz.id, userId]);
+
+  const handleSubmit = async () => {
+    if (questions.length === 0) return;
+    let score = 0;
+    const total = questions.length;
+
+    questions.forEach((q: any) => {
+      const selectedOptionId = answers[q.id];
+      if (!selectedOptionId) return;
+      const selectedOption = q.quiz_options.find((o: any) => o.id === selectedOptionId);
+      if (selectedOption?.is_correct) score++;
+    });
+
+    const pct = (score / total) * 100;
+    const passed = pct >= (quiz.pass_percentage || 70);
+
+    setResult({ score, total, passed });
+    setSubmitted(true);
+
+    // Save attempt
+    if (userId) {
+      await (supabase as any).from("quiz_attempts").insert({
+        quiz_id: quiz.id,
+        user_id: userId,
+        score,
+        total_questions: total,
+        passed,
+        answers,
+      });
+    }
+
+    if (passed) {
+      toast.success(`Passed! ${score}/${total} correct`);
+    } else {
+      toast.error(`Not quite — ${score}/${total}. You need ${quiz.pass_percentage}% to pass.`);
+    }
+  };
+
+  const handleRetry = () => {
+    setAnswers({});
+    setSubmitted(false);
+    setResult(null);
+  };
+
+  if (loadingAttempt) {
+    return (
+      <div className="bg-card border border-border rounded-xl p-6 animate-pulse">
+        <div className="h-4 bg-surface-2 rounded w-1/3 mb-2" />
+        <div className="h-3 bg-surface-2 rounded w-1/2" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="font-semibold text-foreground">{quiz.title}</h4>
+          {quiz.description && (
+            <p className="text-sm text-muted-foreground mt-1">{quiz.description}</p>
+          )}
+        </div>
+        {result && (
+          <span
+            className={`text-xs font-mono px-2.5 py-1 rounded-full ${
+              result.passed
+                ? "bg-emerald-500/15 text-emerald-400"
+                : "bg-rose-500/15 text-rose-400"
+            }`}
+          >
+            {result.passed ? "PASSED" : "FAILED"} — {result.score}/{result.total}
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        {questions.map((q: any, qi: number) => {
+          const selectedId = answers[q.id];
+          const correctOptionId = q.quiz_options.find((o: any) => o.is_correct)?.id;
+          const isCorrect = submitted && selectedId === correctOptionId;
+          const isWrong = submitted && selectedId && selectedId !== correctOptionId;
+
+          return (
+            <div key={q.id} className="space-y-2">
+              <p className="text-sm font-medium">
+                <span className="text-muted-foreground mr-2">{qi + 1}.</span>
+                {q.question_text}
+              </p>
+              <div className="space-y-1.5 pl-5">
+                {q.quiz_options.map((o: any) => {
+                  const isSelected = selectedId === o.id;
+                  let optClass = "bg-surface hover:bg-surface-2";
+                  if (submitted) {
+                    if (o.is_correct) optClass = "bg-emerald-500/10 border-emerald-500/30";
+                    else if (isSelected && !o.is_correct) optClass = "bg-rose-500/10 border-rose-500/30";
+                    else optClass = "bg-surface opacity-60";
+                  }
+
+                  return (
+                    <label
+                      key={o.id}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg border border-border cursor-pointer transition-colors ${optClass}`}
+                    >
+                      <input
+                        type="radio"
+                        name={`quiz-q-${q.id}`}
+                        value={o.id}
+                        checked={isSelected}
+                        disabled={submitted}
+                        onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: o.id }))}
+                        className="accent-emerald-500"
+                      />
+                      <span className="text-sm">{o.option_text}</span>
+                      {submitted && o.is_correct && (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 ml-auto" />
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+              {submitted && q.explanation && (
+                <p className="text-xs text-muted-foreground bg-surface rounded-lg px-3 py-2 ml-5">
+                  {q.explanation}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-3 pt-2">
+        {!submitted ? (
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={Object.keys(answers).length < questions.length}
+          >
+            Submit Quiz
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" onClick={handleRetry}>
+            <RotateCcw className="h-3.5 w-3.5 mr-1" /> Retry
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const ChapterViewer = () => {
   const { chapterId } = useParams<{ chapterId: string }>();
   const navigate = useNavigate();
@@ -96,6 +283,7 @@ const ChapterViewer = () => {
   const [milestone, setMilestone] = useState<{ pct: number; title: string; subtitle: string } | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [showCompletionBanner, setShowCompletionBanner] = useState(false);
+  const [quizzes, setQuizzes] = useState<any[]>([]);
 
   const confettiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -277,6 +465,16 @@ const ChapterViewer = () => {
       ...c,
       user_name: userNameMap[c.user_id] || "Anonymous",
     })));
+
+    // Fetch quizzes for this chapter
+    const { data: quizData } = await (supabase as any)
+      .from("chapter_quizzes")
+      .select("id, title, description, pass_percentage, sort_order, quiz_questions(id, question_text, question_type, explanation, sort_order, quiz_options(id, option_text, is_correct, sort_order))")
+      .eq("chapter_id", chapterId)
+      .eq("is_active", true)
+      .order("sort_order");
+    if (quizData) setQuizzes(quizData);
+
     setLoading(false);
   }, [chapterId, user, profile, navigate]);
 
@@ -634,6 +832,16 @@ const ChapterViewer = () => {
               Next <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           </div>
+
+          {/* Quizzes */}
+          {quizzes.length > 0 && (
+            <div className="space-y-6 mt-8">
+              <h3 className="text-lg font-semibold text-foreground">Knowledge Check</h3>
+              {quizzes.map((quiz) => (
+                <QuizBlock key={quiz.id} quiz={quiz} userId={user?.id} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Right sidebar */}

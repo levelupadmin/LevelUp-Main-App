@@ -56,6 +56,11 @@ const AdminCourseReviews = lazy(() => import("@/pages/admin/AdminCourseReviews")
 const AdminAnnouncements = lazy(() => import("@/pages/admin/AdminAnnouncements"));
 const AdminEmailTemplates = lazy(() => import("@/pages/admin/AdminEmailTemplates"));
 const AdminEmailCampaigns = lazy(() => import("@/pages/admin/AdminEmailCampaigns"));
+const AdminApplications = lazy(() => import("@/pages/admin/AdminApplications"));
+const ApplicationStatus = lazy(() => import("@/pages/ApplicationStatus"));
+const AdminQuizEditor = lazy(() => import("@/pages/admin/AdminQuizEditor"));
+const AdminRoles = lazy(() => import("@/pages/admin/AdminRoles"));
+const AdminCommunityAnalytics = lazy(() => import("@/pages/admin/AdminCommunityAnalytics"));
 
 const LoadingFallback = () => (
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
@@ -108,6 +113,7 @@ const App = () => (
               <Route path="/my-sessions" element={<RequireAuth><MySessionsPage /></RequireAuth>} />
               <Route path="/events" element={<RequireAuth><EventsPage /></RequireAuth>} />
               <Route path="/events/:eventId" element={<RequireAuth><EventDetail /></RequireAuth>} />
+              <Route path="/my-application/:applicationId" element={<RequireAuth><ApplicationStatus /></RequireAuth>} />
 
               {/* Admin routes */}
               <Route path="/admin" element={<RequireAuth><RequireRole role="admin"><AdminDashboard /></RequireRole></RequireAuth>} />
@@ -134,6 +140,10 @@ const App = () => (
               <Route path="/admin/announcements" element={<RequireAuth><RequireRole role="admin"><AdminAnnouncements /></RequireRole></RequireAuth>} />
               <Route path="/admin/email-templates" element={<RequireAuth><RequireRole role="admin"><AdminEmailTemplates /></RequireRole></RequireAuth>} />
               <Route path="/admin/email-campaigns" element={<RequireAuth><RequireRole role="admin"><AdminEmailCampaigns /></RequireRole></RequireAuth>} />
+              <Route path="/admin/applications" element={<RequireAuth><RequireRole role="admin"><AdminApplications /></RequireRole></RequireAuth>} />
+              <Route path="/admin/courses/:courseId/chapters/:chapterId/quiz" element={<RequireAuth><RequireRole role="admin"><AdminQuizEditor /></RequireRole></RequireAuth>} />
+              <Route path="/admin/roles" element={<RequireAuth><RequireRole role="admin"><AdminRoles /></RequireRole></RequireAuth>} />
+              <Route path="/admin/community" element={<RequireAuth><RequireRole role="admin"><AdminCommunityAnalytics /></RequireRole></RequireAuth>} />
 
               {/* Instructor */}
               <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />

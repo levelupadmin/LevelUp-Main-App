@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { MultiSelect, type OptionGroup } from "@/components/ui/multi-select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Search, AlertTriangle } from "lucide-react";
+import { Search, AlertTriangle, Download, Upload } from "lucide-react";
 import { useDebounce } from "@/hooks/useDebounce";
 
 interface UserRow {
@@ -39,6 +39,9 @@ const AdminUsers = () => {
   const [offeringFilter, setOfferingFilter] = useState<string[]>([]);
   const [allOfferings, setAllOfferings] = useState<{ id: string; title: string; product_tier: string }[]>([]);
   const [enrolmentMap, setEnrolmentMap] = useState<Record<string, string[]>>({}); // user_id -> offering_ids
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { profile: currentUser } = useAuth();
 
@@ -158,6 +161,114 @@ const AdminUsers = () => {
     }
   };
 
+  const exportCSV = async () => {
+    setExporting(true);
+    try {
+      // Fetch all users matching current filters
+      let query = supabase
+        .from("users")
+        .select("member_number, full_name, email, phone, role, city, occupation, bio, created_at")
+        .order("created_at", { ascending: false });
+      if (roleFilter !== "all") query = query.eq("role", roleFilter);
+      if (debouncedSearch) {
+        query = query.or(`full_name.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%`);
+      }
+      const { data } = await query;
+      if (!data || data.length === 0) {
+        toast({ title: "No users to export" });
+        setExporting(false);
+        return;
+      }
+      const headers = ["Member #", "Full Name", "Email", "Phone", "Role", "City", "Occupation", "Bio", "Joined"];
+      const rows = data.map((u: any) => [
+        u.member_number ?? "",
+        (u.full_name || "").replace(/"/g, '""'),
+        u.email || "",
+        u.phone || "",
+        u.role || "",
+        (u.city || "").replace(/"/g, '""'),
+        (u.occupation || "").replace(/"/g, '""'),
+        (u.bio || "").replace(/"/g, '""').replace(/\n/g, " "),
+        u.created_at ? new Date(u.created_at).toLocaleDateString("en-IN") : "",
+      ]);
+      const csv = [headers.join(","), ...rows.map((r) => r.map((c: string) => `"${c}"`).join(","))].join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `users-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: `Exported ${data.length} users` });
+    } catch (err: any) {
+      toast({ title: "Export failed", description: err.message, variant: "destructive" });
+    }
+    setExporting(false);
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const lines = text.split("\n").filter((l) => l.trim());
+      if (lines.length < 2) throw new Error("CSV must have a header row and at least one data row");
+      const headers = lines[0].split(",").map((h) => h.replace(/"/g, "").trim().toLowerCase());
+      const emailIdx = headers.indexOf("email");
+      if (emailIdx === -1) throw new Error("CSV must contain an 'email' column");
+      const nameIdx = headers.indexOf("full name") !== -1 ? headers.indexOf("full name") : headers.indexOf("full_name");
+      const phoneIdx = headers.indexOf("phone");
+      const roleIdx = headers.indexOf("role");
+      const cityIdx = headers.indexOf("city");
+      const occIdx = headers.indexOf("occupation");
+      const bioIdx = headers.indexOf("bio");
+
+      let success = 0;
+      let failed = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        // Simple CSV parse (handles quoted fields)
+        const cols: string[] = [];
+        let cur = "";
+        let inQuote = false;
+        for (const ch of lines[i]) {
+          if (ch === '"') { inQuote = !inQuote; continue; }
+          if (ch === "," && !inQuote) { cols.push(cur.trim()); cur = ""; continue; }
+          cur += ch;
+        }
+        cols.push(cur.trim());
+
+        const email = cols[emailIdx];
+        if (!email) { failed++; continue; }
+
+        const updates: Record<string, any> = {};
+        if (nameIdx >= 0 && cols[nameIdx]) updates.full_name = cols[nameIdx];
+        if (phoneIdx >= 0 && cols[phoneIdx]) updates.phone = cols[phoneIdx];
+        if (roleIdx >= 0 && cols[roleIdx]) updates.role = cols[roleIdx];
+        if (cityIdx >= 0 && cols[cityIdx]) updates.city = cols[cityIdx];
+        if (occIdx >= 0 && cols[occIdx]) updates.occupation = cols[occIdx];
+        if (bioIdx >= 0 && cols[bioIdx]) updates.bio = cols[bioIdx];
+
+        const { error } = await supabase
+          .from("users")
+          .update(updates)
+          .eq("email", email);
+
+        if (error) failed++;
+        else success++;
+      }
+
+      toast({ title: `Import complete: ${success} updated, ${failed} failed` });
+      load();
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    }
+    setImporting(false);
+    // Reset file input
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const filtered = users.filter((u) => {
     const matchSearch = !debouncedSearch ||
       (u.full_name || "").toLowerCase().includes(debouncedSearch.toLowerCase()) ||
@@ -191,6 +302,13 @@ const AdminUsers = () => {
           placeholder="All Offerings"
           className="w-56"
         />
+        <Button variant="outline" size="sm" onClick={exportCSV} disabled={exporting}>
+          <Download className="h-4 w-4 mr-1" /> {exporting ? "Exporting..." : "Export CSV"}
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+          <Upload className="h-4 w-4 mr-1" /> {importing ? "Importing..." : "Import CSV"}
+        </Button>
+        <input ref={fileInputRef} type="file" accept=".csv" onChange={handleImport} className="hidden" />
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-x-auto">
