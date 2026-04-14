@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -60,6 +61,12 @@ interface Offering {
   thankyou_cta_url: string | null;
   thankyou_auto_redirect: boolean | null;
   thankyou_redirect_seconds: number | null;
+  payment_mode: string | null;
+  tally_form_url: string | null;
+  app_fee_inr: number | null;
+  confirmation_amount_inr: number | null;
+  show_coupon_on_page: boolean | null;
+  page_coupon_code: string | null;
   offering_courses: OfferingCourse[];
 }
 
@@ -812,6 +819,51 @@ function CheckoutCard({
     </div>
   );
 }
+
+/* ────────────────────────────────────────────────── */
+/*  Apply Card (staged payments)                      */
+/* ────────────────────────────────────────────────── */
+
+function ApplyCard({ offering }: { offering: any }) {
+  const appFee = Number(offering.app_fee_inr || 0);
+  const confirmation = Number(offering.confirmation_amount_inr || 0);
+  const total = Number(offering.price_inr || 0);
+  const balance = Math.max(total - appFee - confirmation, 0);
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-6 space-y-4">
+      <div className="text-center">
+        <p className="text-2xl font-bold text-foreground">₹{total.toLocaleString("en-IN")}</p>
+        <p className="text-sm text-muted-foreground">Total program fee</p>
+      </div>
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <span className="h-6 w-6 rounded-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] flex items-center justify-center text-xs font-bold">1</span>
+          <div className="flex-1"><p className="text-sm text-foreground">Application Fee</p></div>
+          <span className="text-sm font-semibold text-foreground">₹{appFee.toLocaleString("en-IN")}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="h-6 w-6 rounded-full bg-surface-2 text-muted-foreground flex items-center justify-center text-xs font-bold">2</span>
+          <div className="flex-1"><p className="text-sm text-muted-foreground">Confirmation (after acceptance)</p></div>
+          <span className="text-sm text-muted-foreground">₹{confirmation.toLocaleString("en-IN")}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="h-6 w-6 rounded-full bg-surface-2 text-muted-foreground flex items-center justify-center text-xs font-bold">3</span>
+          <div className="flex-1"><p className="text-sm text-muted-foreground">Balance (before cohort starts)</p></div>
+          <span className="text-sm text-muted-foreground">₹{balance.toLocaleString("en-IN")}</span>
+        </div>
+      </div>
+      {offering.tally_form_url && (
+        <a href={offering.tally_form_url} target="_blank" rel="noopener noreferrer" className="block">
+          <Button size="xl" className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
+            Apply Now — ₹{appFee.toLocaleString("en-IN")}
+          </Button>
+        </a>
+      )}
+    </div>
+  );
+}
+
 /* ────────────────────────────────────────────────── */
 /*  Main Page                                         */
 /* ────────────────────────────────────────────────── */
@@ -824,6 +876,7 @@ export default function PublicOffering() {
   const [notFound, setNotFound] = useState(false);
   const [razorpayReady, setRazorpayReady] = useState(false);
   const [razorpayError, setRazorpayError] = useState(false);
+  const [couponInfo, setCouponInfo] = useState<{code: string; discount_type: string; discount_value: number} | null>(null);
 
   usePageTitle(offering?.title || "LevelUp Learning");
 
@@ -875,6 +928,18 @@ export default function PublicOffering() {
       }
     })();
   }, [slug]);
+
+  useEffect(() => {
+    if (!offering?.show_coupon_on_page || !offering?.page_coupon_code) return;
+    (async () => {
+      const { data } = await supabase.functions.invoke("validate-coupon", {
+        body: { coupon_code: offering.page_coupon_code, offering_id: offering.id },
+      });
+      if (data?.valid) setCouponInfo({ code: data.code, discount_type: data.discount_type, discount_value: Number(data.discount_value) });
+    })();
+  }, [offering?.id]);
+
+  const isStaged = (offering as any)?.payment_mode === "staged";
 
   /* ── Loading / 404 ── */
   if (loading) {
@@ -968,14 +1033,40 @@ export default function PublicOffering() {
 
           {/* Right: sticky checkout — desktop */}
           <div className="hidden lg:block lg:w-[40%]">
-            <div className="sticky top-8">
-              <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} razorpayError={razorpayError} />
+            <div className="sticky top-8 space-y-4">
+              {couponInfo && (
+                <div className="rounded-xl border border-[hsl(var(--accent-emerald)/0.3)] bg-[hsl(var(--accent-emerald)/0.08)] p-4 flex items-center gap-3">
+                  <Tag className="h-5 w-5 text-[hsl(var(--accent-emerald))] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-foreground">
+                      {couponInfo.discount_type === "percent" ? `${couponInfo.discount_value}% off` : `₹${Number(couponInfo.discount_value).toLocaleString("en-IN")} off`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Use code <button onClick={() => {navigator.clipboard.writeText(couponInfo.code); toast.success("Copied!")}} className="font-mono font-bold text-[hsl(var(--accent-emerald))] hover:underline">{couponInfo.code}</button> at checkout
+                    </p>
+                  </div>
+                </div>
+              )}
+              {isStaged ? <ApplyCard offering={offering} /> : <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} razorpayError={razorpayError} />}
             </div>
           </div>
 
           {/* Mobile: checkout below */}
-          <div id="checkout-section" className="lg:hidden mt-8">
-            <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} razorpayError={razorpayError} />
+          <div id="checkout-section" className="lg:hidden mt-8 space-y-4">
+            {couponInfo && (
+              <div className="rounded-xl border border-[hsl(var(--accent-emerald)/0.3)] bg-[hsl(var(--accent-emerald)/0.08)] p-4 flex items-center gap-3">
+                <Tag className="h-5 w-5 text-[hsl(var(--accent-emerald))] shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground">
+                    {couponInfo.discount_type === "percent" ? `${couponInfo.discount_value}% off` : `₹${Number(couponInfo.discount_value).toLocaleString("en-IN")} off`}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Use code <button onClick={() => {navigator.clipboard.writeText(couponInfo.code); toast.success("Copied!")}} className="font-mono font-bold text-[hsl(var(--accent-emerald))] hover:underline">{couponInfo.code}</button> at checkout
+                  </p>
+                </div>
+              </div>
+            )}
+            {isStaged ? <ApplyCard offering={offering} /> : <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} razorpayError={razorpayError} />}
           </div>
         </div>
       </main>

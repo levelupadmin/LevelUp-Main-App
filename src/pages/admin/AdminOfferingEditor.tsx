@@ -74,6 +74,25 @@ const EMPTY_FORM = {
   meta_pixel_id: "",
   google_ads_conversion: "",
   custom_tracking_script: "",
+  // Staged Payments (Live Cohort)
+  payment_mode: "single",
+  app_fee_inr: 0,
+  confirmation_amount_inr: 0,
+  confirmation_deadline_days: 2,
+  balance_deadline_days: 15,
+  confirmation_grace_hours: "",
+  attendance_threshold_pct: 85,
+  tally_form_url: "",
+  calendly_url: "",
+  whatsapp_group_link: "",
+  thankyou_show_calendly: false,
+  // Checkout Social Proof
+  checkout_testimonials: "[]",
+  checkout_bullets: "[]",
+  checkout_guarantee_text: "",
+  // Coupon Display
+  show_coupon_on_page: false,
+  page_coupon_code: "",
 };
 
 /* ────────────────────────────────────────────────── */
@@ -91,6 +110,7 @@ const AdminOfferingEditor = () => {
   const [allCourses, setAllCourses] = useState<CourseOption[]>([]);
   const [linkedCourseIds, setLinkedCourseIds] = useState<string[]>([]);
   const [upsells, setUpsells] = useState<UpsellRow[]>([]);
+  const [bumps, setBumps] = useState<{id: string; bump_offering_id: string; headline: string; bump_price_override_inr: string; bump_title?: string}[]>([]);
   const [allOfferingsForUpsell, setAllOfferingsForUpsell] = useState<OfferingForUpsell[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -111,7 +131,7 @@ const AdminOfferingEditor = () => {
       setAllOfferingsForUpsell(offsRes.data || []);
 
       if (!isNew && offeringId) {
-        const [offeringRes, ocsRes, upsellsRes] = await Promise.all([
+        const [offeringRes, ocsRes, upsellsRes, bumpsRes] = await Promise.all([
           supabase.from("offerings").select("*").eq("id", offeringId).single(),
           supabase.from("offering_courses").select("course_id").eq("offering_id", offeringId),
           supabase
@@ -119,6 +139,7 @@ const AdminOfferingEditor = () => {
             .select("id, upsell_offering_id, headline, sort_order")
             .eq("parent_offering_id", offeringId)
             .order("sort_order"),
+          supabase.from("offering_bumps").select("id, bump_offering_id, headline, bump_price_override_inr, sort_order").eq("parent_offering_id", offeringId).order("sort_order"),
         ]);
 
         if (offeringRes.data) {
@@ -152,6 +173,22 @@ const AdminOfferingEditor = () => {
             meta_pixel_id: d.meta_pixel_id || "",
             google_ads_conversion: d.google_ads_conversion || "",
             custom_tracking_script: d.custom_tracking_script || "",
+            payment_mode: d.payment_mode || "single",
+            app_fee_inr: d.app_fee_inr ?? 0,
+            confirmation_amount_inr: d.confirmation_amount_inr ?? 0,
+            confirmation_deadline_days: d.confirmation_deadline_days ?? 2,
+            balance_deadline_days: d.balance_deadline_days ?? 15,
+            confirmation_grace_hours: d.confirmation_grace_hours?.toString() || "",
+            attendance_threshold_pct: d.attendance_threshold_pct ?? 85,
+            tally_form_url: d.tally_form_url || "",
+            calendly_url: d.calendly_url || "",
+            whatsapp_group_link: d.whatsapp_group_link || "",
+            thankyou_show_calendly: d.thankyou_show_calendly ?? false,
+            checkout_testimonials: d.checkout_testimonials ? JSON.stringify(d.checkout_testimonials) : "[]",
+            checkout_bullets: d.checkout_bullets ? JSON.stringify(d.checkout_bullets) : "[]",
+            checkout_guarantee_text: d.checkout_guarantee_text || "",
+            show_coupon_on_page: d.show_coupon_on_page ?? false,
+            page_coupon_code: d.page_coupon_code || "",
           });
         }
 
@@ -165,6 +202,12 @@ const AdminOfferingEditor = () => {
           return { ...u, upsell_title: off?.title || "Unknown" };
         });
         setUpsells(upsellData);
+
+        const bumpData = (bumpsRes.data || []).map((b: any) => {
+          const off = (offsRes.data || []).find((o: any) => o.id === b.bump_offering_id);
+          return { ...b, bump_price_override_inr: b.bump_price_override_inr?.toString() || "", bump_title: off?.title || "Unknown" };
+        });
+        setBumps(bumpData);
       }
       setLoading(false);
     })();
@@ -282,6 +325,24 @@ const AdminOfferingEditor = () => {
       meta_pixel_id: form.meta_pixel_id || null,
       google_ads_conversion: form.google_ads_conversion || null,
       custom_tracking_script: form.custom_tracking_script || null,
+      // Staged payments
+      payment_mode: form.payment_mode || "single",
+      app_fee_inr: form.payment_mode === "staged" ? Number(form.app_fee_inr) || 0 : 0,
+      confirmation_amount_inr: form.payment_mode === "staged" ? Number(form.confirmation_amount_inr) || 0 : 0,
+      confirmation_deadline_days: form.payment_mode === "staged" ? Number(form.confirmation_deadline_days) || 2 : 2,
+      balance_deadline_days: form.payment_mode === "staged" ? Number(form.balance_deadline_days) || 15 : 15,
+      confirmation_grace_hours: form.confirmation_grace_hours ? Number(form.confirmation_grace_hours) : null,
+      attendance_threshold_pct: Number(form.attendance_threshold_pct) || 85,
+      tally_form_url: form.tally_form_url || null,
+      calendly_url: form.calendly_url || null,
+      whatsapp_group_link: form.whatsapp_group_link || null,
+      thankyou_show_calendly: form.thankyou_show_calendly,
+      // Checkout social proof
+      checkout_testimonials: (() => { try { return JSON.parse(form.checkout_testimonials); } catch { return []; } })(),
+      checkout_bullets: (() => { try { return JSON.parse(form.checkout_bullets); } catch { return []; } })(),
+      checkout_guarantee_text: form.checkout_guarantee_text || null,
+      show_coupon_on_page: form.show_coupon_on_page,
+      page_coupon_code: form.page_coupon_code || null,
     };
 
     let offId = isNew ? null : offeringId!;
@@ -340,6 +401,20 @@ const AdminOfferingEditor = () => {
           }))
         );
       }
+
+      // Sync bumps
+      await supabase.from("offering_bumps").delete().eq("parent_offering_id", offId);
+      if (bumps.length > 0) {
+        await supabase.from("offering_bumps").insert(
+          bumps.map((b, i) => ({
+            parent_offering_id: offId!,
+            bump_offering_id: b.bump_offering_id,
+            headline: b.headline || "",
+            bump_price_override_inr: b.bump_price_override_inr ? Number(b.bump_price_override_inr) : null,
+            sort_order: i,
+          }))
+        );
+      }
     }
 
     // Audit log
@@ -386,6 +461,15 @@ const AdminOfferingEditor = () => {
     setUpsells((prev) => prev.map((u, i) => (i === index ? { ...u, headline } : u)));
   };
 
+  /* ── Bump helpers ── */
+  const addBump = (bumpOfferingId: string) => {
+    const off = allOfferingsForUpsell.find((o) => o.id === bumpOfferingId);
+    if (!off) return;
+    setBumps((prev) => [...prev, { id: crypto.randomUUID(), bump_offering_id: bumpOfferingId, headline: `Add ${off.title}`, bump_price_override_inr: "", bump_title: off.title }]);
+  };
+  const removeBump = (id: string) => setBumps((prev) => prev.filter((b) => b.id !== id));
+  const updateBump = (index: number, field: string, value: string) => setBumps((prev) => prev.map((b, i) => (i === index ? { ...b, [field]: value } : b)));
+
   /* ── Loading state ── */
   if (loading) {
     return (
@@ -422,6 +506,8 @@ const AdminOfferingEditor = () => {
           <TabsTrigger value="public">Public Page</TabsTrigger>
           <TabsTrigger value="thankyou">Thank You Page</TabsTrigger>
           <TabsTrigger value="tracking">Tracking & Pixels</TabsTrigger>
+          <TabsTrigger value="checkout">Checkout</TabsTrigger>
+          <TabsTrigger value="cohort">Live Cohort</TabsTrigger>
           <TabsTrigger value="upsells">Upsells</TabsTrigger>
         </TabsList>
 
@@ -785,7 +871,294 @@ const AdminOfferingEditor = () => {
         </TabsContent>
 
         {/* ══════════════════════════════════════════ */}
-        {/*  TAB 5: UPSELLS                            */}
+        {/*  TAB 5: CHECKOUT                             */}
+        {/* ══════════════════════════════════════════ */}
+        <TabsContent value="checkout">
+          <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+            <p className="text-sm text-muted-foreground">
+              Customize the checkout experience — social proof, guarantees, coupons, and order bumps.
+            </p>
+
+            {/* Checkout Testimonials */}
+            <div>
+              <Label>Checkout Testimonials (JSON)</Label>
+              <Textarea
+                value={form.checkout_testimonials}
+                onChange={(e) => f("checkout_testimonials", e.target.value)}
+                placeholder='[{"name":"John","title":"Student","photo_url":"","quote":"Great course!"}]'
+                rows={5}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                JSON array of {`{name, title, photo_url, quote}`} objects shown on checkout
+              </p>
+            </div>
+
+            {/* Value Proposition Bullets */}
+            <div>
+              <Label>Value Proposition Bullets (JSON)</Label>
+              <Textarea
+                value={form.checkout_bullets}
+                onChange={(e) => f("checkout_bullets", e.target.value)}
+                placeholder='["Lifetime access","Certificate included","Money-back guarantee"]'
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                JSON array of strings displayed as bullet points on the checkout page
+              </p>
+            </div>
+
+            {/* Guarantee Badge */}
+            <div>
+              <Label>Guarantee Badge Text</Label>
+              <Input
+                value={form.checkout_guarantee_text}
+                onChange={(e) => f("checkout_guarantee_text", e.target.value)}
+                placeholder="e.g., 7-day money-back guarantee"
+              />
+            </div>
+
+            {/* Coupon Display */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={form.show_coupon_on_page}
+                  onCheckedChange={(checked) => f("show_coupon_on_page", checked)}
+                />
+                <Label>Show coupon on public page</Label>
+              </div>
+              {form.show_coupon_on_page && (
+                <div>
+                  <Label>Page Coupon Code</Label>
+                  <Input
+                    value={form.page_coupon_code}
+                    onChange={(e) => f("page_coupon_code", e.target.value)}
+                    placeholder="e.g., EARLYBIRD"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This coupon code will be displayed on the public offering page
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Order Bumps */}
+            <div>
+              <Label className="mb-2 block">Order Bumps</Label>
+              <p className="text-xs text-muted-foreground mb-3">
+                Add-on offerings shown on the checkout page before payment. Different from upsells (which are post-purchase).
+              </p>
+              {isNew ? (
+                <p className="text-sm text-muted-foreground py-4 text-center border border-dashed border-border rounded-lg">
+                  Save the offering first, then you can add order bumps.
+                </p>
+              ) : (
+                <>
+                  {bumps.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-lg">
+                      No order bumps added yet
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {bumps.map((b, i) => (
+                        <div key={b.id} className="flex items-center gap-3 bg-secondary/30 rounded-lg p-3">
+                          <span className="text-sm font-medium flex-shrink-0 truncate max-w-[160px]">{b.bump_title}</span>
+                          <Input
+                            value={b.headline}
+                            onChange={(e) => updateBump(i, "headline", e.target.value)}
+                            placeholder="Headline"
+                            className="flex-1"
+                          />
+                          <Input
+                            type="number"
+                            value={b.bump_price_override_inr}
+                            onChange={(e) => updateBump(i, "bump_price_override_inr", e.target.value)}
+                            placeholder="Price override (INR)"
+                            className="w-36"
+                          />
+                          <button
+                            onClick={() => removeBump(b.id)}
+                            className="p-1.5 rounded hover:bg-destructive/10 text-destructive"
+                            title="Remove bump"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-3">
+                    <SearchableSelect
+                      options={allOfferingsForUpsell
+                        .filter(
+                          (o) =>
+                            o.id !== offeringId &&
+                            !bumps.find((b) => b.bump_offering_id === o.id)
+                        )
+                        .map((o) => ({ value: o.id, label: `${o.title} — ₹${o.price_inr}` }))}
+                      value=""
+                      onValueChange={addBump}
+                      placeholder="Add an order bump offering…"
+                      searchPlaceholder="Search offerings…"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ══════════════════════════════════════════ */}
+        {/*  TAB 6: LIVE COHORT                        */}
+        {/* ══════════════════════════════════════════ */}
+        <TabsContent value="cohort">
+          <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+            <p className="text-sm text-muted-foreground">
+              Settings for live cohort offerings — staged payments, external integrations, and completion criteria.
+            </p>
+
+            {/* Payment Mode */}
+            <div>
+              <Label>Payment Mode</Label>
+              <Select value={form.payment_mode} onValueChange={(v) => f("payment_mode", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single">Single Payment</SelectItem>
+                  <SelectItem value="staged">Staged Payments</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Staged payments split the total into application fee, confirmation amount, and balance.
+              </p>
+            </div>
+
+            {/* Staged Payment Amounts */}
+            {form.payment_mode === "staged" && (
+              <div className="space-y-4 border border-border rounded-lg p-4">
+                <h4 className="text-sm font-medium">Staged Payment Amounts</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label>Application Fee (INR)</Label>
+                    <Input
+                      type="number"
+                      value={form.app_fee_inr}
+                      onChange={(e) => f("app_fee_inr", Number(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <Label>Confirmation Amount (INR)</Label>
+                    <Input
+                      type="number"
+                      value={form.confirmation_amount_inr}
+                      onChange={(e) => f("confirmation_amount_inr", Number(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <Label>Balance (calculated)</Label>
+                    <Input
+                      type="number"
+                      value={Math.max(Number(form.price_inr) - Number(form.app_fee_inr) - Number(form.confirmation_amount_inr), 0)}
+                      disabled
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Total price minus app fee and confirmation
+                    </p>
+                  </div>
+                </div>
+
+                {/* Deadlines */}
+                <h4 className="text-sm font-medium mt-4">Deadlines</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label>Confirmation Deadline (days)</Label>
+                    <Input
+                      type="number"
+                      value={form.confirmation_deadline_days}
+                      onChange={(e) => f("confirmation_deadline_days", Number(e.target.value))}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Days after application to pay confirmation</p>
+                  </div>
+                  <div>
+                    <Label>Balance Deadline (days)</Label>
+                    <Input
+                      type="number"
+                      value={form.balance_deadline_days}
+                      onChange={(e) => f("balance_deadline_days", Number(e.target.value))}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Days after confirmation to pay balance</p>
+                  </div>
+                  <div>
+                    <Label>Confirmation Grace (hours)</Label>
+                    <Input
+                      type="number"
+                      value={form.confirmation_grace_hours}
+                      onChange={(e) => f("confirmation_grace_hours", e.target.value)}
+                      placeholder="Optional"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Extra hours before auto-cancellation</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* External Integrations */}
+            <div className="space-y-4">
+              <h4 className="text-sm font-medium">External Integrations</h4>
+              <div>
+                <Label>Tally Form URL</Label>
+                <Input
+                  value={form.tally_form_url}
+                  onChange={(e) => f("tally_form_url", e.target.value)}
+                  placeholder="https://tally.so/r/..."
+                />
+              </div>
+              <div>
+                <Label>Calendly URL</Label>
+                <Input
+                  value={form.calendly_url}
+                  onChange={(e) => f("calendly_url", e.target.value)}
+                  placeholder="https://calendly.com/..."
+                />
+              </div>
+              <div>
+                <Label>WhatsApp Group Link</Label>
+                <Input
+                  value={form.whatsapp_group_link}
+                  onChange={(e) => f("whatsapp_group_link", e.target.value)}
+                  placeholder="https://chat.whatsapp.com/..."
+                />
+              </div>
+            </div>
+
+            {/* Completion Settings */}
+            <div className="space-y-4">
+              <h4 className="text-sm font-medium">Completion Settings</h4>
+              <div>
+                <Label>Attendance Threshold (%)</Label>
+                <Input
+                  type="number"
+                  value={form.attendance_threshold_pct}
+                  onChange={(e) => f("attendance_threshold_pct", Number(e.target.value))}
+                  min={0}
+                  max={100}
+                />
+                <p className="text-xs text-muted-foreground mt-1">Minimum attendance percentage for completion certificate</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={form.thankyou_show_calendly}
+                  onCheckedChange={(checked) => f("thankyou_show_calendly", checked)}
+                />
+                <div>
+                  <Label>Show Calendly on Thank You page</Label>
+                  <p className="text-xs text-muted-foreground">Embed Calendly scheduling widget on the thank-you page after purchase</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ══════════════════════════════════════════ */}
+        {/*  TAB 7: UPSELLS                            */}
         {/* ══════════════════════════════════════════ */}
         <TabsContent value="upsells">
           <div className="bg-card border border-border rounded-xl p-6 space-y-5">

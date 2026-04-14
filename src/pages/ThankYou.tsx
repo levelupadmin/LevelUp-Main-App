@@ -46,6 +46,8 @@ interface OrderOffering {
   thankyou_cta_url: string | null;
   thankyou_auto_redirect: boolean | null;
   thankyou_redirect_seconds: number | null;
+  thankyou_show_calendly: boolean | null;
+  calendly_url: string | null;
 }
 
 interface PaymentOrder {
@@ -274,7 +276,7 @@ export default function ThankYou() {
         // Always verify payment from database — never trust client-side state
         const { data: orderData, error } = await supabase
           .from("payment_orders")
-          .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds)")
+          .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds, thankyou_show_calendly, calendly_url)")
           .eq("id", paymentOrderId)
           .eq("status", "captured")
           .single();
@@ -561,6 +563,21 @@ export default function ThankYou() {
               <> &middot; Payment: {order.razorpay_payment_id}</>
             )}
           </p>
+
+          {/* Calendly embed for interview booking */}
+          {order.offerings?.thankyou_show_calendly && order.offerings?.calendly_url && (
+            <div className="w-full max-w-2xl mx-auto">
+              <h3 className="text-lg font-semibold text-foreground mb-3">Book Your Interview</h3>
+              <div className="rounded-xl border border-border overflow-hidden bg-white">
+                <iframe
+                  src={`${order.offerings.calendly_url}${order.offerings.calendly_url.includes("?") ? "&" : "?"}name=${encodeURIComponent(order.guest_name || "")}&email=${encodeURIComponent(order.guest_email || "")}`}
+                  className="w-full"
+                  style={{ minHeight: 700, border: 0 }}
+                  title="Schedule Interview"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Action card — same for guest and logged-in */}
           <div className="max-w-md mx-auto rounded-xl border border-border bg-[hsl(var(--surface))] p-6 space-y-4">
