@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/accordion";
 import { toast } from "sonner";
 import { CheckCircle2, Lock, Play, Clock, BookOpen, Star } from "lucide-react";
-import RatingDistribution from "@/components/reviews/RatingDistribution";
 import ReviewList from "@/components/reviews/ReviewList";
 
 interface Course {
@@ -327,8 +326,7 @@ const CourseDetail = () => {
             <Star className="h-5 w-5 text-yellow-400 fill-yellow-400" />
             <h2 className="text-lg font-semibold">Ratings & Reviews</h2>
           </div>
-          <RatingDistribution courseId={courseId!} />
-          <ReviewList courseId={courseId!} userId={user?.id} hasAccess={hasAccess} />
+          <ReviewList courseId={courseId!} isEnrolled={hasAccess} />
         </div>
 
         {/* Sections + Chapters */}

@@ -89,7 +89,7 @@ export default function NotificationDropdown({
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[360px] bg-surface border border-border rounded-xl shadow-lg z-50 overflow-hidden"
+      className="fixed top-16 left-4 right-4 sm:absolute sm:right-0 sm:top-full sm:mt-2 sm:left-auto sm:w-[360px] bg-surface border border-border rounded-xl shadow-lg z-50 overflow-hidden"
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
