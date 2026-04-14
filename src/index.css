@@ -68,6 +68,13 @@
 
   body {
     @apply bg-background text-foreground font-body antialiased;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: none;
+  }
+
+  /* Prevent 300ms tap delay & double-tap zoom on all interactive elements */
+  button, a, [role="button"], input, select, textarea, label {
+    touch-action: manipulation;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -114,10 +121,12 @@
     will-change: transform;
     transform: translateZ(0);
   }
-  .card-hover:hover {
-    transform: translateY(-4px) translateZ(0);
-    border-color: hsl(var(--border-hover));
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  @media (hover: hover) {
+    .card-hover:hover {
+      transform: translateY(-4px) translateZ(0);
+      border-color: hsl(var(--border-hover));
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
   }
 
   .hide-scrollbar {
@@ -169,7 +178,9 @@
     filter: brightness(0.92) contrast(1.02);
     transition: filter 240ms ease;
   }
-  .dark-img:hover {
-    filter: brightness(1) contrast(1);
+  @media (hover: hover) {
+    .dark-img:hover {
+      filter: brightness(1) contrast(1);
+    }
   }
 }

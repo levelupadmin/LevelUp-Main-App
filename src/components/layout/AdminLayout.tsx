@@ -388,7 +388,7 @@ const AdminLayout = ({ children, title }: Props) => {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg">
+        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]">
           <div className="flex items-center gap-3">
             <button
               className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"

@@ -24,7 +24,7 @@ const HeroWelcome = () => {
   const today = format(new Date(), "EEEE, MMM d, yyyy");
 
   return (
-    <div className="bg-cream rounded-2xl px-10 py-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 max-h-[180px]">
+    <div className="bg-cream rounded-2xl px-5 sm:px-10 py-6 sm:py-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 max-h-[180px]">
       <div>
         <h1 className="text-2xl font-semibold text-cream-text">
           Welcome back,{" "}
@@ -153,7 +153,7 @@ const ContinueLearning = () => {
       <h2 className="text-lg font-semibold mb-4">Continue Learning</h2>
       <div className="flex gap-4 overflow-x-auto pb-2">
         {[1,2,3].map(i => (
-          <div key={i} className="min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden animate-pulse flex-shrink-0">
+          <div key={i} className="min-w-[75vw] sm:min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden animate-pulse flex-shrink-0">
             <div className="aspect-video bg-surface-2" />
             <div className="p-4 space-y-3">
               <div className="h-4 bg-surface-2 rounded w-3/4" />
@@ -180,7 +180,7 @@ const ContinueLearning = () => {
       <div className="relative">
         <div className="flex gap-4 overflow-x-auto snap-x hide-scrollbar pb-2">
           {!courses.length ? (
-            <div className="min-w-[320px] max-w-[320px] h-[200px] bg-cream rounded-xl p-6 flex flex-col justify-center flex-shrink-0 snap-start">
+            <div className="min-w-[75vw] sm:min-w-[320px] max-w-[320px] h-[200px] bg-cream rounded-xl p-6 flex flex-col justify-center flex-shrink-0 snap-start">
               <p className="text-cream-text font-medium text-sm">You're not enrolled in any courses yet.</p>
               <p className="text-cream-text/70 text-xs mt-1">Browse programs below to get started.</p>
             </div>
@@ -196,7 +196,7 @@ const ContinueLearning = () => {
                 <Link
                   key={c.id}
                   to={linkTo}
-                  className="min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start"
+                  className="min-w-[75vw] sm:min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start"
                 >
                   <div className="aspect-video bg-surface-2 relative">
                     {c.thumbnail_url && <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />}
@@ -262,7 +262,7 @@ const PopularCommunity = () => {
         {posts.map((p) => (
           <div
             key={p.id}
-            className="min-w-[340px] max-w-[360px] h-[200px] bg-surface border border-border rounded-xl p-5 card-hover flex-shrink-0 snap-start flex flex-col justify-between"
+            className="min-w-[75vw] sm:min-w-[340px] max-w-[360px] h-[200px] bg-surface border border-border rounded-xl p-5 card-hover flex-shrink-0 snap-start flex flex-col justify-between"
           >
             <div>
               <h3 className="text-sm font-semibold line-clamp-2">{p.title}</h3>
@@ -483,7 +483,7 @@ const UpcomingEvents = () => {
             <Link
               key={ev.id}
               to={`/events/${ev.id}`}
-              className="min-w-[300px] max-w-[340px] lg:max-w-none bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start flex flex-col"
+              className="min-w-[75vw] sm:min-w-[300px] max-w-[340px] lg:max-w-none bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start flex flex-col"
             >
               {/* Banner with overlay title */}
               <div className="relative aspect-[4/3]">

@@ -79,7 +79,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 function HeroBanner({ offering }: { offering: Offering }) {
   const img = offering.banner_url || offering.thumbnail_url;
   return (
-    <div className="relative w-full aspect-[21/9] md:aspect-[3/1] rounded-2xl overflow-hidden border border-border bg-[hsl(var(--surface))]">
+    <div className="relative w-full aspect-[16/9] md:aspect-[21/9] lg:aspect-[3/1] rounded-2xl overflow-hidden border border-border bg-[hsl(var(--surface))]">
       {img ? (
         <img src={img} alt={offering.title} className="absolute inset-0 w-full h-full object-cover" />
       ) : (
@@ -992,7 +992,7 @@ export default function PublicOffering() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
         {/* Desktop: two-col, Mobile: stacked */}
         <div className="lg:flex lg:gap-8">
           {/* Left: product details */}
@@ -1072,7 +1072,7 @@ export default function PublicOffering() {
       </main>
 
       {/* Mobile sticky CTA */}
-      <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))] p-4">
+      <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between">
           <div>
             {isFree ? (

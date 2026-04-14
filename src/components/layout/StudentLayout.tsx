@@ -177,7 +177,7 @@ const StudentLayout = ({ children, title }: Props) => {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg">
+        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]">
           <div className="flex items-center gap-3">
             <button aria-label="Open menu" className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
@@ -249,7 +249,7 @@ const StudentLayout = ({ children, title }: Props) => {
         </header>
 
         {/* Content area */}
-        <main id="main-content" className="flex-1 grain pb-20 md:pb-0">
+        <main id="main-content" className="flex-1 grain pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">
           <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-6 md:py-10 relative z-10 page-enter">
             {children}
           </div>
@@ -257,7 +257,7 @@ const StudentLayout = ({ children, title }: Props) => {
       </div>
 
       {/* Mobile bottom tab bar */}
-      <nav aria-label="Mobile navigation" className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas border-t border-border flex items-stretch">
+      <nav aria-label="Mobile navigation" className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas border-t border-border flex items-stretch pb-[env(safe-area-inset-bottom)]">
         {MOBILE_NAV_ITEMS.map((item) => {
           const active = location.pathname === item.path || location.pathname.startsWith(item.path + "/");
           return (

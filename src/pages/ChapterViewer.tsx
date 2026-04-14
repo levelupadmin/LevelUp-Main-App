@@ -678,7 +678,7 @@ const ChapterViewer = () => {
       <Confetti active={showConfetti} />
       {milestone && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[9998] milestone-banner">
-          <div className="bg-card border border-border rounded-2xl px-6 py-4 shadow-2xl text-center max-w-sm">
+          <div className="bg-card border border-border rounded-2xl px-4 sm:px-6 py-4 shadow-2xl text-center max-w-[calc(100vw-2rem)] sm:max-w-sm">
             <p className="text-lg font-semibold">{milestone.title}</p>
             <p className="text-sm text-muted-foreground mt-1">{milestone.subtitle}</p>
             <div className="mt-2 h-1.5 bg-surface-2 rounded-full overflow-hidden">
@@ -690,7 +690,7 @@ const ChapterViewer = () => {
       {/* Course completion banner */}
       {showCompletionBanner && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-card border border-border rounded-2xl px-8 py-8 shadow-2xl text-center max-w-md mx-4">
+          <div className="bg-card border border-border rounded-2xl px-5 sm:px-8 py-6 sm:py-8 shadow-2xl text-center max-w-sm sm:max-w-md mx-4">
             <div className="text-5xl mb-4">🎉</div>
             <h2 className="text-xl font-bold text-foreground">
               You've completed {courseTitle || "this course"}!
@@ -716,7 +716,7 @@ const ChapterViewer = () => {
       )}
 
       {/* Top bar */}
-      <div className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 h-14 flex items-center gap-3">
+      <div className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 flex items-center gap-3 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]">
         <Button
           variant="ghost"
           size="sm"
@@ -771,7 +771,7 @@ const ChapterViewer = () => {
               />
             </div>
           ) : chapter.content_type === "pdf" && chapter.media_url ? (
-            <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card" style={{ height: "80vh" }}>
+            <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card h-[55vh] sm:h-[80vh]">
               <iframe src={chapter.media_url} className="w-full h-full" title={`${chapter.title} — PDF`} />
             </div>
           ) : chapter.content_type === "image" && chapter.media_url ? (
