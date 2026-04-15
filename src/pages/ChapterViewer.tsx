@@ -674,7 +674,7 @@ const ChapterViewer = () => {
   if (!chapter) return null;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground pb-[env(safe-area-inset-bottom)]">
       <Confetti active={showConfetti} />
       {milestone && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[9998] milestone-banner">
@@ -737,8 +737,8 @@ const ChapterViewer = () => {
       <div className="flex flex-col lg:flex-row">
         {/* Main content */}
         <div className="flex-1 p-4 lg:p-8 space-y-6 max-w-4xl">
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
+          {/* Breadcrumb — hidden on mobile since top bar has back + title */}
+          <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
             <Link to="/my-courses" className="hover:text-foreground transition-colors">My Courses</Link>
             <span>&rsaquo;</span>
             {courseId && courseTitle && (
@@ -802,7 +802,7 @@ const ChapterViewer = () => {
 
           {/* Chapter info */}
           <div className="space-y-4">
-            <h1 className="text-2xl font-bold">{chapter.title}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold">{chapter.title}</h1>
             {chapter.description && (
               <p className="text-muted-foreground text-sm leading-relaxed">
                 {chapter.description}
