@@ -239,11 +239,11 @@ const AdminCourseEditor = () => {
 
       <div className="flex gap-8">
       {/* ── Left: Form ── */}
-      <div className="max-w-2xl flex-1 space-y-5">
+      <div className="max-w-2xl flex-1 min-w-0 space-y-5">
         {field("Title", "title")}
         {field("Slug", "slug")}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1.5">Product Tier</label>
             <Select value={form.product_tier} onValueChange={(v) => setForm((f) => ({ ...f, product_tier: v }))}>
@@ -374,7 +374,7 @@ const AdminCourseEditor = () => {
           <img src={form.thumbnail_url} alt="" className="w-48 h-28 object-cover rounded-lg border border-border" />
         )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1.5">Category</label>
             <Select value={form.category_id} onValueChange={(v) => setForm((f) => ({ ...f, category_id: v }))}>
@@ -400,7 +400,7 @@ const AdminCourseEditor = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {field("Duration (minutes)", "duration_minutes", "number")}
           <div>
             <label className="block text-sm font-medium mb-1.5">Status</label>
@@ -423,7 +423,7 @@ const AdminCourseEditor = () => {
           </div>
         </div>
 
-        <div className="flex gap-3 pt-4">
+        <div className="flex flex-wrap gap-3 pt-4">
           <Button onClick={handleSave} disabled={saving} className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
             {saving ? "Saving…" : "Save Course"}
           </Button>
