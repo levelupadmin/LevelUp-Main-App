@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -118,7 +117,7 @@ export default function AdminChapterPreview() {
   };
 
   return (
-    <AdminLayout title="Student Preview">
+    <>
       {/* Preview banner */}
       <div className="mb-4 flex items-center justify-between">
         <button
@@ -306,6 +305,6 @@ export default function AdminChapterPreview() {
           </div>
         </div>
       )}
-    </AdminLayout>
+    </>
   );
 }

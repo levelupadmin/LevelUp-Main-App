@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -147,7 +146,7 @@ const AdminAuditLogs = () => {
   );
 
   return (
-    <AdminLayout title="Audit Logs">
+    <>
       <div className="flex flex-wrap items-center gap-4 mb-6">
         <div className="flex gap-1 bg-secondary rounded-lg p-1">
           <button
@@ -251,7 +250,7 @@ const AdminAuditLogs = () => {
           </div>
         </div>
       )}
-    </AdminLayout>
+    </>
   );
 };
 

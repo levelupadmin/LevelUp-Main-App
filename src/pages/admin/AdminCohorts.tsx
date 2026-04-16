@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -495,7 +494,7 @@ const AdminCohorts = () => {
   /* ── Render ─────────────────────────────────────────────── */
 
   return (
-    <AdminLayout title="Cohorts">
+    <>
       {/* Offering picker */}
       <div className="mb-6 max-w-md">
         <label className="block text-sm font-medium mb-1">Select Offering</label>
@@ -790,7 +789,7 @@ const AdminCohorts = () => {
           </div>
         </DialogContent>
       </Dialog>
-    </AdminLayout>
+    </>
   );
 };
 

@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -833,7 +832,7 @@ const AdminEnrolments = () => {
   });
 
   return (
-    <AdminLayout title="Enrolments">
+    <>
       {/* ── Filters Row ── */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -1261,7 +1260,7 @@ const AdminEnrolments = () => {
           )}
         </DialogContent>
       </Dialog>
-    </AdminLayout>
+    </>
   );
 };
 

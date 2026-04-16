@@ -7,6 +7,8 @@ import RequireAuth from "@/components/guards/RequireAuth";
 import RequireRole from "@/components/guards/RequireRole";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import OfflineBanner from "@/components/OfflineBanner";
+import StudentLayout from "@/components/layout/StudentLayout";
+import AdminLayout from "@/components/layout/AdminLayout";
 
 // Critical student paths – keep synchronous
 import RootRedirect from "@/pages/RootRedirect";
@@ -87,6 +89,18 @@ const App = () => (
     <AuthProvider>
       <ErrorBoundary>
         <BrowserRouter>
+          {/*
+            Routing architecture:
+            - Public pages: flat routes, each lazy-page has its own Suspense via the
+              `lazyElement()` helper (so no full-page LoadingFallback swap).
+            - Student pages: nested under a single <StudentLayout/> layout route so
+              the nav shell (sidebar, top bar, mobile tab bar) stays mounted across
+              navigations. Fixes the "app reloads every page" feel.
+            - Admin pages: same nested-layout pattern under <AdminLayout/>.
+
+            Suspense now lives INSIDE each layout (around <Outlet/>), so lazy chunk
+            loading only swaps the content area, not the entire UI.
+          */}
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
               {/* Public */}
@@ -96,47 +110,56 @@ const App = () => (
               <Route path="/p/:slug" element={<PublicOffering />} />
               <Route path="/thank-you/:paymentOrderId" element={<ThankYou />} />
 
-              {/* Student routes */}
-              <Route path="/home" element={<RequireAuth><Home /></RequireAuth>} />
-              <Route path="/courses/:courseId" element={<RequireAuth><CourseDetail /></RequireAuth>} />
-              <Route path="/chapters/:chapterId" element={<RequireAuth><ErrorBoundary><ChapterViewer /></ErrorBoundary></RequireAuth>} />
-              <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
-              <Route path="/checkout/:offeringId" element={<RequireAuth><CheckoutPage /></RequireAuth>} />
-              <Route path="/browse" element={<RequireAuth><BrowsePage /></RequireAuth>} />
-              <Route path="/community" element={<RequireAuth><CommunityPage /></RequireAuth>} />
-              <Route path="/my-courses" element={<RequireAuth><MyCoursesPage /></RequireAuth>} />
-              <Route path="/my-sessions" element={<RequireAuth><MySessionsPage /></RequireAuth>} />
-              <Route path="/events" element={<RequireAuth><EventsPage /></RequireAuth>} />
-              <Route path="/events/:eventId" element={<RequireAuth><EventDetail /></RequireAuth>} />
+              {/* ─── Student routes share a single persistent layout ─── */}
+              <Route element={<RequireAuth><StudentLayout /></RequireAuth>}>
+                <Route path="/home" element={<Home />} />
+                <Route path="/courses/:courseId" element={<CourseDetail />} />
+                <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/checkout/:offeringId" element={<CheckoutPage />} />
+                <Route path="/browse" element={<BrowsePage />} />
+                <Route path="/community" element={<CommunityPage />} />
+                <Route path="/my-courses" element={<MyCoursesPage />} />
+                <Route path="/my-sessions" element={<MySessionsPage />} />
+                <Route path="/events" element={<EventsPage />} />
+                <Route path="/events/:eventId" element={<EventDetail />} />
+              </Route>
 
-              {/* Admin routes */}
-              <Route path="/admin" element={<RequireAuth><RequireRole role="admin"><AdminDashboard /></RequireRole></RequireAuth>} />
-              <Route path="/admin/hero-slides" element={<RequireAuth><RequireRole role="admin"><AdminHeroSlides /></RequireRole></RequireAuth>} />
-              <Route path="/admin/courses" element={<RequireAuth><RequireRole role="admin"><AdminCourses /></RequireRole></RequireAuth>} />
-              <Route path="/admin/courses/:courseId/edit" element={<RequireAuth><RequireRole role="admin"><AdminCourseEditor /></RequireRole></RequireAuth>} />
-              <Route path="/admin/courses/:courseId/curriculum" element={<RequireAuth><RequireRole role="admin"><AdminCourseCurriculum /></RequireRole></RequireAuth>} />
-              <Route path="/admin/courses/:courseId/preview" element={<RequireAuth><RequireRole role="admin"><AdminCoursePreview /></RequireRole></RequireAuth>} />
-              <Route path="/admin/courses/:courseId/preview/:chapterId" element={<RequireAuth><RequireRole role="admin"><AdminChapterPreview /></RequireRole></RequireAuth>} />
-              <Route path="/admin/courses/:courseId/reviews" element={<RequireAuth><RequireRole role="admin"><AdminCourseReviews /></RequireRole></RequireAuth>} />
-              <Route path="/admin/offerings" element={<RequireAuth><RequireRole role="admin"><AdminOfferings /></RequireRole></RequireAuth>} />
-              <Route path="/admin/offerings/:offeringId/edit" element={<RequireAuth><RequireRole role="admin"><AdminOfferingEditor /></RequireRole></RequireAuth>} />
-              <Route path="/admin/schedule" element={<RequireAuth><RequireRole role="admin"><AdminSchedule /></RequireRole></RequireAuth>} />
-              <Route path="/admin/events" element={<RequireAuth><RequireRole role="admin"><AdminEvents /></RequireRole></RequireAuth>} />
-              {/* Cohorts removed */}
-              <Route path="/admin/enrolments" element={<RequireAuth><RequireRole role="admin"><AdminEnrolments /></RequireRole></RequireAuth>} />
-              <Route path="/admin/users" element={<RequireAuth><RequireRole role="admin"><AdminUsers /></RequireRole></RequireAuth>} />
-              <Route path="/admin/coupons" element={<RequireAuth><RequireRole role="admin"><AdminCoupons /></RequireRole></RequireAuth>} />
-              <Route path="/admin/revenue" element={<RequireAuth><RequireRole role="admin"><AdminRevenue /></RequireRole></RequireAuth>} />
-              <Route path="/admin/audit-logs" element={<RequireAuth><RequireRole role="admin"><AdminAuditLogs /></RequireRole></RequireAuth>} />
-              <Route path="/admin/certificates" element={<RequireAuth><RequireRole role="admin"><AdminCertificates /></RequireRole></RequireAuth>} />
-              <Route path="/admin/courses/:courseId/certificate" element={<RequireAuth><RequireRole role="admin"><AdminCertificateTemplateEditor /></RequireRole></RequireAuth>} />
-              {/* Reviews accessible per-course at /admin/courses/:courseId/reviews */}
-              <Route path="/admin/announcements" element={<RequireAuth><RequireRole role="admin"><AdminAnnouncements /></RequireRole></RequireAuth>} />
-              <Route path="/admin/email-templates" element={<RequireAuth><RequireRole role="admin"><AdminEmailTemplates /></RequireRole></RequireAuth>} />
-              <Route path="/admin/email-campaigns" element={<RequireAuth><RequireRole role="admin"><AdminEmailCampaigns /></RequireRole></RequireAuth>} />
+              {/* ChapterViewer runs full-bleed (no student nav) but stays auth-guarded */}
+              <Route
+                path="/chapters/:chapterId"
+                element={<RequireAuth><ErrorBoundary><ChapterViewer /></ErrorBoundary></RequireAuth>}
+              />
 
-              {/* Instructor */}
-              <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />
+              {/* ─── Admin routes share a single persistent admin layout ─── */}
+              <Route element={<RequireAuth><RequireRole role="admin"><AdminLayout /></RequireRole></RequireAuth>}>
+                <Route path="/admin" element={<AdminDashboard />} />
+                <Route path="/admin/hero-slides" element={<AdminHeroSlides />} />
+                <Route path="/admin/courses" element={<AdminCourses />} />
+                <Route path="/admin/courses/:courseId/edit" element={<AdminCourseEditor />} />
+                <Route path="/admin/courses/:courseId/curriculum" element={<AdminCourseCurriculum />} />
+                <Route path="/admin/courses/:courseId/preview" element={<AdminCoursePreview />} />
+                <Route path="/admin/courses/:courseId/preview/:chapterId" element={<AdminChapterPreview />} />
+                <Route path="/admin/courses/:courseId/reviews" element={<AdminCourseReviews />} />
+                <Route path="/admin/offerings" element={<AdminOfferings />} />
+                <Route path="/admin/offerings/:offeringId/edit" element={<AdminOfferingEditor />} />
+                <Route path="/admin/schedule" element={<AdminSchedule />} />
+                <Route path="/admin/events" element={<AdminEvents />} />
+                <Route path="/admin/enrolments" element={<AdminEnrolments />} />
+                <Route path="/admin/users" element={<AdminUsers />} />
+                <Route path="/admin/coupons" element={<AdminCoupons />} />
+                <Route path="/admin/revenue" element={<AdminRevenue />} />
+                <Route path="/admin/audit-logs" element={<AdminAuditLogs />} />
+                <Route path="/admin/certificates" element={<AdminCertificates />} />
+                <Route path="/admin/courses/:courseId/certificate" element={<AdminCertificateTemplateEditor />} />
+                <Route path="/admin/announcements" element={<AdminAnnouncements />} />
+                <Route path="/admin/email-templates" element={<AdminEmailTemplates />} />
+                <Route path="/admin/email-campaigns" element={<AdminEmailCampaigns />} />
+              </Route>
+
+              {/* Instructor dashboard also uses the student layout for consistency */}
+              <Route element={<RequireAuth><RequireRole role="instructor"><StudentLayout /></RequireRole></RequireAuth>}>
+                <Route path="/instructor" element={<InstructorDashboard />} />
+              </Route>
 
               {/* Catch-all */}
               <Route path="*" element={<NotFoundPage />} />

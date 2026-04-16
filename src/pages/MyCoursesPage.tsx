@@ -3,7 +3,6 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import StudentLayout from "@/components/layout/StudentLayout";
 import { TierBadge } from "@/components/TierBadge";
 import { Progress } from "@/components/ui/progress";
 import LazyImage from "@/components/LazyImage";
@@ -208,7 +207,7 @@ const MyCoursesPage = () => {
   }, [user]);
 
   return (
-    <StudentLayout title="My Courses">
+    <>
       <div className="space-y-8">
         <div>
           <h1 className="text-[32px] font-semibold leading-tight">My Courses</h1>
@@ -331,7 +330,7 @@ const MyCoursesPage = () => {
           </section>
         )}
       </div>
-    </StudentLayout>
+    </>
   );
 };
 

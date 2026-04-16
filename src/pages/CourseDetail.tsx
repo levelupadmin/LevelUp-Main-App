@@ -3,7 +3,6 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import StudentLayout from "@/components/layout/StudentLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -224,24 +223,24 @@ const CourseDetail = () => {
 
   if (loading) {
     return (
-      <StudentLayout title="Loading...">
+      <>
         <div className="flex items-center justify-center py-20">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground border-t-foreground" />
         </div>
-      </StudentLayout>
+      </>
     );
   }
 
   if (!course) {
     return (
-      <StudentLayout title="Not Found">
+      <>
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <BookOpen className="h-12 w-12 text-muted-foreground" />
           <h1 className="text-xl font-semibold text-foreground">Course not found</h1>
           <p className="text-sm text-muted-foreground">This course doesn't exist or is no longer available.</p>
           <Link to="/home" className="text-sm text-primary hover:underline">← Back to Home</Link>
         </div>
-      </StudentLayout>
+      </>
     );
   }
 
@@ -249,7 +248,7 @@ const CourseDetail = () => {
   const completedCount = progress.filter((p) => p.completed_at).length;
 
   return (
-    <StudentLayout title={course.title}>
+    <>
       <div className="max-w-4xl mx-auto space-y-8">
         {/* Breadcrumb */}
         <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
@@ -422,7 +421,7 @@ const CourseDetail = () => {
           </Accordion>
         </div>
       </div>
-    </StudentLayout>
+    </>
   );
 };
 

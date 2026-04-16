@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import StudentLayout from "@/components/layout/StudentLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -210,7 +209,7 @@ const EventsPage = () => {
   };
 
   return (
-    <StudentLayout title="Events">
+    <>
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-semibold">Events</h1>
@@ -386,7 +385,7 @@ const EventsPage = () => {
           </div>
         )}
       </div>
-    </StudentLayout>
+    </>
   );
 };
 

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -231,7 +230,7 @@ const AdminCourseEditor = () => {
   );
 
   return (
-    <AdminLayout title={isNew ? "New Course" : "Edit Course"}>
+    <>
       <AdminBreadcrumbs items={[
         { label: "Courses", to: "/admin/courses" },
         { label: isNew ? "New Course" : (form.title || "Edit") },
@@ -502,7 +501,7 @@ const AdminCourseEditor = () => {
         </div>
       </div>
       </div>
-    </AdminLayout>
+    </>
   );
 };
 

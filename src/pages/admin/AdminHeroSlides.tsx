@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -175,7 +174,7 @@ const AdminHeroSlides = () => {
   );
 
   return (
-    <AdminLayout title="Hero Slides">
+    <>
       <div className="flex justify-between items-center mb-6">
         <p className="text-sm text-muted-foreground">Manage the hero carousel on dashboard and login pages</p>
         <Button onClick={openNew} className="bg-cream text-cream-text hover:opacity-90">
@@ -289,7 +288,7 @@ const AdminHeroSlides = () => {
           </div>
         </DialogContent>
       </Dialog>
-    </AdminLayout>
+    </>
   );
 };
 

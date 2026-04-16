@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import StudentLayout from "@/components/layout/StudentLayout";
 import { Card } from "@/components/ui/card";
 import { BookOpen, Users, Star, TrendingUp } from "lucide-react";
 
@@ -94,7 +93,7 @@ const InstructorDashboard = () => {
   }, [profile]);
 
   return (
-    <StudentLayout>
+    <>
       <div className="max-w-4xl mx-auto px-4 py-10">
         <h1 className="text-2xl font-bold mb-2">Instructor Dashboard</h1>
         <p className="text-muted-foreground mb-8">Overview of your courses and student engagement.</p>
@@ -173,7 +172,7 @@ const InstructorDashboard = () => {
           </>
         )}
       </div>
-    </StudentLayout>
+    </>
   );
 };
 

@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import StudentLayout from "@/components/layout/StudentLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
@@ -212,7 +211,7 @@ const CommunityPage = () => {
   };
 
   return (
-    <StudentLayout title="Community">
+    <>
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Pull-to-refresh indicator */}
         {(pullDistance > 0 || isRefreshing) && (
@@ -388,7 +387,7 @@ const CommunityPage = () => {
           </div>
         )}
       </div>
-    </StudentLayout>
+    </>
   );
 };
 

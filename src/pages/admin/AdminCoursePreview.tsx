@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -100,7 +99,7 @@ export default function AdminCoursePreview() {
   const totalChapters = chapters.length;
 
   return (
-    <AdminLayout title="Student Preview">
+    <>
       <AdminBreadcrumbs items={[
         { label: "Courses", to: "/admin/courses" },
         { label: course?.title || "Course", to: `/admin/courses/${courseId}/edit` },
@@ -265,6 +264,6 @@ export default function AdminCoursePreview() {
           </div>
         </div>
       )}
-    </AdminLayout>
+    </>
   );
 }

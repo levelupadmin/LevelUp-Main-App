@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Suspense, useState } from "react";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
@@ -7,7 +7,7 @@ import NotificationDropdown from "@/components/NotificationDropdown";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
   Home, BookOpen, Compass, MessageSquare, User,
-  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3
+  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,11 +31,21 @@ const MOBILE_NAV_ITEMS = [
 ];
 
 interface Props {
-  children: React.ReactNode;
-  title?: string;
+  /**
+   * Optional — if omitted the layout will render an <Outlet/> so it can be
+   * used as a React Router v6 layout route. Existing usages that pass
+   * children continue to work (e.g. wrapper-style pages during migration).
+   */
+  children?: React.ReactNode;
 }
 
-const StudentLayout = ({ children, title }: Props) => {
+const ContentSuspenseFallback = () => (
+  <div className="flex min-h-[40vh] items-center justify-center">
+    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+  </div>
+);
+
+const StudentLayout = ({ children }: Props) => {
   const { profile, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -185,7 +195,9 @@ const StudentLayout = ({ children, title }: Props) => {
             <button aria-label="Open menu" className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center focus-ring press-scale rounded-md" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
             </button>
-            <h2 className="text-lg font-semibold">{title}</h2>
+            <Link to="/home" className="md:hidden font-semibold tracking-tight text-foreground">
+              LevelUp
+            </Link>
           </div>
 
           <div className="flex items-center gap-3">
@@ -251,10 +263,14 @@ const StudentLayout = ({ children, title }: Props) => {
           </div>
         </header>
 
-        {/* Content area */}
+        {/* Content area — Suspense is INSIDE the layout so lazy chunk loads
+            don't swap out the entire shell (fixes the "page reloads on every
+            navigation" feeling). The nav, sidebar, and tab bar stay mounted. */}
         <main id="main-content" className="flex-1 grain pb-20 md:pb-0">
           <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-6 md:py-10 relative z-10 page-enter">
-            {children}
+            <Suspense fallback={<ContentSuspenseFallback />}>
+              {children ?? <Outlet />}
+            </Suspense>
           </div>
         </main>
       </div>

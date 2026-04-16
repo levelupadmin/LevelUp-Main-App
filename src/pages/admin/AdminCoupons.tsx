@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -158,7 +157,7 @@ const AdminCoupons = () => {
   });
 
   return (
-    <AdminLayout title="Coupons">
+    <>
       <div className="flex flex-wrap items-center gap-4 mb-6">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -313,7 +312,7 @@ const AdminCoupons = () => {
           </div>
         </DialogContent>
       </Dialog>
-    </AdminLayout>
+    </>
   );
 };
 

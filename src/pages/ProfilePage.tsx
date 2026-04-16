@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import StudentLayout from "@/components/layout/StudentLayout";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -309,7 +308,7 @@ const ProfilePage = () => {
   };
 
   return (
-    <StudentLayout title="Profile">
+    <>
       <div className="space-y-8 max-w-2xl">
         {/* Hero card */}
         <div className="bg-surface border border-border rounded-xl p-6">
@@ -498,7 +497,7 @@ const ProfilePage = () => {
           </div>
         </section>
       </div>
-    </StudentLayout>
+    </>
   );
 };
 

@@ -1,6 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import AdminLayout from "@/components/layout/AdminLayout";
 import AdminBreadcrumbs from "@/components/admin/AdminBreadcrumbs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -224,7 +223,7 @@ const AdminCourseReviews = () => {
   ];
 
   return (
-    <AdminLayout title="Course Reviews">
+    <>
       <AdminBreadcrumbs items={[
         { label: "Courses", to: "/admin/courses" },
         { label: courseName || "Course", to: `/admin/courses/${courseId}/edit` },
@@ -456,7 +455,7 @@ const AdminCourseReviews = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </AdminLayout>
+    </>
   );
 };
 

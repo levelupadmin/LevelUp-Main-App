@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -428,7 +427,7 @@ const AdminEvents = () => {
   /* ================================================================ */
 
   return (
-    <AdminLayout title="Events">
+    <>
       {/* ---- Top bar ---- */}
       <div className="flex justify-between items-center mb-4">
         <div className="flex gap-2 flex-wrap">
@@ -1034,7 +1033,7 @@ const AdminEvents = () => {
           )}
         </DialogContent>
       </Dialog>
-    </AdminLayout>
+    </>
   );
 };
 

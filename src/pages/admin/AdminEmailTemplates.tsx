@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -133,7 +132,7 @@ const AdminEmailTemplates = () => {
   };
 
   return (
-    <AdminLayout title="Email Templates">
+    <>
       <p className="text-muted-foreground text-sm mb-6">
         Manage transactional email templates. Edit content and variables for automated emails.
       </p>
@@ -305,7 +304,7 @@ const AdminEmailTemplates = () => {
           )}
         </DialogContent>
       </Dialog>
-    </AdminLayout>
+    </>
   );
 };
 

@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -561,7 +560,7 @@ const AdminSchedule = () => {
   };
 
   return (
-    <AdminLayout title="Schedule Classes">
+    <>
       {/* Top bar */}
       <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
         <div className="flex items-center gap-3">
@@ -872,7 +871,7 @@ const AdminSchedule = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </AdminLayout>
+    </>
   );
 };
 

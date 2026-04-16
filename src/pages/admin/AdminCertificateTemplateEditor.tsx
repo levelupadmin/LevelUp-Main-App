@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -246,18 +245,18 @@ const AdminCertificateTemplateEditor = () => {
 
   if (loading) {
     return (
-      <AdminLayout title="Certificate Template">
+      <>
         <div className="flex items-center justify-center h-64">
           <p className="text-muted-foreground">Loading...</p>
         </div>
-      </AdminLayout>
+      </>
     );
   }
 
   const scale = canvasRef.current ? canvasRef.current.clientWidth / CANVAS_WIDTH : 0.4;
 
   return (
-    <AdminLayout title="Certificate Template">
+    <>
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -612,7 +611,7 @@ const AdminCertificateTemplateEditor = () => {
           </p>
         </div>
       </div>
-    </AdminLayout>
+    </>
   );
 };
 

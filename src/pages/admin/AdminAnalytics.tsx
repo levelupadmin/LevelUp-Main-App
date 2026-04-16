@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -179,7 +178,7 @@ const AdminAnalytics = () => {
   const maxSignup = Math.max(...dailySignups.map((d) => d.count), 1);
 
   return (
-    <AdminLayout title="Analytics">
+    <>
       <div className="flex items-center gap-4 mb-6">
         <Select value={period} onValueChange={(v) => setPeriod(v as typeof period)}>
           <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
@@ -333,7 +332,7 @@ const AdminAnalytics = () => {
           </Card>
         </>
       )}
-    </AdminLayout>
+    </>
   );
 };
 

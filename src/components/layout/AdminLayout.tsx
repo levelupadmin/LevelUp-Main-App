@@ -1,5 +1,5 @@
-import { ReactNode, useState, useRef, useCallback, useEffect } from "react";
-import { useNavigate, useLocation, Link, Navigate } from "react-router-dom";
+import { ReactNode, Suspense, useState, useRef, useCallback, useEffect } from "react";
+import { useNavigate, useLocation, Link, Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -93,9 +93,16 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 interface Props {
-  children: ReactNode;
-  title?: string;
+  /** Optional — when omitted, the layout renders <Outlet/> so it can be used as a
+   * React Router v6 layout route. Keeps backward-compat with wrapper-style usage. */
+  children?: ReactNode;
 }
+
+const AdminSuspenseFallback = () => (
+  <div className="flex min-h-[40vh] items-center justify-center">
+    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+  </div>
+);
 
 // Determine which groups should be expanded initially based on current path
 function getInitialExpanded(pathname: string): Record<string, boolean> {
@@ -111,7 +118,7 @@ function getInitialExpanded(pathname: string): Record<string, boolean> {
   return expanded;
 }
 
-const AdminLayout = ({ children, title }: Props) => {
+const AdminLayout = ({ children }: Props) => {
   const { profile, signOut, loading: authLoading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -382,7 +389,9 @@ const AdminLayout = ({ children, title }: Props) => {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <h1 className="text-lg font-semibold">{title || ""}</h1>
+            <Link to="/admin" className="md:hidden font-semibold tracking-tight text-foreground">
+              Admin
+            </Link>
           </div>
 
           {/* Global search */}
@@ -460,10 +469,13 @@ const AdminLayout = ({ children, title }: Props) => {
           </div>
         </header>
 
-        {/* Content area */}
+        {/* Content area — Suspense sits INSIDE the shell so lazy chunk loads
+            don't blank out the entire admin nav. */}
         <main id="main-content" className="flex-1 grain">
           <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-6 md:py-10 relative z-10">
-            {children}
+            <Suspense fallback={<AdminSuspenseFallback />}>
+              {children ?? <Outlet />}
+            </Suspense>
           </div>
         </main>
       </div>

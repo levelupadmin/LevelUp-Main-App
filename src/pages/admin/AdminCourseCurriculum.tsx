@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -269,7 +268,7 @@ const AdminCourseCurriculum = () => {
   const ec = editingChapter;
 
   return (
-    <AdminLayout title={`Curriculum: ${courseTitle}`}>
+    <>
       <button
         onClick={() => navigate(`/admin/courses/${courseId}/edit`)}
         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6"
@@ -490,7 +489,7 @@ const AdminCourseCurriculum = () => {
           </div>
         </div>
       )}
-    </AdminLayout>
+    </>
   );
 };
 

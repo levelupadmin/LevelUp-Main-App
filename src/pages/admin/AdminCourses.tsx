@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Plus, Search, Eye, Pencil, Trash2, MoreVertical, Globe, Star } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -253,7 +252,7 @@ const AdminCourses = () => {
   );
 
   return (
-    <AdminLayout title="Courses">
+    <>
       {/* Top bar */}
       <div className="flex flex-wrap items-center gap-4 mb-6">
         <div className="relative flex-1 max-w-sm">
@@ -397,7 +396,7 @@ const AdminCourses = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </AdminLayout>
+    </>
   );
 };
 

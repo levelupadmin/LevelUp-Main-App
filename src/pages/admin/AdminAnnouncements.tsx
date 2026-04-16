@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
@@ -250,7 +249,7 @@ const AdminAnnouncements = () => {
   const canSend = title.trim() && body.trim() && (audienceType === "all" || audienceId);
 
   return (
-    <AdminLayout title="Announcements">
+    <>
       <div className="flex items-center justify-between mb-6">
         <p className="text-muted-foreground text-sm">
           Send in-app notifications to all users or targeted audiences.
@@ -420,7 +419,7 @@ const AdminAnnouncements = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </AdminLayout>
+    </>
   );
 };
 

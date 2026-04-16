@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import StudentLayout from "@/components/layout/StudentLayout";
 import usePageTitle from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
 import { Bell, Calendar, Clock, Video, ExternalLink, PlayCircle } from "lucide-react";
@@ -122,7 +121,7 @@ const MySessionsPage = () => {
   };
 
   return (
-    <StudentLayout title="My Sessions">
+    <>
       <div className="space-y-8 max-w-3xl">
         <div>
           <h1 className="text-[28px] sm:text-[32px] font-semibold leading-tight">My Live Sessions</h1>
@@ -346,7 +345,7 @@ const MySessionsPage = () => {
           </>
         )}
       </div>
-    </StudentLayout>
+    </>
   );
 };
 

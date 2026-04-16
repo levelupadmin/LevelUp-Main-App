@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
@@ -202,7 +201,7 @@ const AdminEmailCampaigns = () => {
   const canSend = subject.trim() && htmlBody.trim() && (audienceType === "all" || audienceId);
 
   return (
-    <AdminLayout title="Email Campaigns">
+    <>
       <div className="flex items-center justify-between mb-6">
         <p className="text-muted-foreground text-sm">
           Create and send email campaigns to your user base.
@@ -399,7 +398,7 @@ const AdminEmailCampaigns = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </AdminLayout>
+    </>
   );
 };
 

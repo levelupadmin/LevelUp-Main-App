@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import StudentLayout from "@/components/layout/StudentLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -197,22 +196,22 @@ const EventDetail = () => {
 
   if (loading) {
     return (
-      <StudentLayout title="Event">
+      <>
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-      </StudentLayout>
+      </>
     );
   }
 
   if (!event) {
     return (
-      <StudentLayout title="Event">
+      <>
         <div className="text-center py-20">
           <p className="text-muted-foreground">Event not found</p>
           <Link to="/events" className="text-sm text-cream mt-2 inline-block">← Back to events</Link>
         </div>
-      </StudentLayout>
+      </>
     );
   }
 
@@ -235,7 +234,7 @@ const EventDetail = () => {
       : "Free";
 
   return (
-    <StudentLayout title={event?.title ?? "Event"}>
+    <>
       {/* Breadcrumb */}
       <div className="mb-6">
         <Link to="/events" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5">
@@ -439,7 +438,7 @@ const EventDetail = () => {
           </button>
         </div>
       )}
-    </StudentLayout>
+    </>
   );
 };
 

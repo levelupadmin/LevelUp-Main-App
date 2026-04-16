@@ -3,7 +3,6 @@ import { cn } from "@/lib/utils";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import StudentLayout from "@/components/layout/StudentLayout";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import HeroCarousel from "@/components/HeroCarousel";
 import { TierBadge } from "@/components/TierBadge";
@@ -926,7 +925,7 @@ const Home = () => {
   });
 
   return (
-    <StudentLayout title="">
+    <>
       <div className="space-y-8">
         {/* Pull-to-refresh indicator */}
         {(pullDistance > 0 || isRefreshing) && (
@@ -950,7 +949,7 @@ const Home = () => {
         <BrowsePrograms key={`bp-${refreshKey}`} />
         <NewMembers key={`nm-${refreshKey}`} />
       </div>
-    </StudentLayout>
+    </>
   );
 };
 

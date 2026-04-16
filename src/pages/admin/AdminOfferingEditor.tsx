@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -389,16 +388,16 @@ const AdminOfferingEditor = () => {
   /* ── Loading state ── */
   if (loading) {
     return (
-      <AdminLayout title="Offering Editor">
+      <>
         <div className="flex items-center justify-center py-24">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      </AdminLayout>
+      </>
     );
   }
 
   return (
-    <AdminLayout title={isNew ? "New Offering" : "Edit Offering"}>
+    <>
       <AdminBreadcrumbs items={[
         { label: "Offerings", to: "/admin/offerings" },
         { label: isNew ? "New Offering" : (form.title || "Edit") },
@@ -844,7 +843,7 @@ const AdminOfferingEditor = () => {
           </div>
         </TabsContent>
       </Tabs>
-    </AdminLayout>
+    </>
   );
 };
 

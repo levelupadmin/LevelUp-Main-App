@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import StudentLayout from "@/components/layout/StudentLayout";
 import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { Input } from "@/components/ui/input";
 import LazyImage from "@/components/LazyImage";
@@ -171,7 +170,7 @@ const BrowsePage = () => {
     .filter((g) => g.items.length > 0);
 
   return (
-    <StudentLayout title="Browse Programs">
+    <>
       <div className="space-y-8">
         <div>
           <h1 className="text-[28px] sm:text-[32px] font-semibold leading-tight">Browse Programs</h1>
@@ -376,7 +375,7 @@ const BrowsePage = () => {
           </div>
         )}
       </div>
-    </StudentLayout>
+    </>
   );
 };
 

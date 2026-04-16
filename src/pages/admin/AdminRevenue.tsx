@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import AdminLayout from "@/components/layout/AdminLayout";
 import usePageTitle from "@/hooks/usePageTitle";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -430,7 +429,7 @@ const AdminRevenue = () => {
   /* ---------------------------------------------------------------- */
 
   return (
-    <AdminLayout title="Revenue">
+    <>
       {/* Date filters + export */}
       <div className="flex flex-wrap items-center gap-2 mb-6">
         {filters.map(f => (
@@ -861,7 +860,7 @@ const AdminRevenue = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </AdminLayout>
+    </>
   );
 };
 

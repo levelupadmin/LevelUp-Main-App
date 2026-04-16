@@ -1,6 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { Link } from "react-router-dom";
-import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -364,7 +363,7 @@ const AdminDashboard = () => {
   );
 
   return (
-    <AdminLayout title="Dashboard">
+    <>
       {/* ── Date Filter Bar ── */}
       <div className="flex flex-wrap items-center gap-2 mb-6">
         <Calendar className="h-4 w-4 text-muted-foreground mr-1" />
@@ -589,7 +588,7 @@ const AdminDashboard = () => {
           </Card>
         </>
       )}
-    </AdminLayout>
+    </>
   );
 };
 
