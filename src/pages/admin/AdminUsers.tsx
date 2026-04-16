@@ -209,14 +209,54 @@ const AdminUsers = () => {
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Reset file input early so the user can re-pick the same file after
+    // cancelling the confirm dialog.
+    const resetInput = () => {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    };
+
     setImporting(true);
     try {
       let text = await file.text();
       // Strip UTF-8 BOM if present
       if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      // Normalise CRLF / CR-only endings so Excel exports don't leave stray \r
+      // tokens inside cells.
+      text = text.replace(/\r\n?/g, "\n");
       const lines = text.split("\n").filter((l) => l.trim());
       if (lines.length < 2) throw new Error("CSV must have a header row and at least one data row");
-      const headers = lines[0].split(",").map((h) => h.replace(/"/g, "").trim().toLowerCase());
+
+      // Proper CSV field splitter: handles quoted fields and "" as an escaped
+      // quote inside a quoted field. Returns trimmed cell values.
+      const splitCsvLine = (line: string): string[] => {
+        const out: string[] = [];
+        let cur = "";
+        let inQuote = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            if (inQuote && line[i + 1] === '"') {
+              // escaped quote
+              cur += '"';
+              i++;
+            } else {
+              inQuote = !inQuote;
+            }
+            continue;
+          }
+          if (ch === "," && !inQuote) {
+            out.push(cur.trim());
+            cur = "";
+            continue;
+          }
+          cur += ch;
+        }
+        out.push(cur.trim());
+        return out;
+      };
+
+      const headers = splitCsvLine(lines[0]).map((h) => h.toLowerCase());
       const emailIdx = headers.indexOf("email");
       if (emailIdx === -1) throw new Error("CSV must contain an 'email' column");
       const nameIdx = headers.indexOf("full name") !== -1 ? headers.indexOf("full name") : headers.indexOf("full_name");
@@ -226,23 +266,28 @@ const AdminUsers = () => {
       const bioIdx = headers.indexOf("bio");
       // Security: role column is intentionally ignored to prevent escalation via CSV
 
+      const dataRowCount = lines.length - 1;
+      // Destructive-ish op: confirm before overwriting real user rows by email.
+      // eslint-disable-next-line no-alert
+      const confirmed = window.confirm(
+        `This will UPDATE up to ${dataRowCount} user profile${dataRowCount === 1 ? "" : "s"} by matching the 'email' column. Continue?`,
+      );
+      if (!confirmed) {
+        setImporting(false);
+        resetInput();
+        return;
+      }
+
       let success = 0;
-      let failed = 0;
+      const failedRows: number[] = [];
 
       for (let i = 1; i < lines.length; i++) {
-        // Simple CSV parse (handles quoted fields)
-        const cols: string[] = [];
-        let cur = "";
-        let inQuote = false;
-        for (const ch of lines[i]) {
-          if (ch === '"') { inQuote = !inQuote; continue; }
-          if (ch === "," && !inQuote) { cols.push(cur.trim()); cur = ""; continue; }
-          cur += ch;
-        }
-        cols.push(cur.trim());
-
+        const cols = splitCsvLine(lines[i]);
         const email = cols[emailIdx]?.toLowerCase().trim();
-        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { failed++; continue; }
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          failedRows.push(i + 1); // human-friendly 1-based row number
+          continue;
+        }
 
         const updates: Record<string, any> = {};
         if (nameIdx >= 0 && cols[nameIdx]) updates.full_name = cols[nameIdx];
@@ -256,18 +301,25 @@ const AdminUsers = () => {
           .update(updates)
           .eq("email", email);
 
-        if (error) failed++;
+        if (error) failedRows.push(i + 1);
         else success++;
       }
 
-      toast({ title: `Import complete: ${success} updated, ${failed} failed` });
+      const failed = failedRows.length;
+      if (failed > 0) {
+        toast({
+          title: `Import complete: ${success} updated, ${failed} failed`,
+          description: `Failed rows: ${failedRows.slice(0, 10).join(", ")}${failed > 10 ? "…" : ""}`,
+        });
+      } else {
+        toast({ title: `Import complete: ${success} updated` });
+      }
       load();
     } catch (err: any) {
       toast({ title: "Import failed", description: err.message, variant: "destructive" });
     }
     setImporting(false);
-    // Reset file input
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    resetInput();
   };
 
   const filtered = users.filter((u) => {

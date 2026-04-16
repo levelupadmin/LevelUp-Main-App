@@ -108,20 +108,27 @@ export default function CheckoutPage() {
       setLinkedCourses(coursesRes.data ?? []);
       setCustomFields(fieldsRes.data ?? []);
 
-      // Load application data for staged payments
+      // Load application data for staged payments.
+      // Defence-in-depth: the server blocks cross-user staged payments, but
+      // we also filter by user_id client-side so we don't render another
+      // student's paid flags / amount if their UUID is pasted into `?app=`.
       if (applicationId && paymentType !== "full") {
         const { data: appData } = await (supabase as any)
           .from("cohort_applications")
-          .select("id, status, full_name, email, app_fee_payment_id, confirmation_payment_id, balance_payment_id")
+          .select("id, user_id, status, full_name, email, app_fee_payment_id, confirmation_payment_id, balance_payment_id")
           .eq("id", applicationId)
-          .single();
-        if (appData) {
-          setApplication(appData);
-          let paid = 0;
-          if (appData.app_fee_payment_id) paid += Number(offRes.data.app_fee_inr ?? 0);
-          if (appData.confirmation_payment_id) paid += Number(offRes.data.confirmation_amount_inr ?? 0);
-          setTotalPreviouslyPaid(paid);
+          .eq("user_id", user!.id)
+          .maybeSingle();
+        if (!appData) {
+          toast.error("This application isn't available on your account.");
+          navigate("/my-courses");
+          return;
         }
+        setApplication(appData);
+        let paid = 0;
+        if (appData.app_fee_payment_id) paid += Number(offRes.data.app_fee_inr ?? 0);
+        if (appData.confirmation_payment_id) paid += Number(offRes.data.confirmation_amount_inr ?? 0);
+        setTotalPreviouslyPaid(paid);
       }
 
       // Load bump offering details

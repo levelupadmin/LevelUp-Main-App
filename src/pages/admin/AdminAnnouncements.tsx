@@ -75,7 +75,7 @@ const AdminAnnouncements = () => {
       .range(from, to);
 
     if (error) {
-      console.error(error);
+      if (import.meta.env.DEV) console.error(error);
       setLoading(false);
       return;
     }
@@ -210,7 +210,7 @@ const AdminAnnouncements = () => {
           is_read: false,
         }));
         const { error } = await (supabase as any).from("notifications").insert(batch);
-        if (error) console.error("Batch insert error:", error);
+        if (error && import.meta.env.DEV) console.error("Batch insert error:", error);
         sent += batch.length;
         setSendProgress(`Sending... ${sent}/${recipientIds.length}`);
       }
@@ -239,7 +239,7 @@ const AdminAnnouncements = () => {
       setDialogOpen(false);
       load();
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
       toast({ title: "Failed to send announcement", variant: "destructive" });
     } finally {
       setSending(false);

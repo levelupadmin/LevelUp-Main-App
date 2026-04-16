@@ -203,7 +203,7 @@ const AdminApplications = () => {
     const { data, count, error } = await query;
     if (error) {
       toast.error("Failed to load applications");
-      console.error(error);
+      if (import.meta.env.DEV) console.error(error);
     }
     setApplications(data || []);
     setTotal(count || 0);
@@ -274,9 +274,11 @@ const AdminApplications = () => {
     fetchStats();
   };
 
-  const sendPaymentReminder = async (app: ApplicationRow) => {
-    // Placeholder: In production this would trigger an edge function / email
-    toast.success(`Payment reminder sent to ${app.email}`);
+  const sendPaymentReminder = async (_app: ApplicationRow) => {
+    // No edge function / email integration is wired up yet. Rather than
+    // falsely toast success, surface the real state so admins don't assume
+    // reminders are going out.
+    toast.info("Payment reminders aren't wired up yet — email the student directly.");
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);

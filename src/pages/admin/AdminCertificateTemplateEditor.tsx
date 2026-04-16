@@ -88,7 +88,7 @@ const AdminCertificateTemplateEditor = () => {
           });
         }
       } catch (err) {
-        console.error("Failed to load template", err);
+        if (import.meta.env.DEV) console.error("Failed to load template", err);
         toast.error("Failed to load certificate template");
       } finally {
         setLoading(false);
@@ -134,7 +134,7 @@ const AdminCertificateTemplateEditor = () => {
       }
       toast.success("Certificate template saved");
     } catch (err: any) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
       toast.error(err.message || "Failed to save template");
     } finally {
       setSaving(false);
@@ -157,7 +157,7 @@ const AdminCertificateTemplateEditor = () => {
       setTemplate((prev) => ({ ...prev, background_image_url: data.publicUrl }));
       toast.success("Background image uploaded");
     } catch (err: any) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
       toast.error(err.message || "Upload failed");
     } finally {
       setUploading(false);

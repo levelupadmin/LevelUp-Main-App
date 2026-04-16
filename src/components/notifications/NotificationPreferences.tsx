@@ -119,7 +119,7 @@ const NotificationPreferences = () => {
 
     if (error) {
       toast.error("Failed to save preferences");
-      console.error(error);
+      if (import.meta.env.DEV) console.error(error);
     } else {
       setPrefs((prev) => {
         const next = { ...prev };

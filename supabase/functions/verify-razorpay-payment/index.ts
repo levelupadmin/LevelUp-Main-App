@@ -62,6 +62,17 @@ async function findAuthUserByEmail(
   }
 }
 
+// Constant-time hex string comparison. HMAC-SHA256 hex is fixed-length (64
+// chars) so the length check leaks nothing useful in normal operation.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 async function verifyHmac(
   orderId: string,
   paymentId: string,
@@ -81,7 +92,7 @@ async function verifyHmac(
   const computed = Array.from(new Uint8Array(sig))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-  return computed === signature;
+  return timingSafeEqual(computed, signature);
 }
 
 async function verifyViaApi(
@@ -629,55 +640,56 @@ Deno.serve(async (req) => {
     let enrolmentId: string | null = null;
 
     if (shouldEnrol) {
-      const { data: existingEnrolment } = await admin
+      // Idempotency: rely on the partial unique index
+      // `enrolments_unique_active` to serialise the webhook vs. this
+      // redirect path. Insert first; on 23505 (unique_violation) re-SELECT.
+      const { data: enrolment, error: enrolErr } = await admin
         .from("enrolments")
+        .insert({
+          user_id: userId,
+          offering_id: po.offering_id,
+          payment_order_id: po.id,
+          status: "active",
+          source: "checkout",
+          application_id: po.application_id || null,
+          total_paid_inr: Number(po.total_inr),
+        })
         .select("id")
-        .eq("user_id", userId)
-        .eq("offering_id", po.offering_id)
-        .maybeSingle();
+        .single();
 
-      if (!existingEnrolment) {
-        const { data: enrolment, error: enrolErr } = await admin
+      if (enrolment) {
+        enrolmentId = enrolment.id;
+      } else if (enrolErr && (enrolErr as any).code === "23505") {
+        const { data: existingEnrolment } = await admin
           .from("enrolments")
-          .insert({
+          .select("id")
+          .eq("user_id", userId)
+          .eq("offering_id", po.offering_id)
+          .eq("status", "active")
+          .maybeSingle();
+        enrolmentId = existingEnrolment?.id ?? null;
+        if (!enrolmentId) {
+          console.error("[verify] enrolment unique violation but row not found on re-select");
+          return jsonRes({ error: "Failed to create enrolment" }, 500);
+        }
+      } else {
+        console.error("Enrolment error:", enrolErr);
+        return jsonRes({ error: "Failed to create enrolment" }, 500);
+      }
+
+      /* ── Enrol bump offerings (only for non-staged or final payment) ──
+         Same partial-unique-index trick as the main enrolment above. */
+      if (po.bump_offering_ids && po.bump_offering_ids.length > 0) {
+        for (const bumpOffId of po.bump_offering_ids) {
+          const { error: bumpErr } = await admin.from("enrolments").insert({
             user_id: userId,
-            offering_id: po.offering_id,
+            offering_id: bumpOffId,
             payment_order_id: po.id,
             status: "active",
             source: "checkout",
-            application_id: po.application_id || null,
-            total_paid_inr: Number(po.total_inr),
-          })
-          .select("id")
-          .single();
-
-        if (enrolErr) {
-          console.error("Enrolment error:", enrolErr);
-          return jsonRes({ error: "Failed to create enrolment" }, 500);
-        }
-        enrolmentId = enrolment.id;
-      } else {
-        enrolmentId = existingEnrolment.id;
-      }
-
-      /* ── Enrol bump offerings (only for non-staged or final payment) ── */
-      if (po.bump_offering_ids && po.bump_offering_ids.length > 0) {
-        for (const bumpOffId of po.bump_offering_ids) {
-          const { data: existingBump } = await admin
-            .from("enrolments")
-            .select("id")
-            .eq("user_id", userId)
-            .eq("offering_id", bumpOffId)
-            .maybeSingle();
-
-          if (!existingBump) {
-            await admin.from("enrolments").insert({
-              user_id: userId,
-              offering_id: bumpOffId,
-              payment_order_id: po.id,
-              status: "active",
-              source: "checkout",
-            });
+          });
+          if (bumpErr && (bumpErr as any).code !== "23505") {
+            console.error("[verify] bump enrolment insert failed:", bumpErr);
           }
         }
       }

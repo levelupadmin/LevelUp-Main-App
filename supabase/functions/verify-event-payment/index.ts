@@ -118,10 +118,12 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Payment does not match the supplied order" }, 400);
     }
 
-    const expectedAmount = Number(event.price_inr ?? 0);
-    if (typeof payment.amount !== "number" || payment.amount !== expectedAmount) {
+    // Razorpay returns `payment.amount` in paise; register-for-event charges
+    // `price_inr * 100`. Compare in paise to match.
+    const expectedPaise = Math.round(Number(event.price_inr ?? 0) * 100);
+    if (typeof payment.amount !== "number" || payment.amount !== expectedPaise) {
       console.error(
-        "[verify-event-payment] amount mismatch: expected", expectedAmount,
+        "[verify-event-payment] amount mismatch (paise): expected", expectedPaise,
         "got", payment.amount
       );
       return jsonRes({ error: "Payment amount does not match event price" }, 400);

@@ -41,6 +41,18 @@ async function findAuthUserByEmail(
   }
 }
 
+// Constant-time string comparison. Both inputs must be the same length or we
+// fail immediately (which is itself a timing signal for length, but HMAC hex
+// output is fixed-length so in practice we only compare 64-char strings).
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 async function verifySignature(
   body: string,
   signature: string,
@@ -58,7 +70,7 @@ async function verifySignature(
   const computed = Array.from(new Uint8Array(sig))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-  return computed === signature;
+  return timingSafeEqual(computed, signature);
 }
 
 /**
@@ -326,55 +338,58 @@ Deno.serve(async (req) => {
     let enrolmentId: string | null = null;
 
     if (shouldEnrol) {
-      const { data: existing } = await admin
+      // Idempotency: the `enrolments_unique_active` partial unique index
+      // guarantees at most one active row per (user_id, offering_id). A
+      // simultaneous webhook + client-verify will race, and exactly one side
+      // will win. We try INSERT first; on a 23505 (unique_violation) we
+      // re-SELECT the winner instead of returning 500 (which makes Razorpay
+      // retry the webhook unnecessarily).
+      const { data: enrolment, error: enrolErr } = await admin
         .from("enrolments")
+        .insert({
+          user_id: userId,
+          offering_id: po.offering_id,
+          payment_order_id: po.id,
+          status: "active",
+          source: "checkout",
+          application_id: po.application_id || null,
+        })
         .select("id")
-        .eq("user_id", userId)
-        .eq("offering_id", po.offering_id)
-        .eq("status", "active")
-        .maybeSingle();
+        .single();
 
-      enrolmentId = existing?.id ?? null;
-
-      if (!existing) {
-        const { data: enrolment, error: enrolErr } = await admin
+      if (enrolment) {
+        enrolmentId = enrolment.id;
+      } else if (enrolErr && (enrolErr as any).code === "23505") {
+        const { data: existing } = await admin
           .from("enrolments")
-          .insert({
+          .select("id")
+          .eq("user_id", userId)
+          .eq("offering_id", po.offering_id)
+          .eq("status", "active")
+          .maybeSingle();
+        enrolmentId = existing?.id ?? null;
+        if (!enrolmentId) {
+          console.error("[razorpay-webhook] enrolment unique violation but row not found on re-select");
+          return jsonRes({ error: "Enrolment lookup failed after conflict" }, 500);
+        }
+      } else {
+        console.error("[razorpay-webhook] enrolment insert failed:", enrolErr);
+        return jsonRes({ error: "Enrolment creation failed" }, 500);
+      }
+
+      // Bump offerings (idempotent). Rely on the partial unique index to
+      // absorb races; swallow 23505 since the row already exists.
+      if (po.bump_offering_ids && Array.isArray(po.bump_offering_ids)) {
+        for (const bumpOffId of po.bump_offering_ids) {
+          const { error: bumpErr } = await admin.from("enrolments").insert({
             user_id: userId,
-            offering_id: po.offering_id,
+            offering_id: bumpOffId,
             payment_order_id: po.id,
             status: "active",
             source: "checkout",
-            application_id: po.application_id || null,
-          })
-          .select("id")
-          .single();
-
-        if (enrolErr) {
-          console.error("[razorpay-webhook] enrolment insert failed:", enrolErr);
-          return jsonRes({ error: "Enrolment creation failed" }, 500);
-        }
-        enrolmentId = enrolment.id;
-      }
-
-      // Bump offerings (idempotent)
-      if (po.bump_offering_ids && Array.isArray(po.bump_offering_ids)) {
-        for (const bumpOffId of po.bump_offering_ids) {
-          const { data: existingBump } = await admin
-            .from("enrolments")
-            .select("id")
-            .eq("user_id", userId)
-            .eq("offering_id", bumpOffId)
-            .eq("status", "active")
-            .maybeSingle();
-          if (!existingBump) {
-            await admin.from("enrolments").insert({
-              user_id: userId,
-              offering_id: bumpOffId,
-              payment_order_id: po.id,
-              status: "active",
-              source: "checkout",
-            });
+          });
+          if (bumpErr && (bumpErr as any).code !== "23505") {
+            console.error("[razorpay-webhook] bump enrolment insert failed:", bumpErr);
           }
         }
       }

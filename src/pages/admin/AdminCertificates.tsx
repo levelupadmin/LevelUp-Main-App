@@ -143,7 +143,7 @@ const AdminCertificates = () => {
       rows.sort((a, b) => a.course_title.localeCompare(b.course_title));
       setTemplates(rows);
     } catch (err: any) {
-      console.error("Failed to load templates", err);
+      if (import.meta.env.DEV) console.error("Failed to load templates", err);
       toast.error("Failed to load certificate templates");
     } finally {
       setLoading(false);
@@ -196,7 +196,7 @@ const AdminCertificates = () => {
         }))
       );
     } catch (err: any) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
       toast.error("Failed to load certificate details");
     } finally {
       setDetailLoading(false);

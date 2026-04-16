@@ -29,6 +29,23 @@ function isSafeRedirectUrl(url: string | null | undefined): boolean {
   }
 }
 
+/**
+ * Only embed the Calendly iframe if `calendly_url` is actually on Calendly.
+ * Admin-authored URLs are trusted in the UI, but prefilling the user's
+ * name+email into a third-party iframe makes a misconfigured or compromised
+ * admin account into a trivial phishing vector. Pin to calendly.com only.
+ */
+function isCalendlyUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    return parsed.hostname === "calendly.com" || parsed.hostname.endsWith(".calendly.com");
+  } catch {
+    return false;
+  }
+}
+
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
 /* ────────────────────────────────────────────────── */
@@ -565,15 +582,18 @@ export default function ThankYou() {
           </p>
 
           {/* Calendly embed for interview booking */}
-          {order.offerings?.thankyou_show_calendly && order.offerings?.calendly_url && (
+          {order.offerings?.thankyou_show_calendly &&
+            isCalendlyUrl(order.offerings?.calendly_url) && (
             <div className="w-full max-w-2xl mx-auto">
               <h3 className="text-lg font-semibold text-foreground mb-3">Book Your Interview</h3>
               <div className="rounded-xl border border-border overflow-hidden bg-white">
                 <iframe
-                  src={`${order.offerings.calendly_url}${order.offerings.calendly_url.includes("?") ? "&" : "?"}name=${encodeURIComponent(order.guest_name || "")}&email=${encodeURIComponent(order.guest_email || "")}`}
+                  src={`${order.offerings.calendly_url}${order.offerings.calendly_url!.includes("?") ? "&" : "?"}name=${encodeURIComponent(order.guest_name || "")}&email=${encodeURIComponent(order.guest_email || "")}`}
                   className="w-full"
                   style={{ minHeight: 700, border: 0 }}
                   title="Schedule Interview"
+                  sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                  referrerPolicy="no-referrer"
                 />
               </div>
             </div>

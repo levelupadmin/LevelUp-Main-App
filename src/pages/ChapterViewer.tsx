@@ -136,9 +136,12 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
     setResult({ score, total, passed });
     setSubmitted(true);
 
-    // Save attempt
+    // Save attempt. If the insert fails we want to tell the user — otherwise
+    // they think their score is recorded when it may not be. (This client-side
+    // scoring path is a security smell in its own right; see the RLS-gated
+    // `submit_quiz` RPC migration for the real fix.)
     if (userId) {
-      await (supabase as any).from("quiz_attempts").insert({
+      const { error: attemptErr } = await (supabase as any).from("quiz_attempts").insert({
         quiz_id: quiz.id,
         user_id: userId,
         score,
@@ -146,6 +149,11 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
         passed,
         answers,
       });
+      if (attemptErr) {
+        if (import.meta.env.DEV) console.error("[quiz] attempt insert failed:", attemptErr);
+        toast.error("We couldn't save your attempt. Please try again.");
+        return;
+      }
     }
 
     if (passed) {
@@ -489,6 +497,70 @@ const ChapterViewer = () => {
     loadChapter();
   }, [loadChapter]);
 
+  // Lightweight refresh for Q&A only — used after posting a question so we don't
+  // unmount the whole page (which would flash the loader and reset the Tabs back
+  // to Overview — especially disruptive on mobile).
+  const refreshQna = useCallback(async () => {
+    if (!chapterId) return;
+    const { data: qnaData } = await supabase
+      .from("chapter_qna")
+      .select("id, question_text, user_id, is_resolved, created_at")
+      .eq("chapter_id", chapterId)
+      .order("created_at", { ascending: false });
+    const qnaItems = (qnaData || []) as any[];
+    const qnaIds = qnaItems.map((q) => q.id);
+    let allReplies: any[] = [];
+    if (qnaIds.length > 0) {
+      const { data: repliesData } = await supabase
+        .from("chapter_qna_replies")
+        .select("id, reply_text, user_id, is_instructor_reply, created_at, qna_id")
+        .in("qna_id", qnaIds)
+        .order("created_at");
+      allReplies = repliesData || [];
+    }
+    const repliesByQna: Record<string, QnaReply[]> = {};
+    allReplies.forEach((r: any) => {
+      if (!repliesByQna[r.qna_id]) repliesByQna[r.qna_id] = [];
+      repliesByQna[r.qna_id].push(r);
+    });
+    const userIds = new Set<string>();
+    qnaItems.forEach((q: any) => userIds.add(q.user_id));
+    allReplies.forEach((r: any) => userIds.add(r.user_id));
+    const userNameMap: Record<string, string> = {};
+    if (userIds.size > 0) {
+      const { data: users } = await supabase
+        .from("users").select("id, full_name").in("id", [...userIds]);
+      (users || []).forEach((u) => { userNameMap[u.id] = u.full_name || "Anonymous"; });
+    }
+    setQna(qnaItems.map((q) => ({
+      ...q,
+      user_name: userNameMap[q.user_id] || "Anonymous",
+      replies: (repliesByQna[q.id] || []).map((r: any) => ({
+        ...r,
+        user_name: userNameMap[r.user_id] || "Anonymous",
+      })),
+    })));
+  }, [chapterId]);
+
+  // Lightweight refresh for comments only — same reason as refreshQna.
+  const refreshComments = useCallback(async () => {
+    if (!chapterId) return;
+    const { data: commentsData } = await supabase
+      .from("chapter_comments")
+      .select("id, comment_text, user_id, created_at")
+      .eq("chapter_id", chapterId)
+      .order("created_at", { ascending: false });
+    const items = (commentsData || []) as any[];
+    const userIds = [...new Set(items.map((c) => c.user_id))];
+    const userNameMap: Record<string, string> = {};
+    if (userIds.length > 0) {
+      const { data: users } = await supabase
+        .from("users").select("id, full_name").in("id", userIds);
+      (users || []).forEach((u) => { userNameMap[u.id] = u.full_name || "Anonymous"; });
+    }
+    setComments(items.map((c) => ({ ...c, user_name: userNameMap[c.user_id] || "Anonymous" })));
+  }, [chapterId]);
+
   // Listen for YouTube / Vimeo / generic iframe progress messages
   useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -619,7 +691,7 @@ const ChapterViewer = () => {
     else {
       toast.success("Question sent — your instructor will see it.");
       setQuestionText("");
-      loadChapter();
+      refreshQna();
     }
     setSubmitting(false);
   };
@@ -636,7 +708,7 @@ const ChapterViewer = () => {
     else {
       toast.success("Comment added!");
       setCommentText("");
-      loadChapter();
+      refreshComments();
     }
     setSubmitting(false);
   };

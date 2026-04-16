@@ -99,7 +99,7 @@ export function useReviews(courseId: string) {
       else if (sortBy === "lowest") query = query.order("rating", { ascending: true });
 
       const { data, error } = await query;
-      if (error) { console.error(error); return; }
+      if (error) { if (import.meta.env.DEV) console.error(error); return; }
 
       const typed = (data || []) as unknown as Review[];
       setHasMore(typed.length === PAGE_SIZE);

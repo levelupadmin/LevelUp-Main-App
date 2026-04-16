@@ -192,7 +192,7 @@ const AdminEmailCampaigns = () => {
       setDialogOpen(false);
       load();
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
       toast({ title: "Error sending campaign", variant: "destructive" });
     } finally {
       setSending(false);
