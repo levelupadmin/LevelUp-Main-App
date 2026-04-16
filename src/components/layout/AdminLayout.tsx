@@ -290,11 +290,14 @@ const AdminLayout = ({ children, title }: Props) => {
         <SidebarContent />
       </aside>
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile sidebar overlay — respects iOS safe-area */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex flex-col">
+          <div
+            className="absolute inset-0 bg-black/60 animate-fade-in"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <aside className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex flex-col safe-top safe-bottom animate-fade-in">
             <div className="flex items-center justify-between p-6">
               <div className="flex items-center gap-3">
                 <LevelUpWordmark />
@@ -369,11 +372,12 @@ const AdminLayout = ({ children, title }: Props) => {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
-        <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg">
+        {/* Top bar — respects iOS safe-area so the status bar doesn't overlap */}
+        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg safe-top h-16">
           <div className="flex items-center gap-3">
             <button
-              className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"
+              aria-label="Open menu"
+              className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center focus-ring press-scale rounded-md"
               onClick={() => setSidebarOpen(true)}
             >
               <Menu className="h-5 w-5" />
@@ -425,7 +429,7 @@ const AdminLayout = ({ children, title }: Props) => {
             <div className="relative">
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2 min-h-[44px]"
+                className="flex items-center gap-2 min-h-[44px] focus-ring press-scale rounded-md px-1"
               >
                 <InitialsAvatar name={profile?.full_name ?? "A"} size={32} />
                 <ChevronDown className="h-3 w-3 text-muted-foreground hidden sm:block" />

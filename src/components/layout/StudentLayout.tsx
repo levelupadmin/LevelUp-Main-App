@@ -112,11 +112,14 @@ const StudentLayout = ({ children, title }: Props) => {
         </div>
       </aside>
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile sidebar overlay — respects iOS safe-area */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex flex-col">
+          <div
+            className="absolute inset-0 bg-black/60 animate-fade-in"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <aside className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex flex-col safe-top safe-bottom animate-fade-in">
             <div className="flex items-center justify-between p-6">
               <LevelUpWordmark />
               <button aria-label="Close menu" onClick={() => setSidebarOpen(false)}>
@@ -176,10 +179,10 @@ const StudentLayout = ({ children, title }: Props) => {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
-        <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg">
+        {/* Top bar — respects iOS safe-area so the status bar doesn't overlap */}
+        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg safe-top h-16">
           <div className="flex items-center gap-3">
-            <button aria-label="Open menu" className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center" onClick={() => setSidebarOpen(true)}>
+            <button aria-label="Open menu" className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center focus-ring press-scale rounded-md" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
             </button>
             <h2 className="text-lg font-semibold">{title}</h2>
@@ -190,7 +193,7 @@ const StudentLayout = ({ children, title }: Props) => {
               <button
                 aria-label="Notifications"
                 onClick={() => setNotifOpen(!notifOpen)}
-                className="relative text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"
+                className="relative text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center focus-ring press-scale rounded-md"
               >
                 <Bell className="h-5 w-5" />
                 {notifLoading ? (
@@ -215,7 +218,7 @@ const StudentLayout = ({ children, title }: Props) => {
             <div className="relative">
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2 min-h-[44px]"
+                className="flex items-center gap-2 min-h-[44px] focus-ring press-scale rounded-md px-1"
               >
                 <InitialsAvatar name={profile?.full_name ?? "U"} photoUrl={profile?.avatar_url} size={32} />
                 <ChevronDown className="h-3 w-3 text-muted-foreground hidden sm:block" />
@@ -256,8 +259,11 @@ const StudentLayout = ({ children, title }: Props) => {
         </main>
       </div>
 
-      {/* Mobile bottom tab bar */}
-      <nav aria-label="Mobile navigation" className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas border-t border-border flex items-stretch">
+      {/* Mobile bottom tab bar — respects iOS safe-area inset */}
+      <nav
+        aria-label="Mobile navigation"
+        className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas/95 backdrop-blur-lg border-t border-border flex items-stretch safe-bottom"
+      >
         {MOBILE_NAV_ITEMS.map((item) => {
           const active = location.pathname === item.path || location.pathname.startsWith(item.path + "/");
           return (
@@ -265,11 +271,11 @@ const StudentLayout = ({ children, title }: Props) => {
               key={item.path}
               to={item.path}
               className={cn(
-                "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2",
-                active ? "text-cream" : "text-muted-foreground"
+                "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors focus-ring press-scale-sm",
+                active ? "text-cream" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <item.icon className="h-5 w-5" />
+              <item.icon className={cn("h-5 w-5 transition-transform", active && "scale-110")} />
               <span>{item.label}</span>
             </Link>
           );
