@@ -91,6 +91,27 @@ export default {
         xl: "20px",
         "2xl": "28px",
       },
+      spacing: {
+        // Semantic spacing — use for page padding / section rhythm / tab-bar offset
+        "page-y": "2rem",
+        "page-y-sm": "1.5rem",
+        "section": "2.5rem",
+        "section-sm": "1.75rem",
+        "stack": "1rem",
+        "stack-sm": "0.75rem",
+        "tab-bar": "4.5rem", // 56px mobile tab bar + 16px breathing room
+        // iOS safe-area helpers available as classes below (safe-top, safe-bottom)
+      },
+      transitionTimingFunction: {
+        "out-expo": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        "in-out-smooth": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "spring": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+      },
+      transitionDuration: {
+        "fast": "160ms",
+        "base": "240ms",
+        "slow": "400ms",
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },

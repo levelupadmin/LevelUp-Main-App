@@ -194,7 +194,7 @@ const StudentLayout = ({ children, title }: Props) => {
               >
                 <Bell className="h-5 w-5" />
                 {notifLoading ? (
-                  <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-gray-400" />
+                  <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-muted-foreground/50" />
                 ) : unreadCount > 0 ? (
                   <span className="absolute top-1.5 right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold leading-none text-white bg-red-500 rounded-full">
                     {unreadCount > 9 ? "9+" : unreadCount}

@@ -58,6 +58,22 @@
     --sidebar-accent-foreground: 0 0% 100%;
     --sidebar-border: 240 4% 16%;
     --sidebar-ring: 0 0% 100%;
+
+    /* ── Design system semantic spacing ── */
+    --space-page-y: 2rem;       /* vertical padding around page content   */
+    --space-page-y-sm: 1.5rem;  /* mobile variant                         */
+    --space-section: 2.5rem;    /* gap between major page sections        */
+    --space-section-sm: 1.75rem;
+    --space-stack: 1rem;        /* gap between stacked cards/items        */
+    --space-stack-sm: 0.75rem;
+
+    /* ── Motion system ── */
+    --motion-fast: 160ms;
+    --motion-base: 240ms;
+    --motion-slow: 400ms;
+    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 }
 
@@ -66,12 +82,83 @@
     @apply border-border;
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-background text-foreground font-body antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-display tracking-tight;
+  }
+
+  /* Respect prefers-reduced-motion across all custom animations */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* ── Semantic typography scale ──
+     Use these instead of ad-hoc text-[28px] values. They scale automatically
+     at the md breakpoint for comfortable reading on larger screens. */
+  .heading-display {
+    @apply font-display font-semibold tracking-tight text-[32px] leading-[1.1] md:text-[44px];
+  }
+  .heading-1 {
+    @apply font-display font-semibold tracking-tight text-[26px] leading-[1.15] md:text-[32px];
+  }
+  .heading-2 {
+    @apply font-display font-semibold tracking-tight text-[20px] leading-[1.2] md:text-[24px];
+  }
+  .heading-3 {
+    @apply font-display font-semibold tracking-tight text-[17px] leading-[1.3] md:text-[18px];
+  }
+  .heading-eyebrow {
+    @apply font-mono uppercase tracking-[0.12em] text-[11px] text-muted-foreground;
+  }
+  .body-lg {
+    @apply text-[16px] leading-[1.55] text-foreground;
+  }
+  .body {
+    @apply text-[14px] leading-[1.55] text-foreground;
+  }
+  .body-muted {
+    @apply text-[14px] leading-[1.55] text-muted-foreground;
+  }
+  .caption {
+    @apply text-[12px] leading-[1.5] text-muted-foreground;
+  }
+
+  /* ── Surface primitives ──
+     Canonical card surface used across the app. Always combine with
+     .card-hover or .card-press where appropriate. */
+  .surface-card {
+    @apply bg-surface border border-border rounded-xl;
+  }
+  .surface-card-muted {
+    @apply bg-surface-2 border border-border rounded-xl;
+  }
+
+  /* ── Section rhythm ── */
+  .section-stack > * + * {
+    margin-top: var(--space-section-sm);
+  }
+  @screen md {
+    .section-stack > * + * {
+      margin-top: var(--space-section);
+    }
   }
 }
 
@@ -107,17 +194,37 @@
     mix-blend-mode: overlay;
   }
 
+  /* ── Card interaction: hover lift on desktop ── */
   .card-hover {
-    transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                border-color 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                box-shadow 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: transform var(--motion-base) var(--ease-out),
+                border-color var(--motion-base) var(--ease-out),
+                box-shadow var(--motion-base) var(--ease-out);
     will-change: transform;
     transform: translateZ(0);
   }
-  .card-hover:hover {
-    transform: translateY(-4px) translateZ(0);
-    border-color: hsl(var(--border-hover));
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  @media (hover: hover) {
+    .card-hover:hover {
+      transform: translateY(-4px) translateZ(0);
+      border-color: hsl(var(--border-hover));
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+  }
+
+  /* ── Tactile press on touch/tap — gives mobile a satisfying feel ── */
+  .press-scale {
+    transition: transform var(--motion-fast) var(--ease-out);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .press-scale:active {
+    transform: scale(0.98);
+  }
+  .press-scale-sm:active {
+    transform: scale(0.96);
+  }
+
+  /* ── Focus ring — consistent, accessible ── */
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-cream/60 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas;
   }
 
   .hide-scrollbar {
@@ -128,15 +235,41 @@
     display: none;
   }
 
+  /* ── Mobile safe-area insets (iOS notch / home indicator) ── */
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-bottom-mb {
+    margin-bottom: env(safe-area-inset-bottom);
+  }
+
   /* Heart bounce on like */
   .heart-bounce {
-    animation: heart-pop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: heart-pop 0.35s var(--ease-out);
   }
 
   /* Smooth page content fade-in */
   .page-enter {
     animation: fade-in-up 0.3s ease-out;
   }
+
+  /* Staggered list entry — apply data-stagger-index on children */
+  .stagger-in > * {
+    opacity: 0;
+    animation: fade-in-up 0.4s var(--ease-out) forwards;
+  }
+  .stagger-in > *:nth-child(1)  { animation-delay: 40ms;  }
+  .stagger-in > *:nth-child(2)  { animation-delay: 80ms;  }
+  .stagger-in > *:nth-child(3)  { animation-delay: 120ms; }
+  .stagger-in > *:nth-child(4)  { animation-delay: 160ms; }
+  .stagger-in > *:nth-child(5)  { animation-delay: 200ms; }
+  .stagger-in > *:nth-child(6)  { animation-delay: 240ms; }
+  .stagger-in > *:nth-child(7)  { animation-delay: 280ms; }
+  .stagger-in > *:nth-child(8)  { animation-delay: 320ms; }
+  .stagger-in > *:nth-child(n+9) { animation-delay: 360ms; }
 
   /* Skeleton shimmer for loading states */
   .skeleton-shimmer {
@@ -152,7 +285,7 @@
 
   /* Milestone toast banner */
   .milestone-banner {
-    animation: milestone-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: milestone-in 0.5s var(--ease-out);
   }
   .milestone-banner.leaving {
     animation: milestone-out 0.4s ease-in forwards;
@@ -167,9 +300,14 @@
   /* Dark mode image polish — slight brightness reduction for thumbnails */
   .dark-img {
     filter: brightness(0.92) contrast(1.02);
-    transition: filter 240ms ease;
+    transition: filter var(--motion-base) ease;
   }
   .dark-img:hover {
     filter: brightness(1) contrast(1);
   }
+
+  /* ── Line clamp helpers ── */
+  .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+  .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 }
