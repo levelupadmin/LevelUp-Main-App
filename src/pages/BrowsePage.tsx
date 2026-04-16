@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import StudentLayout from "@/components/layout/StudentLayout";
 import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { Input } from "@/components/ui/input";
@@ -43,11 +44,30 @@ const formatPrice = (amount: number) =>
   new Intl.NumberFormat("en-IN").format(amount);
 
 const BrowsePage = () => {
+  const { user } = useAuth();
   const [courses, setCourses] = useState<CourseWithOffering[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
+  // offering_ids the current user is actively enrolled in — lets us show
+  // "Continue" instead of "Enroll" on cards they already own.
+  const [enrolledOfferingIds, setEnrolledOfferingIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!user) { setEnrolledOfferingIds(new Set()); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("enrolments")
+        .select("offering_id")
+        .eq("user_id", user.id)
+        .eq("status", "active");
+      if (cancelled) return;
+      setEnrolledOfferingIds(new Set((data || []).map((e) => e.offering_id).filter(Boolean)));
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
   const { wishlistedIds, toggle: toggleWishlist } = useWishlist();
 
   usePageTitle("Browse Programs");
@@ -351,6 +371,13 @@ const BrowsePage = () => {
                           </div>
                           {c.status === "upcoming" ? (
                             <span className="text-sm font-medium text-muted-foreground">Notify me</span>
+                          ) : c.offering_id && enrolledOfferingIds.has(c.offering_id) ? (
+                            <Link
+                              to={`/courses/${c.id}`}
+                              className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all min-h-[44px] sm:min-h-0 items-center"
+                            >
+                              Continue <ArrowRight className="h-3 w-3" />
+                            </Link>
                           ) : c.offering_id ? (
                             <Link
                               to={`/checkout/${c.offering_id}`}

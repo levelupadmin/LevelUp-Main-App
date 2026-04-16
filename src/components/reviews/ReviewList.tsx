@@ -43,9 +43,10 @@ const ReviewList = ({ courseId, isEnrolled = false }: ReviewListProps) => {
 
   return (
     <div className="space-y-6">
-      {/* Rating summary */}
-      <div className="bg-card border border-border rounded-[16px] p-5">
-        <h2 className="text-lg font-semibold text-foreground mb-4">Ratings & Reviews</h2>
+      {/* Rating summary.
+          Note: the parent section (CourseDetail) renders a "Ratings & Reviews"
+          heading with the star icon, so we intentionally don't repeat it here. */}
+      <div>
         <RatingDistribution stats={stats} />
       </div>
 

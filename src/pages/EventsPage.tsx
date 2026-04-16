@@ -303,7 +303,16 @@ const EventsPage = () => {
                   className={cn("bg-surface border border-border rounded-xl overflow-hidden card-hover flex flex-col", isPast && "opacity-60")}
                 >
                   <div className="relative aspect-[4/3]">
-                    {ev.image_url && <img src={ev.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />}
+                    {ev.image_url ? (
+                      <img src={ev.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      // Fallback so events without a thumbnail don't render
+                      // as a big black empty block. Subtle branded gradient +
+                      // decorative icon keeps the card visually intentional.
+                      <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--surface-2))] via-[hsl(var(--surface))] to-[hsl(var(--accent-amber)/0.15)] flex items-center justify-center">
+                        <Calendar className="h-12 w-12 text-muted-foreground/30" />
+                      </div>
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                     {isSoldOut && (
                       <div className="absolute top-3 right-3 bg-destructive/90 text-destructive-foreground text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">

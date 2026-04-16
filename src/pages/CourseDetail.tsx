@@ -138,14 +138,27 @@ const CourseDetail = () => {
       const isAdmin = profile?.role === "admin";
       if (accessErr) {
         toast.error("Couldn't verify your access, retrying...");
-        // Fallback: check enrolments table directly
-        const { data: enrolmentCheck } = await supabase
-          .from("enrolments")
-          .select("id")
-          .eq("user_id", user.id)
-          .eq("status", "active")
-          .limit(1);
-        setHasAccess(!!enrolmentCheck?.length || isAdmin);
+        // Fallback: check enrolments for offerings that actually include THIS
+        // course. A global "does this user have any active enrolment" check
+        // would grant course B to anyone who paid for course A on transient
+        // RPC failures — the old fallback was far too permissive.
+        const { data: offeringLinks } = await supabase
+          .from("offering_courses")
+          .select("offering_id")
+          .eq("course_id", courseId!);
+        const offeringIds = (offeringLinks || []).map((o) => o.offering_id).filter(Boolean);
+        let fallbackAccess = false;
+        if (offeringIds.length > 0) {
+          const { data: enrolmentCheck } = await supabase
+            .from("enrolments")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("status", "active")
+            .in("offering_id", offeringIds)
+            .limit(1);
+          fallbackAccess = !!enrolmentCheck?.length;
+        }
+        setHasAccess(fallbackAccess || isAdmin);
       } else {
         setHasAccess(!!accessData || isAdmin);
       }
@@ -208,7 +221,16 @@ const CourseDetail = () => {
   const handleEnrollOrContinue = () => {
     if (hasAccess) {
       const next = getNextIncompleteChapter();
-      if (next) navigate(`/chapters/${next.id}`);
+      if (next) {
+        navigate(`/chapters/${next.id}`);
+        return;
+      }
+      // No incomplete chapter: either fully completed (review from start) or
+      // course is still empty. Fall through to the first chapter if one
+      // exists; otherwise do nothing (the button should be disabled in that
+      // case by the render guard above).
+      const first = chapters[0];
+      if (first) navigate(`/chapters/${first.id}`);
     } else {
       navigate(`/browse`);
     }
@@ -289,7 +311,13 @@ const CourseDetail = () => {
               {course.duration_minutes && (
                 <span className="flex items-center gap-1">
                   <Clock className="h-3.5 w-3.5" />
-                  {Math.round(course.duration_minutes / 60)}h {course.duration_minutes % 60}m
+                  {(() => {
+                    const h = Math.floor(course.duration_minutes / 60);
+                    const m = course.duration_minutes % 60;
+                    if (h && m) return `${h}h ${m}m`;
+                    if (h) return `${h}h`;
+                    return `${m}m`;
+                  })()}
                 </span>
               )}
               <span className="flex items-center gap-1">
@@ -298,9 +326,22 @@ const CourseDetail = () => {
               </span>
             </div>
             <div className="flex items-center gap-3 mt-2">
-              <Button size="lg" onClick={handleEnrollOrContinue}>
-                {hasAccess ? "Continue Learning →" : "Enroll Now"}
-              </Button>
+              {hasAccess && totalChapters === 0 ? (
+                // Enrolled but the course has no chapters yet. Don't show a
+                // "Continue Learning" button that does nothing — be honest.
+                <Button size="lg" disabled>
+                  Content coming soon
+                </Button>
+              ) : hasAccess && completedCount >= totalChapters && totalChapters > 0 ? (
+                // Fully completed: give the user something meaningful to do.
+                <Button size="lg" onClick={handleEnrollOrContinue}>
+                  Review Course →
+                </Button>
+              ) : (
+                <Button size="lg" onClick={handleEnrollOrContinue}>
+                  {hasAccess ? "Continue Learning →" : "Enroll Now"}
+                </Button>
+              )}
               {hasAccess && totalChapters > 0 && (
                 <span className="text-sm text-muted-foreground">
                   {completedCount}/{totalChapters} completed

@@ -710,13 +710,37 @@ const UpcomingSessions = () => {
 
 // ── Section 6: Browse Programs ──
 const BrowsePrograms = () => {
+  const { user } = useAuth();
   const [courses, setCourses] = useState<any[]>([]);
+  // Set of offering_ids the current user has an active enrolment in — used
+  // to swap the card CTA from "Enroll" to "Continue" and route to the
+  // course page instead of checkout. Without this, signed-in students saw
+  // "Enroll" on courses they already own, which is jarring.
+  const [enrolledOfferingIds, setEnrolledOfferingIds] = useState<Set<string>>(new Set());
 
   const offeringIds = useMemo(
     () => courses.map((c: any) => c.offering_id).filter(Boolean) as string[],
     [courses]
   );
   const { counts: enrolmentCounts, popularIds } = useEnrolmentCounts(offeringIds);
+
+  useEffect(() => {
+    if (!user) {
+      setEnrolledOfferingIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("enrolments")
+        .select("offering_id")
+        .eq("user_id", user.id)
+        .eq("status", "active");
+      if (cancelled) return;
+      setEnrolledOfferingIds(new Set((data || []).map((e) => e.offering_id).filter(Boolean)));
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
 
   useEffect(() => {
     const load = async () => {
@@ -801,10 +825,14 @@ const BrowsePrograms = () => {
         </Link>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {courses.map((c) => (
+        {courses.map((c) => {
+          const isEnrolled = !!c.offering_id && enrolledOfferingIds.has(c.offering_id);
+          return (
           <Link
             key={c.id}
-            to={c.offering_id ? `/checkout/${c.offering_id}` : `/courses/${c.id}`}
+            to={isEnrolled
+              ? `/courses/${c.id}`
+              : c.offering_id ? `/checkout/${c.offering_id}` : `/courses/${c.id}`}
             className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
           >
             <div className="aspect-video bg-surface-2 relative">
@@ -847,12 +875,13 @@ const BrowsePrograms = () => {
                   <span className="text-sm text-muted-foreground">Price TBA</span>
                 )}
                 <span className="text-sm text-cream flex items-center gap-1">
-                  Enroll <ArrowRight className="h-3 w-3" />
+                  {isEnrolled ? "Continue" : "Enroll"} <ArrowRight className="h-3 w-3" />
                 </span>
               </div>
             </div>
           </Link>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
