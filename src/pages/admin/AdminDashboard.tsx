@@ -93,11 +93,6 @@ function getDateRange(preset: DatePreset, customFrom: Date | undefined, customTo
   }
 }
 
-function daysBetween(from: string | null, to: string | null): number {
-  if (!from || !to) return 30;
-  return Math.max(Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / 86400000), 1);
-}
-
 const formatINR = (n: number) => "\u20B9" + n.toLocaleString("en-IN");
 
 /* ───────────── Component ───────────── */
@@ -129,161 +124,47 @@ const AdminDashboard = () => {
     setLoading(true);
     const { from, to } = dateRange;
 
-    /* ── Offerings list (for filter dropdowns) ── */
-    const { data: allOfferings } = await supabase.from("offerings").select("id, title, product_tier").eq("status", "active");
-    setOfferings((allOfferings || []).map((o: any) => ({ id: o.id, title: o.title, product_tier: o.product_tier })));
-
-    /* ── Summary stats ── */
-    let studentsQuery = supabase.from("users").select("id", { count: "exact", head: true }).eq("role", "student");
-    if (from) studentsQuery = studentsQuery.gte("created_at", from);
-    if (to) studentsQuery = studentsQuery.lt("created_at", to);
-
-    let enrolQuery = supabase.from("enrolments").select("id", { count: "exact", head: true }).eq("status", "active");
-    if (from) enrolQuery = enrolQuery.gte("created_at", from);
-    if (to) enrolQuery = enrolQuery.lt("created_at", to);
-
-    const offCountQuery = supabase.from("offerings").select("id", { count: "exact", head: true }).eq("status", "active");
-
-    let payQuery = supabase.from("payment_orders").select("total_inr").eq("status", "captured");
-    if (from) payQuery = payQuery.gte("created_at", from);
-    if (to) payQuery = payQuery.lt("created_at", to);
-
-    const [usersRes, enrolRes, offRes, payRes] = await Promise.all([studentsQuery, enrolQuery, offCountQuery, payQuery]);
-
-    const revenue = (payRes.data || []).reduce((sum, r) => sum + Number(r.total_inr || 0), 0);
-    setStats({
-      total_students: usersRes.count || 0,
-      active_enrolments: enrolRes.count || 0,
-      active_offerings: offRes.count || 0,
-      total_revenue: revenue,
+    /* ── Single-shot dashboard fetch ──
+       The previous implementation fired ~150 sequential queries per
+       page load (one COUNT per day for the bar chart, four queries
+       per published course for completion rates, three per offering
+       for performance, etc.). The admin_dashboard_metrics RPC does
+       all of that in ONE round-trip with proper aggregation, joins,
+       and the indexes added in 20260417100000_foundation_hardening.
+       Typical load drops from ~30-90s to <500ms.                    */
+    const { data, error } = await supabase.rpc("admin_dashboard_metrics", {
+      p_from: from,
+      p_to: to,
     });
 
-    /* ── Daily signups ── */
-    const days = daysBetween(from, to);
-    const signups: DailySignup[] = [];
-    const signupStart = from ? new Date(from) : new Date(Date.now() - 30 * 86400000);
-    for (let i = 0; i < days && i < 90; i++) {
-      const d = new Date(signupStart.getTime() + i * 86400000);
-      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
-      const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).toISOString();
-      const { count } = await supabase
-        .from("users")
-        .select("id", { count: "exact", head: true })
-        .gte("created_at", dayStart)
-        .lt("created_at", dayEnd);
-      signups.push({ date: d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }), count: count ?? 0 });
+    if (error) {
+      console.error("admin_dashboard_metrics rpc failed:", error);
+      setLoading(false);
+      return;
     }
-    setDailySignups(signups);
 
-    /* ── Course completion data ── */
-    const { data: courses } = await supabase.from("courses").select("id, title").eq("status", "published");
-    const completions: CourseCompletion[] = [];
-    if (courses) {
-      for (const course of courses.slice(0, 20)) {
-        const { count: chapterCount } = await supabase
-          .from("chapters")
-          .select("id, sections!inner(course_id)", { count: "exact", head: true })
-          .eq("sections.course_id", course.id);
+    const payload = (data ?? {}) as {
+      stats?: Stats;
+      daily_signups?: DailySignup[];
+      course_completions?: CourseCompletion[];
+      offering_metrics?: OfferingMetric[];
+      recent_enrolments?: RecentEnrolment[];
+      offerings?: OfferingOption[];
+    };
 
-        const { data: enrolments } = await supabase
-          .from("enrolments")
-          .select("user_id, offering_id")
-          .eq("status", "active");
-
-        const { data: offeringCourses } = await supabase
-          .from("offering_courses")
-          .select("offering_id")
-          .eq("course_id", course.id);
-
-        const relevantOfferingIds = new Set((offeringCourses || []).map((oc) => oc.offering_id));
-        const enrolledUserIds = [...new Set(
-          (enrolments || []).filter((e) => relevantOfferingIds.has(e.offering_id)).map((e) => e.user_id),
-        )];
-
-        if (enrolledUserIds.length === 0 || !chapterCount) continue;
-
-        const { data: progress } = await supabase
-          .from("chapter_progress")
-          .select("user_id, completed_at")
-          .eq("course_id", course.id)
-          .not("completed_at", "is", null)
-          .in("user_id", enrolledUserIds.slice(0, 100));
-
-        const completedPerUser: Record<string, number> = {};
-        (progress || []).forEach((p) => {
-          completedPerUser[p.user_id] = (completedPerUser[p.user_id] || 0) + 1;
-        });
-
-        const avgCompleted = Object.values(completedPerUser).reduce((s, v) => s + v, 0) / enrolledUserIds.length;
-        const rate = chapterCount > 0 ? Math.round((avgCompleted / chapterCount) * 100) : 0;
-
-        completions.push({
-          course_id: course.id,
-          course_title: course.title,
-          total_enrolled: enrolledUserIds.length,
-          total_chapters: chapterCount,
-          avg_completed_chapters: Math.round(avgCompleted * 10) / 10,
-          completion_rate: rate,
-        });
-      }
-    }
-    setCourseCompletions(completions.sort((a, b) => b.total_enrolled - a.total_enrolled));
-
-    /* ── Offering metrics ── */
-    const metrics: OfferingMetric[] = [];
-    if (allOfferings) {
-      for (const off of allOfferings) {
-        let totalQ = supabase.from("enrolments").select("id", { count: "exact", head: true }).eq("offering_id", off.id);
-        let activeQ = supabase.from("enrolments").select("id", { count: "exact", head: true }).eq("offering_id", off.id).eq("status", "active");
-        let revQ = supabase.from("payment_orders").select("total_inr").eq("offering_id", off.id).eq("status", "captured");
-        if (from) { totalQ = totalQ.gte("created_at", from); activeQ = activeQ.gte("created_at", from); revQ = revQ.gte("created_at", from); }
-        if (to) { totalQ = totalQ.lt("created_at", to); activeQ = activeQ.lt("created_at", to); revQ = revQ.lt("created_at", to); }
-        const [totalRes, activeRes, revRes] = await Promise.all([totalQ, activeQ, revQ]);
-        const rev = (revRes.data || []).reduce((s, o) => s + Number(o.total_inr || 0), 0);
-        metrics.push({
-          offering_id: off.id,
-          offering_title: off.title,
-          total_enrolments: totalRes.count ?? 0,
-          active_enrolments: activeRes.count ?? 0,
-          revenue_inr: rev,
-        });
-      }
-    }
-    setOfferingMetrics(metrics.sort((a, b) => b.revenue_inr - a.revenue_inr));
-
-    /* ── Recent enrolments ── */
-    let recentQuery = supabase
-      .from("enrolments")
-      .select("id, status, created_at, user_id, offering_id")
-      .order("created_at", { ascending: false })
-      .limit(15);
-    if (from) recentQuery = recentQuery.gte("created_at", from);
-    if (to) recentQuery = recentQuery.lt("created_at", to);
-
-    const { data: enrolments } = await recentQuery;
-    if (enrolments && enrolments.length > 0) {
-      const userIds = [...new Set(enrolments.map((e) => e.user_id))];
-      const offeringIds = [...new Set(enrolments.map((e) => e.offering_id))];
-      const [usersData, offeringsData] = await Promise.all([
-        supabase.from("users").select("id, full_name, email").in("id", userIds),
-        supabase.from("offerings").select("id, title").in("id", offeringIds),
-      ]);
-      const usersMap = Object.fromEntries((usersData.data || []).map((u) => [u.id, u]));
-      const offMap = Object.fromEntries((offeringsData.data || []).map((o) => [o.id, o]));
-      setRecent(
-        enrolments.map((e) => ({
-          id: e.id,
-          status: e.status,
-          created_at: e.created_at,
-          user_name: usersMap[e.user_id]?.full_name || "Unknown",
-          user_email: usersMap[e.user_id]?.email || "",
-          offering_title: offMap[e.offering_id]?.title || "Unknown",
-          offering_id: e.offering_id,
-        })),
-      );
-    } else {
-      setRecent([]);
-    }
+    setStats(
+      payload.stats ?? {
+        total_students: 0,
+        active_enrolments: 0,
+        active_offerings: 0,
+        total_revenue: 0,
+      },
+    );
+    setDailySignups(payload.daily_signups ?? []);
+    setCourseCompletions(payload.course_completions ?? []);
+    setOfferingMetrics(payload.offering_metrics ?? []);
+    setRecent(payload.recent_enrolments ?? []);
+    setOfferings(payload.offerings ?? []);
 
     setLoading(false);
   }, [dateRange]);

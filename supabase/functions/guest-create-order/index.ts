@@ -19,6 +19,16 @@ function normalizePhone(phone: string): string {
   return digits;
 }
 
+function getClientIp(req: Request): string {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0].trim();
+  return (
+    req.headers.get("cf-connecting-ip") ??
+    req.headers.get("x-real-ip") ??
+    "unknown"
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -55,6 +65,30 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    /* ── Rate limit: 8 guest orders per 15 min per (ip, offering) ──
+       Without this an attacker could:
+         - flood payment_orders with junk rows
+         - use the scenario-validation 403s as a user-existence oracle
+         - rack up Razorpay API calls until our daily quota is hit
+       8 per 15 min is enough for a real shopper who fat-fingers their
+       card a few times but cuts an automated scanner off quickly.   */
+    const ip = getClientIp(req);
+    const { data: rlAllowed, error: rlErr } = await admin.rpc(
+      "check_and_increment_rate_limit",
+      {
+        p_key: `guest-create-order:${ip}:${offering_id}`,
+        p_max_count: 8,
+        p_window_seconds: 900,
+      }
+    );
+    if (rlErr) {
+      console.error("rate-limit rpc failed:", rlErr);
+      return jsonRes({ error: "Internal error" }, 500);
+    }
+    if (rlAllowed === false) {
+      return jsonRes({ error: "Too many requests, please try again shortly." }, 429);
+    }
 
     /* ── Offering ── */
     const { data: offering, error: offErr } = await admin

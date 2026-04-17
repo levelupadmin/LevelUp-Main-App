@@ -133,12 +133,26 @@ const AdminRevenue = () => {
   const fetchData = async () => {
     setLoading(true);
 
-    // Fetch all payment orders (not just captured — we need refunded/pending/failed too)
+    // Fetch captured/refunded payment orders, newest first. The
+    // previous implementation had no .limit() — once the orders table
+    // grew past a few thousand rows this query became the single
+    // slowest call on the site. We cap at 5000 because:
+    //   - any org with more than 5000 lifetime orders should be using
+    //     a proper warehouse for revenue reports, not this admin page,
+    //   - indexes (payment_orders_status_created_at_idx from migration
+    //     20260417100000) make the ORDER BY DESC LIMIT 5000 path an
+    //     index-only scan rather than a full table sort,
+    //   - 5000 rows is comfortably more than a full year at current
+    //     LevelUp volume so nothing routine gets truncated.
+    // If we ever hit the cap, the server-side RPC pattern should be
+    // extended to this page the same way it was for AdminDashboard.
+    const ORDERS_CAP = 5000;
     const { data, error } = await supabase
       .from("payment_orders")
       .select("id, offering_id, total_inr, subtotal_inr, discount_inr, gst_inr, captured_at, guest_email, guest_phone, user_id, status, razorpay_order_id, razorpay_payment_id, refunded_at, offerings(title)")
       .in("status", ["captured", "refunded"])
-      .order("captured_at", { ascending: false });
+      .order("captured_at", { ascending: false })
+      .limit(ORDERS_CAP);
 
     if (error) {
       if (import.meta.env.DEV) console.error(error);
@@ -213,8 +227,19 @@ const AdminRevenue = () => {
   /* ---------------------------------------------------------------- */
 
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Use IST for "today" / "this month" because the business operates
+  // in India — an order captured at 10pm PDT ("yesterday" in PDT) was
+  // placed at 10:30am the NEXT day IST and absolutely counts towards
+  // today's and this-month's revenue for the operator in Mumbai. We
+  // compute the start-of-IST-day as (now - (now's IST offset from UTC)
+  // truncated to day) converted back to a UTC instant.
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const nowIstMs = now.getTime() + IST_OFFSET_MS;
+  const startOfTodayUtcMs = Math.floor(nowIstMs / 86400000) * 86400000 - IST_OFFSET_MS;
+  const startOfToday = new Date(startOfTodayUtcMs);
+  const istNow = new Date(nowIstMs);
+  const startOfMonthUtcMs = Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), 1) - IST_OFFSET_MS;
+  const startOfMonth = new Date(startOfMonthUtcMs);
 
   const filtered = orders.filter(o => {
     if (dateRange === "all") return true;
@@ -224,12 +249,16 @@ const AdminRevenue = () => {
     if (dateRange === "30d") return d >= new Date(now.getTime() - 30 * 86400000);
     if (dateRange === "custom") {
       if (customFrom) {
-        const start = new Date(customFrom.getFullYear(), customFrom.getMonth(), customFrom.getDate());
-        if (d < start) return false;
+        // DateRangePicker gives us a JS Date at midnight local time. We
+        // need the UTC instant that corresponds to midnight IST on the
+        // same calendar date so an order placed at 5am IST on the
+        // selected day is included regardless of the admin's browser TZ.
+        const startMs = Date.UTC(customFrom.getFullYear(), customFrom.getMonth(), customFrom.getDate()) - IST_OFFSET_MS;
+        if (d.getTime() < startMs) return false;
       }
       if (customTo) {
-        const end = new Date(customTo.getFullYear(), customTo.getMonth(), customTo.getDate() + 1);
-        if (d >= end) return false;
+        const endMs = Date.UTC(customTo.getFullYear(), customTo.getMonth(), customTo.getDate() + 1) - IST_OFFSET_MS;
+        if (d.getTime() >= endMs) return false;
       }
       return true;
     }
@@ -277,9 +306,40 @@ const AdminRevenue = () => {
   /*  Summary metrics                                                  */
   /* ---------------------------------------------------------------- */
 
-  const totalRevenue = filtered.reduce((s, o) => s + Number(o.total_inr), 0);
-  const todayRevenue = orders.filter(o => new Date(o.captured_at) >= startOfToday).reduce((s, o) => s + Number(o.total_inr), 0);
-  const monthRevenue = orders.filter(o => new Date(o.captured_at) >= startOfMonth).reduce((s, o) => s + Number(o.total_inr), 0);
+  // Net revenue = gross captured minus refunds. The previous
+  // implementation summed `total_inr` across BOTH captured and
+  // refunded rows, which double-counted: the original order still
+  // contributed its full total even after a refund row zeroed it out
+  // on Razorpay's side. We now compute:
+  //
+  //   net(order) = total_inr
+  //                - (refund.amount_inr if refund.status = "completed"
+  //                   else 0)
+  //                - (total_inr if order.status = "refunded" AND no
+  //                   refund row exists, i.e. the order was marked
+  //                   refunded via the legacy refunded_at column)
+  //
+  // This handles both full and partial refunds correctly.
+  const netRevenue = (o: Order): number => {
+    const gross = Number(o.total_inr);
+    const refund = refundMap[o.id];
+    if (refund && refund.status === "completed") {
+      return Math.max(gross - Number(refund.amount_inr), 0);
+    }
+    if (o.status === "refunded") {
+      // Legacy refund path (pre-refunds-table) — the whole order is gone.
+      return 0;
+    }
+    return gross;
+  };
+
+  const totalRevenue = filtered.reduce((s, o) => s + netRevenue(o), 0);
+  const todayRevenue = orders
+    .filter(o => new Date(o.captured_at) >= startOfToday)
+    .reduce((s, o) => s + netRevenue(o), 0);
+  const monthRevenue = orders
+    .filter(o => new Date(o.captured_at) >= startOfMonth)
+    .reduce((s, o) => s + netRevenue(o), 0);
 
   // By tier (grouped)
   const TIER_LABELS: Record<string, string> = {
@@ -293,12 +353,13 @@ const AdminRevenue = () => {
   filtered.forEach(o => {
     const tier = offeringTiers[o.offering_id] || "other";
     if (!byTier[tier]) byTier[tier] = { label: TIER_LABELS[tier] || tier, count: 0, revenue: 0, offerings: {} };
+    const net = netRevenue(o);
     byTier[tier].count++;
-    byTier[tier].revenue += Number(o.total_inr);
+    byTier[tier].revenue += net;
     const offKey = o.offering_id;
     if (!byTier[tier].offerings[offKey]) byTier[tier].offerings[offKey] = { title: o.offerings?.title ?? "Unknown", count: 0, revenue: 0 };
     byTier[tier].offerings[offKey].count++;
-    byTier[tier].offerings[offKey].revenue += Number(o.total_inr);
+    byTier[tier].offerings[offKey].revenue += net;
   });
   const tierList = Object.entries(byTier).sort((a, b) => b[1].revenue - a[1].revenue);
 

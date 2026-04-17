@@ -54,88 +54,109 @@ const ContinueLearning = () => {
     setLoading(true);
     try {
       if (!user) { setLoading(false); return; }
+
+      // chapter_progress only depends on user.id, so kick it off in
+      // parallel with the enrolment/offering/course chain. Previously
+      // this ran as the 6th sequential query; now it overlaps with the
+      // entire chain and typically arrives before we need it, saving
+      // one round-trip on the critical path to first render.
+      const progressPromise = supabase
+        .from("chapter_progress")
+        .select("chapter_id, completed_at")
+        .eq("user_id", user.id);
+
       const { data: enrolments } = await supabase
         .from("enrolments")
         .select("id, offering_id, created_at")
         .eq("user_id", user.id)
         .eq("status", "active");
 
-        if (!enrolments?.length) return;
+      if (!enrolments?.length) return;
 
-        const offeringIds = enrolments.map((e) => e.offering_id);
-        const { data: ocs } = await supabase
-          .from("offering_courses")
-          .select("offering_id, course_id")
-          .in("offering_id", offeringIds);
+      const offeringIds = enrolments.map((e) => e.offering_id);
+      const { data: ocs } = await supabase
+        .from("offering_courses")
+        .select("offering_id, course_id")
+        .in("offering_id", offeringIds);
 
-        if (!ocs?.length) return;
+      if (!ocs?.length) return;
 
-        const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
-        const { data: coursesData } = await supabase
+      const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
+
+      // Fire courses + sections in parallel — both only need
+      // courseIds which is already computed above.
+      const [coursesRes, sectionsRes] = await Promise.all([
+        supabase
           .from("courses")
           .select("id, slug, title, description, instructor_display_name, thumbnail_url")
-          .in("id", courseIds);
+          .in("id", courseIds),
+        supabase
+          .from("sections")
+          .select("id, course_id, sort_order")
+          .in("course_id", courseIds)
+          .order("sort_order"),
+      ]);
 
-        setCourses(coursesData ?? []);
+      const coursesData = coursesRes.data;
+      const sectionsData = sectionsRes.data;
 
-        // Calculate progress and find next uncompleted chapter
-        if (coursesData?.length) {
-          // Map section_id → course_id and get section sort orders
-          const { data: sectionsData } = await supabase
-            .from("sections")
-            .select("id, course_id, sort_order")
-            .in("course_id", courseIds)
-            .order("sort_order");
+      setCourses(coursesData ?? []);
 
-          const sectionCourseMap: Record<string, string> = {};
-          const sectionSortMap: Record<string, number> = {};
-          (sectionsData ?? []).forEach((s: any) => {
-            sectionCourseMap[s.id] = s.course_id;
-            sectionSortMap[s.id] = s.sort_order;
-          });
+      // Calculate progress and find next uncompleted chapter
+      if (coursesData?.length) {
+        const sectionCourseMap: Record<string, string> = {};
+        const sectionSortMap: Record<string, number> = {};
+        (sectionsData ?? []).forEach((s: any) => {
+          sectionCourseMap[s.id] = s.course_id;
+          sectionSortMap[s.id] = s.sort_order;
+        });
 
-          const sectionIds = (sectionsData ?? []).map((s: any) => s.id);
+        const sectionIds = (sectionsData ?? []).map((s: any) => s.id);
 
-          const { data: allChapters } = sectionIds.length
-            ? await supabase
+        // chapters must wait for sectionIds, but chapter_progress
+        // fired at the top of this function — await them together so
+        // whichever finishes last is the only thing we actually block
+        // on.
+        const [chaptersRes, progressRes] = await Promise.all([
+          sectionIds.length
+            ? supabase
                 .from("chapters")
                 .select("id, section_id, sort_order")
                 .in("section_id", sectionIds)
                 .order("sort_order")
-            : { data: [] };
+            : Promise.resolve({ data: [] as any[] }),
+          progressPromise,
+        ]);
 
-          // Always scope chapter_progress to the current user
-          const { data: progressData } = await supabase
-            .from("chapter_progress")
-            .select("chapter_id, completed_at")
-            .eq("user_id", user.id);
+        const allChapters = chaptersRes.data ?? [];
+        const progressData = progressRes.data ?? [];
 
-          const completedSet = new Set(
-            (progressData ?? []).filter((p: any) => p.completed_at).map((p: any) => p.chapter_id)
-          );
+        const completedSet = new Set(
+          progressData.filter((p: any) => p.completed_at).map((p: any) => p.chapter_id)
+        );
 
-          const pMap: Record<string, number> = {};
-          const ncMap: Record<string, string | null> = {};
+        const pMap: Record<string, number> = {};
+        const ncMap: Record<string, string | null> = {};
 
-          for (const cId of courseIds) {
-            const courseChapters = (allChapters ?? [])
-              .filter((ch: any) => sectionCourseMap[ch.section_id] === cId)
-              .sort((a: any, b: any) => {
-                const sa = sectionSortMap[a.section_id] ?? 0;
-                const sb = sectionSortMap[b.section_id] ?? 0;
-                return sa !== sb ? sa - sb : a.sort_order - b.sort_order;
-              });
-            const totalForCourse = courseChapters.length;
-            const doneForCourse = courseChapters.filter((ch: any) => completedSet.has(ch.id)).length;
-            pMap[cId] = totalForCourse > 0 ? Math.round((doneForCourse / totalForCourse) * 100) : 0;
+        for (const cId of courseIds) {
+          const courseChapters = allChapters
+            .filter((ch: any) => sectionCourseMap[ch.section_id] === cId)
+            .sort((a: any, b: any) => {
+              const sa = sectionSortMap[a.section_id] ?? 0;
+              const sb = sectionSortMap[b.section_id] ?? 0;
+              return sa !== sb ? sa - sb : a.sort_order - b.sort_order;
+            });
+          const totalForCourse = courseChapters.length;
+          const doneForCourse = courseChapters.filter((ch: any) => completedSet.has(ch.id)).length;
+          pMap[cId] = totalForCourse > 0 ? Math.round((doneForCourse / totalForCourse) * 100) : 0;
 
-            // Find first uncompleted chapter
-            const nextChapter = courseChapters.find((ch: any) => !completedSet.has(ch.id));
-            ncMap[cId] = nextChapter ? nextChapter.id : null; // null means all complete
-          }
-          setProgressMap(pMap);
-          setNextChapterMap(ncMap);
+          // Find first uncompleted chapter
+          const nextChapter = courseChapters.find((ch: any) => !completedSet.has(ch.id));
+          ncMap[cId] = nextChapter ? nextChapter.id : null; // null means all complete
         }
+        setProgressMap(pMap);
+        setNextChapterMap(ncMap);
+      }
     } catch (err) {
       if (import.meta.env.DEV) console.error("Failed to load enrolled courses:", err);
       setError(true);

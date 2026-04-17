@@ -8,6 +8,16 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
+function getClientIp(req: Request): string {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0].trim();
+  return (
+    req.headers.get("cf-connecting-ip") ??
+    req.headers.get("x-real-ip") ??
+    "unknown"
+  );
+}
+
 /**
  * Public coupon validation endpoint. Guests on PublicOffering used to read
  * the `coupons` table directly, but the coupons_read_lockdown migration
@@ -31,6 +41,28 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    // ── Rate limit: 20 coupon probes per 15 min per (ip, offering). ──
+    // Without this the endpoint is a public coupon oracle — an attacker
+    // could brute-force short alpha codes (ABC, LAUNCH, etc.) at
+    // thousands of rps. 20/15min is generous enough for a real shopper
+    // who mis-types a few times but cuts automated scanners off early.
+    const ip = getClientIp(req);
+    const { data: rlAllowed, error: rlErr } = await admin.rpc(
+      "check_and_increment_rate_limit",
+      {
+        p_key: `validate-coupon:${ip}:${offering_id}`,
+        p_max_count: 20,
+        p_window_seconds: 900,
+      }
+    );
+    if (rlErr) {
+      console.error("rate-limit rpc failed:", rlErr);
+      return jsonRes({ valid: false, error: "Internal error" }, 500);
+    }
+    if (rlAllowed === false) {
+      return jsonRes({ valid: false, error: "Too many requests" }, 429);
+    }
 
     const { data: offering, error: offErr } = await admin
       .from("offerings")

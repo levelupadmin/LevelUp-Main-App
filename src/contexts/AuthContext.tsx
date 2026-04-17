@@ -31,8 +31,58 @@ export const useAuth = () => {
   return ctx;
 };
 
-// DEV-ONLY: skip auth and act as admin when VITE_DEV_ADMIN_BYPASS is set
-const DEV_BYPASS = import.meta.env.DEV && import.meta.env.VITE_DEV_ADMIN_BYPASS === "true";
+// ────────────────────────────────────────────────────────────────────
+// DEV-ONLY admin bypass
+// ────────────────────────────────────────────────────────────────────
+// Vite replaces `import.meta.env.DEV` and `import.meta.env.VITE_*`
+// statically at build time, so a production build compiled with
+// VITE_DEV_ADMIN_BYPASS unset or `import.meta.env.DEV === false` will
+// tree-shake the bypass path out completely.
+//
+// The runtime guards below are belt-and-braces:
+//
+//   1. `safeHostname` — even if someone accidentally ships a dev build
+//      (or flips the env var in a prod build), refuse to activate the
+//      bypass unless the page is served from localhost / 127.0.0.1 /
+//      an IPv6 loopback. This prevents a compromised build pipeline
+//      from turning every visitor into an admin.
+//
+//   2. `console.error` + banner — any time the bypass is active we
+//      scream about it. A developer who forgot the flag is on will
+//      notice immediately; a leaked build in a QA environment will be
+//      caught by the banner visible on every page.
+const isLoopbackHost = () => {
+  if (typeof window === "undefined") return false;
+  const h = window.location.hostname;
+  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]";
+};
+
+const DEV_BYPASS_REQUESTED =
+  import.meta.env.DEV && import.meta.env.VITE_DEV_ADMIN_BYPASS === "true";
+
+const DEV_BYPASS = DEV_BYPASS_REQUESTED && isLoopbackHost();
+
+if (DEV_BYPASS_REQUESTED && !DEV_BYPASS) {
+  // Build-time flag said bypass, runtime says we're NOT on localhost.
+  // This is the dangerous mismatch we're guarding against. Log loudly
+  // and proceed WITHOUT the bypass so real auth is enforced.
+  // eslint-disable-next-line no-console
+  console.error(
+    "[AuthContext] VITE_DEV_ADMIN_BYPASS is set but the page is not " +
+    "served from localhost. Ignoring bypass and enforcing real auth. " +
+    "If you see this in production, your build pipeline is leaking " +
+    "dev flags — investigate immediately."
+  );
+}
+
+if (DEV_BYPASS) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "%c[AuthContext] DEV ADMIN BYPASS ACTIVE",
+    "background:#ff0;color:#000;font-weight:bold;padding:2px 6px;",
+    "— real authentication is disabled. DO NOT SHIP."
+  );
+}
 
 const DEV_PROFILE: UserProfile = {
   id: "00000000-0000-0000-0000-000000000000",
@@ -48,16 +98,41 @@ const DEV_PROFILE: UserProfile = {
 
 const DEV_USER = { id: DEV_PROFILE.id, email: DEV_PROFILE.email } as User;
 
+const DevBypassBanner = () => (
+  <div
+    style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 2147483647,
+      background: "#ff0",
+      color: "#000",
+      padding: "4px 12px",
+      fontFamily: "ui-monospace, SFMono-Regular, monospace",
+      fontSize: 12,
+      fontWeight: 700,
+      textAlign: "center",
+      pointerEvents: "none",
+    }}
+    role="status"
+  >
+    DEV ADMIN BYPASS ACTIVE — auth is disabled. Unset VITE_DEV_ADMIN_BYPASS before deploying.
+  </div>
+);
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const currentUserIdRef = useRef<string | null>(null);
 
-  // Dev bypass — skip Supabase auth entirely
+  // Dev bypass — skip Supabase auth entirely (localhost only, see
+  // runtime guards above).
   if (DEV_BYPASS) {
     return (
       <AuthContext.Provider value={{ session: null, user: DEV_USER, profile: DEV_PROFILE, loading: false, signOut: async () => {} }}>
+        <DevBypassBanner />
         {children}
       </AuthContext.Provider>
     );

@@ -68,10 +68,18 @@ const CommunityPage = () => {
 
     if (!postsData) { setLoading(false); return; }
 
-    // Get user names
+    // Get user names. Uses the public_user_profiles view (not the
+    // users table directly) because the users RLS policy restricts
+    // non-admins to reading their OWN row — authenticated peers need
+    // the view to see each other's names. The view exposes only
+    // id/full_name/avatar_url/member_number/occupation; email, phone,
+    // bio and city are never returned through this path.
     const userIds = [...new Set(postsData.map((p) => p.user_id))];
-    const { data: users } = await supabase.from("users").select("id, full_name").in("id", userIds);
-    const userMap = Object.fromEntries((users || []).map((u) => [u.id, u.full_name || "Anonymous"]));
+    const { data: users } = await supabase
+      .from("public_user_profiles" as any)
+      .select("id, full_name")
+      .in("id", userIds);
+    const userMap = Object.fromEntries(((users as any[]) || []).map((u: any) => [u.id, u.full_name || "Anonymous"]));
 
     // Get like & comment counts
     const postIds = postsData.map((p) => p.id);
@@ -152,8 +160,12 @@ const CommunityPage = () => {
 
     if (data) {
       const uids = [...new Set(data.map((c) => c.user_id))];
-      const { data: users } = await supabase.from("users").select("id, full_name").in("id", uids);
-      const uMap = Object.fromEntries((users || []).map((u) => [u.id, u.full_name || "Anonymous"]));
+      // public_user_profiles view — see comment in loadPosts above.
+      const { data: users } = await supabase
+        .from("public_user_profiles" as any)
+        .select("id, full_name")
+        .in("id", uids);
+      const uMap = Object.fromEntries(((users as any[]) || []).map((u: any) => [u.id, u.full_name || "Anonymous"]));
       setComments((prev) => ({
         ...prev,
         [postId]: data.map((c) => ({ ...c, user_name: uMap[c.user_id] || "Anonymous" })),
