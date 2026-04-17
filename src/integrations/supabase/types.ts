@@ -50,6 +50,13 @@ export type Database = {
             foreignKeyName: "admin_audit_logs_actor_user_id_fkey"
             columns: ["actor_user_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "admin_audit_logs_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -110,7 +117,21 @@ export type Database = {
             foreignKeyName: "assignment_submissions_reviewed_by_fkey"
             columns: ["reviewed_by"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignment_submissions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignment_submissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -170,6 +191,13 @@ export type Database = {
             foreignKeyName: "bulk_import_jobs_run_by_fkey"
             columns: ["run_by"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bulk_import_jobs_run_by_fkey"
+            columns: ["run_by"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -216,6 +244,13 @@ export type Database = {
             columns: ["parent_comment_id"]
             isOneToOne: false
             referencedRelation: "chapter_comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chapter_comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -280,6 +315,13 @@ export type Database = {
             foreignKeyName: "chapter_progress_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chapter_progress_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -325,6 +367,13 @@ export type Database = {
             foreignKeyName: "chapter_qna_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chapter_qna_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -361,6 +410,13 @@ export type Database = {
             columns: ["qna_id"]
             isOneToOne: false
             referencedRelation: "chapter_qna"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chapter_qna_replies_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -537,6 +593,13 @@ export type Database = {
             foreignKeyName: "community_post_comments_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_post_comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -564,6 +627,13 @@ export type Database = {
             columns: ["post_id"]
             isOneToOne: false
             referencedRelation: "community_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_post_likes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -615,6 +685,13 @@ export type Database = {
             columns: ["course_tag_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_posts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -772,6 +849,13 @@ export type Database = {
             foreignKeyName: "course_reviews_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_reviews_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -799,6 +883,7 @@ export type Database = {
           rating_avg: number | null
           rating_count: number | null
           show_as_locked: boolean
+          show_on_browse: boolean | null
           slug: string
           sort_order: number
           status: string
@@ -833,6 +918,7 @@ export type Database = {
           rating_avg?: number | null
           rating_count?: number | null
           show_as_locked?: boolean
+          show_on_browse?: boolean | null
           slug: string
           sort_order?: number
           status?: string
@@ -867,6 +953,7 @@ export type Database = {
           rating_avg?: number | null
           rating_count?: number | null
           show_as_locked?: boolean
+          show_on_browse?: boolean | null
           slug?: string
           sort_order?: number
           status?: string
@@ -1058,6 +1145,13 @@ export type Database = {
             foreignKeyName: "enrolment_audit_log_actor_user_id_fkey"
             columns: ["actor_user_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrolment_audit_log_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -1130,6 +1224,13 @@ export type Database = {
             foreignKeyName: "enrolments_granted_by_fkey"
             columns: ["granted_by"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrolments_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -1151,7 +1252,21 @@ export type Database = {
             foreignKeyName: "enrolments_revoked_by_fkey"
             columns: ["revoked_by"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrolments_revoked_by_fkey"
+            columns: ["revoked_by"]
+            isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrolments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1194,6 +1309,13 @@ export type Database = {
             referencedRelation: "events"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "event_free_courses_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events_safe"
+            referencedColumns: ["id"]
+          },
         ]
       }
       event_registrations: {
@@ -1230,6 +1352,20 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_registrations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events_safe"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_registrations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1275,6 +1411,13 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_speakers_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events_safe"
             referencedColumns: ["id"]
           },
         ]
@@ -1453,6 +1596,13 @@ export type Database = {
             foreignKeyName: "instructor_course_assignments_assigned_by_fkey"
             columns: ["assigned_by"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instructor_course_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -1467,6 +1617,13 @@ export type Database = {
             foreignKeyName: "instructor_course_assignments_instructor_id_fkey"
             columns: ["instructor_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instructor_course_assignments_instructor_id_fkey"
+            columns: ["instructor_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -1475,44 +1632,41 @@ export type Database = {
       live_sessions: {
         Row: {
           course_id: string
-          created_at: string
+          created_at: string | null
           description: string | null
-          duration_minutes: number
-          hero_image_url: string | null
+          duration_minutes: number | null
           id: string
           recording_url: string | null
-          starts_at: string
-          status: string
+          scheduled_at: string
+          status: string | null
           title: string
-          updated_at: string
+          updated_at: string | null
           zoom_link: string | null
         }
         Insert: {
           course_id: string
-          created_at?: string
+          created_at?: string | null
           description?: string | null
-          duration_minutes?: number
-          hero_image_url?: string | null
+          duration_minutes?: number | null
           id?: string
           recording_url?: string | null
-          starts_at: string
-          status?: string
+          scheduled_at: string
+          status?: string | null
           title: string
-          updated_at?: string
+          updated_at?: string | null
           zoom_link?: string | null
         }
         Update: {
           course_id?: string
-          created_at?: string
+          created_at?: string | null
           description?: string | null
-          duration_minutes?: number
-          hero_image_url?: string | null
+          duration_minutes?: number | null
           id?: string
           recording_url?: string | null
-          starts_at?: string
-          status?: string
+          scheduled_at?: string
+          status?: string | null
           title?: string
-          updated_at?: string
+          updated_at?: string | null
           zoom_link?: string | null
         }
         Relationships: [
@@ -1557,6 +1711,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "notifications_user_id_fkey"
             columns: ["user_id"]
@@ -1607,56 +1768,6 @@ export type Database = {
             columns: ["parent_offering_id"]
             isOneToOne: false
             referencedRelation: "offerings"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      live_sessions: {
-        Row: {
-          id: string
-          course_id: string
-          title: string
-          description: string | null
-          scheduled_at: string
-          duration_minutes: number | null
-          zoom_link: string | null
-          recording_url: string | null
-          status: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          course_id: string
-          title: string
-          description?: string | null
-          scheduled_at: string
-          duration_minutes?: number | null
-          zoom_link?: string | null
-          recording_url?: string | null
-          status?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          course_id?: string
-          title?: string
-          description?: string | null
-          scheduled_at?: string
-          duration_minutes?: number | null
-          zoom_link?: string | null
-          recording_url?: string | null
-          status?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "live_sessions_course_id_fkey"
-            columns: ["course_id"]
-            isOneToOne: false
-            referencedRelation: "courses"
             referencedColumns: ["id"]
           },
         ]
@@ -1767,6 +1878,13 @@ export type Database = {
           status: string
           subscription_period: string | null
           subtitle: string | null
+          thankyou_auto_redirect: boolean | null
+          thankyou_body: string | null
+          thankyou_cta_label: string | null
+          thankyou_cta_url: string | null
+          thankyou_headline: string | null
+          thankyou_redirect_seconds: number | null
+          thankyou_thumbnail_url: string | null
           thumbnail_url: string | null
           title: string
           type: string
@@ -1797,6 +1915,13 @@ export type Database = {
           status?: string
           subscription_period?: string | null
           subtitle?: string | null
+          thankyou_auto_redirect?: boolean | null
+          thankyou_body?: string | null
+          thankyou_cta_label?: string | null
+          thankyou_cta_url?: string | null
+          thankyou_headline?: string | null
+          thankyou_redirect_seconds?: number | null
+          thankyou_thumbnail_url?: string | null
           thumbnail_url?: string | null
           title: string
           type: string
@@ -1827,6 +1952,13 @@ export type Database = {
           status?: string
           subscription_period?: string | null
           subtitle?: string | null
+          thankyou_auto_redirect?: boolean | null
+          thankyou_body?: string | null
+          thankyou_cta_label?: string | null
+          thankyou_cta_url?: string | null
+          thankyou_headline?: string | null
+          thankyou_redirect_seconds?: number | null
+          thankyou_thumbnail_url?: string | null
           thumbnail_url?: string | null
           title?: string
           type?: string
@@ -1892,6 +2024,13 @@ export type Database = {
             foreignKeyName: "opportunities_posted_by_user_id_fkey"
             columns: ["posted_by_user_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opportunities_posted_by_user_id_fkey"
+            columns: ["posted_by_user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -1929,6 +2068,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "opportunity_applications_applicant_user_id_fkey"
+            columns: ["applicant_user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "opportunity_applications_applicant_user_id_fkey"
             columns: ["applicant_user_id"]
@@ -2049,6 +2195,13 @@ export type Database = {
             foreignKeyName: "payment_orders_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_orders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -2105,10 +2258,35 @@ export type Database = {
             foreignKeyName: "portfolio_projects_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portfolio_projects_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
+      }
+      public_rate_limits: {
+        Row: {
+          count: number
+          key: string
+          window_start: string
+        }
+        Insert: {
+          count?: number
+          key: string
+          window_start: string
+        }
+        Update: {
+          count?: number
+          key?: string
+          window_start?: string
+        }
+        Relationships: []
       }
       qna_posts: {
         Row: {
@@ -2150,6 +2328,13 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qna_posts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -2354,6 +2539,13 @@ export type Database = {
             foreignKeyName: "workshop_attendance_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workshop_attendance_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -2430,9 +2622,171 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      events_safe: {
+        Row: {
+          city: string | null
+          created_at: string | null
+          description: string | null
+          duration_minutes: number | null
+          ends_at: string | null
+          event_type: string | null
+          host_avatar_url: string | null
+          host_name: string | null
+          host_title: string | null
+          id: string | null
+          image_url: string | null
+          is_active: boolean | null
+          is_featured: boolean | null
+          max_capacity: number | null
+          price_inr: number | null
+          pricing_type: string | null
+          sort_order: number | null
+          starts_at: string | null
+          status: string | null
+          title: string | null
+          updated_at: string | null
+          venue_label: string | null
+          venue_type: string | null
+        }
+        Insert: {
+          city?: string | null
+          created_at?: string | null
+          description?: string | null
+          duration_minutes?: number | null
+          ends_at?: string | null
+          event_type?: string | null
+          host_avatar_url?: string | null
+          host_name?: string | null
+          host_title?: string | null
+          id?: string | null
+          image_url?: string | null
+          is_active?: boolean | null
+          is_featured?: boolean | null
+          max_capacity?: number | null
+          price_inr?: number | null
+          pricing_type?: string | null
+          sort_order?: number | null
+          starts_at?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          venue_label?: string | null
+          venue_type?: string | null
+        }
+        Update: {
+          city?: string | null
+          created_at?: string | null
+          description?: string | null
+          duration_minutes?: number | null
+          ends_at?: string | null
+          event_type?: string | null
+          host_avatar_url?: string | null
+          host_name?: string | null
+          host_title?: string | null
+          id?: string | null
+          image_url?: string | null
+          is_active?: boolean | null
+          is_featured?: boolean | null
+          max_capacity?: number | null
+          price_inr?: number | null
+          pricing_type?: string | null
+          sort_order?: number | null
+          starts_at?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          venue_label?: string | null
+          venue_type?: string | null
+        }
+        Relationships: []
+      }
+      live_sessions_safe: {
+        Row: {
+          course_id: string | null
+          created_at: string | null
+          description: string | null
+          duration_minutes: number | null
+          id: string | null
+          recording_url: string | null
+          scheduled_at: string | null
+          status: string | null
+          title: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          course_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          duration_minutes?: number | null
+          id?: string | null
+          recording_url?: string | null
+          scheduled_at?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          course_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          duration_minutes?: number | null
+          id?: string | null
+          recording_url?: string | null
+          scheduled_at?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_sessions_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      public_user_profiles: {
+        Row: {
+          avatar_url: string | null
+          full_name: string | null
+          id: string | null
+          member_number: number | null
+          occupation: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          full_name?: string | null
+          id?: string | null
+          member_number?: number | null
+          occupation?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          full_name?: string | null
+          id?: string | null
+          member_number?: number | null
+          occupation?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      admin_dashboard_metrics: {
+        Args: {
+          p_from?: string
+          p_max_courses?: number
+          p_max_days?: number
+          p_recent_limit?: number
+          p_to?: string
+        }
+        Returns: Json
+      }
+      check_and_increment_rate_limit: {
+        Args: { p_key: string; p_max_count: number; p_window_seconds: number }
+        Returns: boolean
+      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
@@ -2440,6 +2794,15 @@ export type Database = {
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
         Returns: number
+      }
+      get_event_registration_count: {
+        Args: { p_event_id: string }
+        Returns: number
+      }
+      get_event_venue_link: { Args: { p_event_id: string }; Returns: string }
+      get_live_session_zoom_link: {
+        Args: { p_session_id: string }
+        Returns: string
       }
       has_course_access: { Args: { p_course_id: string }; Returns: boolean }
       increment_coupon_usage: {
@@ -2456,6 +2819,7 @@ export type Database = {
         }
         Returns: number
       }
+      purge_old_rate_limits: { Args: never; Returns: undefined }
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number }
         Returns: {
@@ -2464,6 +2828,7 @@ export type Database = {
           read_ct: number
         }[]
       }
+      redeem_coupon: { Args: { p_coupon_id: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
