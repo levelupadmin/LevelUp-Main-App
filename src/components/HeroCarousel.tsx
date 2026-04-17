@@ -1,297 +1,247 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowRight, Clock, Users, CalendarDays } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Editorial chapter imagery — curated cinematic stills rather than marketing
-// posters. Each still evokes the discipline; no mentor-portrait collages, no
-// "iPad mock-up" visuals, no promotional cube overlays.
-import bgDirection from "@/assets/hero-filmmaking-1.jpg";
-import bgCinematography from "@/assets/hero-cinematography-1.jpg";
-import bgWriting from "@/assets/skill-writing.jpg";
-import bgEditing from "@/assets/hero-editing-1.jpg";
-import bgSound from "@/assets/skill-music.jpg";
+// Fallback images keyed by sort_order
+import slideBfp from "@/assets/carousel/slide-bfp.jpg";
+import slideVea from "@/assets/carousel/slide-vea.jpg";
+import slideUiux from "@/assets/carousel/slide-uiux.jpg";
+import slideSmp from "@/assets/carousel/slide-smp.jpg";
+import slideMasterclasses from "@/assets/carousel/slide-masterclasses.jpg";
 
-/**
- * HeroCarousel — Anthology edition
- *
- * A quiet, editorial carousel built for the target audience: aspiring Indian
- * filmmakers and creators who respond to craft, story, and restraint — not to
- * hard-sell marketing posters. The language is pulled from film periodicals
- * (Criterion, Notebook, Sight & Sound) rather than ad creatives.
- *
- * Intentional choices:
- *   • Each slide is a "chapter" — the dashboard reads like the cover of an
- *     anthology, not a sale rack.
- *   • Single full-bleed still + deep vertical gradient. No split posters, no
- *     portrait collages, no CTA buttons competing for attention.
- *   • A serif display headline (Instrument Serif) carries each slide. A
- *     monospaced eyebrow acts as a magazine section rule. Italic accents and
- *     tall letter-spacing supply the craft feel.
- *   • One discreet underlined link. A slim progress rule at the base of the
- *     card. A small "01 / 05" counter. That's all the UI asks of you.
- *   • Slides are intentionally curated editorial copy — the dashboard speaks
- *     with a single curated voice. Admin-editable hero slides can be re-wired
- *     later if desired.
- */
-
-type Chapter = {
-  id: string;
-  eyebrow: string;
-  headlinePrefix: string;
-  headlineAccent: string;
-  subtitle: string;
-  cta: string;
-  background: string;
-  backgroundPosition?: string;
+const FALLBACK_IMAGES: Record<number, string> = {
+  1: slideBfp,
+  2: slideVea,
+  3: slideUiux,
+  4: slideSmp,
+  5: slideMasterclasses,
 };
 
-const CHAPTERS: Chapter[] = [
-  {
-    id: "direction",
-    eyebrow: "Chapter 01 · Direction",
-    headlinePrefix: "Every frame",
-    headlineAccent: "is a decision.",
-    subtitle:
-      "Staging, shot rhythm, and the quiet art of guiding a performance — the craft of directing the picture.",
-    cta: "/browse?focus=direction",
-    background: bgDirection,
-    backgroundPosition: "center 30%",
-  },
-  {
-    id: "cinematography",
-    eyebrow: "Chapter 02 · Cinematography",
-    headlinePrefix: "Light writes the",
-    headlineAccent: "story first.",
-    subtitle:
-      "Read a scene before you shoot it. Compose with intention, and let the frame do the talking.",
-    cta: "/browse?focus=cinematography",
-    background: bgCinematography,
-    backgroundPosition: "center 40%",
-  },
-  {
-    id: "writing",
-    eyebrow: "Chapter 03 · Screenwriting",
-    headlinePrefix: "Begin",
-    headlineAccent: "at the ending.",
-    subtitle:
-      "Structure, character, and voice — the craft of the page before the first camera moves.",
-    cta: "/browse?focus=writing",
-    background: bgWriting,
-    backgroundPosition: "center 35%",
-  },
-  {
-    id: "editing",
-    eyebrow: "Chapter 04 · Editing",
-    headlinePrefix: "The cut is where",
-    headlineAccent: "film happens.",
-    subtitle:
-      "Pace, continuity, and the invisible grammar of the edit — where footage becomes a film.",
-    cta: "/browse?focus=editing",
-    background: bgEditing,
-    backgroundPosition: "center 45%",
-  },
-  {
-    id: "sound",
-    eyebrow: "Chapter 05 · Sound & Score",
-    headlinePrefix: "Half of what you see,",
-    headlineAccent: "you hear.",
-    subtitle:
-      "Score, foley, and dialogue — the craft that decides what a film actually feels like.",
-    cta: "/browse?focus=sound",
-    background: bgSound,
-    backgroundPosition: "center 50%",
-  },
-];
-
-const AUTOPLAY_MS = 6800;
+interface HeroSlide {
+  id: string;
+  title_prefix: string;
+  title_accent: string;
+  subtitle: string | null;
+  category_label: string;
+  cta_text: string;
+  cta_link: string;
+  image_url: string | null;
+  gradient_class: string;
+  duration_label: string | null;
+  student_count_label: string | null;
+  next_batch_label: string | null;
+  sort_order: number;
+}
 
 const HeroCarousel = () => {
+  const [slides, setSlides] = useState<HeroSlide[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
-  const progressRef = useRef<HTMLSpanElement>(null);
+  const [direction, setDirection] = useState(1);
+  const progressRef = useRef<HTMLDivElement>(null);
 
-  const total = CHAPTERS.length;
-  const chapter = CHAPTERS[activeIndex];
+  useEffect(() => {
+    supabase
+      .from("hero_slides")
+      .select("*")
+      .eq("is_active", true)
+      .or("placement.eq.dashboard,placement.eq.both")
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        const now = new Date();
+        const filtered = (data ?? []).filter((s: any) =>
+          (!s.starts_at || new Date(s.starts_at) <= now) &&
+          (!s.expires_at || new Date(s.expires_at) >= now)
+        );
+        setSlides(filtered as HeroSlide[]);
+      });
+  }, []);
 
-  const next = useCallback(() => setActiveIndex((i) => (i + 1) % total), [total]);
-  const prev = useCallback(
-    () => setActiveIndex((i) => (i - 1 + total) % total),
-    [total]
+  const goTo = useCallback(
+    (i: number) => {
+      setDirection(i > activeIndex ? 1 : -1);
+      setActiveIndex(i);
+    },
+    [activeIndex]
   );
-  const goTo = useCallback((i: number) => setActiveIndex(i), []);
 
-  // Autoplay — pauses on hover / focus
-  useEffect(() => {
-    if (paused) return;
-    const timer = window.setInterval(next, AUTOPLAY_MS);
-    return () => window.clearInterval(timer);
-  }, [next, paused, activeIndex]);
+  const next = useCallback(() => {
+    if (!slides.length) return;
+    setDirection(1);
+    setActiveIndex((prev) => (prev + 1) % slides.length);
+  }, [slides.length]);
 
-  // Restart the progress rule whenever the active chapter changes
   useEffect(() => {
-    if (!progressRef.current) return;
-    progressRef.current.style.animation = "none";
-    // Force reflow so the animation restarts cleanly
-    void progressRef.current.offsetHeight;
-    progressRef.current.style.animation = "";
+    if (paused || !slides.length) return;
+    const timer = setInterval(next, 6000);
+    return () => clearInterval(timer);
+  }, [next, paused, slides.length]);
+
+  // Reset progress bar animation on slide change
+  useEffect(() => {
+    if (progressRef.current) {
+      progressRef.current.style.animation = "none";
+      // Force reflow
+      void progressRef.current.offsetHeight;
+      progressRef.current.style.animation = "";
+    }
   }, [activeIndex]);
 
-  const counter = useMemo(
-    () =>
-      `${String(activeIndex + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}`,
-    [activeIndex, total]
-  );
+  if (!slides.length) return null;
+
+  const slide = slides[activeIndex];
+  const imageUrl = slide.image_url || FALLBACK_IMAGES[slide.sort_order] || "";
+  const pills = [
+    { icon: Clock, label: slide.duration_label },
+    { icon: Users, label: slide.student_count_label },
+    { icon: CalendarDays, label: slide.next_batch_label },
+  ].filter((p) => p.label);
 
   return (
-    <section
-      role="region"
-      aria-roledescription="carousel"
-      aria-label="Chapters of the creative craft"
-      tabIndex={0}
-      className="group relative isolate w-full overflow-hidden rounded-[28px] bg-black focus-ring"
+    <div
+      className="relative w-full h-[420px] rounded-[20px] overflow-hidden"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowLeft") prev();
-        else if (e.key === "ArrowRight") next();
-      }}
     >
-      <div className="relative w-full aspect-[16/9] min-h-[440px] md:aspect-[16/7] md:min-h-[520px]">
-        {/* ───────── Full-bleed cinematic still ───────── */}
-        <AnimatePresence initial={false} mode="sync">
-          <motion.img
-            key={chapter.id + "-bg"}
-            src={chapter.background}
+      {/* ── Crossfade image layers ── */}
+      <AnimatePresence initial={false}>
+        <motion.div
+          key={slide.id}
+          className="absolute inset-0"
+          initial={{ opacity: 0, scale: 1.05 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
+        >
+          <img
+            src={imageUrl}
             alt=""
-            aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover"
-            style={{ objectPosition: chapter.backgroundPosition ?? "center" }}
-            initial={{ opacity: 0, scale: 1.03 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 w-full h-full object-cover"
+            width={1600}
+            height={896}
           />
-        </AnimatePresence>
+          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+        </motion.div>
+      </AnimatePresence>
 
-        {/* Editorial gradient — deep at the base so type has room to breathe */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/10"
-        />
-        {/* Soft left-side vignette for legibility in the copy zone */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-y-0 left-0 w-2/3 bg-gradient-to-r from-black/60 via-black/20 to-transparent"
-        />
-        {/* Grain — ties the hero to the rest of the app */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 grain opacity-40"
-        />
-
-        {/* ───────── Top rule: masthead + counter ───────── */}
-        <div className="absolute inset-x-6 top-6 z-10 flex items-center justify-between md:inset-x-10 md:top-8">
-          <span className="font-mono text-[11px] uppercase tracking-[0.28em] text-cream/80">
-            LevelUp · Anthology
-          </span>
-          <span className="font-mono text-[11px] tabular-nums uppercase tracking-[0.28em] text-cream/60">
-            {counter}
-          </span>
-        </div>
-
-        {/* ───────── Copy block ───────── */}
-        <div className="absolute inset-x-0 bottom-0 z-10 px-6 pb-14 md:px-12 md:pb-16">
-          <div className="max-w-3xl">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={chapter.id + "-copy"}
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-              >
-                <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-cream/80">
-                  {chapter.eyebrow}
-                </p>
-
-                <h2 className="mt-4 font-serif text-[44px] leading-[1.02] tracking-[-0.01em] text-white sm:text-[56px] md:text-[72px]">
-                  <span className="block">{chapter.headlinePrefix}</span>
-                  <span className="block italic text-cream">{chapter.headlineAccent}</span>
-                </h2>
-
-                <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-white/80 md:text-base">
-                  {chapter.subtitle}
-                </p>
-
-                <div className="mt-7 flex items-center gap-6">
-                  <Link
-                    to={chapter.cta}
-                    className="group/cta inline-flex items-center gap-2 text-[12px] uppercase tracking-[0.22em] text-white transition-colors hover:text-cream"
-                  >
-                    <span className="relative">
-                      Explore this chapter
-                      <span className="absolute inset-x-0 -bottom-1 block h-px bg-white/40 transition-colors group-hover/cta:bg-cream" />
-                    </span>
-                    <ArrowUpRight className="h-4 w-4 transition-transform group-hover/cta:translate-x-0.5 group-hover/cta:-translate-y-0.5" />
-                  </Link>
-
-                  <Link
-                    to="/browse"
-                    className="hidden text-[12px] uppercase tracking-[0.22em] text-white/60 transition-colors hover:text-white sm:inline-flex"
-                  >
-                    Browse all
-                  </Link>
-                </div>
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </div>
-
-        {/* ───────── Chapter navigator — slim rules along the base ───────── */}
-        <div className="absolute inset-x-6 bottom-6 z-10 flex items-center gap-2 md:inset-x-10 md:bottom-7">
-          {CHAPTERS.map((c, i) => {
-            const isActive = i === activeIndex;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                aria-label={`Go to ${c.eyebrow}`}
-                aria-current={isActive ? "true" : undefined}
-                onClick={() => goTo(i)}
-                className="relative h-[2px] flex-1 overflow-hidden rounded-full bg-white/15 transition-colors hover:bg-white/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-cream/70"
-              >
-                {isActive && !paused && (
-                  <span
-                    ref={progressRef}
-                    className="absolute inset-y-0 left-0 block bg-cream"
-                    style={{
-                      animationName: "heroProgress",
-                      animationDuration: `${AUTOPLAY_MS}ms`,
-                      animationTimingFunction: "linear",
-                      animationFillMode: "forwards",
-                    }}
-                  />
-                )}
-                {isActive && paused && (
-                  <span className="absolute inset-y-0 left-0 block w-full bg-cream/60" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Keyframes for the progress rule */}
-        <style>{`
-          @keyframes heroProgress {
-            from { width: 0%; }
-            to { width: 100%; }
-          }
-        `}</style>
+      {/* ── Progress bars — top-left ── */}
+      <div className="absolute top-5 left-6 flex gap-2 z-20">
+        {slides.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => goTo(i)}
+            className="w-12 h-[3px] bg-white/20 rounded-full overflow-hidden cursor-pointer"
+          >
+            {i === activeIndex ? (
+              <div
+                ref={i === activeIndex ? progressRef : undefined}
+                className="h-full bg-white rounded-full"
+                style={{
+                  animation: paused ? "none" : "slideProgress 6s linear forwards",
+                  animationPlayState: paused ? "paused" : "running",
+                }}
+              />
+            ) : (
+              <div
+                className={`h-full bg-white rounded-full transition-all duration-300 ${
+                  i < activeIndex ? "w-full" : "w-0"
+                }`}
+              />
+            )}
+          </button>
+        ))}
       </div>
-    </section>
+
+      {/* ── Text overlay — left-center, animated ── */}
+      <div className="relative z-10 flex items-center h-full px-8 md:px-12">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={slide.id + "-text"}
+            className="max-w-lg"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1], staggerChildren: 0.08 }}
+          >
+            <motion.p
+              className="font-mono text-xs uppercase tracking-widest text-white/50 mb-3"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, duration: 0.4 }}
+            >
+              {slide.category_label}
+            </motion.p>
+
+            <motion.h2
+              className="text-3xl md:text-[48px] md:leading-[1.1] font-semibold text-foreground mb-3"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15, duration: 0.5 }}
+            >
+              {slide.title_prefix}{" "}
+              <span className="font-serif-italic text-cream">{slide.title_accent}</span>
+            </motion.h2>
+
+            <motion.p
+              className="text-sm md:text-base text-white/60 max-w-md mb-5"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+            >
+              {slide.subtitle}
+            </motion.p>
+
+            {/* Key info pills */}
+            {pills.length > 0 && (
+              <motion.div
+                className="flex flex-wrap gap-2 mb-6"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3, duration: 0.4 }}
+              >
+                {pills.map((pill, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 text-xs font-mono text-white/80"
+                  >
+                    <pill.icon className="h-3 w-3" />
+                    {pill.label}
+                  </span>
+                ))}
+              </motion.div>
+            )}
+
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35, duration: 0.4 }}
+            >
+              <Link
+                to={slide.cta_link}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-cream text-cream-text text-sm font-semibold rounded-lg hover:-translate-y-0.5 transition-transform"
+              >
+                {slide.cta_text} <ArrowRight className="h-4 w-4" />
+              </Link>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* ── Dots — bottom-right ── */}
+      <div className="absolute bottom-5 right-6 flex gap-2 z-20">
+        {slides.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => goTo(i)}
+            className={`h-2 rounded-full transition-all duration-300 ${
+              i === activeIndex ? "bg-white w-6" : "bg-white/30 hover:bg-white/50 w-2"
+            }`}
+          />
+        ))}
+      </div>
+    </div>
   );
 };
 
