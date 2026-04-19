@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
 import { Loader2, Tag, ShieldCheck, BookOpen, ArrowLeft, CheckCircle2 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+import TrustPanel from "@/components/checkout/TrustPanel";
 
 /* ── Razorpay global type ── */
 declare global {
@@ -384,8 +385,14 @@ export default function CheckoutPage() {
     (offering as any).mrp_inr &&
     Number((offering as any).mrp_inr) > Number(offering.price_inr);
 
+  // Pull display metadata for the trust panel. Uses the first linked course
+  // as the "what you're buying" preview — safe fallback if none exists.
+  const primaryCourseId = linkedCourses[0]?.course_id ?? null;
+  const trustPanelCourseTitle = (linkedCourses[0]?.courses as any)?.title ?? offering.title;
+  const trustPanelThumb = (linkedCourses[0]?.courses as any)?.thumbnail_url ?? null;
+
   return (
-    <div className="min-h-screen bg-canvas flex items-start justify-center px-4 py-12 md:py-20">
+    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20">
       <Card className="w-full max-w-[560px] border-border bg-surface">
         <CardContent className="p-6 md:p-8 space-y-6">
           {/* ── Back link ── */}
@@ -724,6 +731,19 @@ export default function CheckoutPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Desktop-only trust sidebar. Hidden on staged payments to keep
+          the confirmation/balance flow focused. */}
+      {!isStaged && (
+        <TrustPanel
+          courseId={primaryCourseId}
+          courseTitle={trustPanelCourseTitle}
+          courseThumbnailUrl={trustPanelThumb}
+          instructorName={(offering as any).instructor_display_name ?? null}
+          durationMinutes={(offering as any).duration_minutes ?? null}
+          batchStartsAt={(offering as any).starts_at ?? null}
+        />
+      )}
     </div>
   );
 }

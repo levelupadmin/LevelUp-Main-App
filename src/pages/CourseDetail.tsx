@@ -15,6 +15,13 @@ import {
 import { toast } from "@/lib/toast";
 import { CheckCircle2, Lock, Play, Clock, BookOpen, Star } from "lucide-react";
 import ReviewList from "@/components/reviews/ReviewList";
+import Outcomes from "@/components/course-detail/Outcomes";
+import PortfolioPieces from "@/components/course-detail/PortfolioPieces";
+import InstructorCard from "@/components/course-detail/InstructorCard";
+import CohortSchedule from "@/components/course-detail/CohortSchedule";
+import TestimonialsCarousel from "@/components/course-detail/TestimonialsCarousel";
+import FAQ from "@/components/course-detail/FAQ";
+import UrgencyStrip from "@/components/course-detail/UrgencyStrip";
 
 interface Course {
   id: string;
@@ -29,6 +36,21 @@ interface Course {
   total_lessons: number | null;
   level: string | null;
   category_id: string | null;
+  // Phase 4 content blocks — populated once the 20260420120000 migration ships
+  outcomes?: string[] | null;
+  portfolio_pieces?: { title: string; description?: string | null; image_url?: string | null }[] | null;
+  instructor_bio?: string | null;
+  instructor_credentials?: string[] | null;
+  instructor_avatar_url?: string | null;
+  instructor_links?: { label: string; url: string }[] | null;
+  faqs?: { question: string; answer: string }[] | null;
+}
+
+interface OfferingUrgency {
+  seats_total: number | null;
+  seats_left: number | null;
+  batch_starts_at: string | null;
+  cohort_sessions: { title: string; starts_at: string; duration_min?: number | null }[] | null;
 }
 
 interface Section {
@@ -70,6 +92,7 @@ const CourseDetail = () => {
   const [dripMode, setDripMode] = useState("no_drip");
   const [loading, setLoading] = useState(true);
   const [categoryName, setCategoryName] = useState<string | null>(null);
+  const [offeringUrgency, setOfferingUrgency] = useState<OfferingUrgency | null>(null);
 
   usePageTitle(course?.title ?? "Course");
 
@@ -108,6 +131,41 @@ const CourseDetail = () => {
     setCourse(courseRes.data as Course);
     setSections((sectionsRes.data || []) as Section[]);
     setDripMode(dripRes.data?.drip_mode || "no_drip");
+
+    // Load the primary offering for urgency + cohort schedule (Phase 4.1).
+    // Safe if the migration hasn't run: missing columns come back undefined
+    // and downstream components hide themselves via graceful-empty rendering.
+    (async () => {
+      const { data: ocs } = await supabase
+        .from("offering_courses")
+        .select("offering_id")
+        .eq("course_id", courseId!)
+        .limit(1);
+      const offId = ocs?.[0]?.offering_id;
+      if (!offId) return;
+      const { data: off } = await (supabase as any)
+        .from("offerings")
+        .select("id, seats_total, starts_at, cohort_sessions")
+        .eq("id", offId)
+        .eq("status", "active")
+        .maybeSingle();
+      if (!off) return;
+      let seatsLeft: number | null = null;
+      if (off.seats_total) {
+        const { count } = await supabase
+          .from("enrolments")
+          .select("id", { count: "exact", head: true })
+          .eq("offering_id", offId)
+          .eq("status", "active");
+        seatsLeft = Math.max(0, off.seats_total - (count ?? 0));
+      }
+      setOfferingUrgency({
+        seats_total: off.seats_total ?? null,
+        seats_left: seatsLeft,
+        batch_starts_at: off.starts_at ?? null,
+        cohort_sessions: off.cohort_sessions ?? null,
+      });
+    })();
 
     // Load category name
     if (courseRes.data.category_id) {
@@ -354,6 +412,24 @@ const CourseDetail = () => {
             </p>
           </div>
         )}
+
+        {/* Phase 4 content blocks — each renders-and-hides if the data isn't there yet */}
+        <UrgencyStrip
+          seatsLeft={offeringUrgency?.seats_left}
+          batchStartsAt={offeringUrgency?.batch_starts_at}
+        />
+        <Outcomes outcomes={course.outcomes} />
+        <PortfolioPieces pieces={course.portfolio_pieces} />
+        <InstructorCard
+          name={course.instructor_display_name}
+          bio={course.instructor_bio}
+          credentials={course.instructor_credentials}
+          avatarUrl={course.instructor_avatar_url}
+          links={course.instructor_links}
+        />
+        <CohortSchedule sessions={offeringUrgency?.cohort_sessions} />
+        <TestimonialsCarousel courseId={courseId!} />
+        <FAQ faqs={course.faqs} />
 
         {/* Ratings & Reviews */}
         <div className="bg-card border border-border rounded-[16px] p-6 space-y-6">

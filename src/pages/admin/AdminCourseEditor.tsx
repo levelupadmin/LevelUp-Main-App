@@ -65,7 +65,16 @@ const AdminCourseEditor = () => {
     primary_offering_id: "" as string | null,
     default_video_type: "standard",
     show_on_browse: true,
+    // Phase 4 content-block fields (migration 20260420120000)
+    instructor_bio: "",
+    instructor_avatar_url: "",
+    outcomes_json: "",
+    portfolio_pieces_json: "",
+    instructor_credentials_json: "",
+    instructor_links_json: "",
+    faqs_json: "",
   });
+  const [jsonErrors, setJsonErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -100,6 +109,13 @@ const AdminCourseEditor = () => {
             primary_offering_id: data.primary_offering_id || "",
             default_video_type: data.default_video_type || "standard",
             show_on_browse: data.show_on_browse ?? true,
+            instructor_bio: data.instructor_bio || "",
+            instructor_avatar_url: data.instructor_avatar_url || "",
+            outcomes_json: data.outcomes ? JSON.stringify(data.outcomes, null, 2) : "",
+            portfolio_pieces_json: data.portfolio_pieces ? JSON.stringify(data.portfolio_pieces, null, 2) : "",
+            instructor_credentials_json: data.instructor_credentials ? JSON.stringify(data.instructor_credentials, null, 2) : "",
+            instructor_links_json: data.instructor_links ? JSON.stringify(data.instructor_links, null, 2) : "",
+            faqs_json: data.faqs ? JSON.stringify(data.faqs, null, 2) : "",
           });
         }
 
@@ -139,6 +155,35 @@ const AdminCourseEditor = () => {
       return;
     }
 
+    // Parse JSON content-block fields; bail with a clear error rather than
+    // silently saving malformed data.
+    const parseJsonField = (label: string, key: string, raw: string): unknown => {
+      if (!raw.trim()) return null;
+      try {
+        return JSON.parse(raw);
+      } catch (err) {
+        setJsonErrors((prev) => ({ ...prev, [key]: (err as Error).message }));
+        throw new Error(`${label} JSON is invalid — ${(err as Error).message}`);
+      }
+    };
+    setJsonErrors({});
+    let outcomes: unknown = null;
+    let portfolio_pieces: unknown = null;
+    let instructor_credentials: unknown = null;
+    let instructor_links: unknown = null;
+    let faqs: unknown = null;
+    try {
+      outcomes = parseJsonField("Outcomes", "outcomes_json", form.outcomes_json);
+      portfolio_pieces = parseJsonField("Portfolio pieces", "portfolio_pieces_json", form.portfolio_pieces_json);
+      instructor_credentials = parseJsonField("Instructor credentials", "instructor_credentials_json", form.instructor_credentials_json);
+      instructor_links = parseJsonField("Instructor links", "instructor_links_json", form.instructor_links_json);
+      faqs = parseJsonField("FAQs", "faqs_json", form.faqs_json);
+    } catch (err) {
+      toast({ title: "Invalid JSON", description: (err as Error).message, variant: "destructive" });
+      setSaving(false);
+      return;
+    }
+
     const payload: Record<string, any> = {
       title: form.title,
       subtitle: form.subtitle || null,
@@ -155,6 +200,13 @@ const AdminCourseEditor = () => {
       primary_offering_id: form.primary_offering_id || null,
       default_video_type: form.default_video_type,
       show_on_browse: form.show_on_browse,
+      instructor_bio: form.instructor_bio || null,
+      instructor_avatar_url: form.instructor_avatar_url || null,
+      outcomes,
+      portfolio_pieces,
+      instructor_credentials,
+      instructor_links,
+      faqs,
     };
 
     let savedCourseId = courseId;
@@ -373,6 +425,107 @@ const AdminCourseEditor = () => {
         {form.thumbnail_url && (
           <img src={form.thumbnail_url} alt="" className="w-48 h-28 object-cover rounded-lg border border-border" />
         )}
+
+        {/* ── Phase 4 landing-page content blocks ─────────────────────
+            Each of these feeds a component on the student-facing course
+            detail page. Empty/null → the corresponding section hides.
+            Complex fields are JSON textareas for now; proper array
+            editors can come in a follow-up once content is flowing. */}
+        <div className="border border-border rounded-xl p-4 space-y-5">
+          <div>
+            <h3 className="text-sm font-semibold">Landing page content</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Powers the "What you'll learn", "Meet your instructor", and
+              FAQ blocks on the public course page. Leave blank to hide a
+              section.
+            </p>
+          </div>
+
+          {field("Instructor bio", "instructor_bio", "textarea")}
+          {field("Instructor avatar URL", "instructor_avatar_url")}
+
+          {(["outcomes_json", "Outcomes — JSON array of strings, e.g. [\"Shoot in natural light\", \"Edit dialogue scenes\"]"] as const) && null}
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">
+              Outcomes <span className="text-muted-foreground font-normal">— JSON array of strings</span>
+            </label>
+            <Textarea
+              value={form.outcomes_json}
+              onChange={(e) => setForm((f) => ({ ...f, outcomes_json: e.target.value }))}
+              placeholder={'["Shoot in natural light", "Edit dialogue scenes"]'}
+              rows={4}
+              className="font-mono text-xs"
+            />
+            {jsonErrors.outcomes_json && (
+              <p className="text-xs text-destructive mt-1">{jsonErrors.outcomes_json}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">
+              Portfolio pieces <span className="text-muted-foreground font-normal">— {"[{title, description, image_url}]"}</span>
+            </label>
+            <Textarea
+              value={form.portfolio_pieces_json}
+              onChange={(e) => setForm((f) => ({ ...f, portfolio_pieces_json: e.target.value }))}
+              placeholder={'[{"title": "Short film", "description": "A 2-min narrative piece", "image_url": "https://..."}]'}
+              rows={5}
+              className="font-mono text-xs"
+            />
+            {jsonErrors.portfolio_pieces_json && (
+              <p className="text-xs text-destructive mt-1">{jsonErrors.portfolio_pieces_json}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">
+              Instructor credentials <span className="text-muted-foreground font-normal">— JSON array of strings</span>
+            </label>
+            <Textarea
+              value={form.instructor_credentials_json}
+              onChange={(e) => setForm((f) => ({ ...f, instructor_credentials_json: e.target.value }))}
+              placeholder={'["National Film Award 2019", "10+ years directing"]'}
+              rows={3}
+              className="font-mono text-xs"
+            />
+            {jsonErrors.instructor_credentials_json && (
+              <p className="text-xs text-destructive mt-1">{jsonErrors.instructor_credentials_json}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">
+              Instructor links <span className="text-muted-foreground font-normal">— {"[{label, url}]"}</span>
+            </label>
+            <Textarea
+              value={form.instructor_links_json}
+              onChange={(e) => setForm((f) => ({ ...f, instructor_links_json: e.target.value }))}
+              placeholder={'[{"label": "Instagram", "url": "https://instagram.com/..."}]'}
+              rows={3}
+              className="font-mono text-xs"
+            />
+            {jsonErrors.instructor_links_json && (
+              <p className="text-xs text-destructive mt-1">{jsonErrors.instructor_links_json}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">
+              FAQs <span className="text-muted-foreground font-normal">— {"[{question, answer}]"}</span>
+            </label>
+            <Textarea
+              value={form.faqs_json}
+              onChange={(e) => setForm((f) => ({ ...f, faqs_json: e.target.value }))}
+              placeholder={'[{"question": "Is there a refund policy?", "answer": "Yes — 7 days, no questions asked."}]'}
+              rows={6}
+              className="font-mono text-xs"
+            />
+            {jsonErrors.faqs_json && (
+              <p className="text-xs text-destructive mt-1">{jsonErrors.faqs_json}</p>
+            )}
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>

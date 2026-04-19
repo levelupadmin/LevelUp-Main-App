@@ -203,7 +203,10 @@ const ContinueLearning = () => {
                     {c.thumbnail_url && <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />}
                   </div>
                   <div className="p-4">
-                    <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-base font-semibold line-clamp-1 flex-1">{c.title}</h3>
+                      <CourseRatingBadge courseId={c.id} />
+                    </div>
                     <p className="text-sm text-muted-foreground mt-1">{c.instructor_display_name}</p>
                     <div className="mt-3 h-1 bg-surface-2 rounded-full overflow-hidden">
                       <div className="h-full bg-cream rounded-full transition-all" style={{ width: `${progressMap[c.id] || 0}%` }} />
@@ -871,10 +874,15 @@ const BrowsePrograms = () => {
               )}
               <div className="flex items-center justify-between mt-3">
                 {c.price_inr != null ? (
-                  <div className="flex items-baseline gap-2">
+                  <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-base font-semibold">₹{Number(c.price_inr).toLocaleString()}</span>
                     {c.mrp_inr && Number(c.mrp_inr) > Number(c.price_inr) && (
-                      <span className="text-sm text-muted-foreground line-through">₹{Number(c.mrp_inr).toLocaleString()}</span>
+                      <>
+                        <span className="text-sm text-muted-foreground line-through">₹{Number(c.mrp_inr).toLocaleString()}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
+                          Save {Math.round((1 - Number(c.price_inr) / Number(c.mrp_inr)) * 100)}%
+                        </span>
+                      </>
                     )}
                   </div>
                 ) : (
