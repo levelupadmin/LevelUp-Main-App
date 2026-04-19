@@ -88,13 +88,14 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
       quiz_options: (q.quiz_options || []).sort((a: any, b: any) => a.sort_order - b.sort_order),
     }));
 
-  // Load previous attempt on mount
+  // Load previous attempt on mount. Column is `total`, not `total_questions`
+  // — prior code referenced a non-existent column.
   useEffect(() => {
     if (!userId || !quiz.id) { setLoadingAttempt(false); return; }
     (async () => {
       const { data: attempt } = await (supabase as any)
         .from("quiz_attempts")
-        .select("id, score, total_questions, passed, answers")
+        .select("id, score, total, passed, answers")
         .eq("quiz_id", quiz.id)
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
@@ -105,7 +106,7 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
         if (attempt.answers && typeof attempt.answers === "object") {
           setAnswers(attempt.answers as Record<string, string>);
         }
-        setResult({ score: attempt.score, total: attempt.total_questions, passed: attempt.passed });
+        setResult({ score: attempt.score, total: attempt.total, passed: attempt.passed });
         setSubmitted(true);
       }
       setLoadingAttempt(false);
@@ -121,41 +122,27 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
       toast.error("Please answer at least one question before submitting.");
       return;
     }
-    let score = 0;
-    const total = questions.length;
 
-    questions.forEach((q: any) => {
-      const selectedOptionId = answers[q.id];
-      if (!selectedOptionId) return;
-      const selectedOption = q.quiz_options.find((o: any) => o.id === selectedOptionId);
-      if (selectedOption?.is_correct) score++;
+    // Server-side scoring — the RPC verifies enrolment, reads is_correct
+    // from the locked-down base table, and records the attempt in one
+    // SECURITY DEFINER transaction. Client no longer sees the answer key.
+    const { data, error } = await (supabase as any).rpc("submit_quiz", {
+      p_quiz_id: quiz.id,
+      p_answers: answers,
     });
 
-    const pct = total > 0 ? (score / total) * 100 : 0;
-    const passed = pct >= (quiz.pass_percentage || 70);
+    if (error || !data) {
+      if (import.meta.env.DEV) console.error("[quiz] submit_quiz RPC failed:", error);
+      toast.error("We couldn't submit your quiz. Please try again.");
+      return;
+    }
+
+    const score: number = Number(data.score) || 0;
+    const total: number = Number(data.total) || questions.length;
+    const passed: boolean = !!data.passed;
 
     setResult({ score, total, passed });
     setSubmitted(true);
-
-    // Save attempt. If the insert fails we want to tell the user — otherwise
-    // they think their score is recorded when it may not be. (This client-side
-    // scoring path is a security smell in its own right; see the RLS-gated
-    // `submit_quiz` RPC migration for the real fix.)
-    if (userId) {
-      const { error: attemptErr } = await (supabase as any).from("quiz_attempts").insert({
-        quiz_id: quiz.id,
-        user_id: userId,
-        score,
-        total_questions: total,
-        passed,
-        answers,
-      });
-      if (attemptErr) {
-        if (import.meta.env.DEV) console.error("[quiz] attempt insert failed:", attemptErr);
-        toast.error("We couldn't save your attempt. Please try again.");
-        return;
-      }
-    }
 
     if (passed) {
       hapticNotification("success");
@@ -483,14 +470,42 @@ const ChapterViewer = () => {
       user_name: userNameMap[c.user_id] || "Anonymous",
     })));
 
-    // Fetch quizzes for this chapter
+    // Fetch quizzes for this chapter. Options come from `quiz_options_public`
+    // — a view that never exposes `is_correct`. Scoring moved to the
+    // `submit_quiz` RPC (see migration 20260417120000) so students can no
+    // longer read the answer key.
     const { data: quizData } = await (supabase as any)
       .from("chapter_quizzes")
-      .select("id, title, description, pass_percentage, sort_order, quiz_questions(id, question_text, question_type, explanation, sort_order, quiz_options(id, option_text, is_correct, sort_order))")
+      .select("id, title, description, pass_percentage, sort_order, quiz_questions(id, question_text, question_type, explanation, sort_order)")
       .eq("chapter_id", chapterId)
       .eq("is_active", true)
       .order("sort_order");
-    if (quizData) setQuizzes(quizData);
+
+    if (quizData && quizData.length) {
+      const allQuestionIds: string[] = quizData.flatMap((q: any) =>
+        (q.quiz_questions || []).map((qq: any) => qq.id)
+      );
+      if (allQuestionIds.length) {
+        const { data: opts } = await (supabase as any)
+          .from("quiz_options_public")
+          .select("id, question_id, option_text, sort_order")
+          .in("question_id", allQuestionIds)
+          .order("sort_order");
+        const byQuestion: Record<string, any[]> = {};
+        (opts || []).forEach((o: any) => {
+          if (!byQuestion[o.question_id]) byQuestion[o.question_id] = [];
+          byQuestion[o.question_id].push(o);
+        });
+        quizData.forEach((q: any) => {
+          (q.quiz_questions || []).forEach((qq: any) => {
+            qq.quiz_options = byQuestion[qq.id] || [];
+          });
+        });
+      }
+      setQuizzes(quizData);
+    } else {
+      setQuizzes([]);
+    }
 
     setLoading(false);
   }, [chapterId, user, profile, navigate]);
