@@ -1,7 +1,8 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster as SonnerToaster } from "sonner";
+import { AnimatePresence, motion } from "framer-motion";
 import { AuthProvider } from "@/contexts/AuthContext";
 import RequireAuth from "@/components/guards/RequireAuth";
 import RequireRole from "@/components/guards/RequireRole";
@@ -87,19 +88,25 @@ const queryClient = new QueryClient({
   },
 });
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <ErrorBoundary>
-        <BrowserRouter>
-          <Suspense fallback={<LoadingFallback />}>
-            <Routes>
-              {/* Public */}
-              <Route path="/" element={<RootRedirect />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route path="/p/:slug" element={<PublicOffering />} />
-              <Route path="/thank-you/:paymentOrderId" element={<ThankYou />} />
+const AnimatedRoutes = () => {
+  const location = useLocation();
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.div
+        key={location.pathname}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.06, ease: "linear" }}
+      >
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes location={location}>
+            {/* Public */}
+            <Route path="/" element={<RootRedirect />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/p/:slug" element={<PublicOffering />} />
+            <Route path="/thank-you/:paymentOrderId" element={<ThankYou />} />
 
               {/* Student routes */}
               <Route path="/home" element={<RequireAuth><Home /></RequireAuth>} />
@@ -145,13 +152,24 @@ const App = () => (
               <Route path="/admin/roles" element={<RequireAuth><RequireRole role="admin"><AdminRoles /></RequireRole></RequireAuth>} />
               <Route path="/admin/community" element={<RequireAuth><RequireRole role="admin"><AdminCommunityAnalytics /></RequireRole></RequireAuth>} />
 
-              {/* Instructor */}
-              <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />
+            {/* Instructor */}
+            <Route path="/instructor" element={<RequireAuth><RequireRole role="instructor"><InstructorDashboard /></RequireRole></RequireAuth>} />
 
-              {/* Catch-all */}
-              <Route path="*" element={<NotFoundPage />} />
-            </Routes>
-          </Suspense>
+            {/* Catch-all */}
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </Suspense>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <AuthProvider>
+      <ErrorBoundary>
+        <BrowserRouter>
+          <AnimatedRoutes />
         </BrowserRouter>
       </ErrorBoundary>
       <SonnerToaster position="bottom-right" theme="dark" />

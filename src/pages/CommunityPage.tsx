@@ -8,8 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
+import PostSkeleton from "@/components/skeletons/PostSkeleton";
 
 interface Post {
   id: string;
@@ -258,40 +259,39 @@ const CommunityPage = () => {
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="bg-surface border border-border rounded-xl p-4 space-y-3 animate-pulse">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-surface-2 flex-shrink-0" />
-                  <div className="space-y-1.5 flex-1">
-                    <div className="h-3 bg-surface-2 rounded w-28" />
-                    <div className="h-2 bg-surface-2 rounded w-16" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <div className="h-3 bg-surface-2 rounded w-full" />
-                  <div className="h-3 bg-surface-2 rounded w-5/6" />
-                  <div className="h-3 bg-surface-2 rounded w-2/3" />
-                </div>
-                <div className="flex items-center gap-4 pt-1">
-                  <div className="h-3 bg-surface-2 rounded w-10" />
-                  <div className="h-3 bg-surface-2 rounded w-10" />
-                </div>
-              </div>
+              <PostSkeleton key={i} />
             ))}
           </div>
         ) : posts.length === 0 ? (
           <div className="text-center py-12">
             <MessageCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
             <p className="text-lg font-medium text-foreground mb-1">No posts yet — be the first!</p>
-            <p className="text-muted-foreground text-sm">Share a thought, your work, or start a conversation.</p>
-            <button
-              onClick={() => {
-                const textarea = document.querySelector<HTMLTextAreaElement>('textarea[placeholder="Share something with the community..."]');
-                if (textarea) { textarea.focus(); textarea.scrollIntoView({ behavior: "smooth", block: "center" }); }
-              }}
-              className="mt-4 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity inline-flex items-center gap-1.5"
-            >
-              <Send className="h-4 w-4" /> Write a Post
-            </button>
+            <p className="text-muted-foreground text-sm mb-5">Not sure where to start? Pick a prompt:</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {[
+                "Share your latest work",
+                "Ask for feedback",
+                "Introduce yourself",
+              ].map((prompt) => (
+                <button
+                  key={prompt}
+                  onClick={() => {
+                    setNewPost(prompt + " — ");
+                    const textarea = document.querySelector<HTMLTextAreaElement>('textarea[placeholder="Share something with the community..."]');
+                    if (textarea) {
+                      textarea.focus();
+                      textarea.scrollIntoView({ behavior: "smooth", block: "center" });
+                      requestAnimationFrame(() => {
+                        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+                      });
+                    }
+                  }}
+                  className="px-4 py-2 rounded-full border border-border bg-surface text-sm text-foreground hover:border-cream hover:bg-surface-2 transition-colors min-h-[44px]"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="space-y-4">

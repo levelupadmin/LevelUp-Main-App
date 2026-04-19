@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, Pencil, X, Award } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import CertificateGallery from "@/components/certificates/CertificateGallery";
 import NotificationPreferences from "@/components/notifications/NotificationPreferences";
 

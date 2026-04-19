@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import LazyImage from "@/components/LazyImage";
 import { ArrowRight, Search, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useWishlist } from "@/hooks/useWishlist";
 import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/useEnrolmentCounts";
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
+import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 import { useDebounce } from "@/hooks/useDebounce";
 
 const TIER_ORDER = ["live_cohort", "masterclass", "advanced_program", "workshop"] as const;
@@ -228,19 +229,7 @@ const BrowsePage = () => {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="bg-surface border border-border rounded-xl overflow-hidden animate-pulse">
-                <div className="aspect-video bg-surface-2" />
-                <div className="p-4 space-y-2">
-                  <div className="h-4 bg-surface-2 rounded w-3/4" />
-                  <div className="h-3 bg-surface-2 rounded w-1/2" />
-                  <div className="h-3 bg-surface-2 rounded w-full" />
-                  <div className="h-3 bg-surface-2 rounded w-2/3" />
-                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
-                    <div className="h-4 bg-surface-2 rounded w-20" />
-                    <div className="h-3 bg-surface-2 rounded w-14" />
-                  </div>
-                </div>
-              </div>
+              <CourseCardSkeleton key={i} />
             ))}
           </div>
         ) : filtered.length === 0 ? (

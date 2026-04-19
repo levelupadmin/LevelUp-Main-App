@@ -7,7 +7,7 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
 import { Bell, Calendar, Clock, Video, ExternalLink, PlayCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useSessionReminder } from "@/hooks/useSessionReminder";
 
 interface SessionRow {

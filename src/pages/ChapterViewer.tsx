@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import DOMPurify from "dompurify";
 import {
   CheckCircle2,
@@ -24,6 +24,7 @@ import Confetti from "@/components/Confetti";
 import { checkMilestone } from "@/hooks/useMilestone";
 import { useVideoProgress } from "@/hooks/useVideoProgress";
 import { checkAndGenerateCertificate } from "@/hooks/useCertificateAutoGenerate";
+import { hapticImpact, hapticNotification } from "@/lib/haptics";
 
 interface Chapter {
   id: string;
@@ -157,6 +158,7 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
     }
 
     if (passed) {
+      hapticNotification("success");
       toast.success(`Passed! ${score}/${total} correct`);
     } else {
       toast.error(`Not quite — ${score}/${total}. You need ${quiz.pass_percentage}% to pass.`);
@@ -628,6 +630,7 @@ const ChapterViewer = () => {
 
     setIsCompleted(true);
     setSubmitting(false);
+    hapticImpact("light");
 
     // Check for milestone (progress celebration)
     const { data: allProgress } = await supabase
@@ -643,6 +646,7 @@ const ChapterViewer = () => {
     if (hit) {
       setShowConfetti(true);
       setMilestone(hit);
+      hapticNotification("success");
       toast.success(hit.title, { description: hit.subtitle, duration: 4000 });
       confettiTimerRef.current = setTimeout(() => { setShowConfetti(false); setMilestone(null); }, 4000);
     } else {
@@ -675,7 +679,10 @@ const ChapterViewer = () => {
     // Auto-advance to next (with safety check) — delay longer if milestone shown
     const advanceDelay = hit ? 2500 : 800;
     if (siblings && currentIndex >= 0 && currentIndex < siblings.length - 1 && siblings[currentIndex + 1]?.id) {
-      autoAdvanceTimerRef.current = setTimeout(() => navigate(`/chapters/${siblings[currentIndex + 1].id}`), advanceDelay);
+      autoAdvanceTimerRef.current = setTimeout(() => {
+        hapticImpact("light");
+        navigate(`/chapters/${siblings[currentIndex + 1].id}`);
+      }, advanceDelay);
     }
   };
 

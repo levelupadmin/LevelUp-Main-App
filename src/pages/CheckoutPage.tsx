@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Loader2, Tag, ShieldCheck, BookOpen, ArrowLeft, CheckCircle2 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 

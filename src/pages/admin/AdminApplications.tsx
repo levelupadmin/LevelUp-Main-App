@@ -38,7 +38,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 /* ── Status definitions ── */
 const ALL_STATUSES = [

@@ -11,6 +11,7 @@ import LazyImage from "@/components/LazyImage";
 import { ArrowRight, Calendar, MessageSquare, ArrowUp, Globe, MapPin, Loader2, Video, Clock, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
+import { eventDateTimeLabel, eventDurationLabel } from "@/lib/event-format";
 import { useToast } from "@/hooks/use-toast";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/useEnrolmentCounts";
@@ -516,7 +517,7 @@ const UpcomingEvents = () => {
                 </div>
                 <div className="flex flex-col items-end gap-0.5 flex-shrink-0 ml-3">
                   <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                    <Calendar className="h-3 w-3" /> {format(new Date(ev.starts_at), "EEE, MMM d")}
+                    <Calendar className="h-3 w-3" /> {eventDateTimeLabel(ev.starts_at)}
                   </span>
                   <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                     {ev.event_type === "online" || ev.venue_type !== "in_person" ? (
@@ -525,6 +526,11 @@ const UpcomingEvents = () => {
                       <><MapPin className="h-3 w-3" /> {ev.city || "In-Person"}</>
                     )}
                   </span>
+                  {eventDurationLabel(ev.duration_minutes) && (
+                    <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-3 w-3" /> {eventDurationLabel(ev.duration_minutes)}
+                    </span>
+                  )}
                 </div>
               </div>
               {/* CTA row */}

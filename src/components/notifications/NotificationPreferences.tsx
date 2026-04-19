@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Switch } from "@/components/ui/switch";
 import { Bell, BookOpen, Users, ShieldCheck, Loader2, Info } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { NOTIFICATION_TYPES, type NotificationType } from "@/lib/notificationTypes";
 
 interface PrefRow {

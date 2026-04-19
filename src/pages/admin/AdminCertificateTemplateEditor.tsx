@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ArrowLeft, Plus, X, Upload, GripVertical } from "lucide-react";
 import {
   CANVAS_WIDTH,

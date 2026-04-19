@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Clock, Users, CalendarDays } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -40,7 +40,6 @@ const HeroCarousel = () => {
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [direction, setDirection] = useState(1);
-  const progressRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     supabase
@@ -79,16 +78,6 @@ const HeroCarousel = () => {
     return () => clearInterval(timer);
   }, [next, paused, slides.length]);
 
-  // Reset progress bar animation on slide change
-  useEffect(() => {
-    if (progressRef.current) {
-      progressRef.current.style.animation = "none";
-      // Force reflow
-      void progressRef.current.offsetHeight;
-      progressRef.current.style.animation = "";
-    }
-  }, [activeIndex]);
-
   if (!slides.length) return null;
 
   const slide = slides[activeIndex];
@@ -125,34 +114,6 @@ const HeroCarousel = () => {
           <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
         </motion.div>
       </AnimatePresence>
-
-      {/* ── Progress bars — top-left ── */}
-      <div className="absolute top-5 left-6 flex gap-2 z-20">
-        {slides.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => goTo(i)}
-            className="w-12 h-[3px] bg-white/20 rounded-full overflow-hidden cursor-pointer"
-          >
-            {i === activeIndex ? (
-              <div
-                ref={i === activeIndex ? progressRef : undefined}
-                className="h-full bg-white rounded-full"
-                style={{
-                  animation: paused ? "none" : "slideProgress 6s linear forwards",
-                  animationPlayState: paused ? "paused" : "running",
-                }}
-              />
-            ) : (
-              <div
-                className={`h-full bg-white rounded-full transition-all duration-300 ${
-                  i < activeIndex ? "w-full" : "w-0"
-                }`}
-              />
-            )}
-          </button>
-        ))}
-      </div>
 
       {/* ── Text overlay — left-center, animated ── */}
       <div className="relative z-10 flex items-center h-full px-8 md:px-12">

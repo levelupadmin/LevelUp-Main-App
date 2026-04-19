@@ -12,7 +12,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { CheckCircle2, Lock, Play, Clock, BookOpen, Star } from "lucide-react";
 import ReviewList from "@/components/reviews/ReviewList";
 
@@ -270,14 +270,8 @@ const CourseDetail = () => {
   const completedCount = progress.filter((p) => p.completed_at).length;
 
   return (
-    <StudentLayout title={course.title}>
+    <StudentLayout backTo="/my-courses" backLabel="My Courses">
       <div className="max-w-4xl mx-auto space-y-8">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
-          <Link to="/my-courses" className="hover:text-foreground transition-colors">My Courses</Link>
-          <span>&rsaquo;</span>
-          <span className="text-foreground truncate">{course.title}</span>
-        </div>
         {/* Hero */}
         <div className="relative rounded-[20px] overflow-hidden bg-card border border-border">
           {course.hero_image_url && (
@@ -413,9 +407,9 @@ const CourseDetail = () => {
                           <div key={chapter.id}>
                             <button
                               onClick={() => handleChapterClick(chapter, sectionChapters)}
-                              className="w-full flex items-center gap-3 h-10 px-4 rounded-lg text-left text-sm transition-colors hover:bg-accent/50 group"
+                              className="w-full flex items-start gap-3 min-h-[40px] py-2 px-4 rounded-lg text-left text-sm transition-colors hover:bg-accent/50 group"
                             >
-                              <span className="w-5 h-5 flex items-center justify-center shrink-0">
+                              <span className="w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">
                                 {completed ? (
                                   <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                                 ) : locked ? (
@@ -425,19 +419,19 @@ const CourseDetail = () => {
                                 )}
                               </span>
                               <span
-                                className={`flex-1 truncate ${
+                                className={`flex-1 line-clamp-2 leading-snug ${
                                   locked ? "text-muted-foreground" : "text-foreground"
                                 }`}
                               >
                                 {idx + 1}. {chapter.title}
                               </span>
                               {chapter.make_free && !hasAccess && (
-                                <Badge variant="outline" className="text-[10px] h-5 px-1.5">
+                                <Badge variant="outline" className="text-[10px] h-5 px-1.5 mt-0.5 shrink-0">
                                   Free
                                 </Badge>
                               )}
                               {chapter.duration_seconds && (
-                                <span className="text-xs text-muted-foreground font-mono shrink-0">
+                                <span className="text-xs text-muted-foreground font-mono shrink-0 mt-0.5">
                                   {formatDuration(chapter.duration_seconds)}
                                 </span>
                               )}

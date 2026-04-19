@@ -8,6 +8,7 @@ import { TierBadge } from "@/components/TierBadge";
 import { Progress } from "@/components/ui/progress";
 import LazyImage from "@/components/LazyImage";
 import { ArrowRight, BookOpen, Sparkles, Award } from "lucide-react";
+import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 
 interface EnrolledCourse {
   enrolment_id: string;
@@ -220,7 +221,7 @@ const MyCoursesPage = () => {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-surface border border-border rounded-xl h-[280px] animate-pulse" />
+              <CourseCardSkeleton key={i} />
             ))}
           </div>
         ) : courses.length === 0 ? (

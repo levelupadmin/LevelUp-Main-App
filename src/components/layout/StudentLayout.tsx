@@ -7,9 +7,10 @@ import NotificationDropdown from "@/components/NotificationDropdown";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
   Home, BookOpen, Compass, MessageSquare, User,
-  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3
+  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, ChevronLeft
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { hapticSelection } from "@/lib/haptics";
 
 const NAV_ITEMS = [
   { label: "Home", icon: Home, path: "/home" },
@@ -33,9 +34,11 @@ const MOBILE_NAV_ITEMS = [
 interface Props {
   children: React.ReactNode;
   title?: string;
+  backTo?: string;
+  backLabel?: string;
 }
 
-const StudentLayout = ({ children, title }: Props) => {
+const StudentLayout = ({ children, title, backTo, backLabel }: Props) => {
   const { profile, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -114,7 +117,7 @@ const StudentLayout = ({ children, title }: Props) => {
 
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div className="fixed inset-0 z-[60] md:hidden">
           <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex flex-col">
             <div className="flex items-center justify-between p-6">
@@ -123,7 +126,18 @@ const StudentLayout = ({ children, title }: Props) => {
                 <X className="h-5 w-5 text-muted-foreground" />
               </button>
             </div>
-            <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1">
+
+            <div className="px-6 pb-4 flex items-center gap-3">
+              <InitialsAvatar name={profile?.full_name ?? "U"} photoUrl={profile?.avatar_url} size={40} />
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{profile?.full_name ?? "Student"}</p>
+                <p className="text-xs font-mono text-muted-foreground">
+                  #{profile?.member_number ?? "—"}
+                </p>
+              </div>
+            </div>
+
+            <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1 overflow-y-auto">
               {NAV_ITEMS.map((item) => {
                 const active = location.pathname === item.path;
                 return (
@@ -170,6 +184,20 @@ const StudentLayout = ({ children, title }: Props) => {
                 </>
               )}
             </nav>
+
+            <div className="border-t border-border p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+              <button
+                onClick={async () => {
+                  setSidebarOpen(false);
+                  await signOut();
+                  navigate("/login");
+                }}
+                className="flex items-center gap-3 w-full px-3 py-3 rounded-md text-sm text-destructive hover:bg-destructive/10 transition-colors min-h-[44px]"
+              >
+                <LogOut className="h-[18px] w-[18px]" />
+                Sign out
+              </button>
+            </div>
           </aside>
         </div>
       )}
@@ -178,11 +206,21 @@ const StudentLayout = ({ children, title }: Props) => {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
         <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <button aria-label="Open menu" className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
             </button>
-            <h2 className="text-lg font-semibold">{title}</h2>
+            {backTo ? (
+              <Link
+                to={backTo}
+                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors min-h-[44px]"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                {backLabel ?? "Back"}
+              </Link>
+            ) : (
+              <h2 className="text-lg font-semibold truncate">{title}</h2>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -264,6 +302,7 @@ const StudentLayout = ({ children, title }: Props) => {
             <Link
               key={item.path}
               to={item.path}
+              onClick={() => { if (!active) hapticSelection(); }}
               className={cn(
                 "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2",
                 active ? "text-cream" : "text-muted-foreground"

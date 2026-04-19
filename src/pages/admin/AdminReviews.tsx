@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Star, CheckCircle2, XCircle, Trash2, Search } from "lucide-react";
 import { useDebounce } from "@/hooks/useDebounce";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 interface ReviewRow {
   id: string;
