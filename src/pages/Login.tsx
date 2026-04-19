@@ -3,7 +3,9 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
+import SocialAuthButtons from "@/components/SocialAuthButtons";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Mail, ArrowRight } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
@@ -172,9 +174,42 @@ const Login = () => {
   const slide = slides[activeSlide];
 
   return (
-    <div className="flex min-h-screen bg-canvas">
+    <div className="flex min-h-screen flex-col lg:flex-row bg-canvas">
+      {/* Mobile/tablet hero — desktop uses the right-side carousel below instead */}
+      <div className="lg:hidden relative h-[40vh] md:h-[50vh] overflow-hidden">
+        {slide.image && (
+          <img
+            key={activeSlide}
+            src={slide.image}
+            alt={slide.title + " " + slide.italic}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="eager"
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/20" />
+        <div className="relative z-10 h-full flex flex-col justify-end p-6 pb-8">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
+            {slide.category}
+          </p>
+          <h2 className="text-[44px] sm:text-[56px] leading-[1] font-semibold text-foreground max-w-[14ch]">
+            {slide.title}{" "}
+            <span className="font-serif-italic text-cream">{slide.italic}</span>
+          </h2>
+          <div className="flex gap-1.5 mt-5">
+            {slides.map((_, i) => (
+              <div
+                key={i}
+                className={`h-1 rounded-full transition-all ${
+                  i === activeSlide ? "w-8 bg-white" : "w-4 bg-white/30"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Left sidebar */}
-      <div className="w-full lg:w-[420px] lg:min-w-[420px] flex flex-col justify-between px-6 sm:px-8 py-8 border-r border-border">
+      <div className="w-full lg:w-[420px] lg:min-w-[420px] flex flex-col justify-between px-6 sm:px-8 py-8 lg:border-r border-border">
         <div>
           <LevelUpWordmark className="text-xl" />
         </div>
@@ -184,9 +219,17 @@ const Login = () => {
             <h1 className="text-2xl font-semibold mb-1">
               Welcome <span className="font-serif-italic text-cream">back</span>
             </h1>
-            <p className="text-sm text-muted-foreground mb-8">
+            <p className="text-sm text-muted-foreground mb-6">
               Sign in to continue your craft
             </p>
+
+            <SocialAuthButtons redirectTo={redirectTarget} />
+
+            <div className="flex items-center gap-3 my-5">
+              <div className="flex-1 border-t border-border" />
+              <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest">or</span>
+              <div className="flex-1 border-t border-border" />
+            </div>
 
             {loginMode === "password" ? (
               <form onSubmit={handleLogin} className="space-y-4">
@@ -204,9 +247,8 @@ const Login = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password" className="text-sm text-muted-foreground">Password</Label>
-                  <Input
+                  <PasswordInput
                     id="password"
-                    type="password"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}

@@ -4,10 +4,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
+import SocialAuthButtons from "@/components/SocialAuthButtons";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle2, Mail } from "lucide-react";
+import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 const Signup = () => {
   const { toast } = useToast();
@@ -144,17 +147,43 @@ const Signup = () => {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-[440px] border-border bg-card shadow-elevated">
+    <div className="min-h-screen bg-background">
+      {/* Mobile/tablet hero — hidden on desktop where the centered card is self-contained */}
+      <div className="lg:hidden relative h-[40vh] md:h-[50vh] overflow-hidden">
+        <img
+          src={signupHeroImage}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          loading="eager"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/20" />
+        <div className="relative z-10 h-full flex flex-col justify-end p-6 pb-8">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
+            CREATORS WHO SHIP
+          </p>
+          <h2 className="text-[44px] sm:text-[56px] leading-[1] font-semibold text-foreground max-w-[14ch]">
+            Learn the <span className="font-serif-italic text-cream">craft</span>
+          </h2>
+        </div>
+      </div>
+
+      <div className="flex lg:min-h-screen lg:items-center lg:justify-center px-4 py-8 lg:py-12">
+        <Card className="w-full lg:max-w-[440px] border-none lg:border-border bg-transparent lg:bg-card shadow-none lg:shadow-elevated">
         <CardHeader className="items-center gap-2 pb-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent lg:flex hidden">
             <span className="text-xl font-bold text-foreground">L</span>
           </div>
           <h1 className="text-xl font-bold text-foreground">Create your account</h1>
-          <p className="text-sm text-muted-foreground">Join LevelUp and start learning filmmaking</p>
+          <p className="text-sm text-muted-foreground">Join LevelUp. Learn from India's best creators.</p>
           <p className="text-xs text-muted-foreground/70 font-mono">Join 5,000+ creators learning new skills</p>
         </CardHeader>
         <CardContent>
+          <SocialAuthButtons redirectTo="/home" />
+          <div className="flex items-center gap-3 my-5">
+            <div className="flex-1 border-t border-border" />
+            <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest">or</span>
+            <div className="flex-1 border-t border-border" />
+          </div>
           <form onSubmit={handleSignup} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="fullName">Full name</Label>
@@ -214,9 +243,8 @@ const Signup = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="At least 8 characters"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -250,7 +278,7 @@ const Signup = () => {
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading || !passwordValid}>
+            <Button type="submit" className="w-full" disabled={loading}>
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Create account
             </Button>
@@ -262,7 +290,8 @@ const Signup = () => {
             </Link>
           </p>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 };
