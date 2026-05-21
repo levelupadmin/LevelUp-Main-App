@@ -45,7 +45,7 @@ const EMPTY_FORM = {
   title: "",
   slug: "",
   description: "",
-  type: "live_cohort",
+  type: "onetime",
   status: "draft",
   price_inr: 0,
   mrp_inr: "",
@@ -147,7 +147,7 @@ const AdminOfferingEditor = () => {
             title: d.title || "",
             slug: d.slug || "",
             description: d.description || "",
-            type: d.type || "live_cohort",
+            type: d.type || "onetime",
             status: d.status || "draft",
             price_inr: d.price_inr ?? 0,
             mrp_inr: d.mrp_inr?.toString() || "",
@@ -584,16 +584,17 @@ const AdminOfferingEditor = () => {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Type</Label>
+                <Label>Billing model</Label>
                 <Select value={form.type} onValueChange={(v) => f("type", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="live_cohort">Live Cohort</SelectItem>
-                    <SelectItem value="masterclass">Masterclass</SelectItem>
-                    <SelectItem value="workshop">Workshop</SelectItem>
-                    <SelectItem value="bundle">Bundle</SelectItem>
+                    <SelectItem value="onetime">One-time payment</SelectItem>
+                    <SelectItem value="subscription">Subscription</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Product category (Masterclass / Live Cohort / Workshop) is set on the linked course, not here.
+                </p>
               </div>
               <div>
                 <Label>Status</Label>
