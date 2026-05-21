@@ -123,9 +123,37 @@ const AdminOfferings = () => {
     return matchesSearch && matchesStatus;
   });
 
-  const copyLink = (slug: string) => {
-    navigator.clipboard.writeText(`https://app.leveluplearning.in/p/${slug}`);
-    sonnerToast("Link copied!");
+  const copyLink = async (slug: string) => {
+    // Build the link against the current host so it works in local dev,
+    // Vercel preview deploys, and production without code changes.
+    const url = `${window.location.origin}/p/${slug}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        sonnerToast.success("Link copied", { description: url });
+        return;
+      }
+      throw new Error("Clipboard API unavailable");
+    } catch {
+      // Fallback: legacy execCommand path for browsers/contexts that
+      // refuse the async clipboard API (Safari background tab, http://
+      // contexts, locked-down corporate browsers, etc.).
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "absolute";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        sonnerToast.success("Link copied", { description: url });
+      } catch {
+        // Last resort: surface the URL so the user can copy it manually.
+        sonnerToast.error("Copy blocked by your browser", { description: url, duration: 30000 });
+      }
+    }
   };
 
   return (
