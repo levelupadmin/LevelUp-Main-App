@@ -28,3 +28,6 @@ dist-ssr
 .env.local
 .env.*.local
 .vercel
+
+# Supabase CLI scratch state (project ref, pooler URL, versions, etc.)
+supabase/.temp/
