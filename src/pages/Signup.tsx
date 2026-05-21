@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
-import SocialAuthButtons from "@/components/SocialAuthButtons";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle2, Mail } from "lucide-react";
@@ -178,12 +177,6 @@ const Signup = () => {
           <p className="text-xs text-muted-foreground/70 font-mono">Join 5,000+ creators learning new skills</p>
         </CardHeader>
         <CardContent>
-          <SocialAuthButtons redirectTo="/home" />
-          <div className="flex items-center gap-3 my-5">
-            <div className="flex-1 border-t border-border" />
-            <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest">or</span>
-            <div className="flex-1 border-t border-border" />
-          </div>
           <form onSubmit={handleSignup} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="fullName">Full name</Label>

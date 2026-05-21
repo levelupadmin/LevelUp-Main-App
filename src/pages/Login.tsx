@@ -5,7 +5,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
-import SocialAuthButtons from "@/components/SocialAuthButtons";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Mail, ArrowRight } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
@@ -222,14 +221,6 @@ const Login = () => {
             <p className="text-sm text-muted-foreground mb-6">
               Sign in to continue your craft
             </p>
-
-            <SocialAuthButtons redirectTo={redirectTarget} />
-
-            <div className="flex items-center gap-3 my-5">
-              <div className="flex-1 border-t border-border" />
-              <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest">or</span>
-              <div className="flex-1 border-t border-border" />
-            </div>
 
             {loginMode === "password" ? (
               <form onSubmit={handleLogin} className="space-y-4">
