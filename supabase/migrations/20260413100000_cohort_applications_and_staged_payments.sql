@@ -35,7 +35,7 @@ CREATE INDEX IF NOT EXISTS idx_cohort_apps_status ON cohort_applications(status)
 
 CREATE OR REPLACE TRIGGER set_cohort_applications_updated_at
   BEFORE UPDATE ON cohort_applications
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 ALTER TABLE cohort_applications ENABLE ROW LEVEL SECURITY;
 

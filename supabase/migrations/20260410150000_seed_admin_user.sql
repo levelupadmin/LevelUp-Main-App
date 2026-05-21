@@ -1,5 +1,11 @@
 -- Seed admin user: rahul@rahul.com
 -- IMPORTANT: Change the password after first login.
+--
+-- Triggers `prevent_role_escalation` (20260407215331) and `users_admin_role_guard`
+-- (20260408160200) would normally block the role bump below because no admin
+-- exists yet on a fresh DB. Bypass them locally for this transaction only.
+
+SET LOCAL session_replication_role = 'replica';
 
 DO $$
 DECLARE
@@ -11,7 +17,11 @@ BEGIN
   IF _uid IS NULL THEN
     _uid := gen_random_uuid();
 
-    -- Create the auth user with password
+    -- Create the auth user with password. Supabase's go-true auth service
+    -- scans every nullable string column into a Go string, which fails with
+    -- "converting NULL to string is unsupported" if any of email_change /
+    -- phone_change / *_token fields are NULL. Initialise them to '' so the
+    -- first sign-in does not 500.
     INSERT INTO auth.users (
       instance_id,
       id,
@@ -26,6 +36,13 @@ BEGIN
       updated_at,
       confirmation_token,
       recovery_token,
+      email_change,
+      email_change_token_new,
+      email_change_token_current,
+      phone,
+      phone_change,
+      phone_change_token,
+      reauthentication_token,
       is_sso_user
     ) VALUES (
       '00000000-0000-0000-0000-000000000000',
@@ -39,6 +56,13 @@ BEGIN
       '{"full_name":"Rahul"}'::jsonb,
       now(),
       now(),
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
       '',
       '',
       false

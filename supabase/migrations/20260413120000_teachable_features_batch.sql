@@ -58,7 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz_user ON quiz_attempts(quiz_id,
 
 CREATE OR REPLACE TRIGGER set_chapter_quizzes_updated_at
   BEFORE UPDATE ON chapter_quizzes
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 ALTER TABLE chapter_quizzes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quiz_questions ENABLE ROW LEVEL SECURITY;

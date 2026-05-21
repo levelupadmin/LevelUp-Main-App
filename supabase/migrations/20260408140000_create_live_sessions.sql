@@ -13,6 +13,24 @@ CREATE TABLE IF NOT EXISTS live_sessions (
   updated_at timestamptz DEFAULT now()
 );
 
+-- Some earlier migrations (e.g. 20260405074258_*) created live_sessions with
+-- `starts_at` as the date column. The app + later migrations expect
+-- `scheduled_at`. Rename the legacy column if present so this migration and
+-- everything after it works against either a fresh DB or one that was
+-- bootstrapped from the older schema.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'live_sessions' AND column_name = 'starts_at'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'live_sessions' AND column_name = 'scheduled_at'
+  ) THEN
+    EXECUTE 'ALTER TABLE public.live_sessions RENAME COLUMN starts_at TO scheduled_at';
+  END IF;
+END $$;
+
 -- Index for fast lookups by course and date
 CREATE INDEX IF NOT EXISTS idx_live_sessions_course_date
   ON live_sessions (course_id, scheduled_at DESC);

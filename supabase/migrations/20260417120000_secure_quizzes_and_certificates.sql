@@ -267,7 +267,7 @@ BEGIN
 
   IF v_completion_pct < v_threshold THEN
     RAISE EXCEPTION
-      'course completion %%%% (%%) is below required threshold %%%% (%%)',
+      'course completion %% (%) is below required threshold %% (%)',
       v_completion_pct, v_threshold
       USING ERRCODE = '42501';
   END IF;
