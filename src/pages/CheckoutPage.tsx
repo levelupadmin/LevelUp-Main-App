@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -9,9 +9,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
-import { Loader2, Tag, ShieldCheck, BookOpen, ArrowLeft } from "lucide-react";
+import { toast } from "@/lib/toast";
+import { Loader2, Tag, ShieldCheck, BookOpen, ArrowLeft, CheckCircle2 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+import TrustPanel from "@/components/checkout/TrustPanel";
 
 /* ── Razorpay global type ── */
 declare global {
@@ -36,7 +37,15 @@ export default function CheckoutPage() {
   const { offeringId } = useParams<{ offeringId: string }>();
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
-  usePageTitle("Checkout");
+  const [searchParams] = useSearchParams();
+  // Staged payment params
+  const paymentType = (searchParams.get("type") as "full" | "app_fee" | "confirmation" | "balance") || "full";
+  const applicationId = searchParams.get("app") || null;
+  usePageTitle(
+    paymentType === "app_fee" ? "Application Fee" :
+    paymentType === "confirmation" ? "Confirmation Payment" :
+    paymentType === "balance" ? "Balance Payment" : "Checkout"
+  );
 
   const [offering, setOffering] = useState<Offering | null>(null);
   const [linkedCourses, setLinkedCourses] = useState<LinkedCourse[]>([]);
@@ -63,6 +72,8 @@ export default function CheckoutPage() {
   const [fieldTouched, setFieldTouched] = useState<Record<string, boolean>>({});
   const [paying, setPaying] = useState(false);
   const paymentInFlightRef = useRef(false);
+  const [application, setApplication] = useState<any>(null);
+  const [totalPreviouslyPaid, setTotalPreviouslyPaid] = useState(0);
 
   /* ── Load offering data ── */
   useEffect(() => {
@@ -98,6 +109,29 @@ export default function CheckoutPage() {
       setLinkedCourses(coursesRes.data ?? []);
       setCustomFields(fieldsRes.data ?? []);
 
+      // Load application data for staged payments.
+      // Defence-in-depth: the server blocks cross-user staged payments, but
+      // we also filter by user_id client-side so we don't render another
+      // student's paid flags / amount if their UUID is pasted into `?app=`.
+      if (applicationId && paymentType !== "full") {
+        const { data: appData } = await (supabase as any)
+          .from("cohort_applications")
+          .select("id, user_id, status, full_name, email, app_fee_payment_id, confirmation_payment_id, balance_payment_id")
+          .eq("id", applicationId)
+          .eq("user_id", user!.id)
+          .maybeSingle();
+        if (!appData) {
+          toast.error("This application isn't available on your account.");
+          navigate("/my-courses");
+          return;
+        }
+        setApplication(appData);
+        let paid = 0;
+        if (appData.app_fee_payment_id) paid += Number(offRes.data.app_fee_inr ?? 0);
+        if (appData.confirmation_payment_id) paid += Number(offRes.data.confirmation_amount_inr ?? 0);
+        setTotalPreviouslyPaid(paid);
+      }
+
       // Load bump offering details
       const bumpData = bumpsRes.data ?? [];
       if (bumpData.length > 0) {
@@ -119,11 +153,23 @@ export default function CheckoutPage() {
       setLoading(false);
     }
     load();
-  }, [authLoading, user, offeringId, navigate]);
+  }, [authLoading, user, offeringId, applicationId, paymentType, navigate]);
+
+  const isStaged = paymentType !== "full" && (offering as any)?.payment_mode === "staged";
+  const stagedLabel = paymentType === "app_fee" ? "Application Fee"
+    : paymentType === "confirmation" ? "Confirmation Amount"
+    : paymentType === "balance" ? "Balance Payment" : "";
 
   /* ── Pricing ── */
   const subtotal = (() => {
     if (!offering) return 0;
+    // Staged payment: use the specific stage amount
+    if (isStaged) {
+      if (paymentType === "app_fee") return Number((offering as any).app_fee_inr ?? 0);
+      if (paymentType === "confirmation") return Number((offering as any).confirmation_amount_inr ?? 0);
+      if (paymentType === "balance") return Math.max(Number(offering.price_inr) - totalPreviouslyPaid, 0);
+    }
+    // Standard full payment
     let total = Number(offering.price_inr);
     for (const bId of selectedBumps) {
       const bump = bumps.find((b) => b.bump_offering_id === bId);
@@ -229,6 +275,7 @@ export default function CheckoutPage() {
     setFieldTouched((prev) => ({ ...prev, ...touchAll }));
     if (hasFieldError) {
       toast.error("Please fill in all required fields");
+      paymentInFlightRef.current = false;
       return;
     }
 
@@ -240,9 +287,13 @@ export default function CheckoutPage() {
         {
           body: {
             offering_id: offeringId,
-            coupon_id: appliedCoupon?.id ?? null,
-            bump_ids: Array.from(selectedBumps),
+            coupon_id: isStaged ? null : (appliedCoupon?.id ?? null),
+            bump_ids: isStaged ? [] : Array.from(selectedBumps),
             custom_field_values: customFieldValues,
+            ...(isStaged ? {
+              payment_type: paymentType,
+              application_id: applicationId,
+            } : {}),
           },
         }
       );
@@ -298,7 +349,7 @@ export default function CheckoutPage() {
           toast.success(
             `Welcome to ${verifyData.offering_title ?? offering.title}!`
           );
-          navigate("/home");
+          navigate(`/thank-you/${data.payment_order_id}`);
         },
         modal: {
           ondismiss: () => {
@@ -334,8 +385,14 @@ export default function CheckoutPage() {
     (offering as any).mrp_inr &&
     Number((offering as any).mrp_inr) > Number(offering.price_inr);
 
+  // Pull display metadata for the trust panel. Uses the first linked course
+  // as the "what you're buying" preview — safe fallback if none exists.
+  const primaryCourseId = linkedCourses[0]?.course_id ?? null;
+  const trustPanelCourseTitle = (linkedCourses[0]?.courses as any)?.title ?? offering.title;
+  const trustPanelThumb = (linkedCourses[0]?.courses as any)?.thumbnail_url ?? null;
+
   return (
-    <div className="min-h-screen bg-canvas flex items-start justify-center px-4 py-12 md:py-20">
+    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20">
       <Card className="w-full max-w-[560px] border-border bg-surface">
         <CardContent className="p-6 md:p-8 space-y-6">
           {/* ── Back link ── */}
@@ -353,10 +410,20 @@ export default function CheckoutPage() {
 
           {/* ── Header ── */}
           <div>
+            {isStaged && stagedLabel && (
+              <Badge variant="secondary" className="mb-2">{stagedLabel}</Badge>
+            )}
             <h1 className="text-xl font-semibold text-foreground">
               {offering.title}
             </h1>
-            {offering.description && (
+            {isStaged && (
+              <p className="text-sm text-muted-foreground mt-1">
+                {paymentType === "app_fee" ? "Submit your application fee to begin the review process." :
+                 paymentType === "confirmation" ? "Confirm your seat with this payment." :
+                 paymentType === "balance" ? "Complete your remaining balance payment." : ""}
+              </p>
+            )}
+            {!isStaged && offering.description && (
               <p className="text-sm text-muted-foreground mt-1">
                 {offering.description}
               </p>
@@ -384,6 +451,49 @@ export default function CheckoutPage() {
               ))}
             </div>
           )}
+
+          {/* Testimonials */}
+          {!isStaged && (() => {
+            try {
+              const testimonials = (offering as any).checkout_testimonials || [];
+              if (!Array.isArray(testimonials) || testimonials.length === 0) return null;
+              return (
+                <div className="space-y-3">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What students say</p>
+                  {testimonials.map((t: any, i: number) => (
+                    <div key={i} className="flex gap-3 rounded-lg bg-surface-2 px-4 py-3">
+                      {t.photo_url && <img src={t.photo_url} alt={t.name} className="h-10 w-10 rounded-full object-cover shrink-0" />}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground italic">"{t.quote}"</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t.name}{t.title ? ` · ${t.title}` : ""}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            } catch { return null; }
+          })()}
+
+          {/* Value bullets */}
+          {!isStaged && (() => {
+            try {
+              const bullets = (offering as any).checkout_bullets || [];
+              if (!Array.isArray(bullets) || bullets.length === 0) return null;
+              return (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What you get</p>
+                  <ul className="space-y-1.5">
+                    {bullets.map((b: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                        <CheckCircle2 className="h-4 w-4 text-accent-emerald shrink-0 mt-0.5" />
+                        <span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            } catch { return null; }
+          })()}
 
           {/* ── Custom fields ── */}
           {customFields.length > 0 && (
@@ -431,7 +541,7 @@ export default function CheckoutPage() {
           )}
 
           {/* ── Bumps ── */}
-          {bumps.length > 0 && (
+          {!isStaged && bumps.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Add to your order
@@ -480,6 +590,7 @@ export default function CheckoutPage() {
           )}
 
           {/* ── Coupon ── */}
+          {!isStaged && (
           <div className="space-y-2">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Coupon code
@@ -545,6 +656,7 @@ export default function CheckoutPage() {
               </div>
             )}
           </div>
+          )}
 
           <Separator className="bg-border" />
 
@@ -592,7 +704,7 @@ export default function CheckoutPage() {
           {/* ── Trust signals ── */}
           <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
             <ShieldCheck className="h-3.5 w-3.5" />
-            7-day refund policy · Secure payment
+            {(offering as any).checkout_guarantee_text || "7-day refund policy"} · Secure payment
           </div>
 
           {/* ── Pay button ── */}
@@ -608,7 +720,9 @@ export default function CheckoutPage() {
                 Processing…
               </>
             ) : (
-              `Pay ₹${total.toLocaleString("en-IN")}`
+              isStaged
+                ? `Pay ${stagedLabel} — ₹${total.toLocaleString("en-IN")}`
+                : `Pay ₹${total.toLocaleString("en-IN")}`
             )}
           </Button>
 
@@ -617,6 +731,19 @@ export default function CheckoutPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Desktop-only trust sidebar. Hidden on staged payments to keep
+          the confirmation/balance flow focused. */}
+      {!isStaged && (
+        <TrustPanel
+          courseId={primaryCourseId}
+          courseTitle={trustPanelCourseTitle}
+          courseThumbnailUrl={trustPanelThumb}
+          instructorName={(offering as any).instructor_display_name ?? null}
+          durationMinutes={(offering as any).duration_minutes ?? null}
+          batchStartsAt={(offering as any).starts_at ?? null}
+        />
+      )}
     </div>
   );
 }

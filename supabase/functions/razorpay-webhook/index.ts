@@ -15,11 +15,11 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
-function normalizePhone(phone: string): string {
+function normalizePhone(phone: string): string | null {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
   if (digits.length === 10) return digits;
-  return digits;
+  return null; // Invalid phone length
 }
 
 /**
@@ -48,6 +48,18 @@ async function findAuthUserByEmail(
   }
 }
 
+// Constant-time string comparison. Both inputs must be the same length or we
+// fail immediately (which is itself a timing signal for length, but HMAC hex
+// output is fixed-length so in practice we only compare 64-char strings).
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 async function verifySignature(
   body: string,
   signature: string,
@@ -65,7 +77,7 @@ async function verifySignature(
   const computed = Array.from(new Uint8Array(sig))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-  return computed === signature;
+  return timingSafeEqual(computed, signature);
 }
 
 /**
@@ -301,18 +313,45 @@ Deno.serve(async (req) => {
         .eq("id", po.id);
     }
 
+    // ── Staged payment: update cohort_applications ──
+    if (po.payment_type && po.application_id) {
+      const appUpdate: Record<string, unknown> = {};
+      if (po.payment_type === "app_fee") {
+        appUpdate.status = "app_fee_paid";
+        appUpdate.app_fee_payment_id = po.id;
+        appUpdate.app_fee_paid_at = new Date().toISOString();
+        if (userId) appUpdate.user_id = userId;
+      } else if (po.payment_type === "confirmation") {
+        appUpdate.status = "confirmation_paid";
+        appUpdate.confirmation_payment_id = po.id;
+      } else if (po.payment_type === "balance") {
+        appUpdate.status = "balance_paid";
+        appUpdate.balance_payment_id = po.id;
+      }
+      if (Object.keys(appUpdate).length > 0) {
+        const { error: appErr } = await admin
+          .from("cohort_applications")
+          .update(appUpdate)
+          .eq("id", po.application_id);
+        if (appErr) console.error("[razorpay-webhook] cohort_applications update failed:", appErr);
+        else console.log("[razorpay-webhook] Application", po.application_id, "→", appUpdate.status);
+      }
+    }
+
     // Main enrolment (idempotent)
-    const { data: existing } = await admin
-      .from("enrolments")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("offering_id", po.offering_id)
-      .eq("status", "active")
-      .maybeSingle();
+    // For staged payments, only enrol on balance or confirmation (not app_fee)
+    const isStaged = !!po.payment_type;
+    const shouldEnrol = !isStaged || po.payment_type === "balance" || po.payment_type === "confirmation";
 
-    let enrolmentId: string | null = existing?.id ?? null;
+    let enrolmentId: string | null = null;
 
-    if (!existing) {
+    if (shouldEnrol) {
+      // Idempotency: the `enrolments_unique_active` partial unique index
+      // guarantees at most one active row per (user_id, offering_id). A
+      // simultaneous webhook + client-verify will race, and exactly one side
+      // will win. We try INSERT first; on a 23505 (unique_violation) we
+      // re-SELECT the winner instead of returning 500 (which makes Razorpay
+      // retry the webhook unnecessarily).
       const { data: enrolment, error: enrolErr } = await admin
         .from("enrolments")
         .insert({
@@ -321,36 +360,54 @@ Deno.serve(async (req) => {
           payment_order_id: po.id,
           status: "active",
           source: "checkout",
+          application_id: po.application_id || null,
         })
         .select("id")
         .single();
 
-      if (enrolErr) {
-        console.error("[razorpay-webhook] enrolment insert failed:", enrolErr);
-        return jsonRes({ error: "Enrolment creation failed" }, 500);
-      }
-      enrolmentId = enrolment.id;
-    }
-
-    // Bump offerings (idempotent)
-    if (po.bump_offering_ids && Array.isArray(po.bump_offering_ids)) {
-      for (const bumpOffId of po.bump_offering_ids) {
-        const { data: existingBump } = await admin
+      if (enrolment) {
+        enrolmentId = enrolment.id;
+      } else if (enrolErr && (enrolErr as any).code === "23505") {
+        const { data: existing } = await admin
           .from("enrolments")
           .select("id")
           .eq("user_id", userId)
-          .eq("offering_id", bumpOffId)
+          .eq("offering_id", po.offering_id)
           .eq("status", "active")
           .maybeSingle();
-        if (!existingBump) {
-          await admin.from("enrolments").insert({
+        enrolmentId = existing?.id ?? null;
+        if (!enrolmentId) {
+          console.error("[razorpay-webhook] enrolment unique violation but row not found on re-select");
+          return jsonRes({ error: "Enrolment lookup failed after conflict" }, 500);
+        }
+      } else {
+        console.error("[razorpay-webhook] enrolment insert failed:", enrolErr);
+        return jsonRes({ error: "Enrolment creation failed" }, 500);
+      }
+
+      // Bump offerings (idempotent). Rely on the partial unique index to
+      // absorb races; swallow 23505 since the row already exists.
+      if (po.bump_offering_ids && Array.isArray(po.bump_offering_ids)) {
+        for (const bumpOffId of po.bump_offering_ids) {
+          const { error: bumpErr } = await admin.from("enrolments").insert({
             user_id: userId,
             offering_id: bumpOffId,
             payment_order_id: po.id,
             status: "active",
             source: "checkout",
           });
+          if (bumpErr && (bumpErr as any).code !== "23505") {
+            console.error("[razorpay-webhook] bump enrolment insert failed:", bumpErr);
+          }
         }
+      }
+
+      // For balance payments, mark application as enrolled
+      if (po.payment_type === "balance" && po.application_id) {
+        await admin
+          .from("cohort_applications")
+          .update({ status: "enrolled" })
+          .eq("id", po.application_id);
       }
     }
 

@@ -129,7 +129,9 @@ export async function generateAndSaveCertificate(opts: {
   courseId: string;
   generatedBy: "auto" | "admin_manual";
 }): Promise<{ certificateUrl: string; certificateNumber: string } | null> {
-  // Check if certificate already exists
+  // Check if certificate already exists. If yes, return the stored URL —
+  // we'd still get there via the RPC's idempotency path, but short-circuiting
+  // here skips the placeholder image upload entirely on re-runs.
   const { data: existing } = await (supabase as any)
     .from("certificates")
     .select("id, image_url, certificate_number")
@@ -139,35 +141,74 @@ export async function generateAndSaveCertificate(opts: {
 
   if (existing) return { certificateUrl: existing.image_url, certificateNumber: existing.certificate_number };
 
-  // Get certificate number
-  const { data: certNum, error: rpcErr } = await supabase.rpc("next_certificate_number");
-  if (rpcErr || !certNum) throw new Error("Failed to generate certificate number");
-  const certificateNumber = certNum as string;
+  // Two paths:
+  //   - auto:          student-triggered. Go through issue_certificate RPC
+  //                    (SECURITY DEFINER) which verifies enrolment + completion
+  //                    and generates the number server-side.
+  //   - admin_manual:  admin-triggered on behalf of a student. The issue_cert
+  //                    RPC only supports self-issuance (uses auth.uid()), so
+  //                    admins fall back to the direct INSERT path which is
+  //                    privileged via the `certificates_admin FOR ALL` RLS
+  //                    policy. Number comes from next_certificate_number()
+  //                    (already an RPC with the right grants).
+  if (opts.generatedBy === "admin_manual") {
+    const { data: certNum, error: numErr } = await (supabase as any).rpc("next_certificate_number");
+    if (numErr || !certNum) throw new Error(numErr?.message || "Failed to generate certificate number");
+    const certificateNumber = certNum as string;
 
-  // Generate image
-  const blob = await generateCertificateImage(
+    const finalBlob = await generateCertificateImage(
+      opts.templateImageUrl,
+      opts.variablePositions,
+      { ...opts.variableValues, certificate_number: certificateNumber }
+    );
+    const imageUrl = await uploadCertificate(finalBlob, opts.userId, opts.courseId);
+
+    const { error: insertErr } = await (supabase as any)
+      .from("certificates")
+      .insert({
+        user_id: opts.userId,
+        course_id: opts.courseId,
+        template_id: opts.templateId,
+        image_url: imageUrl,
+        certificate_number: certificateNumber,
+        generated_by: "admin_manual",
+        metadata: opts.variableValues,
+      });
+    if (insertErr) throw new Error(`Failed to save certificate: ${insertErr.message}`);
+
+    return { certificateUrl: imageUrl, certificateNumber };
+  }
+
+  // Student auto-generate path — two-step because issue_certificate generates
+  // the cert number server-side but the image we store needs that number
+  // painted on. Upload a placeholder first, call the RPC, then re-render
+  // with the real number and upsert (Supabase storage upsert overwrites the
+  // same path).
+  const placeholderBlob = await generateCertificateImage(
+    opts.templateImageUrl,
+    opts.variablePositions,
+    { ...opts.variableValues, certificate_number: "" }
+  );
+  const imageUrl = await uploadCertificate(placeholderBlob, opts.userId, opts.courseId);
+
+  const { data: issued, error: rpcErr } = await (supabase as any).rpc("issue_certificate", {
+    p_course_id: opts.courseId,
+    p_template_id: opts.templateId,
+    p_image_url: imageUrl,
+    p_variable_values: opts.variableValues,
+  });
+  if (rpcErr || !issued) {
+    throw new Error(rpcErr?.message || "Failed to issue certificate");
+  }
+
+  const certificateNumber = issued.certificate_number as string;
+
+  const finalBlob = await generateCertificateImage(
     opts.templateImageUrl,
     opts.variablePositions,
     { ...opts.variableValues, certificate_number: certificateNumber }
   );
-
-  // Upload
-  const imageUrl = await uploadCertificate(blob, opts.userId, opts.courseId);
-
-  // Save to DB
-  const { error: insertErr } = await (supabase as any)
-    .from("certificates")
-    .insert({
-      user_id: opts.userId,
-      course_id: opts.courseId,
-      template_id: opts.templateId,
-      image_url: imageUrl,
-      certificate_number: certificateNumber,
-      generated_by: opts.generatedBy,
-      metadata: opts.variableValues,
-    });
-
-  if (insertErr) throw new Error(`Failed to save certificate: ${insertErr.message}`);
+  await uploadCertificate(finalBlob, opts.userId, opts.courseId);
 
   return { certificateUrl: imageUrl, certificateNumber };
 }

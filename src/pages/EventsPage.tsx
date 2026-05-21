@@ -5,9 +5,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import usePageTitle from "@/hooks/usePageTitle";
 import InitialsAvatar from "@/components/InitialsAvatar";
-import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import { Globe, MapPin, Loader2, Calendar } from "lucide-react";
+import { Globe, MapPin, Loader2, Calendar, Clock } from "lucide-react";
+import { eventDateTimeLabel, eventDurationLabel } from "@/lib/event-format";
+import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 
 interface Speaker {
   event_id: string;
@@ -234,27 +235,7 @@ const EventsPage = () => {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-surface border border-border rounded-xl overflow-hidden animate-pulse">
-                <div className="aspect-[4/3] bg-surface-2" />
-                <div className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-full bg-surface-2 flex-shrink-0" />
-                    <div className="space-y-1.5">
-                      <div className="h-3 bg-surface-2 rounded w-24" />
-                      <div className="h-2 bg-surface-2 rounded w-16" />
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="h-2 bg-surface-2 rounded w-20" />
-                    <div className="h-2 bg-surface-2 rounded w-14 ml-auto" />
-                  </div>
-                </div>
-                <div className="px-4 pb-4">
-                  <div className="pt-3 border-t border-border">
-                    <div className="h-3 bg-surface-2 rounded w-24" />
-                  </div>
-                </div>
-              </div>
+              <EventCardSkeleton key={i} />
             ))}
           </div>
         ) : displayed.length === 0 ? (
@@ -302,7 +283,16 @@ const EventsPage = () => {
                   className={cn("bg-surface border border-border rounded-xl overflow-hidden card-hover flex flex-col", isPast && "opacity-60")}
                 >
                   <div className="relative aspect-[4/3]">
-                    {ev.image_url && <img src={ev.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />}
+                    {ev.image_url ? (
+                      <img src={ev.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      // Fallback so events without a thumbnail don't render
+                      // as a big black empty block. Subtle branded gradient +
+                      // decorative icon keeps the card visually intentional.
+                      <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--surface-2))] via-[hsl(var(--surface))] to-[hsl(var(--accent-amber)/0.15)] flex items-center justify-center">
+                        <Calendar className="h-12 w-12 text-muted-foreground/30" />
+                      </div>
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                     {isSoldOut && (
                       <div className="absolute top-3 right-3 bg-destructive/90 text-destructive-foreground text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
@@ -339,7 +329,7 @@ const EventsPage = () => {
                     </div>
                     <div className="flex flex-col items-end gap-0.5 flex-shrink-0 ml-3">
                       <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                        <Calendar className="h-3 w-3" /> {format(new Date(ev.starts_at), "EEE, MMM d")}
+                        <Calendar className="h-3 w-3" /> {eventDateTimeLabel(ev.starts_at)}
                       </span>
                       <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                         {ev.event_type === "online" || ev.venue_type !== "in_person" ? (
@@ -348,6 +338,11 @@ const EventsPage = () => {
                           <><MapPin className="h-3 w-3" /> {ev.city || "In-Person"}</>
                         )}
                       </span>
+                      {eventDurationLabel(ev.duration_minutes) && (
+                        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                          <Clock className="h-3 w-3" /> {eventDurationLabel(ev.duration_minutes)}
+                        </span>
+                      )}
                     </div>
                   </div>
                   {!isPast && !isCancelled && (

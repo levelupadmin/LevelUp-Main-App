@@ -156,6 +156,12 @@ Deno.serve(async (req) => {
 
     const vdoData = await vdoRes.json();
 
+    // Validate VdoCipher response has required fields
+    if (!vdoData?.otp || !vdoData?.playbackInfo) {
+      console.error("VdoCipher returned invalid response:", JSON.stringify(vdoData).slice(0, 500));
+      return jsonRes({ error: "Failed to generate video token" }, 502);
+    }
+
     // Log the view
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
     const ua = req.headers.get("user-agent") || null;

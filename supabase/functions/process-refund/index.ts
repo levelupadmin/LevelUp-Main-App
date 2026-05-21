@@ -31,8 +31,8 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return jsonRes({ error: "Unauthorized" }, 401);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return jsonRes({ error: "Unauthorized" }, 401);
 
     const { data: profile } = await admin.from("users").select("role").eq("id", user.id).maybeSingle();
     if (profile?.role !== "admin") return jsonRes({ error: "Forbidden" }, 403);

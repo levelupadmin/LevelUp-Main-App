@@ -58,6 +58,11 @@ const AdminCourseReviews = lazy(() => import("@/pages/admin/AdminCourseReviews")
 const AdminAnnouncements = lazy(() => import("@/pages/admin/AdminAnnouncements"));
 const AdminEmailTemplates = lazy(() => import("@/pages/admin/AdminEmailTemplates"));
 const AdminEmailCampaigns = lazy(() => import("@/pages/admin/AdminEmailCampaigns"));
+const AdminApplications = lazy(() => import("@/pages/admin/AdminApplications"));
+const ApplicationStatus = lazy(() => import("@/pages/ApplicationStatus"));
+const AdminQuizEditor = lazy(() => import("@/pages/admin/AdminQuizEditor"));
+const AdminRoles = lazy(() => import("@/pages/admin/AdminRoles"));
+const AdminCommunityAnalytics = lazy(() => import("@/pages/admin/AdminCommunityAnalytics"));
 
 const LoadingFallback = () => (
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
@@ -91,14 +96,13 @@ const App = () => (
         <BrowserRouter>
           {/*
             Routing architecture:
-            - Public pages: flat routes, each lazy-page has its own Suspense via the
-              `lazyElement()` helper (so no full-page LoadingFallback swap).
+            - Public pages: flat routes.
             - Student pages: nested under a single <StudentLayout/> layout route so
               the nav shell (sidebar, top bar, mobile tab bar) stays mounted across
               navigations. Fixes the "app reloads every page" feel.
             - Admin pages: same nested-layout pattern under <AdminLayout/>.
 
-            Suspense now lives INSIDE each layout (around <Outlet/>), so lazy chunk
+            Suspense lives INSIDE each layout (around <Outlet/>), so lazy chunk
             loading only swaps the content area, not the entire UI.
           */}
           <Suspense fallback={<LoadingFallback />}>
@@ -122,6 +126,7 @@ const App = () => (
                 <Route path="/my-sessions" element={<MySessionsPage />} />
                 <Route path="/events" element={<EventsPage />} />
                 <Route path="/events/:eventId" element={<EventDetail />} />
+                <Route path="/my-application/:applicationId" element={<ApplicationStatus />} />
               </Route>
 
               {/* ChapterViewer runs full-bleed (no student nav) but stays auth-guarded */}
@@ -154,6 +159,10 @@ const App = () => (
                 <Route path="/admin/announcements" element={<AdminAnnouncements />} />
                 <Route path="/admin/email-templates" element={<AdminEmailTemplates />} />
                 <Route path="/admin/email-campaigns" element={<AdminEmailCampaigns />} />
+                <Route path="/admin/applications" element={<AdminApplications />} />
+                <Route path="/admin/courses/:courseId/chapters/:chapterId/quiz" element={<AdminQuizEditor />} />
+                <Route path="/admin/roles" element={<AdminRoles />} />
+                <Route path="/admin/community" element={<AdminCommunityAnalytics />} />
               </Route>
 
               {/* Instructor dashboard also uses the student layout for consistency */}

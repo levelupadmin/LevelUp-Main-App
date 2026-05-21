@@ -140,10 +140,7 @@ Deno.serve(async (req) => {
         Authorization: `Basic ${encodeBase64(`${keyId}:${keySecret}`)}`,
       },
       body: JSON.stringify({
-        // event.price_inr is stored in paise (see migration
-        // 20260408151100 / verify-event-payment comparison). Do NOT
-        // multiply here.
-        amount: event.price_inr,
+        amount: Math.round(Number(event.price_inr) * 100), // event.price_inr is in rupees; Razorpay needs paise
         currency: "INR",
         notes: { event_id, user_id: user.id },
       }),
@@ -168,7 +165,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       registered: false,
       razorpay_order_id: rzpOrder.id,
-      amount: event.price_inr,
+      amount: Math.round(Number(event.price_inr) * 100), // Paise for Razorpay client
       key_id: keyId,
       event_id,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });

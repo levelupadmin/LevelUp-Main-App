@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
     const userId = claimsData.claims.sub as string;
 
     /* ── Input ── */
-    const { offering_id, coupon_id, bump_ids, custom_field_values } =
+    const { offering_id, coupon_id, bump_ids, custom_field_values, payment_type, application_id } =
       await req.json();
     if (!offering_id)
       return jsonRes({ error: "offering_id is required" }, 400);
@@ -54,13 +54,63 @@ Deno.serve(async (req) => {
     /* ── Offering ── */
     const { data: offering, error: offErr } = await admin
       .from("offerings")
-      .select("id, title, price_inr, gst_mode, gst_rate, status")
+      .select("id, title, price_inr, gst_mode, gst_rate, status, payment_mode, app_fee_inr, confirmation_amount_inr")
       .eq("id", offering_id)
       .single();
     if (offErr || !offering)
       return jsonRes({ error: "Offering not found" }, 404);
     if (offering.status !== "active")
       return jsonRes({ error: "Offering is not active" }, 400);
+
+    /* ── Staged payment amount calculation ──
+       For cohort offerings using staged payments (app_fee → confirmation
+       → balance), compute the amount for the requested stage. Bumps and
+       coupons are skipped on staged payments. */
+    let stagedAmountInr: number | null = null;
+    if (offering.payment_mode === "staged" && payment_type) {
+      if (!application_id && payment_type !== "app_fee")
+        return jsonRes({ error: "application_id is required for this payment stage" }, 400);
+
+      // Verify application ownership and load state
+      let app: any = null;
+      if (application_id) {
+        const { data: appRow } = await admin
+          .from("cohort_applications")
+          .select("id, user_id, status, app_fee_payment_id, confirmation_payment_id, balance_payment_id")
+          .eq("id", application_id)
+          .single();
+        if (!appRow)
+          return jsonRes({ error: "Application not found" }, 404);
+        // Security: verify the application belongs to the requesting user
+        if (appRow.user_id && appRow.user_id !== userId)
+          return jsonRes({ error: "Not your application" }, 403);
+        app = appRow;
+      }
+
+      if (payment_type === "app_fee") {
+        // Prevent double-payment on app_fee
+        if (app?.app_fee_payment_id)
+          return jsonRes({ error: "Application fee already paid" }, 400);
+        stagedAmountInr = Number(offering.app_fee_inr || 0);
+      } else if (payment_type === "confirmation") {
+        // Must have paid app_fee first
+        if (!app?.app_fee_payment_id)
+          return jsonRes({ error: "Application fee must be paid before confirmation" }, 400);
+        if (app?.confirmation_payment_id)
+          return jsonRes({ error: "Confirmation already paid" }, 400);
+        stagedAmountInr = Number(offering.confirmation_amount_inr || 0);
+      } else if (payment_type === "balance") {
+        // Must have paid confirmation first
+        if (!app?.confirmation_payment_id)
+          return jsonRes({ error: "Confirmation must be paid before balance" }, 400);
+        if (app?.balance_payment_id)
+          return jsonRes({ error: "Balance already paid" }, 400);
+        let previouslyPaid = 0;
+        if (app?.app_fee_payment_id) previouslyPaid += Number(offering.app_fee_inr || 0);
+        if (app?.confirmation_payment_id) previouslyPaid += Number(offering.confirmation_amount_inr || 0);
+        stagedAmountInr = Math.max(Number(offering.price_inr) - previouslyPaid, 0);
+      }
+    }
 
     /* ── Bumps ──
        Parentage + price in a single join so a client cannot (a) claim a
@@ -71,9 +121,10 @@ Deno.serve(async (req) => {
        someone else's bump_ids list. */
     let bumpTotal = 0;
     const validBumpIds: string[] = [];
-    if (bump_ids && Array.isArray(bump_ids) && bump_ids.length > 20)
+    // Skip bumps for staged payments
+    if (!stagedAmountInr && bump_ids && Array.isArray(bump_ids) && bump_ids.length > 20)
       return jsonRes({ error: "Too many bump selections" }, 400);
-    if (bump_ids && Array.isArray(bump_ids) && bump_ids.length > 0) {
+    if (!stagedAmountInr && bump_ids && Array.isArray(bump_ids) && bump_ids.length > 0) {
       const { data: bumps } = await admin
         .from("offering_bumps")
         .select(
@@ -104,7 +155,8 @@ Deno.serve(async (req) => {
        coupon is treated as "no coupon." */
     let discountInr = 0;
     let couponDbId: string | null = null;
-    if (coupon_id) {
+    // Skip coupon for staged payments
+    if (!stagedAmountInr && coupon_id) {
       const { data: coupon } = await admin
         .from("coupons")
         .select("*")
@@ -150,8 +202,8 @@ Deno.serve(async (req) => {
     }
 
     /* ── Totals ── */
-    const subtotalInr = Number(offering.price_inr) + bumpTotal;
-    const afterDiscount = Math.max(subtotalInr - discountInr, 0);
+    const subtotalInr = stagedAmountInr != null ? stagedAmountInr : Number(offering.price_inr) + bumpTotal;
+    const afterDiscount = stagedAmountInr != null ? stagedAmountInr : Math.max(subtotalInr - discountInr, 0);
     let gstInr = 0;
     if (offering.gst_mode === "inclusive") {
       gstInr = Math.round(
@@ -228,6 +280,8 @@ Deno.serve(async (req) => {
         bump_offering_ids: validBumpIds.length ? validBumpIds : [],
         custom_field_values: custom_field_values || {},
         status: "created",
+        payment_type: payment_type || null,
+        application_id: application_id || null,
       })
       .select("id")
       .single();

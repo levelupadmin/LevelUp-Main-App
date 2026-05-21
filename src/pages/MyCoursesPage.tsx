@@ -7,6 +7,8 @@ import { TierBadge } from "@/components/TierBadge";
 import { Progress } from "@/components/ui/progress";
 import LazyImage from "@/components/LazyImage";
 import { ArrowRight, BookOpen, Sparkles, Award } from "lucide-react";
+import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
+import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
 
 interface EnrolledCourse {
   enrolment_id: string;
@@ -219,7 +221,7 @@ const MyCoursesPage = () => {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-surface border border-border rounded-xl h-[280px] animate-pulse" />
+              <CourseCardSkeleton key={i} />
             ))}
           </div>
         ) : courses.length === 0 ? (
@@ -252,7 +254,10 @@ const MyCoursesPage = () => {
                   )}
                 </div>
                 <div className="p-4 space-y-2">
-                  <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-base font-semibold line-clamp-1 flex-1">{c.title}</h3>
+                    <CourseRatingBadge courseId={c.course_id} />
+                  </div>
                   {c.instructor_display_name && (
                     <p className="text-sm text-muted-foreground">{c.instructor_display_name}</p>
                   )}
@@ -304,7 +309,10 @@ const MyCoursesPage = () => {
                     </div>
                   </div>
                   <div className="p-4 space-y-1.5">
-                    <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-base font-semibold line-clamp-1 flex-1">{c.title}</h3>
+                      <CourseRatingBadge courseId={c.id} />
+                    </div>
                     {c.instructor_display_name && (
                       <p className="text-sm text-muted-foreground">{c.instructor_display_name}</p>
                     )}

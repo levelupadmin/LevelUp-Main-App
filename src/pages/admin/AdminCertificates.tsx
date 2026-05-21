@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   Search,
   Plus,
@@ -142,7 +142,7 @@ const AdminCertificates = () => {
       rows.sort((a, b) => a.course_title.localeCompare(b.course_title));
       setTemplates(rows);
     } catch (err: any) {
-      console.error("Failed to load templates", err);
+      if (import.meta.env.DEV) console.error("Failed to load templates", err);
       toast.error("Failed to load certificate templates");
     } finally {
       setLoading(false);
@@ -195,7 +195,7 @@ const AdminCertificates = () => {
         }))
       );
     } catch (err: any) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
       toast.error("Failed to load certificate details");
     } finally {
       setDetailLoading(false);

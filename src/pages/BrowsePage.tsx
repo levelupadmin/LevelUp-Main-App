@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { Input } from "@/components/ui/input";
 import LazyImage from "@/components/LazyImage";
 import { ArrowRight, Search, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useWishlist } from "@/hooks/useWishlist";
 import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/useEnrolmentCounts";
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
+import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 import { useDebounce } from "@/hooks/useDebounce";
 
 const TIER_ORDER = ["live_cohort", "masterclass", "advanced_program", "workshop"] as const;
@@ -42,11 +44,30 @@ const formatPrice = (amount: number) =>
   new Intl.NumberFormat("en-IN").format(amount);
 
 const BrowsePage = () => {
+  const { user } = useAuth();
   const [courses, setCourses] = useState<CourseWithOffering[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
+  // offering_ids the current user is actively enrolled in — lets us show
+  // "Continue" instead of "Enroll" on cards they already own.
+  const [enrolledOfferingIds, setEnrolledOfferingIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!user) { setEnrolledOfferingIds(new Set()); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("enrolments")
+        .select("offering_id")
+        .eq("user_id", user.id)
+        .eq("status", "active");
+      if (cancelled) return;
+      setEnrolledOfferingIds(new Set((data || []).map((e) => e.offering_id).filter(Boolean)));
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
   const { wishlistedIds, toggle: toggleWishlist } = useWishlist();
 
   usePageTitle("Browse Programs");
@@ -207,19 +228,7 @@ const BrowsePage = () => {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="bg-surface border border-border rounded-xl overflow-hidden animate-pulse">
-                <div className="aspect-video bg-surface-2" />
-                <div className="p-4 space-y-2">
-                  <div className="h-4 bg-surface-2 rounded w-3/4" />
-                  <div className="h-3 bg-surface-2 rounded w-1/2" />
-                  <div className="h-3 bg-surface-2 rounded w-full" />
-                  <div className="h-3 bg-surface-2 rounded w-2/3" />
-                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
-                    <div className="h-4 bg-surface-2 rounded w-20" />
-                    <div className="h-3 bg-surface-2 rounded w-14" />
-                  </div>
-                </div>
-              </div>
+              <CourseCardSkeleton key={i} />
             ))}
           </div>
         ) : filtered.length === 0 ? (
@@ -350,6 +359,13 @@ const BrowsePage = () => {
                           </div>
                           {c.status === "upcoming" ? (
                             <span className="text-sm font-medium text-muted-foreground">Notify me</span>
+                          ) : c.offering_id && enrolledOfferingIds.has(c.offering_id) ? (
+                            <Link
+                              to={`/courses/${c.id}`}
+                              className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all min-h-[44px] sm:min-h-0 items-center"
+                            >
+                              Continue <ArrowRight className="h-3 w-3" />
+                            </Link>
                           ) : c.offering_id ? (
                             <Link
                               to={`/checkout/${c.offering_id}`}

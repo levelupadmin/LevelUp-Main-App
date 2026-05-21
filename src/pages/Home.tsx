@@ -10,6 +10,7 @@ import LazyImage from "@/components/LazyImage";
 import { ArrowRight, Calendar, MessageSquare, ArrowUp, Globe, MapPin, Loader2, Video, Clock, ExternalLink, BookOpen } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
+import { eventDateTimeLabel, eventDurationLabel } from "@/lib/event-format";
 import { useToast } from "@/hooks/use-toast";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/useEnrolmentCounts";
@@ -216,13 +217,16 @@ const ContinueLearning = () => {
                 <Link
                   key={c.id}
                   to={linkTo}
-                  className="min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start"
+                  className="min-w-[75vw] sm:min-w-[300px] max-w-[320px] bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start"
                 >
                   <div className="aspect-video bg-surface-2 relative">
                     {c.thumbnail_url && <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />}
                   </div>
                   <div className="p-4">
-                    <h3 className="text-base font-semibold line-clamp-1">{c.title}</h3>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-base font-semibold line-clamp-1 flex-1">{c.title}</h3>
+                      <CourseRatingBadge courseId={c.id} />
+                    </div>
                     <p className="text-sm text-muted-foreground mt-1">{c.instructor_display_name}</p>
                     <div className="mt-3 h-1 bg-surface-2 rounded-full overflow-hidden">
                       <div className="h-full bg-cream rounded-full transition-all" style={{ width: `${progressMap[c.id] || 0}%` }} />
@@ -281,7 +285,7 @@ const PopularCommunity = () => {
         {posts.map((p) => (
           <div
             key={p.id}
-            className="min-w-[340px] max-w-[360px] h-[200px] bg-surface border border-border rounded-xl p-5 card-hover flex-shrink-0 snap-start flex flex-col justify-between"
+            className="min-w-[75vw] sm:min-w-[340px] max-w-[360px] h-[200px] bg-surface border border-border rounded-xl p-5 card-hover flex-shrink-0 snap-start flex flex-col justify-between"
           >
             <div>
               <h3 className="text-sm font-semibold line-clamp-2">{p.title}</h3>
@@ -502,7 +506,7 @@ const UpcomingEvents = () => {
             <Link
               key={ev.id}
               to={`/events/${ev.id}`}
-              className="min-w-[300px] max-w-[340px] lg:max-w-none bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start flex flex-col"
+              className="min-w-[75vw] sm:min-w-[300px] max-w-[340px] lg:max-w-none bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start flex flex-col"
             >
               {/* Banner with overlay title */}
               <div className="relative aspect-[4/3]">
@@ -535,7 +539,7 @@ const UpcomingEvents = () => {
                 </div>
                 <div className="flex flex-col items-end gap-0.5 flex-shrink-0 ml-3">
                   <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                    <Calendar className="h-3 w-3" /> {format(new Date(ev.starts_at), "EEE, MMM d")}
+                    <Calendar className="h-3 w-3" /> {eventDateTimeLabel(ev.starts_at)}
                   </span>
                   <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                     {ev.event_type === "online" || ev.venue_type !== "in_person" ? (
@@ -544,6 +548,11 @@ const UpcomingEvents = () => {
                       <><MapPin className="h-3 w-3" /> {ev.city || "In-Person"}</>
                     )}
                   </span>
+                  {eventDurationLabel(ev.duration_minutes) && (
+                    <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-3 w-3" /> {eventDurationLabel(ev.duration_minutes)}
+                    </span>
+                  )}
                 </div>
               </div>
               {/* CTA row */}
@@ -729,13 +738,37 @@ const UpcomingSessions = () => {
 
 // ── Section 6: Browse Programs ──
 const BrowsePrograms = () => {
+  const { user } = useAuth();
   const [courses, setCourses] = useState<any[]>([]);
+  // Set of offering_ids the current user has an active enrolment in — used
+  // to swap the card CTA from "Enroll" to "Continue" and route to the
+  // course page instead of checkout. Without this, signed-in students saw
+  // "Enroll" on courses they already own, which is jarring.
+  const [enrolledOfferingIds, setEnrolledOfferingIds] = useState<Set<string>>(new Set());
 
   const offeringIds = useMemo(
     () => courses.map((c: any) => c.offering_id).filter(Boolean) as string[],
     [courses]
   );
   const { counts: enrolmentCounts, popularIds } = useEnrolmentCounts(offeringIds);
+
+  useEffect(() => {
+    if (!user) {
+      setEnrolledOfferingIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("enrolments")
+        .select("offering_id")
+        .eq("user_id", user.id)
+        .eq("status", "active");
+      if (cancelled) return;
+      setEnrolledOfferingIds(new Set((data || []).map((e) => e.offering_id).filter(Boolean)));
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
 
   useEffect(() => {
     const load = async () => {
@@ -820,10 +853,14 @@ const BrowsePrograms = () => {
         </Link>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {courses.map((c) => (
+        {courses.map((c) => {
+          const isEnrolled = !!c.offering_id && enrolledOfferingIds.has(c.offering_id);
+          return (
           <Link
             key={c.id}
-            to={c.offering_id ? `/checkout/${c.offering_id}` : `/courses/${c.id}`}
+            to={isEnrolled
+              ? `/courses/${c.id}`
+              : c.offering_id ? `/checkout/${c.offering_id}` : `/courses/${c.id}`}
             className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
           >
             <div className="aspect-video bg-surface-2 relative">
@@ -856,22 +893,28 @@ const BrowsePrograms = () => {
               )}
               <div className="flex items-center justify-between mt-3">
                 {c.price_inr != null ? (
-                  <div className="flex items-baseline gap-2">
+                  <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-base font-semibold">₹{Number(c.price_inr).toLocaleString()}</span>
                     {c.mrp_inr && Number(c.mrp_inr) > Number(c.price_inr) && (
-                      <span className="text-sm text-muted-foreground line-through">₹{Number(c.mrp_inr).toLocaleString()}</span>
+                      <>
+                        <span className="text-sm text-muted-foreground line-through">₹{Number(c.mrp_inr).toLocaleString()}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
+                          Save {Math.round((1 - Number(c.price_inr) / Number(c.mrp_inr)) * 100)}%
+                        </span>
+                      </>
                     )}
                   </div>
                 ) : (
                   <span className="text-sm text-muted-foreground">Price TBA</span>
                 )}
                 <span className="text-sm text-cream flex items-center gap-1">
-                  Enroll <ArrowRight className="h-3 w-3" />
+                  {isEnrolled ? "Continue" : "Enroll"} <ArrowRight className="h-3 w-3" />
                 </span>
               </div>
             </div>
           </Link>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

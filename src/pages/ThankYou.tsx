@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -29,6 +29,23 @@ function isSafeRedirectUrl(url: string | null | undefined): boolean {
   }
 }
 
+/**
+ * Only embed the Calendly iframe if `calendly_url` is actually on Calendly.
+ * Admin-authored URLs are trusted in the UI, but prefilling the user's
+ * name+email into a third-party iframe makes a misconfigured or compromised
+ * admin account into a trivial phishing vector. Pin to calendly.com only.
+ */
+function isCalendlyUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    return parsed.hostname === "calendly.com" || parsed.hostname.endsWith(".calendly.com");
+  } catch {
+    return false;
+  }
+}
+
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
 /* ────────────────────────────────────────────────── */
@@ -46,6 +63,8 @@ interface OrderOffering {
   thankyou_cta_url: string | null;
   thankyou_auto_redirect: boolean | null;
   thankyou_redirect_seconds: number | null;
+  thankyou_show_calendly: boolean | null;
+  calendly_url: string | null;
 }
 
 interface PaymentOrder {
@@ -274,7 +293,7 @@ export default function ThankYou() {
         // Always verify payment from database — never trust client-side state
         const { data: orderData, error } = await supabase
           .from("payment_orders")
-          .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds)")
+          .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds, thankyou_show_calendly, calendly_url)")
           .eq("id", paymentOrderId)
           .eq("status", "captured")
           .single();
@@ -581,6 +600,24 @@ export default function ThankYou() {
               <> &middot; Payment: {order.razorpay_payment_id}</>
             )}
           </p>
+
+          {/* Calendly embed for interview booking */}
+          {order.offerings?.thankyou_show_calendly &&
+            isCalendlyUrl(order.offerings?.calendly_url) && (
+            <div className="w-full max-w-2xl mx-auto">
+              <h3 className="text-lg font-semibold text-foreground mb-3">Book Your Interview</h3>
+              <div className="rounded-xl border border-border overflow-hidden bg-white">
+                <iframe
+                  src={`${order.offerings.calendly_url}${order.offerings.calendly_url!.includes("?") ? "&" : "?"}name=${encodeURIComponent(order.guest_name || "")}&email=${encodeURIComponent(order.guest_email || "")}`}
+                  className="w-full"
+                  style={{ minHeight: 700, border: 0 }}
+                  title="Schedule Interview"
+                  sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Action card — same for guest and logged-in */}
           <div className="max-w-md mx-auto rounded-xl border border-border bg-[hsl(var(--surface))] p-6 space-y-4">

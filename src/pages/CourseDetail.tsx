@@ -11,10 +11,16 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { CheckCircle2, Lock, Play, Clock, BookOpen, Star } from "lucide-react";
-import RatingDistribution from "@/components/reviews/RatingDistribution";
 import ReviewList from "@/components/reviews/ReviewList";
+import Outcomes from "@/components/course-detail/Outcomes";
+import PortfolioPieces from "@/components/course-detail/PortfolioPieces";
+import InstructorCard from "@/components/course-detail/InstructorCard";
+import CohortSchedule from "@/components/course-detail/CohortSchedule";
+import TestimonialsCarousel from "@/components/course-detail/TestimonialsCarousel";
+import FAQ from "@/components/course-detail/FAQ";
+import UrgencyStrip from "@/components/course-detail/UrgencyStrip";
 
 interface Course {
   id: string;
@@ -29,6 +35,21 @@ interface Course {
   total_lessons: number | null;
   level: string | null;
   category_id: string | null;
+  // Phase 4 content blocks — populated once the 20260420120000 migration ships
+  outcomes?: string[] | null;
+  portfolio_pieces?: { title: string; description?: string | null; image_url?: string | null }[] | null;
+  instructor_bio?: string | null;
+  instructor_credentials?: string[] | null;
+  instructor_avatar_url?: string | null;
+  instructor_links?: { label: string; url: string }[] | null;
+  faqs?: { question: string; answer: string }[] | null;
+}
+
+interface OfferingUrgency {
+  seats_total: number | null;
+  seats_left: number | null;
+  batch_starts_at: string | null;
+  cohort_sessions: { title: string; starts_at: string; duration_min?: number | null }[] | null;
 }
 
 interface Section {
@@ -70,6 +91,7 @@ const CourseDetail = () => {
   const [dripMode, setDripMode] = useState("no_drip");
   const [loading, setLoading] = useState(true);
   const [categoryName, setCategoryName] = useState<string | null>(null);
+  const [offeringUrgency, setOfferingUrgency] = useState<OfferingUrgency | null>(null);
 
   usePageTitle(course?.title ?? "Course");
 
@@ -109,6 +131,41 @@ const CourseDetail = () => {
     setSections((sectionsRes.data || []) as Section[]);
     setDripMode(dripRes.data?.drip_mode || "no_drip");
 
+    // Load the primary offering for urgency + cohort schedule (Phase 4.1).
+    // Safe if the migration hasn't run: missing columns come back undefined
+    // and downstream components hide themselves via graceful-empty rendering.
+    (async () => {
+      const { data: ocs } = await supabase
+        .from("offering_courses")
+        .select("offering_id")
+        .eq("course_id", courseId!)
+        .limit(1);
+      const offId = ocs?.[0]?.offering_id;
+      if (!offId) return;
+      const { data: off } = await (supabase as any)
+        .from("offerings")
+        .select("id, seats_total, starts_at, cohort_sessions")
+        .eq("id", offId)
+        .eq("status", "active")
+        .maybeSingle();
+      if (!off) return;
+      let seatsLeft: number | null = null;
+      if (off.seats_total) {
+        const { count } = await supabase
+          .from("enrolments")
+          .select("id", { count: "exact", head: true })
+          .eq("offering_id", offId)
+          .eq("status", "active");
+        seatsLeft = Math.max(0, off.seats_total - (count ?? 0));
+      }
+      setOfferingUrgency({
+        seats_total: off.seats_total ?? null,
+        seats_left: seatsLeft,
+        batch_starts_at: off.starts_at ?? null,
+        cohort_sessions: off.cohort_sessions ?? null,
+      });
+    })();
+
     // Load category name
     if (courseRes.data.category_id) {
       const { data: cat } = await supabase
@@ -138,14 +195,27 @@ const CourseDetail = () => {
       const isAdmin = profile?.role === "admin";
       if (accessErr) {
         toast.error("Couldn't verify your access, retrying...");
-        // Fallback: check enrolments table directly
-        const { data: enrolmentCheck } = await supabase
-          .from("enrolments")
-          .select("id")
-          .eq("user_id", user.id)
-          .eq("status", "active")
-          .limit(1);
-        setHasAccess(!!enrolmentCheck?.length || isAdmin);
+        // Fallback: check enrolments for offerings that actually include THIS
+        // course. A global "does this user have any active enrolment" check
+        // would grant course B to anyone who paid for course A on transient
+        // RPC failures — the old fallback was far too permissive.
+        const { data: offeringLinks } = await supabase
+          .from("offering_courses")
+          .select("offering_id")
+          .eq("course_id", courseId!);
+        const offeringIds = (offeringLinks || []).map((o) => o.offering_id).filter(Boolean);
+        let fallbackAccess = false;
+        if (offeringIds.length > 0) {
+          const { data: enrolmentCheck } = await supabase
+            .from("enrolments")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("status", "active")
+            .in("offering_id", offeringIds)
+            .limit(1);
+          fallbackAccess = !!enrolmentCheck?.length;
+        }
+        setHasAccess(fallbackAccess || isAdmin);
       } else {
         setHasAccess(!!accessData || isAdmin);
       }
@@ -208,7 +278,16 @@ const CourseDetail = () => {
   const handleEnrollOrContinue = () => {
     if (hasAccess) {
       const next = getNextIncompleteChapter();
-      if (next) navigate(`/chapters/${next.id}`);
+      if (next) {
+        navigate(`/chapters/${next.id}`);
+        return;
+      }
+      // No incomplete chapter: either fully completed (review from start) or
+      // course is still empty. Fall through to the first chapter if one
+      // exists; otherwise do nothing (the button should be disabled in that
+      // case by the render guard above).
+      const first = chapters[0];
+      if (first) navigate(`/chapters/${first.id}`);
     } else {
       navigate(`/browse`);
     }
@@ -250,12 +329,6 @@ const CourseDetail = () => {
   return (
     <>
       <div className="max-w-4xl mx-auto space-y-8">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
-          <Link to="/my-courses" className="hover:text-foreground transition-colors">My Courses</Link>
-          <span>&rsaquo;</span>
-          <span className="text-foreground truncate">{course.title}</span>
-        </div>
         {/* Hero */}
         <div className="relative rounded-[20px] overflow-hidden bg-card border border-border">
           {course.hero_image_url && (
@@ -289,7 +362,13 @@ const CourseDetail = () => {
               {course.duration_minutes && (
                 <span className="flex items-center gap-1">
                   <Clock className="h-3.5 w-3.5" />
-                  {Math.round(course.duration_minutes / 60)}h {course.duration_minutes % 60}m
+                  {(() => {
+                    const h = Math.floor(course.duration_minutes / 60);
+                    const m = course.duration_minutes % 60;
+                    if (h && m) return `${h}h ${m}m`;
+                    if (h) return `${h}h`;
+                    return `${m}m`;
+                  })()}
                 </span>
               )}
               <span className="flex items-center gap-1">
@@ -298,9 +377,22 @@ const CourseDetail = () => {
               </span>
             </div>
             <div className="flex items-center gap-3 mt-2">
-              <Button size="lg" onClick={handleEnrollOrContinue}>
-                {hasAccess ? "Continue Learning →" : "Enroll Now"}
-              </Button>
+              {hasAccess && totalChapters === 0 ? (
+                // Enrolled but the course has no chapters yet. Don't show a
+                // "Continue Learning" button that does nothing — be honest.
+                <Button size="lg" disabled>
+                  Content coming soon
+                </Button>
+              ) : hasAccess && completedCount >= totalChapters && totalChapters > 0 ? (
+                // Fully completed: give the user something meaningful to do.
+                <Button size="lg" onClick={handleEnrollOrContinue}>
+                  Review Course →
+                </Button>
+              ) : (
+                <Button size="lg" onClick={handleEnrollOrContinue}>
+                  {hasAccess ? "Continue Learning →" : "Enroll Now"}
+                </Button>
+              )}
               {hasAccess && totalChapters > 0 && (
                 <span className="text-sm text-muted-foreground">
                   {completedCount}/{totalChapters} completed
@@ -320,14 +412,31 @@ const CourseDetail = () => {
           </div>
         )}
 
+        {/* Phase 4 content blocks — each renders-and-hides if the data isn't there yet */}
+        <UrgencyStrip
+          seatsLeft={offeringUrgency?.seats_left}
+          batchStartsAt={offeringUrgency?.batch_starts_at}
+        />
+        <Outcomes outcomes={course.outcomes} />
+        <PortfolioPieces pieces={course.portfolio_pieces} />
+        <InstructorCard
+          name={course.instructor_display_name}
+          bio={course.instructor_bio}
+          credentials={course.instructor_credentials}
+          avatarUrl={course.instructor_avatar_url}
+          links={course.instructor_links}
+        />
+        <CohortSchedule sessions={offeringUrgency?.cohort_sessions} />
+        <TestimonialsCarousel courseId={courseId!} />
+        <FAQ faqs={course.faqs} />
+
         {/* Ratings & Reviews */}
         <div className="bg-card border border-border rounded-[16px] p-6 space-y-6">
           <div className="flex items-center gap-2">
             <Star className="h-5 w-5 text-yellow-400 fill-yellow-400" />
             <h2 className="text-lg font-semibold">Ratings & Reviews</h2>
           </div>
-          <RatingDistribution courseId={courseId!} />
-          <ReviewList courseId={courseId!} userId={user?.id} hasAccess={hasAccess} />
+          <ReviewList courseId={courseId!} isEnrolled={hasAccess} />
         </div>
 
         {/* Sections + Chapters */}
@@ -373,9 +482,9 @@ const CourseDetail = () => {
                           <div key={chapter.id}>
                             <button
                               onClick={() => handleChapterClick(chapter, sectionChapters)}
-                              className="w-full flex items-center gap-3 h-10 px-4 rounded-lg text-left text-sm transition-colors hover:bg-accent/50 group"
+                              className="w-full flex items-start gap-3 min-h-[40px] py-2 px-4 rounded-lg text-left text-sm transition-colors hover:bg-accent/50 group"
                             >
-                              <span className="w-5 h-5 flex items-center justify-center shrink-0">
+                              <span className="w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">
                                 {completed ? (
                                   <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                                 ) : locked ? (
@@ -385,19 +494,19 @@ const CourseDetail = () => {
                                 )}
                               </span>
                               <span
-                                className={`flex-1 truncate ${
+                                className={`flex-1 line-clamp-2 leading-snug ${
                                   locked ? "text-muted-foreground" : "text-foreground"
                                 }`}
                               >
                                 {idx + 1}. {chapter.title}
                               </span>
                               {chapter.make_free && !hasAccess && (
-                                <Badge variant="outline" className="text-[10px] h-5 px-1.5">
+                                <Badge variant="outline" className="text-[10px] h-5 px-1.5 mt-0.5 shrink-0">
                                   Free
                                 </Badge>
                               )}
                               {chapter.duration_seconds && (
-                                <span className="text-xs text-muted-foreground font-mono shrink-0">
+                                <span className="text-xs text-muted-foreground font-mono shrink-0 mt-0.5">
                                   {formatDuration(chapter.duration_seconds)}
                                 </span>
                               )}

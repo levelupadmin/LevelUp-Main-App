@@ -46,21 +46,37 @@ export async function checkAndGenerateCertificate(
     .eq("id", courseId)
     .maybeSingle();
 
-  // Get batch number from enrolment's offering
+  // Get batch number from the enrolment that covers THIS course.
+  // (The previous .maybeSingle() threw "more than one row" whenever a user
+  // had multiple active enrolments, and even on success picked an arbitrary
+  // offering — so the batch label printed on the cert was random.)
+  // We resolve the offering via offering_courses and pick the user's active
+  // enrolment on one of those offerings, preferring the most recent.
   let batchNumber = "";
-  const { data: enrolment } = await supabase
-    .from("enrolments")
+  const { data: offeringLinks } = await supabase
+    .from("offering_courses")
     .select("offering_id")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (enrolment?.offering_id) {
-    const { data: offering } = await supabase
-      .from("offerings")
-      .select("title")
-      .eq("id", enrolment.offering_id)
+    .eq("course_id", courseId);
+  const offeringIds = (offeringLinks || []).map((o) => o.offering_id).filter(Boolean);
+  if (offeringIds.length > 0) {
+    const { data: enrolment } = await supabase
+      .from("enrolments")
+      .select("offering_id, created_at")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .in("offering_id", offeringIds)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
-    batchNumber = offering?.title ?? "";
+
+    if (enrolment?.offering_id) {
+      const { data: offering } = await supabase
+        .from("offerings")
+        .select("title")
+        .eq("id", enrolment.offering_id)
+        .maybeSingle();
+      batchNumber = offering?.title ?? "";
+    }
   }
 
   const variablePositions = (template.variable_positions || []) as VariablePosition[];
@@ -88,7 +104,7 @@ export async function checkAndGenerateCertificate(
     });
     return result;
   } catch (err) {
-    console.error("Auto certificate generation failed:", err);
+    if (import.meta.env.DEV) console.error("Auto certificate generation failed:", err);
     return null;
   }
 }

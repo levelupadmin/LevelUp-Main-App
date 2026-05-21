@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import DOMPurify from "dompurify";
 import {
   CheckCircle2,
@@ -17,12 +17,14 @@ import {
   HelpCircle,
   Info,
   ArrowLeft,
+  RotateCcw,
 } from "lucide-react";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 import Confetti from "@/components/Confetti";
 import { checkMilestone } from "@/hooks/useMilestone";
 import { useVideoProgress } from "@/hooks/useVideoProgress";
 import { checkAndGenerateCertificate } from "@/hooks/useCertificateAutoGenerate";
+import { hapticImpact, hapticNotification } from "@/lib/haptics";
 
 interface Chapter {
   id: string;
@@ -72,6 +74,195 @@ interface Comment {
   user_name?: string;
 }
 
+/* ─── QuizBlock component ─── */
+const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitted, setSubmitted] = useState(false);
+  const [result, setResult] = useState<{ score: number; total: number; passed: boolean } | null>(null);
+  const [loadingAttempt, setLoadingAttempt] = useState(true);
+
+  const questions: any[] = (quiz.quiz_questions || [])
+    .sort((a: any, b: any) => a.sort_order - b.sort_order)
+    .map((q: any) => ({
+      ...q,
+      quiz_options: (q.quiz_options || []).sort((a: any, b: any) => a.sort_order - b.sort_order),
+    }));
+
+  // Load previous attempt on mount. Column is `total`, not `total_questions`
+  // — prior code referenced a non-existent column.
+  useEffect(() => {
+    if (!userId || !quiz.id) { setLoadingAttempt(false); return; }
+    (async () => {
+      const { data: attempt } = await (supabase as any)
+        .from("quiz_attempts")
+        .select("id, score, total, passed, answers")
+        .eq("quiz_id", quiz.id)
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (attempt && attempt.passed) {
+        // Pre-fill answers and show results
+        if (attempt.answers && typeof attempt.answers === "object") {
+          setAnswers(attempt.answers as Record<string, string>);
+        }
+        setResult({ score: attempt.score, total: attempt.total, passed: attempt.passed });
+        setSubmitted(true);
+      }
+      setLoadingAttempt(false);
+    })();
+  }, [quiz.id, userId]);
+
+  const answeredCount = Object.keys(answers).length;
+
+  const handleSubmit = async () => {
+    if (questions.length === 0) return;
+    // Require at least one answer before submitting
+    if (answeredCount === 0) {
+      toast.error("Please answer at least one question before submitting.");
+      return;
+    }
+
+    // Server-side scoring — the RPC verifies enrolment, reads is_correct
+    // from the locked-down base table, and records the attempt in one
+    // SECURITY DEFINER transaction. Client no longer sees the answer key.
+    const { data, error } = await (supabase as any).rpc("submit_quiz", {
+      p_quiz_id: quiz.id,
+      p_answers: answers,
+    });
+
+    if (error || !data) {
+      if (import.meta.env.DEV) console.error("[quiz] submit_quiz RPC failed:", error);
+      toast.error("We couldn't submit your quiz. Please try again.");
+      return;
+    }
+
+    const score: number = Number(data.score) || 0;
+    const total: number = Number(data.total) || questions.length;
+    const passed: boolean = !!data.passed;
+
+    setResult({ score, total, passed });
+    setSubmitted(true);
+
+    if (passed) {
+      hapticNotification("success");
+      toast.success(`Passed! ${score}/${total} correct`);
+    } else {
+      toast.error(`Not quite — ${score}/${total}. You need ${quiz.pass_percentage}% to pass.`);
+    }
+  };
+
+  const handleRetry = () => {
+    setAnswers({});
+    setSubmitted(false);
+    setResult(null);
+  };
+
+  if (loadingAttempt) {
+    return (
+      <div className="bg-card border border-border rounded-xl p-6 animate-pulse">
+        <div className="h-4 bg-surface-2 rounded w-1/3 mb-2" />
+        <div className="h-3 bg-surface-2 rounded w-1/2" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="font-semibold text-foreground">{quiz.title}</h4>
+          {quiz.description && (
+            <p className="text-sm text-muted-foreground mt-1">{quiz.description}</p>
+          )}
+        </div>
+        {result && (
+          <span
+            className={`text-xs font-mono px-2.5 py-1 rounded-full ${
+              result.passed
+                ? "bg-emerald-500/15 text-emerald-400"
+                : "bg-rose-500/15 text-rose-400"
+            }`}
+          >
+            {result.passed ? "PASSED" : "FAILED"} — {result.score}/{result.total}
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        {questions.map((q: any, qi: number) => {
+          const selectedId = answers[q.id];
+          const correctOptionId = q.quiz_options.find((o: any) => o.is_correct)?.id;
+          const isCorrect = submitted && selectedId === correctOptionId;
+          const isWrong = submitted && selectedId && selectedId !== correctOptionId;
+
+          return (
+            <div key={q.id} className="space-y-2">
+              <p className="text-sm font-medium">
+                <span className="text-muted-foreground mr-2">{qi + 1}.</span>
+                {q.question_text}
+              </p>
+              <div className="space-y-1.5 pl-5">
+                {q.quiz_options.map((o: any) => {
+                  const isSelected = selectedId === o.id;
+                  let optClass = "bg-surface hover:bg-surface-2";
+                  if (submitted) {
+                    if (o.is_correct) optClass = "bg-emerald-500/10 border-emerald-500/30";
+                    else if (isSelected && !o.is_correct) optClass = "bg-rose-500/10 border-rose-500/30";
+                    else optClass = "bg-surface opacity-60";
+                  }
+
+                  return (
+                    <label
+                      key={o.id}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg border border-border cursor-pointer transition-colors ${optClass}`}
+                    >
+                      <input
+                        type="radio"
+                        name={`quiz-q-${q.id}`}
+                        value={o.id}
+                        checked={isSelected}
+                        disabled={submitted}
+                        onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: o.id }))}
+                        className="accent-emerald-500"
+                      />
+                      <span className="text-sm">{o.option_text}</span>
+                      {submitted && o.is_correct && (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 ml-auto" />
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+              {submitted && q.explanation && (
+                <p className="text-xs text-muted-foreground bg-surface rounded-lg px-3 py-2 ml-5">
+                  {q.explanation}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-3 pt-2">
+        {!submitted ? (
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={Object.keys(answers).length < questions.length}
+          >
+            Submit Quiz
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" onClick={handleRetry}>
+            <RotateCcw className="h-3.5 w-3.5 mr-1" /> Retry
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const ChapterViewer = () => {
   const { chapterId } = useParams<{ chapterId: string }>();
   const navigate = useNavigate();
@@ -96,6 +287,7 @@ const ChapterViewer = () => {
   const [milestone, setMilestone] = useState<{ pct: number; title: string; subtitle: string } | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [showCompletionBanner, setShowCompletionBanner] = useState(false);
+  const [quizzes, setQuizzes] = useState<any[]>([]);
 
   const confettiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -283,12 +475,114 @@ const ChapterViewer = () => {
       ...c,
       user_name: userNameMap[c.user_id] || "Anonymous",
     })));
+
+    // Fetch quizzes for this chapter. Options come from `quiz_options_public`
+    // — a view that never exposes `is_correct`. Scoring moved to the
+    // `submit_quiz` RPC (see migration 20260417120000) so students can no
+    // longer read the answer key.
+    const { data: quizData } = await (supabase as any)
+      .from("chapter_quizzes")
+      .select("id, title, description, pass_percentage, sort_order, quiz_questions(id, question_text, question_type, explanation, sort_order)")
+      .eq("chapter_id", chapterId)
+      .eq("is_active", true)
+      .order("sort_order");
+
+    if (quizData && quizData.length) {
+      const allQuestionIds: string[] = quizData.flatMap((q: any) =>
+        (q.quiz_questions || []).map((qq: any) => qq.id)
+      );
+      if (allQuestionIds.length) {
+        const { data: opts } = await (supabase as any)
+          .from("quiz_options_public")
+          .select("id, question_id, option_text, sort_order")
+          .in("question_id", allQuestionIds)
+          .order("sort_order");
+        const byQuestion: Record<string, any[]> = {};
+        (opts || []).forEach((o: any) => {
+          if (!byQuestion[o.question_id]) byQuestion[o.question_id] = [];
+          byQuestion[o.question_id].push(o);
+        });
+        quizData.forEach((q: any) => {
+          (q.quiz_questions || []).forEach((qq: any) => {
+            qq.quiz_options = byQuestion[qq.id] || [];
+          });
+        });
+      }
+      setQuizzes(quizData);
+    } else {
+      setQuizzes([]);
+    }
+
     setLoading(false);
   }, [chapterId, user, profile, navigate]);
 
   useEffect(() => {
     loadChapter();
   }, [loadChapter]);
+
+  // Lightweight refresh for Q&A only — used after posting a question so we don't
+  // unmount the whole page (which would flash the loader and reset the Tabs back
+  // to Overview — especially disruptive on mobile).
+  const refreshQna = useCallback(async () => {
+    if (!chapterId) return;
+    const { data: qnaData } = await supabase
+      .from("chapter_qna")
+      .select("id, question_text, user_id, is_resolved, created_at")
+      .eq("chapter_id", chapterId)
+      .order("created_at", { ascending: false });
+    const qnaItems = (qnaData || []) as any[];
+    const qnaIds = qnaItems.map((q) => q.id);
+    let allReplies: any[] = [];
+    if (qnaIds.length > 0) {
+      const { data: repliesData } = await supabase
+        .from("chapter_qna_replies")
+        .select("id, reply_text, user_id, is_instructor_reply, created_at, qna_id")
+        .in("qna_id", qnaIds)
+        .order("created_at");
+      allReplies = repliesData || [];
+    }
+    const repliesByQna: Record<string, QnaReply[]> = {};
+    allReplies.forEach((r: any) => {
+      if (!repliesByQna[r.qna_id]) repliesByQna[r.qna_id] = [];
+      repliesByQna[r.qna_id].push(r);
+    });
+    const userIds = new Set<string>();
+    qnaItems.forEach((q: any) => userIds.add(q.user_id));
+    allReplies.forEach((r: any) => userIds.add(r.user_id));
+    const userNameMap: Record<string, string> = {};
+    if (userIds.size > 0) {
+      const { data: users } = await supabase
+        .from("users").select("id, full_name").in("id", [...userIds]);
+      (users || []).forEach((u) => { userNameMap[u.id] = u.full_name || "Anonymous"; });
+    }
+    setQna(qnaItems.map((q) => ({
+      ...q,
+      user_name: userNameMap[q.user_id] || "Anonymous",
+      replies: (repliesByQna[q.id] || []).map((r: any) => ({
+        ...r,
+        user_name: userNameMap[r.user_id] || "Anonymous",
+      })),
+    })));
+  }, [chapterId]);
+
+  // Lightweight refresh for comments only — same reason as refreshQna.
+  const refreshComments = useCallback(async () => {
+    if (!chapterId) return;
+    const { data: commentsData } = await supabase
+      .from("chapter_comments")
+      .select("id, comment_text, user_id, created_at")
+      .eq("chapter_id", chapterId)
+      .order("created_at", { ascending: false });
+    const items = (commentsData || []) as any[];
+    const userIds = [...new Set(items.map((c) => c.user_id))];
+    const userNameMap: Record<string, string> = {};
+    if (userIds.length > 0) {
+      const { data: users } = await supabase
+        .from("users").select("id, full_name").in("id", userIds);
+      (users || []).forEach((u) => { userNameMap[u.id] = u.full_name || "Anonymous"; });
+    }
+    setComments(items.map((c) => ({ ...c, user_name: userNameMap[c.user_id] || "Anonymous" })));
+  }, [chapterId]);
 
   // Listen for YouTube / Vimeo / generic iframe progress messages
   useEffect(() => {
@@ -357,6 +651,7 @@ const ChapterViewer = () => {
 
     setIsCompleted(true);
     setSubmitting(false);
+    hapticImpact("light");
 
     // Check for milestone (progress celebration)
     const { data: allProgress } = await supabase
@@ -372,6 +667,7 @@ const ChapterViewer = () => {
     if (hit) {
       setShowConfetti(true);
       setMilestone(hit);
+      hapticNotification("success");
       toast.success(hit.title, { description: hit.subtitle, duration: 4000 });
       confettiTimerRef.current = setTimeout(() => { setShowConfetti(false); setMilestone(null); }, 4000);
     } else {
@@ -404,7 +700,10 @@ const ChapterViewer = () => {
     // Auto-advance to next (with safety check) — delay longer if milestone shown
     const advanceDelay = hit ? 2500 : 800;
     if (siblings && currentIndex >= 0 && currentIndex < siblings.length - 1 && siblings[currentIndex + 1]?.id) {
-      autoAdvanceTimerRef.current = setTimeout(() => navigate(`/chapters/${siblings[currentIndex + 1].id}`), advanceDelay);
+      autoAdvanceTimerRef.current = setTimeout(() => {
+        hapticImpact("light");
+        navigate(`/chapters/${siblings[currentIndex + 1].id}`);
+      }, advanceDelay);
     }
   };
 
@@ -420,7 +719,7 @@ const ChapterViewer = () => {
     else {
       toast.success("Question sent — your instructor will see it.");
       setQuestionText("");
-      loadChapter();
+      refreshQna();
     }
     setSubmitting(false);
   };
@@ -437,7 +736,7 @@ const ChapterViewer = () => {
     else {
       toast.success("Comment added!");
       setCommentText("");
-      loadChapter();
+      refreshComments();
     }
     setSubmitting(false);
   };
@@ -475,11 +774,11 @@ const ChapterViewer = () => {
   if (!chapter) return null;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground pb-[env(safe-area-inset-bottom)]">
       <Confetti active={showConfetti} />
       {milestone && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[9998] milestone-banner">
-          <div className="bg-card border border-border rounded-2xl px-6 py-4 shadow-2xl text-center max-w-sm">
+          <div className="bg-card border border-border rounded-2xl px-4 sm:px-6 py-4 shadow-2xl text-center max-w-[calc(100vw-2rem)] sm:max-w-sm">
             <p className="text-lg font-semibold">{milestone.title}</p>
             <p className="text-sm text-muted-foreground mt-1">{milestone.subtitle}</p>
             <div className="mt-2 h-1.5 bg-surface-2 rounded-full overflow-hidden">
@@ -491,7 +790,7 @@ const ChapterViewer = () => {
       {/* Course completion banner */}
       {showCompletionBanner && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-card border border-border rounded-2xl px-8 py-8 shadow-2xl text-center max-w-md mx-4">
+          <div className="bg-card border border-border rounded-2xl px-5 sm:px-8 py-6 sm:py-8 shadow-2xl text-center max-w-sm sm:max-w-md mx-4">
             <div className="text-5xl mb-4">🎉</div>
             <h2 className="text-xl font-bold text-foreground">
               You've completed {courseTitle || "this course"}!
@@ -517,7 +816,7 @@ const ChapterViewer = () => {
       )}
 
       {/* Top bar */}
-      <div className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 h-14 flex items-center gap-3">
+      <div className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 flex items-center gap-3 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]">
         <Button
           variant="ghost"
           size="sm"
@@ -538,8 +837,8 @@ const ChapterViewer = () => {
       <div className="flex flex-col lg:flex-row">
         {/* Main content */}
         <div className="flex-1 p-4 lg:p-8 space-y-6 max-w-4xl">
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
+          {/* Breadcrumb — hidden on mobile since top bar has back + title */}
+          <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
             <Link to="/my-courses" className="hover:text-foreground transition-colors">My Courses</Link>
             <span>&rsaquo;</span>
             {courseId && courseTitle && (
@@ -572,7 +871,7 @@ const ChapterViewer = () => {
               />
             </div>
           ) : chapter.content_type === "pdf" && chapter.media_url ? (
-            <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card" style={{ height: "80vh" }}>
+            <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card h-[55vh] sm:h-[80vh]">
               <iframe src={chapter.media_url} className="w-full h-full" title={`${chapter.title} — PDF`} />
             </div>
           ) : chapter.content_type === "image" && chapter.media_url ? (
@@ -603,7 +902,7 @@ const ChapterViewer = () => {
 
           {/* Chapter info */}
           <div className="space-y-4">
-            <h1 className="text-2xl font-bold">{chapter.title}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold">{chapter.title}</h1>
             {chapter.description && (
               <p className="text-muted-foreground text-sm leading-relaxed">
                 {chapter.description}
@@ -640,6 +939,16 @@ const ChapterViewer = () => {
               Next <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           </div>
+
+          {/* Quizzes */}
+          {quizzes.length > 0 && (
+            <div className="space-y-6 mt-8">
+              <h3 className="text-lg font-semibold text-foreground">Knowledge Check</h3>
+              {quizzes.map((quiz) => (
+                <QuizBlock key={quiz.id} quiz={quiz} userId={user?.id} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Right sidebar */}
