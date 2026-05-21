@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster as SonnerToaster } from "sonner";
+import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/contexts/AuthContext";
 import RequireAuth from "@/components/guards/RequireAuth";
 import RequireRole from "@/components/guards/RequireRole";
@@ -177,6 +178,7 @@ const App = () => (
         </BrowserRouter>
       </ErrorBoundary>
       <SonnerToaster position="bottom-right" theme="dark" />
+      <Toaster />
       <OfflineBanner />
     </AuthProvider>
   </QueryClientProvider>

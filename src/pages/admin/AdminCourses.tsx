@@ -275,7 +275,7 @@ const AdminCourses = () => {
           </SelectContent>
         </Select>
         <Button
-          onClick={() => navigate("/admin/courses/new")}
+          onClick={() => navigate("/admin/courses/new/edit")}
           className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
         >
           <Plus className="h-4 w-4 mr-2" /> New Course
