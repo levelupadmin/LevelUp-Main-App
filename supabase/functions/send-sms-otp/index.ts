@@ -1,137 +1,100 @@
-// Supabase Auth "Send SMS Hook" -> MSG91 v5 OTP API.
-//
-// Supabase generates and stores the OTP, then POSTs to us with payload:
-//   { user: { id, phone, user_metadata, ... }, sms: { otp, type } }
-// We forward the OTP via MSG91 (DLT-compliant SMS for +91, otherwise
-// the same SMS route — MSG91 handles international routing).
-//
-// Channel selection (SMS vs WhatsApp) is read from
-// user_metadata.next_otp_channel which the client sets before calling
-// signInWithOtp. Default = "sms". Set to "whatsapp" via the WhatsApp
-// button on the OTP entry screen.
+/**
+ * send-sms-otp — Generate a 4-digit OTP, hash + store it, then dispatch
+ * the plain OTP via MSG91 Flow API. The DLT template (id in
+ * MSG91_OTP_TEMPLATE_ID) uses the variable name `var` for the OTP slot,
+ * and a Jio-registered LVLUP sender header.
+ *
+ * Why we send via Flow API and not the MSG91 OTP widget:
+ *   - Widget runs in the browser, requires custom-element mounting +
+ *     captcha host + token; per-IP throttles can block during testing.
+ *   - Flow API is a clean server-to-server call. Each request originates
+ *     from a Supabase Edge datacenter IP, which rotates and is not
+ *     subject to per-IP rate-limits at MSG91.
+ *   - We own OTP generation and verification, so the entire flow lives
+ *     inside our Supabase tenant; MSG91 is just a transport.
+ */
 
-import { Webhook } from "https://esm.sh/standardwebhooks@1.0.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
-const MSG91_AUTH_KEY = Deno.env.get("MSG91_AUTH_KEY") ?? "";
-const MSG91_TEMPLATE_ID = Deno.env.get("MSG91_TEMPLATE_ID") ?? "";
-const HOOK_SECRET = Deno.env.get("SEND_SMS_HOOK_SECRET") ?? "";
+const SUPABASE_URL          = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY      = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const MSG91_AUTH_KEY        = Deno.env.get("MSG91_AUTH_KEY")!;
+const MSG91_TEMPLATE_ID     = Deno.env.get("MSG91_OTP_TEMPLATE_ID")!;
+const MSG91_SENDER_ID       = Deno.env.get("MSG91_SENDER_ID") || "LVLUP";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, content-type, webhook-id, webhook-signature, webhook-timestamp",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-interface SmsHookPayload {
-  user: {
-    id: string;
-    phone?: string;
-    email?: string;
-    user_metadata?: Record<string, unknown>;
-  };
-  sms: {
-    otp: string;
-    type?: string;
-  };
-}
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 
-async function sendViaMsg91(opts: {
-  phone: string;
-  otp: string;
-  channel: "sms" | "whatsapp";
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!MSG91_AUTH_KEY) return { ok: false, error: "MSG91_AUTH_KEY not configured" };
-
-  const mobile = opts.phone.replace(/^\+/, "").replace(/\D/g, "");
-  if (!mobile) return { ok: false, error: "invalid phone" };
-
-  const body: Record<string, unknown> = {
-    mobile,
-    otp: opts.otp,
-    otp_length: opts.otp.length,
-  };
-  if (MSG91_TEMPLATE_ID) body.template_id = MSG91_TEMPLATE_ID;
-  if (opts.channel === "whatsapp") body.via = "whatsapp";
-
-  try {
-    const res = await fetch("https://control.msg91.com/api/v5/otp", {
-      method: "POST",
-      headers: {
-        authkey: MSG91_AUTH_KEY,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data?.type !== "success") {
-      return { ok: false, error: `MSG91 ${res.status}: ${JSON.stringify(data)}` };
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: String(e) };
-  }
+async function sha256Hex(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  if (req.method !== "POST") {
-    return new Response("method not allowed", { status: 405, headers: corsHeaders });
-  }
+  if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
-  const rawBody = await req.text();
-  let payload: SmsHookPayload;
+  let body: { phone?: string };
+  try { body = await req.json(); } catch { return json({ error: "invalid_json" }, 400); }
+  if (!body.phone) return json({ error: "missing_phone" }, 400);
 
-  if (HOOK_SECRET) {
-    try {
-      const wh = new Webhook(HOOK_SECRET);
-      payload = wh.verify(rawBody, Object.fromEntries(req.headers)) as SmsHookPayload;
-    } catch (e) {
-      console.error("hook signature verification failed", e);
-      return new Response(JSON.stringify({ error: "invalid signature" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-  } else {
-    console.warn("SEND_SMS_HOOK_SECRET not configured — signature check disabled");
-    try {
-      payload = JSON.parse(rawBody) as SmsHookPayload;
-    } catch {
-      return new Response(JSON.stringify({ error: "invalid json" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-  }
+  // Normalise to E.164 with leading +
+  const normPhone = body.phone.startsWith("+")
+    ? body.phone
+    : `+${body.phone.replace(/^0+/, "")}`;
 
-  const phone = payload.user?.phone;
-  const otp = payload.sms?.otp;
-  if (!phone || !otp) {
-    return new Response(JSON.stringify({ error: "missing phone or otp" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
+  // Server-side OTP generation
+  const otp = String(Math.floor(1000 + Math.random() * 9000));
+  const otpHash = await sha256Hex(`${normPhone}:${otp}`);
 
-  const channel =
-    (payload.user.user_metadata?.next_otp_channel as "sms" | "whatsapp" | undefined) ||
-    "sms";
-
-  const result = await sendViaMsg91({ phone, otp, channel });
-
-  if (!result.ok) {
-    console.error("MSG91 send failed", { error: result.error });
-    return new Response(JSON.stringify({ error: result.error }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  const masked = phone.slice(0, 4) + "***" + phone.slice(-2);
-  console.log(`OTP sent via ${channel} to ${masked}`);
-  return new Response(JSON.stringify({ success: true, channel }), {
-    status: 200,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
   });
+
+  // Invalidate any prior pending OTPs for this phone (single in-flight
+  // OTP at a time keeps the verify path simple).
+  await admin.from("phone_otp_attempts").delete().eq("phone", normPhone);
+
+  // Store the hash with a 10-minute TTL.
+  const { error: insertErr } = await admin.from("phone_otp_attempts").insert({
+    phone: normPhone,
+    otp_hash: otpHash,
+    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+  });
+  if (insertErr) {
+    return json({ error: "db_error", detail: insertErr.message }, 500);
+  }
+
+  // Send via MSG91 Flow API.
+  // mobiles: digits only with country code, no leading +
+  const mobileNum = normPhone.replace(/^\+/, "");
+  const msgResp = await fetch("https://control.msg91.com/api/v5/flow", {
+    method: "POST",
+    headers: { authkey: MSG91_AUTH_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      flow_id: MSG91_TEMPLATE_ID,
+      sender: MSG91_SENDER_ID,
+      mobiles: mobileNum,
+      var: otp,
+    }),
+  });
+  const msgData = (await msgResp.json()) as { type?: string; message?: string };
+  if (!msgResp.ok || msgData.type !== "success") {
+    // Rollback the stored hash so the user can retry immediately.
+    await admin.from("phone_otp_attempts").delete().eq("phone", normPhone);
+    return json({ error: "msg91_send_failed", detail: msgData }, 502);
+  }
+
+  return json({ success: true, request_id: msgData.message });
 });

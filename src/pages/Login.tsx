@@ -11,7 +11,9 @@ import Footer from "@/components/Footer";
 import usePageTitle from "@/hooks/usePageTitle";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
-import { sendOtp as msg91SendOtp, verifyOtp as msg91VerifyOtp, retryOtp as msg91RetryOtp } from "@/lib/msg91-widget";
+// msg91-widget kept on disk but no longer imported here — we use our
+// own backend edge functions for SMS OTP now (server-side OTP generation
+// + MSG91 Flow API dispatch).
 import slideBfp from "@/assets/carousel/slide-bfp.jpg";
 import slideVea from "@/assets/carousel/slide-vea.jpg";
 import slideUiux from "@/assets/carousel/slide-uiux.jpg";
@@ -36,24 +38,15 @@ interface SlideData {
 
 type Step = "phone" | "otp" | "email_input" | "email_sent";
 
-// While true, every user (Indian or not) auths via email magic link
-// only. While false, +91 phones get SMS OTP via the MSG91 widget and
-// non-+91 phones still fall through to email.
-//
-// CURRENTLY TRUE (2026-05-22 evening): the MSG91 OTP Widget API returns
-// success on sendOTP but the SMS is silently dropped at the telco
-// because the LevelUp MSG91 account has NO DLT-approved template
-// registered yet. The widget config says use_default:true but MSG91's
-// "default" only works for accounts that have at least one DLT-approved
-// template under their Principal Entity. Our DLT template is still
-// pending approval from telco DLT registry (submitted, 24-48h ETA).
-//
-// Flip back to false the moment our DLT template clears (or once we
-// borrow a working template via Plan C — backend send via Supabase
-// edge function with a registered Sender ID).
-const EMAIL_ONLY_AUTH = true;
+// While true, every user (Indian or not) auths via email magic link.
+// While false, +91 phones get SMS OTP via our backend (send-sms-otp
+// edge function -> MSG91 Flow API -> SMS via LVLUP sender) and non-+91
+// phones still fall through to email magic link.
+const EMAIL_ONLY_AUTH = false;
 
-// MSG91 widget verify URL (our edge function bridges widget JWT → Supabase session).
+// Backend edge functions that drive the phone-OTP flow.
+const SEND_SMS_OTP_URL =
+  "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/send-sms-otp";
 const VERIFY_MSG91_OTP_URL =
   "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
 
@@ -124,15 +117,19 @@ const Login = () => {
   const redirectTarget = rawFrom.startsWith("/") && !rawFrom.includes("//") ? rawFrom : "/home";
   const isIndianPhone = phone.startsWith("+91");
 
-  const sendSmsOtp = async (waMode = false): Promise<{ ok: boolean; error?: string }> => {
-    // First send goes via sendOTP. If we already sent once and the user
-    // taps "Get on WhatsApp", we use retryOTP with the WhatsApp channel
-    // code so MSG91 keeps the same reqId / OTP flow.
+  const sendSmsOtp = async (_waMode = false): Promise<{ ok: boolean; error?: string }> => {
+    // POST to our backend, which generates the OTP server-side, stores
+    // its hash, and dispatches via MSG91 Flow API. WhatsApp fallback
+    // isn't wired through this path yet — same SMS resend if waMode set.
     try {
-      if (waMode) {
-        await msg91RetryOtp("whatsapp");
-      } else {
-        await msg91SendOtp(phone);
+      const resp = await fetch(SEND_SMS_OTP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        return { ok: false, error: data?.detail?.message || data?.error || "Couldn't send OTP" };
       }
       return { ok: true };
     } catch (e) {
@@ -171,22 +168,22 @@ const Login = () => {
 
   const handleVerify = async (otp: string): Promise<{ ok: boolean; error?: string }> => {
     try {
-      // 1. Verify with MSG91 widget → get accessToken (JWT)
-      const { accessToken } = await msg91VerifyOtp(otp);
-      // 2. Send to our edge function → mint Supabase session
+      // Verify hash + mint session in one backend round-trip.
       const resp = await fetch(VERIFY_MSG91_OTP_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, accessToken }),
+        body: JSON.stringify({ phone, otp }),
       });
       const data = await resp.json();
       if (!resp.ok) {
         if (data?.error === "signup_requires_email_and_name") {
           return { ok: false, error: "No account with this number. Sign up first." };
         }
+        if (data?.error === "invalid_otp") return { ok: false, error: "Wrong code. Try again." };
+        if (data?.error === "otp_expired_or_not_found") return { ok: false, error: "Code expired. Tap resend." };
+        if (data?.error === "too_many_attempts") return { ok: false, error: "Too many tries. Tap resend for a new code." };
         return { ok: false, error: data?.detail || data?.error || "Verification failed" };
       }
-      // 3. Set the session client-side
       const { error: setErr } = await supabase.auth.setSession({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
