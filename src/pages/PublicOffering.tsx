@@ -173,7 +173,7 @@ function IncludedCourses({ courses }: { courses: OfferingCourse[] }) {
   if (!courses.length) return null;
   return (
     <div className="space-y-3">
-      <h3 className="text-lg font-semibold text-foreground">What's Included</h3>
+      <h2 className="text-lg font-semibold text-foreground">What's Included</h2>
       <div className="space-y-3">
         {courses.map((oc) => (
           <div key={oc.course_id} className="flex gap-4 p-4 rounded-xl border border-border bg-[hsl(var(--surface))]">
@@ -235,7 +235,7 @@ function Curriculum({
   return (
     <div className="space-y-3">
       <div className="flex items-baseline justify-between">
-        <h3 className="text-lg font-semibold text-foreground">Course Curriculum</h3>
+        <h2 className="text-lg font-semibold text-foreground">Course Curriculum</h2>
         <div className="text-xs text-muted-foreground font-mono">
           {totalLessons || allChapters.length} lessons
           {durationMinutes ? ` · ${Math.round(durationMinutes / 60)}h` : ""}
@@ -309,7 +309,7 @@ function InstructorBio({
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-foreground">About Your Instructor</h3>
+      <h2 className="text-lg font-semibold text-foreground">About Your Instructor</h2>
       <div className="rounded-xl border border-border bg-[hsl(var(--surface))] p-5 sm:p-6 space-y-5">
         <div className="flex items-start gap-4">
           {avatar ? (
@@ -376,7 +376,7 @@ function FAQs({ items }: { items?: Array<{ question: string; answer: string }> |
   if (!items?.length) return null;
   return (
     <div className="space-y-3">
-      <h3 className="text-lg font-semibold text-foreground">Frequently Asked Questions</h3>
+      <h2 className="text-lg font-semibold text-foreground">Frequently Asked Questions</h2>
       <div className="space-y-2">
         {items.map((f, i) => {
           const isOpen = openIdx === i;
@@ -425,7 +425,7 @@ function Testimonials({
   if (!valid.length) return null;
   return (
     <div className="space-y-3">
-      <h3 className="text-lg font-semibold text-foreground">What Students Say</h3>
+      <h2 className="text-lg font-semibold text-foreground">What Students Say</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {valid.map((t, i) => (
           <figure
@@ -1445,14 +1445,14 @@ export default function PublicOffering() {
 
             {highlights.length > 0 && (
               <div className="space-y-3">
-                <h3 className="text-lg font-semibold text-foreground">Program Highlights</h3>
+                <h2 className="text-lg font-semibold text-foreground">Program Highlights</h2>
                 <Highlights items={highlights} />
               </div>
             )}
 
             {offering.description && (
               <div className="space-y-3">
-                <h3 className="text-lg font-semibold text-foreground">About This Program</h3>
+                <h2 className="text-lg font-semibold text-foreground">About This Program</h2>
                 <p className="text-muted-foreground whitespace-pre-line leading-relaxed">
                   {offering.description}
                 </p>
