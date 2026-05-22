@@ -11,14 +11,21 @@ import OfflineBanner from "@/components/OfflineBanner";
 import FloatingSupport from "@/components/FloatingSupport";
 import ScrollToTop from "@/components/ScrollToTop";
 import StudentLayout from "@/components/layout/StudentLayout";
-import AdminLayout from "@/components/layout/AdminLayout";
+// AdminLayout is lazy — admin paths are <1% of traffic; no reason to ship its
+// 20 KB of nav chrome + 14 admin route imports inside every anon page load.
+const AdminLayout = lazy(() => import("@/components/layout/AdminLayout"));
 
-// Critical student paths – keep synchronous
+// Critical student paths – keep synchronous so first-paint of the most common
+// anon landings (/, /login, /signup) doesn't await a chunk fetch.
 import RootRedirect from "@/pages/RootRedirect";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
-import Home from "@/pages/Home";
 import NotFoundPage from "@/pages/NotFoundPage";
+
+// Home is the authenticated dashboard — anon visitors land on Login or /p/<slug>
+// and never see it. Lazy so the 40 KB source (TanStack-Query'd home grid +
+// course cards + hero carousel) doesn't ride along with the main bundle.
+const Home = lazy(() => import("@/pages/Home"));
 
 // Lazy-loaded student pages
 const CourseDetail = lazy(() => import("@/pages/CourseDetail"));
