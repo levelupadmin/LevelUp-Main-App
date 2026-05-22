@@ -110,7 +110,14 @@ function HeroBanner({ offering }: { offering: Offering }) {
   return (
     <div className="relative w-full aspect-[16/9] md:aspect-[21/9] lg:aspect-[3/1] rounded-2xl overflow-hidden border border-border bg-[hsl(var(--surface))]">
       {img ? (
-        <img src={img} alt={offering.title} className="absolute inset-0 w-full h-full object-cover" />
+        <img
+          src={img}
+          alt={offering.title}
+          className="absolute inset-0 w-full h-full object-cover"
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
+        />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
           <BookOpen className="h-16 w-16 opacity-30" />
