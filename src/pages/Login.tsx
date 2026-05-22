@@ -38,15 +38,9 @@ type Step = "phone" | "otp" | "email_input" | "email_sent";
 
 // While true, every user (Indian or not) auths via email magic link
 // only. While false, +91 phones get SMS OTP via the MSG91 widget and
-// non-+91 phones still fall through to email.
-//
-// CURRENTLY TRUE: the MSG91 widget on file (widgetId 366576693257373539373533)
-// is registered against the "Forgeapp" MSG91 app, not LevelUp Main App.
-// Phone-OTP attempts time out because the widget script refuses to expose
-// methods for an origin not in its allowlist. Flip back to false once a
-// fresh widget is created inside the LevelUp app context in MSG91 and the
-// new widgetId + tokenAuth are pasted into index.html.
-const EMAIL_ONLY_AUTH = true;
+// non-+91 phones still fall through to email. Flip to true as an
+// emergency fallback if the widget misbehaves.
+const EMAIL_ONLY_AUTH = false;
 
 // MSG91 widget verify URL (our edge function bridges widget JWT → Supabase session).
 const VERIFY_MSG91_OTP_URL =

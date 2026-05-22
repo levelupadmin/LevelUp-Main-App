@@ -16,10 +16,9 @@ import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 type Step = "form" | "otp" | "email_sent";
 
-// Mirrors Login.tsx. While true, all signups verify via email magic
-// link. Flip to false once the LevelUp-scoped MSG91 widget credentials
-// are in place. (Current widgetId is registered to the wrong MSG91 app.)
-const EMAIL_ONLY_AUTH = true;
+// Mirrors Login.tsx. While false, +91 phones go through the MSG91
+// widget; non-+91 phones still fall through to email magic link.
+const EMAIL_ONLY_AUTH = false;
 
 // MSG91 widget verify URL (our edge function bridges widget JWT → Supabase session).
 const VERIFY_MSG91_OTP_URL =
