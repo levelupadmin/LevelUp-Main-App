@@ -1336,9 +1336,44 @@ export default function PublicOffering() {
 
   /* ── Loading / 404 ── */
   if (loading) {
+    // Structured skeleton matches the eventual page layout so users see
+    // shape immediately and don't experience a jarring layout shift when
+    // the data lands.
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-[hsl(var(--cream))]" />
+      <div className="min-h-screen bg-background animate-pulse">
+        <header className="border-b border-border bg-[hsl(var(--surface))]">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+            <div className="h-6 w-24 rounded bg-[hsl(var(--surface-2))]" />
+            <div className="h-6 w-16 rounded bg-[hsl(var(--surface-2))]" />
+          </div>
+        </header>
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 lg:flex lg:gap-8">
+          <div className="lg:w-[60%] space-y-6">
+            <div className="aspect-[16/9] md:aspect-[21/9] rounded-2xl bg-[hsl(var(--surface))]" />
+            <div className="space-y-3">
+              <div className="h-8 w-3/4 rounded bg-[hsl(var(--surface-2))]" />
+              <div className="h-5 w-1/2 rounded bg-[hsl(var(--surface-2))]" />
+            </div>
+            <div className="h-20 rounded-xl bg-[hsl(var(--surface))]" />
+            <div className="space-y-2">
+              <div className="h-5 w-40 rounded bg-[hsl(var(--surface-2))]" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="h-14 rounded-lg bg-[hsl(var(--surface))]" />
+                <div className="h-14 rounded-lg bg-[hsl(var(--surface))]" />
+                <div className="h-14 rounded-lg bg-[hsl(var(--surface))]" />
+                <div className="h-14 rounded-lg bg-[hsl(var(--surface))]" />
+              </div>
+            </div>
+          </div>
+          <div className="hidden lg:block lg:w-[40%]">
+            <div className="rounded-2xl bg-[hsl(var(--surface))] p-6 space-y-4">
+              <div className="h-8 w-32 rounded bg-[hsl(var(--surface-2))]" />
+              <div className="h-12 rounded bg-[hsl(var(--surface-2))]" />
+              <div className="h-12 rounded bg-[hsl(var(--surface-2))]" />
+              <div className="h-12 rounded bg-[hsl(var(--surface-2))]" />
+            </div>
+          </div>
+        </main>
       </div>
     );
   }
