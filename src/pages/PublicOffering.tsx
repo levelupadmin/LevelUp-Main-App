@@ -1182,28 +1182,82 @@ export default function PublicOffering() {
 
   usePageTitle(offering?.title || "LevelUp Learning");
 
-  /* ── Load Razorpay script with error/timeout ── */
+  /* ── Defer-load Razorpay script (off the LCP critical path) ──
+   *
+   * Razorpay's checkout.js pulls in ~470 KB of vendor chunks (lottie, lang
+   * files, asset-common, the modal app itself). On a throttled-3G Lighthouse
+   * run that competes with the LCP image for bandwidth, pushing LCP from
+   * ~7s to ~13s. Defer the actual insertion to after the page has settled
+   * (requestIdleCallback or first user interaction), whichever comes first.
+   * The button stays disabled until ready — typically a few hundred ms gap.
+   */
   useEffect(() => {
     if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')) {
       setRazorpayReady(true);
       return;
     }
+
+    let cancelled = false;
     let scriptLoaded = false;
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.async = true;
-    script.onload = () => {
-      scriptLoaded = true;
-      setRazorpayReady(true);
+
+    const loadScript = () => {
+      if (cancelled || scriptLoaded) return;
+      // Re-check in case another component on the page raced us.
+      if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')) {
+        setRazorpayReady(true);
+        scriptLoaded = true;
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      script.onload = () => {
+        scriptLoaded = true;
+        if (!cancelled) setRazorpayReady(true);
+      };
+      script.onerror = () => {
+        if (!cancelled) setRazorpayError(true);
+      };
+      document.body.appendChild(script);
+
+      const errorTimeout = window.setTimeout(() => {
+        if (!scriptLoaded && !cancelled) setRazorpayError(true);
+      }, 10000);
+      // Stash on the script element so cleanup can clear it.
+      (script as any).__errorTimeout = errorTimeout;
     };
-    script.onerror = () => setRazorpayError(true);
-    document.body.appendChild(script);
 
-    const timeout = setTimeout(() => {
-      if (!scriptLoaded) setRazorpayError(true);
-    }, 10000);
+    // 1) Schedule via requestIdleCallback so LCP isn't blocked.
+    const idleCb: any =
+      typeof (window as any).requestIdleCallback === "function"
+        ? (window as any).requestIdleCallback(loadScript, { timeout: 4000 })
+        : window.setTimeout(loadScript, 2500);
 
-    return () => clearTimeout(timeout);
+    // 2) Also trigger on first user interaction (faster than idle on phones).
+    const onInteract = () => {
+      loadScript();
+      removeInteractionListeners();
+    };
+    const removeInteractionListeners = () => {
+      window.removeEventListener("touchstart", onInteract);
+      window.removeEventListener("mousemove", onInteract);
+      window.removeEventListener("scroll", onInteract);
+      window.removeEventListener("keydown", onInteract);
+    };
+    window.addEventListener("touchstart", onInteract, { passive: true, once: true });
+    window.addEventListener("mousemove", onInteract, { passive: true, once: true });
+    window.addEventListener("scroll", onInteract, { passive: true, once: true });
+    window.addEventListener("keydown", onInteract, { once: true });
+
+    return () => {
+      cancelled = true;
+      removeInteractionListeners();
+      if (typeof (window as any).cancelIdleCallback === "function") {
+        (window as any).cancelIdleCallback(idleCb);
+      } else {
+        window.clearTimeout(idleCb);
+      }
+    };
   }, []);
 
   /* ── Fetch offering ── */
