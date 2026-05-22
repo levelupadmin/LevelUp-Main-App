@@ -1239,6 +1239,38 @@ export default function PublicOffering() {
     })();
   }, [offering?.id]);
 
+  /* ── Per-offering SEO meta (title + description + OG/Twitter share preview) ── */
+  useEffect(() => {
+    if (!offering) return;
+    const title = `${offering.title} — LevelUp Learning`;
+    const desc = offering.subtitle || offering.description?.slice(0, 160) || "Learn from the people behind some of India's most loved films and creative work.";
+    const img = offering.banner_url || offering.thumbnail_url || "";
+
+    document.title = title;
+
+    const setMeta = (selector: string, attr: string, value: string) => {
+      if (!value) return;
+      let el = document.head.querySelector<HTMLMetaElement>(selector);
+      if (!el) {
+        el = document.createElement("meta");
+        // Re-derive the attribute from the selector. Selectors look like
+        // `meta[name="description"]` or `meta[property="og:title"]`.
+        const m = selector.match(/\[(name|property)="([^"]+)"\]/);
+        if (m) el.setAttribute(m[1], m[2]);
+        document.head.appendChild(el);
+      }
+      el.setAttribute(attr, value);
+    };
+    setMeta('meta[name="description"]', "content", desc);
+    setMeta('meta[property="og:title"]', "content", title);
+    setMeta('meta[property="og:description"]', "content", desc);
+    if (img) setMeta('meta[property="og:image"]', "content", img);
+    setMeta('meta[property="og:url"]', "content", window.location.href);
+    setMeta('meta[name="twitter:title"]', "content", title);
+    setMeta('meta[name="twitter:description"]', "content", desc);
+    if (img) setMeta('meta[name="twitter:image"]', "content", img);
+  }, [offering]);
+
   const isStaged = (offering as any)?.payment_mode === "staged";
 
   /* ── Loading / 404 ── */

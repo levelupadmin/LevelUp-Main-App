@@ -9,6 +9,7 @@ import RequireRole from "@/components/guards/RequireRole";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import OfflineBanner from "@/components/OfflineBanner";
 import FloatingSupport from "@/components/FloatingSupport";
+import ScrollToTop from "@/components/ScrollToTop";
 import StudentLayout from "@/components/layout/StudentLayout";
 import AdminLayout from "@/components/layout/AdminLayout";
 
@@ -188,6 +189,7 @@ const App = () => (
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
+          <ScrollToTop />
           <FloatingSupport />
         </BrowserRouter>
       </ErrorBoundary>
