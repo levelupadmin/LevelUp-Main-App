@@ -49,56 +49,18 @@
     <div id="root"></div>
 
     <!--
-      MSG91 OTP widget. The script is an Angular custom-element framework
-      that looks for two things in the DOM before it can mount:
-        1. <msg91-otp-provider> — the host element it bootstraps into
-        2. A div identified by config.captchaRenderId — hCaptcha goes here
-      Once both exist and initSendOTP(config) is called, it exposes
-      window.sendOtp / verifyOtp / retryOtp directly (NOT under an
-      OTPWidget namespace). React drives those via src/lib/msg91-widget.ts.
-      msg91-otp-provider and msg91-captcha-host are kept off-screen so
-      they do not interfere with the layout but remain in the DOM.
-    -->
-    <msg91-otp-provider style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;"></msg91-otp-provider>
-    <div id="msg91-captcha-host" style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;"></div>
+      The MSG91 OTP browser widget was loaded here in an earlier iteration
+      to drive phone-OTP via the widget's window.sendOtp / verifyOtp.
+      We have since moved SMS to a Supabase Edge Function that talks to
+      MSG91's Flow API directly (server-side OTP generation, no browser
+      widget required). The dead loader was downloading ~800 KB of
+      otp-provider.js on every page and logging "Cannot read properties
+      of undefined (reading 'exposeMethods')" four times to the console.
 
-    <script type="text/javascript">
-      window.__MSG91_CONFIG__ = {
-        widgetId: '366576757143333830323239',
-        tokenAuth: '375909Tjo25XmX06a102894P1',
-        exposeMethods: true,
-        captchaRenderId: 'msg91-captcha-host',
-        success: (data) => {
-          window.dispatchEvent(new CustomEvent('msg91:success', { detail: data }));
-        },
-        failure: (error) => {
-          window.dispatchEvent(new CustomEvent('msg91:failure', { detail: error }));
-        },
-      };
-      (function loadOtpScript(urls) {
-        let i = 0;
-        function attempt() {
-          const s = document.createElement('script');
-          s.src = urls[i];
-          s.async = true;
-          s.onload = () => {
-            if (typeof window.initSendOTP === 'function') {
-              window.initSendOTP(window.__MSG91_CONFIG__);
-              window.dispatchEvent(new Event('msg91:ready'));
-            }
-          };
-          s.onerror = () => {
-            i++;
-            if (i < urls.length) attempt();
-          };
-          document.head.appendChild(s);
-        }
-        attempt();
-      })([
-        'https://verify.msg91.com/otp-provider.js',
-        'https://verify.phone91.com/otp-provider.js',
-      ]);
-    </script>
+      If we ever bring the widget back (paid invisible-captcha tier or
+      a different UX), the integration lives in src/lib/msg91-widget.ts
+      and is one script tag away.
+    -->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
