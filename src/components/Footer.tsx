@@ -93,9 +93,9 @@ const Footer = () => {
 
           {Object.entries(footerLinks).map(([category, links]) => (
             <div key={category}>
-              <h4 className="text-xs font-medium uppercase tracking-widest text-cream mb-5">
+              <h3 className="text-xs font-medium uppercase tracking-widest text-cream mb-5">
                 {category}
-              </h4>
+              </h3>
               <ul className="space-y-1">
                 {links.map((link) => (
                   <li key={link.label}>{renderLink(link)}</li>
