@@ -140,11 +140,11 @@ const AdminUsers = () => {
       // Audit log
       if (currentUser?.id) {
         await (supabase as any).from("admin_audit_logs").insert({
-          admin_user_id: currentUser.id,
+          actor_user_id: currentUser.id,
           action: "update",
-          entity_type: "user",
-          entity_id: editUser.id,
-          details: {
+          target_table: "users",
+          target_id: editUser.id,
+          metadata: {
             full_name: editForm.full_name,
             role_changed: !isSelf && roleChanged ? { from: editUser.role, to: editForm.role } : undefined,
           },

@@ -241,11 +241,11 @@ const AdminCourseEditor = () => {
     // Audit log
     if (profile?.id && savedCourseId) {
       await (supabase as any).from("admin_audit_logs").insert({
-        admin_user_id: profile.id,
+        actor_user_id: profile.id,
         action: isNew ? "create" : "update",
-        entity_type: "course",
-        entity_id: savedCourseId,
-        details: { title: form.title, status: form.status },
+        target_table: "courses",
+        target_id: savedCourseId,
+        metadata: { title: form.title, status: form.status },
       });
     }
 

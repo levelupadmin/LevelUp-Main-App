@@ -214,11 +214,11 @@ const AdminEnrolments = () => {
     } else {
       if (profile?.id) {
         await (supabase as any).from("admin_audit_logs").insert({
-          admin_user_id: profile.id,
+          actor_user_id: profile.id,
           action: "update",
-          entity_type: "enrolment",
-          entity_id: enrolId,
-          details: { new_status: newStatus },
+          target_table: "enrolments",
+          target_id: enrolId,
+          metadata: { new_status: newStatus },
         });
       }
       toast({ title: "Status updated" });
@@ -255,11 +255,11 @@ const AdminEnrolments = () => {
     } else {
       if (profile?.id) {
         await (supabase as any).from("admin_audit_logs").insert({
-          admin_user_id: profile.id,
+          actor_user_id: profile.id,
           action: "create",
-          entity_type: "enrolment",
-          entity_id: `${manualUserId}:${manualOfferingId}`,
-          details: { user_id: manualUserId, offering_id: manualOfferingId, source: "admin_manual" },
+          target_table: "enrolments",
+          target_id: null,
+          metadata: { user_id: manualUserId, offering_id: manualOfferingId, source: "admin_manual" },
         });
       }
       toast({ title: "User enrolled" });
@@ -348,11 +348,11 @@ const AdminEnrolments = () => {
     if (success > 0) {
       if (profile?.id) {
         await (supabase as any).from("admin_audit_logs").insert({
-          admin_user_id: profile.id,
+          actor_user_id: profile.id,
           action: "bulk_create",
-          entity_type: "enrolment",
-          entity_id: bulkOfferingId,
-          details: { offering_id: bulkOfferingId, success, failed: failed.length, skipped: skipped.length },
+          target_table: "enrolments",
+          target_id: bulkOfferingId,
+          metadata: { offering_id: bulkOfferingId, success, failed: failed.length, skipped: skipped.length },
         });
       }
       toast({ title: `${success} users enrolled` });
@@ -393,11 +393,11 @@ const AdminEnrolments = () => {
     } else {
       if (profile?.id) {
         await (supabase as any).from("admin_audit_logs").insert({
-          admin_user_id: profile.id,
+          actor_user_id: profile.id,
           action: "bulk_update",
-          entity_type: "enrolment",
-          entity_id: ids.join(","),
-          details: { enrolment_ids: ids, new_status: newStatus, count: ids.length },
+          target_table: "enrolments",
+          target_id: null,
+          metadata: { enrolment_ids: ids, new_status: newStatus, count: ids.length },
         });
       }
       toast({ title: `${ids.length} enrolment(s) updated to ${newStatus}` });
@@ -806,11 +806,11 @@ const AdminEnrolments = () => {
     // Audit log
     if (profile?.id) {
       await (supabase as any).from("admin_audit_logs").insert({
-        admin_user_id: profile.id,
+        actor_user_id: profile.id,
         action: "csv_import",
-        entity_type: "enrolment",
-        entity_id: "csv_bulk",
-        details: { enrolled, users_created: usersCreated, skipped },
+        target_table: "enrolments",
+        target_id: null,
+        metadata: { source: "csv_bulk", enrolled, users_created: usersCreated, skipped },
       });
     }
 

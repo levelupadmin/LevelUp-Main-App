@@ -454,11 +454,11 @@ const AdminOfferingEditor = () => {
     // Audit log
     if (profile?.id && offId) {
       await (supabase as any).from("admin_audit_logs").insert({
-        admin_user_id: profile.id,
+        actor_user_id: profile.id,
         action: isNew ? "create" : "update",
-        entity_type: "offering",
-        entity_id: offId,
-        details: { title: form.title, status: form.status, price_inr: form.price_inr },
+        target_table: "offerings",
+        target_id: offId,
+        metadata: { title: form.title, status: form.status, price_inr: form.price_inr },
       });
     }
 

@@ -26,13 +26,38 @@ import {
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
 /* ────────────────────────────────────────────────── */
+interface ChapterRow {
+  id: string;
+  title: string;
+  description: string | null;
+  duration_seconds: number | null;
+  make_free: boolean | null;
+  sort_order: number;
+}
+interface SectionRow {
+  id: string;
+  title: string;
+  sort_order: number;
+  chapters: ChapterRow[];
+}
+
 interface OfferingCourse {
   course_id: string;
   courses: {
+    id?: string;
     title: string;
     description: string | null;
     thumbnail_url: string | null;
     instructor_display_name: string | null;
+    instructor_bio: string | null;
+    instructor_avatar_url: string | null;
+    instructor_credentials: string[] | null;
+    portfolio_pieces: Array<{ title?: string; image_url?: string; description?: string }> | null;
+    outcomes: string[] | null;
+    faqs: Array<{ question: string; answer: string }> | null;
+    duration_minutes: number | null;
+    total_lessons: number | null;
+    sections?: SectionRow[];
   };
 }
 
@@ -54,6 +79,7 @@ interface Offering {
   instructor_title: string | null;
   instructor_avatar_url: string | null;
   highlights: string[] | null;
+  checkout_testimonials: Array<{ name?: string; quote?: string; role?: string }> | null;
   meta_pixel_id: string | null;
   google_ads_conversion: string | null;
   custom_tracking_script: string | null;
@@ -159,6 +185,244 @@ function IncludedCourses({ courses }: { courses: OfferingCourse[] }) {
               )}
             </div>
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────── */
+/*  Curriculum — sections + chapters accordion        */
+/* ────────────────────────────────────────────────── */
+function Curriculum({
+  sections,
+  durationMinutes,
+  totalLessons,
+}: {
+  sections?: SectionRow[];
+  durationMinutes?: number | null;
+  totalLessons?: number | null;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  if (!sections?.length) return null;
+  const sorted = [...sections].sort((a, b) => a.sort_order - b.sort_order);
+  const allChapters = sorted.flatMap((s) => s.chapters || []);
+  if (!allChapters.length) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-lg font-semibold text-foreground">Course Curriculum</h3>
+        <div className="text-xs text-muted-foreground font-mono">
+          {totalLessons || allChapters.length} lessons
+          {durationMinutes ? ` · ${Math.round(durationMinutes / 60)}h` : ""}
+        </div>
+      </div>
+      <div className="space-y-2">
+        {sorted.map((sec) => {
+          const chapters = [...(sec.chapters || [])].sort((a, b) => a.sort_order - b.sort_order);
+          const isOpen = expanded.has(sec.id) || sorted.length === 1;
+          return (
+            <div key={sec.id} className="rounded-xl border border-border bg-[hsl(var(--surface))] overflow-hidden">
+              {sorted.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => toggle(sec.id)}
+                  className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-[hsl(var(--surface-2))] transition-colors min-h-[48px]"
+                  aria-expanded={isOpen}
+                >
+                  <span className="font-medium text-foreground">{sec.title}</span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {chapters.length} lesson{chapters.length === 1 ? "" : "s"}
+                  </span>
+                </button>
+              )}
+              {isOpen && (
+                <ol className="divide-y divide-border">
+                  {chapters.map((ch, i) => (
+                    <li key={ch.id} className="flex items-start gap-3 p-4">
+                      <span className="font-mono text-xs text-muted-foreground tabular-nums w-6 mt-0.5">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground">{ch.title}</p>
+                        {ch.description && (
+                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{ch.description}</p>
+                        )}
+                      </div>
+                      {ch.make_free && (
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-[hsl(var(--accent-emerald))] border border-[hsl(var(--accent-emerald)/0.4)] rounded px-1.5 py-0.5 mt-0.5 flex-shrink-0">
+                          Free
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────── */
+/*  InstructorBio — full bio + credentials + portfolio */
+/* ────────────────────────────────────────────────── */
+function InstructorBio({
+  course,
+}: {
+  course?: OfferingCourse["courses"];
+}) {
+  if (!course) return null;
+  const name = course.instructor_display_name;
+  const bio = course.instructor_bio;
+  const avatar = course.instructor_avatar_url;
+  const credentials = course.instructor_credentials || [];
+  const portfolio = course.portfolio_pieces || [];
+
+  if (!name || (!bio && !credentials.length && !portfolio.length)) return null;
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold text-foreground">About Your Instructor</h3>
+      <div className="rounded-xl border border-border bg-[hsl(var(--surface))] p-5 sm:p-6 space-y-5">
+        <div className="flex items-start gap-4">
+          {avatar ? (
+            <img
+              src={avatar}
+              alt={name}
+              className="h-16 w-16 sm:h-20 sm:w-20 rounded-full object-cover flex-shrink-0"
+            />
+          ) : (
+            <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-full bg-[hsl(var(--surface-2))] flex items-center justify-center text-xl font-bold text-[hsl(var(--cream))] flex-shrink-0">
+              {name.charAt(0)}
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="text-lg font-semibold text-foreground">{name}</p>
+            {credentials[0] && (
+              <p className="text-sm text-muted-foreground mt-0.5">{credentials[0]}</p>
+            )}
+          </div>
+        </div>
+        {bio && (
+          <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{bio}</p>
+        )}
+        {credentials.length > 1 && (
+          <div className="space-y-2">
+            <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Career milestones</p>
+            <ul className="space-y-2">
+              {credentials.map((c, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                  <Check className="h-4 w-4 mt-0.5 text-[hsl(var(--accent-emerald))] flex-shrink-0" />
+                  <span>{c}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {portfolio.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Selected work</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {portfolio.map((p, i) => (
+                <div
+                  key={i}
+                  className="aspect-[4/3] rounded-lg bg-[hsl(var(--surface-2))] border border-border flex items-center justify-center text-center p-2"
+                >
+                  <span className="text-xs text-foreground font-medium">{p.title || "Untitled"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────── */
+/*  FAQs — accordion                                  */
+/* ────────────────────────────────────────────────── */
+function FAQs({ items }: { items?: Array<{ question: string; answer: string }> | null }) {
+  const [openIdx, setOpenIdx] = useState<number | null>(0);
+  if (!items?.length) return null;
+  return (
+    <div className="space-y-3">
+      <h3 className="text-lg font-semibold text-foreground">Frequently Asked Questions</h3>
+      <div className="space-y-2">
+        {items.map((f, i) => {
+          const isOpen = openIdx === i;
+          return (
+            <div
+              key={i}
+              className="rounded-xl border border-border bg-[hsl(var(--surface))] overflow-hidden"
+            >
+              <button
+                type="button"
+                onClick={() => setOpenIdx(isOpen ? null : i)}
+                className="w-full flex items-start justify-between gap-3 p-4 text-left hover:bg-[hsl(var(--surface-2))] transition-colors min-h-[48px]"
+                aria-expanded={isOpen}
+              >
+                <span className="text-sm font-medium text-foreground">{f.question}</span>
+                <span
+                  className={`text-muted-foreground text-xl leading-none flex-shrink-0 transition-transform ${
+                    isOpen ? "rotate-45" : ""
+                  }`}
+                >
+                  +
+                </span>
+              </button>
+              {isOpen && f.answer && (
+                <p className="text-sm text-muted-foreground leading-relaxed px-4 pb-4 -mt-1 whitespace-pre-line">
+                  {f.answer}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────── */
+/*  Testimonials — quote cards                        */
+/* ────────────────────────────────────────────────── */
+function Testimonials({
+  items,
+}: {
+  items?: Array<{ name?: string; quote?: string; role?: string }> | null;
+}) {
+  const valid = (items || []).filter((t) => t.quote);
+  if (!valid.length) return null;
+  return (
+    <div className="space-y-3">
+      <h3 className="text-lg font-semibold text-foreground">What Students Say</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {valid.map((t, i) => (
+          <figure
+            key={i}
+            className="rounded-xl border border-border bg-[hsl(var(--surface))] p-5 space-y-3"
+          >
+            <blockquote className="text-sm text-foreground leading-relaxed">"{t.quote}"</blockquote>
+            {(t.name || t.role) && (
+              <figcaption className="text-xs text-muted-foreground">
+                {t.name && <span className="font-medium text-foreground">{t.name}</span>}
+                {t.role && <span> · {t.role}</span>}
+              </figcaption>
+            )}
+          </figure>
         ))}
       </div>
     </div>
@@ -714,7 +978,7 @@ function CheckoutCard({
             variant="outline"
             onClick={handleApplyCoupon}
             disabled={couponLoading || couponApplied}
-            className="border-border"
+            className="border-border h-12 px-5"
           >
             {couponLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : couponApplied ? "Applied" : "Apply"}
           </Button>
@@ -932,7 +1196,22 @@ export default function PublicOffering() {
       try {
         const { data, error } = await supabase
           .from("offerings")
-          .select("*, offering_courses(course_id, courses(title, description, thumbnail_url, instructor_display_name))")
+          .select(`
+            *,
+            offering_courses(
+              course_id,
+              courses(
+                id, title, description, thumbnail_url,
+                instructor_display_name, instructor_bio, instructor_avatar_url,
+                instructor_credentials, portfolio_pieces, outcomes, faqs,
+                duration_minutes, total_lessons,
+                sections!sections_course_id_fkey(
+                  id, title, sort_order,
+                  chapters(id, title, description, duration_seconds, make_free, sort_order)
+                )
+              )
+            )
+          `)
           .eq("slug", slug)
           .eq("status", "active")
           .single();
@@ -1050,6 +1329,20 @@ export default function PublicOffering() {
             )}
 
             <IncludedCourses courses={offering.offering_courses || []} />
+
+            {/* Below-the-fold rich content sourced from the linked course.
+                Each section bails to null if data isn't populated. */}
+            <Curriculum
+              sections={offering.offering_courses?.[0]?.courses?.sections}
+              durationMinutes={offering.offering_courses?.[0]?.courses?.duration_minutes}
+              totalLessons={offering.offering_courses?.[0]?.courses?.total_lessons}
+            />
+
+            <InstructorBio course={offering.offering_courses?.[0]?.courses} />
+
+            <Testimonials items={offering.checkout_testimonials} />
+
+            <FAQs items={offering.offering_courses?.[0]?.courses?.faqs} />
           </div>
 
           {/* Right: sticky checkout — desktop */}
@@ -1117,9 +1410,9 @@ export default function PublicOffering() {
           </div>
           <Button
             onClick={() => document.getElementById("checkout-section")?.scrollIntoView({ behavior: "smooth" })}
-            className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 font-semibold"
+            className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 font-semibold h-12 px-5 text-base"
           >
-            {isFree ? "Start Learning \u2014 Free" : "Enrol Now \u2014 Full Access"} <ArrowRight className="h-4 w-4 ml-1" />
+            {isFree ? "Start Learning" : "Enrol Now"} <ArrowRight className="h-4 w-4 ml-1" />
           </Button>
         </div>
       </div>

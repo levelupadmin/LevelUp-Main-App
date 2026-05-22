@@ -127,11 +127,11 @@ const AdminCourseReviews = () => {
   const auditLog = async (action: string, entityId: string, details: Record<string, any>) => {
     if (!user) return;
     await (supabase as any).from("admin_audit_logs").insert({
-      admin_user_id: user.id,
+      actor_user_id: user.id,
       action,
-      entity_type: "course_review",
-      entity_id: entityId,
-      details,
+      target_table: "course_reviews",
+      target_id: entityId,
+      metadata: details,
     });
   };
 

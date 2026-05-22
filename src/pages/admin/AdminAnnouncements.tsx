@@ -227,11 +227,11 @@ const AdminAnnouncements = () => {
 
       // Audit log
       await (supabase as any).from("admin_audit_logs").insert({
-        admin_user_id: profile.id,
+        actor_user_id: profile.id,
         action: "send_announcement",
-        entity_type: "admin_announcement",
-        entity_id: title,
-        details: { audience_type: audienceType, audience_id: audienceId || null, recipient_count: recipientIds.length },
+        target_table: "admin_announcements",
+        target_id: null,
+        metadata: { title, audience_type: audienceType, audience_id: audienceId || null, recipient_count: recipientIds.length },
       });
 
       toast({ title: `Announcement sent to ${recipientIds.length} users` });
