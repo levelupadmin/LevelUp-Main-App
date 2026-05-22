@@ -8,6 +8,7 @@ import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import Footer from "@/components/Footer";
 import {
   Check,
   Loader2,
@@ -1098,6 +1099,8 @@ export default function PublicOffering() {
           </Button>
         </div>
       </div>
+
+      <Footer />
     </div>
   );
 }

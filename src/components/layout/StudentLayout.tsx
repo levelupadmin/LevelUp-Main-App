@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import NotificationDropdown from "@/components/NotificationDropdown";
+import Footer from "@/components/Footer";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
   Home, BookOpen, Compass, MessageSquare, User,
@@ -266,13 +267,18 @@ const StudentLayout = ({ children }: Props) => {
         {/* Content area — Suspense is INSIDE the layout so lazy chunk loads
             don't swap out the entire shell (fixes the "page reloads on every
             navigation" feeling). The nav, sidebar, and tab bar stay mounted. */}
-        <main id="main-content" className="flex-1 grain pb-20 md:pb-0">
+        <main id="main-content" className="flex-1 grain">
           <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-6 md:py-10 relative z-10 page-enter">
             <Suspense fallback={<ContentSuspenseFallback />}>
               {children ?? <Outlet />}
             </Suspense>
           </div>
         </main>
+        {/* Footer sits below scrollable content; extra bottom padding on
+            mobile keeps it clear of the fixed bottom tab bar. */}
+        <div className="pb-20 md:pb-0">
+          <Footer />
+        </div>
       </div>
 
       {/* Mobile bottom tab bar — respects iOS safe-area inset */}

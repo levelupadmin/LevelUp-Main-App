@@ -8,6 +8,7 @@ import RequireAuth from "@/components/guards/RequireAuth";
 import RequireRole from "@/components/guards/RequireRole";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import OfflineBanner from "@/components/OfflineBanner";
+import FloatingSupport from "@/components/FloatingSupport";
 import StudentLayout from "@/components/layout/StudentLayout";
 import AdminLayout from "@/components/layout/AdminLayout";
 
@@ -30,6 +31,9 @@ const EventsPage = lazy(() => import("@/pages/EventsPage"));
 const EventDetail = lazy(() => import("@/pages/EventDetail"));
 const PublicOffering = lazy(() => import("@/pages/PublicOffering"));
 const ThankYou = lazy(() => import("@/pages/ThankYou"));
+const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
+const Terms = lazy(() => import("@/pages/Terms"));
+const RefundPolicy = lazy(() => import("@/pages/RefundPolicy"));
 const CommunityPage = lazy(() => import("@/pages/CommunityPage"));
 const InstructorDashboard = lazy(() => import("@/pages/InstructorDashboard"));
 
@@ -114,6 +118,9 @@ const App = () => (
               <Route path="/signup" element={<Signup />} />
               <Route path="/p/:slug" element={<PublicOffering />} />
               <Route path="/thank-you/:paymentOrderId" element={<ThankYou />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/refunds" element={<RefundPolicy />} />
 
               {/* ─── Student routes share a single persistent layout ─── */}
               <Route element={<RequireAuth><StudentLayout /></RequireAuth>}>
@@ -175,6 +182,7 @@ const App = () => (
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
+          <FloatingSupport />
         </BrowserRouter>
       </ErrorBoundary>
       <SonnerToaster position="bottom-right" theme="dark" />

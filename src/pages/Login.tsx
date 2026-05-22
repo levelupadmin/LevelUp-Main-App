@@ -3,12 +3,14 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
-import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mail, ArrowRight } from "lucide-react";
+import { Loader2, Mail, ArrowRight, CheckCircle2 } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
+import Footer from "@/components/Footer";
 import usePageTitle from "@/hooks/usePageTitle";
+import { PhoneInput } from "@/components/auth/PhoneInput";
+import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
 import slideBfp from "@/assets/carousel/slide-bfp.jpg";
 import slideVea from "@/assets/carousel/slide-vea.jpg";
 import slideUiux from "@/assets/carousel/slide-uiux.jpg";
@@ -31,27 +33,36 @@ interface SlideData {
   image: string;
 }
 
+type Step = "phone" | "otp" | "email_input" | "email_sent";
+
+// Temporary launch gate. While our DLT SMS template waits for telco
+// approval (~24-48h), every user — Indian or not — auths via email
+// magic link. Flip to `false` the moment the template is approved and
+// MSG91_OTP_TEMPLATE_ID is wired into the SMS hook; the phone-OTP code
+// path below is still intact and ready.
+const EMAIL_ONLY_AUTH = true;
+
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
+
+  const [step, setStep] = useState<Step>(EMAIL_ONLY_AUTH ? "email_input" : "phone");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [channel, setChannel] = useState<"sms" | "whatsapp">("sms");
   const [loading, setLoading] = useState(false);
+
   const [slides, setSlides] = useState<SlideData[]>(FALLBACK_SLIDES);
   const [activeSlide, setActiveSlide] = useState(0);
-  const [loginMode, setLoginMode] = useState<"password" | "magic_link">("password");
-  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
   usePageTitle("Sign In");
 
-  // Redirect if already authenticated (e.g. dev bypass)
   useEffect(() => {
     if (!authLoading && user) navigate("/home", { replace: true });
   }, [user, authLoading, navigate]);
 
-  // Fetch slides from DB
   useEffect(() => {
     supabase
       .from("hero_slides")
@@ -60,37 +71,29 @@ const Login = () => {
       .or("placement.eq.login,placement.eq.both")
       .order("sort_order", { ascending: true })
       .then(({ data, error }) => {
-        if (error) {
-          if (import.meta.env.DEV) console.error("Failed to load hero slides:", error);
-          return;
-        }
-        if (data && data.length > 0) {
-          const now = new Date();
-          const filtered = data.filter((s: any) =>
-            s.image_url &&
-            (!s.starts_at || new Date(s.starts_at) <= now) &&
-            (!s.expires_at || new Date(s.expires_at) >= now)
-          );
-          if (filtered.length > 0) {
-            setSlides(filtered.map((s: any) => ({
-              category: s.category_label || "",
-              title: s.title_prefix || "",
-              italic: s.title_accent || "",
-              subtitle: s.subtitle || "",
-              image: s.image_url || "",
-            })));
-          }
+        if (error || !data?.length) return;
+        const now = new Date();
+        const filtered = data.filter((s: any) =>
+          s.image_url &&
+          (!s.starts_at || new Date(s.starts_at) <= now) &&
+          (!s.expires_at || new Date(s.expires_at) >= now)
+        );
+        if (filtered.length) {
+          setSlides(filtered.map((s: any) => ({
+            category: s.category_label || "",
+            title: s.title_prefix || "",
+            italic: s.title_accent || "",
+            subtitle: s.subtitle || "",
+            image: s.image_url || "",
+          })));
         }
       });
   }, []);
 
-  const nextSlide = useCallback(() => {
-    setActiveSlide((prev) => (prev + 1) % slides.length);
-  }, [slides.length]);
-
+  const nextSlide = useCallback(() => setActiveSlide((p) => (p + 1) % slides.length), [slides.length]);
   useEffect(() => {
-    const timer = setInterval(nextSlide, 6000);
-    return () => clearInterval(timer);
+    const t = setInterval(nextSlide, 6000);
+    return () => clearInterval(t);
   }, [nextSlide]);
 
   if (authLoading) {
@@ -100,114 +103,126 @@ const Login = () => {
       </div>
     );
   }
-
   if (user) return null;
 
-  const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
   const rawFrom = (location.state as any)?.from?.pathname || "/home";
   const redirectTarget = rawFrom.startsWith("/") && !rawFrom.includes("//") ? rawFrom : "/home";
+  const isIndianPhone = phone.startsWith("+91");
 
-  const handleForgotPassword = async () => {
-    if (!email) {
-      toast({ title: "Enter your email first", variant: "destructive" });
+  const sendSmsOtp = async (waMode = false): Promise<{ ok: boolean; error?: string }> => {
+    if (waMode) {
+      // The hook reads next_otp_channel from user_metadata. We update the user
+      // before triggering, but pre-auth we cannot — so we pass it via the data
+      // option of signInWithOtp; Supabase merges into user_metadata before
+      // calling the hook.
+      const { error } = await supabase.auth.signInWithOtp({
+        phone,
+        options: {
+          shouldCreateUser: false,
+          data: { next_otp_channel: "whatsapp" },
+        },
+      });
+      if (error) return { ok: false, error: error.message };
+      return { ok: true };
+    }
+    const { error } = await supabase.auth.signInWithOtp({
+      phone,
+      options: { shouldCreateUser: false, data: { next_otp_channel: "sms" } },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  };
+
+  const handleSendOtp = async () => {
+    if (!phone) {
+      toast({ title: "Enter your phone number", variant: "destructive" });
       return;
     }
-    if (!isValidEmail(email)) {
-      toast({ title: "Please enter a valid email address", variant: "destructive" });
+    if (!isIndianPhone) {
+      setStep("email_input");
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}${redirectTarget}`,
-    });
+    const res = await sendSmsOtp(false);
     setLoading(false);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Check your email", description: "We sent a password reset link." });
-    }
-  };
-
-  const handleMagicLink = async () => {
-    if (!email) {
-      toast({ title: "Enter your email", variant: "destructive" });
+    if (!res.ok) {
+      const msg = (res.error || "").toLowerCase();
+      if (msg.includes("not found") || msg.includes("invalid")) {
+        toast({
+          title: "No account with this number",
+          description: "Create an account first or check the number.",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Couldn't send OTP", description: res.error, variant: "destructive" });
+      }
       return;
     }
-    if (!isValidEmail(email)) {
-      toast({ title: "Please enter a valid email address", variant: "destructive" });
+    setChannel("sms");
+    setStep("otp");
+  };
+
+  const handleVerify = async (otp: string): Promise<{ ok: boolean; error?: string }> => {
+    const { error } = await supabase.auth.verifyOtp({ phone, token: otp, type: "sms" });
+    if (error) return { ok: false, error: error.message };
+    navigate(redirectTarget, { replace: true });
+    return { ok: true };
+  };
+
+  const handleSwitchToWA = async (): Promise<{ ok: boolean; error?: string }> => {
+    const res = await sendSmsOtp(true);
+    if (res.ok) setChannel("whatsapp");
+    return res;
+  };
+
+  const handleSwitchToEmail = () => {
+    setStep("email_input");
+  };
+
+  const handleEmailSubmit = async () => {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast({ title: "Enter a valid email", variant: "destructive" });
       return;
     }
     setLoading(true);
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}${redirectTarget}` },
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: `${window.location.origin}${redirectTarget}`,
+      },
     });
     setLoading(false);
     if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      setMagicLinkSent(true);
-    }
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
-    if (!isValidEmail(email)) {
-      toast({ title: "Please enter a valid email address", variant: "destructive" });
-      setLoading(false);
+      toast({ title: "Couldn't send email", description: error.message, variant: "destructive" });
       return;
     }
-
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      toast({ title: "Login failed", description: error.message, variant: "destructive" });
-      setLoading(false);
-      return;
-    }
-
-    navigate(redirectTarget, { replace: true });
+    setStep("email_sent");
   };
 
   const slide = slides[activeSlide];
 
   return (
-    <div className="flex min-h-screen flex-col lg:flex-row bg-canvas">
-      {/* Mobile/tablet hero — desktop uses the right-side carousel below instead */}
+    <div className="min-h-screen flex flex-col bg-canvas">
+    <div className="flex flex-col lg:flex-row flex-1">
       <div className="lg:hidden relative h-[40vh] md:h-[50vh] overflow-hidden">
         {slide.image && (
-          <img
-            key={activeSlide}
-            src={slide.image}
-            alt={slide.title + " " + slide.italic}
-            className="absolute inset-0 w-full h-full object-cover"
-            loading="eager"
-          />
+          <img key={activeSlide} src={slide.image} alt={slide.title + " " + slide.italic} className="absolute inset-0 w-full h-full object-cover" loading="eager" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/20" />
         <div className="relative z-10 h-full flex flex-col justify-end p-6 pb-8">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-            {slide.category}
-          </p>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">{slide.category}</p>
           <h2 className="text-[44px] sm:text-[56px] leading-[1] font-semibold text-foreground max-w-[14ch]">
-            {slide.title}{" "}
-            <span className="font-serif-italic text-cream">{slide.italic}</span>
+            {slide.title} <span className="font-serif-italic text-cream">{slide.italic}</span>
           </h2>
           <div className="flex gap-1.5 mt-5">
             {slides.map((_, i) => (
-              <div
-                key={i}
-                className={`h-1 rounded-full transition-all ${
-                  i === activeSlide ? "w-8 bg-white" : "w-4 bg-white/30"
-                }`}
-              />
+              <div key={i} className={`h-1 rounded-full transition-all ${i === activeSlide ? "w-8 bg-white" : "w-4 bg-white/30"}`} />
             ))}
           </div>
         </div>
       </div>
 
-      {/* Left sidebar */}
       <div className="w-full lg:w-[420px] lg:min-w-[420px] flex flex-col justify-between px-6 sm:px-8 py-8 lg:border-r border-border">
         <div>
           <LevelUpWordmark className="text-xl" />
@@ -215,114 +230,117 @@ const Login = () => {
 
         <div className="flex-1 flex items-center">
           <div className="w-full max-w-[340px] mx-auto">
-            <h1 className="text-2xl font-semibold mb-1">
-              Welcome <span className="font-serif-italic text-cream">back</span>
-            </h1>
-            <p className="text-sm text-muted-foreground mb-6">
-              Sign in to continue your craft
-            </p>
+            {step === "phone" && (
+              <>
+                <h1 className="text-2xl font-semibold mb-1">
+                  Welcome <span className="font-serif-italic text-cream">back</span>
+                </h1>
+                <p className="text-sm text-muted-foreground mb-6">Sign in to continue your craft</p>
 
-            {loginMode === "password" ? (
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-sm text-muted-foreground">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="bg-surface border-border focus:border-foreground h-11"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password" className="text-sm text-muted-foreground">Password</Label>
-                  <PasswordInput
-                    id="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="bg-surface border-border focus:border-foreground h-11"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full h-11 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+                <form
+                  onSubmit={(e) => { e.preventDefault(); handleSendOtp(); }}
+                  className="space-y-4"
                 >
-                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Sign in
-                </button>
-              </form>
-            ) : magicLinkSent ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="phone" className="text-sm text-muted-foreground">Phone number</Label>
+                    <PhoneInput value={phone} onChange={setPhone} autoFocus />
+                    <p className="text-xs text-muted-foreground">
+                      {isIndianPhone
+                        ? "We'll send a 4-digit code via SMS."
+                        : phone
+                        ? "We'll send a sign-in link to your email."
+                        : "+91 by default. Tap the flag to change country."}
+                    </p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading || !phone}
+                    className="w-full h-11 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Continue
+                  </button>
+                </form>
+              </>
+            )}
+
+            {step === "otp" && (
+              <OtpEntryStep
+                phone={phone}
+                channel={channel}
+                otpLength={4}
+                onVerify={handleVerify}
+                onResendSms={() => sendSmsOtp(false)}
+                onSwitchToWhatsApp={handleSwitchToWA}
+                onSwitchToEmail={handleSwitchToEmail}
+                onBack={() => { setStep("phone"); setChannel("sms"); }}
+              />
+            )}
+
+            {step === "email_input" && (
+              <>
+                <h1 className="text-2xl font-semibold mb-1">
+                  Sign in with <span className="font-serif-italic text-cream">email</span>
+                </h1>
+                <p className="text-sm text-muted-foreground mb-6">
+                  We'll email you a one-click sign-in link.
+                </p>
+                <form
+                  onSubmit={(e) => { e.preventDefault(); handleEmailSubmit(); }}
+                  className="space-y-4"
+                >
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="text-sm text-muted-foreground">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoFocus
+                      required
+                      className="bg-surface border-border focus:border-foreground h-11"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full h-11 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Send sign-in link
+                  </button>
+                  {!EMAIL_ONLY_AUTH && (
+                    <button
+                      type="button"
+                      onClick={() => setStep("phone")}
+                      className="block w-full text-center text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      ← Use phone instead
+                    </button>
+                  )}
+                </form>
+              </>
+            )}
+
+            {step === "email_sent" && (
               <div className="text-center space-y-4 py-6">
                 <div className="w-12 h-12 rounded-full bg-[hsl(var(--accent-amber)/0.15)] flex items-center justify-center mx-auto">
                   <Mail className="h-6 w-6 text-cream" />
                 </div>
                 <h2 className="text-lg font-semibold">Check your email</h2>
                 <p className="text-sm text-muted-foreground">
-                  We sent a login link to <span className="text-foreground font-medium">{email}</span>
+                  We sent a sign-in link to <span className="text-foreground font-medium">{email}</span>
                 </p>
                 <button
-                  onClick={() => { setMagicLinkSent(false); setLoginMode("password"); }}
+                  onClick={() => { setStep(EMAIL_ONLY_AUTH ? "email_input" : "phone"); setEmail(""); }}
                   className="text-sm text-cream hover:underline"
                 >
-                  Back to password login
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="magic-email" className="text-sm text-muted-foreground">Email</Label>
-                  <Input
-                    id="magic-email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="bg-surface border-border focus:border-foreground h-11"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleMagicLink}
-                  disabled={loading}
-                  className="w-full h-11 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Send login link
+                  Use a different email
                 </button>
               </div>
             )}
-
-            <div className="mt-4 flex items-center justify-center gap-2 text-sm">
-              {loginMode === "password" ? (
-                <>
-                  <button onClick={handleForgotPassword} className="text-muted-foreground hover:text-foreground transition-colors">
-                    Forgot password?
-                  </button>
-                  <span className="text-muted-foreground">·</span>
-                  <button
-                    onClick={() => setLoginMode("magic_link")}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Sign in with email link
-                  </button>
-                </>
-              ) : !magicLinkSent && (
-                <button
-                  onClick={() => setLoginMode("password")}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Sign in with password instead
-                </button>
-              )}
-            </div>
-
           </div>
         </div>
 
@@ -339,31 +357,19 @@ const Login = () => {
         </div>
       </div>
 
-      {/* Right hero carousel */}
       <div className="hidden lg:flex flex-1 relative overflow-hidden">
         {slide.image && (
-          <img
-            key={activeSlide}
-            src={slide.image}
-            alt={slide.title + " " + slide.italic}
-            className="absolute inset-0 w-full h-full object-cover z-0"
-            loading="eager"
-          />
+          <img key={activeSlide} src={slide.image} alt={slide.title + " " + slide.italic} className="absolute inset-0 w-full h-full object-cover z-0" loading="eager" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/10 z-[1]" />
 
         <div className="relative z-10 flex flex-col justify-end p-12 pb-24 w-full">
           <div className="max-w-[500px] ml-auto">
-            <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground mb-4">
-              {slide.category}
-            </p>
+            <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground mb-4">{slide.category}</p>
             <h2 className="text-3xl font-semibold text-foreground mb-3">
-              {slide.title}{" "}
-              <span className="font-serif-italic text-cream">{slide.italic}</span>
+              {slide.title} <span className="font-serif-italic text-cream">{slide.italic}</span>
             </h2>
-            <p className="text-base text-muted-foreground max-w-[400px]">
-              {slide.subtitle}
-            </p>
+            <p className="text-base text-muted-foreground max-w-[400px]">{slide.subtitle}</p>
             <div className="flex items-center gap-4 mt-5">
               <span className="text-sm font-medium text-cream flex items-center gap-1 opacity-80">
                 Explore <ArrowRight className="h-3 w-3" />
@@ -376,15 +382,13 @@ const Login = () => {
         <div className="absolute bottom-8 left-12 flex gap-2 z-20">
           {slides.map((_, i) => (
             <div key={i} className="w-16 h-0.5 bg-white/20 rounded-full overflow-hidden">
-              <div
-                className={`h-full bg-white rounded-full ${
-                  i === activeSlide ? "animate-slide-progress" : i < activeSlide ? "w-full" : "w-0"
-                }`}
-              />
+              <div className={`h-full bg-white rounded-full ${i === activeSlide ? "animate-slide-progress" : i < activeSlide ? "w-full" : "w-0"}`} />
             </div>
           ))}
         </div>
       </div>
+    </div>
+    <Footer />
     </div>
   );
 };
