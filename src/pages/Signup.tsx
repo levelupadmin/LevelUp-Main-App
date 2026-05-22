@@ -16,9 +16,11 @@ import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 type Step = "form" | "otp" | "email_sent";
 
-// Mirrors Login.tsx. While false, +91 phones go through the MSG91
-// widget; non-+91 phones still fall through to email magic link.
-const EMAIL_ONLY_AUTH = false;
+// Mirrors Login.tsx. TRUE for launch: every signup verifies via email
+// magic link because the MSG91 widget accepts OTP requests but the
+// telco silently drops the SMS (no DLT template approved on this
+// account yet). Flip back to false once the DLT template clears.
+const EMAIL_ONLY_AUTH = true;
 
 // MSG91 widget verify URL (our edge function bridges widget JWT → Supabase session).
 const VERIFY_MSG91_OTP_URL =

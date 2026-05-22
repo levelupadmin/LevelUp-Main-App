@@ -38,9 +38,20 @@ type Step = "phone" | "otp" | "email_input" | "email_sent";
 
 // While true, every user (Indian or not) auths via email magic link
 // only. While false, +91 phones get SMS OTP via the MSG91 widget and
-// non-+91 phones still fall through to email. Flip to true as an
-// emergency fallback if the widget misbehaves.
-const EMAIL_ONLY_AUTH = false;
+// non-+91 phones still fall through to email.
+//
+// CURRENTLY TRUE (2026-05-22 evening): the MSG91 OTP Widget API returns
+// success on sendOTP but the SMS is silently dropped at the telco
+// because the LevelUp MSG91 account has NO DLT-approved template
+// registered yet. The widget config says use_default:true but MSG91's
+// "default" only works for accounts that have at least one DLT-approved
+// template under their Principal Entity. Our DLT template is still
+// pending approval from telco DLT registry (submitted, 24-48h ETA).
+//
+// Flip back to false the moment our DLT template clears (or once we
+// borrow a working template via Plan C — backend send via Supabase
+// edge function with a registered Sender ID).
+const EMAIL_ONLY_AUTH = true;
 
 // MSG91 widget verify URL (our edge function bridges widget JWT → Supabase session).
 const VERIFY_MSG91_OTP_URL =
