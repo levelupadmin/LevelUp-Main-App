@@ -1,8 +1,9 @@
 /**
  * send-sms-otp — Generate a 4-digit OTP, hash + store it, then dispatch
- * the plain OTP via MSG91 Flow API. The DLT template (id in
- * MSG91_OTP_TEMPLATE_ID) uses the variable name `var` for the OTP slot,
- * and a Jio-registered LVLUP sender header.
+ * the plain OTP via MSG91 Flow API. The DLT-approved template body uses
+ * `##number##` (the OTP) and a trailing `##var1##` (unused, sent as
+ * empty string). Sender header: LVLUP, DLT-registered with Jio under
+ * PE 1201177686382624078.
  *
  * Why we send via Flow API and not the MSG91 OTP widget:
  *   - Widget runs in the browser, requires custom-element mounting +
@@ -86,7 +87,8 @@ Deno.serve(async (req) => {
       flow_id: MSG91_TEMPLATE_ID,
       sender: MSG91_SENDER_ID,
       mobiles: mobileNum,
-      var: otp,
+      number: otp,   // matches the ##number## placeholder in the DLT template
+      var1: "",      // matches the trailing ##var1## placeholder (unused)
     }),
   });
   const msgData = (await msgResp.json()) as { type?: string; message?: string };
