@@ -12,7 +12,6 @@ import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
 // msg91-widget kept on disk but no longer imported here — we use our
 // own backend edge functions for SMS OTP now.
-import Footer from "@/components/Footer";
 import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 type Step = "form" | "otp" | "email_sent";
@@ -193,6 +192,7 @@ const Signup = () => {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     required
+                    className="h-12 text-base"
                   />
                 </div>
 
@@ -219,10 +219,11 @@ const Signup = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
+                    className="h-12 text-base"
                   />
                 </div>
 
-                <Button type="submit" className="w-full" disabled={loading || !formValid}>
+                <Button type="submit" className="w-full h-12 text-base" disabled={loading || !formValid}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Create account
                 </Button>
@@ -274,7 +275,19 @@ const Signup = () => {
         </Card>
       </div>
       </div>
-      <Footer />
+      {/* Minimal legal strip — no full Footer on a focused conversion page */}
+      <div className="px-6 pb-6 pt-2 space-y-2">
+        <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-muted-foreground">
+          <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
+          <span className="opacity-30">·</span>
+          <Link to="/terms" className="hover:text-foreground">Terms</Link>
+          <span className="opacity-30">·</span>
+          <Link to="/refunds" className="hover:text-foreground">Refunds</Link>
+          <span className="opacity-30">·</span>
+          <a href="https://api.whatsapp.com/send?phone=919791520177&text=Hi" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">Support</a>
+        </div>
+        <p className="text-[10px] text-center font-mono text-muted-foreground/60">© 2026 LevelUp Learning</p>
+      </div>
     </div>
   );
 };

@@ -6,7 +6,6 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import Footer from "@/components/Footer";
 import {
   CheckCircle2,
   Loader2,
@@ -699,7 +698,6 @@ export default function ThankYou() {
           </>
         )}
       </main>
-      <Footer />
     </div>
   );
 }

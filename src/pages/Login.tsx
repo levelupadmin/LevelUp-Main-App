@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Mail, ArrowRight, CheckCircle2 } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
-import Footer from "@/components/Footer";
 import usePageTitle from "@/hooks/usePageTitle";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
@@ -292,7 +291,7 @@ const Login = () => {
                   <button
                     type="submit"
                     disabled={loading || !phone}
-                    className="w-full h-11 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full h-12 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2 text-base"
                   >
                     {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                     Continue
@@ -342,7 +341,7 @@ const Login = () => {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-11 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full h-12 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2 text-base"
                   >
                     {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                     Send sign-in link
@@ -387,8 +386,17 @@ const Login = () => {
               Create an account
             </Link>
           </p>
-          <p className="text-xs text-center font-mono text-muted-foreground">
-            © 2026 LevelUp Learning · v1.0
+          <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-muted-foreground">
+            <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
+            <span className="opacity-30">·</span>
+            <Link to="/terms" className="hover:text-foreground">Terms</Link>
+            <span className="opacity-30">·</span>
+            <Link to="/refunds" className="hover:text-foreground">Refunds</Link>
+            <span className="opacity-30">·</span>
+            <a href="https://api.whatsapp.com/send?phone=919791520177&text=Hi" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">Support</a>
+          </div>
+          <p className="text-[10px] text-center font-mono text-muted-foreground/60">
+            © 2026 LevelUp Learning
           </p>
         </div>
       </div>
@@ -424,7 +432,6 @@ const Login = () => {
         </div>
       </div>
     </div>
-    <Footer />
     </div>
   );
 };
