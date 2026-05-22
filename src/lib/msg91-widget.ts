@@ -1,59 +1,64 @@
 /**
- * Thin promise-based wrapper around MSG91's OTP widget exposed methods.
+ * Thin promise-based wrapper around MSG91's OTP widget runtime.
  *
- * The widget is loaded by a script tag in index.html with
- * exposeMethods: true, which puts window.OTPWidget on the page.
- * That object exposes sendOTP / retryOTP / verifyOTP, each of which
- * takes (data, successCb, failureCb). This wrapper turns them into
- * proper Promises so React components can `await` them.
+ * The widget is loaded by a <script> tag in index.html. It is an Angular
+ * custom-element framework: once initSendOTP({widgetId, tokenAuth, exposeMethods:true})
+ * runs against a mounted <msg91-otp-provider> element, the framework
+ * exposes three callbacks-style functions directly on `window`:
  *
- * The widget uses MSG91's pre-approved default DLT template under the
- * hood, so SMS delivery works the moment a token is provisioned --
- * no wait on our own DLT template.
+ *   window.sendOtp(identifier, successCb, failureCb)
+ *   window.verifyOtp(otp, successCb, failureCb, reqId?)
+ *   window.retryOtp(channel, successCb, failureCb, reqId?)
+ *
+ * There is no `window.OTPWidget` namespace - earlier versions of this
+ * file looked for one and timed out. The minified provider source defines
+ * the surface via Object.defineProperties(window, {sendOtp, verifyOtp,
+ * retryOtp, ...}) inside the Angular component lifecycle, gated on
+ * config.exposeMethods.
+ *
+ * Channels for retryOtp:
+ *   "11" -> SMS, "12" -> Voice, "13" -> WhatsApp
  */
 
-type OtpSuccess = { type?: string; message?: string; req_id?: string; [k: string]: unknown };
-type OtpFailure = { type?: string; message?: string; [k: string]: unknown };
-
-interface OtpWidget {
-  sendOTP: (
-    data: { identifier: string },
-    success: (r: OtpSuccess) => void,
-    failure: (e: OtpFailure) => void,
-  ) => void;
-  retryOTP: (
-    channel: "11" | "12" | "13", // 11=text/sms, 12=voice, 13=whatsapp
-    success: (r: OtpSuccess) => void,
-    failure: (e: OtpFailure) => void,
-  ) => void;
-  verifyOTP: (
-    otp: number | string,
-    success: (r: OtpSuccess & { message?: string }) => void,
-    failure: (e: OtpFailure) => void,
-  ) => void;
-}
+type Cb<T> = (r: T) => void;
+type WidgetReason = {
+  type?: string;
+  message?: string;
+  hasError?: boolean;
+  status?: string;
+  [k: string]: unknown;
+};
 
 declare global {
   interface Window {
-    OTPWidget?: OtpWidget;
     initSendOTP?: (config: Record<string, unknown>) => void;
+    sendOtp?: (identifier: string, success: Cb<WidgetReason>, failure: Cb<WidgetReason>) => void;
+    verifyOtp?: (
+      otp: number | string,
+      success: Cb<WidgetReason & { message?: string }>,
+      failure: Cb<WidgetReason>,
+      reqId?: string,
+    ) => void;
+    retryOtp?: (
+      channel: "11" | "12" | "13",
+      success: Cb<WidgetReason>,
+      failure: Cb<WidgetReason>,
+      reqId?: string,
+    ) => void;
     __MSG91_CONFIG__?: Record<string, unknown>;
   }
 }
 
 /**
- * Wait for the widget to finish loading. Polls window.OTPWidget for
- * up to `timeoutMs`. Returns true if loaded, false on timeout.
- *
- * Most calls resolve within ~500ms — the script tag in index.html
- * triggers a `msg91:ready` event as soon as initSendOTP returns.
+ * Poll for the widget to expose its window methods. Usually ~500ms-1s
+ * after initSendOTP runs.
  */
-export const waitForOtpWidget = (timeoutMs = 8000): Promise<boolean> => {
+export const waitForMsg91 = (timeoutMs = 8000): Promise<boolean> => {
   return new Promise((resolve) => {
-    if (window.OTPWidget) return resolve(true);
+    if (typeof window.sendOtp === "function") return resolve(true);
     const start = Date.now();
     const t = setInterval(() => {
-      if (window.OTPWidget) {
+      if (typeof window.sendOtp === "function") {
         clearInterval(t);
         resolve(true);
         return;
@@ -67,19 +72,18 @@ export const waitForOtpWidget = (timeoutMs = 8000): Promise<boolean> => {
 };
 
 /**
- * Send an OTP to the given phone (E.164 with country code, no +).
- * MSG91 wants `91` + 10-digit, not `+91...`, so the caller can pass
- * either format -- we normalise.
+ * Send an OTP via the widget. MSG91 wants the identifier as digits
+ * with country code, no leading + (e.g. "919884731816").
  */
-export const sendOtp = async (identifier: string): Promise<OtpSuccess> => {
-  const ready = await waitForOtpWidget();
-  if (!ready || !window.OTPWidget) {
+export const sendOtp = async (identifier: string): Promise<WidgetReason> => {
+  const ready = await waitForMsg91();
+  if (!ready || typeof window.sendOtp !== "function") {
     throw new Error("OTP service not available right now. Try again.");
   }
   const normalised = identifier.replace(/^\+/, "");
   return new Promise((resolve, reject) => {
-    window.OTPWidget!.sendOTP(
-      { identifier: normalised },
+    window.sendOtp!(
+      normalised,
       (r) => resolve(r),
       (e) => reject(new Error(e?.message || "Couldn't send OTP")),
     );
@@ -87,18 +91,20 @@ export const sendOtp = async (identifier: string): Promise<OtpSuccess> => {
 };
 
 /**
- * Verify an OTP. Returns the widget's response payload which contains
- * a `message` field that is the access token (a JWT) we forward to
- * our edge function for backend verification + Supabase session mint.
+ * Verify an OTP. The widget's success callback gives us an access
+ * token (a JWT) in the `message` field - we forward that to our
+ * verify-msg91-otp edge function which mints a Supabase session.
  */
 export const verifyOtp = async (otp: string | number): Promise<{ accessToken: string }> => {
-  if (!window.OTPWidget) throw new Error("OTP service not initialised");
+  if (typeof window.verifyOtp !== "function") {
+    throw new Error("OTP service not initialised");
+  }
+  const otpNum = typeof otp === "string" ? Number(otp) : otp;
   return new Promise((resolve, reject) => {
-    window.OTPWidget!.verifyOTP(
-      typeof otp === "string" ? Number(otp) : otp,
+    window.verifyOtp!(
+      otpNum,
       (r) => {
-        // MSG91 returns { message: "<JWT>", type: "success" } on verify.
-        const token = (r as { message?: string }).message;
+        const token = r?.message;
         if (!token) return reject(new Error("Verify succeeded but no token returned"));
         resolve({ accessToken: token });
       },
@@ -108,16 +114,18 @@ export const verifyOtp = async (otp: string | number): Promise<{ accessToken: st
 };
 
 /**
- * Retry channel codes per MSG91 docs:
- *   11 = SMS  (default)
- *   12 = Voice
- *   13 = WhatsApp
+ * Resend OTP via a different channel.
+ *   "sms"      -> channel code "11"
+ *   "voice"    -> channel code "12"
+ *   "whatsapp" -> channel code "13"
  */
-export const retryOtp = async (channel: "sms" | "voice" | "whatsapp"): Promise<OtpSuccess> => {
-  if (!window.OTPWidget) throw new Error("OTP service not initialised");
+export const retryOtp = async (channel: "sms" | "voice" | "whatsapp"): Promise<WidgetReason> => {
+  if (typeof window.retryOtp !== "function") {
+    throw new Error("OTP service not initialised");
+  }
   const code = channel === "sms" ? "11" : channel === "voice" ? "12" : "13";
   return new Promise((resolve, reject) => {
-    window.OTPWidget!.retryOTP(
+    window.retryOtp!(
       code,
       (r) => resolve(r),
       (e) => reject(new Error(e?.message || "Couldn't resend OTP")),

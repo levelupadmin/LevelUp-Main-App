@@ -37,20 +37,27 @@
   </head>
   <body>
     <div id="root"></div>
+
     <!--
-      MSG91 OTP widget loader. Sets up window.OTPWidget with sendOTP /
-      verifyOTP / retryOTP exposed so React can drive the OTP flow
-      from its own UI (no MSG91 default popup). The widget itself
-      handles the underlying SMS / WhatsApp / Voice routing and uses
-      MSG91's pre-approved default DLT template, so it works while
-      our own DLT template is still being approved.
-      Fallback CDN (phone91.com) is tried if verify.msg91.com fails.
+      MSG91 OTP widget. The script is an Angular custom-element framework
+      that looks for two things in the DOM before it can mount:
+        1. <msg91-otp-provider> — the host element it bootstraps into
+        2. A div identified by config.captchaRenderId — hCaptcha goes here
+      Once both exist and initSendOTP(config) is called, it exposes
+      window.sendOtp / verifyOtp / retryOtp directly (NOT under an
+      OTPWidget namespace). React drives those via src/lib/msg91-widget.ts.
+      msg91-otp-provider and msg91-captcha-host are kept off-screen so
+      they do not interfere with the layout but remain in the DOM.
     -->
+    <msg91-otp-provider style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;"></msg91-otp-provider>
+    <div id="msg91-captcha-host" style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;"></div>
+
     <script type="text/javascript">
       window.__MSG91_CONFIG__ = {
         widgetId: '366576757143333830323239',
         tokenAuth: '375909Tjo25XmX06a102894P1',
         exposeMethods: true,
+        captchaRenderId: 'msg91-captcha-host',
         success: (data) => {
           window.dispatchEvent(new CustomEvent('msg91:success', { detail: data }));
         },
