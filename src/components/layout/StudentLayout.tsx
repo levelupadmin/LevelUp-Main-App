@@ -293,7 +293,7 @@ const StudentLayout = ({ children }: Props) => {
               key={item.path}
               to={item.path}
               className={cn(
-                "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors focus-ring press-scale-sm",
+                "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[11px] font-medium transition-colors focus-ring press-scale-sm",
                 active ? "text-cream" : "text-muted-foreground hover:text-foreground"
               )}
             >

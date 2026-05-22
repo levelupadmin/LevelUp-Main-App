@@ -970,7 +970,7 @@ function CheckoutCard({
               placeholder="Coupon code"
               value={couponCode}
               onChange={(e) => setCouponCode(e.target.value)}
-              className="pl-9 bg-[hsl(var(--surface-2))] border-border"
+              className="pl-9 h-12 bg-[hsl(var(--surface-2))] border-border"
               disabled={couponApplied}
             />
           </div>
@@ -1018,7 +1018,7 @@ function CheckoutCard({
             placeholder="Full name"
             value={guestName}
             onChange={(e) => setGuestName(e.target.value)}
-            className="bg-[hsl(var(--surface-2))] border-border"
+            className="h-12 bg-[hsl(var(--surface-2))] border-border"
             required
           />
           <Input
@@ -1026,7 +1026,7 @@ function CheckoutCard({
             placeholder="Email address"
             value={guestEmail}
             onChange={(e) => handleEmailChange(e.target.value)}
-            className="bg-[hsl(var(--surface-2))] border-border"
+            className="h-12 bg-[hsl(var(--surface-2))] border-border"
           />
           <div>
             <div className="relative">
@@ -1038,7 +1038,7 @@ function CheckoutCard({
                 placeholder="Phone number"
                 value={guestPhone}
                 onChange={(e) => handlePhoneChange(e.target.value)}
-                className="pl-12 bg-[hsl(var(--surface-2))] border-border"
+                className="pl-12 h-12 bg-[hsl(var(--surface-2))] border-border"
               />
             </div>
             {phoneError && (
@@ -1285,7 +1285,10 @@ export default function PublicOffering() {
             LevelUp
           </span>
           {!session && (
-            <a href="/login" className="text-sm text-muted-foreground hover:text-foreground">
+            <a
+              href="/login"
+              className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center min-h-[44px] px-3 -mx-3 rounded-md"
+            >
               Sign in
             </a>
           )}
