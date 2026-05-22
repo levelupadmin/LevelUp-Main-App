@@ -1269,6 +1269,50 @@ export default function PublicOffering() {
     setMeta('meta[name="twitter:title"]', "content", title);
     setMeta('meta[name="twitter:description"]', "content", desc);
     if (img) setMeta('meta[name="twitter:image"]', "content", img);
+
+    // Schema.org Course structured data so Google can render a rich
+    // result card with the instructor, price, and provider. Replaces
+    // any previous offering-specific block (keyed by id).
+    const SCHEMA_ID = "offering-jsonld";
+    let script = document.getElementById(SCHEMA_ID) as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement("script");
+      script.id = SCHEMA_ID;
+      script.type = "application/ld+json";
+      document.head.appendChild(script);
+    }
+    const linkedCourse = offering.offering_courses?.[0]?.courses;
+    const payload: Record<string, unknown> = {
+      "@context": "https://schema.org",
+      "@type": "Course",
+      name: offering.title,
+      description: desc,
+      url: window.location.href,
+      provider: {
+        "@type": "Organization",
+        name: "LevelUp Learning",
+        sameAs: "https://leveluplearning.in",
+      },
+      offers: {
+        "@type": "Offer",
+        price: Number(offering.price_inr || 0),
+        priceCurrency: offering.currency || "INR",
+        url: window.location.href,
+        availability: "https://schema.org/InStock",
+      },
+    };
+    if (offering.instructor_name) {
+      payload.instructor = { "@type": "Person", name: offering.instructor_name };
+    }
+    if (img) payload.image = img;
+    if (linkedCourse?.total_lessons) {
+      payload.hasCourseInstance = {
+        "@type": "CourseInstance",
+        courseMode: "Online",
+        numberOfLessons: linkedCourse.total_lessons,
+      };
+    }
+    script.textContent = JSON.stringify(payload);
   }, [offering]);
 
   const isStaged = (offering as any)?.payment_mode === "staged";
