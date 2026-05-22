@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, MessageCircle, Mail } from "lucide-react";
+import { Loader2, Mail } from "lucide-react";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 
 interface Props {
@@ -8,7 +8,9 @@ interface Props {
   otpLength?: number;
   onVerify: (otp: string) => Promise<{ ok: boolean; error?: string }>;
   onResendSms: () => Promise<{ ok: boolean; error?: string }>;
-  onSwitchToWhatsApp: () => Promise<{ ok: boolean; error?: string }>;
+  // WhatsApp channel kept in the type for forward compatibility but
+  // the UI button is hidden until we wire a WhatsApp Flow API path.
+  onSwitchToWhatsApp?: () => Promise<{ ok: boolean; error?: string }>;
   onSwitchToEmail?: () => void;
   onBack: () => void;
 }
@@ -24,7 +26,6 @@ export function OtpEntryStep({
   otpLength = 4,
   onVerify,
   onResendSms,
-  onSwitchToWhatsApp,
   onSwitchToEmail,
   onBack,
 }: Props) {
@@ -71,19 +72,6 @@ export function OtpEntryStep({
       return;
     }
     setResendCount((c) => c + 1);
-    setResendTimer(30);
-  };
-
-  const handleSwitchWA = async () => {
-    setResending(true);
-    setError(null);
-    setOtp("");
-    const res = await onSwitchToWhatsApp();
-    setResending(false);
-    if (!res.ok) {
-      setError(res.error || "WhatsApp delivery failed.");
-      return;
-    }
     setResendTimer(30);
   };
 
@@ -141,18 +129,6 @@ export function OtpEntryStep({
             "Resend SMS"
           )}
         </button>
-
-        {channel === "sms" && (
-          <button
-            type="button"
-            onClick={handleSwitchWA}
-            disabled={resending || verifying}
-            className="w-full h-10 text-sm border border-border rounded-md hover:bg-secondary/30 disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
-          >
-            <MessageCircle className="h-4 w-4 text-[hsl(var(--accent-emerald))]" />
-            Get OTP on WhatsApp
-          </button>
-        )}
 
         {resendCount >= 1 && onSwitchToEmail && (
           <button
