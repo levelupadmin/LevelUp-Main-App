@@ -27,6 +27,7 @@ const footerLinks: Record<string, FooterLink[]> = {
     { label: "Privacy Policy", href: "/privacy" },
     { label: "Terms of Service", href: "/terms" },
     { label: "Refund Policy", href: "/refunds" },
+    { label: "Delete Account", href: "/delete-account" },
     {
       label: "Contact Support",
       href: "https://api.whatsapp.com/send?phone=919791520177&text=Hi",

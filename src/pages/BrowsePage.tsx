@@ -14,6 +14,8 @@ import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/u
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
 import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 import { useDebounce } from "@/hooks/useDebounce";
+import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
+import { isAndroid } from "@/lib/platform";
 
 const TIER_ORDER = ["live_cohort", "masterclass", "advanced_program", "workshop"] as const;
 const TIER_FILTERS = ["All", "Mentorship Cohorts", "Masterclasses", "Programs", "Workshops"] as const;
@@ -367,12 +369,24 @@ const BrowsePage = () => {
                               Continue <ArrowRight className="h-3 w-3" />
                             </Link>
                           ) : c.offering_id ? (
-                            <Link
-                              to={`/checkout/${c.offering_id}`}
-                              className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all min-h-[44px] sm:min-h-0 items-center"
-                            >
-                              Enroll <ArrowRight className="h-3 w-3" />
-                            </Link>
+                            // Path B: on Android, surface a "Continue on web"
+                            // link to the public offering URL instead of the
+                            // in-app checkout route. The slug isn't on the
+                            // browse-query payload, so we fall back to a
+                            // browse link if it's missing.
+                            isAndroid() ? (
+                              <ContinueOnWebCTA
+                                variant="inline"
+                                webPath={`/browse`}
+                              />
+                            ) : (
+                              <Link
+                                to={`/checkout/${c.offering_id}`}
+                                className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all min-h-[44px] sm:min-h-0 items-center"
+                              >
+                                Enroll <ArrowRight className="h-3 w-3" />
+                              </Link>
+                            )
                           ) : (
                             <Link
                               to={`/courses/${c.id}`}

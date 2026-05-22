@@ -7,8 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Pencil, X, Award } from "lucide-react";
+import { ArrowRight, Pencil, X, Award, AlertTriangle } from "lucide-react";
 import { toast } from "@/lib/toast";
 import CertificateGallery from "@/components/certificates/CertificateGallery";
 import NotificationPreferences from "@/components/notifications/NotificationPreferences";
@@ -183,6 +193,126 @@ const ChangePasswordSection = ({ email }: { email: string }) => {
         Forgot your password?
       </button>
     </div>
+  );
+};
+
+// Required by Google Play's mandatory in-app account-deletion policy.
+// Soft-deletes via the `delete-account` edge function (7-day grace) and
+// signs the user out locally.
+const DangerZoneSection = () => {
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  const canConfirm = confirmText.trim().toUpperCase() === "DELETE" && !deleting;
+
+  const handleDelete = async () => {
+    if (!canConfirm) return;
+    setDeleting(true);
+
+    const { data, error } = await supabase.functions.invoke("delete-account", {
+      method: "POST",
+    });
+
+    if (error || (data as { error?: string })?.error) {
+      setDeleting(false);
+      const msg =
+        (data as { error?: string })?.error ||
+        error?.message ||
+        "Could not delete your account. Please try again or contact support.";
+      toast.error(msg);
+      return;
+    }
+
+    toast.success("Account scheduled for deletion. You'll be signed out.");
+
+    // Sign out locally then bounce to the marketing root.
+    await signOut();
+    navigate("/", { replace: true });
+  };
+
+  return (
+    <section>
+      <div className="border border-destructive/40 bg-destructive/5 rounded-xl p-6">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-destructive">
+              Danger zone
+            </h3>
+            <p className="text-sm text-muted-foreground mt-1 mb-4">
+              Deleting your account is permanent after a 7-day grace period.
+              Your enrolments, course progress, reviews, and profile data will
+              be removed.
+            </p>
+            <Button
+              variant="outline"
+              className="border-destructive text-destructive hover:bg-destructive/10"
+              onClick={() => setOpen(true)}
+            >
+              Delete account
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <AlertDialog
+        open={open}
+        onOpenChange={(next) => {
+          if (deleting) return;
+          setOpen(next);
+          if (!next) setConfirmText("");
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete your LevelUp account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove your enrolments, course progress,
+              reviews, certificates, community posts, and account profile after
+              a 7-day grace period. Payment records are retained for tax and
+              refund compliance.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="delete-confirm"
+              className="text-xs text-muted-foreground"
+            >
+              Type <span className="font-mono text-foreground">DELETE</span> to
+              confirm
+            </label>
+            <Input
+              id="delete-confirm"
+              autoComplete="off"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="DELETE"
+              disabled={deleting}
+            />
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // Prevent Radix from auto-closing before the async work
+                // resolves; we close manually after sign-out / nav.
+                e.preventDefault();
+                void handleDelete();
+              }}
+              disabled={!canConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Deleting…" : "Delete forever"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
   );
 };
 
@@ -496,6 +626,12 @@ const ProfilePage = () => {
             </Button>
           </div>
         </section>
+
+        {/* Divider */}
+        <div className="border-t border-border" />
+
+        {/* Danger zone — account deletion (Google Play requirement) */}
+        <DangerZoneSection />
       </div>
     </>
   );

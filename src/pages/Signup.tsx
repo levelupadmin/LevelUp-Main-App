@@ -10,16 +10,19 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle2, Mail } from "lucide-react";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
+import { sendOtp as msg91SendOtp, verifyOtp as msg91VerifyOtp, retryOtp as msg91RetryOtp } from "@/lib/msg91-widget";
 import Footer from "@/components/Footer";
 import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 type Step = "form" | "otp" | "email_sent";
 
-// Mirrors Login.tsx — same DLT-waiting gate. While true, every signup
-// (Indian or not) verifies via email magic link instead of SMS OTP.
-// Phone is still collected and stored on the user so it's ready for
-// SMS auth the moment DLT clears.
-const EMAIL_ONLY_AUTH = true;
+// Mirrors Login.tsx. While false, +91 phones go through the MSG91
+// widget; non-+91 phones still fall through to email magic link.
+const EMAIL_ONLY_AUTH = false;
+
+// MSG91 widget verify URL (our edge function bridges widget JWT → Supabase session).
+const VERIFY_MSG91_OTP_URL =
+  "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
 
 const Signup = () => {
   const { toast } = useToast();
@@ -53,26 +56,21 @@ const Signup = () => {
   const formValid = nameValid && phoneValid && emailValid;
 
   const triggerOtp = async (waMode = false): Promise<{ ok: boolean; error?: string }> => {
-    // While EMAIL_ONLY_AUTH is true, all signups go through email magic link
-    // regardless of phone country. The phone is still stored on the user record
-    // so the SMS path lights up automatically the moment the flag flips.
+    // +91 phones use MSG91 widget for SMS OTP. Edge function handles
+    // user creation + session minting after widget verify.
     if (!EMAIL_ONLY_AUTH && isIndianPhone) {
-      const { error } = await supabase.auth.signInWithOtp({
-        phone,
-        options: {
-          shouldCreateUser: true,
-          data: {
-            full_name: fullName.trim(),
-            email,
-            next_otp_channel: waMode ? "whatsapp" : "sms",
-          },
-        },
-      });
-      if (error) return { ok: false, error: error.message };
-      return { ok: true };
+      try {
+        if (waMode) {
+          await msg91RetryOtp("whatsapp");
+        } else {
+          await msg91SendOtp(phone);
+        }
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : "Couldn't send OTP" };
+      }
     }
-    // Email magic link path — used for non-Indian phones AND for everyone
-    // while EMAIL_ONLY_AUTH is true.
+    // Non-Indian phones (or fallback when EMAIL_ONLY_AUTH=true): email magic link.
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
@@ -114,10 +112,32 @@ const Signup = () => {
   };
 
   const handleVerify = async (otp: string): Promise<{ ok: boolean; error?: string }> => {
-    const { error } = await supabase.auth.verifyOtp({ phone, token: otp, type: "sms" });
-    if (error) return { ok: false, error: error.message };
-    navigate("/home", { replace: true });
-    return { ok: true };
+    try {
+      const { accessToken } = await msg91VerifyOtp(otp);
+      const resp = await fetch(VERIFY_MSG91_OTP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone,
+          accessToken,
+          email,
+          full_name: fullName.trim(),
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        return { ok: false, error: data?.detail || data?.error || "Couldn't verify OTP" };
+      }
+      const { error: setErr } = await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      });
+      if (setErr) return { ok: false, error: setErr.message };
+      navigate("/home", { replace: true });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Invalid OTP" };
+    }
   };
 
   const handleSwitchWA = async (): Promise<{ ok: boolean; error?: string }> => {

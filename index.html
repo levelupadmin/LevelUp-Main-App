@@ -37,6 +37,51 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      MSG91 OTP widget loader. Sets up window.OTPWidget with sendOTP /
+      verifyOTP / retryOTP exposed so React can drive the OTP flow
+      from its own UI (no MSG91 default popup). The widget itself
+      handles the underlying SMS / WhatsApp / Voice routing and uses
+      MSG91's pre-approved default DLT template, so it works while
+      our own DLT template is still being approved.
+      Fallback CDN (phone91.com) is tried if verify.msg91.com fails.
+    -->
+    <script type="text/javascript">
+      window.__MSG91_CONFIG__ = {
+        widgetId: '366576693257373539373533',
+        tokenAuth: '375909Tjo25XmX06a102894P1',
+        exposeMethods: true,
+        success: (data) => {
+          window.dispatchEvent(new CustomEvent('msg91:success', { detail: data }));
+        },
+        failure: (error) => {
+          window.dispatchEvent(new CustomEvent('msg91:failure', { detail: error }));
+        },
+      };
+      (function loadOtpScript(urls) {
+        let i = 0;
+        function attempt() {
+          const s = document.createElement('script');
+          s.src = urls[i];
+          s.async = true;
+          s.onload = () => {
+            if (typeof window.initSendOTP === 'function') {
+              window.initSendOTP(window.__MSG91_CONFIG__);
+              window.dispatchEvent(new Event('msg91:ready'));
+            }
+          };
+          s.onerror = () => {
+            i++;
+            if (i < urls.length) attempt();
+          };
+          document.head.appendChild(s);
+        }
+        attempt();
+      })([
+        'https://verify.msg91.com/otp-provider.js',
+        'https://verify.phone91.com/otp-provider.js',
+      ]);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

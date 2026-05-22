@@ -214,6 +214,17 @@ const PrivacyPolicy = () => {
                 <li>Withdraw consent at any time (for marketing communication)</li>
                 <li>Request a copy of your data in a portable format</li>
               </ul>
+              <p className="mt-4 text-sm">
+                To delete your account, sign in and use{" "}
+                <strong className="text-foreground">
+                  Profile &rarr; Danger zone &rarr; Delete account
+                </strong>
+                , or submit a request on our{" "}
+                <Link to="/delete-account" className="text-cream hover:underline">
+                  account deletion page
+                </Link>{" "}
+                if you cannot sign in.
+              </p>
             </div>
           </section>
 

@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import Footer from "@/components/Footer";
+import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
+import { isAndroid } from "@/lib/platform";
 import {
   Check,
   Loader2,
@@ -652,6 +654,18 @@ function CheckoutCard({
     : `Enrol Now \u2014 Full Access \u00b7 \u20b9${afterDiscount.toLocaleString("en-IN")}`;
 
   /* ── Render ── */
+
+  // Path B / Google Play Reader Rule: the Android shell must not expose any
+  // purchase UI. Render a deep-link CTA that bounces the user to the same
+  // offering page on the public web origin, where Razorpay can take payment.
+  if (isAndroid()) {
+    return (
+      <div id="checkout-card">
+        <ContinueOnWebCTA webPath={`/p/${offering.slug}`} />
+      </div>
+    );
+  }
+
   return (
     <div id="checkout-card" className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-6 space-y-5">
       {/* Price */}
@@ -830,6 +844,12 @@ function ApplyCard({ offering }: { offering: any }) {
   const confirmation = Number(offering.confirmation_amount_inr || 0);
   const total = Number(offering.price_inr || 0);
   const balance = Math.max(total - appFee - confirmation, 0);
+
+  // Staged applications also collect money (the application fee). On Android
+  // we bounce to web for the same Path B reason as the main checkout card.
+  if (isAndroid()) {
+    return <ContinueOnWebCTA webPath={`/p/${offering.slug}`} />;
+  }
 
   return (
     <div className="rounded-xl border border-border bg-surface p-6 space-y-4">
@@ -1072,7 +1092,11 @@ export default function PublicOffering() {
         </div>
       </main>
 
-      {/* Mobile sticky CTA */}
+      {/* Mobile sticky CTA — hidden on Android (Path B). The in-page
+          checkout section already renders the Android Continue-on-web
+          card, so the sticky variant would be redundant and would surface
+          a price chip Google Play could flag as a purchase entry point. */}
+      {!isAndroid() && (
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between">
           <div>
@@ -1099,6 +1123,7 @@ export default function PublicOffering() {
           </Button>
         </div>
       </div>
+      )}
 
       <Footer />
     </div>

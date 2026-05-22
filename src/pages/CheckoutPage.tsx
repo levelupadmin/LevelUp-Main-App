@@ -13,6 +13,8 @@ import { toast } from "@/lib/toast";
 import { Loader2, Tag, ShieldCheck, BookOpen, ArrowLeft, CheckCircle2 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import TrustPanel from "@/components/checkout/TrustPanel";
+import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
+import { isAndroid } from "@/lib/platform";
 
 /* ── Razorpay global type ── */
 declare global {
@@ -380,6 +382,21 @@ export default function CheckoutPage() {
   }
 
   if (!offering) return null;
+
+  // Path B / Google Play Reader Rule: the Android shell must NEVER expose a
+  // Razorpay-driven checkout page. Replace the entire pay UI with a
+  // Continue-on-web card that deep-links to the same offering on the public
+  // web origin. Slug-aware so we land the user exactly where they tapped.
+  if (isAndroid()) {
+    const webPath = offering.slug ? `/p/${offering.slug}` : "/browse";
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-[480px]">
+          <ContinueOnWebCTA webPath={webPath} />
+        </div>
+      </div>
+    );
+  }
 
   const hasMrp =
     (offering as any).mrp_inr &&

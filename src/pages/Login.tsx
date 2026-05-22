@@ -11,6 +11,7 @@ import Footer from "@/components/Footer";
 import usePageTitle from "@/hooks/usePageTitle";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
+import { sendOtp as msg91SendOtp, verifyOtp as msg91VerifyOtp, retryOtp as msg91RetryOtp } from "@/lib/msg91-widget";
 import slideBfp from "@/assets/carousel/slide-bfp.jpg";
 import slideVea from "@/assets/carousel/slide-vea.jpg";
 import slideUiux from "@/assets/carousel/slide-uiux.jpg";
@@ -35,12 +36,15 @@ interface SlideData {
 
 type Step = "phone" | "otp" | "email_input" | "email_sent";
 
-// Temporary launch gate. While our DLT SMS template waits for telco
-// approval (~24-48h), every user — Indian or not — auths via email
-// magic link. Flip to `false` the moment the template is approved and
-// MSG91_OTP_TEMPLATE_ID is wired into the SMS hook; the phone-OTP code
-// path below is still intact and ready.
-const EMAIL_ONLY_AUTH = true;
+// While true, every user (Indian or not) auths via email magic link
+// only. While false, +91 phones get SMS OTP via the MSG91 widget and
+// non-+91 phones still fall through to email. Flip this back to true
+// if the widget is misbehaving and you want a quick email-only fallback.
+const EMAIL_ONLY_AUTH = false;
+
+// MSG91 widget verify URL (our edge function bridges widget JWT → Supabase session).
+const VERIFY_MSG91_OTP_URL =
+  "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -110,27 +114,19 @@ const Login = () => {
   const isIndianPhone = phone.startsWith("+91");
 
   const sendSmsOtp = async (waMode = false): Promise<{ ok: boolean; error?: string }> => {
-    if (waMode) {
-      // The hook reads next_otp_channel from user_metadata. We update the user
-      // before triggering, but pre-auth we cannot — so we pass it via the data
-      // option of signInWithOtp; Supabase merges into user_metadata before
-      // calling the hook.
-      const { error } = await supabase.auth.signInWithOtp({
-        phone,
-        options: {
-          shouldCreateUser: false,
-          data: { next_otp_channel: "whatsapp" },
-        },
-      });
-      if (error) return { ok: false, error: error.message };
+    // First send goes via sendOTP. If we already sent once and the user
+    // taps "Get on WhatsApp", we use retryOTP with the WhatsApp channel
+    // code so MSG91 keeps the same reqId / OTP flow.
+    try {
+      if (waMode) {
+        await msg91RetryOtp("whatsapp");
+      } else {
+        await msg91SendOtp(phone);
+      }
       return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Couldn't send OTP" };
     }
-    const { error } = await supabase.auth.signInWithOtp({
-      phone,
-      options: { shouldCreateUser: false, data: { next_otp_channel: "sms" } },
-    });
-    if (error) return { ok: false, error: error.message };
-    return { ok: true };
   };
 
   const handleSendOtp = async () => {
@@ -163,10 +159,33 @@ const Login = () => {
   };
 
   const handleVerify = async (otp: string): Promise<{ ok: boolean; error?: string }> => {
-    const { error } = await supabase.auth.verifyOtp({ phone, token: otp, type: "sms" });
-    if (error) return { ok: false, error: error.message };
-    navigate(redirectTarget, { replace: true });
-    return { ok: true };
+    try {
+      // 1. Verify with MSG91 widget → get accessToken (JWT)
+      const { accessToken } = await msg91VerifyOtp(otp);
+      // 2. Send to our edge function → mint Supabase session
+      const resp = await fetch(VERIFY_MSG91_OTP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, accessToken }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        if (data?.error === "signup_requires_email_and_name") {
+          return { ok: false, error: "No account with this number. Sign up first." };
+        }
+        return { ok: false, error: data?.detail || data?.error || "Verification failed" };
+      }
+      // 3. Set the session client-side
+      const { error: setErr } = await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      });
+      if (setErr) return { ok: false, error: setErr.message };
+      navigate(redirectTarget, { replace: true });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Invalid OTP" };
+    }
   };
 
   const handleSwitchToWA = async (): Promise<{ ok: boolean; error?: string }> => {

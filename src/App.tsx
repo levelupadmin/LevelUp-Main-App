@@ -34,6 +34,7 @@ const ThankYou = lazy(() => import("@/pages/ThankYou"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/Terms"));
 const RefundPolicy = lazy(() => import("@/pages/RefundPolicy"));
+const DeleteAccount = lazy(() => import("@/pages/DeleteAccount"));
 const CommunityPage = lazy(() => import("@/pages/CommunityPage"));
 const InstructorDashboard = lazy(() => import("@/pages/InstructorDashboard"));
 
@@ -121,6 +122,11 @@ const App = () => (
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/refunds" element={<RefundPolicy />} />
+              {/*
+                Public self-serve account deletion (Google Play requirement).
+                Unauthenticated — must be reachable without signing in.
+              */}
+              <Route path="/delete-account" element={<DeleteAccount />} />
 
               {/* ─── Student routes share a single persistent layout ─── */}
               <Route element={<RequireAuth><StudentLayout /></RequireAuth>}>
