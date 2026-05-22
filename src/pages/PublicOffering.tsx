@@ -136,6 +136,8 @@ function InstructorCard({ offering }: { offering: Offering }) {
         <img
           src={offering.instructor_avatar_url}
           alt={offering.instructor_name}
+          loading="lazy"
+          decoding="async"
           className="h-14 w-14 rounded-full object-cover border-2 border-[hsl(var(--cream))]"
         />
       ) : (
@@ -176,7 +178,13 @@ function IncludedCourses({ courses }: { courses: OfferingCourse[] }) {
         {courses.map((oc) => (
           <div key={oc.course_id} className="flex gap-4 p-4 rounded-xl border border-border bg-[hsl(var(--surface))]">
             {oc.courses.thumbnail_url ? (
-              <img src={oc.courses.thumbnail_url} alt={oc.courses.title} className="h-16 w-24 rounded-lg object-cover flex-shrink-0" />
+              <img
+                src={oc.courses.thumbnail_url}
+                alt={oc.courses.title}
+                loading="lazy"
+                decoding="async"
+                className="h-16 w-24 rounded-lg object-cover flex-shrink-0"
+              />
             ) : (
               <div className="h-16 w-24 rounded-lg bg-[hsl(var(--surface-2))] flex items-center justify-center flex-shrink-0">
                 <BookOpen className="h-6 w-6 text-muted-foreground" />
@@ -308,6 +316,8 @@ function InstructorBio({
             <img
               src={avatar}
               alt={name}
+              loading="lazy"
+              decoding="async"
               className="h-16 w-16 sm:h-20 sm:w-20 rounded-full object-cover flex-shrink-0"
             />
           ) : (
