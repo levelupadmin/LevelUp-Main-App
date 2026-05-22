@@ -1330,6 +1330,25 @@ export default function PublicOffering() {
       };
     }
     script.textContent = JSON.stringify(payload);
+
+    // Preload the hero image so the browser fetches it ASAP — Lighthouse
+    // flagged LCP because the hero <img> tag was discovered late by the
+    // pre-load scanner. A preload link in head pulls it forward.
+    const PRELOAD_ID = "offering-hero-preload";
+    let preload = document.getElementById(PRELOAD_ID) as HTMLLinkElement | null;
+    if (img) {
+      if (!preload) {
+        preload = document.createElement("link");
+        preload.id = PRELOAD_ID;
+        preload.rel = "preload";
+        preload.as = "image";
+        preload.setAttribute("fetchpriority", "high");
+        document.head.appendChild(preload);
+      }
+      preload.href = img;
+    } else if (preload) {
+      preload.remove();
+    }
   }, [offering]);
 
   const isStaged = (offering as any)?.payment_mode === "staged";
