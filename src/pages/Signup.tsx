@@ -17,10 +17,9 @@ import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 type Step = "form" | "otp" | "email_sent";
 
-// Mirrors Login.tsx. While false, +91 phones get SMS OTP via our
-// backend (send-sms-otp -> MSG91 Flow API -> LVLUP sender); non-+91
-// falls through to email magic link.
-const EMAIL_ONLY_AUTH = false;
+// Mirrors Login.tsx. TRUE for tonight - MSG91 is sending blank-OTP
+// SMS after high test volume; need their support to confirm cause.
+const EMAIL_ONLY_AUTH = true;
 
 const SEND_SMS_OTP_URL =
   "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/send-sms-otp";

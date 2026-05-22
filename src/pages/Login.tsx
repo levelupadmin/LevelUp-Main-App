@@ -42,7 +42,16 @@ type Step = "phone" | "otp" | "email_input" | "email_sent";
 // While false, +91 phones get SMS OTP via our backend (send-sms-otp
 // edge function -> MSG91 Flow API -> SMS via LVLUP sender) and non-+91
 // phones still fall through to email magic link.
-const EMAIL_ONLY_AUTH = false;
+//
+// CURRENTLY TRUE (2026-05-22 night): the full backend SMS plumbing is
+// wired and proven. Direct curl tests delivered OTPs (9999, 7777, 4329
+// all arrived visible). But after ~15 sends to the same test number in
+// one evening, MSG91 started returning SMSes with the ##number##
+// variable substituted to empty string. Suspect account-side rate
+// limit or template flag. Need MSG91 support to confirm; for now,
+// email-only is the safe production default. Flip back to false once
+// MSG91 confirms the issue is resolved.
+const EMAIL_ONLY_AUTH = true;
 
 // Backend edge functions that drive the phone-OTP flow.
 const SEND_SMS_OTP_URL =
