@@ -112,9 +112,16 @@ Deno.serve(async (req) => {
   const lookupData = (await lookupResp.json()) as {
     users?: Array<{ id: string; email?: string; phone?: string }>;
   };
-  const user = (lookupData.users || []).find((u) =>
+  // Match against both phone formats Supabase has historically stored
+  // (with + and without). If multiple rows match (e.g. an old ghost
+  // row created before we hardened the signup path), prefer the one
+  // with an email - that's the usable account. The previous
+  // "first match wins" behaviour picked the newest row, which was
+  // often the email-less ghost.
+  const candidates = (lookupData.users || []).filter((u) =>
     u.phone === normPhone || u.phone === normPhone.replace(/^\+/, "")
   );
+  const user = candidates.find((u) => !!u.email) ?? candidates[0];
 
   // EXISTING USER → login
   if (user) {

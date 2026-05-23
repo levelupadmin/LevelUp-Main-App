@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, Mail } from "lucide-react";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 
@@ -31,6 +31,7 @@ export function OtpEntryStep({
 }: Props) {
   const [otp, setOtp] = useState("");
   const [verifying, setVerifying] = useState(false);
+  const verifyingRef = useRef(false);
   const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendCount, setResendCount] = useState(0);
@@ -43,23 +44,44 @@ export function OtpEntryStep({
   }, [resendTimer]);
 
   useEffect(() => {
-    if (otp.length !== otpLength || verifying) return;
+    if (otp.length !== otpLength) return;
+    // Note: `verifying` is intentionally NOT in the deps array. If we
+    // include it, setVerifying(true) below changes deps -> cleanup
+    // fires with cancelled=true BEFORE the await settles -> setVerifying(false)
+    // is skipped -> spinner gets stuck forever. Use a ref to guard
+    // against double-fires instead.
+    if (verifyingRef.current) return;
+    verifyingRef.current = true;
+
     let cancelled = false;
     (async () => {
       setVerifying(true);
       setError(null);
-      const res = await onVerify(otp);
-      if (cancelled) return;
-      setVerifying(false);
-      if (!res.ok) {
-        setError(res.error || "Invalid code. Please try again.");
-        setOtp("");
+      try {
+        const res = await onVerify(otp);
+        if (cancelled) return;
+        if (!res.ok) {
+          setError(res.error || "Invalid code. Please try again.");
+          setOtp("");
+        }
+      } catch (e) {
+        // onVerify should always return a result object, but if it
+        // throws anyway (e.g. fetch rejection on the verify edge fn)
+        // we still need to clear the spinner.
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Verification error. Try again.");
+          setOtp("");
+        }
+      } finally {
+        if (!cancelled) setVerifying(false);
+        verifyingRef.current = false;
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [otp, otpLength, verifying, onVerify]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otp, otpLength]);
 
   const handleResendSms = async () => {
     setResending(true);
