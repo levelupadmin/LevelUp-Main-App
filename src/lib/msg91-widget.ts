@@ -50,6 +50,46 @@ declare global {
 }
 
 /**
+ * Initialise the MSG91 widget. Idempotent - second+ calls are no-ops.
+ *
+ * The <script src="verify.msg91.com/otp-provider.js"> tag in index.html
+ * defines window.initSendOTP. We wait (up to 5s) for it to land, then
+ * call it with the widget config from .env. After init the provider
+ * exposes window.sendOtp / verifyOtp / retryOtp on the next tick.
+ *
+ * widgetId + tokenAuth are MSG91-dashboard primitives: the widget binds
+ * to a sender + DLT template + retry channel rules. Two apps sharing
+ * the same widget is fine - MSG91 keys OTP state on (phone, widget),
+ * not on origin.
+ */
+const WIDGET_ID = import.meta.env.VITE_MSG91_WIDGET_ID;
+const TOKEN_AUTH = import.meta.env.VITE_MSG91_TOKEN_AUTH;
+
+let initialised = false;
+
+export const initMsg91 = async (): Promise<void> => {
+  if (initialised) return;
+  if (!WIDGET_ID || !TOKEN_AUTH) {
+    throw new Error("MSG91 widget env vars missing (VITE_MSG91_WIDGET_ID, VITE_MSG91_TOKEN_AUTH)");
+  }
+  for (let i = 0; i < 50; i++) {
+    if (typeof window.initSendOTP === "function") break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  if (typeof window.initSendOTP !== "function") {
+    throw new Error("MSG91 widget script not loaded - verify.msg91.com may be blocked");
+  }
+  window.initSendOTP({
+    widgetId: WIDGET_ID,
+    tokenAuth: TOKEN_AUTH,
+    exposeMethods: true,
+    success: () => {},
+    failure: () => {},
+  });
+  initialised = true;
+};
+
+/**
  * Poll for the widget to expose its window methods. Usually ~500ms-1s
  * after initSendOTP runs.
  */

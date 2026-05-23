@@ -10,20 +10,17 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle2, Mail } from "lucide-react";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
-// msg91-widget kept on disk but no longer imported here — we use our
-// own backend edge functions for SMS OTP now.
+import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
 import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 type Step = "form" | "otp" | "email_sent";
 
-// Mirrors Login.tsx. TRUE for tonight - MSG91 is sending blank-OTP
-// SMS after high test volume; need their support to confirm cause.
-const EMAIL_ONLY_AUTH = true;
+// Mirrors Login.tsx. 2026-05-23: flipped back to false after switching
+// from MSG91 Flow API (silently dropping ##number## substitution) to
+// the MSG91 widget pattern the Forge app ships.
+const EMAIL_ONLY_AUTH = false;
 
-const SEND_SMS_OTP_URL =
-  "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/send-sms-otp";
-
-// MSG91 widget verify URL (our edge function bridges widget JWT → Supabase session).
+// MSG91 widget verify URL (edge fn bridges widget access token → Supabase session).
 const VERIFY_MSG91_OTP_URL =
   "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
 
@@ -43,6 +40,13 @@ const Signup = () => {
     if (!authLoading && user) navigate("/home", { replace: true });
   }, [user, authLoading, navigate]);
 
+  // Best-effort widget init on mount. If the script is blocked or env
+  // vars are missing we'll surface the error inside triggerOtp.
+  useEffect(() => {
+    if (EMAIL_ONLY_AUTH) return;
+    initMsg91().catch(() => {});
+  }, []);
+
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-canvas">
@@ -58,18 +62,17 @@ const Signup = () => {
   const nameValid = fullName.trim().length >= 2;
   const formValid = nameValid && phoneValid && emailValid;
 
-  const triggerOtp = async (_waMode = false): Promise<{ ok: boolean; error?: string }> => {
-    // +91 phones: backend SMS OTP via /send-sms-otp edge function.
+  const triggerOtp = async (waMode = false): Promise<{ ok: boolean; error?: string }> => {
+    // +91 phones: MSG91 widget. window.sendOtp drops the SMS via MSG91's
+    // own pipeline so the ##number## substitution issue that bit the
+    // Flow API path can't happen here.
     if (!EMAIL_ONLY_AUTH && isIndianPhone) {
       try {
-        const resp = await fetch(SEND_SMS_OTP_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone }),
-        });
-        const data = await resp.json();
-        if (!resp.ok) {
-          return { ok: false, error: data?.detail?.message || data?.error || "Couldn't send OTP" };
+        await initMsg91();
+        if (waMode) {
+          await widgetRetryOtp("whatsapp");
+        } else {
+          await widgetSendOtp(phone);
         }
         return { ok: true };
       } catch (e) {
@@ -119,12 +122,24 @@ const Signup = () => {
 
   const handleVerify = async (otp: string): Promise<{ ok: boolean; error?: string }> => {
     try {
+      // Step 1: ask the widget to verify the digits with MSG91. On
+      // success we get a short-lived access token (JWT) we hand to our
+      // backend, which re-verifies with MSG91 server-to-server and
+      // then mints the actual Supabase session for this phone.
+      let token: string;
+      try {
+        const r = await widgetVerifyOtp(otp);
+        token = r.accessToken;
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : "Wrong code. Try again." };
+      }
+
       const resp = await fetch(VERIFY_MSG91_OTP_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           phone,
-          otp,
+          accessToken: token,
           email,
           full_name: fullName.trim(),
         }),
@@ -132,8 +147,7 @@ const Signup = () => {
       const data = await resp.json();
       if (!resp.ok) {
         if (data?.error === "invalid_otp") return { ok: false, error: "Wrong code. Try again." };
-        if (data?.error === "otp_expired_or_not_found") return { ok: false, error: "Code expired. Tap resend." };
-        if (data?.error === "too_many_attempts") return { ok: false, error: "Too many tries. Tap resend for a new code." };
+        if (data?.error === "create_user_failed") return { ok: false, error: data?.detail || "Couldn't create account" };
         return { ok: false, error: data?.detail || data?.error || "Couldn't verify OTP" };
       }
       const { error: setErr } = await supabase.auth.setSession({

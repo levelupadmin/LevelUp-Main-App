@@ -10,9 +10,7 @@ import LevelUpWordmark from "@/components/LevelUpWordmark";
 import usePageTitle from "@/hooks/usePageTitle";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
-// msg91-widget kept on disk but no longer imported here — we use our
-// own backend edge functions for SMS OTP now (server-side OTP generation
-// + MSG91 Flow API dispatch).
+import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
 import slideBfp from "@/assets/carousel/slide-bfp.jpg";
 import slideVea from "@/assets/carousel/slide-vea.jpg";
 import slideUiux from "@/assets/carousel/slide-uiux.jpg";
@@ -38,23 +36,18 @@ interface SlideData {
 type Step = "phone" | "otp" | "email_input" | "email_sent";
 
 // While true, every user (Indian or not) auths via email magic link.
-// While false, +91 phones get SMS OTP via our backend (send-sms-otp
-// edge function -> MSG91 Flow API -> SMS via LVLUP sender) and non-+91
-// phones still fall through to email magic link.
+// While false, +91 phones go through the MSG91 OTP widget (browser-side
+// send via window.sendOtp, then a verify-msg91-otp edge function call
+// that mints a Supabase session). Non-+91 phones still fall through to
+// email magic link.
 //
-// CURRENTLY TRUE (2026-05-22 night): the full backend SMS plumbing is
-// wired and proven. Direct curl tests delivered OTPs (9999, 7777, 4329
-// all arrived visible). But after ~15 sends to the same test number in
-// one evening, MSG91 started returning SMSes with the ##number##
-// variable substituted to empty string. Suspect account-side rate
-// limit or template flag. Need MSG91 support to confirm; for now,
-// email-only is the safe production default. Flip back to false once
-// MSG91 confirms the issue is resolved.
-const EMAIL_ONLY_AUTH = true;
+// 2026-05-23: flipped back to false after switching from MSG91 Flow API
+// (which silently dropped the ##number## substitution for our account)
+// to the MSG91 widget pattern the Forge app uses. The widget renders
+// the template inside MSG91's pipeline, so the blank-OTP failure mode
+// no longer applies.
+const EMAIL_ONLY_AUTH = false;
 
-// Backend edge functions that drive the phone-OTP flow.
-const SEND_SMS_OTP_URL =
-  "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/send-sms-otp";
 const VERIFY_MSG91_OTP_URL =
   "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
 
@@ -78,6 +71,14 @@ const Login = () => {
   useEffect(() => {
     if (!authLoading && user) navigate("/home", { replace: true });
   }, [user, authLoading, navigate]);
+
+  // Best-effort widget init on mount. If it fails (script blocked, env
+  // vars missing) we'll retry inside handleSendOtp - the UI doesn't
+  // surface this until the user actually clicks "Send OTP".
+  useEffect(() => {
+    if (EMAIL_ONLY_AUTH) return;
+    initMsg91().catch(() => {});
+  }, []);
 
   useEffect(() => {
     supabase
@@ -125,19 +126,19 @@ const Login = () => {
   const redirectTarget = rawFrom.startsWith("/") && !rawFrom.includes("//") ? rawFrom : "/home";
   const isIndianPhone = phone.startsWith("+91");
 
-  const sendSmsOtp = async (_waMode = false): Promise<{ ok: boolean; error?: string }> => {
-    // POST to our backend, which generates the OTP server-side, stores
-    // its hash, and dispatches via MSG91 Flow API. WhatsApp fallback
-    // isn't wired through this path yet — same SMS resend if waMode set.
+  const sendSmsOtp = async (waMode = false): Promise<{ ok: boolean; error?: string }> => {
+    // MSG91 widget path: window.sendOtp dispatches the SMS via MSG91's
+    // own pipeline (the template gets rendered inside MSG91, so the
+    // ##number## substitution that broke our Flow API path can't fail
+    // here). waMode triggers the WhatsApp channel via retryOtp, but
+    // only after an initial send - MSG91 doesn't allow channel choice
+    // on the first dispatch.
     try {
-      const resp = await fetch(SEND_SMS_OTP_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        return { ok: false, error: data?.detail?.message || data?.error || "Couldn't send OTP" };
+      await initMsg91();
+      if (waMode) {
+        await widgetRetryOtp("whatsapp");
+      } else {
+        await widgetSendOtp(phone);
       }
       return { ok: true };
     } catch (e) {
@@ -176,11 +177,23 @@ const Login = () => {
 
   const handleVerify = async (otp: string): Promise<{ ok: boolean; error?: string }> => {
     try {
-      // Verify hash + mint session in one backend round-trip.
+      // Step 1: verify the digits with MSG91 widget. Success returns a
+      // short-lived JWT access token we forward to our backend.
+      let token: string;
+      try {
+        const r = await widgetVerifyOtp(otp);
+        token = r.accessToken;
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : "Wrong code. Try again." };
+      }
+
+      // Step 2: backend re-verifies the token with MSG91 server-to-server
+      // (defence in depth - the client could lie), then mints a Supabase
+      // session for the phone-matched auth.users row.
       const resp = await fetch(VERIFY_MSG91_OTP_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, otp }),
+        body: JSON.stringify({ phone, accessToken: token }),
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -188,8 +201,7 @@ const Login = () => {
           return { ok: false, error: "No account with this number. Sign up first." };
         }
         if (data?.error === "invalid_otp") return { ok: false, error: "Wrong code. Try again." };
-        if (data?.error === "otp_expired_or_not_found") return { ok: false, error: "Code expired. Tap resend." };
-        if (data?.error === "too_many_attempts") return { ok: false, error: "Too many tries. Tap resend for a new code." };
+        if (data?.error === "user_missing_email") return { ok: false, error: "Account is missing an email - contact support." };
         return { ok: false, error: data?.detail || data?.error || "Verification failed" };
       }
       const { error: setErr } = await supabase.auth.setSession({

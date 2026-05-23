@@ -50,19 +50,49 @@
   <body>
     <div id="root"></div>
 
-    <!--
-      The MSG91 OTP browser widget was loaded here in an earlier iteration
-      to drive phone-OTP via the widget's window.sendOtp / verifyOtp.
-      We have since moved SMS to a Supabase Edge Function that talks to
-      MSG91's Flow API directly (server-side OTP generation, no browser
-      widget required). The dead loader was downloading ~800 KB of
-      otp-provider.js on every page and logging "Cannot read properties
-      of undefined (reading 'exposeMethods')" four times to the console.
-
-      If we ever bring the widget back (paid invisible-captcha tier or
-      a different UX), the integration lives in src/lib/msg91-widget.ts
-      and is one script tag away.
-    -->
     <script type="module" src="/src/main.tsx"></script>
+
+    <!--
+      MSG91 OTP widget loader.
+
+      Why we use the browser widget and NOT the MSG91 Flow API:
+      We initially shipped server-side OTP generation + MSG91 Flow API
+      dispatch (a /send-sms-otp Edge Function passed `number: <otp>`
+      to MSG91 for ##number## substitution). The substitution silently
+      failed for our account/template combo - SMSes arrived with the
+      template body but a blank OTP slot. The Forge app's team built
+      against the widget instead and ship working OTPs every time. The
+      widget delegates rendering + sending to MSG91's own pipeline so
+      the ##number## failure mode doesn't exist.
+
+      Two URLs - verify.phone91.com is a documented MSG91 mirror.
+      If the primary CDN is blocked (ISP, ad-blocker, corporate
+      proxy) the loader walks to the secondary.
+
+      Initialised lazily by src/lib/msg91.ts - this script just
+      attaches window.initSendOTP / sendOtp / verifyOtp / retryOtp.
+      It only loads on the auth-bearing pages where lib/msg91.ts
+      calls initMsg91() in a useEffect; the script tag is async so
+      it never blocks first paint on other pages.
+    -->
+    <script type="text/javascript">
+      (function loadOtpScript(urls) {
+        var i = 0;
+        function attempt() {
+          var s = document.createElement('script');
+          s.src = urls[i];
+          s.async = true;
+          s.onerror = function () {
+            i++;
+            if (i < urls.length) attempt();
+          };
+          document.head.appendChild(s);
+        }
+        attempt();
+      })([
+        'https://verify.msg91.com/otp-provider.js',
+        'https://verify.phone91.com/otp-provider.js'
+      ]);
+    </script>
   </body>
 </html>
