@@ -118,7 +118,7 @@ function HeroBanner({ offering }: { offering: Offering }) {
           alt={offering.title}
           className="absolute inset-0 w-full h-full object-cover"
           loading="eager"
-          fetchPriority="high"
+          fetchpriority="high"
           decoding="async"
         />
       ) : (
