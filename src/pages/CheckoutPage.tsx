@@ -610,38 +610,36 @@ export default function CheckoutPage() {
           {!isStaged && (
           <div className="space-y-2">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Coupon code
+              Promo code
             </p>
             {appliedCoupon ? (
-              <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="secondary" className="gap-1">
-                  <Tag className="h-3 w-3" />
-                  {appliedCoupon.code}
-                </Badge>
-                {discount > 0 && (
-                  <span className="text-sm font-semibold text-emerald-500">
-                    You save ₹{discount.toLocaleString("en-IN")}
+              <div className="space-y-2">
+                {/* Applied-coupon chip with one-click remove. The
+                    chip is the visible affordance; the savings line
+                    below reinforces the win emotionally. */}
+                <div className="inline-flex items-center gap-2 pl-3 pr-1 py-1 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] border border-[hsl(var(--accent-emerald)/0.4)]">
+                  <Tag className="h-3.5 w-3.5 text-[hsl(var(--accent-emerald))]" />
+                  <span className="font-mono text-sm font-bold text-[hsl(var(--accent-emerald))]">
+                    {appliedCoupon.code}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAppliedCoupon(null);
+                      setCouponCode("");
+                      toast.success("Promo code removed");
+                    }}
+                    aria-label="Remove promo code"
+                    className="h-6 w-6 rounded-full bg-[hsl(var(--accent-emerald)/0.2)] hover:bg-[hsl(var(--accent-emerald)/0.4)] flex items-center justify-center transition-colors"
+                  >
+                    <span aria-hidden className="text-[hsl(var(--accent-emerald))] text-sm leading-none">×</span>
+                  </button>
+                </div>
+                {discount > 0 && (
+                  <p className="text-sm font-semibold text-[hsl(var(--accent-emerald))]">
+                    Saved ₹{discount.toLocaleString("en-IN")} on this order
+                  </p>
                 )}
-                <button
-                  onClick={() => {
-                    const extra = discount;
-                    if (
-                      !window.confirm(
-                        `Remove coupon? You'll pay ₹${extra.toLocaleString("en-IN")} more.`
-                      )
-                    )
-                      return;
-                    setAppliedCoupon(null);
-                    setCouponCode("");
-                  }}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Remove
-                </button>
-                <span className="ml-auto text-sm text-accent-emerald font-medium">
-                  −₹{discount.toLocaleString("en-IN")}
-                </span>
               </div>
             ) : (
               <div className="flex gap-2">
@@ -650,7 +648,7 @@ export default function CheckoutPage() {
                     value={couponCode}
                     onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
                     placeholder="Have a promo code?"
-                    className="bg-surface-2 border-border w-full"
+                    className="bg-surface-2 border-border w-full font-mono uppercase"
                     onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
                   />
                   {couponLoading && (
@@ -662,7 +660,7 @@ export default function CheckoutPage() {
                   size="sm"
                   onClick={applyCoupon}
                   disabled={couponLoading || !couponCode.trim()}
-                  className="shrink-0"
+                  className="shrink-0 h-10"
                 >
                   {couponLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -716,6 +714,25 @@ export default function CheckoutPage() {
                 ₹{total.toLocaleString("en-IN")}
               </span>
             </div>
+            {/* Celebrate the savings - MRP markdown + coupon discount
+                combined. Shopify-style; the emotional reinforcement
+                lifts conversion at the exact decision moment. */}
+            {(() => {
+              const mrpInr = Number((offering as any).mrp_inr || 0);
+              const mrpSavings = hasMrp && mrpInr > subtotal ? mrpInr - subtotal : 0;
+              const totalSavings = mrpSavings + discount;
+              if (totalSavings <= 0) return null;
+              return (
+                <div className="flex justify-between items-center px-3 py-2 rounded-lg bg-[hsl(var(--accent-emerald)/0.10)] border border-[hsl(var(--accent-emerald)/0.25)]">
+                  <span className="text-xs font-mono uppercase tracking-wider text-[hsl(var(--accent-emerald))]">
+                    Total savings
+                  </span>
+                  <span className="text-sm font-bold text-[hsl(var(--accent-emerald))]">
+                    ₹{totalSavings.toLocaleString("en-IN")}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* ── Trust signals ── */}

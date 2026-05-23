@@ -713,9 +713,96 @@ export default function ThankYou() {
             )}
           </div>
 
+          {/* Journey timeline - reinforces that this is the start of
+              something, not just a transaction. Each step is grounded
+              in real platform behaviour (payment landed, account/access
+              ready, lesson 1 waiting, certificate at the end). */}
+          <div className="max-w-lg mx-auto pt-2">
+            <ol className="grid grid-cols-4 gap-1 sm:gap-2">
+              {[
+                { label: "Payment", done: true },
+                { label: "Account ready", done: true },
+                { label: "Start watching", done: false },
+                { label: "Get certificate", done: false },
+              ].map((step, i, arr) => (
+                <li key={step.label} className="flex flex-col items-center text-center">
+                  <div className="flex items-center w-full">
+                    {i > 0 && (
+                      <div className={`flex-1 h-px ${arr[i - 1].done ? "bg-[hsl(var(--accent-emerald))]" : "bg-border"}`} />
+                    )}
+                    <span
+                      className={`h-6 w-6 sm:h-7 sm:w-7 rounded-full flex items-center justify-center text-[10px] font-mono shrink-0 ${
+                        step.done
+                          ? "bg-[hsl(var(--accent-emerald))] text-white"
+                          : "bg-surface-2 text-muted-foreground border border-border"
+                      }`}
+                      aria-current={!step.done && (i === 0 || arr[i - 1].done) ? "step" : undefined}
+                    >
+                      {step.done ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
+                    </span>
+                    {i < arr.length - 1 && (
+                      <div className={`flex-1 h-px ${step.done ? "bg-[hsl(var(--accent-emerald))]" : "bg-border"}`} />
+                    )}
+                  </div>
+                  <span className={`mt-1.5 text-[10px] sm:text-[11px] font-mono uppercase tracking-wider ${step.done ? "text-foreground" : "text-muted-foreground/70"}`}>
+                    {step.label}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          {/* Share + Receipt + meta - secondary actions that didn't fit
+              into the primary celebration block above. */}
+          <div className="pt-4 max-w-md mx-auto space-y-4">
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const shareUrl = order.offerings?.title
+                    ? `${window.location.origin}/p/${(order.offerings as any).slug || ""}`
+                    : window.location.origin;
+                  const text = `Just enrolled in ${order.offerings?.title || "a LevelUp masterclass"}! ${shareUrl}`;
+                  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+                }}
+                className="h-9"
+              >
+                <span aria-hidden className="mr-2 text-[hsl(var(--accent-emerald))]">●</span>
+                Share on WhatsApp
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const text = `LevelUp masterclass: ${order.offerings?.title || ""}`;
+                  if ((navigator as any).share) {
+                    (navigator as any).share({ title: text, url: window.location.origin }).catch(() => {});
+                  } else {
+                    navigator.clipboard.writeText(window.location.origin);
+                    /* no toast - silent copy */
+                  }
+                }}
+                className="h-9"
+              >
+                Share elsewhere
+              </Button>
+            </div>
+            {/* Receipt confirmation - the email used (guest or logged-in).
+                Reduces the "did my receipt get sent?" anxiety that
+                otherwise drives support tickets. */}
+            {(order.guest_email || session?.user?.email) && (
+              <p className="text-center text-xs text-muted-foreground">
+                <Mail className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
+                A receipt has been emailed to{" "}
+                <span className="text-foreground font-medium">{order.guest_email || session?.user?.email}</span>
+              </p>
+            )}
+          </div>
+
           {/* Discreet receipt strip - the meta you want one tap away but
               never crowding the celebration moment. */}
-          <div className="pt-6 border-t border-border/50 max-w-md mx-auto text-xs text-muted-foreground/80 font-mono space-y-1">
+          <div className="pt-4 border-t border-border/50 max-w-md mx-auto text-xs text-muted-foreground/80 font-mono space-y-1">
             <p>Order {order.id.slice(0, 8).toUpperCase()} &middot; {confirmedAt}</p>
             {order.razorpay_payment_id && (
               <p className="text-muted-foreground/60">Payment {order.razorpay_payment_id}</p>
