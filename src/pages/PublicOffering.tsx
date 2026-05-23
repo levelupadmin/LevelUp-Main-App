@@ -7,6 +7,7 @@ import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import Footer from "@/components/Footer";
 import { isAndroid } from "@/lib/platform";
+import { track } from "@/lib/analytics";
 import {
   Check,
   Tag,
@@ -881,6 +882,16 @@ export default function PublicOffering() {
           setNotFound(true);
         } else {
           setOffering(data as any);
+          // Fire view_content once the offering data is in. Pixels
+          // configured via /admin/analytics-settings (Meta Pixel, GA4,
+          // X Pixel) receive the event with the product id + price.
+          track({
+            name: "view_content",
+            content_id: (data as any).id,
+            content_name: (data as any).title,
+            value: Number((data as any).price_inr || 0),
+            currency: (data as any).currency || "INR",
+          });
         }
       } catch {
         setNotFound(true);

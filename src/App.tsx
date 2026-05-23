@@ -1,5 +1,6 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { bootAnalytics } from "@/lib/analytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster as SonnerToaster } from "sonner";
 import { Toaster } from "@/components/ui/toaster";
@@ -76,6 +77,7 @@ const AdminApplications = lazy(() => import("@/pages/admin/AdminApplications"));
 const ApplicationStatus = lazy(() => import("@/pages/ApplicationStatus"));
 const AdminQuizEditor = lazy(() => import("@/pages/admin/AdminQuizEditor"));
 const AdminRoles = lazy(() => import("@/pages/admin/AdminRoles"));
+const AdminAnalyticsSettings = lazy(() => import("@/pages/admin/AdminAnalyticsSettings"));
 const AdminCommunityAnalytics = lazy(() => import("@/pages/admin/AdminCommunityAnalytics"));
 
 const LoadingFallback = () => (
@@ -103,7 +105,16 @@ const queryClient = new QueryClient({
   },
 });
 
-const App = () => (
+const App = () => {
+  // Fire-and-forget analytics boot. Reads analytics_settings from the
+  // DB and injects whichever platform scripts are enabled. Skips on
+  // localhost so dev work doesn't pollute production funnels (the
+  // bootAnalytics function gates that internally). Idempotent.
+  useEffect(() => {
+    bootAnalytics().catch(() => {/* analytics must never break the app */});
+  }, []);
+
+  return (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <ErrorBoundary>
@@ -184,6 +195,7 @@ const App = () => (
                 <Route path="/admin/applications" element={<AdminApplications />} />
                 <Route path="/admin/courses/:courseId/chapters/:chapterId/quiz" element={<AdminQuizEditor />} />
                 <Route path="/admin/roles" element={<AdminRoles />} />
+                <Route path="/admin/analytics-settings" element={<AdminAnalyticsSettings />} />
                 <Route path="/admin/community" element={<AdminCommunityAnalytics />} />
               </Route>
 
@@ -205,6 +217,7 @@ const App = () => (
       <OfflineBanner />
     </AuthProvider>
   </QueryClientProvider>
-);
+  );
+};
 
 export default App;

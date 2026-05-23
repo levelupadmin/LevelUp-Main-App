@@ -6,6 +6,7 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { track } from "@/lib/analytics";
 import {
   CheckCircle2,
   Loader2,
@@ -334,7 +335,20 @@ export default function ThankYou() {
   useEffect(() => {
     if (!order || pixelsFired.current) return;
     pixelsFired.current = true;
+    // Per-offering pixel/tracking-script firing (the existing path).
     firePixels(order);
+    // Global analytics fan-out for the platforms configured under
+    // /admin/analytics-settings (Meta, GA4, Twitter, Clarity).
+    // Idempotent at the platform level — Meta Pixel + GA4 dedupe
+    // identical transaction_ids server-side.
+    track({
+      name: "purchase",
+      transaction_id: order.razorpay_payment_id || order.id,
+      content_id: order.offering_id,
+      content_name: order.offerings?.title || "LevelUp masterclass",
+      value: Number(order.total_inr),
+      currency: "INR",
+    });
   }, [order]);
 
   /* ── Countdown — respects custom thank you page settings ──

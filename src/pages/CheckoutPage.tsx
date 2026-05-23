@@ -15,6 +15,7 @@ import type { Tables } from "@/integrations/supabase/types";
 import TrustPanel from "@/components/checkout/TrustPanel";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import { isAndroid } from "@/lib/platform";
+import { track } from "@/lib/analytics";
 
 /* ── Razorpay global type ── */
 declare global {
@@ -110,6 +111,17 @@ export default function CheckoutPage() {
       setOffering(offRes.data as Offering);
       setLinkedCourses(coursesRes.data ?? []);
       setCustomFields(fieldsRes.data ?? []);
+
+      // Fire initiate_checkout once the checkout surface has data
+      // to display. Subsequent re-renders don't re-fire because this
+      // sits inside the offering-load flow.
+      track({
+        name: "initiate_checkout",
+        content_id: (offRes.data as any).id,
+        content_name: (offRes.data as any).title,
+        value: Number((offRes.data as any).price_inr || 0),
+        currency: (offRes.data as any).currency || "INR",
+      });
 
       // Load application data for staged payments.
       // Defence-in-depth: the server blocks cross-user staged payments, but
