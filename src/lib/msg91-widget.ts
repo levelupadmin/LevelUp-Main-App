@@ -62,8 +62,14 @@ declare global {
  * the same widget is fine - MSG91 keys OTP state on (phone, widget),
  * not on origin.
  */
-const WIDGET_ID = import.meta.env.VITE_MSG91_WIDGET_ID;
-const TOKEN_AUTH = import.meta.env.VITE_MSG91_TOKEN_AUTH;
+// .trim() is defence-in-depth - `echo "$VAL" | vercel env add` is a
+// common foot-gun that stores values with a trailing \n. MSG91's auth
+// check rejects "...P1\n" as AuthenticationFailure even though the
+// network call returns HTTP 200 with a JSON error body. Strip
+// whitespace on read so a future env-var fat-finger can't repeat
+// today's debug session.
+const WIDGET_ID = (import.meta.env.VITE_MSG91_WIDGET_ID ?? "").trim();
+const TOKEN_AUTH = (import.meta.env.VITE_MSG91_TOKEN_AUTH ?? "").trim();
 
 let initialised = false;
 
