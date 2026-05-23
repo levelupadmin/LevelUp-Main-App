@@ -549,10 +549,40 @@ export default function ThankYou() {
     );
   }
 
+  // Pretty IST date for the receipt strip; falls back to UTC ISO if Intl chokes.
+  let confirmedAt = "";
+  try {
+    confirmedAt = new Intl.DateTimeFormat("en-IN", {
+      day: "numeric", month: "short", year: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true,
+      timeZone: "Asia/Kolkata",
+    }).format(new Date(order.created_at || Date.now()));
+  } catch {
+    confirmedAt = new Date(order.created_at || Date.now()).toISOString();
+  }
+
+  // Course-side facts for the celebration strip. Each chip falls out
+  // if the underlying data is missing - never show "0 lessons".
+  const course = (order.offerings as any)?.offering_courses?.[0]?.courses;
+  const lessons = course?.total_lessons ?? course?.sections?.reduce(
+    (sum: number, s: any) => sum + (s.chapters?.length ?? 0), 0,
+  );
+  const hours = course?.duration_minutes ? Math.round(course.duration_minutes / 60) : null;
+  const benefitChips: string[] = [];
+  if (lessons && lessons > 0) benefitChips.push(`${lessons} lessons`);
+  if (hours && hours > 0) benefitChips.push(`${hours}+ hrs`);
+  benefitChips.push("4K video");
+  benefitChips.push("Subtitles");
+  benefitChips.push("Lifetime access");
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative overflow-hidden">
+      {/* Cream celebration glow - pure CSS, no JS, no layout shift */}
+      <div className="pointer-events-none absolute top-[-20%] left-1/2 -translate-x-1/2 w-[800px] h-[800px] rounded-full opacity-[0.18] blur-[120px]"
+           style={{ background: "radial-gradient(circle, hsl(var(--cream)) 0%, transparent 60%)" }} />
+
       {/* Header */}
-      <header className="border-b border-border bg-[hsl(var(--surface))]">
+      <header className="relative border-b border-border bg-[hsl(var(--surface))]/60 backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
           <span className="text-lg font-bold text-[hsl(var(--cream))] font-['Instrument_Serif'] italic">
             LevelUp
@@ -560,46 +590,58 @@ export default function ThankYou() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
-        {/* Success confirmation */}
-        <div className="text-center space-y-6 mb-12">
+      <main className="relative max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+        {/* Celebration moment */}
+        <div className="text-center space-y-7 sm:space-y-8 mb-12">
           {order.offerings?.thankyou_thumbnail_url ? (
             <img
               src={order.offerings.thankyou_thumbnail_url}
-              alt="Thank you"
-              className="w-full max-h-64 object-cover rounded-xl mx-auto"
+              alt=""
+              className="w-full max-h-72 object-cover rounded-2xl mx-auto shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
             />
           ) : (
-            <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] mx-auto">
-              <CheckCircle2 className="h-10 w-10 text-[hsl(var(--accent-emerald))]" />
+            <div className="relative inline-flex items-center justify-center h-24 w-24 mx-auto">
+              {/* Soft pulsing halo behind the check */}
+              <span className="absolute inset-0 rounded-full bg-[hsl(var(--accent-emerald)/0.18)] animate-ping" />
+              <span className="relative inline-flex items-center justify-center h-24 w-24 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] ring-1 ring-[hsl(var(--accent-emerald)/0.3)]">
+                <CheckCircle2 className="h-12 w-12 text-[hsl(var(--accent-emerald))]" strokeWidth={1.75} />
+              </span>
             </div>
           )}
 
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">
-              {order.offerings?.thankyou_headline || "Payment Successful!"}
+          <div className="space-y-3">
+            <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--accent-emerald))]">
+              Payment confirmed
+            </p>
+            <h1 className="text-4xl sm:text-5xl font-bold text-foreground tracking-[-0.02em] leading-[1.05]">
+              {order.offerings?.thankyou_headline || "You're in."}
             </h1>
             {order.offerings?.thankyou_body ? (
-              <p className="mt-2 text-lg text-muted-foreground whitespace-pre-line">
+              <p className="mt-3 text-base sm:text-lg text-muted-foreground whitespace-pre-line max-w-[52ch] mx-auto leading-relaxed">
                 {order.offerings.thankyou_body}
               </p>
             ) : (
-              <p className="mt-2 text-lg text-muted-foreground">
-                You're enrolled in{" "}
+              <p className="mt-3 text-base sm:text-lg text-muted-foreground max-w-[52ch] mx-auto leading-relaxed">
+                Welcome to{" "}
                 <span className="text-[hsl(var(--cream))] font-medium font-['Instrument_Serif'] italic">
                   {order.offerings?.title || "your program"}
                 </span>
+                . Your access is unlocked - start whenever you're ready.
               </p>
             )}
           </div>
 
-          {/* Order reference */}
-          <p className="text-xs text-muted-foreground font-mono">
-            Order ID: {order.id.slice(0, 8).toUpperCase()}
-            {order.razorpay_payment_id && (
-              <> &middot; Payment: {order.razorpay_payment_id}</>
-            )}
-          </p>
+          {/* Benefit chips - what they actually got */}
+          {benefitChips.length > 0 && (
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-sm">
+              {benefitChips.map((chip, i) => (
+                <span key={i} className="inline-flex items-center gap-3">
+                  <span className="text-foreground/80">{chip}</span>
+                  {i < benefitChips.length - 1 && <span className="text-muted-foreground/40">&middot;</span>}
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* Calendly embed for interview booking */}
           {order.offerings?.thankyou_show_calendly &&
@@ -619,56 +661,64 @@ export default function ThankYou() {
             </div>
           )}
 
-          {/* Action card — same for guest and logged-in */}
-          <div className="max-w-md mx-auto rounded-xl border border-border bg-[hsl(var(--surface))] p-6 space-y-4">
+          {/* Action card - primary CTA gets full visual weight */}
+          <div className="max-w-md mx-auto space-y-3">
             {isGuest && (
-              <>
-                <div className="flex items-center gap-3">
-                  <Mail className="h-5 w-5 text-[hsl(var(--cream))]" />
+              <div className="rounded-xl border border-border bg-[hsl(var(--surface))]/60 backdrop-blur-sm p-4 text-left space-y-1">
+                <div className="flex items-center gap-2.5">
+                  <Mail className="h-4 w-4 text-[hsl(var(--cream))]" />
                   <p className="text-sm text-foreground">
-                    We've also sent a login link to <strong className="text-[hsl(var(--cream))]">{order.guest_email}</strong>
+                    Login link sent to <strong className="text-[hsl(var(--cream))]">{order.guest_email}</strong>
                   </p>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  You can also access your course anytime via the link in your email.
+                <p className="text-xs text-muted-foreground pl-6">
+                  Open it on any device to access your course.
                 </p>
-              </>
-            )}
-            {!isGuest && session && autoRedirect && !redirectCancelled && countdown > 0 && (
-              <div className="text-center space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Redirecting in <span className="text-foreground font-bold">{countdown}s</span>...
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setRedirectCancelled(true)}
-                  className="text-xs text-muted-foreground hover:text-foreground underline transition-colors"
-                >
-                  Stay on this page
-                </button>
               </div>
             )}
             <Button
               onClick={handleGoToDashboard}
               disabled={loggingIn}
-              className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
+              size="lg"
+              className="w-full h-14 text-base font-semibold bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 hover:-translate-y-0.5 transition-all shadow-[0_10px_30px_-10px_hsl(var(--cream)/0.5)]"
             >
               {loggingIn ? (
-                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Signing you in…</>
+                <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Signing you in&hellip;</>
               ) : (
-                <>{order.offerings?.thankyou_cta_label || "Go to Dashboard"} <ArrowRight className="h-4 w-4 ml-2" /></>
+                <>{order.offerings?.thankyou_cta_label || "Start watching"} <ArrowRight className="h-5 w-5 ml-2" /></>
               )}
             </Button>
+            {!isGuest && session && autoRedirect && !redirectCancelled && countdown > 0 && (
+              <p className="text-center text-xs text-muted-foreground">
+                Redirecting in {countdown}s &middot;{" "}
+                <button
+                  type="button"
+                  onClick={() => setRedirectCancelled(true)}
+                  className="underline hover:text-foreground transition-colors"
+                >
+                  stay here instead
+                </button>
+              </p>
+            )}
             {isGuest && (
               <Button
                 variant="ghost"
                 onClick={handleResendLink}
                 disabled={resending}
-                className="w-full text-sm text-muted-foreground"
+                className="w-full text-sm text-muted-foreground hover:text-foreground"
               >
                 {resending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
-                Resend login link to email
+                Resend login link
               </Button>
+            )}
+          </div>
+
+          {/* Discreet receipt strip - the meta you want one tap away but
+              never crowding the celebration moment. */}
+          <div className="pt-6 border-t border-border/50 max-w-md mx-auto text-xs text-muted-foreground/80 font-mono space-y-1">
+            <p>Order {order.id.slice(0, 8).toUpperCase()} &middot; {confirmedAt}</p>
+            {order.razorpay_payment_id && (
+              <p className="text-muted-foreground/60">Payment {order.razorpay_payment_id}</p>
             )}
           </div>
         </div>

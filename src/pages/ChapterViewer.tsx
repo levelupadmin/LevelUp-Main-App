@@ -849,11 +849,17 @@ const ChapterViewer = () => {
             )}
             <span className="text-foreground truncate">{chapter.title}</span>
           </div>
-          {/* Content renderer */}
+          {/* Content renderer.
+              All non-VdoCipher players get a borderless, slightly elevated
+              shell - dropping the visible border in favour of a soft shadow
+              reads as more premium and matches the offering page's
+              cinematic feel. */}
           {chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
-            <VdoCipherPlayer chapterId={chapter.id} onProgress={updateProgress} startPosition={lastPosition} />
+            <div className="rounded-[16px] overflow-hidden shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
+              <VdoCipherPlayer chapterId={chapter.id} onProgress={updateProgress} startPosition={lastPosition} />
+            </div>
           ) : chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
-            <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
+            <div className="aspect-video bg-card rounded-[16px] overflow-hidden shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
               <iframe
                 src={(() => {
                   const url = chapter.embed_url || chapter.media_url || "";
@@ -900,41 +906,78 @@ const ChapterViewer = () => {
             </div>
           )}
 
-          {/* Chapter info */}
-          <div className="space-y-4">
-            <h1 className="text-xl sm:text-2xl font-bold">{chapter.title}</h1>
+          {/* Chapter info - larger type, clear hierarchy. The eyebrow
+              tells the learner where they are in the course (4 of 15)
+              without forcing them to scan the sidebar. */}
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+                Lesson {currentIndex + 1} of {siblings.length}
+              </p>
+              <h1 className="text-2xl sm:text-4xl font-bold tracking-[-0.01em] leading-[1.1]">
+                {chapter.title}
+              </h1>
+            </div>
             {chapter.description && (
-              <p className="text-muted-foreground text-sm leading-relaxed">
+              <p className="text-muted-foreground text-base leading-relaxed max-w-[68ch]">
                 {chapter.description}
               </p>
             )}
 
             {!isCompleted && (
-              <Button onClick={handleMarkComplete} disabled={submitting} size="lg">
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Mark as Complete
+              <Button
+                onClick={handleMarkComplete}
+                disabled={submitting}
+                size="lg"
+                className="h-12 px-6 text-base font-semibold bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 hover:-translate-y-0.5 transition-all"
+              >
+                <CheckCircle2 className="h-5 w-5 mr-2" />
+                Mark as complete
               </Button>
             )}
           </div>
 
           {/* Nav buttons */}
-          <div className="flex items-center justify-between pt-4 border-t border-border">
+          <div className="flex items-center justify-between pt-5 border-t border-border">
             <Button
               variant="outline"
               size="sm"
               disabled={currentIndex <= 0}
               onClick={() => navigate(`/chapters/${siblings[currentIndex - 1]?.id}`)}
+              className="h-10"
             >
               <ChevronLeft className="h-4 w-4 mr-1" /> Previous
             </Button>
-            <span className="text-xs text-muted-foreground">
-              {currentIndex + 1} / {siblings.length}
-            </span>
+            {/* Compact progress dots - shows location at a glance without
+                taking the cognitive load of "12 / 15". Caps at 30 dots so
+                very long courses don't blow out the row; falls back to
+                a numeric counter past that. */}
+            {siblings.length <= 30 ? (
+              <div className="flex items-center gap-1.5">
+                {siblings.map((_, i) => (
+                  <span
+                    key={i}
+                    className={`h-1.5 rounded-full transition-all ${
+                      i === currentIndex
+                        ? "w-6 bg-[hsl(var(--cream))]"
+                        : i < currentIndex
+                        ? "w-1.5 bg-foreground/40"
+                        : "w-1.5 bg-foreground/15"
+                    }`}
+                  />
+                ))}
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground font-mono">
+                {currentIndex + 1} / {siblings.length}
+              </span>
+            )}
             <Button
               variant="outline"
               size="sm"
               disabled={currentIndex >= siblings.length - 1}
               onClick={() => navigate(`/chapters/${siblings[currentIndex + 1]?.id}`)}
+              className="h-10"
             >
               Next <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
@@ -954,21 +997,21 @@ const ChapterViewer = () => {
         {/* Right sidebar */}
         <div className="lg:w-[380px] border-t lg:border-t-0 lg:border-l border-border p-4 lg:p-6">
           <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="w-full grid grid-cols-4">
-              <TabsTrigger value="overview" className="text-xs gap-1">
-                <Info className="h-3 w-3" /> Overview
+            <TabsList className="w-full grid grid-cols-4 h-11">
+              <TabsTrigger value="overview" className="text-sm gap-1.5">
+                <Info className="h-3.5 w-3.5" /> Overview
               </TabsTrigger>
-              <TabsTrigger value="resources" className="text-xs gap-1">
-                <FileText className="h-3 w-3" /> Files
+              <TabsTrigger value="resources" className="text-sm gap-1.5">
+                <FileText className="h-3.5 w-3.5" /> Files
               </TabsTrigger>
-              <TabsTrigger value="qna" className="text-xs gap-1">
-                <HelpCircle className="h-3 w-3" /> Q&A
+              <TabsTrigger value="qna" className="text-sm gap-1.5">
+                <HelpCircle className="h-3.5 w-3.5" /> Q&A
                 {qna.some((q) => q.replies.some((r) => r.is_instructor_reply) && q.user_id === user?.id && !q.is_resolved) && (
                   <span className="ml-0.5 h-2 w-2 rounded-full bg-[hsl(var(--accent-emerald))] animate-pulse" />
                 )}
               </TabsTrigger>
-              <TabsTrigger value="comments" className="text-xs gap-1">
-                <MessageSquare className="h-3 w-3" /> Chat
+              <TabsTrigger value="comments" className="text-sm gap-1.5">
+                <MessageSquare className="h-3.5 w-3.5" /> Chat
               </TabsTrigger>
             </TabsList>
 

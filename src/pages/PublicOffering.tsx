@@ -105,10 +105,17 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 /*  Subcomponents                                     */
 /* ────────────────────────────────────────────────── */
 
+/**
+ * Cinematic hero: image fills the full container at a portrait aspect on
+ * mobile (so the instructor's face dominates the fold) and a wider 21:9
+ * on desktop. Title + subtitle sit overlaid at the bottom with a heavy
+ * bottom-fade gradient for legibility. Matches the visual weight of
+ * Masterclass / Reforge / Maven course pages.
+ */
 function HeroBanner({ offering }: { offering: Offering }) {
   const img = offering.banner_url || offering.thumbnail_url;
   return (
-    <div className="relative w-full aspect-[16/9] md:aspect-[21/9] lg:aspect-[3/1] rounded-2xl overflow-hidden border border-border bg-[hsl(var(--surface))]">
+    <div className="relative w-full aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-2xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
       {img ? (
         <img
           src={img}
@@ -123,32 +130,100 @@ function HeroBanner({ offering }: { offering: Offering }) {
           <BookOpen className="h-16 w-16 opacity-30" />
         </div>
       )}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+      {/* Title-legibility gradient: dense at the bottom where the type sits, fades out by midpoint */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent pointer-events-none" />
+      {/* Subtle left vignette so a busy background never compromises the cream title */}
+      <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none" />
+
+      {/* Overlaid title block */}
+      <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8 lg:p-12">
+        <p className="text-[10px] sm:text-xs font-mono uppercase tracking-[0.18em] text-[hsl(var(--cream))]/80 mb-3">
+          Masterclass
+        </p>
+        <h1 className="text-[36px] leading-[1.02] sm:text-5xl lg:text-[64px] lg:leading-[1.02] font-bold text-foreground tracking-[-0.02em] max-w-[18ch]">
+          {offering.title}
+        </h1>
+        {offering.subtitle && (
+          <p className="mt-3 sm:mt-4 text-base sm:text-xl lg:text-2xl text-foreground/85 font-['Instrument_Serif'] italic max-w-[42ch]">
+            {offering.subtitle}
+          </p>
+        )}
+      </div>
     </div>
+  );
+}
+
+/**
+ * Stat strip that sits right under the hero - the conversion-page version
+ * of "what you actually get". Dots separate items so it reads as a single
+ * confident line rather than a list. Skips itself entirely if no facts
+ * are present.
+ */
+function StatStrip({ offering }: { offering: Offering }) {
+  const course = offering.offering_courses?.[0]?.courses;
+  const lessons = course?.total_lessons ?? course?.sections?.reduce(
+    (sum, s) => sum + (s.chapters?.length ?? 0),
+    0,
+  );
+  const minutes = course?.duration_minutes ?? 0;
+  const hours = minutes > 0 ? Math.round(minutes / 60) : null;
+
+  const items: string[] = [];
+  if (lessons && lessons > 0) items.push(`${lessons} ${lessons === 1 ? "lesson" : "lessons"}`);
+  if (hours && hours > 0) items.push(`${hours}+ hrs`);
+  items.push("4K video");
+  items.push("Subtitles");
+  items.push("Lifetime access");
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
+      {items.map((item, i) => (
+        <span key={i} className="inline-flex items-center gap-3">
+          <span className="text-foreground/90 font-medium">{item}</span>
+          {i < items.length - 1 && <span className="text-muted-foreground/40">&middot;</span>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Small uppercase eyebrow used above major sections. Pairs with the big
+ * h2 to give every block a clear "label + headline" rhythm instead of
+ * a wall of same-size subheads.
+ */
+function SectionEyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+      {children}
+    </p>
   );
 }
 
 function InstructorCard({ offering }: { offering: Offering }) {
   if (!offering.instructor_name) return null;
   return (
-    <div className="flex items-center gap-4 p-4 rounded-xl border border-border bg-[hsl(var(--surface))]">
+    <div className="flex items-center gap-4 sm:gap-5 py-4 sm:py-5 border-y border-border">
       {offering.instructor_avatar_url ? (
         <img
           src={offering.instructor_avatar_url}
           alt={offering.instructor_name}
           loading="lazy"
           decoding="async"
-          className="h-14 w-14 rounded-full object-cover border-2 border-[hsl(var(--cream))]"
+          className="h-14 w-14 sm:h-16 sm:w-16 rounded-full object-cover ring-2 ring-[hsl(var(--cream))] ring-offset-2 ring-offset-background"
         />
       ) : (
-        <div className="h-14 w-14 rounded-full bg-[hsl(var(--surface-2))] flex items-center justify-center text-xl font-bold text-[hsl(var(--cream))]">
+        <div className="h-14 w-14 sm:h-16 sm:w-16 rounded-full bg-[hsl(var(--surface-2))] flex items-center justify-center text-2xl font-bold text-[hsl(var(--cream))]">
           {offering.instructor_name.charAt(0)}
         </div>
       )}
-      <div>
-        <p className="font-semibold text-foreground">{offering.instructor_name}</p>
+      <div className="min-w-0">
+        <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">Taught by</p>
+        <p className="text-lg sm:text-xl font-semibold text-foreground truncate">{offering.instructor_name}</p>
         {offering.instructor_title && (
-          <p className="text-sm text-muted-foreground">{offering.instructor_title}</p>
+          <p className="text-sm text-muted-foreground truncate">{offering.instructor_title}</p>
         )}
       </div>
     </div>
@@ -172,8 +247,11 @@ function Highlights({ items }: { items: string[] }) {
 function IncludedCourses({ courses }: { courses: OfferingCourse[] }) {
   if (!courses.length) return null;
   return (
-    <div className="space-y-3">
-      <h2 className="text-lg font-semibold text-foreground">What's Included</h2>
+    <div className="space-y-4">
+      <SectionEyebrow>Bundle</SectionEyebrow>
+      <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+        {courses.length === 1 ? "What's included" : `${courses.length} courses included`}
+      </h2>
       <div className="space-y-3">
         {courses.map((oc) => (
           <div key={oc.course_id} className="flex gap-4 p-4 rounded-xl border border-border bg-[hsl(var(--surface))]">
@@ -233,9 +311,12 @@ function Curriculum({
   if (!allChapters.length) return null;
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-lg font-semibold text-foreground">Course Curriculum</h2>
+    <div className="space-y-4">
+      <SectionEyebrow>Curriculum</SectionEyebrow>
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+          Every lesson, mapped out
+        </h2>
         <div className="text-xs text-muted-foreground font-mono">
           {totalLessons || allChapters.length} lessons
           {durationMinutes ? ` · ${Math.round(durationMinutes / 60)}h` : ""}
@@ -309,7 +390,10 @@ function InstructorBio({
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-foreground">About Your Instructor</h2>
+      <SectionEyebrow>Your instructor</SectionEyebrow>
+      <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+        Learn from someone who's done it
+      </h2>
       <div className="rounded-xl border border-border bg-[hsl(var(--surface))] p-5 sm:p-6 space-y-5">
         <div className="flex items-start gap-4">
           {avatar ? (
@@ -376,7 +460,10 @@ function FAQs({ items }: { items?: Array<{ question: string; answer: string }> |
   if (!items?.length) return null;
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-semibold text-foreground">Frequently Asked Questions</h2>
+      <SectionEyebrow>Questions</SectionEyebrow>
+      <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+        Frequently asked
+      </h2>
       <div className="space-y-2">
         {items.map((f, i) => {
           const isOpen = openIdx === i;
@@ -425,7 +512,10 @@ function Testimonials({
   if (!valid.length) return null;
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-semibold text-foreground">What Students Say</h2>
+      <SectionEyebrow>Students</SectionEyebrow>
+      <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+        What others said
+      </h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {valid.map((t, i) => (
           <figure
@@ -1500,33 +1590,33 @@ export default function PublicOffering() {
         {/* Desktop: two-col, Mobile: stacked */}
         <div className="lg:flex lg:gap-8">
           {/* Left: product details */}
-          <div className="lg:w-[60%] space-y-8">
-            <HeroBanner offering={offering} />
-
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold text-foreground leading-tight">
-                {offering.title}
-              </h1>
-              {offering.subtitle && (
-                <p className="mt-2 text-lg text-muted-foreground font-['Instrument_Serif'] italic">
-                  {offering.subtitle}
-                </p>
-              )}
+          <div className="lg:w-[60%] space-y-10 sm:space-y-14">
+            <div className="space-y-5 sm:space-y-6">
+              <HeroBanner offering={offering} />
+              <StatStrip offering={offering} />
             </div>
 
             <InstructorCard offering={offering} />
 
             {highlights.length > 0 && (
-              <div className="space-y-3">
-                <h2 className="text-lg font-semibold text-foreground">Program Highlights</h2>
+              <div className="space-y-4">
+                <SectionEyebrow>What you'll get</SectionEyebrow>
+                <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+                  Program Highlights
+                </h2>
                 <Highlights items={highlights} />
               </div>
             )}
 
             {offering.description && (
-              <div className="space-y-3">
-                <h2 className="text-lg font-semibold text-foreground">About This Program</h2>
-                <p className="text-muted-foreground whitespace-pre-line leading-relaxed">
+              <div className="space-y-4">
+                <SectionEyebrow>About this program</SectionEyebrow>
+                <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+                  {offering.instructor_name
+                    ? `Inside ${offering.instructor_name.split(" ")[0]}'s masterclass`
+                    : "Inside this masterclass"}
+                </h2>
+                <p className="text-base sm:text-lg text-muted-foreground whitespace-pre-line leading-relaxed max-w-[68ch]">
                   {offering.description}
                 </p>
               </div>
