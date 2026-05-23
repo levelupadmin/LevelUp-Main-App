@@ -159,6 +159,13 @@ function HeroBanner({ offering }: { offering: Offering }) {
  * confident line rather than a list. Skips itself entirely if no facts
  * are present.
  */
+/**
+ * Outcome tile grid — replaces the older dot-separated StatStrip with
+ * the Masterclass "Length / Outcome / Feedback / Structure / Difficulty"
+ * tile pattern. Each tile is label + value so the eye can scan five
+ * brag-points instead of one line. Renders 2 cols on mobile, 3 on
+ * tablet, 5 on desktop.
+ */
 function StatStrip({ offering }: { offering: Offering }) {
   const course = offering.offering_courses?.[0]?.courses;
   const lessons = course?.total_lessons ?? course?.sections?.reduce(
@@ -168,23 +175,39 @@ function StatStrip({ offering }: { offering: Offering }) {
   const minutes = course?.duration_minutes ?? 0;
   const hours = minutes > 0 ? Math.round(minutes / 60) : null;
 
-  const items: string[] = [];
-  if (lessons && lessons > 0) items.push(`${lessons} ${lessons === 1 ? "lesson" : "lessons"}`);
-  if (hours && hours > 0) items.push(`${hours}+ hrs`);
-  items.push("4K video");
-  items.push("Subtitles");
-  items.push("Lifetime access");
+  const tiles: { label: string; value: string }[] = [];
+  if (lessons && lessons > 0) {
+    tiles.push({ label: "Lessons", value: String(lessons) });
+  }
+  if (hours && hours > 0) {
+    tiles.push({ label: "Runtime", value: `${hours}+ hrs` });
+  }
+  tiles.push({ label: "Format", value: "4K video" });
+  tiles.push({ label: "Captions", value: "Subtitles" });
+  tiles.push({ label: "Access", value: "Lifetime" });
 
-  if (items.length === 0) return null;
+  if (tiles.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
-      {items.map((item, i) => (
-        <span key={i} className="inline-flex items-center gap-3">
-          <span className="text-foreground/90 font-medium">{item}</span>
-          {i < items.length - 1 && <span className="text-muted-foreground/40">&middot;</span>}
-        </span>
-      ))}
+    <div className="space-y-3">
+      <div className={`grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3 ${tiles.length >= 5 ? "lg:grid-cols-5" : tiles.length === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
+        {tiles.map((t, i) => (
+          <div
+            key={i}
+            className="rounded-xl border border-border bg-[hsl(var(--surface))] px-3 sm:px-4 py-3 sm:py-4 flex flex-col gap-1"
+          >
+            <p className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+              {t.label}
+            </p>
+            <p className="text-sm sm:text-base font-semibold text-foreground tracking-[-0.01em]">
+              {t.value}
+            </p>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground/70">
+        Available on the web today &middot; Android coming soon
+      </p>
     </div>
   );
 }
@@ -1586,7 +1609,7 @@ export default function PublicOffering() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
+      <main className="max-w-7xl xl:max-w-[1440px] 2xl:max-w-[1680px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 py-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
         {/* Desktop: two-col, Mobile: stacked */}
         <div className="lg:flex lg:gap-8">
           {/* Left: product details */}

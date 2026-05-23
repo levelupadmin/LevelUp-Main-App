@@ -13,11 +13,14 @@ import {
   ChevronRight,
   Download,
   FileText,
-  MessageSquare,
   HelpCircle,
   Info,
   ArrowLeft,
   RotateCcw,
+  Play,
+  PenLine,
+  Share2,
+  ListVideo,
 } from "lucide-react";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 import Confetti from "@/components/Confetti";
@@ -62,14 +65,6 @@ interface QnaReply {
   reply_text: string;
   user_id: string;
   is_instructor_reply: boolean;
-  created_at: string;
-  user_name?: string;
-}
-
-interface Comment {
-  id: string;
-  comment_text: string;
-  user_id: string;
   created_at: string;
   user_name?: string;
 }
@@ -271,19 +266,25 @@ const ChapterViewer = () => {
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseTitle, setCourseTitle] = useState<string | null>(null);
-  const [siblings, setSiblings] = useState<{ id: string; title: string }[]>([]);
+  const [siblings, setSiblings] = useState<{
+    id: string;
+    title: string;
+    duration_seconds: number | null;
+    content_type: string;
+    thumbnail_url: string | null;
+    description: string | null;
+  }[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isCompleted, setIsCompleted] = useState(false);
   const [resources, setResources] = useState<Resource[]>([]);
   const [qna, setQna] = useState<QnaItem[]>([]);
-  const [comments, setComments] = useState<Comment[]>([]);
   const [questionText, setQuestionText] = useState("");
-  const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
   const [qnaLimit, setQnaLimit] = useState(20);
-  const [commentLimit, setCommentLimit] = useState(20);
+  const [notes, setNotes] = useState("");
+  const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
   const [milestone, setMilestone] = useState<{ pct: number; title: string; subtitle: string } | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [showCompletionBanner, setShowCompletionBanner] = useState(false);
@@ -380,7 +381,7 @@ const ChapterViewer = () => {
         const sectionIds = allSections.map((s) => s.id);
         const { data: allChapters } = await supabase
           .from("chapters")
-          .select("id, title, section_id, sort_order")
+          .select("id, title, section_id, sort_order, duration_seconds, content_type, thumbnail_url, description")
           .in("section_id", sectionIds)
           .order("sort_order");
 
@@ -392,14 +393,21 @@ const ChapterViewer = () => {
             const sb = sectionOrder.get(b.section_id) ?? 0;
             return sa !== sb ? sa - sb : a.sort_order - b.sort_order;
           });
-          setSiblings(sorted.map((c) => ({ id: c.id, title: c.title })));
+          setSiblings(sorted.map((c) => ({
+            id: c.id,
+            title: c.title,
+            duration_seconds: c.duration_seconds,
+            content_type: c.content_type,
+            thumbnail_url: c.thumbnail_url,
+            description: c.description,
+          })));
           setCurrentIndex(sorted.findIndex((c) => c.id === chapterId));
         }
       }
     }
 
-    // Load progress, resources, qna, comments in parallel
-    const [progressRes, resourcesRes, qnaRes, commentsRes] = await Promise.all([
+    // Load progress, resources, qna in parallel
+    const [progressRes, resourcesRes, qnaRes] = await Promise.all([
       supabase
         .from("chapter_progress")
         .select("completed_at")
@@ -414,11 +422,6 @@ const ChapterViewer = () => {
       supabase
         .from("chapter_qna")
         .select("id, question_text, user_id, is_resolved, created_at")
-        .eq("chapter_id", chapterId)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("chapter_comments")
-        .select("id, comment_text, user_id, created_at")
         .eq("chapter_id", chapterId)
         .order("created_at", { ascending: false }),
     ]);
@@ -444,11 +447,10 @@ const ChapterViewer = () => {
       repliesByQna[r.qna_id].push(r);
     });
 
-    // Batch-fetch user names for QnA, replies, and comments
+    // Batch-fetch user names for QnA and replies
     const allUserIds = new Set<string>();
     qnaItems.forEach((q: any) => allUserIds.add(q.user_id));
     allReplies.forEach((r: any) => allUserIds.add(r.user_id));
-    ((commentsRes.data || []) as any[]).forEach((c: any) => allUserIds.add(c.user_id));
     let userNameMap: Record<string, string> = {};
     if (allUserIds.size > 0) {
       // public_user_profiles is the column-safe view introduced in
@@ -471,10 +473,6 @@ const ChapterViewer = () => {
       })),
     }));
     setQna(qnaWithReplies);
-    setComments(((commentsRes.data || []) as any[]).map((c) => ({
-      ...c,
-      user_name: userNameMap[c.user_id] || "Anonymous",
-    })));
 
     // Fetch quizzes for this chapter. Options come from `quiz_options_public`
     // — a view that never exposes `is_correct`. Scoring moved to the
@@ -519,6 +517,43 @@ const ChapterViewer = () => {
   useEffect(() => {
     loadChapter();
   }, [loadChapter]);
+
+  // Notes load + debounced autosave (localStorage v1, per-chapter per-user).
+  useEffect(() => {
+    if (!chapterId || !user) return;
+    const key = `levelup:notes:${user.id}:${chapterId}`;
+    try {
+      const stored = localStorage.getItem(key);
+      setNotes(stored ?? "");
+      setNotesSavedAt(null);
+    } catch {
+      setNotes("");
+    }
+  }, [chapterId, user]);
+
+  useEffect(() => {
+    if (!chapterId || !user) return;
+    const key = `levelup:notes:${user.id}:${chapterId}`;
+    const t = setTimeout(() => {
+      try {
+        const existed = localStorage.getItem(key) !== null;
+        if (notes) {
+          localStorage.setItem(key, notes);
+          setNotesSavedAt(Date.now());
+        } else if (existed) {
+          // Only signal "saved" when there was real content to remove —
+          // skips the initial empty-state mount so a fresh chapter
+          // doesn't show "Saved" before the user has typed anything.
+          localStorage.removeItem(key);
+          setNotesSavedAt(Date.now());
+        }
+      } catch {
+        // Storage quota or private-mode failures are non-fatal — notes
+        // simply don't persist this turn; we don't surface an error.
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [notes, chapterId, user]);
 
   // Lightweight refresh for Q&A only — used after posting a question so we don't
   // unmount the whole page (which would flash the loader and reset the Tabs back
@@ -565,25 +600,6 @@ const ChapterViewer = () => {
     })));
   }, [chapterId]);
 
-  // Lightweight refresh for comments only — same reason as refreshQna.
-  const refreshComments = useCallback(async () => {
-    if (!chapterId) return;
-    const { data: commentsData } = await supabase
-      .from("chapter_comments")
-      .select("id, comment_text, user_id, created_at")
-      .eq("chapter_id", chapterId)
-      .order("created_at", { ascending: false });
-    const items = (commentsData || []) as any[];
-    const userIds = [...new Set(items.map((c) => c.user_id))];
-    const userNameMap: Record<string, string> = {};
-    if (userIds.length > 0) {
-      const { data: users } = await supabase
-        .from("users").select("id, full_name").in("id", userIds);
-      (users || []).forEach((u) => { userNameMap[u.id] = u.full_name || "Anonymous"; });
-    }
-    setComments(items.map((c) => ({ ...c, user_name: userNameMap[c.user_id] || "Anonymous" })));
-  }, [chapterId]);
-
   // Listen for YouTube / Vimeo / generic iframe progress messages
   useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -622,6 +638,26 @@ const ChapterViewer = () => {
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, [updateProgress]);
+
+  const handleShare = async () => {
+    if (!chapter) return;
+    const url = window.location.href;
+    const title = chapter.title;
+    if (typeof navigator !== "undefined" && (navigator as any).share) {
+      try {
+        await (navigator as any).share({ url, title });
+        return;
+      } catch {
+        // User cancelled, or share unavailable — fall through to clipboard.
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied");
+    } catch {
+      toast.error("Could not copy link");
+    }
+  };
 
   const handleMarkComplete = async () => {
     if (!user || !chapterId || !courseId) return;
@@ -724,23 +760,6 @@ const ChapterViewer = () => {
     setSubmitting(false);
   };
 
-  const handlePostComment = async () => {
-    if (!commentText.trim() || !user || !chapterId) return;
-    setSubmitting(true);
-    const { error } = await supabase.from("chapter_comments").insert({
-      chapter_id: chapterId,
-      user_id: user.id,
-      comment_text: commentText.trim(),
-    });
-    if (error) toast.error("Failed to post comment");
-    else {
-      toast.success("Comment added!");
-      setCommentText("");
-      refreshComments();
-    }
-    setSubmitting(false);
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
@@ -834,9 +853,11 @@ const ChapterViewer = () => {
         )}
       </div>
 
-      <div className="flex flex-col lg:flex-row">
-        {/* Main content */}
-        <div className="flex-1 p-4 lg:p-8 space-y-6 max-w-4xl">
+      <div className="flex flex-col lg:flex-row pb-[env(safe-area-inset-bottom)]">
+        {/* Main content - no fixed max-w so the player fills wide
+            viewports (16-inch+, ultra-wide). Text blocks have their own
+            per-element max-w to keep line lengths comfortable. */}
+        <div className="flex-1 min-w-0 p-4 lg:p-8 xl:p-10 2xl:p-12 space-y-6">
           {/* Breadcrumb — hidden on mobile since top bar has back + title */}
           <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
             <Link to="/my-courses" className="hover:text-foreground transition-colors">My Courses</Link>
@@ -855,11 +876,11 @@ const ChapterViewer = () => {
               reads as more premium and matches the offering page's
               cinematic feel. */}
           {chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
-            <div className="rounded-[16px] overflow-hidden shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
+            <div className="rounded-[16px] overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
               <VdoCipherPlayer chapterId={chapter.id} onProgress={updateProgress} startPosition={lastPosition} />
             </div>
           ) : chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
-            <div className="aspect-video bg-card rounded-[16px] overflow-hidden shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
+            <div className="aspect-video bg-card rounded-[16px] overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
               <iframe
                 src={(() => {
                   const url = chapter.embed_url || chapter.media_url || "";
@@ -906,34 +927,51 @@ const ChapterViewer = () => {
             </div>
           )}
 
-          {/* Chapter info - larger type, clear hierarchy. The eyebrow
-              tells the learner where they are in the course (4 of 15)
-              without forcing them to scan the sidebar. */}
+          {/* Chapter info - the Masterclass pattern: big title on the
+              left with primary actions docked on the right. The title
+              is the loudest element below the player; actions sit on
+              the same baseline so the eye never has to drop twice. */}
           <div className="space-y-5">
-            <div className="space-y-2">
-              <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
-                Lesson {currentIndex + 1} of {siblings.length}
-              </p>
-              <h1 className="text-2xl sm:text-4xl font-bold tracking-[-0.01em] leading-[1.1]">
-                {chapter.title}
-              </h1>
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 sm:gap-6">
+              <div className="space-y-2 flex-1 min-w-0">
+                <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+                  Lesson {currentIndex + 1} of {siblings.length}
+                </p>
+                <h1 className="text-2xl sm:text-4xl font-bold tracking-[-0.01em] leading-[1.1]">
+                  {chapter.title}
+                </h1>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleShare}
+                  className="h-11 min-w-[44px]"
+                >
+                  <Share2 className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Share</span>
+                </Button>
+                {!isCompleted ? (
+                  <Button
+                    onClick={handleMarkComplete}
+                    disabled={submitting}
+                    size="sm"
+                    className="h-11 px-4 font-semibold bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 hover:-translate-y-0.5 transition-all"
+                  >
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    Mark complete
+                  </Button>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-xs text-[hsl(var(--accent-emerald))] font-medium px-2 h-11">
+                    <CheckCircle2 className="h-4 w-4" /> Completed
+                  </span>
+                )}
+              </div>
             </div>
             {chapter.description && (
               <p className="text-muted-foreground text-base leading-relaxed max-w-[68ch]">
                 {chapter.description}
               </p>
-            )}
-
-            {!isCompleted && (
-              <Button
-                onClick={handleMarkComplete}
-                disabled={submitting}
-                size="lg"
-                className="h-12 px-6 text-base font-semibold bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 hover:-translate-y-0.5 transition-all"
-              >
-                <CheckCircle2 className="h-5 w-5 mr-2" />
-                Mark as complete
-              </Button>
             )}
           </div>
 
@@ -944,7 +982,7 @@ const ChapterViewer = () => {
               size="sm"
               disabled={currentIndex <= 0}
               onClick={() => navigate(`/chapters/${siblings[currentIndex - 1]?.id}`)}
-              className="h-10"
+              className="h-11 min-w-[44px]"
             >
               <ChevronLeft className="h-4 w-4 mr-1" /> Previous
             </Button>
@@ -977,7 +1015,7 @@ const ChapterViewer = () => {
               size="sm"
               disabled={currentIndex >= siblings.length - 1}
               onClick={() => navigate(`/chapters/${siblings[currentIndex + 1]?.id}`)}
-              className="h-10"
+              className="h-11 min-w-[44px]"
             >
               Next <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
@@ -994,26 +1032,179 @@ const ChapterViewer = () => {
           )}
         </div>
 
-        {/* Right sidebar */}
-        <div className="lg:w-[380px] border-t lg:border-t-0 lg:border-l border-border p-4 lg:p-6">
-          <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="w-full grid grid-cols-4 h-11">
-              <TabsTrigger value="overview" className="text-sm gap-1.5">
-                <Info className="h-3.5 w-3.5" /> Overview
+        {/* Right sidebar - grows proportionally on wider viewports so
+            it doesn't feel cramped next to a giant 2K+ player. */}
+        <div className="lg:w-[380px] xl:w-[420px] 2xl:w-[480px] shrink-0 border-t lg:border-t-0 lg:border-l border-border p-4 lg:p-6">
+          {/* Sidebar header — course context above the tabs, matching the
+              Masterclass watching pattern where the course identity is
+              always visible above the lesson navigator. */}
+          {courseTitle && (
+            <div className="flex items-center gap-3 pb-4 mb-4 border-b border-border">
+              <div className="h-9 w-9 rounded-full bg-[hsl(var(--cream))]/15 flex items-center justify-center shrink-0">
+                <ListVideo className="h-4 w-4 text-[hsl(var(--cream))]" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+                  You're in
+                </p>
+                <p className="text-sm font-semibold truncate">{courseTitle}</p>
+              </div>
+              <span className="text-xs text-muted-foreground font-mono shrink-0">
+                {currentIndex + 1}/{siblings.length}
+              </span>
+            </div>
+          )}
+          <Tabs defaultValue="upnext" className="w-full">
+            <TabsList className="w-full grid grid-cols-5 h-11">
+              <TabsTrigger value="upnext" className="text-xs gap-1 px-1">
+                <Play className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Up Next</span>
               </TabsTrigger>
-              <TabsTrigger value="resources" className="text-sm gap-1.5">
-                <FileText className="h-3.5 w-3.5" /> Files
+              <TabsTrigger value="notes" className="text-xs gap-1 px-1">
+                <PenLine className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Notes</span>
               </TabsTrigger>
-              <TabsTrigger value="qna" className="text-sm gap-1.5">
-                <HelpCircle className="h-3.5 w-3.5" /> Q&A
+              <TabsTrigger value="overview" className="text-xs gap-1 px-1">
+                <Info className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Overview</span>
+              </TabsTrigger>
+              <TabsTrigger value="resources" className="text-xs gap-1 px-1">
+                <FileText className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Files</span>
+              </TabsTrigger>
+              <TabsTrigger value="qna" className="text-xs gap-1 px-1 relative">
+                <HelpCircle className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Q&amp;A</span>
                 {qna.some((q) => q.replies.some((r) => r.is_instructor_reply) && q.user_id === user?.id && !q.is_resolved) && (
-                  <span className="ml-0.5 h-2 w-2 rounded-full bg-[hsl(var(--accent-emerald))] animate-pulse" />
+                  <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-[hsl(var(--accent-emerald))] animate-pulse" />
                 )}
               </TabsTrigger>
-              <TabsTrigger value="comments" className="text-sm gap-1.5">
-                <MessageSquare className="h-3.5 w-3.5" /> Chat
-              </TabsTrigger>
             </TabsList>
+
+            {/* Up Next - chapter navigator. Each tile shows lesson
+                number badge, 16:9 thumbnail (or a numbered fallback when
+                no thumbnail is set), title, and a description excerpt -
+                Rahul's request: "lesson number, thumbnail, and description
+                for sure" since that's what pulls the learner into the
+                next lesson. The current lesson gets a cream tint + ring
+                so it's anchored. */}
+            <TabsContent value="upnext" className="mt-4 space-y-2">
+              {siblings.length === 0 ? (
+                <p className="text-sm text-muted-foreground/60">No other lessons in this course.</p>
+              ) : (
+                <>
+                  {(() => {
+                    const start = currentIndex;
+                    const visible = siblings.slice(start, start + 6);
+                    return visible.map((s, idx) => {
+                      const absIndex = start + idx;
+                      const isCurrent = s.id === chapter.id;
+                      const mins = s.duration_seconds ? Math.max(1, Math.round(s.duration_seconds / 60)) : null;
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => !isCurrent && navigate(`/chapters/${s.id}`)}
+                          disabled={isCurrent}
+                          className={`w-full flex gap-3 p-2.5 rounded-lg text-left transition-colors min-h-[68px] ${
+                            isCurrent
+                              ? "bg-[hsl(var(--cream))]/10 ring-1 ring-[hsl(var(--cream))]/40 cursor-default"
+                              : "hover:bg-surface/60 active:bg-surface"
+                          }`}
+                        >
+                          {/* Thumbnail with overlaid lesson number badge.
+                              Fallback to a solid number tile when the
+                              chapter has no thumbnail_url. Today most
+                              chapters don't have thumbnails - the UI
+                              lights up automatically as content gets
+                              backfilled. */}
+                          <div className="relative w-[88px] sm:w-[104px] aspect-video rounded-md overflow-hidden shrink-0 bg-surface-2">
+                            {s.thumbnail_url && (
+                              <img
+                                src={s.thumbnail_url}
+                                alt=""
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                                decoding="async"
+                              />
+                            )}
+                            {/* When there's a thumbnail, show a small
+                                number chip on top. When there isn't and
+                                the lesson is NOT current, show the big
+                                centered number as the visual anchor.
+                                When the lesson IS current, the cream Play
+                                overlay takes over and no number is shown. */}
+                            {s.thumbnail_url && !isCurrent && (
+                              <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-mono text-white">
+                                {absIndex + 1}
+                              </span>
+                            )}
+                            {!s.thumbnail_url && !isCurrent && (
+                              <div className="absolute inset-0 flex items-center justify-center font-mono text-base font-semibold text-muted-foreground/50">
+                                {absIndex + 1}
+                              </div>
+                            )}
+                            {isCurrent && (
+                              <span className="absolute inset-0 bg-[hsl(var(--cream))]/15 flex items-center justify-center">
+                                <Play className="h-4 w-4 fill-[hsl(var(--cream))] text-[hsl(var(--cream))]" />
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <p className={`text-sm leading-tight line-clamp-2 ${isCurrent ? "font-semibold" : ""}`}>
+                              {s.title}
+                            </p>
+                            {s.description && (
+                              <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1 leading-snug">
+                                {s.description}
+                              </p>
+                            )}
+                            {mins && (
+                              <p className="text-[10px] text-muted-foreground/70 mt-1 font-mono">
+                                {mins} min
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    });
+                  })()}
+                  {courseId && siblings.length > 6 && (
+                    <Link
+                      to={`/courses/${courseId}`}
+                      className="block w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-2 mt-1"
+                    >
+                      View all {siblings.length} lessons
+                    </Link>
+                  )}
+                </>
+              )}
+            </TabsContent>
+
+            {/* Notes - localStorage-backed per-chapter scratchpad. v1 is
+                local-only so it doesn't sync across devices; a future
+                pass can promote this to a chapter_notes DB table. */}
+            <TabsContent value="notes" className="mt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Your private notes for this lesson.
+                </p>
+                {notesSavedAt && (
+                  <span className="text-[10px] font-mono text-[hsl(var(--accent-emerald))]/80 uppercase tracking-wider">
+                    Saved
+                  </span>
+                )}
+              </div>
+              <Textarea
+                placeholder="Jot down what stood out…"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={10}
+                className="text-sm resize-none"
+              />
+              <p className="text-[10px] text-muted-foreground/60">
+                Stored on this device only.
+              </p>
+            </TabsContent>
 
             {/* Overview */}
             <TabsContent value="overview" className="mt-4 space-y-4">
@@ -1138,50 +1329,6 @@ const ChapterViewer = () => {
               </div>
             </TabsContent>
 
-            {/* Comments */}
-            <TabsContent value="comments" className="mt-4 space-y-4">
-              <div className="space-y-2">
-                <Textarea
-                  placeholder="Write a comment…"
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  rows={2}
-                  className="text-sm"
-                />
-                <Button
-                  size="sm"
-                  onClick={handlePostComment}
-                  disabled={!commentText.trim() || submitting}
-                >
-                  Post Comment
-                </Button>
-              </div>
-              <div className="space-y-3">
-                {comments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground/60">Be the first to start the conversation.</p>
-                ) : (
-                  comments.slice(0, commentLimit).map((c) => (
-                    <div key={c.id} className="border border-border rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium">{c.user_name || "Anonymous"}</span>
-                        <span className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleDateString()}</span>
-                      </div>
-                      <p className="text-sm">{c.comment_text}</p>
-                    </div>
-                  ))
-                )}
-                {comments.length > commentLimit && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => setCommentLimit((prev) => prev + 20)}
-                  >
-                    Show more comments ({comments.length - commentLimit} remaining)
-                  </Button>
-                )}
-              </div>
-            </TabsContent>
           </Tabs>
         </div>
       </div>

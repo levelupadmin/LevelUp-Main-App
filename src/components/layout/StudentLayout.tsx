@@ -268,7 +268,7 @@ const StudentLayout = ({ children }: Props) => {
             don't swap out the entire shell (fixes the "page reloads on every
             navigation" feeling). The nav, sidebar, and tab bar stay mounted. */}
         <main id="main-content" className="flex-1 grain">
-          <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-6 md:py-10 relative z-10 page-enter">
+          <div className="max-w-[1280px] xl:max-w-[1440px] 2xl:max-w-[1680px] mx-auto px-4 md:px-8 lg:px-10 xl:px-12 py-6 md:py-10 relative z-10 page-enter">
             <Suspense fallback={<ContentSuspenseFallback />}>
               {children ?? <Outlet />}
             </Suspense>
