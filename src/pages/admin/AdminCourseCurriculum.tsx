@@ -25,6 +25,7 @@ interface Chapter {
   vdocipher_video_id: string;
   vdocipher_watermark_text: string;
   thumbnail_url: string;
+  vdocipher_thumbnail_url: string;
   _isNew?: boolean;
 }
 
@@ -47,6 +48,14 @@ const AdminCourseCurriculum = () => {
   const [editingChapter, setEditingChapter] = useState<{ sectionIdx: number; chapterIdx: number } | null>(null);
   const [courseDefaultVideoType, setCourseDefaultVideoType] = useState("standard");
   const [vdoUploadMode, setVdoUploadMode] = useState<Record<string, "upload" | "existing">>({});
+  // Per-chapter fetching state for the VdoCipher metadata call - shows a
+  // "Fetching from VdoCipher…" hint next to the duration field while
+  // we wait on the edge function.
+  const [vdoMetaFetching, setVdoMetaFetching] = useState<Record<string, boolean>>({});
+  // Tracks which chapters had metadata pulled this session - drives the
+  // "Auto-filled from VdoCipher" tag so admins know the duration came
+  // from the API and isn't a manual entry.
+  const [vdoMetaJustFetched, setVdoMetaJustFetched] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     if (!courseId) return;
@@ -69,7 +78,7 @@ const AdminCourseCurriculum = () => {
     const secIds = secs.map((s) => s.id);
     const { data: chs } = await supabase
       .from("chapters")
-      .select("id, title, content_type, description, media_url, embed_url, article_body, duration_seconds, make_free, sort_order, section_id, video_type, vdocipher_video_id, vdocipher_watermark_text, thumbnail_url")
+      .select("id, title, content_type, description, media_url, embed_url, article_body, duration_seconds, make_free, sort_order, section_id, video_type, vdocipher_video_id, vdocipher_watermark_text, thumbnail_url, vdocipher_thumbnail_url")
       .in("section_id", secIds)
       .order("sort_order");
 
@@ -91,6 +100,7 @@ const AdminCourseCurriculum = () => {
         vdocipher_video_id: (ch as any).vdocipher_video_id || "",
         vdocipher_watermark_text: (ch as any).vdocipher_watermark_text || "",
         thumbnail_url: (ch as any).thumbnail_url || "",
+        vdocipher_thumbnail_url: (ch as any).vdocipher_thumbnail_url || "",
       });
     });
 
@@ -135,6 +145,7 @@ const AdminCourseCurriculum = () => {
             vdocipher_video_id: "",
             vdocipher_watermark_text: "",
             thumbnail_url: "",
+            vdocipher_thumbnail_url: "",
             _isNew: true,
           },
         ],
@@ -170,6 +181,95 @@ const AdminCourseCurriculum = () => {
       return updated;
     });
   };
+
+  // Pull duration + poster from VdoCipher for a given chapter. We don't
+  // overwrite a duration the admin manually set (force=false), but we
+  // always refresh the thumbnail since the admin has no way to set it
+  // independently. Caller passes the section + chapter index because
+  // chapter ids change between local "new-..." placeholders and saved
+  // UUIDs - using indices avoids stale closures.
+  const fetchVdoMeta = useCallback(async (
+    sIdx: number,
+    cIdx: number,
+    videoId: string,
+    opts: { overrideDuration?: boolean } = {}
+  ) => {
+    if (!videoId?.trim()) return;
+    const key = `${sIdx}-${cIdx}`;
+    setVdoMetaFetching((prev) => ({ ...prev, [key]: true }));
+    try {
+      const { data, error } = await supabase.functions.invoke<{
+        duration_seconds: number | null;
+        thumbnail_url: string | null;
+      }>("get-vdocipher-video-meta", { body: { video_id: videoId.trim() } });
+      if (error) throw error;
+      if (!data) throw new Error("Empty response");
+
+      setSections((prev) => {
+        const updated = [...prev];
+        const chapters = [...updated[sIdx].chapters];
+        const current = chapters[cIdx];
+        if (!current) return prev;
+        const next: Chapter = { ...current };
+        // Only overwrite duration if it's currently zero/unset, unless
+        // the caller forces it (e.g. fresh upload).
+        if (
+          typeof data.duration_seconds === "number" &&
+          (opts.overrideDuration || !current.duration_seconds)
+        ) {
+          next.duration_seconds = data.duration_seconds;
+        }
+        if (data.thumbnail_url) {
+          next.vdocipher_thumbnail_url = data.thumbnail_url;
+        }
+        chapters[cIdx] = next;
+        updated[sIdx] = { ...updated[sIdx], chapters };
+        return updated;
+      });
+      setVdoMetaJustFetched((prev) => ({ ...prev, [key]: true }));
+    } catch (err: any) {
+      // Quiet failure - admin can still type duration manually, and
+      // a missing thumbnail just falls back to the numbered tile.
+      console.warn("fetchVdoMeta failed", err?.message ?? err);
+      toast({
+        title: "Couldn't fetch VdoCipher metadata",
+        description: err?.message ?? "Video may not exist or be ready yet.",
+        variant: "destructive",
+      });
+    } finally {
+      setVdoMetaFetching((prev) => ({ ...prev, [key]: false }));
+    }
+  }, [toast]);
+
+  // Backfill metadata for chapters that already have a vdocipher_video_id
+  // but no cached thumbnail. Runs once after the curriculum loads so
+  // existing chapters self-heal the next time an admin opens the page.
+  useEffect(() => {
+    if (loading || sections.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (let sIdx = 0; sIdx < sections.length; sIdx++) {
+        for (let cIdx = 0; cIdx < sections[sIdx].chapters.length; cIdx++) {
+          if (cancelled) return;
+          const ch = sections[sIdx].chapters[cIdx];
+          if (
+            ch.video_type === "vdocipher" &&
+            ch.vdocipher_video_id?.trim() &&
+            !ch.vdocipher_thumbnail_url &&
+            !ch._isNew
+          ) {
+            // Sequential to avoid hammering VdoCipher with 30+ parallel
+            // requests on a course with many lessons.
+            await fetchVdoMeta(sIdx, cIdx, ch.vdocipher_video_id);
+          }
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+    // Intentionally only depends on `loading` - we want this to run
+    // exactly once when the load finishes, not on every section edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   const removeChapter = (sIdx: number, cIdx: number) => {
     setSections((prev) => {
@@ -249,6 +349,7 @@ const AdminCourseCurriculum = () => {
             vdocipher_video_id: ch.vdocipher_video_id || null,
             vdocipher_watermark_text: ch.vdocipher_watermark_text || null,
             thumbnail_url: ch.thumbnail_url || null,
+            vdocipher_thumbnail_url: ch.vdocipher_thumbnail_url || null,
           };
 
           if (ch._isNew) {
@@ -398,7 +499,12 @@ const AdminCourseCurriculum = () => {
 
                             {(vdoUploadMode[ch.id] || "existing") === "upload" ? (
                               <VdoCipherUploader
-                                onUploadComplete={(videoId) => updateChapter(sIdx, cIdx, { vdocipher_video_id: videoId })}
+                                onUploadComplete={(videoId) => {
+                                  updateChapter(sIdx, cIdx, { vdocipher_video_id: videoId });
+                                  // Fresh upload - override any stale duration the
+                                  // chapter row had from a previous video.
+                                  fetchVdoMeta(sIdx, cIdx, videoId, { overrideDuration: true });
+                                }}
                               />
                             ) : (
                               <div>
@@ -406,6 +512,11 @@ const AdminCourseCurriculum = () => {
                                 <Input
                                   value={ch.vdocipher_video_id}
                                   onChange={(e) => updateChapter(sIdx, cIdx, { vdocipher_video_id: e.target.value })}
+                                  onBlur={(e) => {
+                                    const v = e.target.value.trim();
+                                    if (v && v !== ch.vdocipher_video_id?.trim()) return;
+                                    if (v) fetchVdoMeta(sIdx, cIdx, v);
+                                  }}
                                   placeholder="e.g. 1234567890abcdef"
                                 />
                               </div>
@@ -457,25 +568,62 @@ const AdminCourseCurriculum = () => {
                         )}
                         <div>
                           <label className="block text-xs font-medium mb-1">
-                            Thumbnail URL
-                            <span className="text-muted-foreground/60 font-normal ml-1">— shows in the Up Next rail on the watching page</span>
+                            Custom Thumbnail URL
+                            <span className="text-muted-foreground/60 font-normal ml-1">— optional override. Falls back to the VdoCipher poster.</span>
                           </label>
                           <Input
                             value={ch.thumbnail_url}
                             onChange={(e) => updateChapter(sIdx, cIdx, { thumbnail_url: e.target.value })}
                             placeholder="https://..."
                           />
-                          {ch.thumbnail_url && (
-                            <img
-                              src={ch.thumbnail_url}
-                              alt=""
-                              className="mt-2 w-32 aspect-video object-cover rounded-md border border-border"
-                            />
-                          )}
+                          {/* Show what'll actually render in the Up Next rail.
+                              Mirrors the runtime fallback chain so admins see
+                              what students will see. */}
+                          <div className="mt-2 flex items-center gap-3">
+                            {ch.thumbnail_url ? (
+                              <>
+                                <img
+                                  src={ch.thumbnail_url}
+                                  alt=""
+                                  className="w-32 aspect-video object-cover rounded-md border border-border"
+                                />
+                                <span className="text-[10px] font-mono uppercase tracking-wider text-[hsl(var(--cream))]/80">
+                                  Using custom thumbnail
+                                </span>
+                              </>
+                            ) : ch.vdocipher_thumbnail_url ? (
+                              <>
+                                <img
+                                  src={ch.vdocipher_thumbnail_url}
+                                  alt=""
+                                  className="w-32 aspect-video object-cover rounded-md border border-border"
+                                />
+                                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                                  Using VdoCipher poster
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/60">
+                                No thumbnail yet — set a VdoCipher video ID or paste a custom URL.
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-xs font-medium mb-1">Duration (seconds)</label>
+                            <label className="block text-xs font-medium mb-1 flex items-center gap-2">
+                              Duration (seconds)
+                              {vdoMetaFetching[`${sIdx}-${cIdx}`] && (
+                                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                                  Fetching from VdoCipher…
+                                </span>
+                              )}
+                              {!vdoMetaFetching[`${sIdx}-${cIdx}`] && vdoMetaJustFetched[`${sIdx}-${cIdx}`] && (
+                                <span className="text-[10px] font-mono uppercase tracking-wider text-[hsl(var(--accent-emerald))]/80">
+                                  Auto-filled from VdoCipher
+                                </span>
+                              )}
+                            </label>
                             <Input type="number" value={ch.duration_seconds} onChange={(e) => updateChapter(sIdx, cIdx, { duration_seconds: Number(e.target.value) })} />
                           </div>
                           <div className="flex items-center gap-2 pt-5">

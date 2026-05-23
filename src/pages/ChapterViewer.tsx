@@ -276,6 +276,7 @@ const ChapterViewer = () => {
     duration_seconds: number | null;
     content_type: string;
     thumbnail_url: string | null;
+    vdocipher_thumbnail_url: string | null;
     description: string | null;
   }[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -423,7 +424,7 @@ const ChapterViewer = () => {
         const sectionIds = allSections.map((s) => s.id);
         const { data: allChapters } = await supabase
           .from("chapters")
-          .select("id, title, section_id, sort_order, duration_seconds, content_type, thumbnail_url, description")
+          .select("id, title, section_id, sort_order, duration_seconds, content_type, thumbnail_url, vdocipher_thumbnail_url, description")
           .in("section_id", sectionIds)
           .order("sort_order");
 
@@ -441,6 +442,7 @@ const ChapterViewer = () => {
             duration_seconds: c.duration_seconds,
             content_type: c.content_type,
             thumbnail_url: c.thumbnail_url,
+            vdocipher_thumbnail_url: (c as any).vdocipher_thumbnail_url ?? null,
             description: c.description,
           })));
           setCurrentIndex(sorted.findIndex((c) => c.id === chapterId));
@@ -560,38 +562,81 @@ const ChapterViewer = () => {
     loadChapter();
   }, [loadChapter]);
 
-  // Notes load + debounced autosave (localStorage v1, per-chapter per-user).
+  // Notes load - DB-backed via chapter_notes (one row per user per chapter).
+  // On mount we read the DB row; if it doesn't exist but localStorage still
+  // has a v1-era note for this chapter we upload it once and clear the
+  // local copy so the two stores can't drift.
+  const notesHydratedRef = useRef(false);
   useEffect(() => {
     if (!chapterId || !user) return;
-    const key = `levelup:notes:${user.id}:${chapterId}`;
-    try {
-      const stored = localStorage.getItem(key);
-      setNotes(stored ?? "");
+    let cancelled = false;
+    notesHydratedRef.current = false;
+    (async () => {
+      const { data } = await supabase
+        .from("chapter_notes")
+        .select("body")
+        .eq("user_id", user.id)
+        .eq("chapter_id", chapterId)
+        .maybeSingle();
+      if (cancelled) return;
+
+      let initial = data?.body ?? "";
+      // Legacy localStorage migration: if no DB row exists yet but a
+      // v1 note is still in localStorage, push it to the DB and wipe
+      // the local copy. Idempotent because subsequent loads see the
+      // DB row and skip this branch.
+      if (!data) {
+        const legacyKey = `levelup:notes:${user.id}:${chapterId}`;
+        let legacy: string | null = null;
+        try { legacy = localStorage.getItem(legacyKey); } catch { /* ignored */ }
+        if (legacy) {
+          await supabase.from("chapter_notes").upsert(
+            { user_id: user.id, chapter_id: chapterId, body: legacy },
+            { onConflict: "user_id,chapter_id" }
+          );
+          try { localStorage.removeItem(legacyKey); } catch { /* ignored */ }
+          initial = legacy;
+        }
+      }
+      if (cancelled) return;
+      setNotes(initial);
       setNotesSavedAt(null);
-    } catch {
-      setNotes("");
-    }
+      // Hydration done - the autosave effect below can now persist user
+      // edits without misreading the initial load as a user change.
+      notesHydratedRef.current = true;
+    })();
+    return () => { cancelled = true; };
   }, [chapterId, user]);
 
+  // Debounced autosave - upserts the (user_id, chapter_id) row whenever
+  // the textarea content changes after hydration completes.
   useEffect(() => {
     if (!chapterId || !user) return;
-    const key = `levelup:notes:${user.id}:${chapterId}`;
-    const t = setTimeout(() => {
+    if (!notesHydratedRef.current) return;
+    const t = setTimeout(async () => {
       try {
-        const existed = localStorage.getItem(key) !== null;
         if (notes) {
-          localStorage.setItem(key, notes);
-          setNotesSavedAt(Date.now());
-        } else if (existed) {
-          // Only signal "saved" when there was real content to remove —
-          // skips the initial empty-state mount so a fresh chapter
-          // doesn't show "Saved" before the user has typed anything.
-          localStorage.removeItem(key);
-          setNotesSavedAt(Date.now());
+          const { error } = await supabase.from("chapter_notes").upsert(
+            { user_id: user.id, chapter_id: chapterId, body: notes },
+            { onConflict: "user_id,chapter_id" }
+          );
+          if (!error) setNotesSavedAt(Date.now());
+        } else {
+          // Empty textarea - delete the row so the DB doesn't keep
+          // empty notes hanging around. Only signal "Saved" if there
+          // was actually a row to delete.
+          const { error, count } = await supabase
+            .from("chapter_notes")
+            .delete({ count: "exact" })
+            .eq("user_id", user.id)
+            .eq("chapter_id", chapterId);
+          if (!error && (count ?? 0) > 0) setNotesSavedAt(Date.now());
         }
       } catch {
-        // Storage quota or private-mode failures are non-fatal — notes
-        // simply don't persist this turn; we don't surface an error.
+        // Offline or network blip - notes stay in component state
+        // and we'll retry on the next change. We deliberately don't
+        // toast every save failure; the user sees the absence of
+        // the "Saved" tag instead.
       }
     }, 600);
     return () => clearTimeout(t);
@@ -1160,43 +1205,43 @@ const ChapterViewer = () => {
                           }`}
                         >
                           {/* Thumbnail with overlaid lesson number badge.
-                              Fallback to a solid number tile when the
-                              chapter has no thumbnail_url. Today most
-                              chapters don't have thumbnails - the UI
-                              lights up automatically as content gets
-                              backfilled. */}
-                          <div className="relative w-[88px] sm:w-[104px] aspect-video rounded-md overflow-hidden shrink-0 bg-surface-2">
-                            {s.thumbnail_url && (
-                              <img
-                                src={s.thumbnail_url}
-                                alt=""
-                                className="w-full h-full object-cover"
-                                loading="lazy"
-                                decoding="async"
-                              />
-                            )}
-                            {/* When there's a thumbnail, show a small
-                                number chip on top. When there isn't and
-                                the lesson is NOT current, show the big
-                                centered number as the visual anchor.
-                                When the lesson IS current, the cream Play
-                                overlay takes over and no number is shown. */}
-                            {s.thumbnail_url && !isCurrent && (
-                              <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-mono text-white">
-                                {absIndex + 1}
-                              </span>
-                            )}
-                            {!s.thumbnail_url && !isCurrent && (
-                              <div className="absolute inset-0 flex items-center justify-center font-mono text-base font-semibold text-muted-foreground/50">
-                                {absIndex + 1}
+                              Resolution order matches the admin contract:
+                                1. Custom thumbnail_url (creator override)
+                                2. vdocipher_thumbnail_url (auto-fetched poster)
+                                3. Numbered tile fallback
+                              Only the last branch shows a big centered number;
+                              the others get a small black chip in the top-left. */}
+                          {(() => {
+                            const thumb = s.thumbnail_url || s.vdocipher_thumbnail_url || null;
+                            return (
+                              <div className="relative w-[88px] sm:w-[104px] aspect-video rounded-md overflow-hidden shrink-0 bg-surface-2">
+                                {thumb && (
+                                  <img
+                                    src={thumb}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                    decoding="async"
+                                  />
+                                )}
+                                {thumb && !isCurrent && (
+                                  <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-mono text-white">
+                                    {absIndex + 1}
+                                  </span>
+                                )}
+                                {!thumb && !isCurrent && (
+                                  <div className="absolute inset-0 flex items-center justify-center font-mono text-base font-semibold text-muted-foreground/50">
+                                    {absIndex + 1}
+                                  </div>
+                                )}
+                                {isCurrent && (
+                                  <span className="absolute inset-0 bg-[hsl(var(--cream))]/15 flex items-center justify-center">
+                                    <Play className="h-4 w-4 fill-[hsl(var(--cream))] text-[hsl(var(--cream))]" />
+                                  </span>
+                                )}
                               </div>
-                            )}
-                            {isCurrent && (
-                              <span className="absolute inset-0 bg-[hsl(var(--cream))]/15 flex items-center justify-center">
-                                <Play className="h-4 w-4 fill-[hsl(var(--cream))] text-[hsl(var(--cream))]" />
-                              </span>
-                            )}
-                          </div>
+                            );
+                          })()}
                           <div className="flex-1 min-w-0 flex flex-col justify-center">
                             <p className={`text-sm leading-tight line-clamp-2 ${isCurrent ? "font-semibold" : ""}`}>
                               {s.title}
@@ -1250,7 +1295,7 @@ const ChapterViewer = () => {
                 className="text-sm resize-none"
               />
               <p className="text-[10px] text-muted-foreground/60">
-                Stored on this device only.
+                Syncs to your account &mdash; you'll see these notes on any device you sign in on.
               </p>
             </TabsContent>
 
