@@ -99,13 +99,16 @@ export function OtpEntryStep({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-2xl font-semibold mb-1">
-          Enter <span className="font-serif-italic text-cream">code</span>
+      <div className="space-y-2">
+        <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+          Step 2 of 2
+        </p>
+        <h2 className="text-3xl sm:text-[32px] font-semibold tracking-[-0.01em] leading-tight">
+          Enter the <span className="font-serif-italic text-cream">code</span> we sent
         </h2>
         <p className="text-sm text-muted-foreground">
-          {channel === "whatsapp" ? "We sent a WhatsApp to " : "We sent an SMS to "}
-          <span className="text-foreground font-medium">{maskPhone(phone)}</span>
+          {channel === "whatsapp" ? "Sent via WhatsApp to " : "Sent via SMS to "}
+          <span className="text-foreground font-medium font-mono">{maskPhone(phone)}</span>
         </p>
       </div>
 

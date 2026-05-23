@@ -284,10 +284,13 @@ const Login = () => {
           <div className="w-full max-w-[340px] mx-auto">
             {step === "phone" && (
               <>
-                <h1 className="text-2xl font-semibold mb-1">
+                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70 mb-2">
+                  Step 1 of 2
+                </p>
+                <h1 className="text-3xl sm:text-[32px] font-semibold tracking-[-0.01em] leading-tight mb-2">
                   Welcome <span className="font-serif-italic text-cream">back</span>
                 </h1>
-                <p className="text-sm text-muted-foreground mb-6">Sign in to continue your craft</p>
+                <p className="text-sm text-muted-foreground mb-6">Sign in to continue your craft.</p>
 
                 <form
                   onSubmit={(e) => { e.preventDefault(); handleSendOtp(); }}
