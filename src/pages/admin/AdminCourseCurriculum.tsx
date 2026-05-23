@@ -24,6 +24,7 @@ interface Chapter {
   video_type: string;
   vdocipher_video_id: string;
   vdocipher_watermark_text: string;
+  thumbnail_url: string;
   _isNew?: boolean;
 }
 
@@ -68,7 +69,7 @@ const AdminCourseCurriculum = () => {
     const secIds = secs.map((s) => s.id);
     const { data: chs } = await supabase
       .from("chapters")
-      .select("id, title, content_type, description, media_url, embed_url, article_body, duration_seconds, make_free, sort_order, section_id, video_type, vdocipher_video_id, vdocipher_watermark_text")
+      .select("id, title, content_type, description, media_url, embed_url, article_body, duration_seconds, make_free, sort_order, section_id, video_type, vdocipher_video_id, vdocipher_watermark_text, thumbnail_url")
       .in("section_id", secIds)
       .order("sort_order");
 
@@ -89,6 +90,7 @@ const AdminCourseCurriculum = () => {
         video_type: (ch as any).video_type || "standard",
         vdocipher_video_id: (ch as any).vdocipher_video_id || "",
         vdocipher_watermark_text: (ch as any).vdocipher_watermark_text || "",
+        thumbnail_url: (ch as any).thumbnail_url || "",
       });
     });
 
@@ -132,6 +134,7 @@ const AdminCourseCurriculum = () => {
             video_type: courseDefaultVideoType,
             vdocipher_video_id: "",
             vdocipher_watermark_text: "",
+            thumbnail_url: "",
             _isNew: true,
           },
         ],
@@ -245,6 +248,7 @@ const AdminCourseCurriculum = () => {
             video_type: ch.video_type || "standard",
             vdocipher_video_id: ch.vdocipher_video_id || null,
             vdocipher_watermark_text: ch.vdocipher_watermark_text || null,
+            thumbnail_url: ch.thumbnail_url || null,
           };
 
           if (ch._isNew) {
@@ -451,6 +455,24 @@ const AdminCourseCurriculum = () => {
                             <Textarea value={ch.article_body} onChange={(e) => updateChapter(sIdx, cIdx, { article_body: e.target.value })} rows={6} />
                           </div>
                         )}
+                        <div>
+                          <label className="block text-xs font-medium mb-1">
+                            Thumbnail URL
+                            <span className="text-muted-foreground/60 font-normal ml-1">— shows in the Up Next rail on the watching page</span>
+                          </label>
+                          <Input
+                            value={ch.thumbnail_url}
+                            onChange={(e) => updateChapter(sIdx, cIdx, { thumbnail_url: e.target.value })}
+                            placeholder="https://..."
+                          />
+                          {ch.thumbnail_url && (
+                            <img
+                              src={ch.thumbnail_url}
+                              alt=""
+                              className="mt-2 w-32 aspect-video object-cover rounded-md border border-border"
+                            />
+                          )}
+                        </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-medium mb-1">Duration (seconds)</label>

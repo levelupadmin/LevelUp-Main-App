@@ -266,6 +266,10 @@ const ChapterViewer = () => {
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseTitle, setCourseTitle] = useState<string | null>(null);
+  // The public offering slug for this chapter's course. Share links use
+  // this so recipients land on the marketing/buy page (not on a paywalled
+  // chapter URL that would bounce them straight to login).
+  const [offeringSlug, setOfferingSlug] = useState<string | null>(null);
   const [siblings, setSiblings] = useState<{
     id: string;
     title: string;
@@ -343,14 +347,52 @@ const ChapterViewer = () => {
     const cid = sec?.course_id;
     setCourseId(cid || null);
 
-    // Fetch course title for breadcrumb
+    // Fetch course title for breadcrumb + the course's public offering
+    // slug so the Share button can deep-link recipients to the buy page
+    // instead of the gated chapter URL.
     if (cid) {
       const { data: courseData } = await supabase
         .from("courses")
-        .select("title")
+        .select("title, primary_offering_id")
         .eq("id", cid)
         .maybeSingle();
       setCourseTitle(courseData?.title || null);
+
+      // Prefer the course's primary offering. If that's unset, fall
+      // through to any offering that lists this course - we just need
+      // a working public landing page to share.
+      let resolvedSlug: string | null = null;
+      if (courseData?.primary_offering_id) {
+        const { data: off } = await supabase
+          .from("offerings")
+          .select("slug")
+          .eq("id", courseData.primary_offering_id)
+          .eq("status", "active")
+          .maybeSingle();
+        resolvedSlug = off?.slug ?? null;
+      }
+      if (!resolvedSlug) {
+        // Two-step lookup instead of a PostgREST embed - more robust
+        // against FK ambiguity, and the offerings table has a tiny row
+        // count so the extra round-trip is negligible.
+        const { data: ocs } = await supabase
+          .from("offering_courses")
+          .select("offering_id")
+          .eq("course_id", cid);
+        const offeringIds = ((ocs ?? []) as any[])
+          .map((r) => r.offering_id)
+          .filter(Boolean);
+        if (offeringIds.length > 0) {
+          const { data: offs } = await supabase
+            .from("offerings")
+            .select("slug, is_public")
+            .in("id", offeringIds)
+            .eq("status", "active");
+          const publicOnes = ((offs ?? []) as any[]).filter((o) => o.is_public !== false);
+          resolvedSlug = publicOnes[0]?.slug ?? null;
+        }
+      }
+      setOfferingSlug(resolvedSlug);
     }
 
     // Access check — if not free, verify access before rendering content
@@ -641,8 +683,14 @@ const ChapterViewer = () => {
 
   const handleShare = async () => {
     if (!chapter) return;
-    const url = window.location.href;
-    const title = chapter.title;
+    // Share the offering's public buy page when we have it - recipients
+    // without access can read about the program and purchase, then
+    // start watching. Only fall back to the chapter URL if no public
+    // offering links to this course (an unlikely but defensive case).
+    const url = offeringSlug
+      ? `${window.location.origin}/p/${offeringSlug}`
+      : window.location.href;
+    const title = courseTitle || chapter.title;
     if (typeof navigator !== "undefined" && (navigator as any).share) {
       try {
         await (navigator as any).share({ url, title });
