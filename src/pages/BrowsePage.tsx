@@ -195,18 +195,29 @@ const BrowsePage = () => {
   return (
     <>
       <div className="space-y-8">
-        <div>
-          <h1 className="text-[28px] sm:text-[32px] font-semibold leading-tight">Browse Programs</h1>
-          <p className="text-base text-muted-foreground mt-1">Find your next creative skill</p>
+        {/* Editorial hero - matches the Home + PublicOffering cinematic
+            voice. Eyebrow + bold headline with a serif italic accent
+            so Browse doesn't feel like a CRUD list next to the other
+            polished surfaces. */}
+        <div className="space-y-3">
+          <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+            The full catalogue
+          </p>
+          <h1 className="text-[36px] sm:text-5xl font-bold tracking-[-0.02em] leading-[1.05]">
+            Find your next <span className="font-serif-italic text-cream">craft</span>
+          </h1>
+          <p className="text-base sm:text-lg text-muted-foreground max-w-[52ch]">
+            Every masterclass, cohort, and workshop on LevelUp — taught by the people behind India's most loved creative work.
+          </p>
         </div>
 
-        <div className="relative max-w-sm">
+        <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search courses..."
+            placeholder="Search instructors, classes, topics…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-surface border-border"
+            className="pl-9 h-11 bg-surface border-border"
           />
         </div>
 
@@ -265,7 +276,7 @@ const BrowsePage = () => {
                   {items.map((c) => (
                     <div
                       key={c.id}
-                      className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
+                      className="group bg-surface rounded-2xl overflow-hidden ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 hover:-translate-y-1 transition-all duration-300 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
                     >
                       <div className="aspect-video bg-surface-2 relative">
                         {c.thumbnail_url && (
