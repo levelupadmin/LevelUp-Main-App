@@ -1,26 +1,18 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
-import { useToast } from "@/hooks/use-toast";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import Footer from "@/components/Footer";
-import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import { isAndroid } from "@/lib/platform";
 import {
   Check,
-  Loader2,
   Tag,
   AlertCircle,
   BookOpen,
   ArrowRight,
-  Mail,
-  Lock,
-  X,
 } from "lucide-react";
 
 /* ────────────────────────────────────────────────── */
@@ -156,17 +148,57 @@ function HeroBanner({ offering }: { offering: Offering }) {
 }
 
 /**
- * Stat strip that sits right under the hero - the conversion-page version
- * of "what you actually get". Dots separate items so it reads as a single
- * confident line rather than a list. Skips itself entirely if no facts
- * are present.
+ * HeroActions — the conversion CTA that sits right under the hero on
+ * the marketing/landing page. Carries the price (with strike-through
+ * MRP) and the primary Enrol-Now button that ships the buyer to the
+ * dedicated /checkout/&lt;offeringId&gt; review screen. PublicOffering is
+ * the marketing surface; CheckoutPage is the buy surface. Keeping them
+ * separate means Meta-ads landing pages can deep-link buyers straight
+ * to /checkout without going through the marketing copy.
+ *
+ * For staged-payment offerings (applications) the same CTA carries the
+ * application-fee copy and the link still goes to /checkout, where
+ * CheckoutPage's existing paymentType logic routes them through the
+ * staged-application flow.
  */
+function HeroActions({ offering }: { offering: Offering }) {
+  const navigate = useNavigate();
+  const isStaged = (offering as any)?.payment_mode === "staged";
+  const price = offering.price_inr ?? 0;
+  const mrp = (offering as any).mrp_inr ?? null;
+  const showStrike = mrp && Number(mrp) > Number(price);
+  const ctaLabel = isStaged ? "Apply now" : price > 0 ? "Enrol now" : "Start for free";
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6 py-2">
+      <div className="flex items-baseline gap-3">
+        <span className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em]">
+          {price > 0 ? `₹${Number(price).toLocaleString("en-IN")}` : "Free"}
+        </span>
+        {showStrike && (
+          <span className="text-base sm:text-lg text-muted-foreground line-through font-mono">
+            ₹{Number(mrp).toLocaleString("en-IN")}
+          </span>
+        )}
+      </div>
+      <Button
+        onClick={() => navigate(`/checkout/${offering.id}`)}
+        size="lg"
+        className="h-12 px-7 text-base font-semibold bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 hover:-translate-y-0.5 transition-all shadow-[0_10px_30px_-10px_hsl(var(--cream)/0.5)]"
+      >
+        {ctaLabel}
+        <ArrowRight className="h-4 w-4 ml-2" />
+      </Button>
+    </div>
+  );
+}
+
 /**
- * Outcome tile grid — replaces the older dot-separated StatStrip with
- * the Masterclass "Length / Outcome / Feedback / Structure / Difficulty"
- * tile pattern. Each tile is label + value so the eye can scan five
- * brag-points instead of one line. Renders 2 cols on mobile, 3 on
- * tablet, 5 on desktop.
+ * Outcome tile grid — kept in source for now but no longer rendered.
+ * Removed from the marketing page on 2026-05-24 per design call:
+ * Masterclass's actual class detail pages don't use it; only their
+ * Sessions pages do. Leaving the component in place in case we want
+ * to revisit for Sessions-style offerings.
  */
 function StatStrip({ offering }: { offering: Offering }) {
   const course = offering.offering_courses?.[0]?.courses;
@@ -650,725 +682,6 @@ function Testimonials({
   );
 }
 
-/* ────────────────────────────────────────────────── */
-/*  Checkout Card                                     */
-/* ────────────────────────────────────────────────── */
-
-function CheckoutCard({
-  offering,
-  session,
-  profile,
-  razorpayReady,
-  razorpayError,
-}: {
-  offering: Offering;
-  session: any;
-  profile: any;
-  razorpayReady: boolean;
-  razorpayError: boolean;
-}) {
-  const navigate = useNavigate();
-  const { toast } = useToast();
-
-  const [guestName, setGuestName] = useState("");
-  const [guestEmail, setGuestEmail] = useState("");
-  const [guestPhone, setGuestPhone] = useState("");
-  const [phoneError, setPhoneError] = useState("");
-  const [couponCode, setCouponCode] = useState("");
-  const [discountInr, setDiscountInr] = useState(0);
-  const [couponApplied, setCouponApplied] = useState(false);
-  const [couponLoading, setCouponLoading] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-
-  // Scenario state: null = not checked yet, A/B/C
-  const [scenario, setScenario] = useState<"A" | "B" | "C" | null>(null);
-  const [checkingIdentity, setCheckingIdentity] = useState(false);
-
-  // Scenario C inline auth
-  const [loginMode, setLoginMode] = useState<"otp" | "password" | null>(null);
-  const [password, setPassword] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [loginLoading, setLoginLoading] = useState(false);
-
-  const price = Number(offering.price_inr);
-  const mrp = offering.mrp_inr ? Number(offering.mrp_inr) : null;
-  const afterDiscount = Math.max(price - discountInr, 0);
-  const isFree = afterDiscount === 0;
-
-  /* ── Phone validation (returns boolean, only sets error when explicitly asked) ── */
-  const validatePhone = (val: string, showError = true): boolean => {
-    const digits = val.replace(/\D/g, "");
-    if (digits.length !== 10) {
-      if (showError) setPhoneError("Please enter a valid 10-digit phone number");
-      return false;
-    }
-    setPhoneError("");
-    return true;
-  };
-
-  /* ── Debounced identity check ──
-   *
-   * Fires 600ms after the user stops typing, but ONLY when both email
-   * and a valid 10-digit phone are present. The CTA button stays visible
-   * the entire time — we just show a subtle "Checking..." indicator and
-   * disable the button while the lookup is in-flight.
-   */
-  const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lookupAbort = useRef<AbortController | null>(null);
-
-  const runIdentityCheck = useCallback(async (email: string, phone: string) => {
-    if (!email.trim() || !phone.trim() || session) return;
-    if (phone.replace(/\D/g, "").length !== 10) return;
-
-    // Abort any previous in-flight request
-    if (lookupAbort.current) lookupAbort.current.abort();
-    const controller = new AbortController();
-    lookupAbort.current = controller;
-
-    setCheckingIdentity(true);
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/check-user-exists`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          phone: phone.trim(),
-          offering_id: offering?.id,
-        }),
-        signal: controller.signal,
-      });
-      if (controller.signal.aborted) return;
-      if (!res.ok) { setCheckingIdentity(false); return; }
-      const data = await res.json();
-      if (controller.signal.aborted) return;
-      setScenario(data.scenario || null);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      /* silent — leave scenario as-is, don't block the user */
-    } finally {
-      if (!controller.signal.aborted) setCheckingIdentity(false);
-    }
-  }, [session, offering?.id]);
-
-  const scheduleLookup = useCallback((email: string, phone: string) => {
-    if (lookupTimer.current) clearTimeout(lookupTimer.current);
-    // Only schedule if both fields look complete
-    if (!email.trim() || phone.replace(/\D/g, "").length !== 10) return;
-    lookupTimer.current = setTimeout(() => runIdentityCheck(email, phone), 600);
-  }, [runIdentityCheck]);
-
-  // Cleanup timer and abort controller on unmount
-  useEffect(() => () => {
-    if (lookupTimer.current) clearTimeout(lookupTimer.current);
-    if (lookupAbort.current) lookupAbort.current.abort();
-  }, []);
-
-  // Restore coupon state after magic-link redirect (Scenario C)
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem("lu_checkout_coupon");
-      if (saved) {
-        const { code, discount } = JSON.parse(saved);
-        if (code && discount) {
-          setCouponCode(code);
-          setDiscountInr(Number(discount));
-          setCouponApplied(true);
-        }
-        sessionStorage.removeItem("lu_checkout_coupon");
-      }
-    } catch { /* ignore parse errors */ }
-  }, []);
-
-  // Change handlers — reset scenario and schedule a fresh lookup
-  const handleEmailChange = (v: string) => {
-    setGuestEmail(v);
-    setScenario(null);
-    setLoginMode(null);
-    setOtpSent(false);
-    scheduleLookup(v, guestPhone);
-  };
-  const handlePhoneChange = (v: string) => {
-    // Normalize: strip country code if user pastes +91… or 91…
-    let digits = v.replace(/\D/g, "");
-    if (digits.length > 10 && digits.startsWith("91")) {
-      digits = digits.slice(2);
-    }
-    digits = digits.slice(0, 10);
-    setGuestPhone(digits);
-    setPhoneError("");
-    setScenario(null);
-    setLoginMode(null);
-    setOtpSent(false);
-    scheduleLookup(guestEmail, digits);
-  };
-
-  /* ── Coupon apply ──
-   *
-   * Guests no longer have SELECT on the coupons table (see
-   * coupons_read_lockdown migration). Validation now goes through the
-   * validate-coupon edge function which runs with service-role privileges
-   * and only returns the discount preview — never used_count /
-   * max_redemptions or any other sensitive row data.
-   */
-  const handleApplyCoupon = async () => {
-    if (!couponCode.trim() || !offering) return;
-    setCouponLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("validate-coupon", {
-        body: {
-          coupon_code: couponCode.toUpperCase().trim(),
-          offering_id: offering.id,
-        },
-      });
-
-      if (error || !data?.valid) {
-        toast({
-          title: data?.error || "Invalid coupon",
-          variant: "destructive",
-        });
-        setCouponLoading(false);
-        return;
-      }
-
-      setDiscountInr(Number(data.discount_inr) || 0);
-      setCouponApplied(true);
-      toast({ title: "Coupon applied!" });
-    } catch {
-      toast({ title: "Error applying coupon", variant: "destructive" });
-    } finally {
-      setCouponLoading(false);
-    }
-  };
-
-  /* ── Coupon remove ── */
-  const handleRemoveCoupon = () => {
-    setCouponApplied(false);
-    setCouponCode("");
-    setDiscountInr(0);
-  };
-
-  /* ── Scenario C: Send magic link ── */
-  const handleSendMagicLink = async () => {
-    setLoginLoading(true);
-    // Preserve checkout state so it survives the magic-link redirect
-    if (couponApplied && couponCode) {
-      try {
-        sessionStorage.setItem(
-          "lu_checkout_coupon",
-          JSON.stringify({ code: couponCode, discount: discountInr }),
-        );
-      } catch { /* storage full — non-critical */ }
-    }
-    const { error } = await supabase.auth.signInWithOtp({
-      email: guestEmail.trim(),
-      options: { emailRedirectTo: window.location.href },
-    });
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      setOtpSent(true);
-      toast({ title: "Check your email!", description: "Click the link to sign in." });
-    }
-    setLoginLoading(false);
-  };
-
-  /* ── Scenario C: Password login ── */
-  const handlePasswordLogin = async () => {
-    setLoginLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: guestEmail.trim(),
-      password,
-    });
-    if (error) {
-      toast({ title: "Login failed", description: error.message, variant: "destructive" });
-    }
-    setLoginLoading(false);
-  };
-
-  /* ── Scenario C: Forgot password ── */
-  const handleForgotPassword = async () => {
-    const { error } = await supabase.auth.resetPasswordForEmail(guestEmail.trim(), {
-      redirectTo: window.location.href,
-    });
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Password reset email sent", description: "Check your email." });
-    }
-  };
-
-  /* ── Pay: authenticated ── */
-  const handleAuthPay = async () => {
-    if (!session || isProcessing) return;
-    setIsProcessing(true);
-    setLoading(true);
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-razorpay-order`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ offering_id: offering.id }),
-      });
-      if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
-      const data = await res.json();
-      openRazorpay(data, false);
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-      setLoading(false);
-      setIsProcessing(false);
-    }
-  };
-
-  /* ── Pay: guest (scenarios A & B) ── */
-  const handleGuestPay = async () => {
-    if (isProcessing) return;
-    if (!guestName.trim()) {
-      toast({ title: "Please enter your name", variant: "destructive" });
-      return;
-    }
-    if (!guestEmail.trim() || !guestPhone.trim()) {
-      toast({ title: "Please fill all fields", variant: "destructive" });
-      return;
-    }
-    if (!validatePhone(guestPhone)) return;
-    setIsProcessing(true);
-    setLoading(true);
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/guest-create-order`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          offering_id: offering.id,
-          guest_name: guestName.trim(),
-          guest_email: guestEmail.trim(),
-          guest_phone: guestPhone.trim(),
-          coupon_code: couponApplied ? couponCode.toUpperCase().trim() : undefined,
-          utm_source: params.get("utm_source") || undefined,
-          utm_medium: params.get("utm_medium") || undefined,
-          utm_campaign: params.get("utm_campaign") || undefined,
-          utm_content: params.get("utm_content") || undefined,
-          utm_term: params.get("utm_term") || undefined,
-        }),
-      });
-      if (!res.ok) {
-        const errBody = await res.text();
-        throw new Error(errBody || `HTTP ${res.status}`);
-      }
-      const data = await res.json();
-
-      // Free offering: backend returns success directly
-      if (data.success && data.payment_order_id) {
-        navigate(`/thank-you/${data.payment_order_id}`, {
-          state: {
-            fromPayment: true,
-            orderData: {
-              id: data.payment_order_id,
-              offering_id: offering.id,
-              total_inr: 0,
-              status: "captured",
-              razorpay_payment_id: null,
-              guest_email: guestEmail || null,
-              guest_name: guestName || null,
-              guest_phone: guestPhone || null,
-              user_id: session?.user?.id || null,
-              offerings: {
-                title: offering.title,
-                subtitle: offering.subtitle || null,
-                thumbnail_url: offering.thumbnail_url || null,
-                meta_pixel_id: offering.meta_pixel_id || null,
-                google_ads_conversion: offering.google_ads_conversion || null,
-                custom_tracking_script: offering.custom_tracking_script || null,
-                thankyou_thumbnail_url: offering.thankyou_thumbnail_url || null,
-                thankyou_headline: offering.thankyou_headline || null,
-                thankyou_body: offering.thankyou_body || null,
-                thankyou_cta_label: offering.thankyou_cta_label || null,
-                thankyou_cta_url: offering.thankyou_cta_url || null,
-                thankyou_auto_redirect: offering.thankyou_auto_redirect ?? true,
-                thankyou_redirect_seconds: offering.thankyou_redirect_seconds ?? 10,
-              },
-            },
-            magicLinkToken: data.magic_link_token || null,
-            guestEmail: guestEmail || null,
-          },
-        });
-        return;
-      }
-
-      openRazorpay(data, true);
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-      setLoading(false);
-      setIsProcessing(false);
-    }
-  };
-
-  /* ── Razorpay modal ── */
-  const openRazorpay = (data: any, isGuest: boolean) => {
-    if (!(window as any).Razorpay) {
-      toast({ title: "Payment unavailable", description: "Please try again in a moment.", variant: "destructive" });
-      setLoading(false);
-      setIsProcessing(false);
-      return;
-    }
-
-    const options = {
-      key: data.key_id,
-      amount: data.amount,
-      currency: data.currency,
-      name: "LevelUp Learning",
-      description: offering.title,
-      order_id: data.razorpay_order_id,
-      handler: async (response: any) => {
-        try {
-          const headers: Record<string, string> = { "Content-Type": "application/json" };
-          if (!isGuest && session) {
-            headers.Authorization = `Bearer ${session.access_token}`;
-          }
-          const verifyRes = await fetch(`${SUPABASE_URL}/functions/v1/verify-razorpay-payment`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_signature: response.razorpay_signature,
-              payment_order_id: data.payment_order_id,
-              is_guest: isGuest,
-            }),
-          });
-
-          if (!verifyRes.ok) {
-            let errMsg = `HTTP ${verifyRes.status}`;
-            try {
-              const errBody = await verifyRes.json();
-              errMsg = errBody.error || errMsg;
-            } catch {
-              try {
-                errMsg = (await verifyRes.text()) || errMsg;
-              } catch {}
-            }
-            if (import.meta.env.DEV) console.error("[PublicOffering] Verification failed:", verifyRes.status, errMsg);
-            throw new Error(errMsg);
-          }
-
-          const verifyData = await verifyRes.json();
-          if (verifyData.success) {
-            navigate(`/thank-you/${data.payment_order_id}`, {
-              state: {
-                fromPayment: true,
-                orderData: {
-                  id: data.payment_order_id,
-                  offering_id: offering.id,
-                  total_inr: afterDiscount,
-                  status: "captured",
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  guest_email: isGuest ? guestEmail : null,
-                  guest_name: isGuest ? guestName : null,
-                  guest_phone: isGuest ? guestPhone : null,
-                  user_id: session?.user?.id || null,
-                  offerings: {
-                    title: offering.title,
-                    subtitle: offering.subtitle || null,
-                    thumbnail_url: offering.thumbnail_url || null,
-                    meta_pixel_id: offering.meta_pixel_id || null,
-                    google_ads_conversion: offering.google_ads_conversion || null,
-                    custom_tracking_script: offering.custom_tracking_script || null,
-                    thankyou_thumbnail_url: offering.thankyou_thumbnail_url || null,
-                    thankyou_headline: offering.thankyou_headline || null,
-                    thankyou_body: offering.thankyou_body || null,
-                    thankyou_cta_label: offering.thankyou_cta_label || null,
-                    thankyou_cta_url: offering.thankyou_cta_url || null,
-                    thankyou_auto_redirect: offering.thankyou_auto_redirect ?? true,
-                    thankyou_redirect_seconds: offering.thankyou_redirect_seconds ?? 10,
-                  },
-                },
-                magicLinkToken: verifyData.magic_link_token || null,
-                guestEmail: isGuest ? guestEmail : null,
-              },
-            });
-          } else {
-            if (import.meta.env.DEV) console.error("[PublicOffering] Verification returned success=false:", verifyData);
-            toast({ title: "Verification failed", description: verifyData.error || "Please contact support.", variant: "destructive" });
-          }
-        } catch (err: any) {
-          if (import.meta.env.DEV) console.error("[PublicOffering] Verification error:", err);
-          toast({
-            title: "Verification error",
-            description: err.message && err.message !== "Payment verification failed" ? err.message : "Please contact support.",
-            variant: "destructive"
-          });
-        }
-        setLoading(false);
-        setIsProcessing(false);
-      },
-      prefill: {
-        name: session ? profile?.full_name : guestName,
-        email: session ? profile?.email : guestEmail,
-        contact: session ? "" : guestPhone,
-      },
-      theme: { color: "#F5F1E8" },
-    };
-
-    const rzp = new (window as any).Razorpay(options);
-    rzp.on("payment.failed", () => {
-      toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
-      setLoading(false);
-      setIsProcessing(false);
-    });
-    rzp.open();
-  };
-
-  /* ── Determine if pay button should show ──
-   *
-   * The button is ALWAYS visible once the guest has filled name+email+phone.
-   * It is disabled (not hidden) while we check identity or if scenario is C.
-   * This prevents the jarring "disappearing CTA" that confused users.
-   */
-  const guestFormFilled = !!(guestName.trim() && guestEmail.trim() && guestPhone.trim());
-  const phoneIsValid = guestPhone.replace(/\D/g, "").length === 10;
-  const canPay = session || guestFormFilled;
-  const payDisabled = loading || isProcessing || razorpayError || (!isFree && !razorpayReady) || checkingIdentity || (guestFormFilled && !phoneIsValid);
-  const isAuthenticated = !!session;
-
-  /* ── Button label ── */
-  const payButtonLabel = isFree
-    ? "Start Learning \u2014 Free"
-    : `Enrol Now \u2014 Full Access \u00b7 \u20b9${afterDiscount.toLocaleString("en-IN")}`;
-
-  /* ── Render ── */
-
-  // Path B / Google Play Reader Rule: the Android shell must not expose any
-  // purchase UI. Render a deep-link CTA that bounces the user to the same
-  // offering page on the public web origin, where Razorpay can take payment.
-  if (isAndroid()) {
-    return (
-      <div id="checkout-card">
-        <ContinueOnWebCTA webPath={`/p/${offering.slug}`} />
-      </div>
-    );
-  }
-
-  return (
-    <div id="checkout-card" className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-6 space-y-5">
-      {/* Price */}
-      <div>
-        <div className="flex items-baseline gap-3">
-          <span className="text-3xl font-bold text-[hsl(var(--cream))]">
-            {isFree ? "Free" : `₹${afterDiscount.toLocaleString("en-IN")}`}
-          </span>
-          {mrp && mrp > price && !isFree && (
-            <span className="text-lg text-muted-foreground line-through">
-              ₹{mrp.toLocaleString("en-IN")}
-            </span>
-          )}
-        </div>
-        {discountInr > 0 && (
-          <div className="flex items-center gap-2 mt-1">
-            <p className="text-sm text-[hsl(var(--accent-emerald))]">
-              You save ₹{discountInr.toLocaleString("en-IN")}!
-            </p>
-            <button
-              onClick={handleRemoveCoupon}
-              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5"
-            >
-              <X className="h-3 w-3" /> Remove
-            </button>
-          </div>
-        )}
-      </div>
-
-      <Separator className="bg-border" />
-
-      {/* Coupon */}
-      {!isFree && (
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Coupon code"
-              value={couponCode}
-              onChange={(e) => setCouponCode(e.target.value)}
-              className="pl-9 h-12 bg-[hsl(var(--surface-2))] border-border"
-              disabled={couponApplied}
-            />
-          </div>
-          <Button
-            variant="outline"
-            onClick={handleApplyCoupon}
-            disabled={couponLoading || couponApplied}
-            className="border-border h-12 px-5"
-          >
-            {couponLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : couponApplied ? "Applied" : "Apply"}
-          </Button>
-        </div>
-      )}
-
-      <Separator className="bg-border" />
-
-      {/* If user is already authenticated (e.g. after Scenario C login) */}
-      {isAuthenticated ? (
-        <div className="space-y-4">
-          <p className="text-sm text-[hsl(var(--accent-emerald))] flex items-center gap-1.5">
-            <Check className="h-4 w-4" />
-            Welcome back, {profile?.full_name || profile?.email}!
-          </p>
-          <Button
-            onClick={handleAuthPay}
-            disabled={loading || isProcessing || razorpayError || (!isFree && !razorpayReady)}
-            className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold"
-          >
-            {isProcessing ? (
-              <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Processing...</>
-            ) : (
-              <>{payButtonLabel} <ArrowRight className="h-4 w-4 ml-2" /></>
-            )}
-          </Button>
-          {!isFree && (
-            <p className="text-xs text-muted-foreground/70 text-center">
-              7-day refund policy. No questions asked.
-            </p>
-          )}
-        </div>
-      ) : (
-        /* Guest form — always show name/email/phone */
-        <div className="space-y-3">
-          <Input
-            placeholder="Full name"
-            value={guestName}
-            onChange={(e) => setGuestName(e.target.value)}
-            className="h-12 bg-[hsl(var(--surface-2))] border-border"
-            required
-          />
-          <Input
-            type="email"
-            placeholder="Email address"
-            value={guestEmail}
-            onChange={(e) => handleEmailChange(e.target.value)}
-            className="h-12 bg-[hsl(var(--surface-2))] border-border"
-          />
-          <div>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">+91</span>
-              <Input
-                type="tel"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="Phone number"
-                value={guestPhone}
-                onChange={(e) => handlePhoneChange(e.target.value)}
-                className="pl-12 h-12 bg-[hsl(var(--surface-2))] border-border"
-              />
-            </div>
-            {phoneError && (
-              <p className="text-xs text-destructive mt-1">{phoneError}</p>
-            )}
-          </div>
-
-          {/* Identity check loading */}
-          {checkingIdentity && (
-            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <Loader2 className="h-3 w-3 animate-spin" /> Checking...
-            </p>
-          )}
-
-          {/* Scenario A/C: Existing account detected — soft info banner, does NOT block checkout */}
-          {(scenario === "A" || scenario === "C") && !checkingIdentity && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-[hsl(var(--accent-amber)/0.1)] border border-[hsl(var(--accent-amber)/0.2)]">
-              <AlertCircle className="h-4 w-4 text-[hsl(var(--accent-amber))] mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-foreground">
-                This email is linked to an existing account.{" "}
-                <a href="/login" className="font-semibold text-[hsl(var(--cream))] hover:underline">Sign in</a>{" "}
-                for the best experience, or continue as guest.
-              </p>
-            </div>
-          )}
-
-          {/* Pay button — always visible once form is filled */}
-          {canPay && (
-            <>
-              <Button
-                onClick={handleGuestPay}
-                disabled={payDisabled}
-                className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 h-12 text-base font-semibold disabled:opacity-50"
-              >
-                {isProcessing ? (
-                  <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Processing...</>
-                ) : checkingIdentity ? (
-                  <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Verifying...</>
-                ) : (
-                  <>{payButtonLabel} <ArrowRight className="h-4 w-4 ml-2" /></>
-                )}
-              </Button>
-              <p className="text-xs text-muted-foreground text-center">
-                {isFree
-                  ? "No payment required. We'll create your account automatically."
-                  : "Secure payment via Razorpay. We'll create your account automatically."}
-              </p>
-              {!isFree && (
-                <p className="text-xs text-muted-foreground/70 text-center">
-                  7-day refund policy. No questions asked.
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ────────────────────────────────────────────────── */
-/*  Apply Card (staged payments)                      */
-/* ────────────────────────────────────────────────── */
-
-function ApplyCard({ offering }: { offering: any }) {
-  const appFee = Number(offering.app_fee_inr || 0);
-  const confirmation = Number(offering.confirmation_amount_inr || 0);
-  const total = Number(offering.price_inr || 0);
-  const balance = Math.max(total - appFee - confirmation, 0);
-
-  // Staged applications also collect money (the application fee). On Android
-  // we bounce to web for the same Path B reason as the main checkout card.
-  if (isAndroid()) {
-    return <ContinueOnWebCTA webPath={`/p/${offering.slug}`} />;
-  }
-
-  return (
-    <div className="rounded-xl border border-border bg-surface p-6 space-y-4">
-      <div className="text-center">
-        <p className="text-2xl font-bold text-foreground">₹{total.toLocaleString("en-IN")}</p>
-        <p className="text-sm text-muted-foreground">Total program fee</p>
-      </div>
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <span className="h-6 w-6 rounded-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] flex items-center justify-center text-xs font-bold">1</span>
-          <div className="flex-1"><p className="text-sm text-foreground">Application Fee</p></div>
-          <span className="text-sm font-semibold text-foreground">₹{appFee.toLocaleString("en-IN")}</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="h-6 w-6 rounded-full bg-surface-2 text-muted-foreground flex items-center justify-center text-xs font-bold">2</span>
-          <div className="flex-1"><p className="text-sm text-muted-foreground">Confirmation (after acceptance)</p></div>
-          <span className="text-sm text-muted-foreground">₹{confirmation.toLocaleString("en-IN")}</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="h-6 w-6 rounded-full bg-surface-2 text-muted-foreground flex items-center justify-center text-xs font-bold">3</span>
-          <div className="flex-1"><p className="text-sm text-muted-foreground">Balance (before cohort starts)</p></div>
-          <span className="text-sm text-muted-foreground">₹{balance.toLocaleString("en-IN")}</span>
-        </div>
-      </div>
-      {offering.tally_form_url && (
-        <a href={offering.tally_form_url} target="_blank" rel="noopener noreferrer" className="block">
-          <Button size="xl" className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
-            Apply Now — ₹{appFee.toLocaleString("en-IN")}
-          </Button>
-        </a>
-      )}
-    </div>
-  );
-}
 
 /* ────────────────────────────────────────────────── */
 /*  Main Page                                         */
@@ -1376,93 +689,18 @@ function ApplyCard({ offering }: { offering: any }) {
 
 export default function PublicOffering() {
   const { slug } = useParams<{ slug: string }>();
-  const { session, profile } = useAuth();
+  const navigate = useNavigate();
+  const { session } = useAuth();
   const [offering, setOffering] = useState<Offering | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [razorpayReady, setRazorpayReady] = useState(false);
-  const [razorpayError, setRazorpayError] = useState(false);
   const [couponInfo, setCouponInfo] = useState<{code: string; discount_type: string; discount_value: number} | null>(null);
 
   usePageTitle(offering?.title || "LevelUp Learning");
 
-  /* ── Defer-load Razorpay script (off the LCP critical path) ──
-   *
-   * Razorpay's checkout.js pulls in ~470 KB of vendor chunks (lottie, lang
-   * files, asset-common, the modal app itself). On a throttled-3G Lighthouse
-   * run that competes with the LCP image for bandwidth, pushing LCP from
-   * ~7s to ~13s. Defer the actual insertion to after the page has settled
-   * (requestIdleCallback or first user interaction), whichever comes first.
-   * The button stays disabled until ready — typically a few hundred ms gap.
-   */
-  useEffect(() => {
-    if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')) {
-      setRazorpayReady(true);
-      return;
-    }
-
-    let cancelled = false;
-    let scriptLoaded = false;
-
-    const loadScript = () => {
-      if (cancelled || scriptLoaded) return;
-      // Re-check in case another component on the page raced us.
-      if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')) {
-        setRazorpayReady(true);
-        scriptLoaded = true;
-        return;
-      }
-      const script = document.createElement("script");
-      script.src = "https://checkout.razorpay.com/v1/checkout.js";
-      script.async = true;
-      script.onload = () => {
-        scriptLoaded = true;
-        if (!cancelled) setRazorpayReady(true);
-      };
-      script.onerror = () => {
-        if (!cancelled) setRazorpayError(true);
-      };
-      document.body.appendChild(script);
-
-      const errorTimeout = window.setTimeout(() => {
-        if (!scriptLoaded && !cancelled) setRazorpayError(true);
-      }, 10000);
-      // Stash on the script element so cleanup can clear it.
-      (script as any).__errorTimeout = errorTimeout;
-    };
-
-    // 1) Schedule via requestIdleCallback so LCP isn't blocked.
-    const idleCb: any =
-      typeof (window as any).requestIdleCallback === "function"
-        ? (window as any).requestIdleCallback(loadScript, { timeout: 4000 })
-        : window.setTimeout(loadScript, 2500);
-
-    // 2) Also trigger on first user interaction (faster than idle on phones).
-    const onInteract = () => {
-      loadScript();
-      removeInteractionListeners();
-    };
-    const removeInteractionListeners = () => {
-      window.removeEventListener("touchstart", onInteract);
-      window.removeEventListener("mousemove", onInteract);
-      window.removeEventListener("scroll", onInteract);
-      window.removeEventListener("keydown", onInteract);
-    };
-    window.addEventListener("touchstart", onInteract, { passive: true, once: true });
-    window.addEventListener("mousemove", onInteract, { passive: true, once: true });
-    window.addEventListener("scroll", onInteract, { passive: true, once: true });
-    window.addEventListener("keydown", onInteract, { once: true });
-
-    return () => {
-      cancelled = true;
-      removeInteractionListeners();
-      if (typeof (window as any).cancelIdleCallback === "function") {
-        (window as any).cancelIdleCallback(idleCb);
-      } else {
-        window.clearTimeout(idleCb);
-      }
-    };
-  }, []);
+  // Razorpay script loading moved to CheckoutPage along with the actual
+  // payment surface, so this marketing page no longer pays the
+  // ~470 KB LCP-blocking script cost.
 
   /* ── Fetch offering ── */
   useEffect(() => {
@@ -1673,15 +911,6 @@ export default function PublicOffering() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Razorpay load error banner */}
-      {razorpayError && !isFree && (
-        <div className="bg-[hsl(var(--accent-amber)/0.15)] border-b border-[hsl(var(--accent-amber)/0.3)] px-4 py-3 text-center">
-          <p className="text-sm text-foreground">
-            <AlertCircle className="h-4 w-4 inline mr-1.5 text-[hsl(var(--accent-amber))]" />
-            Payment system is temporarily unavailable. Please refresh the page or try again later.
-          </p>
-        </div>
-      )}
 
       {/* Top bar */}
       <header className="border-b border-border bg-[hsl(var(--surface))]">
@@ -1700,17 +929,38 @@ export default function PublicOffering() {
         </div>
       </header>
 
-      <main className="max-w-7xl xl:max-w-[1440px] 2xl:max-w-[1680px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 py-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
-        {/* Desktop: two-col, Mobile: stacked */}
-        <div className="lg:flex lg:gap-8">
-          {/* Left: product details */}
-          <div className="lg:w-[60%] space-y-10 sm:space-y-14">
-            <div className="space-y-5 sm:space-y-6">
-              <HeroBanner offering={offering} />
-              <StatStrip offering={offering} />
-            </div>
+      <main className="max-w-5xl xl:max-w-6xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 py-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
+        {/* Single-column marketing flow. Checkout lives on its own
+            route now (/checkout/&lt;offeringId&gt;) so this page can stay
+            purely about helping the buyer decide. The Enrol CTA in
+            HeroActions ships them to checkout when they're ready. */}
+        <div className="space-y-10 sm:space-y-14">
+          <div className="space-y-5 sm:space-y-6">
+            <HeroBanner offering={offering} />
+            {couponInfo && (
+              <div className="rounded-xl border border-[hsl(var(--accent-emerald)/0.3)] bg-[hsl(var(--accent-emerald)/0.08)] p-3 sm:p-4 flex items-center gap-3">
+                <Tag className="h-5 w-5 text-[hsl(var(--accent-emerald))] shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground">
+                    {couponInfo.discount_type === "percent"
+                      ? `${couponInfo.discount_value}% off`
+                      : `₹${Number(couponInfo.discount_value).toLocaleString("en-IN")} off`}
+                    {" "}with code{" "}
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(couponInfo.code); toast.success("Copied!"); }}
+                      className="font-mono font-bold text-[hsl(var(--accent-emerald))] hover:underline"
+                    >
+                      {couponInfo.code}
+                    </button>
+                  </p>
+                  <p className="text-xs text-muted-foreground">Auto-applied at checkout.</p>
+                </div>
+              </div>
+            )}
+            <HeroActions offering={offering} />
+          </div>
 
-            <InstructorCard offering={offering} />
+          <InstructorCard offering={offering} />
 
             {highlights.length > 0 && (
               <div className="space-y-4">
@@ -1755,76 +1005,54 @@ export default function PublicOffering() {
             <Testimonials items={offering.checkout_testimonials} />
 
             <FAQs items={offering.offering_courses?.[0]?.courses?.faqs} />
-          </div>
 
-          {/* Right: sticky checkout — desktop */}
-          <div className="hidden lg:block lg:w-[40%]">
-            <div className="sticky top-8 space-y-4">
-              {couponInfo && (
-                <div className="rounded-xl border border-[hsl(var(--accent-emerald)/0.3)] bg-[hsl(var(--accent-emerald)/0.08)] p-4 flex items-center gap-3">
-                  <Tag className="h-5 w-5 text-[hsl(var(--accent-emerald))] shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-foreground">
-                      {couponInfo.discount_type === "percent" ? `${couponInfo.discount_value}% off` : `₹${Number(couponInfo.discount_value).toLocaleString("en-IN")} off`}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Use code <button onClick={() => {navigator.clipboard.writeText(couponInfo.code); toast.success("Copied!")}} className="font-mono font-bold text-[hsl(var(--accent-emerald))] hover:underline">{couponInfo.code}</button> at checkout
-                    </p>
-                  </div>
-                </div>
-              )}
-              {isStaged ? <ApplyCard offering={offering} /> : <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} razorpayError={razorpayError} />}
-            </div>
-          </div>
-
-          {/* Mobile: checkout below */}
-          <div id="checkout-section" className="lg:hidden mt-8 space-y-4">
-            {couponInfo && (
-              <div className="rounded-xl border border-[hsl(var(--accent-emerald)/0.3)] bg-[hsl(var(--accent-emerald)/0.08)] p-4 flex items-center gap-3">
-                <Tag className="h-5 w-5 text-[hsl(var(--accent-emerald))] shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground">
-                    {couponInfo.discount_type === "percent" ? `${couponInfo.discount_value}% off` : `₹${Number(couponInfo.discount_value).toLocaleString("en-IN")} off`}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Use code <button onClick={() => {navigator.clipboard.writeText(couponInfo.code); toast.success("Copied!")}} className="font-mono font-bold text-[hsl(var(--accent-emerald))] hover:underline">{couponInfo.code}</button> at checkout
-                  </p>
-                </div>
+            {/* Final-CTA reminder. By the time the buyer's scrolled this
+                far they've consumed the page — give them an obvious way
+                back to checkout without scrolling up. Mirrors the hero
+                actions but framed as a reminder. */}
+            <div className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-6 sm:p-8 text-center space-y-4">
+              <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+                Ready when you are
+              </p>
+              <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+                Start {offering.instructor_name ? offering.instructor_name.split(" ")[0] + "'s" : "this"} masterclass today
+              </h2>
+              <div className="pt-2">
+                <HeroActions offering={offering} />
               </div>
-            )}
-            {isStaged ? <ApplyCard offering={offering} /> : <CheckoutCard offering={offering} session={session} profile={profile} razorpayReady={razorpayReady} razorpayError={razorpayError} />}
-          </div>
+            </div>
         </div>
       </main>
 
-      {/* Mobile sticky CTA — hidden on Android (Path B). The in-page
-          checkout section already renders the Android Continue-on-web
-          card, so the sticky variant would be redundant and would surface
-          a price chip Google Play could flag as a purchase entry point. */}
+      {/* Mobile sticky CTA — hidden on Android (Path B compliance).
+          Price + Enrol Now persistent across the page so the buyer
+          never has to scroll back to act. The Masterclass iOS pattern.
+          Navigates to the dedicated checkout route. */}
       {!isAndroid() && (
-      <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-        <div className="flex items-center justify-between">
-          <div>
+      <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             {isFree ? (
-              <span className="text-xl font-bold text-[hsl(var(--accent-emerald))]">Free</span>
+              <span className="text-2xl font-bold text-[hsl(var(--accent-emerald))]">Free</span>
             ) : (
-              <>
-                <span className="text-xl font-bold text-[hsl(var(--cream))]">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-foreground tracking-[-0.01em]">
                   ₹{Number(offering.price_inr).toLocaleString("en-IN")}
                 </span>
                 {offering.mrp_inr && Number(offering.mrp_inr) > Number(offering.price_inr) && (
-                  <span className="text-sm text-muted-foreground line-through ml-2">
+                  <span className="text-sm text-muted-foreground line-through font-mono">
                     ₹{Number(offering.mrp_inr).toLocaleString("en-IN")}
                   </span>
                 )}
-              </>
+              </div>
             )}
           </div>
           <Button
-            onClick={() => document.getElementById("checkout-section")?.scrollIntoView({ behavior: "smooth" })}
-            className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 font-semibold h-12 px-5 text-base"
+            onClick={() => navigate(`/checkout/${offering.id}`)}
+            className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 font-semibold h-12 px-5 text-base shrink-0 shadow-[0_10px_30px_-10px_hsl(var(--cream)/0.5)]"
           >
-            {isFree ? "Start Learning" : "Enrol Now"} <ArrowRight className="h-4 w-4 ml-1" />
+            {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}
+            <ArrowRight className="h-4 w-4 ml-1.5" />
           </Button>
         </div>
       </div>
