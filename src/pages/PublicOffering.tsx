@@ -33,6 +33,8 @@ interface ChapterRow {
   duration_seconds: number | null;
   make_free: boolean | null;
   sort_order: number;
+  thumbnail_url: string | null;
+  vdocipher_thumbnail_url: string | null;
 }
 interface SectionRow {
   id: string;
@@ -302,6 +304,95 @@ function IncludedCourses({ courses }: { courses: OfferingCourse[] }) {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────── */
+/*  WhatYoullLearn — marketing preview rail above the */
+/*  full curriculum accordion. Shows the first handful */
+/*  of lessons as thumbnail cards so a prospect can    */
+/*  see the actual content rather than just titles in  */
+/*  an accordion. Non-interactive: cards don't link    */
+/*  anywhere because most viewers here are unauthed.   */
+/* ────────────────────────────────────────────────── */
+function WhatYoullLearn({ sections }: { sections?: SectionRow[] }) {
+  if (!sections?.length) return null;
+  // Flatten sections in their declared order, then pick the first 6
+  // lessons. That tends to be the most enticing preview - early
+  // lessons set the tone and let buyers gauge fit.
+  const sorted = [...sections].sort((a, b) => a.sort_order - b.sort_order);
+  const flat = sorted.flatMap((s) =>
+    [...(s.chapters || [])].sort((a, b) => a.sort_order - b.sort_order),
+  );
+  if (!flat.length) return null;
+  const visible = flat.slice(0, 6);
+
+  return (
+    <div className="space-y-5">
+      <div className="space-y-3">
+        <SectionEyebrow>A look inside</SectionEyebrow>
+        <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+          What you'll learn
+        </h2>
+      </div>
+      <div className="relative">
+        <div className="flex gap-3 sm:gap-4 overflow-x-auto snap-x hide-scrollbar pb-2 -mx-1 px-1">
+          {visible.map((ch, idx) => {
+            const thumb = ch.thumbnail_url || ch.vdocipher_thumbnail_url || null;
+            const mins = ch.duration_seconds
+              ? Math.max(1, Math.round(ch.duration_seconds / 60))
+              : null;
+            return (
+              <div
+                key={ch.id}
+                className="min-w-[70vw] sm:min-w-[260px] lg:min-w-[280px] max-w-[300px] bg-surface rounded-xl overflow-hidden flex-shrink-0 snap-start ring-1 ring-white/5 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)]"
+              >
+                <div className="relative aspect-video bg-surface-2 overflow-hidden">
+                  {thumb ? (
+                    <img
+                      src={thumb}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center font-mono text-2xl font-semibold text-muted-foreground/30">
+                      {String(idx + 1).padStart(2, "0")}
+                    </div>
+                  )}
+                  {/* Lesson number chip, always visible so the buyer
+                      sees the sequencing at a glance. */}
+                  <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-[10px] font-mono text-white tracking-wider">
+                    LESSON {String(idx + 1).padStart(2, "0")}
+                  </span>
+                  {ch.make_free && (
+                    <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-[hsl(var(--accent-emerald))]/90 text-[10px] font-mono text-white uppercase tracking-wider">
+                      Free preview
+                    </span>
+                  )}
+                </div>
+                <div className="p-3 sm:p-4 space-y-1">
+                  <p className="text-sm font-semibold leading-snug line-clamp-2">
+                    {ch.title}
+                  </p>
+                  {mins && (
+                    <p className="text-[11px] text-muted-foreground font-mono">
+                      {mins} min
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {/* Right-edge fade hint - matches the Continue Learning pattern
+            on Home, gives a visual cue that more content scrolls. */}
+        {flat.length > visible.length && (
+          <div className="pointer-events-none absolute top-0 right-0 bottom-0 w-12 bg-gradient-to-l from-background to-transparent" />
+        )}
       </div>
     </div>
   );
@@ -1391,7 +1482,7 @@ export default function PublicOffering() {
                 duration_minutes, total_lessons,
                 sections!sections_course_id_fkey(
                   id, title, sort_order,
-                  chapters(id, title, description, duration_seconds, make_free, sort_order)
+                  chapters(id, title, description, duration_seconds, make_free, sort_order, thumbnail_url, vdocipher_thumbnail_url)
                 )
               )
             )
@@ -1649,6 +1740,10 @@ export default function PublicOffering() {
 
             {/* Below-the-fold rich content sourced from the linked course.
                 Each section bails to null if data isn't populated. */}
+            <WhatYoullLearn
+              sections={offering.offering_courses?.[0]?.courses?.sections}
+            />
+
             <Curriculum
               sections={offering.offering_courses?.[0]?.courses?.sections}
               durationMinutes={offering.offering_courses?.[0]?.courses?.duration_minutes}

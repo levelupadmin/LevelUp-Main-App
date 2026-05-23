@@ -608,6 +608,12 @@ const ChapterViewer = () => {
     return () => { cancelled = true; };
   }, [chapterId, user]);
 
+  // Hold the live notes string in a ref so the unmount/chapter-switch
+  // flush below can read the latest value without going stale on the
+  // captured closure.
+  const notesRef = useRef("");
+  notesRef.current = notes;
+
   // Debounced autosave - upserts the (user_id, chapter_id) row whenever
   // the textarea content changes after hydration completes.
   useEffect(() => {
@@ -641,6 +647,32 @@ const ChapterViewer = () => {
     }, 600);
     return () => clearTimeout(t);
   }, [notes, chapterId, user]);
+
+  // Flush on unmount or chapter switch. The debounced effect above
+  // clears its timer on cleanup, which means the last ~600ms of
+  // typing would be lost when the user navigates away mid-edit.
+  // This effect fires a fire-and-forget save with the latest value
+  // from the ref so nothing gets clipped. We don't need to set
+  // notesSavedAt here - the component is gone.
+  useEffect(() => {
+    return () => {
+      if (!notesHydratedRef.current) return;
+      if (!chapterId || !user) return;
+      const finalNotes = notesRef.current;
+      if (finalNotes) {
+        void supabase.from("chapter_notes").upsert(
+          { user_id: user.id, chapter_id: chapterId, body: finalNotes },
+          { onConflict: "user_id,chapter_id" }
+        );
+      } else {
+        void supabase
+          .from("chapter_notes")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("chapter_id", chapterId);
+      }
+    };
+  }, [chapterId, user]);
 
   // Lightweight refresh for Q&A only — used after posting a question so we don't
   // unmount the whole page (which would flash the loader and reset the Tabs back
