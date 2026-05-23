@@ -136,7 +136,12 @@ const Signup = () => {
 
       const resp = await fetch(VERIFY_MSG91_OTP_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // Matches Forge's pattern - belt-and-braces against future
+          // verify_jwt flips.
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
         body: JSON.stringify({
           phone,
           accessToken: token,

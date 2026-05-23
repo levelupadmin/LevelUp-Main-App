@@ -23,3 +23,5 @@ project_id = "twqagwleffjggoemzfqs"
     verify_jwt = false
   [functions.vdocipher-upload-credential]
     verify_jwt = false
+  [functions.verify-msg91-otp]
+    verify_jwt = false

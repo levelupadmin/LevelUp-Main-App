@@ -132,8 +132,14 @@ export const sendOtp = async (identifier: string): Promise<WidgetReason> => {
 
 /**
  * Verify an OTP. The widget's success callback gives us an access
- * token (a JWT) in the `message` field - we forward that to our
- * verify-msg91-otp edge function which mints a Supabase session.
+ * token (a JWT) we forward to our verify-msg91-otp edge function
+ * which mints a Supabase session.
+ *
+ * MSG91's response field name has historically shifted between
+ * provider versions - older docs and the Forge integration both
+ * defensively read `access_token`, `token`, then fall back to
+ * `message` (which is what the current provider seems to use).
+ * Mirror that here so a silent MSG91 SDK upgrade doesn't break us.
  */
 export const verifyOtp = async (otp: string | number): Promise<{ accessToken: string }> => {
   if (typeof window.verifyOtp !== "function") {
@@ -144,7 +150,12 @@ export const verifyOtp = async (otp: string | number): Promise<{ accessToken: st
     window.verifyOtp!(
       otpNum,
       (r) => {
-        const token = r?.message;
+        const data = r as Record<string, unknown>;
+        const token =
+          (typeof data?.access_token === "string" && data.access_token) ||
+          (typeof data?.token === "string" && data.token) ||
+          (typeof data?.message === "string" && data.message) ||
+          "";
         if (!token) return reject(new Error("Verify succeeded but no token returned"));
         resolve({ accessToken: token });
       },
