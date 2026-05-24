@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { isAndroid } from "@/lib/platform";
+import { isAndroid, isNative } from "@/lib/platform";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import usePageTitle from "@/hooks/usePageTitle";
 import InitialsAvatar from "@/components/InitialsAvatar";
@@ -297,7 +297,7 @@ const EventDetail = () => {
             {/* Path B / Reader Rule: hide price + paid-register CTA
                 on Android. Free events stay registrable in-app since
                 no payment is involved. */}
-            {!isAndroid() && (
+            {!isNative() && (
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1">Price</p>
                 <p className="text-2xl font-semibold">{priceDisplay}</p>
@@ -335,7 +335,7 @@ const EventDetail = () => {
                 {registering && <Loader2 className="h-4 w-4 animate-spin" />}
                 Register — Free
               </button>
-            ) : isAndroid() ? (
+            ) : isNative() ? (
               // Paid event on Android: swap the Register-with-price CTA
               // for a Continue-on-web card. The web flow handles the
               // Razorpay popup as before.

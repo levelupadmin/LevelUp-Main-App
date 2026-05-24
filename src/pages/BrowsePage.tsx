@@ -15,7 +15,7 @@ import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
 import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 import { useDebounce } from "@/hooks/useDebounce";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
-import { isAndroid } from "@/lib/platform";
+import { isAndroid, isNative } from "@/lib/platform";
 
 const TIER_ORDER = ["live_cohort", "masterclass", "advanced_program", "workshop"] as const;
 const TIER_FILTERS = ["All", "Mentorship Cohorts", "Masterclasses", "Programs", "Workshops"] as const;
@@ -386,7 +386,7 @@ const BrowsePage = () => {
                             // in-app checkout route. The slug isn't on the
                             // browse-query payload, so we fall back to a
                             // browse link if it's missing.
-                            isAndroid() ? (
+                            isNative() ? (
                               <ContinueOnWebCTA
                                 variant="inline"
                                 webPath={c.offering_slug ? `/p/${c.offering_slug}` : `/browse`}

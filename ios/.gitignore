@@ -1,0 +1,13 @@
+# Xcode build output + user state
+build/
+*.xcuserstate
+xcuserdata/
+
+# CocoaPods (managed by cap sync)
+App/Pods/
+
+# Web assets (copied in by `cap copy`)
+App/App/public/
+
+# Build configuration synced from capacitor.config.ts
+App/App/capacitor.config.json

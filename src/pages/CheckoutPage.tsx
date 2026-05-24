@@ -14,7 +14,7 @@ import { Loader2, Tag, ShieldCheck, BookOpen, ArrowLeft, CheckCircle2 } from "lu
 import type { Tables } from "@/integrations/supabase/types";
 import TrustPanel from "@/components/checkout/TrustPanel";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
-import { isAndroid } from "@/lib/platform";
+import { isAndroid, isNative } from "@/lib/platform";
 import { track } from "@/lib/analytics";
 
 /* ── Razorpay global type ── */
@@ -487,7 +487,7 @@ export default function CheckoutPage() {
   // Razorpay-driven checkout page. Replace the entire pay UI with a
   // Continue-on-web card that deep-links to the same offering on the public
   // web origin. Slug-aware so we land the user exactly where they tapped.
-  if (isAndroid()) {
+  if (isNative()) {
     const webPath = offering.slug ? `/p/${offering.slug}` : "/browse";
     return (
       <div className="min-h-screen bg-canvas flex items-center justify-center px-4 py-12">

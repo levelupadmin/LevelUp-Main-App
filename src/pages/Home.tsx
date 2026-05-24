@@ -16,7 +16,7 @@ import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useEnrolmentCounts, formatEnrolmentLabel, isHotCourse } from "@/hooks/useEnrolmentCounts";
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
 import { Section, EmptyState, ErrorState, SkeletonCard } from "@/components/patterns";
-import { isAndroid } from "@/lib/platform";
+import { isAndroid, isNative } from "@/lib/platform";
 
 
 // ── Section 1: Hero Welcome ──
@@ -785,7 +785,7 @@ const UpcomingEvents = () => {
                         {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
                         Register Free
                       </button>
-                    ) : isAndroid() ? (
+                    ) : isNative() ? (
                       // Path B / Reader Rule: no in-app price or pay
                       // affordances. Card is still tappable into the
                       // event detail (which itself swaps to a

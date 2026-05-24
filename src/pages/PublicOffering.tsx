@@ -6,7 +6,7 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import Footer from "@/components/Footer";
-import { isAndroid } from "@/lib/platform";
+import { isAndroid, isNative } from "@/lib/platform";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 import { track } from "@/lib/analytics";
@@ -178,7 +178,7 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
   // web checkout. Swap the entire pricing+CTA row for the trailer
   // affordance + a Continue-on-web card. This keeps the marketing
   // page useful for browsing while compliant for store review.
-  if (isAndroid()) {
+  if (isNative()) {
     return (
       <div className="space-y-3">
         {freeChapterId && (
@@ -1150,7 +1150,7 @@ export default function PublicOffering() {
             <HeroBanner offering={offering} />
             {/* Coupon banner is a price-discount affordance, so it has
                 to be hidden on Android for Reader Rule compliance. */}
-            {couponInfo && !isAndroid() && (
+            {couponInfo && !isNative() && (
               <div className="rounded-xl border border-[hsl(var(--accent-emerald)/0.3)] bg-[hsl(var(--accent-emerald)/0.08)] p-3 sm:p-4 flex items-center gap-3">
                 <Tag className="h-5 w-5 text-[hsl(var(--accent-emerald))] shrink-0" />
                 <div className="flex-1 min-w-0">
@@ -1252,7 +1252,7 @@ export default function PublicOffering() {
           Price + Enrol Now persistent across the page so the buyer
           never has to scroll back to act. The Masterclass iOS pattern.
           Navigates to the dedicated checkout route. */}
-      {!isAndroid() && (
+      {!isNative() && (
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
