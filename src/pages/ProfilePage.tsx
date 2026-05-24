@@ -630,10 +630,127 @@ const ProfilePage = () => {
         {/* Divider */}
         <div className="border-t border-border" />
 
+        {/* Invoices section — past purchases, downloadable PDFs */}
+        <InvoicesSection />
+
+        {/* Divider */}
+        <div className="border-t border-border" />
+
         {/* Danger zone — account deletion (Google Play requirement) */}
         <DangerZoneSection />
       </div>
     </>
+  );
+};
+
+// ── Invoices section ────────────────────────────────────────────────
+// Lists the user's captured orders with a "Download invoice (PDF)" button
+// for each. Clicking the button mints a fresh signed URL via the
+// generate-invoice-pdf edge function and opens the PDF in a new tab.
+//
+// Why not pre-generate signed URLs on load: they expire (we use 90-day
+// TTL but defensive). On-demand minting also lets us lazily generate
+// the PDF for any order that doesn't have one yet (e.g. orders captured
+// before this feature shipped).
+const InvoicesSection = () => {
+  const { user } = useAuth();
+  const [orders, setOrders] = useState<Array<{
+    id: string;
+    total_inr: number;
+    captured_at: string | null;
+    razorpay_payment_id: string | null;
+    offering_title: string;
+  }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data } = await supabase
+        .from("payment_orders")
+        .select("id, total_inr, captured_at, razorpay_payment_id, offerings(title)")
+        .eq("user_id", user.id)
+        .eq("status", "captured")
+        .order("captured_at", { ascending: false });
+      setOrders(
+        (data ?? []).map((o: any) => ({
+          id: o.id,
+          total_inr: Number(o.total_inr),
+          captured_at: o.captured_at,
+          razorpay_payment_id: o.razorpay_payment_id,
+          offering_title: o.offerings?.title ?? "Order",
+        }))
+      );
+      setLoading(false);
+    })();
+  }, [user]);
+
+  const downloadInvoice = async (orderId: string) => {
+    setDownloadingId(orderId);
+    try {
+      // Ensure the PDF exists in Storage (regenerates if missing - cheap)
+      const { data: genData, error: genErr } = await supabase.functions.invoke<{
+        path?: string;
+        bucket?: string;
+        error?: string;
+      }>("generate-invoice-pdf", { body: { payment_order_id: orderId } });
+      if (genErr || !genData?.path) {
+        toast.error(genData?.error || "Couldn't generate invoice");
+        return;
+      }
+      // Mint a fresh signed URL (5 min TTL is plenty - user opens
+      // immediately and the browser keeps the PDF after).
+      const { data: signed, error: signedErr } = await supabase.storage
+        .from(genData.bucket || "invoices")
+        .createSignedUrl(genData.path, 60 * 5);
+      if (signedErr || !signed?.signedUrl) {
+        toast.error("Couldn't get invoice link");
+        return;
+      }
+      window.open(signed.signedUrl, "_blank", "noopener");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  if (loading) return null;
+  if (!orders.length) return null;
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold">Invoices</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Receipts + tax invoices for every masterclass you've enrolled in.
+        </p>
+      </div>
+      <div className="rounded-2xl border border-border overflow-hidden">
+        {orders.map((o, i) => (
+          <div
+            key={o.id}
+            className={`flex items-center gap-4 px-4 py-3 sm:px-5 sm:py-4 ${i > 0 ? "border-t border-border" : ""}`}
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold truncate">{o.offering_title}</p>
+              <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+                ₹{o.total_inr.toLocaleString("en-IN")}
+                {o.captured_at ? ` · ${new Date(o.captured_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : ""}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => downloadInvoice(o.id)}
+              disabled={downloadingId === o.id}
+              className="shrink-0"
+            >
+              {downloadingId === o.id ? "Preparing…" : "PDF"}
+            </Button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 };
 

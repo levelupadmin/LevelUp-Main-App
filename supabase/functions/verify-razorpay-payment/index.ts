@@ -737,6 +737,94 @@ Deno.serve(async (req) => {
       responseGuestEmail = poForEmail?.guest_email || null;
     }
 
+    // ── Generate PDF invoice + queue receipt email ───────────────────
+    // Fire-and-forget; the client doesn't need to wait for the receipt
+    // pipeline before showing the ThankYou page. If either step fails,
+    // log and continue - the user can still re-download via the
+    // dashboard, and we can retry the email queue from admin.
+    void (async () => {
+      try {
+        const supaUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+        // 1. Generate the PDF (uploads to invoices/<user_id>/<order_id>.pdf)
+        const pdfRes = await fetch(`${supaUrl}/functions/v1/generate-invoice-pdf`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${serviceRole}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ payment_order_id }),
+        });
+        const pdfJson: any = await pdfRes.json().catch(() => ({}));
+        if (!pdfRes.ok || !pdfJson?.path) {
+          console.warn("[verify] invoice PDF generation failed:", pdfJson);
+          return;
+        }
+
+        // 2. Mint a 90-day signed URL for the PDF and pass to the email
+        const signed = await admin.storage
+          .from("invoices")
+          .createSignedUrl(pdfJson.path, 60 * 60 * 24 * 90);
+        const invoiceUrl = signed.data?.signedUrl
+          ?? `${Deno.env.get("SITE_URL") || "https://app.leveluplearning.in"}/profile`;
+
+        // 3. Resolve buyer name + email for the template
+        const { data: poFull } = await admin
+          .from("payment_orders")
+          .select("guest_name, guest_email, total_inr, razorpay_payment_id, captured_at, user_id, offerings(title)")
+          .eq("id", payment_order_id)
+          .single();
+        let toEmail = poFull?.guest_email || null;
+        let studentName = poFull?.guest_name || "there";
+        if (poFull?.user_id) {
+          const { data: u } = await admin
+            .from("users")
+            .select("full_name, email")
+            .eq("id", poFull.user_id)
+            .maybeSingle();
+          if (u) {
+            toEmail = u.email || toEmail;
+            studentName = u.full_name || studentName;
+          }
+        }
+        if (!toEmail) {
+          console.warn("[verify] no email on file for receipt; skipping");
+          return;
+        }
+
+        const dateStr = new Intl.DateTimeFormat("en-IN", {
+          day: "2-digit", month: "short", year: "numeric",
+          timeZone: "Asia/Kolkata",
+        }).format(new Date(poFull?.captured_at || Date.now()));
+
+        // 4. Queue via queue-transactional-email (uses the payment_receipt
+        //    template we just upgraded in DB)
+        await fetch(`${supaUrl}/functions/v1/queue-transactional-email`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${serviceRole}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            template_key: "payment_receipt",
+            to_email: toEmail,
+            variables: {
+              student_name: studentName,
+              offering_name: (poFull?.offerings as any)?.title || "your masterclass",
+              amount: Number(poFull?.total_inr || 0).toLocaleString("en-IN"),
+              payment_id: poFull?.razorpay_payment_id || "",
+              date: dateStr,
+              app_url: Deno.env.get("SITE_URL") || "https://app.leveluplearning.in",
+              invoice_url: invoiceUrl,
+            },
+          }),
+        });
+      } catch (e) {
+        console.warn("[verify] receipt pipeline failed:", e);
+      }
+    })();
+
     return jsonRes({
       success: true,
       offering_title: off?.title ?? "your program",
