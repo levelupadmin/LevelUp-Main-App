@@ -78,9 +78,22 @@ export default function CheckoutPage() {
   const [application, setApplication] = useState<any>(null);
   const [totalPreviouslyPaid, setTotalPreviouslyPaid] = useState(0);
 
+  // Guest checkout fields. Only used when there's no user session.
+  // On payment success the guest-create-order + verify-razorpay-payment
+  // edge functions create a real auth.users row using these details, so
+  // the buyer becomes a logged-in user without ever seeing an OTP.
+  const [guestName, setGuestName] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
+  const [guestTouched, setGuestTouched] = useState<{ name?: boolean; email?: boolean; phone?: boolean }>({});
+
   /* ── Load offering data ── */
   useEffect(() => {
-    if (authLoading || !user || !offeringId) return;
+    // Wait for auth to settle; load works for both signed-in users
+    // and anon (guest) visitors. Staged-payment offerings still need
+    // a logged-in user (application + balance flows) but that's
+    // checked at the staged-payment branch later.
+    if (authLoading || !offeringId) return;
 
     async function load() {
       setLoading(true);
@@ -124,15 +137,19 @@ export default function CheckoutPage() {
       });
 
       // Load application data for staged payments.
-      // Defence-in-depth: the server blocks cross-user staged payments, but
-      // we also filter by user_id client-side so we don't render another
-      // student's paid flags / amount if their UUID is pasted into `?app=`.
+      // Staged payments require a logged-in user (the application was
+      // created against their account). Anon visitors hitting a staged
+      // URL get bounced to login first.
       if (applicationId && paymentType !== "full") {
+        if (!user) {
+          navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
+          return;
+        }
         const { data: appData } = await (supabase as any)
           .from("cohort_applications")
           .select("id, user_id, status, full_name, email, app_fee_payment_id, confirmation_payment_id, balance_payment_id")
           .eq("id", applicationId)
-          .eq("user_id", user!.id)
+          .eq("user_id", user.id)
           .maybeSingle();
         if (!appData) {
           toast.error("This application isn't available on your account.");
@@ -168,6 +185,26 @@ export default function CheckoutPage() {
     }
     load();
   }, [authLoading, user, offeringId, applicationId, paymentType, navigate]);
+
+  // Prefill guest fields from logged-in user when available - the guest
+  // form is still rendered if needed (e.g. user has no full_name on
+  // file yet) but seeded so they don't retype.
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data } = await supabase
+        .from("users")
+        .select("full_name, email, phone")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (data) {
+        if (data.full_name && !guestName) setGuestName(data.full_name);
+        if (data.email && !guestEmail) setGuestEmail(data.email);
+        if (data.phone && !guestPhone) setGuestPhone(data.phone);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const isStaged = paymentType !== "full" && (offering as any)?.payment_mode === "staged";
   const stagedLabel = paymentType === "app_fee" ? "Application Fee"
@@ -273,8 +310,31 @@ export default function CheckoutPage() {
 
   /* ── Pay ── */
   const handlePay = async () => {
-    if (!offering || !user) return;
+    if (!offering) return;
     if (paymentInFlightRef.current) return;
+
+    // Validate guest fields when anon. Touch all so inline errors
+    // surface immediately on the first paint of the form.
+    const isAnon = !user;
+    if (isAnon) {
+      setGuestTouched({ name: true, email: true, phone: true });
+      if (!guestName.trim() || !guestEmail.trim() || !guestPhone.trim()) {
+        toast.error("Please fill in name, email and phone");
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim())) {
+        toast.error("Please enter a valid email");
+        return;
+      }
+      // Accept either 10-digit or +91-prefixed 12-digit; the edge
+      // function does the canonical normalisation.
+      const digits = guestPhone.replace(/\D/g, "");
+      if (!(digits.length === 10 || (digits.length === 12 && digits.startsWith("91")))) {
+        toast.error("Please enter a valid 10-digit Indian phone number");
+        return;
+      }
+    }
+
     paymentInFlightRef.current = true;
 
     // Validate custom fields — mark all as touched so inline errors appear
@@ -296,34 +356,62 @@ export default function CheckoutPage() {
     setPaying(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke(
-        "create-razorpay-order",
-        {
-          body: {
-            offering_id: offeringId,
-            coupon_id: isStaged ? null : (appliedCoupon?.id ?? null),
-            bump_ids: isStaged ? [] : Array.from(selectedBumps),
-            custom_field_values: customFieldValues,
-            ...(isStaged ? {
-              payment_type: paymentType,
-              application_id: applicationId,
-            } : {}),
-          },
-        }
-      );
+      // Anon → guest-create-order (creates the auth.users row on
+      // payment verify, no OTP). Logged-in → create-razorpay-order
+      // (existing path, ties to user.id).
+      const { data, error } = isAnon
+        ? await supabase.functions.invoke("guest-create-order", {
+            body: {
+              offering_id: offeringId,
+              guest_name: guestName.trim(),
+              guest_email: guestEmail.trim(),
+              guest_phone: guestPhone.trim(),
+              coupon_code: appliedCoupon?.code ?? null,
+            },
+          })
+        : await supabase.functions.invoke("create-razorpay-order", {
+            body: {
+              offering_id: offeringId,
+              coupon_id: isStaged ? null : (appliedCoupon?.id ?? null),
+              bump_ids: isStaged ? [] : Array.from(selectedBumps),
+              custom_field_values: customFieldValues,
+              ...(isStaged
+                ? {
+                    payment_type: paymentType,
+                    application_id: applicationId,
+                  }
+                : {}),
+            },
+          });
 
-      if (error || !data?.razorpay_order_id) {
+      if (error || (!data?.razorpay_order_id && !(isAnon && data?.success))) {
         toast.error(data?.error ?? "Failed to create order");
         setPaying(false); paymentInFlightRef.current = false;
         return;
       }
 
-      // Fetch user details for prefill
-      const { data: profile } = await supabase
-        .from("users")
-        .select("full_name, email, phone")
-        .eq("id", user.id)
-        .single();
+      // Free guest offering: edge function already enrolled the user
+      // and granted access. Drop straight to ThankYou.
+      if (isAnon && data?.success && !data?.razorpay_order_id) {
+        navigate(`/thank-you/${data.payment_order_id}`);
+        return;
+      }
+
+      // Prefill: for guest checkout use what they just typed; for
+      // logged-in users pull from profile.
+      let prefillName = guestName;
+      let prefillEmail = guestEmail;
+      let prefillContact = guestPhone;
+      if (!isAnon && user) {
+        const { data: profile } = await supabase
+          .from("users")
+          .select("full_name, email, phone")
+          .eq("id", user.id)
+          .single();
+        prefillName = profile?.full_name ?? "";
+        prefillEmail = profile?.email ?? user.email ?? "";
+        prefillContact = profile?.phone ?? "";
+      }
 
       const options = {
         key: data.key_id,
@@ -333,9 +421,9 @@ export default function CheckoutPage() {
         description: data.offering_title,
         order_id: data.razorpay_order_id,
         prefill: {
-          name: profile?.full_name ?? "",
-          email: profile?.email ?? user.email ?? "",
-          contact: profile?.phone ?? "",
+          name: prefillName,
+          email: prefillEmail,
+          contact: prefillContact,
         },
         theme: { color: "#ffffff", backdrop_color: "rgba(0,0,0,0.8)" },
         handler: async (response: {
@@ -615,6 +703,64 @@ export default function CheckoutPage() {
                   </label>
                 );
               })}
+            </div>
+          )}
+
+          {/* ── Guest fields (anon checkout) ──
+              Friction-free: just name + email + phone. No OTP. The
+              edge function uses these to create the auth.users row
+              on payment verify, so the buyer becomes a logged-in
+              user the next time they sign in with this phone. */}
+          {!user && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Your details
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`)}
+                  className="text-xs text-[hsl(var(--cream))] hover:underline"
+                >
+                  Already have an account? Sign in
+                </button>
+              </div>
+              <Input
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+                onBlur={() => setGuestTouched((s) => ({ ...s, name: true }))}
+                placeholder="Full name"
+                className={guestTouched.name && !guestName.trim() ? "border-destructive" : ""}
+                autoComplete="name"
+              />
+              <Input
+                value={guestEmail}
+                onChange={(e) => setGuestEmail(e.target.value)}
+                onBlur={() => setGuestTouched((s) => ({ ...s, email: true }))}
+                placeholder="Email address"
+                type="email"
+                inputMode="email"
+                className={guestTouched.email && !guestEmail.trim() ? "border-destructive" : ""}
+                autoComplete="email"
+              />
+              <div className="flex">
+                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-border bg-surface-2 text-sm text-muted-foreground font-mono">
+                  +91
+                </span>
+                <Input
+                  value={guestPhone}
+                  onChange={(e) => setGuestPhone(e.target.value.replace(/[^\d+]/g, ""))}
+                  onBlur={() => setGuestTouched((s) => ({ ...s, phone: true }))}
+                  placeholder="10-digit mobile number"
+                  type="tel"
+                  inputMode="tel"
+                  className={`rounded-l-none ${guestTouched.phone && !guestPhone.trim() ? "border-destructive" : ""}`}
+                  autoComplete="tel"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                We'll create your account on this phone number. No password, no OTP — just sign in with this phone later to access your masterclass.
+              </p>
             </div>
           )}
 

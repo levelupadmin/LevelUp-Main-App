@@ -138,6 +138,12 @@ const App = () => {
               <Route path="/signup" element={<Signup />} />
               <Route path="/p/:slug" element={<PublicOffering />} />
               <Route path="/thank-you/:paymentOrderId" element={<ThankYou />} />
+              {/* Checkout sits in the public block - anon visitors landing
+                  here from a Meta ad or marketing site can complete a guest
+                  purchase. CheckoutPage branches internally on the auth
+                  state to show either the guest form or the logged-in
+                  prefill. */}
+              <Route path="/checkout/:offeringId" element={<CheckoutPage />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/refunds" element={<RefundPolicy />} />
@@ -152,7 +158,6 @@ const App = () => {
                 <Route path="/home" element={<Home />} />
                 <Route path="/courses/:courseId" element={<CourseDetail />} />
                 <Route path="/profile" element={<ProfilePage />} />
-                <Route path="/checkout/:offeringId" element={<CheckoutPage />} />
                 <Route path="/browse" element={<BrowsePage />} />
                 <Route path="/community" element={<CommunityPage />} />
                 <Route path="/my-courses" element={<MyCoursesPage />} />
