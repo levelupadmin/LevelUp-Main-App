@@ -114,6 +114,35 @@ const App = () => {
     bootAnalytics().catch(() => {/* analytics must never break the app */});
   }, []);
 
+  // Android hardware back button: dynamically import the Capacitor App
+  // plugin (it's a no-op on web), and wire backButton so it walks the
+  // WebView history. When there's nowhere left to go back to (e.g. the
+  // user is on the Home screen), exit the app instead of doing nothing -
+  // matches every other Android app's behaviour.
+  useEffect(() => {
+    let remove: (() => void) | undefined;
+    (async () => {
+      try {
+        const { Capacitor } = await import("@capacitor/core");
+        if (!Capacitor.isNativePlatform()) return;
+        const { App: CapApp } = await import("@capacitor/app");
+        const handle = await CapApp.addListener("backButton", ({ canGoBack }) => {
+          if (canGoBack) {
+            window.history.back();
+          } else {
+            // Root of the in-app stack - hand control back to the OS so
+            // the user lands on their launcher instead of being stuck.
+            CapApp.exitApp();
+          }
+        });
+        remove = () => handle.remove();
+      } catch {
+        // Plugin not installed (e.g. running in browser) - no-op.
+      }
+    })();
+    return () => { remove?.(); };
+  }, []);
+
   return (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>

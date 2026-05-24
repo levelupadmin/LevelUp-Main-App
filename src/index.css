@@ -147,13 +147,21 @@
 
   html {
     -webkit-text-size-adjust: 100%;
+    /* Background fallback so fast scroll / overscroll on Android WebView
+       never exposes the browser-default white. body inherits its dark
+       canvas from Tailwind, but the html element is what paints behind
+       any overscroll bounce or content-not-yet-painted gap. */
+    @apply bg-background;
   }
 
   body {
     @apply bg-background text-foreground font-body antialiased;
     -webkit-tap-highlight-color: transparent;
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior-y: none;
+    /* `none` on both axes (was only y) so horizontal swipes inside the
+       Capacitor WebView don't trigger the system back-swipe or expose
+       a white edge. */
+    overscroll-behavior: none;
   }
 
   /* Prevent 300ms tap delay & double-tap zoom on all interactive elements */
