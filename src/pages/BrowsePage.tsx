@@ -113,17 +113,17 @@ const BrowsePage = () => {
         Object.values(primaryMap).filter(Boolean) as string[]
       )];
 
-      let offeringMap: Record<string, { price_inr: number; mrp_inr: number | null }> = {};
+      let offeringMap: Record<string, { slug: string | null; price_inr: number; mrp_inr: number | null }> = {};
 
       if (primaryOfferingIds.length) {
         const { data: offerings } = await supabase
           .from("offerings")
-          .select("id, price_inr, mrp_inr")
+          .select("id, slug, price_inr, mrp_inr")
           .in("id", primaryOfferingIds)
           .eq("status", "active");
 
-        (offerings ?? []).forEach((o) => {
-          offeringMap[o.id] = { price_inr: o.price_inr, mrp_inr: o.mrp_inr };
+        (offerings ?? []).forEach((o: any) => {
+          offeringMap[o.id] = { slug: o.slug ?? null, price_inr: o.price_inr, mrp_inr: o.mrp_inr };
         });
       }
 
@@ -142,12 +142,12 @@ const BrowsePage = () => {
         if (fallbackOfferingIds.length) {
           const { data: fallbackOfferings } = await supabase
             .from("offerings")
-            .select("id, price_inr, mrp_inr")
+            .select("id, slug, price_inr, mrp_inr")
             .in("id", fallbackOfferingIds)
             .eq("status", "active");
 
           (fallbackOfferings ?? []).forEach((o) => {
-            if (!offeringMap[o.id]) offeringMap[o.id] = { price_inr: o.price_inr, mrp_inr: o.mrp_inr };
+            if (!offeringMap[o.id]) offeringMap[o.id] = { slug: (o as any).slug ?? null, price_inr: o.price_inr, mrp_inr: o.mrp_inr };
           });
         }
 
@@ -162,6 +162,7 @@ const BrowsePage = () => {
             ...c,
             primary_offering_id: primaryMap[c.id] || null,
             offering_id: offId,
+            offering_slug: off?.slug ?? null,
             price_inr: off?.price_inr ?? null,
             mrp_inr: off?.mrp_inr ?? null,
           };
@@ -388,14 +389,20 @@ const BrowsePage = () => {
                             isAndroid() ? (
                               <ContinueOnWebCTA
                                 variant="inline"
-                                webPath={`/browse`}
+                                webPath={c.offering_slug ? `/p/${c.offering_slug}` : `/browse`}
                               />
                             ) : (
+                              // "View course" not "Enroll" - sends the
+                              // visitor to the offering page so they
+                              // can watch the free preview before they
+                              // decide to enrol. Skipping /p straight
+                              // to /checkout pressures the click and
+                              // creates a confusing back-button history.
                               <Link
-                                to={`/checkout/${c.offering_id}`}
+                                to={c.offering_slug ? `/p/${c.offering_slug}` : `/courses/${c.id}`}
                                 className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all min-h-[44px] sm:min-h-0 items-center"
                               >
-                                Enroll <ArrowRight className="h-3 w-3" />
+                                View course <ArrowRight className="h-3 w-3" />
                               </Link>
                             )
                           ) : (

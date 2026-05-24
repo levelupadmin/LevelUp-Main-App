@@ -1022,7 +1022,7 @@ const BrowsePrograms = () => {
         if (primaryOfferingIds.length) {
           const { data: offs } = await supabase
             .from("offerings")
-            .select("id, price_inr, mrp_inr")
+            .select("id, slug, price_inr, mrp_inr")
             .in("id", primaryOfferingIds)
             .eq("status", "active");
           (offs ?? []).forEach((o) => { offeringMap[o.id] = o; });
@@ -1042,7 +1042,7 @@ const BrowsePrograms = () => {
           if (fallbackOffIds.length) {
             const { data: fallbackOffs } = await supabase
               .from("offerings")
-              .select("id, price_inr, mrp_inr")
+              .select("id, slug, price_inr, mrp_inr")
               .in("id", fallbackOffIds)
               .eq("status", "active");
             (fallbackOffs ?? []).forEach((o) => { if (!offeringMap[o.id]) offeringMap[o.id] = o; });
@@ -1054,7 +1054,7 @@ const BrowsePrograms = () => {
         setCourses(coursesData.map((c) => {
           const offId = primaryMap[c.id] || fallbackOcMap[c.id] || null;
           const off = offId ? offeringMap[offId] : null;
-          return { ...c, offering_id: offId, price_inr: off?.price_inr, mrp_inr: off?.mrp_inr };
+          return { ...c, offering_id: offId, offering_slug: off?.slug ?? null, price_inr: off?.price_inr, mrp_inr: off?.mrp_inr };
         }));
       } catch (err) {
         if (import.meta.env.DEV) console.error("Failed to load browse programs:", err);
@@ -1079,9 +1079,14 @@ const BrowsePrograms = () => {
           return (
           <Link
             key={c.id}
+            // Enrolled: continue learning in the course detail view.
+            // Not enrolled: send to the public offering page so they can
+            // evaluate, watch the free preview, and *then* decide to
+            // enrol. Jumping straight to /checkout from Home skipped the
+            // entire marketing surface and broke the back-button history.
             to={isEnrolled
               ? `/courses/${c.id}`
-              : c.offering_id ? `/checkout/${c.offering_id}` : `/courses/${c.id}`}
+              : c.offering_slug ? `/p/${c.offering_slug}` : `/courses/${c.id}`}
             className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
           >
             <div className="aspect-video bg-surface-2 relative">

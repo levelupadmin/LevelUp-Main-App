@@ -29,6 +29,7 @@ interface RecommendedCourse {
   product_tier: string;
   instructor_display_name: string | null;
   offering_id: string | null;
+  offering_slug: string | null;
   price_inr: number | null;
 }
 
@@ -178,16 +179,19 @@ const MyCoursesPage = () => {
         })
         .slice(0, 6);
 
-      // Fetch prices for primary offerings
+      // Fetch slug + price for primary offerings. We need the slug to
+      // route card clicks to the offering page (/p/&lt;slug&gt;) rather
+      // than checkout - so the buyer can evaluate before being asked
+      // to pay.
       const recOfferingIds = candidates.map((c: any) => c.primary_offering_id).filter(Boolean);
-      let recOfferingMap: Record<string, number> = {};
+      let recOfferingMap: Record<string, { slug: string | null; price_inr: number | null }> = {};
       if (recOfferingIds.length) {
         const { data: recOffs } = await supabase
           .from("offerings")
-          .select("id, price_inr")
+          .select("id, slug, price_inr")
           .in("id", recOfferingIds)
           .eq("status", "active");
-        (recOffs || []).forEach((o) => { recOfferingMap[o.id] = o.price_inr; });
+        (recOffs || []).forEach((o: any) => { recOfferingMap[o.id] = { slug: o.slug, price_inr: o.price_inr }; });
       }
 
       setRecommendations(
@@ -199,7 +203,8 @@ const MyCoursesPage = () => {
           product_tier: c.product_tier,
           instructor_display_name: c.instructor_display_name,
           offering_id: c.primary_offering_id || null,
-          price_inr: c.primary_offering_id ? (recOfferingMap[c.primary_offering_id] ?? null) : null,
+          offering_slug: c.primary_offering_id ? (recOfferingMap[c.primary_offering_id]?.slug ?? null) : null,
+          price_inr: c.primary_offering_id ? (recOfferingMap[c.primary_offering_id]?.price_inr ?? null) : null,
         }))
       );
 
@@ -297,7 +302,12 @@ const MyCoursesPage = () => {
               {recommendations.map((c) => (
                 <Link
                   key={c.id}
-                  to={c.offering_id ? `/checkout/${c.offering_id}` : `/courses/${c.id}`}
+                  // Recommended cards on My Courses: send to the offering
+                  // page so the user can evaluate, not straight to
+                  // checkout. Skipping /p makes the back-button history
+                  // weird and pressures the user into a buy decision
+                  // before they've seen the trailer.
+                  to={c.offering_slug ? `/p/${c.offering_slug}` : `/courses/${c.id}`}
                   className="bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
                 >
                   <div className="aspect-video bg-surface-2 relative">
