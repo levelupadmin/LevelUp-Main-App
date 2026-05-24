@@ -121,6 +121,16 @@ export default function CheckoutPage() {
         return;
       }
 
+      // Archived offerings are no longer for sale — they only exist
+      // for past enrolees to access materials. Anyone landing on
+      // /checkout/<id> for an archived offering gets redirected to
+      // /p/<slug> where the archive notice + "Sign in" CTA lives.
+      if ((offRes.data as any).status === "archived") {
+        toast.error("This programme is no longer accepting enrolments.");
+        navigate((offRes.data as any).slug ? `/p/${(offRes.data as any).slug}` : "/browse");
+        return;
+      }
+
       setOffering(offRes.data as Offering);
       setLinkedCourses(coursesRes.data ?? []);
       setCustomFields(fieldsRes.data ?? []);

@@ -17,6 +17,7 @@ import {
   BookOpen,
   ArrowRight,
   Play,
+  Archive,
 } from "lucide-react";
 
 /* ────────────────────────────────────────────────── */
@@ -168,10 +169,59 @@ function HeroBanner({ offering }: { offering: Offering }) {
 function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChapterId?: string | null }) {
   const navigate = useNavigate();
   const isStaged = (offering as any)?.payment_mode === "staged";
+  const isArchived = (offering as any)?.status === "archived";
   const price = offering.price_inr ?? 0;
   const mrp = (offering as any).mrp_inr ?? null;
   const showStrike = mrp && Number(mrp) > Number(price);
   const ctaLabel = isStaged ? "Apply now" : price > 0 ? "Enrol now" : "Start for free";
+
+  // Archived offerings represent past programs (legacy TagMango
+  // workshops, retired cohorts) that we keep accessible to existing
+  // enrolees but never re-sell. Hide the price + buy CTA entirely and
+  // replace with an explanation + "If you already enrolled, sign in"
+  // affordance so returning users know they're in the right place.
+  if (isArchived) {
+    return (
+      <div className="rounded-2xl border border-border bg-card/40 p-5 sm:p-6 space-y-3">
+        <div className="flex items-center gap-2">
+          <Archive className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-medium">
+            Past programme
+          </span>
+        </div>
+        <p className="text-base text-foreground/90 leading-relaxed">
+          This programme is closed to new enrolments. If you previously
+          enrolled — including through the old LevelUp app on TagMango —
+          sign in with the phone you used and your materials will be
+          waiting for you.
+        </p>
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Button
+            size="lg"
+            onClick={() => navigate("/auth")}
+            className="h-12 px-6 text-base font-semibold bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
+          >
+            Sign in to access
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+          {freeChapterId && (
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => {
+                const el = document.getElementById("free-preview");
+                if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+              }}
+              className="h-12 px-5 text-base font-medium border-[hsl(var(--cream))]/40 hover:bg-[hsl(var(--cream))]/10"
+            >
+              <Play className="h-4 w-4 mr-2 fill-current" />
+              Preview a lesson
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // Path B / Google Play Reader Rule: the Android shell cannot show
   // price labels or buy/enrol buttons in-app, even if they link to a
@@ -912,7 +962,13 @@ export default function PublicOffering() {
             )
           `)
           .eq("slug", slug)
-          .eq("status", "active")
+          // 'active' is the normal storefront state. 'archived' is for
+          // past programs (e.g. legacy TagMango workshops) where the
+          // sale is closed but past enrolees still need access to the
+          // curriculum and resources via the same /p/<slug> URL. The
+          // page renders an "archive notice" instead of the buy CTA
+          // in that case. Drafts stay invisible.
+          .in("status", ["active", "archived"])
           .single();
 
         if (error || !data) {
@@ -1248,11 +1304,12 @@ export default function PublicOffering() {
         </div>
       </main>
 
-      {/* Mobile sticky CTA — hidden on Android (Path B compliance).
-          Price + Enrol Now persistent across the page so the buyer
-          never has to scroll back to act. The Masterclass iOS pattern.
-          Navigates to the dedicated checkout route. */}
-      {!isNative() && (
+      {/* Mobile sticky CTA — hidden on Android (Path B compliance) and
+          on archived offerings (no longer for sale). Price + Enrol Now
+          persistent across the page so the buyer never has to scroll
+          back to act. The Masterclass iOS pattern. Navigates to the
+          dedicated checkout route. */}
+      {!isNative() && offering.status !== "archived" && (
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">

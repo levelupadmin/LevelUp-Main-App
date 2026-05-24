@@ -368,7 +368,10 @@ const ChapterViewer = () => {
           .from("offerings")
           .select("slug")
           .eq("id", courseData.primary_offering_id)
-          .eq("status", "active")
+          // Resolve slug for active OR archived offerings — legacy
+          // enrolees on archived programs still need the "Back to
+          // offering" link from inside ChapterViewer to work.
+          .in("status", ["active", "archived"])
           .maybeSingle();
         resolvedSlug = off?.slug ?? null;
       }
@@ -386,11 +389,15 @@ const ChapterViewer = () => {
         if (offeringIds.length > 0) {
           const { data: offs } = await supabase
             .from("offerings")
-            .select("slug, is_public")
+            .select("slug, is_public, status")
             .in("id", offeringIds)
-            .eq("status", "active");
+            .in("status", ["active", "archived"]);
+          // Prefer active offerings for the canonical back-link; fall
+          // back to an archived one if this course only has archived
+          // offerings (e.g. legacy TagMango program with no successor).
           const publicOnes = ((offs ?? []) as any[]).filter((o) => o.is_public !== false);
-          resolvedSlug = publicOnes[0]?.slug ?? null;
+          const active = publicOnes.find((o) => o.status === "active");
+          resolvedSlug = (active ?? publicOnes[0])?.slug ?? null;
         }
       }
       setOfferingSlug(resolvedSlug);
