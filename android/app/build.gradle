@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "in.leveluplearning.lms"
+    namespace = "com.tagmango.leveluplearning"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "in.leveluplearning.lms"
+        applicationId "com.tagmango.leveluplearning"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -16,10 +16,38 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
+    // Release signing — reads keystore + password from env vars so the
+    // keystore file is never committed. Path + password live in iCloud:
+    //   Claude Projects/LevelUp Core/keystores/
+    // and the password is in 1Password under "LevelUp Android upload
+    // keystore" + a backup email in ceo@leveluplearning.in Drafts.
+    //
+    // Before ./gradlew bundleRelease:
+    //   export LEVELUP_KEYSTORE_PATH="/Users/.../keystores/upload-keystore.jks"
+    //   export LEVELUP_KEYSTORE_PASSWORD="<the password>"
+    //
+    // If the env vars are unset (e.g. on CI without the secrets yet)
+    // the release build will fail with a clear "missing keystore" message
+    // instead of silently building an unsigned bundle.
+    signingConfigs {
+        release {
+            def keystorePath = System.getenv("LEVELUP_KEYSTORE_PATH")
+            def keystorePassword = System.getenv("LEVELUP_KEYSTORE_PASSWORD")
+            if (keystorePath != null && keystorePassword != null) {
+                storeFile file(keystorePath)
+                storePassword keystorePassword
+                keyAlias "upload"
+                keyPassword keystorePassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 }

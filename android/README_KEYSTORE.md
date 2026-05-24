@@ -1,72 +1,68 @@
 # Android Release Keystore
 
-> **Do NOT commit this keystore or its passwords.** Store the `.jks` file and
-> the credentials in your password manager (1Password / Bitwarden) and back
-> them up. If you lose this keystore you cannot ship app updates — Google
-> Play tightly couples the upload-key to your package name.
+> **The keystore already exists.** This file documents how to use it, not
+> how to generate it. If you need the actual generation history, see the
+> README inside the keystore folder itself.
 
-The LevelUp Learning Android shell uses the package id `in.leveluplearning.lms`.
-This README documents the one-time keystore generation step. Run it on your
-own machine — do not let Claude or any CI system create it.
+## Where the keystore lives
 
-## 1. Generate the upload keystore
-
-From a directory **outside** this repo (e.g. `~/Keys/leveluplearning/`):
-
-```bash
-keytool -genkey -v \
-  -keystore leveluplearning-upload.jks \
-  -alias leveluplearning-upload \
-  -keyalg RSA \
-  -keysize 2048 \
-  -validity 10000
+```
+~/Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/keystores/
+  upload-keystore.jks      ← signs every Android release
+  upload_certificate.pem   ← public cert uploaded to Play Console once
+  README.md                ← password + metadata
 ```
 
-`keytool` will prompt for:
+The password is also in:
+- A "🔐 LevelUp Android upload keystore" email in `ceo@leveluplearning.in`'s
+  inbox (search Gmail for that subject)
+- (Recommended) 1Password / Apple Keychain as a Secure Note
 
-- **Keystore password** — pick a strong random string, save in your password manager.
-- **Key password** — can be the same as the keystore password.
-- **Name / OU / Org / City / State / Country code** — use:
-  - Name: `LevelUp Learning`
-  - Organisation: `LevelUp Learning`
-  - City: `Bangalore`
-  - State: `Karnataka`
-  - Country code: `IN`
+## Which Play Console listing this signs
 
-After this you'll have `leveluplearning-upload.jks`. Store it in your password
-manager (1Password supports file attachments) and in at least one offline
-backup.
+| Field | Value |
+|---|---|
+| Package name | `com.tagmango.leveluplearning` |
+| Play Console listing | https://play.google.com/store/apps/details?id=com.tagmango.leveluplearning |
+| Developer account | LevelUp Learning (id `8183819487402535302`) |
+| Install base when keystore was minted | ~2.05k installs, 464 MAU |
+| Last production release before this rewrite | 26 Dec 2023 (TagMango white-label build) |
 
-## 2. Wire it into the Android build
+The current Play Console upload-key fingerprint shows the OLD upload key
+(TagMango's). Until Google approves our "Request upload key reset" form,
+any AAB uploaded to this listing must still be signed with TagMango's
+key. Once Google approves (24–48h after submitting `upload_certificate.pem`)
+this keystore takes over.
 
-In `android/keystore.properties` (gitignored — see `android/.gitignore`),
-create:
+## Building a signed AAB
 
-```properties
-storeFile=/absolute/path/to/leveluplearning-upload.jks
-storePassword=...
-keyAlias=leveluplearning-upload
-keyPassword=...
-```
-
-Then update `android/app/build.gradle` to read these and add a `release`
-`signingConfig`. The Capacitor docs walk through this:
-https://capacitorjs.com/docs/android/deploying-to-google-play#signing-an-apk-for-release
-
-## 3. Build the signed bundle (AAB)
+Two env vars wire the keystore into Gradle (see `android/app/build.gradle`):
 
 ```bash
+export LEVELUP_KEYSTORE_PATH="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/keystores/upload-keystore.jks"
+export LEVELUP_KEYSTORE_PASSWORD="<from the keystore README or your password manager>"
+```
+
+Then from the repo root:
+
+```bash
+bun run build          # builds the React app into dist/
+npx cap sync android   # copies dist/ into android/app/src/main/assets
 cd android
 ./gradlew bundleRelease
 ```
 
-The output AAB lands at `android/app/build/outputs/bundle/release/app-release.aab`.
-Upload that to Google Play Console.
+The signed AAB lands at:
 
-## 4. Play App Signing (recommended)
+```
+android/app/build/outputs/bundle/release/app-release.aab
+```
 
-When you create the Play Console listing, enrol in **Play App Signing**.
-Google will hold the production signing key for you, and you'll only need to
-guard the upload key generated above. This is the safer default — recovery
-from a lost upload key is possible; recovery from a lost production signing
-key is not.
+Upload that to Play Console → Production track.
+
+## Play App Signing
+
+The listing is already enrolled in Play App Signing — Google holds the
+master key (SHA-256 `A0:05:04:9B:A8:6B:EB:03:52:B6:AE:E6:45:1E:8A:24:E8:DB:4F:6A:66:60:74:FB:D8:F2:1D:30:EC:70:88:29`).
+Our keystore is the *upload* key only, which is recoverable via
+`App signing → Request upload key reset` if ever lost.

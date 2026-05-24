@@ -1,4 +1,4 @@
-package in.leveluplearning.lms;
+package com.tagmango.leveluplearning;
 
 import com.getcapacitor.BridgeActivity;
 

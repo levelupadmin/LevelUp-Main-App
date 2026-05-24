@@ -13,7 +13,12 @@ import type { CapacitorConfig } from "@capacitor/cli";
  * `src/lib/platform.ts`. Razorpay never opens inside the WebView on Android.
  */
 const config: CapacitorConfig = {
-  appId: "in.leveluplearning.lms",
+  // Pinned to com.tagmango.leveluplearning so the AAB we ship updates
+  // the existing Play Console listing (2.05k installs, 19 months of
+  // ranking signals + reviews) in-place. The package name is
+  // immutable once installs exist, so changing this would force a
+  // fresh listing and lose everything.
+  appId: "com.tagmango.leveluplearning",
   appName: "LevelUp Learning",
   webDir: "dist",
   server: {
