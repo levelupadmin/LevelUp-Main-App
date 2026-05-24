@@ -31,6 +31,7 @@ import {
   ClipboardList,
   MessageSquare,
   Shield,
+  Repeat,
   type LucideIcon,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
@@ -79,6 +80,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Users", icon: UserCog, path: "/admin/users" },
       { label: "Coupons", icon: Ticket, path: "/admin/coupons" },
       { label: "Certificates", icon: Award, path: "/admin/certificates" },
+      { label: "Legacy mappings", icon: Repeat, path: "/admin/legacy-mappings" },
     ],
   },
   {

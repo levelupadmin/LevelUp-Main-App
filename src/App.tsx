@@ -71,6 +71,7 @@ const AdminCertificates = lazy(() => import("@/pages/admin/AdminCertificates"));
 const AdminCertificateTemplateEditor = lazy(() => import("@/pages/admin/AdminCertificateTemplateEditor"));
 const AdminCourseReviews = lazy(() => import("@/pages/admin/AdminCourseReviews"));
 const AdminAnnouncements = lazy(() => import("@/pages/admin/AdminAnnouncements"));
+const AdminLegacyMappings = lazy(() => import("@/pages/admin/AdminLegacyMappings"));
 const AdminEmailTemplates = lazy(() => import("@/pages/admin/AdminEmailTemplates"));
 const AdminEmailCampaigns = lazy(() => import("@/pages/admin/AdminEmailCampaigns"));
 const AdminApplications = lazy(() => import("@/pages/admin/AdminApplications"));
@@ -231,6 +232,7 @@ const App = () => {
                 <Route path="/admin/roles" element={<AdminRoles />} />
                 <Route path="/admin/analytics-settings" element={<AdminAnalyticsSettings />} />
                 <Route path="/admin/community" element={<AdminCommunityAnalytics />} />
+                <Route path="/admin/legacy-mappings" element={<AdminLegacyMappings />} />
               </Route>
 
               {/* Instructor dashboard also uses the student layout for consistency */}
