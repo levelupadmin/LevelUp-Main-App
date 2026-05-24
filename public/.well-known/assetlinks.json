@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.tagmango.leveluplearning",
+      "sha256_cert_fingerprints": [
+        "A0:05:04:9B:A8:6B:EB:03:52:B6:AE:E6:45:1E:8A:24:E8:DB:4F:6A:66:60:74:FB:D8:F2:1D:30:EC:70:88:29"
+      ]
+    }
+  }
+]
