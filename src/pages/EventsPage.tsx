@@ -212,9 +212,17 @@ const EventsPage = () => {
   return (
     <>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Events</h1>
-          <p className="text-sm text-muted-foreground mt-1">Workshops, webinars, and live sessions</p>
+        {/* Editorial hero matching Home + Browse cinematic voice. */}
+        <div className="space-y-3">
+          <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+            What's coming up
+          </p>
+          <h1 className="text-[36px] sm:text-5xl font-bold tracking-[-0.02em] leading-[1.05]">
+            Workshops, panels, <span className="font-serif-italic text-cream">live</span>
+          </h1>
+          <p className="text-base sm:text-lg text-muted-foreground max-w-[52ch]">
+            Standalone sessions outside the masterclass series — workshops, webinars, alumni meets, and one-off live classes.
+          </p>
         </div>
 
         <div className="flex gap-2">

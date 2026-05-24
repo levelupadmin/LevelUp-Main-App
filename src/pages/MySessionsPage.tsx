@@ -123,9 +123,19 @@ const MySessionsPage = () => {
   return (
     <>
       <div className="space-y-8 max-w-3xl">
-        <div>
-          <h1 className="text-[28px] sm:text-[32px] font-semibold leading-tight">My Live Sessions</h1>
-          <p className="text-base text-muted-foreground mt-1">All scheduled and past live classes for your courses</p>
+        {/* Editorial hero — matches Home + Browse + PublicOffering's
+            cinematic voice so My Sessions doesn't feel like an
+            afterthought next to the other polished surfaces. */}
+        <div className="space-y-3">
+          <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+            Calendar
+          </p>
+          <h1 className="text-[36px] sm:text-5xl font-bold tracking-[-0.02em] leading-[1.05]">
+            Your <span className="font-serif-italic text-cream">live</span> sessions
+          </h1>
+          <p className="text-base sm:text-lg text-muted-foreground max-w-[52ch]">
+            Every scheduled class for the masterclasses and cohorts you're enrolled in.
+          </p>
         </div>
 
         {loading ? (

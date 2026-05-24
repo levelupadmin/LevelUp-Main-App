@@ -239,9 +239,17 @@ const CommunityPage = () => {
             />
           </div>
         )}
-        <div>
-          <h1 className="text-[28px] sm:text-[32px] font-semibold leading-tight">Community</h1>
-          <p className="text-base text-muted-foreground mt-1">Connect with fellow creators</p>
+        {/* Editorial hero matching Home + Browse + Events cinematic voice. */}
+        <div className="space-y-3">
+          <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+            Fellow creators
+          </p>
+          <h1 className="text-[36px] sm:text-5xl font-bold tracking-[-0.02em] leading-[1.05]">
+            Talk to <span className="font-serif-italic text-cream">your</span> people
+          </h1>
+          <p className="text-base sm:text-lg text-muted-foreground max-w-[52ch]">
+            Ask questions, share your work, find a collaborator. The community knows things the masterclass can't teach you.
+          </p>
         </div>
 
         {/* New post */}
