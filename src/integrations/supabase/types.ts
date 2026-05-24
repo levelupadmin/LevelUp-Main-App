@@ -187,6 +187,48 @@ export type Database = {
           },
         ]
       }
+      analytics_settings: {
+        Row: {
+          clarity_enabled: boolean
+          clarity_project_id: string | null
+          ga4_enabled: boolean
+          ga4_measurement_id: string | null
+          meta_pixel_enabled: boolean
+          meta_pixel_id: string | null
+          singleton: boolean
+          twitter_pixel_enabled: boolean
+          twitter_pixel_id: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          clarity_enabled?: boolean
+          clarity_project_id?: string | null
+          ga4_enabled?: boolean
+          ga4_measurement_id?: string | null
+          meta_pixel_enabled?: boolean
+          meta_pixel_id?: string | null
+          singleton?: boolean
+          twitter_pixel_enabled?: boolean
+          twitter_pixel_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          clarity_enabled?: boolean
+          clarity_project_id?: string | null
+          ga4_enabled?: boolean
+          ga4_measurement_id?: string | null
+          meta_pixel_enabled?: boolean
+          meta_pixel_id?: string | null
+          singleton?: boolean
+          twitter_pixel_enabled?: boolean
+          twitter_pixel_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       assignment_submissions: {
         Row: {
           admin_feedback: string | null
@@ -430,65 +472,6 @@ export type Database = {
           },
           {
             foreignKeyName: "certificates_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      chapter_comments: {
-        Row: {
-          chapter_id: string
-          comment_text: string
-          created_at: string
-          id: string
-          parent_comment_id: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          chapter_id: string
-          comment_text: string
-          created_at?: string
-          id?: string
-          parent_comment_id?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          chapter_id?: string
-          comment_text?: string
-          created_at?: string
-          id?: string
-          parent_comment_id?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "chapter_comments_chapter_id_fkey"
-            columns: ["chapter_id"]
-            isOneToOne: false
-            referencedRelation: "chapters"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chapter_comments_parent_comment_id_fkey"
-            columns: ["parent_comment_id"]
-            isOneToOne: false
-            referencedRelation: "chapter_comments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chapter_comments_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "public_user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chapter_comments_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -3031,36 +3014,6 @@ export type Database = {
           },
         ]
       }
-      phone_otp_attempts: {
-        Row: {
-          attempts: number
-          consumed_at: string | null
-          created_at: string
-          expires_at: string
-          id: string
-          otp_hash: string
-          phone: string
-        }
-        Insert: {
-          attempts?: number
-          consumed_at?: string | null
-          created_at?: string
-          expires_at?: string
-          id?: string
-          otp_hash: string
-          phone: string
-        }
-        Update: {
-          attempts?: number
-          consumed_at?: string | null
-          created_at?: string
-          expires_at?: string
-          id?: string
-          otp_hash?: string
-          phone?: string
-        }
-        Relationships: []
-      }
       portfolio_projects: {
         Row: {
           created_at: string
@@ -4049,7 +4002,6 @@ export type Database = {
           deleted_user_id: string
         }[]
       }
-      cleanup_phone_otps: { Args: never; Returns: undefined }
       delete_email:
         | { Args: { p_msg_id: number }; Returns: boolean }
         | { Args: { message_id: number; queue_name: string }; Returns: boolean }
