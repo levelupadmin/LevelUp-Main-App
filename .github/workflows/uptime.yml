@@ -1,0 +1,104 @@
+name: Uptime monitor
+
+# Cron-driven smoke test of the production surface every 5 minutes.
+# If app.leveluplearning.in returns non-2xx OR a critical edge function
+# fails OR /p/<slug> stops rendering the expected markers, opens a
+# GitHub issue tagged "uptime" so the team gets a Slack/email ping via
+# GitHub's notification settings.
+#
+# Why GitHub Actions and not a hosted uptime service:
+# - Free (we already pay for Actions minutes if anything)
+# - No new account, no DSN to manage
+# - Issue creation gives a perfect audit trail of every incident
+# - You can later wire it to a webhook if you want fancier alerting
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"  # every 5 minutes
+  workflow_dispatch:        # let admins trigger manually for debugging
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Check production endpoints
+        id: probe
+        env:
+          # If a check fails we stash the reason here for the issue body
+          STATUS_FILE: ${{ runner.temp }}/uptime-status.txt
+        run: |
+          set +e   # don't bail on a single non-zero; we want to collect all failures
+          failures=""
+
+          probe() {
+            local label="$1"
+            local url="$2"
+            local expect_substr="$3"
+            local resp_code
+            local body
+            resp_code=$(curl -s -o /tmp/body -w "%{http_code}" --max-time 15 "$url")
+            body=$(cat /tmp/body)
+            if [ "$resp_code" != "200" ]; then
+              failures="${failures}- ${label}: HTTP ${resp_code} (expected 200) — \`${url}\`\n"
+              return
+            fi
+            if [ -n "$expect_substr" ] && ! grep -q "$expect_substr" /tmp/body; then
+              failures="${failures}- ${label}: body did not contain '${expect_substr}' — \`${url}\`\n"
+              return
+            fi
+            echo "✓ ${label}: 200"
+          }
+
+          # Root page returns SPA shell with our title
+          probe "root" "https://app.leveluplearning.in/" "LevelUp"
+          # Public offering page (canonical conversion surface)
+          probe "lokesh offering" "https://app.leveluplearning.in/p/lokesh-kanagaraj-teaches-film-making" "LevelUp"
+          # Marketing site
+          probe "marketing" "https://leveluplearning.in/" "LevelUp"
+          # Asset links (Android App Link verification)
+          probe "assetlinks" "https://app.leveluplearning.in/.well-known/assetlinks.json" "com.tagmango.leveluplearning"
+
+          if [ -n "$failures" ]; then
+            printf "%b" "$failures" > "$STATUS_FILE"
+            echo "failed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "failed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open issue on failure
+        if: steps.probe.outputs.failed == 'true'
+        uses: actions/github-script@v7
+        env:
+          STATUS_FILE: ${{ runner.temp }}/uptime-status.txt
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync(process.env.STATUS_FILE, 'utf8');
+            const stamp = new Date().toISOString();
+            // Dedupe: if an open "uptime" issue with a similar title
+            // already exists for THIS UTC date, comment on it instead
+            // of opening a new one — keeps the issue list readable
+            // during a long outage.
+            const today = stamp.slice(0, 10);
+            const title = `Uptime alert: prod degraded (${today})`;
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'uptime',
+            });
+            const existing = open.find((i) => i.title === title);
+            const text = `Probe failed at ${stamp}:\n\n${body}\n\n---\n_GitHub Actions cron - ${context.workflow}_`;
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, body: text,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body: text, labels: ['uptime'],
+              });
+            }

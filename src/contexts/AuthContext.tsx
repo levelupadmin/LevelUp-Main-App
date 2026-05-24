@@ -171,6 +171,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
         currentUserIdRef.current = null;
         setProfile(null);
+        // Clear Sentry user attribution so post-signout errors aren't
+        // attributed to the previous user.
+        void import("@/lib/sentry").then((m) => m.setSentryUser(null));
         setLoading(false);
         initialLoadDone = true;
         return;
@@ -190,6 +193,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!isMounted) return;
 
       setProfile(nextProfile);
+      // Attach the current user identity to Sentry so error reports
+      // can be filtered + searched by who hit them. Dynamic import so
+      // unauthenticated pages don't pull Sentry into their bundle.
+      void import("@/lib/sentry").then((m) =>
+        m.setSentryUser({ id: nextSession.user.id, email: nextSession.user.email ?? null })
+      );
       setLoading(false);
       initialLoadDone = true;
     };
