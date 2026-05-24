@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import Footer from "@/components/Footer";
 import { isAndroid } from "@/lib/platform";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
+import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 import { track } from "@/lib/analytics";
 import {
   Check,
@@ -242,14 +243,12 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
 }
 
 /**
- * FreePreviewPlayer — sample-before-buy on the marketing page. Finds
- * the first chapter that's flagged make_free=true and renders its
- * poster with a Play overlay. Click navigates to /chapters/&lt;id&gt; which
- * is auth-gated; signed-in viewers land directly in the lesson, anon
- * visitors are bounced to /login with a return-path. Doing this via a
- * poster-link rather than an inline VdoCipher player keeps the OTP
- * edge function strictly authenticated for now; inline anon play is
- * tracked as a separate follow-up.
+ * FreePreviewPlayer — sample-before-buy on the marketing page. Renders
+ * the first make_free chapter's poster with a Play overlay. On click,
+ * the VdoCipher player loads inline and starts playing - no sign-in
+ * required, thanks to the anon-friendly branch in get-vdocipher-otp.
+ * Lazy-loading the player keeps the OTP call (and VdoCipher quota
+ * consumption) off the initial page render.
  */
 function FreePreviewPlayer({
   chapter,
@@ -258,7 +257,7 @@ function FreePreviewPlayer({
   chapter: ChapterRow & { thumbnail_url: string | null; vdocipher_thumbnail_url: string | null } | null;
   instructorName: string | null;
 }) {
-  const navigate = useNavigate();
+  const [playing, setPlaying] = useState(false);
   if (!chapter) return null;
   const thumb = chapter.thumbnail_url || chapter.vdocipher_thumbnail_url || null;
   const mins = chapter.duration_seconds
@@ -270,46 +269,54 @@ function FreePreviewPlayer({
       <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
         Watch the first lesson on us
       </h2>
-      <button
-        type="button"
-        onClick={() => navigate(`/chapters/${chapter.id}`)}
-        className="group relative w-full aspect-video rounded-2xl overflow-hidden ring-1 ring-white/5 shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)] bg-surface-2 text-left"
-        aria-label={`Play free preview: ${chapter.title}`}
-      >
-        {thumb ? (
-          <img
-            src={thumb}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-700"
-            loading="lazy"
-            decoding="async"
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/30">
-            <BookOpen className="h-12 w-12" />
-          </div>
-        )}
-        {/* Dark gradient to keep title legible against any thumbnail */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
-        {/* Centred Play button */}
-        <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span className="h-16 w-16 sm:h-20 sm:w-20 rounded-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] flex items-center justify-center shadow-[0_20px_40px_-10px_hsl(var(--cream)/0.7)] group-hover:scale-110 transition-transform">
-            <Play className="h-7 w-7 sm:h-8 sm:w-8 fill-current ml-1" />
-          </span>
-        </span>
-        {/* Title overlay */}
-        <div className="absolute inset-x-0 bottom-0 p-4 sm:p-6">
-          <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/80 mb-2">
-            Lesson 1{instructorName ? ` · with ${instructorName}` : ""}
-          </p>
-          <p className="text-lg sm:text-2xl font-bold text-white tracking-[-0.01em] line-clamp-2">
-            {chapter.title}
-          </p>
-          {mins && (
-            <p className="text-xs sm:text-sm text-white/70 font-mono mt-1">{mins} min</p>
-          )}
+      {playing ? (
+        // Lazy-load the actual VdoCipher player only after first click
+        // so anon visitors who scroll past don't consume our DRM minutes.
+        <div className="rounded-2xl overflow-hidden ring-1 ring-white/5 shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
+          <VdoCipherPlayer chapterId={chapter.id} />
         </div>
-      </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setPlaying(true)}
+          className="group relative w-full aspect-video rounded-2xl overflow-hidden ring-1 ring-white/5 shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)] bg-surface-2 text-left"
+          aria-label={`Play free preview: ${chapter.title}`}
+        >
+          {thumb ? (
+            <img
+              src={thumb}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-700"
+              loading="lazy"
+              decoding="async"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/30">
+              <BookOpen className="h-12 w-12" />
+            </div>
+          )}
+          {/* Dark gradient to keep title legible against any thumbnail */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
+          {/* Centred Play button */}
+          <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="h-16 w-16 sm:h-20 sm:w-20 rounded-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] flex items-center justify-center shadow-[0_20px_40px_-10px_hsl(var(--cream)/0.7)] group-hover:scale-110 transition-transform">
+              <Play className="h-7 w-7 sm:h-8 sm:w-8 fill-current ml-1" />
+            </span>
+          </span>
+          {/* Title overlay */}
+          <div className="absolute inset-x-0 bottom-0 p-4 sm:p-6">
+            <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/80 mb-2">
+              Lesson 1{instructorName ? ` · with ${instructorName}` : ""}
+            </p>
+            <p className="text-lg sm:text-2xl font-bold text-white tracking-[-0.01em] line-clamp-2">
+              {chapter.title}
+            </p>
+            {mins && (
+              <p className="text-xs sm:text-sm text-white/70 font-mono mt-1">{mins} min</p>
+            )}
+          </div>
+        </button>
+      )}
       <p className="text-xs sm:text-sm text-muted-foreground max-w-[60ch]">
         No card needed. Sign in to keep watching the rest of the masterclass.
       </p>
