@@ -197,9 +197,35 @@ export type AnalyticsEvent =
   | { name: "lead"; method?: string }
   | { name: "sign_up"; method?: string };
 
+// Generate a stable, unique event ID for each track() call. Meta's
+// server-side CAPI (enabled via "Set up with Meta" in Events Manager)
+// uses this to dedupe against the browser-side Pixel event - same
+// eventID across both = counted once. Without it, Meta falls back to
+// best-guess hashing on event_name + url + timestamp, which works
+// but isn't bulletproof. crypto.randomUUID is supported in every
+// modern browser + Capacitor WebView; fallback to a Math.random
+// concat just in case.
+function newEventId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch { /* falls through */ }
+  return `evt_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// For purchase events specifically we use the transaction_id as the
+// eventID base so a refresh of /thank-you doesn't create a second
+// purchase signal - Meta will dedupe across the two fires.
+function purchaseEventId(transactionId: string): string {
+  return `purchase_${transactionId}`;
+}
+
 export function track(event: AnalyticsEvent) {
   if (typeof window === "undefined") return;
   try {
+    const eventID =
+      event.name === "purchase" ? purchaseEventId(event.transaction_id) : newEventId();
     switch (event.name) {
       case "view_content":
         window.fbq?.("track", "ViewContent", {
@@ -208,7 +234,7 @@ export function track(event: AnalyticsEvent) {
           content_type: "product",
           value: event.value,
           currency: event.currency || "INR",
-        });
+        }, { eventID });
         window.gtag?.("event", "view_item", {
           items: [{ item_id: event.content_id, item_name: event.content_name }],
           value: event.value,
@@ -222,7 +248,7 @@ export function track(event: AnalyticsEvent) {
           content_name: event.content_name,
           value: event.value,
           currency: event.currency,
-        });
+        }, { eventID });
         window.gtag?.("event", "begin_checkout", {
           items: [{ item_id: event.content_id, item_name: event.content_name }],
           value: event.value,
@@ -236,7 +262,7 @@ export function track(event: AnalyticsEvent) {
           content_name: event.content_name,
           value: event.value,
           currency: event.currency,
-        });
+        }, { eventID });
         window.gtag?.("event", "purchase", {
           transaction_id: event.transaction_id,
           items: [{ item_id: event.content_id, item_name: event.content_name }],
@@ -246,11 +272,11 @@ export function track(event: AnalyticsEvent) {
         window.twq?.("event", "tw-purchase", { value: event.value });
         break;
       case "lead":
-        window.fbq?.("track", "Lead", { method: event.method });
+        window.fbq?.("track", "Lead", { method: event.method }, { eventID });
         window.gtag?.("event", "generate_lead", { method: event.method });
         break;
       case "sign_up":
-        window.fbq?.("track", "CompleteRegistration", { method: event.method });
+        window.fbq?.("track", "CompleteRegistration", { method: event.method }, { eventID });
         window.gtag?.("event", "sign_up", { method: event.method });
         break;
     }
