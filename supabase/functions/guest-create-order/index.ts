@@ -315,7 +315,7 @@ Deno.serve(async (req) => {
           type: "magiclink",
           email: guest_email,
           options: {
-            redirectTo: `${Deno.env.get("SITE_URL") || "https://levelup-creator-os.lovable.app"}/home`,
+            redirectTo: `${Deno.env.get("SITE_URL") || "https://app.leveluplearning.in"}/home`,
           },
         });
       } catch (linkErr) {
