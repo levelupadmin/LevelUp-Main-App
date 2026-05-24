@@ -7,6 +7,7 @@ import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import Footer from "@/components/Footer";
 import { isAndroid } from "@/lib/platform";
+import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import { track } from "@/lib/analytics";
 import {
   Check,
@@ -170,6 +171,35 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
   const mrp = (offering as any).mrp_inr ?? null;
   const showStrike = mrp && Number(mrp) > Number(price);
   const ctaLabel = isStaged ? "Apply now" : price > 0 ? "Enrol now" : "Start for free";
+
+  // Path B / Google Play Reader Rule: the Android shell cannot show
+  // price labels or buy/enrol buttons in-app, even if they link to a
+  // web checkout. Swap the entire pricing+CTA row for the trailer
+  // affordance + a Continue-on-web card. This keeps the marketing
+  // page useful for browsing while compliant for store review.
+  if (isAndroid()) {
+    return (
+      <div className="space-y-3">
+        {freeChapterId && (
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => {
+              const el = document.getElementById("free-preview");
+              if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+            }}
+            className="w-full sm:w-auto h-12 px-5 text-base font-medium border-[hsl(var(--cream))]/40 hover:bg-[hsl(var(--cream))]/10"
+          >
+            <Play className="h-4 w-4 mr-2 fill-current" />
+            Watch the free lesson
+          </Button>
+        )}
+        <ContinueOnWebCTA
+          webPath={offering.slug ? `/p/${offering.slug}` : "/browse"}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6 py-2">
@@ -1111,7 +1141,9 @@ export default function PublicOffering() {
         <div className="space-y-10 sm:space-y-14">
           <div className="space-y-5 sm:space-y-6">
             <HeroBanner offering={offering} />
-            {couponInfo && (
+            {/* Coupon banner is a price-discount affordance, so it has
+                to be hidden on Android for Reader Rule compliance. */}
+            {couponInfo && !isAndroid() && (
               <div className="rounded-xl border border-[hsl(var(--accent-emerald)/0.3)] bg-[hsl(var(--accent-emerald)/0.08)] p-3 sm:p-4 flex items-center gap-3">
                 <Tag className="h-5 w-5 text-[hsl(var(--accent-emerald))] shrink-0" />
                 <div className="flex-1 min-w-0">

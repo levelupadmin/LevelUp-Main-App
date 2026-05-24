@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/accordion";
 import { toast } from "@/lib/toast";
 import { CheckCircle2, Lock, Play, Clock, BookOpen, Star } from "lucide-react";
+import { isAndroid } from "@/lib/platform";
 import ReviewList from "@/components/reviews/ReviewList";
 import Outcomes from "@/components/course-detail/Outcomes";
 import PortfolioPieces from "@/components/course-detail/PortfolioPieces";
@@ -390,7 +391,11 @@ const CourseDetail = () => {
                 </Button>
               ) : (
                 <Button size="lg" onClick={handleEnrollOrContinue}>
-                  {hasAccess ? "Continue Learning →" : "Enroll Now"}
+                  {hasAccess
+                    ? "Continue Learning →"
+                    : isAndroid()
+                      ? "Browse courses →"
+                      : "Enroll Now"}
                 </Button>
               )}
               {hasAccess && totalChapters > 0 && (

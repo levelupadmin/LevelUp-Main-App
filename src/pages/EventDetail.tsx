@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { isAndroid } from "@/lib/platform";
+import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import usePageTitle from "@/hooks/usePageTitle";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import { format } from "date-fns";
@@ -292,10 +294,15 @@ const EventDetail = () => {
 
           {/* Price + CTA */}
           <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1">Price</p>
-              <p className="text-2xl font-semibold">{priceDisplay}</p>
-            </div>
+            {/* Path B / Reader Rule: hide price + paid-register CTA
+                on Android. Free events stay registrable in-app since
+                no payment is involved. */}
+            {!isAndroid() && (
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1">Price</p>
+                <p className="text-2xl font-semibold">{priceDisplay}</p>
+              </div>
+            )}
 
             {spotsLeft !== null && spotsLeft > 0 && !isRegistered && (
               <p className="text-xs text-muted-foreground flex items-center gap-1">
@@ -319,16 +326,28 @@ const EventDetail = () => {
               <div className="w-full py-3 rounded-lg bg-muted text-muted-foreground text-center font-mono text-sm uppercase tracking-widest font-bold">
                 Event Ended
               </div>
-            ) : (
+            ) : event.pricing_type === "free" ? (
               <button
-                onClick={event.pricing_type === "free" ? handleRegisterFree : handleRegisterPaid}
+                onClick={handleRegisterFree}
                 disabled={registering}
                 className="w-full py-3 rounded-lg bg-cream text-cream-text font-mono text-sm uppercase tracking-widest font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2 min-h-[48px]"
               >
                 {registering && <Loader2 className="h-4 w-4 animate-spin" />}
-                {event.pricing_type === "free"
-                  ? "Register — Free"
-                  : `Register · ₹${event.price_inr ? (event.price_inr / 100).toLocaleString("en-IN") : ""}`}
+                Register — Free
+              </button>
+            ) : isAndroid() ? (
+              // Paid event on Android: swap the Register-with-price CTA
+              // for a Continue-on-web card. The web flow handles the
+              // Razorpay popup as before.
+              <ContinueOnWebCTA webPath={`/events/${event.id}`} />
+            ) : (
+              <button
+                onClick={handleRegisterPaid}
+                disabled={registering}
+                className="w-full py-3 rounded-lg bg-cream text-cream-text font-mono text-sm uppercase tracking-widest font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2 min-h-[48px]"
+              >
+                {registering && <Loader2 className="h-4 w-4 animate-spin" />}
+                Register · ₹{event.price_inr ? (event.price_inr / 100).toLocaleString("en-IN") : ""}
               </button>
             )}
           </div>
