@@ -1,151 +1,252 @@
 #!/usr/bin/env node
 /**
  * Drive the running Vite dev server (localhost:8080) with Playwright,
- * log in as admin, walk through every documented flow step, and save
- * desktop + mobile PNGs to src/docs/screenshots/.
+ * land an authenticated session via a Supabase magic link, and capture
+ * polished screenshots of every important screen — student, admin,
+ * and instructor perspectives — at both desktop (1440×900) and mobile
+ * (390×844, iPhone UA + DPR=2).
  *
- * Usage:  node scripts/capture_docs_screenshots.mjs
+ * Per-page waiter: each shot specifies a unique selector that only
+ * renders once the page is fully authenticated + hydrated. Prevents
+ * the auth-race that produced duplicate "login screen" captures on
+ * /home and /community last time.
  *
- * The dev server must already be running:
- *   npm run dev   (or use the preview_start MCP tool)
+ * Output: src/docs/screenshots/<slug>-<device>.png — kept under
+ * public/docs/screenshots/ once moved. Re-runnable.
  *
- * Output filename convention:
- *   <flow-slug>-<step-index>-<device>.png
- *   browse-desktop.png   browse-mobile.png   (for standalone pages)
+ *   node scripts/capture_docs_screenshots.mjs
+ *   node scripts/capture_docs_screenshots.mjs --only=student
+ *   node scripts/capture_docs_screenshots.mjs --only=admin
+ *   node scripts/capture_docs_screenshots.mjs --device=desktop
  */
 import { chromium } from "playwright";
-import fs from "node:fs";
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const OUT = path.join(ROOT, "src", "docs", "screenshots");
+const OUT = path.join(ROOT, "public", "docs", "screenshots");
 fs.mkdirSync(OUT, { recursive: true });
 
 const BASE = "http://localhost:8080";
-const ADMIN_EMAIL = "rahul@rahul.com";
-const ADMIN_PASSWORD = "rahul123";
+const SUPABASE_URL = "https://ivkvluezuiojovpotlyb.supabase.co";
+const SRK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2a3ZsdWV6dWlvam92cG90bHliIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTM3OTI5MiwiZXhwIjoyMDk0OTU1MjkyfQ.p_BLoeh92rtMXxgtwwTjo_3dTzo63ATQCA-xWxK_AZk";
+const ADMIN_EMAIL = "ceo@leveluplearning.in";
 
-const DESKTOP = { width: 1440, height: 900, deviceScaleFactor: 1 };
-const MOBILE = { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
+const ARGS = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith("--")).map(a => {
+  const [k, v] = a.slice(2).split("=");
+  return [k, v ?? true];
+}));
+
+const DESKTOP = { label: "desktop", width: 1440, height: 900, isMobile: false };
+const MOBILE  = { label: "mobile",  width: 390,  height: 844, isMobile: true,
+  userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1",
+  deviceScaleFactor: 2, hasTouch: true };
 
 /**
- * What we capture. Each entry produces a desktop + mobile PNG.
- * `setup` is an async fn run inside the page before the screenshot.
- * `wait` is an optional selector + timeout pair to wait for.
- * `requiresAuth` triggers the admin login flow before the visit.
- * `scroll` snaps to a scroll position before shooting.
+ * Per-page shot definition.
+ *   slug:     output filename prefix
+ *   group:    'student' | 'admin' | 'student-auth' (anon-vs-auth)
+ *   url:      route to visit
+ *   waitFor:  selector that proves the page is hydrated AND auth has
+ *             resolved. Use text= for content-based waits, css for
+ *             elements. The page is screenshotted only after this
+ *             matches.
+ *   setup:    optional async fn run after navigation+wait (e.g. click
+ *             a tab, toggle a filter, scroll to position)
+ *   settle:   ms to wait after `setup` before screenshot (default 500)
+ *   anonOk:   if true, this is captured WITHOUT the auth cookie (used
+ *             for /browse and /login)
  */
 const SHOTS = [
-  // Public/anon pages
-  { slug: "browse",                requiresAuth: false, url: "/browse",          wait: "h1" },
-  { slug: "login",                 requiresAuth: false, url: "/login",           wait: "input[type='tel'], input[name='phone']" },
-  // Authenticated student pages
-  { slug: "home",                  requiresAuth: true,  url: "/home",            wait: "main" },
-  { slug: "community-everyone",    requiresAuth: true,  url: "/community",       wait: "h1, textarea" },
-  { slug: "profile",               requiresAuth: true,  url: "/profile",         wait: "main" },
-  // Admin pages
-  { slug: "admin-dashboard",       requiresAuth: true,  url: "/admin",           wait: "main" },
-  { slug: "admin-offerings",       requiresAuth: true,  url: "/admin/offerings", wait: "main" },
-  { slug: "admin-courses",         requiresAuth: true,  url: "/admin/courses",   wait: "main" },
-  { slug: "admin-users",           requiresAuth: true,  url: "/admin/users",     wait: "table, main" },
-  { slug: "admin-revenue",         requiresAuth: true,  url: "/admin/revenue",   wait: "main" },
-  { slug: "admin-enrolments",      requiresAuth: true,  url: "/admin/enrolments",wait: "main" },
-  { slug: "admin-coupons",         requiresAuth: true,  url: "/admin/coupons",   wait: "main" },
-  { slug: "admin-cohorts",         requiresAuth: true,  url: "/admin/cohorts",   wait: "main" },
-  { slug: "admin-applications",    requiresAuth: true,  url: "/admin/applications", wait: "main" },
-  { slug: "admin-api-keys",        requiresAuth: true,  url: "/admin/api",       wait: "main" },
-  { slug: "admin-api-install",     requiresAuth: true,  url: "/admin/api",       wait: "main",
-    setup: async (page) => { await page.click('button[role="tab"]:has-text("Install")').catch(() => {}); await page.waitForTimeout(400); } },
-  { slug: "admin-api-webhooks",    requiresAuth: true,  url: "/admin/api",       wait: "main",
-    setup: async (page) => { await page.click('button[role="tab"]:has-text("Webhooks")').catch(() => {}); await page.waitForTimeout(400); } },
-  { slug: "admin-api-activity",    requiresAuth: true,  url: "/admin/api",       wait: "main",
-    setup: async (page) => { await page.click('button[role="tab"]:has-text("Activity")').catch(() => {}); await page.waitForTimeout(400); } },
-  { slug: "admin-api-surface",     requiresAuth: true,  url: "/admin/api",       wait: "main",
-    setup: async (page) => { await page.click('button[role="tab"]:has-text("Surface")').catch(() => {}); await page.waitForTimeout(700); } },
-  { slug: "admin-docs-overview",   requiresAuth: true,  url: "/admin/docs",      wait: "main" },
-  { slug: "admin-docs-features",   requiresAuth: true,  url: "/admin/docs",      wait: "main",
-    setup: async (page) => { await page.click('button[role="tab"]:has-text("Features")').catch(() => {}); await page.waitForTimeout(400); } },
-  { slug: "admin-docs-flows",      requiresAuth: true,  url: "/admin/docs",      wait: "main",
-    setup: async (page) => { await page.click('button[role="tab"]:has-text("Flows")').catch(() => {}); await page.waitForTimeout(400); } },
-  { slug: "admin-docs-schema",     requiresAuth: true,  url: "/admin/docs",      wait: "main",
-    setup: async (page) => { await page.click('button[role="tab"]:has-text("Schema")').catch(() => {}); await page.waitForTimeout(400); } },
-  { slug: "admin-docs-changelog",  requiresAuth: true,  url: "/admin/docs",      wait: "main",
-    setup: async (page) => { await page.click('button[role="tab"]:has-text("Changelog")').catch(() => {}); await page.waitForTimeout(400); } },
-  { slug: "admin-email-templates", requiresAuth: true,  url: "/admin/email-templates", wait: "main" },
-  { slug: "admin-email-campaigns", requiresAuth: true,  url: "/admin/email-campaigns", wait: "main" },
-  { slug: "admin-announcements",   requiresAuth: true,  url: "/admin/announcements",   wait: "main" },
+  // ───── Student / anon pages ─────
+  { slug: "browse",                 group: "student", url: "/browse",                       waitFor: 'text=Browse', anonOk: true },
+  { slug: "login-step-1",           group: "student", url: "/login",                        waitFor: "input[type='tel'], input[placeholder*='phone' i]", anonOk: true },
+  { slug: "offering-page",          group: "student", url: "/offering/nelson-dilipkumar-teaches-filmmaking", waitFor: "text=Nelson", anonOk: true },
+
+  // ───── Student / authenticated ─────
+  { slug: "home",                   group: "student", url: "/home",                         waitFor: "text=/Continue|Pick up|Welcome|My Library|Browse/i" },
+  { slug: "community-everyone",     group: "student", url: "/community",                    waitFor: "textarea, text=/Share with/" },
+  { slug: "community-my-cohort",    group: "student", url: "/community",                    waitFor: "textarea",
+      setup: async (page) => { await page.click("text=My Cohort").catch(() => {}); } },
+  { slug: "community-peer-reviews", group: "student", url: "/community",                    waitFor: "textarea",
+      setup: async (page) => { await page.click("text=Peer Reviews").catch(() => {}); } },
+  { slug: "profile",                group: "student", url: "/profile",                      waitFor: "text=/Full name|Profile|Account|Settings/i" },
+
+  // ───── Admin / Overview ─────
+  { slug: "admin-dashboard",        group: "admin",   url: "/admin",                        waitFor: "text=Admin" },
+  { slug: "admin-revenue",          group: "admin",   url: "/admin/revenue",                waitFor: "text=/Combined revenue|This app's orders|Total Orders|Revenue/i" },
+
+  // ───── Admin / Content ─────
+  { slug: "admin-hero-slides",      group: "admin",   url: "/admin/hero-slides",            waitFor: "text=/Hero/i" },
+  { slug: "admin-courses",          group: "admin",   url: "/admin/courses",                waitFor: "text=/Course|Title/i" },
+  { slug: "admin-offerings",        group: "admin",   url: "/admin/offerings",              waitFor: "text=/Offering|Slug|Price/i" },
+  { slug: "admin-offerings-editor", group: "admin",   url: "/admin/offerings/190a09ee-3f34-4242-ad9f-70ddedcc8eae/edit", waitFor: "text=/General|Pricing|Title/i" },
+  { slug: "admin-course-curriculum",group: "admin",   url: "/admin/courses/e893d612-c811-4acf-892c-0971c52655bb/curriculum", waitFor: "text=/Curriculum|Chapter/i" },
+
+  // ───── Admin / Scheduling ─────
+  { slug: "admin-schedule",         group: "admin",   url: "/admin/schedule",               waitFor: "text=/Schedule|Session/i" },
+  { slug: "admin-events",           group: "admin",   url: "/admin/events",                 waitFor: "text=/Event|Starts/i" },
+  { slug: "admin-cohorts",          group: "admin",   url: "/admin/cohorts",                waitFor: "text=/Cohort/i" },
+  { slug: "admin-cohort-submissions",group: "admin",  url: "/admin/cohort-submissions",     waitFor: "text=/Submission/i" },
+
+  // ───── Admin / People ─────
+  { slug: "admin-applications",     group: "admin",   url: "/admin/applications",           waitFor: "text=/Application|Applicant/i" },
+  { slug: "admin-enrolments",       group: "admin",   url: "/admin/enrolments",             waitFor: "text=/Enrolment|Status|User/i" },
+  { slug: "admin-users",            group: "admin",   url: "/admin/users",                  waitFor: "text=/All users|Role|Joined/i" },
+  { slug: "admin-coupons",          group: "admin",   url: "/admin/coupons",                waitFor: "text=/Coupon|Code|Discount/i" },
+  { slug: "admin-certificates",     group: "admin",   url: "/admin/certificates",           waitFor: "text=/Certificate|Template/i" },
+  { slug: "admin-legacy-mappings",  group: "admin",   url: "/admin/legacy-mappings",        waitFor: "text=/Legacy|Map/i" },
+
+  // ───── Admin / Communications ─────
+  { slug: "admin-announcements",    group: "admin",   url: "/admin/announcements",          waitFor: "text=/Announcement/i" },
+  { slug: "admin-email-templates",  group: "admin",   url: "/admin/email-templates",        waitFor: "text=/Template|Subject/i" },
+  { slug: "admin-email-campaigns",  group: "admin",   url: "/admin/email-campaigns",        waitFor: "text=/Campaign/i" },
+
+  // ───── Admin / Community ─────
+  { slug: "admin-community",        group: "admin",   url: "/admin/community",              waitFor: "text=/Community|Post/i" },
+
+  // ───── Admin / System — API ─────
+  { slug: "admin-api-keys",         group: "admin",   url: "/admin/api",                    waitFor: "text=API & integrations",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("Keys")').catch(() => {}); }, settle: 400 },
+  { slug: "admin-api-install",      group: "admin",   url: "/admin/api",                    waitFor: "text=API & integrations",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("Install")').catch(() => {}); }, settle: 400 },
+  { slug: "admin-api-webhooks",     group: "admin",   url: "/admin/api",                    waitFor: "text=API & integrations",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("Webhooks")').catch(() => {}); }, settle: 400 },
+  { slug: "admin-api-activity",     group: "admin",   url: "/admin/api",                    waitFor: "text=API & integrations",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("Activity")').catch(() => {}); }, settle: 400 },
+  { slug: "admin-api-surface",      group: "admin",   url: "/admin/api",                    waitFor: "text=API & integrations",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("Surface")').catch(() => {}); }, settle: 800 },
+
+  // ───── Admin / System — Docs ─────
+  { slug: "admin-docs-overview",    group: "admin",   url: "/admin/docs",                   waitFor: "text=Documentation",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("Overview")').catch(() => {}); }, settle: 400 },
+  { slug: "admin-docs-features",    group: "admin",   url: "/admin/docs",                   waitFor: "text=Documentation",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("Features")').catch(() => {}); }, settle: 400 },
+  { slug: "admin-docs-flows",       group: "admin",   url: "/admin/docs",                   waitFor: "text=Documentation",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("Flows")').catch(() => {}); }, settle: 600 },
+  { slug: "admin-docs-tech",        group: "admin",   url: "/admin/docs",                   waitFor: "text=Documentation",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("Tech")').catch(() => {}); }, settle: 400 },
+  { slug: "admin-docs-schema",      group: "admin",   url: "/admin/docs",                   waitFor: "text=Documentation",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("Schema")').catch(() => {}); }, settle: 400 },
+  { slug: "admin-docs-api",         group: "admin",   url: "/admin/docs",                   waitFor: "text=Documentation",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("API")').catch(() => {}); }, settle: 600 },
+  { slug: "admin-docs-changelog",   group: "admin",   url: "/admin/docs",                   waitFor: "text=Documentation",
+      setup: async (page) => { await page.click('button[role="tab"]:has-text("Changelog")').catch(() => {}); }, settle: 400 },
+
+  // ───── Admin / System — Other ─────
+  { slug: "admin-audit-logs",       group: "admin",   url: "/admin/audit-logs",             waitFor: "text=/Audit|Action|Actor/i" },
+  { slug: "admin-roles",            group: "admin",   url: "/admin/roles",                  waitFor: "text=/Role|Permission/i" },
+  { slug: "admin-analytics-settings",group: "admin",  url: "/admin/analytics-settings",     waitFor: "text=/Analytics|Pixel|GA4/i" },
 ];
 
-async function login(page) {
-  // Email-based admin login (rahul@rahul.com). Login page is OTP-first
-  // but accepts email+password via a fallback toggle. To keep this
-  // simple we use Supabase auth directly via the supabase client that
-  // already exists in the app.
-  await page.goto(`${BASE}/login`);
-  await page.waitForLoadState("networkidle").catch(() => {});
+const wantedGroups = ARGS.only ? new Set(String(ARGS.only).split(",")) : null;
+const wantedDevices = ARGS.device ? [ARGS.device] : ["desktop", "mobile"];
 
-  // Use the app's own supabase client via window
-  await page.evaluate(async ({ email, password }) => {
-    // @ts-ignore
-    const { supabase } = await import("/src/integrations/supabase/client.ts").catch(() => ({}));
-    if (supabase?.auth) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) console.error("login error:", error.message);
-    }
-  }, { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
-
-  await page.goto(`${BASE}/home`);
-  await page.waitForLoadState("networkidle").catch(() => {});
-  // Verify
-  const url = page.url();
-  if (url.includes("/login")) {
-    console.error("WARN: login may have failed. Continuing anyway — public pages will still capture.");
-  }
+async function mintMagicLink() {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
+    method: "POST",
+    headers: { apikey: SRK, Authorization: `Bearer ${SRK}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "magiclink", email: ADMIN_EMAIL }),
+  });
+  const data = await res.json();
+  let link = data.action_link || data.properties?.action_link;
+  if (!link) throw new Error("no action_link: " + JSON.stringify(data).slice(0, 200));
+  // Redirect to localhost so the session lands in dev-server localStorage
+  link = link.replace(/redirect_to=[^&]+/, `redirect_to=${encodeURIComponent(BASE + "/home")}`);
+  return link;
 }
 
-async function capture(browser, device) {
-  const ctx = await browser.newContext({
+async function captureDevice(browser, device) {
+  console.log(`\n=== ${device.label.toUpperCase()} (${device.width}×${device.height}) ===`);
+  const ctxOpts = {
     viewport: { width: device.width, height: device.height },
-    deviceScaleFactor: device.deviceScaleFactor,
-    isMobile: device.isMobile ?? false,
+    deviceScaleFactor: device.deviceScaleFactor ?? 1,
+    isMobile: device.isMobile,
     hasTouch: device.hasTouch ?? false,
-    userAgent: device.isMobile
-      ? "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-      : undefined,
-  });
-  const page = await ctx.newPage();
-  page.setDefaultTimeout(8000);
+  };
+  if (device.userAgent) ctxOpts.userAgent = device.userAgent;
 
-  // Login once for this context
-  console.log(`\n=== ${device.label} ===`);
-  await login(page);
+  // Auth context (signed in as ceo@) and anon context, both reused
+  const authCtx = await browser.newContext(ctxOpts);
+  const authPage = await authCtx.newPage();
+  authPage.setDefaultTimeout(12000);
+
+  const anonCtx = await browser.newContext(ctxOpts);
+  const anonPage = await anonCtx.newPage();
+  anonPage.setDefaultTimeout(12000);
+
+  // Land the auth session
+  const link = await mintMagicLink();
+  await authPage.goto(link);
+  await authPage.waitForLoadState("networkidle").catch(() => {});
+  // Wait for the auth context to fully resolve: the "Sign out" or
+  // initials-avatar UI signals AuthContext has loaded. Fall back to
+  // a 2.5s settle if neither shows up.
+  await Promise.race([
+    authPage.waitForSelector("text=Sign out", { timeout: 4000 }).catch(() => {}),
+    authPage.waitForSelector("[class*='InitialsAvatar'], [data-testid='initials-avatar']", { timeout: 4000 }).catch(() => {}),
+    authPage.waitForTimeout(2500),
+  ]);
+  // Sanity check: confirm auth token is in storage
+  const tokenPresent = await authPage.evaluate(() =>
+    !!Object.keys(localStorage).find(k => k.startsWith("sb-") && k.endsWith("-auth-token"))
+  );
+  if (!tokenPresent) {
+    console.warn("  ⚠ auth token NOT in storage — auth-required pages may capture the login redirect");
+  }
+
+  let captured = 0, skipped = 0, failed = 0;
 
   for (const shot of SHOTS) {
+    if (wantedGroups && !wantedGroups.has(shot.group)) { skipped++; continue; }
+    const page = shot.anonOk ? anonPage : authPage;
     const outFile = path.join(OUT, `${shot.slug}-${device.label}.png`);
     try {
       await page.goto(`${BASE}${shot.url}`);
-      await page.waitForLoadState("networkidle").catch(() => {});
-      if (shot.wait) await page.waitForSelector(shot.wait, { timeout: 5000 }).catch(() => {});
-      if (shot.setup) await shot.setup(page);
-      await page.waitForTimeout(300); // settle
+      await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
+
+      // Wait for the page-specific signal (proves it's not the
+      // login-flash). Use a 6s timeout per shot.
+      if (shot.waitFor) {
+        await page.waitForSelector(shot.waitFor, { timeout: 6000 }).catch(() => {});
+      }
+      if (shot.setup) {
+        try { await shot.setup(page); } catch { /* ignore setup failures */ }
+      }
+      await page.waitForTimeout(shot.settle ?? 600);
+
+      // Final sanity: if the page URL was redirected to /login despite
+      // wanting auth, that's the auth-race — skip rather than save junk.
+      if (!shot.anonOk && page.url().includes("/login") && !shot.slug.startsWith("login")) {
+        console.log(`  ⚠ ${shot.slug}-${device.label}: redirected to /login, skipping`);
+        failed++;
+        continue;
+      }
+
       await page.screenshot({ path: outFile, fullPage: false });
       console.log(`  ✓ ${shot.slug}-${device.label}.png`);
+      captured++;
     } catch (e) {
       console.log(`  ✗ ${shot.slug}-${device.label}: ${e.message.split("\n")[0]}`);
+      failed++;
     }
   }
 
-  await ctx.close();
+  await authCtx.close();
+  await anonCtx.close();
+  console.log(`  ${captured} captured · ${failed} failed · ${skipped} skipped`);
 }
 
 (async () => {
-  console.log(`Capturing ${SHOTS.length} pages × 2 devices = ${SHOTS.length * 2} screenshots`);
-  console.log(`Output: ${OUT}`);
+  console.log(`Capturing ${SHOTS.length} pages × ${wantedDevices.length} device(s) = ${SHOTS.length * wantedDevices.length} screenshots`);
+  console.log(`Output: ${OUT}\n`);
   const browser = await chromium.launch({ headless: true });
-  await capture(browser, { ...DESKTOP, label: "desktop" });
-  await capture(browser, { ...MOBILE,  label: "mobile" });
+  for (const dev of wantedDevices) {
+    const cfg = dev === "mobile" ? MOBILE : DESKTOP;
+    await captureDevice(browser, cfg);
+  }
   await browser.close();
   console.log("\nDone.");
 })().catch((e) => { console.error(e); process.exit(1); });

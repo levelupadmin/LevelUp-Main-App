@@ -38,6 +38,9 @@ export interface Feature {
   appRefs?: string[];
   /** Optional deep dive — markdown-style prose, rendered with prose styles */
   details?: string;
+  /** ISO date this feature went live in prod. Used by the docs date
+   *  filter so the team can see "what shipped in the last 7 days". */
+  shipped_at?: string;
 }
 
 export interface FlowStep {

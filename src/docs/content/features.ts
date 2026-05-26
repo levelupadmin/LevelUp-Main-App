@@ -17,6 +17,7 @@ export const FEATURES: Feature[] = [
     summary: "Sign up and sign in with a phone number; OTP delivered via MSG91. Idempotent — re-using the same phone returns the existing account.",
     area: "Auth",
     status: "shipped",
+    shipped_at: "2026-05-26",
     codeRefs: ["src/pages/Login.tsx", "supabase/functions/send-otp/index.ts", "supabase/functions/verify-otp/index.ts"],
     appRefs: ["/login"],
     details: "MSG91 template-based delivery, rate-limited via `phone_otp_attempts` table (5 attempts per 15 min). On verify, the user row is upserted by phone, and any matching legacy_enrolments are auto-granted.",
@@ -166,6 +167,7 @@ export const FEATURES: Feature[] = [
     summary: "Per-student cohort home: current week, assignment, mentor feedback, next session, attendance status. Replaces a separate course view for live-cohort enrolments.",
     area: "Cohort",
     status: "shipped",
+    shipped_at: "2026-05-26",
     codeRefs: ["src/pages/CohortDashboard.tsx"],
     appRefs: ["/cohort/:slug"],
   },
@@ -175,6 +177,7 @@ export const FEATURES: Feature[] = [
     summary: "Per-week assignment form with text body, file uploads (Supabase Storage), optional link, opt-in for peer review. Edits-allowed until mentor opens it.",
     area: "Cohort",
     status: "shipped",
+    shipped_at: "2026-05-26",
     codeRefs: ["src/components/cohort/AssignmentSubmissionForm.tsx"],
   },
   {
@@ -183,6 +186,7 @@ export const FEATURES: Feature[] = [
     summary: "Admins review submitted assignments in /admin/cohort-submissions. Write feedback, mark status (revised, approved). Student sees feedback in their dashboard.",
     area: "Cohort",
     status: "shipped",
+    shipped_at: "2026-05-26",
     codeRefs: ["src/pages/admin/AdminCohortSubmissions.tsx", "src/components/cohort/AssignmentFeedbackView.tsx"],
   },
   {
@@ -191,6 +195,7 @@ export const FEATURES: Feature[] = [
     summary: "Cohort-mates' opted-in assignments shown in a feed. Drawer with critique textarea + 5-star rating + draft save. Reachable from both /cohort and /community.",
     area: "Cohort",
     status: "shipped",
+    shipped_at: "2026-05-26",
     codeRefs: ["src/components/cohort/PeerReviewBoard.tsx"],
     appRefs: ["/cohort/:slug", "/community"],
   },
@@ -200,6 +205,7 @@ export const FEATURES: Feature[] = [
     summary: "Admin marks who attended each live session. Below-threshold attendance can gate certificate eligibility.",
     area: "Cohort",
     status: "shipped",
+    shipped_at: "2026-05-26",
     codeRefs: ["src/pages/admin/AdminCohortAttendance.tsx"],
   },
   {
@@ -208,6 +214,7 @@ export const FEATURES: Feature[] = [
     summary: "pg_cron fires every 15 min. Three windows: 24h-before-due (assignment), 1h-before-session, 24-48h-after-missed-assignment. Email via Brevo, WhatsApp via Interakt.",
     area: "Cohort",
     status: "shipped",
+    shipped_at: "2026-05-26",
     codeRefs: ["supabase/functions/notify-cohort/index.ts", "supabase/migrations/20260526220000_cohort_notify_cron.sql"],
   },
 
@@ -269,6 +276,7 @@ export const FEATURES: Feature[] = [
     summary: "All users (new + legacy from TagMango) in one table. Filters: All / Active / Legacy + program vertical. Columns: name, email, phone, role, city, vertical, lifetime revenue.",
     area: "Admin",
     status: "shipped",
+    shipped_at: "2026-05-26",
     appRefs: ["/admin/users"],
   },
   {
@@ -277,6 +285,7 @@ export const FEATURES: Feature[] = [
     summary: "Date filters: Today / Yesterday / 7d / 30d / 90d / All / Custom. Per-offering revenue, top buyers in window, CSV export, refund issuance.",
     area: "Admin",
     status: "shipped",
+    shipped_at: "2026-05-26",
     appRefs: ["/admin/revenue"],
   },
   {
@@ -317,6 +326,7 @@ export const FEATURES: Feature[] = [
     summary: "/admin/api — tabs for Keys, Install (CLI + MCP setup), Webhooks, Activity log, Surface browser.",
     area: "Admin",
     status: "shipped",
+    shipped_at: "2026-05-26",
     appRefs: ["/admin/api"],
   },
   {
@@ -325,6 +335,7 @@ export const FEATURES: Feature[] = [
     summary: "/admin/docs — tabs for Overview, Features, Flows, Tech, Schema, API, Changelog. Search per tab, screenshot mobile/desktop toggle, downloadable as markdown.",
     area: "Admin",
     status: "shipped",
+    shipped_at: "2026-05-27",
     appRefs: ["/admin/docs"],
   },
 
@@ -335,6 +346,7 @@ export const FEATURES: Feature[] = [
     summary: "Idempotent crm_contacts insert via lead_capture() RPC. Ad landing pages + marketing site fire it directly. Same email/phone is updated, not duplicated.",
     area: "Marketing",
     status: "shipped",
+    shipped_at: "2026-05-26",
     codeRefs: ["supabase/migrations/20260526240000_marketing_crm_surface.sql"],
   },
   {
@@ -343,6 +355,7 @@ export const FEATURES: Feature[] = [
     summary: "Per-user free-form tags + values. Segment for marketing. Indexed for fast lookup. Bulk-tag via API.",
     area: "Marketing",
     status: "shipped",
+    shipped_at: "2026-05-26",
   },
   {
     slug: "user-notes",
@@ -350,6 +363,7 @@ export const FEATURES: Feature[] = [
     summary: "Free-form internal notes per user. Created_by tracking. Used by sales / CS team.",
     area: "Marketing",
     status: "shipped",
+    shipped_at: "2026-05-26",
   },
   {
     slug: "marketing-prefs",
@@ -357,6 +371,7 @@ export const FEATURES: Feature[] = [
     summary: "Per-user opt-in tracking with consent_at + unsubscribed_at. UTM provenance stored. Honored by bulk send + cohort notify.",
     area: "Marketing",
     status: "shipped",
+    shipped_at: "2026-05-26",
   },
   {
     slug: "email-templates",
@@ -388,6 +403,7 @@ export const FEATURES: Feature[] = [
     summary: "Subscribe external systems (Zapier, Make, n8n, HubSpot) to events: user.created, enrolment.granted, crm_contact.created, crm_contact.converted. HMAC-signed.",
     area: "Marketing",
     status: "shipped",
+    shipped_at: "2026-05-26",
     appRefs: ["/admin/api"],
   },
 
@@ -502,6 +518,7 @@ export const FEATURES: Feature[] = [
     summary: "Single endpoint /functions/v1/admin-api dispatches on body.action. Read/write/admin scope gates. Audit logged.",
     area: "API",
     status: "shipped",
+    shipped_at: "2026-05-26",
     codeRefs: ["supabase/functions/admin-api/index.ts"],
   },
   {
@@ -510,6 +527,7 @@ export const FEATURES: Feature[] = [
     summary: "Node CLI (no deps, ≥18) that wraps the admin API. Auth set, table rendering, --json flag, raw <action> escape hatch.",
     area: "API",
     status: "shipped",
+    shipped_at: "2026-05-26",
     codeRefs: ["~/Claude/levelup-cli"],
   },
   {
@@ -518,6 +536,7 @@ export const FEATURES: Feature[] = [
     summary: "JSON-RPC 2.0 over stdio. 74 tools auto-generated from list_actions. Drop into Claude Desktop / Claude Code / Cursor.",
     area: "API",
     status: "shipped",
+    shipped_at: "2026-05-26",
     codeRefs: ["~/Claude/levelup-mcp"],
   },
   {
@@ -526,6 +545,7 @@ export const FEATURES: Feature[] = [
     summary: "Issue + revoke keys with read/write/admin scope. Plaintext shown once at creation. Per-key install instructions dialog.",
     area: "API",
     status: "shipped",
+    shipped_at: "2026-05-26",
     appRefs: ["/admin/api"],
   },
 ];

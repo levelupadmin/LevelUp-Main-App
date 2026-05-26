@@ -46,6 +46,8 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  FileDown,
+  Loader2,
 } from "lucide-react";
 import usePageTitle from "@/hooks/usePageTitle";
 
@@ -55,7 +57,83 @@ import { FLOWS } from "@/docs/content/flows";
 import { TECH_SECTIONS } from "@/docs/content/tech";
 import { SCHEMA_TABLES } from "@/docs/content/schema";
 import { buildMarkdown, downloadMarkdown } from "@/docs/download";
+import { downloadFlowsPdf } from "@/docs/buildPdf";
 import type { ChangelogRow, FeatureStatus } from "@/docs/types";
+
+/* ─────────── shared date-window helper ─────────── */
+type DateWindow = "all" | "today" | "yesterday" | "7d" | "30d" | "90d" | "custom";
+
+function windowToBounds(w: DateWindow, customFrom?: string, customTo?: string): [Date, Date] | null {
+  const IST_OFFSET_MS = 5.5 * 3600 * 1000;
+  const now = Date.now();
+  const startOfToday = new Date(Math.floor((now + IST_OFFSET_MS) / 86400000) * 86400000 - IST_OFFSET_MS);
+  if (w === "all") return null;
+  if (w === "today") return [startOfToday, new Date(now + 86400000)];
+  if (w === "yesterday") {
+    const start = new Date(startOfToday.getTime() - 86400000);
+    return [start, startOfToday];
+  }
+  if (w === "7d")  return [new Date(now - 7 * 86400000), new Date(now + 86400000)];
+  if (w === "30d") return [new Date(now - 30 * 86400000), new Date(now + 86400000)];
+  if (w === "90d") return [new Date(now - 90 * 86400000), new Date(now + 86400000)];
+  if (w === "custom") {
+    const f = customFrom ? new Date(customFrom) : null;
+    const t = customTo ? new Date(customTo) : new Date(now + 86400000);
+    if (!f) return null;
+    return [f, t];
+  }
+  return null;
+}
+
+function DateWindowFilter({
+  value, onChange, customFrom, customTo, onCustomChange,
+}: {
+  value: DateWindow;
+  onChange: (w: DateWindow) => void;
+  customFrom: string;
+  customTo: string;
+  onCustomChange: (from: string, to: string) => void;
+}) {
+  const presets: Array<{ label: string; value: DateWindow }> = [
+    { label: "All",       value: "all" },
+    { label: "Today",     value: "today" },
+    { label: "Yesterday", value: "yesterday" },
+    { label: "7 days",    value: "7d" },
+    { label: "30 days",   value: "30d" },
+    { label: "90 days",   value: "90d" },
+    { label: "Custom",    value: "custom" },
+  ];
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {presets.map((p) => (
+        <button
+          key={p.value}
+          onClick={() => onChange(p.value)}
+          className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${value === p.value ? "border-cream/40 text-foreground bg-surface" : "border-border text-muted-foreground hover:text-foreground"}`}
+        >
+          {p.label}
+        </button>
+      ))}
+      {value === "custom" && (
+        <div className="flex items-center gap-2 ml-2">
+          <input
+            type="date"
+            value={customFrom}
+            onChange={(e) => onCustomChange(e.target.value, customTo)}
+            className="text-xs bg-surface border border-border rounded px-2 py-1"
+          />
+          <span className="text-muted-foreground text-xs">→</span>
+          <input
+            type="date"
+            value={customTo}
+            onChange={(e) => onCustomChange(customFrom, e.target.value)}
+            className="text-xs bg-surface border border-border rounded px-2 py-1"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ─────────── status pill helper ─────────── */
 
@@ -309,11 +387,20 @@ function OverviewTab({ search }: { search: string }) {
 function FeaturesTab({ search }: { search: string }) {
   const [statusFilter, setStatusFilter] = useState<FeatureStatus | "all">("all");
   const [areaFilter, setAreaFilter] = useState<string>("all");
+  const [dateWindow, setDateWindow] = useState<DateWindow>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   const visible = useMemo(() => {
+    const bounds = windowToBounds(dateWindow, customFrom, customTo);
     return FEATURES.filter((f) => {
       if (statusFilter !== "all" && f.status !== statusFilter) return false;
       if (areaFilter !== "all" && f.area !== areaFilter) return false;
+      if (bounds) {
+        if (!f.shipped_at) return false;
+        const d = new Date(f.shipped_at).getTime();
+        if (d < bounds[0].getTime() || d >= bounds[1].getTime()) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         return f.title.toLowerCase().includes(q) || f.summary.toLowerCase().includes(q) ||
@@ -322,7 +409,7 @@ function FeaturesTab({ search }: { search: string }) {
       }
       return true;
     });
-  }, [search, statusFilter, areaFilter]);
+  }, [search, statusFilter, areaFilter, dateWindow, customFrom, customTo]);
 
   const areas = useMemo(() => Array.from(new Set(FEATURES.map((f) => f.area))).sort(), []);
 
@@ -382,6 +469,18 @@ function FeaturesTab({ search }: { search: string }) {
         ))}
       </div>
 
+      {/* Date window filter — filters by feature.shipped_at */}
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Shipped in</span>
+        <DateWindowFilter
+          value={dateWindow}
+          onChange={setDateWindow}
+          customFrom={customFrom}
+          customTo={customTo}
+          onCustomChange={(f, t) => { setCustomFrom(f); setCustomTo(t); }}
+        />
+      </div>
+
       {/* Features grid */}
       {Object.keys(grouped).length === 0 ? (
         <Card className="p-10 text-center text-muted-foreground">No features match these filters.</Card>
@@ -428,29 +527,66 @@ function FeaturesTab({ search }: { search: string }) {
    ═══════════════════════════════════════════════════ */
 
 function FlowsTab({ search, device, onDeviceChange }: { search: string; device: "desktop" | "mobile"; onDeviceChange: (d: "desktop" | "mobile") => void }) {
-  const filtered = FLOWS.filter((f) =>
-    !search || f.title.toLowerCase().includes(search.toLowerCase()) ||
-    f.summary.toLowerCase().includes(search.toLowerCase()) ||
-    f.steps.some((s) => s.title.toLowerCase().includes(search.toLowerCase()) || s.description.toLowerCase().includes(search.toLowerCase())),
-  );
+  const { toast } = useToast();
+  const [audienceFilter, setAudienceFilter] = useState<string>("all");
+  const [pdfBuilding, setPdfBuilding] = useState(false);
+
+  const filtered = FLOWS.filter((f) => {
+    if (audienceFilter !== "all" && f.audience !== audienceFilter) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return f.title.toLowerCase().includes(q) ||
+      f.summary.toLowerCase().includes(q) ||
+      f.steps.some((s) => s.title.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
+  });
+
+  const handlePdf = async () => {
+    setPdfBuilding(true);
+    try {
+      await downloadFlowsPdf(filtered, device);
+      toast({ title: "PDF ready", description: `${filtered.length} flows · ${filtered.reduce((s, f) => s + f.steps.length, 0)} pages` });
+    } catch (e: any) {
+      toast({ title: "PDF build failed", description: e.message, variant: "destructive" });
+    }
+    setPdfBuilding(false);
+  };
+
+  const audiences = ["all", ...Array.from(new Set(FLOWS.map((f) => f.audience)))];
 
   return (
-    <div className="space-y-6">
-      <Card className="p-3 flex items-center justify-between bg-surface">
-        <div className="text-sm text-muted-foreground">Screenshots</div>
-        <div className="flex items-center gap-1 p-1 bg-surface-2 rounded-md">
-          <button
-            onClick={() => onDeviceChange("desktop")}
-            className={`px-2.5 py-1 text-xs rounded inline-flex items-center gap-1.5 ${device === "desktop" ? "bg-foreground text-background" : "text-muted-foreground"}`}
-          >
-            <Monitor className="h-3 w-3" /> Desktop
-          </button>
-          <button
-            onClick={() => onDeviceChange("mobile")}
-            className={`px-2.5 py-1 text-xs rounded inline-flex items-center gap-1.5 ${device === "mobile" ? "bg-foreground text-background" : "text-muted-foreground"}`}
-          >
-            <Smartphone className="h-3 w-3" /> Mobile
-          </button>
+    <div className="space-y-4">
+      <Card className="p-3 flex items-center justify-between bg-surface flex-wrap gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mr-1">Persona</span>
+          {audiences.map((a) => (
+            <button
+              key={a}
+              onClick={() => setAudienceFilter(a)}
+              className={`px-2.5 py-1 text-xs rounded-md border transition-colors capitalize ${audienceFilter === a ? "border-cream/40 text-foreground bg-surface-2" : "border-border text-muted-foreground hover:text-foreground"}`}
+            >
+              {a === "all" ? "All" : a}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button onClick={handlePdf} size="sm" variant="outline" disabled={pdfBuilding || filtered.length === 0}>
+            {pdfBuilding ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5 mr-1.5" />}
+            Download as PDF
+          </Button>
+          <div className="flex items-center gap-1 p-1 bg-surface-2 rounded-md">
+            <button
+              onClick={() => onDeviceChange("desktop")}
+              className={`px-2.5 py-1 text-xs rounded inline-flex items-center gap-1.5 ${device === "desktop" ? "bg-foreground text-background" : "text-muted-foreground"}`}
+            >
+              <Monitor className="h-3 w-3" /> Desktop
+            </button>
+            <button
+              onClick={() => onDeviceChange("mobile")}
+              className={`px-2.5 py-1 text-xs rounded inline-flex items-center gap-1.5 ${device === "mobile" ? "bg-foreground text-background" : "text-muted-foreground"}`}
+            >
+              <Smartphone className="h-3 w-3" /> Mobile
+            </button>
+          </div>
         </div>
       </Card>
 
@@ -636,15 +772,37 @@ function ApiTab() {
    ═══════════════════════════════════════════════════ */
 
 function ChangelogTab({ search, rows }: { search: string; rows: ChangelogRow[] }) {
-  const filtered = rows.filter((r) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return r.title.toLowerCase().includes(q) || r.summary.toLowerCase().includes(q) ||
-           (r.area || "").toLowerCase().includes(q) || (r.body_md || "").toLowerCase().includes(q);
-  });
+  const [dateWindow, setDateWindow] = useState<DateWindow>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+
+  const filtered = useMemo(() => {
+    const bounds = windowToBounds(dateWindow, customFrom, customTo);
+    return rows.filter((r) => {
+      if (bounds) {
+        if (!r.shipped_at) return false;
+        const d = new Date(r.shipped_at).getTime();
+        if (d < bounds[0].getTime() || d >= bounds[1].getTime()) return false;
+      }
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return r.title.toLowerCase().includes(q) || r.summary.toLowerCase().includes(q) ||
+             (r.area || "").toLowerCase().includes(q) || (r.body_md || "").toLowerCase().includes(q);
+    });
+  }, [rows, search, dateWindow, customFrom, customTo]);
 
   return (
     <div className="space-y-3">
+      <div className="flex items-baseline justify-between flex-wrap gap-2 mb-2">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Shipped in</span>
+        <DateWindowFilter
+          value={dateWindow}
+          onChange={setDateWindow}
+          customFrom={customFrom}
+          customTo={customTo}
+          onCustomChange={(f, t) => { setCustomFrom(f); setCustomTo(t); }}
+        />
+      </div>
       {filtered.length === 0 ? (
         <Card className="p-10 text-center text-muted-foreground">
           {rows.length === 0 ? "No changelog entries yet." : `No entries match "${search}"`}
