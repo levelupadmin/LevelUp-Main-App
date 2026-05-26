@@ -86,7 +86,7 @@ const StudentLayout = ({ children }: Props) => {
             );
           })}
 
-          {profile?.role === "admin" && (
+          {(profile?.role === "admin" || profile?.role === "owner") && (
             <>
               <div className="my-3 border-t border-border" />
               <Link
@@ -156,7 +156,7 @@ const StudentLayout = ({ children }: Props) => {
                 );
               })}
 
-              {profile?.role === "admin" && (
+              {(profile?.role === "admin" || profile?.role === "owner") && (
                 <>
                   <div className="my-3 border-t border-border" />
                   <Link
@@ -241,7 +241,7 @@ const StudentLayout = ({ children }: Props) => {
                 <>
                   <div className="fixed inset-0" onClick={() => setDropdownOpen(false)} />
                   <div className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-lg shadow-lg py-1 z-50">
-                    {profile?.role === "admin" && (
+                    {(profile?.role === "admin" || profile?.role === "owner") && (
                       <button
                         onClick={() => { setDropdownOpen(false); navigate("/admin"); }}
                         className="flex items-center gap-2 w-full px-4 py-2 text-sm text-[hsl(var(--accent-amber))] hover:bg-surface-2 transition-colors min-h-[44px]"
