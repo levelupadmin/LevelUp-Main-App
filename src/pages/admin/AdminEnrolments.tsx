@@ -31,9 +31,14 @@ interface EnrolmentRow {
   user_id: string;
   user_name: string;
   user_email: string;
+  user_phone?: string;
   offering_id: string;
   offering_title: string;
   payment_order_id: string | null;
+  /** "live" = native payment_orders / admin grant; "legacy" = pre-claim row in legacy_enrolments */
+  enrolment_kind?: "live" | "legacy";
+  total_paid_inr?: number | null;
+  legacy_purchased_at?: string | null;
 }
 
 /* ── CSV Import types ── */
@@ -122,11 +127,16 @@ const AdminEnrolments = () => {
     const from = p * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    /* ── Build server-side query with offering filter ── */
-    let countQuery = supabase.from("enrolments").select("id", { count: "exact", head: true });
-    let dataQuery = supabase
-      .from("enrolments")
-      .select("id, status, created_at, user_id, offering_id, payment_order_id")
+    /* ── Build server-side query against the unified view ──
+     * enrolments_unified UNIONs:
+     *   - live enrolments (from public.enrolments)
+     *   - legacy enrolments (from public.legacy_enrolments — ~73K rows)
+     * The view exposes user_email/phone/full_name + offering_title + an
+     * `enrolment_kind` column so the UI can badge live vs legacy. */
+    let countQuery = (supabase as any).from("enrolments_unified").select("id", { count: "exact", head: true });
+    let dataQuery = (supabase as any)
+      .from("enrolments_unified")
+      .select("id, status, created_at, user_id, offering_id, payment_order_id, enrolment_kind, total_paid_inr, legacy_purchased_at, user_email, user_phone, user_full_name, offering_title")
       .order("created_at", { ascending: false });
 
     // Apply offering filter (also used by course filter)
@@ -174,31 +184,20 @@ const AdminEnrolments = () => {
 
     if (!enrols) { setLoading(false); return; }
 
-    const userIds = [...new Set(enrols.map((e) => e.user_id))];
-    const offIds = [...new Set(enrols.map((e) => e.offering_id))];
-
-    const [uRes, oRes] = await Promise.all([
-      userIds.length > 0
-        ? supabase.from("users").select("id, full_name, email").in("id", userIds)
-        : { data: [] },
-      offIds.length > 0
-        ? supabase.from("offerings").select("id, title").in("id", offIds)
-        : { data: [] },
-    ]);
-
-    const uMap = Object.fromEntries((uRes.data || []).map((u) => [u.id, u]));
-    const oMap = Object.fromEntries((oRes.data || []).map((o) => [o.id, o]));
-
-    let rows = enrols.map((e) => ({
+    let rows: EnrolmentRow[] = (enrols as any[]).map((e) => ({
       id: e.id,
       status: e.status,
       created_at: e.created_at,
       user_id: e.user_id,
-      user_name: uMap[e.user_id]?.full_name || "Unknown",
-      user_email: uMap[e.user_id]?.email || "",
+      user_name: e.user_full_name || e.user_email || e.user_phone || "Unknown",
+      user_email: e.user_email || "",
+      user_phone: e.user_phone || "",
       offering_id: e.offering_id,
-      offering_title: oMap[e.offering_id]?.title || "Unknown",
+      offering_title: e.offering_title || (e.enrolment_kind === "legacy" ? "(unmapped legacy)" : "Unknown"),
       payment_order_id: e.payment_order_id,
+      enrolment_kind: e.enrolment_kind,
+      total_paid_inr: e.total_paid_inr ?? null,
+      legacy_purchased_at: e.legacy_purchased_at ?? null,
     }));
 
     setEnrolments(rows);

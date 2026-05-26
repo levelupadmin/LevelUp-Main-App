@@ -126,6 +126,22 @@ const AdminRevenue = () => {
   // Confirmation dialog
   const [confirmRefund, setConfirmRefund] = useState<{ orderId: string; amount: number; customerName: string } | null>(null);
 
+  /* Combined live + legacy revenue from revenue_in_range RPC.
+   * The in-memory `orders` array only has live payment_orders; legacy
+   * data lives in legacy_enrolments (~73K rows, too big to load) and is
+   * aggregated server-side. */
+  const [combinedTotals, setCombinedTotals] = useState<{
+    live_paid_inr: number;
+    live_order_count: number;
+    live_unique_buyers: number;
+    legacy_paid_inr: number;
+    legacy_order_count: number;
+    legacy_unique_buyers: number;
+    total_paid_inr: number;
+    total_order_count: number;
+    refunded_inr: number;
+  } | null>(null);
+
   /* ---------------------------------------------------------------- */
   /*  Load data                                                        */
   /* ---------------------------------------------------------------- */
@@ -221,6 +237,44 @@ const AdminRevenue = () => {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  /* Refetch combined (live + legacy) totals whenever the date filter
+   * changes. revenue_in_range is an SQL RPC that does the aggregation
+   * server-side across both payment_orders and the 73K-row
+   * legacy_enrolments table — cheap, indexed. */
+  useEffect(() => {
+    const now = Date.now();
+    const IST_OFFSET_MS = 5.5 * 3600 * 1000;
+    const startOfTodayMs = Math.floor((now + IST_OFFSET_MS) / 86400000) * 86400000 - IST_OFFSET_MS;
+    let from = new Date(0);
+    let to = new Date(now + 86400000);
+    if (dateRange === "today")     from = new Date(startOfTodayMs);
+    else if (dateRange === "yesterday") { from = new Date(startOfTodayMs - 86400000); to = new Date(startOfTodayMs); }
+    else if (dateRange === "7d")   from = new Date(now - 7 * 86400000);
+    else if (dateRange === "30d")  from = new Date(now - 30 * 86400000);
+    else if (dateRange === "90d")  from = new Date(now - 90 * 86400000);
+    else if (dateRange === "custom") {
+      if (customFrom) from = new Date(Date.UTC(customFrom.getFullYear(), customFrom.getMonth(), customFrom.getDate()) - IST_OFFSET_MS);
+      if (customTo)   to   = new Date(Date.UTC(customTo.getFullYear(), customTo.getMonth(), customTo.getDate() + 1) - IST_OFFSET_MS);
+    }
+    (async () => {
+      const { data } = await supabase.rpc("revenue_in_range" as any, { p_from: from.toISOString(), p_to: to.toISOString() });
+      const row = (data as any[])?.[0];
+      if (row) {
+        setCombinedTotals({
+          live_paid_inr: Number(row.live_paid_inr) || 0,
+          live_order_count: Number(row.live_order_count) || 0,
+          live_unique_buyers: Number(row.live_unique_buyers) || 0,
+          legacy_paid_inr: Number(row.legacy_paid_inr) || 0,
+          legacy_order_count: Number(row.legacy_order_count) || 0,
+          legacy_unique_buyers: Number(row.legacy_unique_buyers) || 0,
+          total_paid_inr: Number(row.total_paid_inr) || 0,
+          total_order_count: Number(row.total_order_count) || 0,
+          refunded_inr: Number(row.refunded_inr) || 0,
+        });
+      }
+    })();
+  }, [dateRange, customFrom, customTo]);
 
   /* ---------------------------------------------------------------- */
   /*  Filtering                                                        */
@@ -531,7 +585,62 @@ const AdminRevenue = () => {
         <p className="text-muted-foreground text-sm">Loading...</p>
       ) : (
         <>
-          {/* Summary cards */}
+          {/* Combined live + legacy revenue strip — server-aggregated
+              via revenue_in_range RPC. Surfaces the 73K legacy_enrolments
+              alongside new-app payment_orders so the headline number
+              actually reflects all TagMango-era revenue too. */}
+          {combinedTotals && (
+            <div className="mb-6">
+              <div className="flex items-baseline justify-between mb-3">
+                <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">
+                  Combined revenue (live + legacy)
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Selected window: {dateRange === "custom" ? "custom" : dateRange}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card className="p-4 bg-gradient-to-br from-[hsl(var(--accent-amber)/0.08)] to-transparent border-[hsl(var(--accent-amber)/0.3)]">
+                  <p className="text-[10px] font-mono uppercase text-muted-foreground">Total revenue</p>
+                  <p className="text-2xl font-semibold mt-1">{formatINR(combinedTotals.total_paid_inr)}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 font-mono">
+                    {combinedTotals.total_order_count} orders
+                  </p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-[10px] font-mono uppercase text-muted-foreground">Live (this app)</p>
+                  <p className="text-xl font-semibold mt-1">{formatINR(combinedTotals.live_paid_inr)}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 font-mono">
+                    {combinedTotals.live_order_count} orders · {combinedTotals.live_unique_buyers} buyers
+                  </p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-[10px] font-mono uppercase text-muted-foreground inline-flex items-center gap-1">
+                    <span className="inline-block px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[9px]">LEGACY</span>
+                    TagMango
+                  </p>
+                  <p className="text-xl font-semibold mt-1 text-amber-400">{formatINR(combinedTotals.legacy_paid_inr)}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 font-mono">
+                    {combinedTotals.legacy_order_count.toLocaleString("en-IN")} orders · {combinedTotals.legacy_unique_buyers.toLocaleString("en-IN")} buyers
+                  </p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-[10px] font-mono uppercase text-muted-foreground">Refunded (live)</p>
+                  <p className="text-xl font-semibold mt-1 text-rose-400">{formatINR(combinedTotals.refunded_inr)}</p>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          {/* Live-only summary cards (filtered orders array in memory) */}
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">
+              This app's orders only
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Live payment_orders from the new platform. Drill into rows below.
+            </p>
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             {[
               { label: "Filtered Revenue", value: formatINR(totalRevenue), icon: IndianRupee },

@@ -21,7 +21,7 @@ interface UserRow {
   member_number: number;
   created_at: string;
   enrolment_count: number;
-  // segmentation columns (from users_segmented view / users table)
+  // segmentation columns (from users_unified view / users table)
   is_legacy?: boolean;
   city?: string | null;
   state?: string | null;
@@ -93,9 +93,9 @@ const AdminUsers = () => {
     const from = p * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    // Query the users_segmented view — adds legacy flag, city, vertical, LTV.
+    // Query the users_unified view — adds legacy flag, city, vertical, LTV.
     let countQuery = supabase
-      .from("users_segmented" as any)
+      .from("users_unified" as any)
       .select("id", { count: "exact", head: true });
     if (scopeFilter === "active") countQuery = countQuery.eq("is_legacy", false);
     if (scopeFilter === "legacy") countQuery = countQuery.eq("is_legacy", true);
@@ -104,9 +104,11 @@ const AdminUsers = () => {
     setTotalCount(count ?? 0);
 
     let q = supabase
-      .from("users_segmented" as any)
-      .select("id, full_name, email, phone, role, member_number, created_at, is_legacy, city, state, program_vertical, lifetime_revenue_inr, first_purchase_at, purchase_count, legacy_enrolment_count")
-      .order("created_at", { ascending: false })
+      .from("users_unified" as any)
+      .select("id, full_name, email, phone, role, member_number, created_at, is_real, is_legacy, legacy_source, city, state, program_vertical, lifetime_revenue_inr, first_purchase_at, last_purchase_at, purchase_count")
+      // Ordering by lifetime_revenue_inr puts your biggest customers
+      // (legacy or not) at the top of the list.
+      .order("lifetime_revenue_inr", { ascending: false, nullsFirst: false })
       .range(from, to);
     if (scopeFilter === "active") q = q.eq("is_legacy", false);
     if (scopeFilter === "legacy") q = q.eq("is_legacy", true);
@@ -115,8 +117,12 @@ const AdminUsers = () => {
 
     if (!usersData) { setLoading(false); return; }
 
-    const uids = (usersData as any[]).map((u) => u.id);
-    const { data: enrols } = await supabase.from("enrolments").select("user_id, offering_id").in("user_id", uids);
+    // Only real users have an `id`; phantom legacy users have id=null.
+    // Use the real ids to hydrate enrolment offering arrays.
+    const uids = (usersData as any[]).map((u) => u.id).filter(Boolean);
+    const { data: enrols } = uids.length
+      ? await supabase.from("enrolments").select("user_id, offering_id").in("user_id", uids)
+      : { data: [] };
     const eCounts: Record<string, number> = {};
     const eMap: Record<string, string[]> = {};
     (enrols || []).forEach((e: any) => {
@@ -429,17 +435,21 @@ const AdminUsers = () => {
               <tr><td colSpan={9} className="px-5 py-12 text-center text-muted-foreground">Loading…</td></tr>
             ) : filtered.length === 0 ? (
               <tr><td colSpan={9} className="px-5 py-12 text-center text-muted-foreground">No users found</td></tr>
-            ) : filtered.map((u) => (
+            ) : filtered.map((u) => {
+              const isPhantom = !u.id;
+              return (
               <tr
-                key={u.id}
-                className="border-b border-border last:border-0 hover:bg-secondary/30 cursor-pointer"
-                onClick={() => openEdit(u)}
+                key={u.id || u.phone || u.email}
+                className={`border-b border-border last:border-0 ${isPhantom ? "" : "hover:bg-secondary/30 cursor-pointer"}`}
+                onClick={() => !isPhantom && openEdit(u)}
               >
                 <td className="px-5 py-3 font-medium">
-                  <div>{u.full_name || "—"}</div>
-                  <div className="font-mono text-[10px] text-muted-foreground">#{u.member_number}</div>
+                  <div>{u.full_name || (isPhantom ? <span className="text-muted-foreground italic">unclaimed legacy</span> : "—")}</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">
+                    {u.member_number ? `#${u.member_number}` : (u.phone || "—")}
+                  </div>
                 </td>
-                <td className="px-5 py-3 text-muted-foreground">{u.email || "—"}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{u.email || u.phone || "—"}</td>
                 <td className="px-5 py-3">
                   {u.is_legacy ? (
                     <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">legacy</span>
@@ -464,14 +474,20 @@ const AdminUsers = () => {
                     : "—"}
                 </td>
                 <td className="px-5 py-3 font-mono text-xs">
-                  {u.enrolment_count}
-                  {(u.legacy_enrolment_count ?? 0) > 0 && (
-                    <span className="text-amber-400 ml-1">+{u.legacy_enrolment_count}L</span>
+                  {isPhantom ? (
+                    <span className="text-amber-400">{u.purchase_count}L</span>
+                  ) : (
+                    <>
+                      {u.enrolment_count}
+                      {(u.legacy_enrolment_count ?? 0) > 0 && (
+                        <span className="text-amber-400 ml-1">+{u.legacy_enrolment_count}L</span>
+                      )}
+                    </>
                   )}
                 </td>
-                <td className="px-5 py-3 font-mono text-xs">{new Date(u.created_at).toLocaleDateString("en-IN")}</td>
+                <td className="px-5 py-3 font-mono text-xs">{u.created_at ? new Date(u.created_at).toLocaleDateString("en-IN") : "—"}</td>
               </tr>
-            ))}
+            );})}
           </tbody>
         </table>
       </div>
