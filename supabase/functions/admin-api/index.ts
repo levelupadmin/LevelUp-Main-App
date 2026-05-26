@@ -450,6 +450,597 @@ const HANDLERS: Record<string, Handler> = {
       return { coupon: data };
     },
   },
+
+  /* ───────── user_tags ───────── */
+  "users.list_tags": {
+    scope: "read",
+    fn: async (admin, p) => {
+      if (!p?.user_id) throw new Error("user_id required");
+      const { data, error } = await admin.from("user_tags").select("id, tag, value, source, created_by, created_at").eq("user_id", p.user_id).order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return { tags: data };
+    },
+  },
+  "users.tag": {
+    scope: "write",
+    fn: async (admin, p, ctx) => {
+      if (!p?.user_id || !p?.tag) throw new Error("user_id and tag required");
+      const { data, error } = await admin.from("user_tags").upsert({
+        user_id: p.user_id, tag: p.tag, value: p.value ?? null,
+        source: p.source ?? "api", created_by: ctx.created_by,
+      }, { onConflict: "user_id,tag" }).select().single();
+      if (error) throw new Error(error.message);
+      return { tag: data };
+    },
+  },
+  "users.untag": {
+    scope: "write",
+    fn: async (admin, p) => {
+      if (!p?.user_id || !p?.tag) throw new Error("user_id and tag required");
+      const { error, count } = await admin.from("user_tags").delete({ count: "exact" }).eq("user_id", p.user_id).eq("tag", p.tag);
+      if (error) throw new Error(error.message);
+      return { removed: count };
+    },
+  },
+  "users.list_by_tag": {
+    scope: "read",
+    fn: async (admin, p) => {
+      if (!p?.tag) throw new Error("tag required");
+      const limit = Math.min(p?.limit ?? 200, 1000);
+      const { data, error } = await admin.from("user_tags")
+        .select("user_id, value, created_at, users:user_id(email, phone, full_name, role)")
+        .eq("tag", p.tag).order("created_at", { ascending: false }).limit(limit);
+      if (error) throw new Error(error.message);
+      const flat = (data || []).map((r: any) => ({
+        user_id: r.user_id, value: r.value, tagged_at: r.created_at,
+        email: r.users?.email, phone: r.users?.phone, full_name: r.users?.full_name, role: r.users?.role,
+      }));
+      return { users: flat, count: flat.length };
+    },
+  },
+  "users.bulk_tag": {
+    scope: "write",
+    fn: async (admin, p, ctx) => {
+      if (!Array.isArray(p?.user_ids) || !p?.tag) throw new Error("user_ids[] and tag required");
+      const rows = p.user_ids.map((uid: string) => ({
+        user_id: uid, tag: p.tag, value: p.value ?? null,
+        source: p.source ?? "api", created_by: ctx.created_by,
+      }));
+      const { data, error } = await admin.from("user_tags").upsert(rows, { onConflict: "user_id,tag" }).select("id");
+      if (error) throw new Error(error.message);
+      return { tagged: data?.length ?? 0 };
+    },
+  },
+
+  /* ───────── user_notes ───────── */
+  "users.list_notes": {
+    scope: "read",
+    fn: async (admin, p) => {
+      if (!p?.user_id) throw new Error("user_id required");
+      const { data, error } = await admin.from("user_notes")
+        .select("id, body, source, created_by, created_at, updated_at")
+        .eq("user_id", p.user_id).order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return { notes: data };
+    },
+  },
+  "users.add_note": {
+    scope: "write",
+    fn: async (admin, p, ctx) => {
+      if (!p?.user_id || !p?.body) throw new Error("user_id and body required");
+      const { data, error } = await admin.from("user_notes").insert({
+        user_id: p.user_id, body: p.body,
+        source: p.source ?? "api", created_by: ctx.created_by,
+      }).select().single();
+      if (error) throw new Error(error.message);
+      return { note: data };
+    },
+  },
+  "users.delete_note": {
+    scope: "admin",
+    fn: async (admin, p) => {
+      if (!p?.id) throw new Error("id required");
+      const { error } = await admin.from("user_notes").delete().eq("id", p.id);
+      if (error) throw new Error(error.message);
+      return { deleted: true };
+    },
+  },
+
+  /* ───────── user_marketing_prefs ───────── */
+  "users.get_prefs": {
+    scope: "read",
+    fn: async (admin, p) => {
+      if (!p?.user_id) throw new Error("user_id required");
+      const { data, error } = await admin.from("user_marketing_prefs").select("*").eq("user_id", p.user_id).maybeSingle();
+      if (error) throw new Error(error.message);
+      return { prefs: data };
+    },
+  },
+  "users.set_prefs": {
+    scope: "write",
+    fn: async (admin, p) => {
+      if (!p?.user_id) throw new Error("user_id required");
+      const fields: Record<string, any> = { user_id: p.user_id };
+      for (const k of ["email_opt_in","whatsapp_opt_in","sms_opt_in","source","utm_source","utm_medium","utm_campaign","utm_term","utm_content","crm_id","consent_at","unsubscribed_at","custom_fields"]) {
+        if (p[k] !== undefined) fields[k] = p[k];
+      }
+      const { data, error } = await admin.from("user_marketing_prefs").upsert(fields, { onConflict: "user_id" }).select().single();
+      if (error) throw new Error(error.message);
+      return { prefs: data };
+    },
+  },
+  "users.opt_out": {
+    scope: "write",
+    fn: async (admin, p) => {
+      if (!p?.user_id) throw new Error("user_id required");
+      const { data, error } = await admin.from("user_marketing_prefs").upsert({
+        user_id: p.user_id, email_opt_in: false, whatsapp_opt_in: false, sms_opt_in: false,
+        unsubscribed_at: new Date().toISOString(),
+      }, { onConflict: "user_id" }).select().single();
+      if (error) throw new Error(error.message);
+      return { prefs: data };
+    },
+  },
+
+  /* ───────── user export (paginated, CRM-grade) ───────── */
+  "users.export": {
+    scope: "read",
+    fn: async (admin, p) => {
+      const limit = Math.min(p?.limit ?? 500, 2000);
+      let q = admin.from("users")
+        .select("id, email, phone, full_name, role, created_at, member_number")
+        .order("created_at", { ascending: false }).limit(limit);
+      if (p?.cursor) q = q.lt("created_at", p.cursor);
+      if (p?.role) q = q.eq("role", p.role);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      const ids = (data || []).map((u: any) => u.id);
+      // hydrate prefs + tags in batch
+      const [{ data: prefs }, { data: tags }] = await Promise.all([
+        admin.from("user_marketing_prefs").select("*").in("user_id", ids),
+        admin.from("user_tags").select("user_id, tag, value").in("user_id", ids),
+      ]);
+      const prefMap = new Map((prefs || []).map((r: any) => [r.user_id, r]));
+      const tagMap = new Map<string, Array<{ tag: string; value: string | null }>>();
+      for (const t of (tags || []) as any[]) {
+        const arr = tagMap.get(t.user_id) ?? [];
+        arr.push({ tag: t.tag, value: t.value });
+        tagMap.set(t.user_id, arr);
+      }
+      const out = (data || []).map((u: any) => ({
+        ...u, prefs: prefMap.get(u.id) ?? null, tags: tagMap.get(u.id) ?? [],
+      }));
+      const nextCursor = out.length === limit ? out[out.length - 1].created_at : null;
+      return { users: out, count: out.length, next_cursor: nextCursor };
+    },
+  },
+
+  /* ───────── crm_contacts (leads) ───────── */
+  "leads.list": {
+    scope: "read",
+    fn: async (admin, p) => {
+      const limit = Math.min(p?.limit ?? 100, 1000);
+      let q = admin.from("crm_contacts").select("*").order("created_at", { ascending: false }).limit(limit);
+      if (p?.cursor) q = q.lt("created_at", p.cursor);
+      if (p?.status) q = q.eq("status", p.status);
+      if (p?.source) q = q.eq("source", p.source);
+      if (p?.utm_campaign) q = q.eq("utm_campaign", p.utm_campaign);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      const nextCursor = (data?.length ?? 0) === limit ? data![data!.length - 1].created_at : null;
+      return { leads: data, count: data?.length ?? 0, next_cursor: nextCursor };
+    },
+  },
+  "leads.get": {
+    scope: "read",
+    fn: async (admin, p) => {
+      if (!p?.id) throw new Error("id required");
+      const { data, error } = await admin.from("crm_contacts").select("*").eq("id", p.id).maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) throw new Error("Not found");
+      return { lead: data };
+    },
+  },
+  "leads.search": {
+    scope: "read",
+    fn: async (admin, p) => {
+      if (!p?.q) throw new Error("q required");
+      const q = String(p.q).trim();
+      const { data, error } = await admin.from("crm_contacts").select("*")
+        .or(`email.ilike.%${q}%,phone.ilike.%${q}%,full_name.ilike.%${q}%,crm_id.eq.${q}`)
+        .order("created_at", { ascending: false }).limit(Math.min(p?.limit ?? 50, 500));
+      if (error) throw new Error(error.message);
+      return { leads: data, count: data?.length ?? 0 };
+    },
+  },
+  "leads.create": {
+    scope: "write",
+    fn: async (admin, p) => {
+      if (!p?.email && !p?.phone) throw new Error("email or phone required");
+      // idempotent — use lead_capture RPC so callers can replay safely
+      const { data: id, error } = await admin.rpc("lead_capture", {
+        p_email: p.email ?? null, p_phone: p.phone ?? null,
+        p_full_name: p.full_name ?? null, p_source: p.source ?? null,
+        p_utm: p.utm ?? {}, p_custom_fields: p.custom_fields ?? {},
+      });
+      if (error) throw new Error(error.message);
+      const { data } = await admin.from("crm_contacts").select("*").eq("id", id).single();
+      return { lead: data };
+    },
+  },
+  "leads.update": {
+    scope: "write",
+    fn: async (admin, p) => {
+      if (!p?.id) throw new Error("id required");
+      const fields: Record<string, any> = {};
+      for (const k of ["email","phone","full_name","source","status","owner_user_id","utm_source","utm_medium","utm_campaign","utm_term","utm_content","tags","custom_fields","notes","crm_id","last_contacted_at"]) {
+        if (p[k] !== undefined) fields[k] = p[k];
+      }
+      const { data, error } = await admin.from("crm_contacts").update(fields).eq("id", p.id).select().single();
+      if (error) throw new Error(error.message);
+      return { lead: data };
+    },
+  },
+  "leads.convert": {
+    scope: "write",
+    fn: async (admin, p) => {
+      if (!p?.id || !p?.user_id) throw new Error("id and user_id required");
+      const { data, error } = await admin.from("crm_contacts").update({
+        status: "converted", converted_user_id: p.user_id, converted_at: new Date().toISOString(),
+      }).eq("id", p.id).select().single();
+      if (error) throw new Error(error.message);
+      return { lead: data };
+    },
+  },
+  "leads.bulk_import": {
+    scope: "write",
+    fn: async (admin, p) => {
+      if (!Array.isArray(p?.leads)) throw new Error("leads[] required");
+      const created: string[] = [];
+      for (const l of p.leads) {
+        const { data: id, error } = await admin.rpc("lead_capture", {
+          p_email: l.email ?? null, p_phone: l.phone ?? null,
+          p_full_name: l.full_name ?? null, p_source: l.source ?? p.source ?? null,
+          p_utm: l.utm ?? {}, p_custom_fields: l.custom_fields ?? {},
+        });
+        if (!error && id) created.push(id as string);
+      }
+      return { created: created.length, ids: created };
+    },
+  },
+
+  /* ───────── payments / orders ───────── */
+  "payments.list": {
+    scope: "read",
+    fn: async (admin, p) => {
+      const limit = Math.min(p?.limit ?? 100, 1000);
+      let q = admin.from("payment_orders")
+        .select("id, user_id, offering_id, amount_inr, status, razorpay_order_id, razorpay_payment_id, created_at, captured_at")
+        .order("created_at", { ascending: false }).limit(limit);
+      if (p?.cursor) q = q.lt("created_at", p.cursor);
+      if (p?.status) q = q.eq("status", p.status);
+      if (p?.user_id) q = q.eq("user_id", p.user_id);
+      if (p?.from) q = q.gte("created_at", p.from);
+      if (p?.to) q = q.lte("created_at", p.to);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      const nextCursor = (data?.length ?? 0) === limit ? data![data!.length - 1].created_at : null;
+      return { payments: data, count: data?.length ?? 0, next_cursor: nextCursor };
+    },
+  },
+  "payments.get": {
+    scope: "read",
+    fn: async (admin, p) => {
+      if (!p?.id && !p?.razorpay_payment_id) throw new Error("id or razorpay_payment_id required");
+      const q = p.id
+        ? admin.from("payment_orders").select("*").eq("id", p.id).maybeSingle()
+        : admin.from("payment_orders").select("*").eq("razorpay_payment_id", p.razorpay_payment_id).maybeSingle();
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { payment: data };
+    },
+  },
+
+  /* ───────── campaigns (email + WhatsApp) ───────── */
+  "campaigns.email_templates_list": {
+    scope: "read",
+    fn: async (admin) => {
+      const { data, error } = await admin.from("email_templates").select("key, name, subject, html_body, is_active, updated_at").order("name");
+      if (error) throw new Error(error.message);
+      return { templates: data };
+    },
+  },
+  "campaigns.email_send_one": {
+    scope: "write",
+    fn: async (admin, p) => {
+      if (!p?.template_key || !p?.to) throw new Error("template_key and to required");
+      const { data, error } = await admin.from("email_queue").insert({
+        template_key: p.template_key, to_email: p.to, to_name: p.to_name ?? null,
+        merge_vars: p.merge_vars ?? {}, status: "pending", priority: p.priority ?? 5,
+      }).select().single();
+      if (error) throw new Error(error.message);
+      return { queued: data };
+    },
+  },
+  "campaigns.email_send_bulk": {
+    scope: "admin",
+    fn: async (admin, p) => {
+      if (!p?.template_key || !Array.isArray(p?.recipients)) throw new Error("template_key and recipients[] required");
+      const rows = p.recipients.map((r: any) => ({
+        template_key: p.template_key,
+        to_email: r.email, to_name: r.name ?? null,
+        merge_vars: r.merge_vars ?? p.merge_vars ?? {},
+        status: "pending", priority: p.priority ?? 5,
+      }));
+      const { data, error } = await admin.from("email_queue").insert(rows).select("id");
+      if (error) throw new Error(error.message);
+      return { queued: data?.length ?? 0 };
+    },
+  },
+  "campaigns.email_history": {
+    scope: "read",
+    fn: async (admin, p) => {
+      const limit = Math.min(p?.limit ?? 100, 1000);
+      let q = admin.from("email_queue").select("id, template_key, to_email, status, sent_at, error_message, created_at").order("created_at", { ascending: false }).limit(limit);
+      if (p?.status) q = q.eq("status", p.status);
+      if (p?.to) q = q.eq("to_email", p.to);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { emails: data };
+    },
+  },
+
+  /* ───────── webhooks ───────── */
+  "webhooks.list": {
+    scope: "read",
+    fn: async (admin) => {
+      const { data, error } = await admin.from("webhook_subscriptions")
+        .select("id, name, url, event_types, active, description, last_triggered_at, failure_count, last_failure_at, last_failure_reason, created_at")
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return { webhooks: data };
+    },
+  },
+  "webhooks.create": {
+    scope: "admin",
+    fn: async (admin, p, ctx) => {
+      if (!p?.name || !p?.url || !Array.isArray(p?.event_types)) throw new Error("name, url, event_types[] required");
+      // Generate a signing secret if not provided
+      const secret = p.secret ?? "whk_" + crypto.getRandomValues(new Uint8Array(24)).reduce((s, b) => s + b.toString(16).padStart(2, "0"), "");
+      const { data, error } = await admin.from("webhook_subscriptions").insert({
+        name: p.name, url: p.url, secret, event_types: p.event_types,
+        active: p.active ?? true, description: p.description ?? null, created_by: ctx.created_by,
+      }).select().single();
+      if (error) throw new Error(error.message);
+      return { webhook: data, secret };
+    },
+  },
+  "webhooks.update": {
+    scope: "admin",
+    fn: async (admin, p) => {
+      if (!p?.id) throw new Error("id required");
+      const fields: Record<string, any> = {};
+      for (const k of ["name","url","event_types","active","description"]) {
+        if (p[k] !== undefined) fields[k] = p[k];
+      }
+      const { data, error } = await admin.from("webhook_subscriptions").update(fields).eq("id", p.id).select().single();
+      if (error) throw new Error(error.message);
+      return { webhook: data };
+    },
+  },
+  "webhooks.delete": {
+    scope: "admin",
+    fn: async (admin, p) => {
+      if (!p?.id) throw new Error("id required");
+      const { error } = await admin.from("webhook_subscriptions").delete().eq("id", p.id);
+      if (error) throw new Error(error.message);
+      return { deleted: true };
+    },
+  },
+  "webhooks.test": {
+    scope: "admin",
+    fn: async (admin, p) => {
+      if (!p?.id) throw new Error("id required");
+      const { data: sub } = await admin.from("webhook_subscriptions").select("*").eq("id", p.id).single();
+      if (!sub) throw new Error("Not found");
+      const payload = { event_type: "webhook.test", payload: { sent_at: new Date().toISOString(), note: "test ping from admin-api" } };
+      const { data, error } = await admin.from("webhook_deliveries").insert({
+        subscription_id: sub.id, event_type: "webhook.test", payload, status: "pending", next_retry_at: new Date().toISOString(),
+      }).select().single();
+      if (error) throw new Error(error.message);
+      // Try delivering synchronously so the caller gets immediate feedback
+      try {
+        const res = await fetch(sub.url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-LevelUp-Event": "webhook.test", "X-LevelUp-Signature": sub.secret },
+          body: JSON.stringify(payload),
+        });
+        await admin.from("webhook_deliveries").update({
+          status: res.ok ? "delivered" : "failed", http_status: res.status,
+          delivered_at: res.ok ? new Date().toISOString() : null, attempts: 1,
+          response_excerpt: (await res.text().catch(() => "")).slice(0, 500),
+        }).eq("id", data.id);
+        return { delivered: res.ok, http_status: res.status, delivery_id: data.id };
+      } catch (e) {
+        await admin.from("webhook_deliveries").update({
+          status: "failed", attempts: 1, error_message: String(e),
+        }).eq("id", data.id);
+        return { delivered: false, error: String(e), delivery_id: data.id };
+      }
+    },
+  },
+  "webhooks.deliveries": {
+    scope: "read",
+    fn: async (admin, p) => {
+      const limit = Math.min(p?.limit ?? 100, 1000);
+      let q = admin.from("webhook_deliveries")
+        .select("id, subscription_id, event_type, status, http_status, attempts, delivered_at, error_message, created_at")
+        .order("created_at", { ascending: false }).limit(limit);
+      if (p?.subscription_id) q = q.eq("subscription_id", p.subscription_id);
+      if (p?.status) q = q.eq("status", p.status);
+      if (p?.event_type) q = q.eq("event_type", p.event_type);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { deliveries: data };
+    },
+  },
+  "webhooks.event_types": {
+    scope: "read",
+    fn: async () => ({
+      event_types: [
+        { type: "user.created", description: "A new user account is created (signup or admin grant)" },
+        { type: "enrolment.granted", description: "A user is enrolled in an offering (purchase or admin grant)" },
+        { type: "crm_contact.created", description: "A new lead lands in crm_contacts (ad form, lead_capture RPC)" },
+        { type: "crm_contact.converted", description: "A lead is converted to a paying user" },
+        { type: "webhook.test", description: "Manual test ping from /admin/api" },
+      ],
+    }),
+  },
+
+  /* ───────── api keys (eat our own dog food) ───────── */
+  "keys.list": {
+    scope: "admin",
+    fn: async (admin) => {
+      const { data, error } = await admin.from("team_api_keys")
+        .select("id, name, scope, key_hint, created_by, last_used_at, last_used_ip, revoked_at, expires_at, created_at, users:created_by(email, full_name)")
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      const flat = (data || []).map((k: any) => ({
+        id: k.id, name: k.name, scope: k.scope, key_hint: `…${k.key_hint}`,
+        owner_email: k.users?.email, owner_name: k.users?.full_name,
+        last_used_at: k.last_used_at, last_used_ip: k.last_used_ip,
+        revoked_at: k.revoked_at, expires_at: k.expires_at, created_at: k.created_at,
+        status: k.revoked_at ? "revoked" : (k.expires_at && new Date(k.expires_at) < new Date() ? "expired" : "active"),
+      }));
+      return { keys: flat };
+    },
+  },
+  "keys.create": {
+    scope: "admin",
+    fn: async (admin, p, ctx) => {
+      if (!p?.name || !p?.scope) throw new Error("name and scope required");
+      if (!["read","write","admin"].includes(p.scope)) throw new Error("scope must be read|write|admin");
+      const { data, error } = await admin.rpc("create_team_api_key", {
+        p_name: p.name, p_scope: p.scope,
+        p_expires_at: p.expires_at ?? null, p_created_by: ctx.created_by,
+      });
+      if (error) throw new Error(error.message);
+      const row = (data as any[])[0];
+      return {
+        key: { id: row.key_id, name: p.name, scope: p.scope, key_hint: row.hint },
+        plaintext: row.plaintext,
+        warning: "Save this plaintext now — it is shown only once.",
+      };
+    },
+  },
+  "keys.revoke": {
+    scope: "admin",
+    fn: async (admin, p) => {
+      if (!p?.id) throw new Error("id required");
+      const { data, error } = await admin.from("team_api_keys").update({ revoked_at: new Date().toISOString() }).eq("id", p.id).select().single();
+      if (error) throw new Error(error.message);
+      return { key: data };
+    },
+  },
+  "keys.usage": {
+    scope: "admin",
+    fn: async (admin, p) => {
+      const limit = Math.min(p?.limit ?? 100, 1000);
+      let q = admin.from("api_call_log")
+        .select("id, api_key_id, action, status_code, duration_ms, ip, error_message, created_at")
+        .order("created_at", { ascending: false }).limit(limit);
+      if (p?.api_key_id) q = q.eq("api_key_id", p.api_key_id);
+      if (p?.action) q = q.eq("action", p.action);
+      if (p?.status_code) q = q.eq("status_code", p.status_code);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { calls: data };
+    },
+  },
+
+  /* ───────── analytics / funnel ───────── */
+  "analytics.funnel": {
+    scope: "read",
+    fn: async (admin, p) => {
+      const days = Math.min(p?.days ?? 30, 365);
+      const since = new Date(Date.now() - days * 86400_000).toISOString();
+      const [u, o, e] = await Promise.all([
+        admin.from("users").select("id", { count: "exact", head: true }).gte("created_at", since),
+        admin.from("payment_orders").select("status", { count: "exact" }).gte("created_at", since),
+        admin.from("enrolments").select("id", { count: "exact", head: true }).gte("created_at", since),
+      ]);
+      const orders = (o.data || []) as Array<{ status: string }>;
+      return {
+        days,
+        signups: u.count ?? 0,
+        orders_created: orders.length,
+        orders_captured: orders.filter((x) => x.status === "paid").length,
+        orders_failed: orders.filter((x) => x.status === "failed").length,
+        enrolments: e.count ?? 0,
+      };
+    },
+  },
+  "analytics.utm_breakdown": {
+    scope: "read",
+    fn: async (admin, p) => {
+      const days = Math.min(p?.days ?? 30, 365);
+      const since = new Date(Date.now() - days * 86400_000).toISOString();
+      const { data } = await admin.from("crm_contacts")
+        .select("utm_source, utm_campaign, status")
+        .gte("created_at", since);
+      const breakdown = new Map<string, { utm_source: string; utm_campaign: string; leads: number; converted: number }>();
+      for (const r of (data || []) as any[]) {
+        const k = `${r.utm_source ?? "(none)"}|${r.utm_campaign ?? "(none)"}`;
+        const e = breakdown.get(k) ?? { utm_source: r.utm_source ?? "(none)", utm_campaign: r.utm_campaign ?? "(none)", leads: 0, converted: 0 };
+        e.leads++;
+        if (r.status === "converted") e.converted++;
+        breakdown.set(k, e);
+      }
+      return { days, rows: Array.from(breakdown.values()).sort((a, b) => b.leads - a.leads) };
+    },
+  },
+  "analytics.cohort_engagement": {
+    scope: "read",
+    fn: async (admin, p) => {
+      if (!p?.batch_id) throw new Error("batch_id required");
+      const [{ data: members }, { data: submissions }, { data: attendance }] = await Promise.all([
+        admin.from("cohort_batch_members").select("id, enrolment_id").eq("batch_id", p.batch_id),
+        admin.from("cohort_submissions").select("user_id, week_id, status").eq("batch_id", p.batch_id),
+        admin.from("cohort_attendance").select("user_id, session_id, status").eq("batch_id", p.batch_id),
+      ]);
+      return {
+        batch_id: p.batch_id,
+        member_count: members?.length ?? 0,
+        submissions_total: submissions?.length ?? 0,
+        attendance_total: attendance?.length ?? 0,
+        attendance_present: (attendance || []).filter((a: any) => a.status === "present").length,
+      };
+    },
+  },
+
+  /* ───────── enrolments export ───────── */
+  "enrolments.export": {
+    scope: "read",
+    fn: async (admin, p) => {
+      const limit = Math.min(p?.limit ?? 500, 5000);
+      let q = admin.from("enrolments")
+        .select("id, user_id, offering_id, status, total_paid_inr, created_at, users:user_id(email, phone, full_name), offerings:offering_id(slug, title, type)")
+        .order("created_at", { ascending: false }).limit(limit);
+      if (p?.cursor) q = q.lt("created_at", p.cursor);
+      if (p?.status) q = q.eq("status", p.status);
+      if (p?.offering_id) q = q.eq("offering_id", p.offering_id);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      const flat = (data || []).map((e: any) => ({
+        id: e.id, user_id: e.user_id, offering_id: e.offering_id,
+        email: e.users?.email, phone: e.users?.phone, full_name: e.users?.full_name,
+        offering_slug: e.offerings?.slug, offering_title: e.offerings?.title, offering_type: e.offerings?.type,
+        status: e.status, total_paid_inr: e.total_paid_inr, created_at: e.created_at,
+      }));
+      const nextCursor = flat.length === limit ? flat[flat.length - 1].created_at : null;
+      return { enrolments: flat, count: flat.length, next_cursor: nextCursor };
+    },
+  },
 };
 
 const SCOPE_RANK: Record<Scope, number> = { read: 1, write: 2, admin: 3 };
