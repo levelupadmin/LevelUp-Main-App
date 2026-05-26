@@ -1,181 +1,213 @@
 /**
  * User flows — every important journey through the app, step-by-step.
  *
- * Each step can have an optional screenshot (desktop + mobile) which
- * the docs portal renders inline with a toggle. The placeholder text
- * shows until real screenshots are captured + dropped into
- * src/docs/screenshots/.
+ * Each step has a real screenshot pair (desktop + mobile). Steps that
+ * correspond to external systems (Razorpay modal, Meta lead form,
+ * webhook receiver) keep a placeholder.
  *
- * Audience is who walks through this flow in real life — sometimes
- * "student" (the public-facing happy path), sometimes "admin" (a
- * back-office workflow).
+ * Screenshots live under /public/docs/screenshots/ so they're served
+ * by Vite as static assets and don't bloat the JS bundle.
+ *
+ * Audience is who walks through this flow in real life.
  */
 import type { Flow } from "../types";
+
+const S = (slug: string) => ({
+  desktop: `/docs/screenshots/${slug}-desktop.png`,
+  mobile: `/docs/screenshots/${slug}-mobile.png`,
+});
 
 export const FLOWS: Flow[] = [
   {
     slug: "student-signup-to-purchase",
     title: "Student: signup → purchase → first watch",
     audience: "student",
-    summary: "The full happy path from a Meta ad click all the way to a student watching their first chapter.",
+    summary: "The full happy path from a Meta ad click all the way to a student watching their first chapter. Screenshots show real pages in production.",
     steps: [
       {
-        title: "1. Ad click → landing on /offering/:slug",
-        description: "User clicks a Meta/Google/X ad → lands on the public offering page. UTM params captured for attribution. Page shows hero video, what-you'll-learn, curriculum preview, free preview button.",
-        screenshot: { placeholder: "Public offering page hero + curriculum module list" },
+        title: "1. Browse + discover an offering",
+        description: "Visitor lands on /browse — the public catalogue. Filters by product tier (masterclass / live cohort / workshop). Each card shows hero, price, and a CTA. UTM params from ad clicks are captured for attribution.",
+        screenshot: { ...S("browse"), placeholder: "Browse page with offering grid" },
       },
       {
-        title: "2. Free preview play",
-        description: "User clicks 'Watch free preview' → the first is_free chapter plays via VdoCipher (anon-allowed). No signup wall yet — friction-free taste of the content.",
-        screenshot: { placeholder: "Anon chapter viewer with watermark" },
+        title: "2. Login + phone OTP",
+        description: "Clicking 'Sign in' or hitting a gated page lands them here. Mobbin-grounded UX — single cinematic still, 'What's your number?' headline, unified country pill, slide-left transition between phone-entry and OTP-verify.",
+        screenshot: { ...S("login"), placeholder: "Login page with cinematic still" },
       },
       {
-        title: "3. Buy now → /checkout",
-        description: "Hero CTA jumps to /checkout. Guest mode is default so ad traffic doesn't bounce. Email + phone required. Optional coupon. Real-time price update.",
-        screenshot: { placeholder: "Checkout page with price breakdown + coupon" },
+        title: "3. Home — what they own",
+        description: "After login, /home shows their entitled offerings (purchased + admin-granted + legacy-claimed). Continue Watching strip + Up Next chapters across courses they're enrolled in.",
+        screenshot: { ...S("home"), placeholder: "Authenticated home dashboard" },
       },
       {
-        title: "4. Razorpay modal",
-        description: "Pay button → create-razorpay-order edge function returns order_id → Razorpay modal opens. UPI, card, netbanking, wallets all supported.",
-        screenshot: { placeholder: "Razorpay standard checkout modal" },
+        title: "4. Razorpay modal (external)",
+        description: "Pay button → create-razorpay-order edge function returns order_id → Razorpay modal opens. UPI, card, netbanking, wallets all supported. Webhook captures payment + auto-creates the enrolment + queues the welcome email + generates the GST invoice PDF.",
+        screenshot: { placeholder: "Razorpay standard checkout modal (external)" },
       },
       {
-        title: "5. Capture → /thank-you",
-        description: "Webhook captures payment. Enrolment created. User redirected to /thank-you with confetti + 'start learning' CTA. Welcome email queued. Invoice PDF generated.",
-        screenshot: { placeholder: "Thank-you confirmation screen" },
+        title: "5. Community — talk to your people",
+        description: "Once enrolled, students get into /community. Three scopes: Everyone (app-wide), My Cohort (members-only), Peer Reviews (cohort-mates' opted-in assignments). Posts + threaded comments + ❤️ likes + mute-thread.",
+        screenshot: { ...S("community-everyone"), placeholder: "Community feed" },
       },
       {
-        title: "6. First watch",
-        description: "Clicking 'Start learning' lands them on /chapter/<first>. Notes panel + Q&A tab + Up Next sidebar. Progress auto-saved.",
-        screenshot: { placeholder: "Chapter viewer with notes drawer open" },
+        title: "6. Profile",
+        description: "Edit name + bio + avatar, manage email/WhatsApp/SMS opt-ins, view purchase history, request account deletion.",
+        screenshot: { ...S("profile"), placeholder: "Profile page" },
       },
     ],
   },
   {
-    slug: "admin-create-masterclass",
-    title: "Admin: launch a new masterclass",
+    slug: "admin-launch-offering",
+    title: "Admin: launch a new masterclass / cohort",
     audience: "admin",
-    summary: "Steps an admin takes from green-field to publishing a new masterclass on the storefront.",
+    summary: "Walking through the admin dashboard from green-field to a published, purchasable offering.",
     steps: [
       {
-        title: "1. /admin/offerings → New",
-        description: "Create the offering: slug, title, subtitle, type='masterclass', product_tier='masterclass', price_inr, hero_image_url. Status starts as 'draft'.",
+        title: "1. Admin Dashboard",
+        description: "Single-page summary: live KPIs (revenue, students, refunds), top offerings, recent activity. Click into Offerings to start.",
+        screenshot: { ...S("admin-dashboard"), placeholder: "Admin dashboard with KPI cards" },
       },
       {
-        title: "2. Curriculum editor",
-        description: "/admin/courses/<id>/curriculum — Add chapters one-by-one. For each: title, VdoCipher video ID (upload triggers metadata fetch — duration + thumbnail auto-populated). Drag to reorder.",
+        title: "2. Offerings list",
+        description: "/admin/offerings — every offering, sortable + filterable by status (draft/active/archived) + tier. Click an offering to edit or 'New' to create.",
+        screenshot: { ...S("admin-offerings"), placeholder: "Offerings list" },
       },
       {
-        title: "3. Mark free preview chapter(s)",
-        description: "Toggle is_free on the first chapter (or any teaser chapter). These show in the anon storefront preview.",
+        title: "3. Curriculum editor",
+        description: "/admin/courses → each offering has a curriculum. Add chapters: title, VdoCipher video ID, content type (video/pdf/article/quiz). Drag to reorder. Mark `is_free` on preview chapters.",
+        screenshot: { ...S("admin-courses"), placeholder: "Curriculum editor" },
       },
       {
-        title: "4. Set hero + marketing copy",
-        description: "Edit the offering page content — long description, what-you'll-learn bullets, instructor bio, FAQ. Reorder lesson rail.",
+        title: "4. Cohort weeks (for live cohorts)",
+        description: "/admin/cohorts → per-offering admin defines week-by-week curriculum, assignments + due dates + live session calendar. pg_cron picks up due dates and fires email + WhatsApp reminders.",
+        screenshot: { ...S("admin-cohorts"), placeholder: "Cohort weeks editor" },
       },
       {
-        title: "5. Publish",
-        description: "Flip status to 'active'. Offering appears on /browse + becomes purchasable. Test in incognito.",
+        title: "5. Coupons (optional)",
+        description: "/admin/coupons → set up discount codes (percent / flat). max_redemptions + valid_until. Validated client-side AND server-side at checkout.",
+        screenshot: { ...S("admin-coupons"), placeholder: "Coupons admin" },
       },
       {
-        title: "6. Run paid ad",
-        description: "Marketing kicks off Meta ad with the offering URL + UTM params. UTM is captured in crm_contacts via lead_capture if a form intercepts; otherwise the buyer's referrer is logged on the order.",
+        title: "6. Applications inbox (cohort flow)",
+        description: "/admin/applications → form responses from prospective cohort students. Approve → outreach email fires + crm_contacts row created.",
+        screenshot: { ...S("admin-applications"), placeholder: "Applications inbox" },
       },
     ],
   },
   {
-    slug: "cohort-week-lifecycle",
-    title: "Cohort: weekly assignment lifecycle",
-    audience: "student",
-    summary: "What happens between Monday morning (week opens) and Sunday night (week closes).",
-    steps: [
-      {
-        title: "Mon — week opens",
-        description: "pg_cron unlocks the week (if locked_until is set). Student dashboard shows new assignment with due_at. Email reminder fires (template: cohort_week_opens).",
-      },
-      {
-        title: "Mon-Sat — work + submit",
-        description: "Student fills the submission form (text body, file uploads, optional link, peer-review opt-in). Can edit until mentor opens it.",
-      },
-      {
-        title: "Wed — peer review opens",
-        description: "Cohort-mates' opted-in submissions are visible at /community → Peer Reviews. Drawer with critique + 5-star + draft.",
-      },
-      {
-        title: "Sat 9pm — 24h-before-due reminder",
-        description: "notify-cohort scans every 15 min. Members who haven't submitted get email + WhatsApp pings.",
-      },
-      {
-        title: "Sun midnight — due",
-        description: "Submissions lock. Mentors open /admin/cohort-submissions and start reviewing. Each gets feedback within 48h.",
-      },
-      {
-        title: "Mon-Tue — feedback returns",
-        description: "Mentor writes feedback → student sees it in their dashboard with a 'New feedback' badge. Email fires (cohort_submission_reviewed).",
-      },
-      {
-        title: "+24-48h — missed-assignment nudge",
-        description: "Members who never submitted get a one-time 'we missed you' email (cohort_assignment_missed). Idempotent — won't double-fire.",
-      },
-    ],
-  },
-  {
-    slug: "founders-office-bulk-grant",
-    title: "Founders Office: bulk grant access via CLI",
+    slug: "admin-people-money",
+    title: "Admin: people + money management",
     audience: "admin",
-    summary: "How a non-engineer on the team uses the levelup CLI to grant 100 users access to an offering — without touching the React admin UI.",
+    summary: "Who's enrolled, who paid what, who's a legacy customer — surfaced in three tightly-linked pages.",
     steps: [
       {
-        title: "1. Get an API key from /admin/api",
-        description: "Admin issues a key with scope='admin' (needed for enrolments.grant). Plaintext is shown once + copied.",
+        title: "1. Users — new + legacy in one view",
+        description: "/admin/users → every user with a 'Type' column (Legacy / Active), city, vertical, lifetime revenue, and enrolment counts (live + legacy). Filters: scope (all/active/legacy) + program vertical.",
+        screenshot: { ...S("admin-users"), placeholder: "Users page with legacy badges" },
       },
       {
-        title: "2. Install the CLI",
-        description: "Run the install-instructions snippet from the per-key dialog: gh repo clone levelupadmin/levelup-cli + npm link + levelup auth set <key>.",
+        title: "2. Enrolments",
+        description: "/admin/enrolments → grant or revoke access. Each row shows user + offering + source (checkout / admin_grant / legacy_claim) + total_paid.",
+        screenshot: { ...S("admin-enrolments"), placeholder: "Enrolments admin" },
       },
       {
-        title: "3. List the user IDs to grant",
-        description: "Run `levelup users search --q <email-or-phone>` for each, or pull a CSV of user IDs from a different tool.",
-      },
-      {
-        title: "4. Loop grant",
-        description: "Shell loop: `for u in $(cat users.txt); do levelup enrolments grant --user_id $u --offering_id <oid>; done`. Each call is logged in api_call_log.",
-      },
-      {
-        title: "5. Verify in /admin/enrolments",
-        description: "The new enrolments show up immediately. Webhooks fire (enrolment.granted) → CRM is updated.",
+        title: "3. Revenue — TagMango-grade date filters",
+        description: "/admin/revenue → Today / Yesterday / 7d / 30d / 90d / All Time / Custom. KPI cards (gross / net / orders / unique buyers), per-offering breakdown, top buyers in the window, CSV export, refund issuance.",
+        screenshot: { ...S("admin-revenue"), placeholder: "Revenue page" },
       },
     ],
   },
   {
-    slug: "marketing-lead-flow",
-    title: "Marketing: ad → lead → CRM → conversion",
+    slug: "founders-office-api-tour",
+    title: "Founders Office: API + CLI + MCP tour",
+    audience: "admin",
+    summary: "Five tabs at /admin/api let your team and AI agents drive the entire app without ever touching the codebase.",
+    steps: [
+      {
+        title: "1. Keys tab",
+        description: "Issue per-teammate / per-tool API keys with read / write / admin scope. Plaintext shown only once. Revoke any key with one click — everything downstream stops working within seconds.",
+        screenshot: { ...S("admin-api-keys"), placeholder: "API keys management" },
+      },
+      {
+        title: "2. Install tab",
+        description: "Three install paths — CLI for shell + scripts, MCP for AI agents (Claude Desktop / Claude Code / Cursor), curl/HTTP for Zapier + n8n + custom code. Every key has a 'download icon' on its row that opens a scoped install dialog.",
+        screenshot: { ...S("admin-api-install"), placeholder: "Install instructions" },
+      },
+      {
+        title: "3. Webhooks tab",
+        description: "Subscribe external systems (Zapier / Make / n8n / HubSpot) to events: user.created, enrolment.granted, crm_contact.created, crm_contact.converted. HMAC-signed. Built-in 'test ping' button does a real POST and returns delivered/failed.",
+        screenshot: { ...S("admin-api-webhooks"), placeholder: "Webhooks management" },
+      },
+      {
+        title: "4. Activity tab",
+        description: "Last 200 API calls with action, status code, latency, IP, error. Filter by action or status. Audit trail for compliance + debugging.",
+        screenshot: { ...S("admin-api-activity"), placeholder: "API call log" },
+      },
+      {
+        title: "5. Surface tab",
+        description: "Auto-fetched catalogue of all 74 actions grouped by namespace (offerings / users / leads / payments / campaigns / webhooks / keys / analytics …). Copy a curl recipe for any action with one click.",
+        screenshot: { ...S("admin-api-surface"), placeholder: "Action surface browser" },
+      },
+    ],
+  },
+  {
+    slug: "marketing-comms",
+    title: "Marketing: campaigns + announcements",
     audience: "marketing",
-    summary: "How a Meta ad form-fill turns into a tracked lead in the CRM and ultimately a buyer.",
+    summary: "How marketing reaches students — email templates + bulk campaigns + community announcements.",
     steps: [
       {
-        title: "1. Meta lead form submit",
-        description: "Visitor fills a Meta lead form. Zapier (or n8n) catches the new lead and POSTs to /functions/v1/admin-api with action: leads.create.",
+        title: "1. Email templates",
+        description: "/admin/email-templates → Brevo-backed transactional templates. Subject + HTML body with {{first_name}}-style interpolation. is_active toggle stops sending mid-campaign.",
+        screenshot: { ...S("admin-email-templates"), placeholder: "Email templates editor" },
       },
       {
-        title: "2. Idempotent capture",
-        description: "lead_capture RPC matches by email-then-phone. If new → crm_contacts insert. If existing → merge custom_fields. crm_contact.created webhook fires.",
+        title: "2. Email campaigns",
+        description: "/admin/email-campaigns → pick a template + filter an audience + send. Honors user_marketing_prefs opt-out. Throttled to Brevo rate limits.",
+        screenshot: { ...S("admin-email-campaigns"), placeholder: "Email campaigns" },
       },
       {
-        title: "3. Outreach + tagging",
-        description: "Sales tags the lead with users.tag --user_id ... --tag warm. Notes added via users.add_note.",
+        title: "3. Community announcements",
+        description: "/admin/announcements → broadcast a message to the community feed with an Admin badge. Pinned to top. Can be cohort-scoped or app-wide.",
+        screenshot: { ...S("admin-announcements"), placeholder: "Announcements composer" },
+      },
+    ],
+  },
+  {
+    slug: "docs-portal-tour",
+    title: "Docs portal: this very page",
+    audience: "admin",
+    summary: "How to navigate the documentation portal at /admin/docs (you're already here).",
+    steps: [
+      {
+        title: "1. Overview",
+        description: "Plain-prose introduction — what LevelUp is, the four pillars, who uses the app, the stack. Read this first if you just landed.",
+        screenshot: { ...S("admin-docs-overview"), placeholder: "Overview tab" },
       },
       {
-        title: "4. Email nurture",
-        description: "campaigns.email_send_one fires a transactional sequence. Open + click events tracked. unsubscribe sets unsubscribed_at on user_marketing_prefs.",
+        title: "2. Features catalogue",
+        description: "Every capability with a status badge: Shipped / Partial / Planned / Deprecated. Filter by clicking the count cards. Each feature shows code refs + clickable app links.",
+        screenshot: { ...S("admin-docs-features"), placeholder: "Features tab" },
       },
       {
-        title: "5. Conversion",
-        description: "Lead buys → razorpay-webhook → enrolment created → users row created with phone match → legacy_enrolments auto-claim trigger fires. crm_contact.converted webhook fires with the new user_id.",
+        title: "3. Flows (this tab)",
+        description: "Step-by-step user journeys with screenshots. Toggle Mobile ↔ Desktop at the top to see both viewports.",
+        screenshot: { ...S("admin-docs-flows"), placeholder: "Flows tab" },
       },
       {
-        title: "6. CRM updated",
-        description: "Webhook subscriber (HubSpot/Pipedrive/Notion) receives the converted event with full payload including the new user_id, total_paid_inr, offering details.",
+        title: "4. Schema",
+        description: "30+ public.* tables documented with purpose, key columns, relationships. Collapsible details per table.",
+        screenshot: { ...S("admin-docs-schema"), placeholder: "Schema tab" },
+      },
+      {
+        title: "5. Changelog",
+        description: "Human-readable change log from the doc_changelog table. Hand-written entries, NOT auto-generated from git. Sortable by date.",
+        screenshot: { ...S("admin-docs-changelog"), placeholder: "Changelog tab" },
+      },
+      {
+        title: "6. Download as markdown",
+        description: "Button in the top-right of every tab. Concatenates every section into a single .md file you paste into Claude (or any LLM) as a system prompt — instant full context on the codebase.",
+        screenshot: { placeholder: "Download button (top-right) — exports the entire docs as a single markdown" },
       },
     ],
   },

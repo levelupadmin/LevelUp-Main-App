@@ -44,6 +44,8 @@ import {
   Wrench,
   Calendar,
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import usePageTitle from "@/hooks/usePageTitle";
 
@@ -122,34 +124,146 @@ function inline(s: string): string {
     .replace(/\n/g, "<br/>");
 }
 
-/* ─────────── screenshot pair w/ mobile/desktop toggle ─────────── */
+/* ─────────── screenshot frame (single image) ─────────── */
 
 function ScreenshotFrame({
   desktop,
   mobile,
   placeholder,
   device,
+  caption,
 }: {
   desktop?: string;
   mobile?: string;
   placeholder?: string;
   device: "desktop" | "mobile";
+  caption?: string;
 }) {
   const src = device === "mobile" ? mobile : desktop;
+  const frameClass = device === "mobile"
+    ? "max-w-[280px] mx-auto"
+    : "w-full";
+
   if (src) {
     return (
-      <div className={`border border-border rounded-lg overflow-hidden bg-surface-2 ${device === "mobile" ? "max-w-[280px]" : "w-full"}`}>
-        <img src={src} alt="" className="w-full h-auto" />
+      <div className={`relative ${frameClass}`}>
+        <div className={`border border-border rounded-lg overflow-hidden bg-surface-2 shadow-lg ${device === "mobile" ? "rounded-[20px] border-2" : ""}`}>
+          <img src={src} alt={caption || ""} className="w-full h-auto block" loading="lazy" />
+        </div>
+        {caption && (
+          <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mt-2 text-center">
+            {caption}
+          </div>
+        )}
       </div>
     );
   }
   return (
-    <div className={`border-2 border-dashed border-border rounded-lg ${device === "mobile" ? "max-w-[280px] aspect-[9/19.5]" : "aspect-video"} bg-surface-2 flex items-center justify-center p-6 text-center`}>
-      <div>
-        <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-1">
-          {device} screenshot pending
+    <div className={frameClass}>
+      <div className={`border-2 border-dashed border-border rounded-lg ${device === "mobile" ? "aspect-[9/19.5] rounded-[20px]" : "aspect-video"} bg-surface-2 flex items-center justify-center p-6 text-center`}>
+        <div>
+          <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-1">
+            {device} screenshot pending
+          </div>
+          {placeholder && <p className="text-sm text-muted-foreground">{placeholder}</p>}
         </div>
-        {placeholder && <p className="text-sm text-muted-foreground">{placeholder}</p>}
+      </div>
+      {caption && (
+        <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mt-2 text-center">
+          {caption}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────── flow carousel (full-width hero w/ arrows + dots) ─────────── */
+
+function FlowCarousel({
+  steps,
+  device,
+}: {
+  steps: import("@/docs/types").FlowStep[];
+  device: "desktop" | "mobile";
+}) {
+  const [idx, setIdx] = useState(0);
+  const step = steps[idx];
+  const prev = () => setIdx((i) => (i - 1 + steps.length) % steps.length);
+  const next = () => setIdx((i) => (i + 1) % steps.length);
+
+  return (
+    <div className="space-y-3">
+      <Card className="p-4 md:p-6">
+        <div className="grid md:grid-cols-[1fr_minmax(280px,_460px)] gap-6 items-start">
+          {/* Step body */}
+          <div className="min-w-0">
+            <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-1">
+              Step {idx + 1} of {steps.length}
+            </div>
+            <h3 className="text-lg font-semibold leading-tight mb-2">{step.title}</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">{step.description}</p>
+          </div>
+          {/* Screenshot */}
+          <div>
+            <ScreenshotFrame
+              desktop={step.screenshot?.desktop}
+              mobile={step.screenshot?.mobile}
+              placeholder={step.screenshot?.placeholder}
+              device={device}
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* Controls */}
+      <div className="flex items-center justify-between gap-3">
+        <button
+          onClick={prev}
+          disabled={steps.length < 2}
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs border border-border rounded-md text-muted-foreground hover:text-foreground hover:border-border-hover transition-colors disabled:opacity-30"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" /> Previous
+        </button>
+        <div className="flex items-center gap-1.5">
+          {steps.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setIdx(i)}
+              aria-label={`Step ${i + 1}`}
+              className={`h-1.5 rounded-full transition-all ${i === idx ? "w-6 bg-cream" : "w-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/50"}`}
+            />
+          ))}
+        </div>
+        <button
+          onClick={next}
+          disabled={steps.length < 2}
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs border border-border rounded-md text-muted-foreground hover:text-foreground hover:border-border-hover transition-colors disabled:opacity-30"
+        >
+          Next <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Thumbnail strip */}
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+        {steps.map((s, i) => {
+          const thumbSrc = device === "mobile" ? s.screenshot?.mobile : s.screenshot?.desktop;
+          return (
+            <button
+              key={i}
+              onClick={() => setIdx(i)}
+              className={`relative aspect-video rounded border-2 overflow-hidden transition-colors ${i === idx ? "border-cream" : "border-border opacity-60 hover:opacity-100"}`}
+            >
+              {thumbSrc ? (
+                <img src={thumbSrc} alt="" className="w-full h-full object-cover" loading="lazy" />
+              ) : (
+                <div className="w-full h-full bg-surface-2 flex items-center justify-center text-[10px] text-muted-foreground">{i + 1}</div>
+              )}
+              <div className="absolute top-0.5 left-0.5 text-[9px] font-mono px-1 py-0.5 bg-black/60 text-white rounded">
+                {i + 1}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -349,22 +463,7 @@ function FlowsTab({ search, device, onDeviceChange }: { search: string; device: 
             </div>
             <p className="text-sm text-muted-foreground">{flow.summary}</p>
           </div>
-          <div className="space-y-3">
-            {flow.steps.map((step, i) => (
-              <Card key={i} className="p-4 grid md:grid-cols-[1fr_320px] gap-4">
-                <div>
-                  <h3 className="font-medium mb-1">{step.title}</h3>
-                  <p className="text-sm text-muted-foreground">{step.description}</p>
-                </div>
-                <ScreenshotFrame
-                  desktop={step.screenshot?.desktop}
-                  mobile={step.screenshot?.mobile}
-                  placeholder={step.screenshot?.placeholder}
-                  device={device}
-                />
-              </Card>
-            ))}
-          </div>
+          <FlowCarousel steps={flow.steps} device={device} />
         </div>
       ))}
 
