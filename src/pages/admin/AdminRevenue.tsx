@@ -34,7 +34,7 @@ import SortableHeader, { useSort } from "@/components/admin/SortableHeader";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type DateFilter = "today" | "7d" | "30d" | "all" | "custom";
+type DateFilter = "today" | "yesterday" | "7d" | "30d" | "90d" | "all" | "custom";
 
 interface Order {
   id: string;
@@ -241,12 +241,17 @@ const AdminRevenue = () => {
   const startOfMonthUtcMs = Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), 1) - IST_OFFSET_MS;
   const startOfMonth = new Date(startOfMonthUtcMs);
 
+  const startOfYesterday = new Date(startOfTodayUtcMs - 86400000);
+  const endOfYesterday = startOfToday; // [startOfYesterday, startOfToday)
+
   const filtered = orders.filter(o => {
     if (dateRange === "all") return true;
     const d = new Date(o.captured_at);
     if (dateRange === "today") return d >= startOfToday;
+    if (dateRange === "yesterday") return d >= startOfYesterday && d < endOfYesterday;
     if (dateRange === "7d") return d >= new Date(now.getTime() - 7 * 86400000);
     if (dateRange === "30d") return d >= new Date(now.getTime() - 30 * 86400000);
+    if (dateRange === "90d") return d >= new Date(now.getTime() - 90 * 86400000);
     if (dateRange === "custom") {
       if (customFrom) {
         // DateRangePicker gives us a JS Date at midnight local time. We
@@ -462,8 +467,10 @@ const AdminRevenue = () => {
 
   const filters: { label: string; value: DateFilter }[] = [
     { label: "Today", value: "today" },
+    { label: "Yesterday", value: "yesterday" },
     { label: "7 Days", value: "7d" },
     { label: "30 Days", value: "30d" },
+    { label: "90 Days", value: "90d" },
     { label: "All Time", value: "all" },
     { label: "Custom", value: "custom" },
   ];
@@ -545,6 +552,57 @@ const AdminRevenue = () => {
               </Card>
             ))}
           </div>
+
+          {/* Top buyers — aggregate filtered orders by customer.
+              Shows who's spending the most in the active date window. */}
+          {(() => {
+            const buyerMap = new Map<string, { name: string; email: string; phone: string; total: number; orderCount: number }>();
+            for (const o of filtered) {
+              if (o.status !== "captured") continue;
+              const key = o.user_id || (o.guest_email || `__guest:${o.id}`);
+              const u = o.user_id ? userMap[o.user_id] : null;
+              const name = u?.full_name || o.guest_email || "Guest";
+              const email = u?.email || o.guest_email || "";
+              const phone = u?.phone || o.guest_phone || "";
+              const cur = buyerMap.get(key) ?? { name, email, phone, total: 0, orderCount: 0 };
+              cur.total += Number(o.total_inr);
+              cur.orderCount += 1;
+              buyerMap.set(key, cur);
+            }
+            const topBuyers = Array.from(buyerMap.values()).sort((a, b) => b.total - a.total).slice(0, 25);
+            if (topBuyers.length === 0) return null;
+            return (
+              <>
+                <h3 className="text-sm font-semibold mb-3">Top buyers in this window</h3>
+                <div className="bg-card border border-border rounded-xl overflow-hidden mb-8">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-left text-muted-foreground">
+                        <th className="px-4 py-3 font-medium">#</th>
+                        <th className="px-4 py-3 font-medium">Customer</th>
+                        <th className="px-4 py-3 font-medium">Email</th>
+                        <th className="px-4 py-3 font-medium">Phone</th>
+                        <th className="px-4 py-3 font-medium text-right">Orders</th>
+                        <th className="px-4 py-3 font-medium text-right">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topBuyers.map((b, i) => (
+                        <tr key={`${b.email}-${i}`} className="border-b border-border last:border-0 hover:bg-secondary/20">
+                          <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{i + 1}</td>
+                          <td className="px-4 py-3 font-medium">{b.name}</td>
+                          <td className="px-4 py-3 text-muted-foreground text-xs">{b.email}</td>
+                          <td className="px-4 py-3 text-muted-foreground text-xs font-mono">{b.phone}</td>
+                          <td className="px-4 py-3 text-right font-mono text-xs">{b.orderCount}</td>
+                          <td className="px-4 py-3 text-right font-mono text-sm font-semibold">{formatINR(b.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            );
+          })()}
 
           {/* Revenue by Product Tier */}
           <h3 className="text-sm font-semibold mb-3">Revenue by Product Tier</h3>

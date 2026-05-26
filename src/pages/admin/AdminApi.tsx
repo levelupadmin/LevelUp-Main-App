@@ -53,6 +53,10 @@ import {
   Activity as ActivityIcon,
   Sparkles,
   ShieldCheck,
+  Download,
+  Terminal,
+  Bot,
+  BookOpen,
 } from "lucide-react";
 
 /* ─────────────────── types ─────────────────── */
@@ -136,6 +140,170 @@ async function copy(text: string) {
   }
 }
 
+/* ───────────────── reusable install snippets ───────────────── */
+// Re-used by the top-level Install tab AND the per-key install dialog.
+// `keyVar` is what we drop into examples — actual plaintext if we have
+// it (only at creation time), else the placeholder env var name.
+
+function CodeBlock({ children, lang }: { children: string; lang?: string }) {
+  const { toast } = useToast();
+  return (
+    <div className="relative group">
+      <pre className="text-xs bg-surface-2 rounded-md p-3 overflow-x-auto whitespace-pre">
+        {lang && (
+          <div className="text-[10px] font-mono uppercase text-muted-foreground mb-1.5">{lang}</div>
+        )}
+        <code>{children}</code>
+      </pre>
+      <button
+        onClick={() => { copy(children); toast({ title: "Copied" }); }}
+        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-surface border border-border rounded px-2 py-1 text-[10px]"
+      >
+        Copy
+      </button>
+    </div>
+  );
+}
+
+function CliInstall({ keyVar }: { keyVar: string }) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="font-medium text-sm mb-1">1. Install</div>
+        <p className="text-xs text-muted-foreground mb-2">
+          Clone the standalone CLI repo and link it on your $PATH. No main-app code involved.
+        </p>
+        <CodeBlock lang="bash">{`gh repo clone levelupadmin/levelup-cli ~/levelup-cli
+cd ~/levelup-cli && npm link    # exposes \`levelup\` on $PATH
+# requires Node ≥ 18`}</CodeBlock>
+      </div>
+      <div>
+        <div className="font-medium text-sm mb-1">2. Set the key</div>
+        <CodeBlock lang="bash">{`levelup auth set ${keyVar}`}</CodeBlock>
+      </div>
+      <div>
+        <div className="font-medium text-sm mb-1">3. Try it</div>
+        <CodeBlock lang="bash">{`levelup whoami
+levelup actions                     # list everything available
+levelup offerings list --status active --limit 5
+levelup revenue summary --days 30`}</CodeBlock>
+      </div>
+    </div>
+  );
+}
+
+function McpInstall({ keyVar }: { keyVar: string }) {
+  const claudeDesktop = `{
+  "mcpServers": {
+    "levelup": {
+      "command": "node",
+      "args": ["/Users/you/levelup-mcp/server.js"],
+      "env": {
+        "LEVELUP_API_KEY": "${keyVar}"
+      }
+    }
+  }
+}`;
+  const claudeCode = `{
+  "mcpServers": {
+    "levelup": {
+      "command": "/Users/you/levelup-mcp/server.js",
+      "env": { "LEVELUP_API_KEY": "${keyVar}" }
+    }
+  }
+}`;
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="font-medium text-sm mb-1">1. Install</div>
+        <p className="text-xs text-muted-foreground mb-2">
+          Clone the standalone MCP repo. No main-app code involved.
+        </p>
+        <CodeBlock lang="bash">{`gh repo clone levelupadmin/levelup-mcp ~/levelup-mcp
+chmod +x ~/levelup-mcp/server.js
+# requires Node ≥ 18`}</CodeBlock>
+      </div>
+      <div>
+        <div className="font-medium text-sm mb-1">2. Claude Desktop config</div>
+        <p className="text-xs text-muted-foreground mb-2">
+          Edit <code>~/Library/Application Support/Claude/claude_desktop_config.json</code>:
+        </p>
+        <CodeBlock lang="json">{claudeDesktop}</CodeBlock>
+      </div>
+      <div>
+        <div className="font-medium text-sm mb-1">3. Claude Code config</div>
+        <p className="text-xs text-muted-foreground mb-2">
+          Add to <code>~/.claude/mcp.json</code>:
+        </p>
+        <CodeBlock lang="json">{claudeCode}</CodeBlock>
+      </div>
+      <div>
+        <div className="font-medium text-sm mb-1">4. Restart your client</div>
+        <p className="text-xs text-muted-foreground">
+          The <code>levelup_*</code> tools will appear automatically once the client
+          re-reads the config. The MCP server discovers all 74 actions at startup, so
+          new server-side actions surface without re-installing.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function CurlInstall({ keyVar }: { keyVar: string }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        For Zapier, Make, n8n, custom scripts, Postman — anything that can POST JSON.
+        No software install needed.
+      </p>
+      <div>
+        <div className="font-medium text-sm mb-1">Endpoint</div>
+        <CodeBlock>{API_URL}</CodeBlock>
+      </div>
+      <div>
+        <div className="font-medium text-sm mb-1">Auth header</div>
+        <CodeBlock>{`Authorization: Bearer ${keyVar}`}</CodeBlock>
+      </div>
+      <div>
+        <div className="font-medium text-sm mb-1">Body</div>
+        <CodeBlock lang="json">{`{
+  "action": "offerings.list",
+  "params": { "status": "active", "limit": 5 }
+}`}</CodeBlock>
+      </div>
+      <div>
+        <div className="font-medium text-sm mb-1">Full curl example</div>
+        <CodeBlock lang="bash">{`curl -X POST ${API_URL} \\
+  -H "Authorization: Bearer ${keyVar}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"action":"offerings.list","params":{"status":"active","limit":5}}'`}</CodeBlock>
+      </div>
+      <div>
+        <div className="font-medium text-sm mb-1">Tool browsing</div>
+        <p className="text-xs text-muted-foreground">
+          Use <code>{`{"action":"system.list_actions"}`}</code> to discover all 74 actions
+          this key can hit. Each scope (read/write/admin) limits what's callable.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function InstallInstructions({ keyVar }: { keyVar: string }) {
+  return (
+    <Tabs defaultValue="cli">
+      <TabsList>
+        <TabsTrigger value="cli"><Terminal className="h-3.5 w-3.5 mr-1.5" />CLI</TabsTrigger>
+        <TabsTrigger value="mcp"><Bot className="h-3.5 w-3.5 mr-1.5" />MCP (AI)</TabsTrigger>
+        <TabsTrigger value="curl"><BookOpen className="h-3.5 w-3.5 mr-1.5" />curl / HTTP</TabsTrigger>
+      </TabsList>
+      <TabsContent value="cli" className="pt-3"><CliInstall keyVar={keyVar} /></TabsContent>
+      <TabsContent value="mcp" className="pt-3"><McpInstall keyVar={keyVar} /></TabsContent>
+      <TabsContent value="curl" className="pt-3"><CurlInstall keyVar={keyVar} /></TabsContent>
+    </Tabs>
+  );
+}
+
 /* ═══════════════════════════════════════════════════
    Keys tab
    ═══════════════════════════════════════════════════ */
@@ -148,6 +316,7 @@ function KeysTab() {
   const [scope, setScope] = useState<"read" | "write" | "admin">("read");
   const [creating, setCreating] = useState(false);
   const [revealed, setRevealed] = useState<{ name: string; plaintext: string } | null>(null);
+  const [installKey, setInstallKey] = useState<ApiKey | null>(null);
   const { toast } = useToast();
 
   const load = async () => {
@@ -262,11 +431,21 @@ function KeysTab() {
                     <td className="px-4 py-3">
                       <Badge variant={status === "active" ? "default" : "secondary"}>{status}</Badge>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right space-x-1">
                       {!k.revoked_at && (
-                        <Button variant="ghost" size="sm" onClick={() => handleRevoke(k.id, k.name)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setInstallKey(k)}
+                            title="Show install instructions"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleRevoke(k.id, k.name)} title="Revoke">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
                       )}
                     </td>
                   </tr>
@@ -313,39 +492,73 @@ function KeysTab() {
         </DialogContent>
       </Dialog>
 
-      {/* Reveal dialog */}
+      {/* Reveal dialog — shows once with full install instructions */}
       <Dialog open={!!revealed} onOpenChange={(o) => !o && setRevealed(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <KeyIcon className="h-5 w-5 text-amber-500" />
-              Your new API key
+              Key created: {revealed?.name}
             </DialogTitle>
             <DialogDescription>
-              This is the only time you'll see the plaintext. Copy it now.
+              This is the only time you'll see the plaintext. Copy it, then share the install
+              instructions below with the teammate using it.
             </DialogDescription>
           </DialogHeader>
           {revealed && (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">{revealed.name}</div>
-                <div className="font-mono text-xs bg-surface-2 p-3 rounded-md break-all">{revealed.plaintext}</div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Plaintext API key</div>
+                <div className="font-mono text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3 rounded-md break-all">
+                  {revealed.plaintext}
+                </div>
+                <Button
+                  onClick={() => { copy(revealed.plaintext); toast({ title: "Copied" }); }}
+                  size="sm"
+                  className="mt-2"
+                >
+                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                  Copy plaintext
+                </Button>
               </div>
-              <Button
-                onClick={() => { copy(revealed.plaintext); toast({ title: "Copied" }); }}
-                className="w-full"
-              >
-                <Copy className="h-4 w-4 mr-2" />
-                Copy plaintext
-              </Button>
-              <div className="text-xs text-muted-foreground space-y-1">
-                <div><strong>CLI:</strong> <code>levelup auth set {revealed.plaintext.slice(0, 12)}…</code></div>
-                <div><strong>MCP:</strong> set <code>LEVELUP_API_KEY</code> in your Claude Desktop config</div>
+              <div className="border-t border-border pt-3">
+                <div className="text-sm font-medium mb-2">Onboarding for the teammate using this key</div>
+                <InstallInstructions keyVar={revealed.plaintext} />
               </div>
             </div>
           )}
           <DialogFooter>
             <Button onClick={() => setRevealed(null)}>I saved it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Per-key install dialog (after the plaintext is gone) */}
+      <Dialog open={!!installKey} onOpenChange={(o) => !o && setInstallKey(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="h-5 w-5 text-emerald-500" />
+              Install instructions: {installKey?.name}
+            </DialogTitle>
+            <DialogDescription>
+              You no longer have the plaintext for this key (we only store the bcrypt hash).
+              Share these instructions with the teammate who has the key.
+            </DialogDescription>
+          </DialogHeader>
+          {installKey && (
+            <div className="space-y-3">
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 text-xs">
+                <strong>Note:</strong> Replace <code>$LEVELUP_API_KEY</code> below with the actual
+                plaintext (the one ending in <code>…{installKey.key_hint}</code>) when you paste this
+                to your teammate. If they don't have the plaintext, revoke this key and issue a
+                fresh one.
+              </div>
+              <InstallInstructions keyVar="$LEVELUP_API_KEY" />
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setInstallKey(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -849,6 +1062,89 @@ function SurfaceTab() {
 }
 
 /* ═══════════════════════════════════════════════════
+   Install tab (top-level setup reference)
+   ═══════════════════════════════════════════════════ */
+
+function InstallTab() {
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight">Setting up CLI, MCP, or HTTP access</h2>
+        <p className="text-sm text-muted-foreground max-w-2xl mt-1">
+          Three ways to hit the LevelUp admin-api. None of them need access to the main
+          LevelUp-Main-App repo — they're separate, isolated clients.
+        </p>
+      </div>
+
+      <Card className="p-4 bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800">
+        <div className="flex gap-3 items-start">
+          <ShieldCheck className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
+          <div className="text-sm">
+            <div className="font-medium">Security posture</div>
+            <ul className="mt-2 space-y-1 text-muted-foreground list-disc pl-4">
+              <li>Your team never reads the main-app source.</li>
+              <li>Each key has a scope (<code>read</code> / <code>write</code> / <code>admin</code>)
+                  that gates what's possible. Read keys can't write. Write keys can't issue more keys
+                  or revoke users.</li>
+              <li>Every call is logged to <code>api_call_log</code> with action, status, latency, IP.
+                  See the <em>Activity</em> tab.</li>
+              <li>Revoke a key here and the CLI/MCP/HTTP using it stops working within seconds.</li>
+              <li>The standalone CLI repo (<a className="underline" href="https://github.com/levelupadmin/levelup-cli" target="_blank" rel="noreferrer">levelupadmin/levelup-cli</a>) and MCP repo (<a className="underline" href="https://github.com/levelupadmin/levelup-mcp" target="_blank" rel="noreferrer">levelupadmin/levelup-mcp</a>) contain only client code — no business logic, no DB access, no secrets.</li>
+            </ul>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-4">
+        <h3 className="font-semibold mb-3">Pick the right client</h3>
+        <div className="grid md:grid-cols-3 gap-3 text-sm">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Terminal className="h-4 w-4 text-cream" />
+              <strong>CLI</strong>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              For humans + shell scripts. Install once, run <code>levelup …</code> from any
+              terminal. Best for ad-hoc work and bash pipelines.
+            </p>
+          </div>
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Bot className="h-4 w-4 text-cream" />
+              <strong>MCP</strong>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              For Claude Desktop, Claude Code, Cursor — any MCP-aware AI agent. Each action
+              becomes a tool the agent can call autonomously.
+            </p>
+          </div>
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen className="h-4 w-4 text-cream" />
+              <strong>HTTP</strong>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              For Zapier, Make, n8n, HubSpot workflows, custom scripts. No software install —
+              just POST to the endpoint.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-4">
+        <h3 className="font-semibold mb-3">Setup snippets</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Replace <code>$LEVELUP_API_KEY</code> below with the actual key from the Keys tab.
+          Or click the download icon on any key row for a key-scoped version of these
+          instructions.
+        </p>
+        <InstallInstructions keyVar="$LEVELUP_API_KEY" />
+      </Card>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
    page
    ═══════════════════════════════════════════════════ */
 
@@ -873,11 +1169,13 @@ const AdminApi = () => {
       <Tabs defaultValue="keys" className="space-y-4">
         <TabsList>
           <TabsTrigger value="keys"><KeyIcon className="h-4 w-4 mr-1.5" />Keys</TabsTrigger>
+          <TabsTrigger value="install"><Download className="h-4 w-4 mr-1.5" />Install</TabsTrigger>
           <TabsTrigger value="webhooks"><WebhookIcon className="h-4 w-4 mr-1.5" />Webhooks</TabsTrigger>
           <TabsTrigger value="activity"><ActivityIcon className="h-4 w-4 mr-1.5" />Activity</TabsTrigger>
           <TabsTrigger value="surface"><Sparkles className="h-4 w-4 mr-1.5" />Surface</TabsTrigger>
         </TabsList>
         <TabsContent value="keys"><KeysTab /></TabsContent>
+        <TabsContent value="install"><InstallTab /></TabsContent>
         <TabsContent value="webhooks"><WebhooksTab /></TabsContent>
         <TabsContent value="activity"><ActivityTab /></TabsContent>
         <TabsContent value="surface"><SurfaceTab /></TabsContent>

@@ -16,10 +16,20 @@ interface UserRow {
   id: string;
   full_name: string | null;
   email: string | null;
+  phone: string | null;
   role: string;
   member_number: number;
   created_at: string;
   enrolment_count: number;
+  // segmentation columns (from users_segmented view / users table)
+  is_legacy?: boolean;
+  city?: string | null;
+  state?: string | null;
+  program_vertical?: string | null;
+  lifetime_revenue_inr?: number | null;
+  first_purchase_at?: string | null;
+  purchase_count?: number | null;
+  legacy_enrolment_count?: number;
 }
 
 const AdminUsers = () => {
@@ -35,6 +45,8 @@ const AdminUsers = () => {
   const [saving, setSaving] = useState(false);
   const [confirmRoleChange, setConfirmRoleChange] = useState(false);
   const [roleFilter, setRoleFilter] = useState("all");
+  const [scopeFilter, setScopeFilter] = useState<"all" | "active" | "legacy">("all");
+  const [verticalFilter, setVerticalFilter] = useState<string>("all");
   const [offeringFilter, setOfferingFilter] = useState<string[]>([]);
   const [allOfferings, setAllOfferings] = useState<{ id: string; title: string; product_tier: string }[]>([]);
   const [enrolmentMap, setEnrolmentMap] = useState<Record<string, string[]>>({}); // user_id -> offering_ids
@@ -81,20 +93,29 @@ const AdminUsers = () => {
     const from = p * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    const { count } = await supabase
-      .from("users")
+    // Query the users_segmented view — adds legacy flag, city, vertical, LTV.
+    let countQuery = supabase
+      .from("users_segmented" as any)
       .select("id", { count: "exact", head: true });
+    if (scopeFilter === "active") countQuery = countQuery.eq("is_legacy", false);
+    if (scopeFilter === "legacy") countQuery = countQuery.eq("is_legacy", true);
+    if (verticalFilter !== "all") countQuery = countQuery.eq("program_vertical", verticalFilter);
+    const { count } = await countQuery;
     setTotalCount(count ?? 0);
 
-    const { data: usersData } = await supabase
-      .from("users")
-      .select("id, full_name, email, role, member_number, created_at")
+    let q = supabase
+      .from("users_segmented" as any)
+      .select("id, full_name, email, phone, role, member_number, created_at, is_legacy, city, state, program_vertical, lifetime_revenue_inr, first_purchase_at, purchase_count, legacy_enrolment_count")
       .order("created_at", { ascending: false })
       .range(from, to);
+    if (scopeFilter === "active") q = q.eq("is_legacy", false);
+    if (scopeFilter === "legacy") q = q.eq("is_legacy", true);
+    if (verticalFilter !== "all") q = q.eq("program_vertical", verticalFilter);
+    const { data: usersData } = await q as any;
 
     if (!usersData) { setLoading(false); return; }
 
-    const uids = usersData.map((u) => u.id);
+    const uids = (usersData as any[]).map((u) => u.id);
     const { data: enrols } = await supabase.from("enrolments").select("user_id, offering_id").in("user_id", uids);
     const eCounts: Record<string, number> = {};
     const eMap: Record<string, string[]> = {};
@@ -105,11 +126,11 @@ const AdminUsers = () => {
     });
     setEnrolmentMap(eMap);
 
-    setUsers(usersData.map((u) => ({ ...u, enrolment_count: eCounts[u.id] || 0 })));
+    setUsers((usersData as any[]).map((u: any) => ({ ...u, enrolment_count: eCounts[u.id] || 0 })));
     setLoading(false);
   };
 
-  useEffect(() => { load(page); }, [page]);
+  useEffect(() => { load(page); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [page, scopeFilter, verticalFilter]);
 
   const openEdit = async (user: UserRow) => {
     const { data } = await supabase.from("users").select("full_name, bio, role").eq("id", user.id).single();
@@ -345,12 +366,31 @@ const AdminUsers = () => {
           <Input placeholder="Search users..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
         <Select value={roleFilter} onValueChange={setRoleFilter}>
-          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Roles</SelectItem>
             <SelectItem value="admin">Admin</SelectItem>
             <SelectItem value="instructor">Instructor</SelectItem>
             <SelectItem value="student">Student</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={scopeFilter} onValueChange={(v) => setScopeFilter(v as any)}>
+          <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All users</SelectItem>
+            <SelectItem value="active">Active only</SelectItem>
+            <SelectItem value="legacy">Legacy only</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={verticalFilter} onValueChange={setVerticalFilter}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Vertical" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All verticals</SelectItem>
+            <SelectItem value="Forge">Forge</SelectItem>
+            <SelectItem value="Live">Live cohort</SelectItem>
+            <SelectItem value="Masterclass">Masterclass</SelectItem>
+            <SelectItem value="Workshop">Workshop</SelectItem>
+            <SelectItem value="Multi">Multi-product</SelectItem>
           </SelectContent>
         </Select>
         <MultiSelect
@@ -375,36 +415,60 @@ const AdminUsers = () => {
             <tr className="border-b border-border text-left text-muted-foreground">
               <th className="px-5 py-3 font-medium">Name</th>
               <th className="px-5 py-3 font-medium">Email</th>
+              <th className="px-5 py-3 font-medium">Type</th>
               <th className="px-5 py-3 font-medium">Role</th>
-              <th className="px-5 py-3 font-medium">Member #</th>
+              <th className="px-5 py-3 font-medium">City</th>
+              <th className="px-5 py-3 font-medium">Vertical</th>
+              <th className="px-5 py-3 font-medium text-right">LTV</th>
               <th className="px-5 py-3 font-medium">Enrolments</th>
               <th className="px-5 py-3 font-medium">Joined</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading…</td></tr>
+              <tr><td colSpan={9} className="px-5 py-12 text-center text-muted-foreground">Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">No users found</td></tr>
+              <tr><td colSpan={9} className="px-5 py-12 text-center text-muted-foreground">No users found</td></tr>
             ) : filtered.map((u) => (
               <tr
                 key={u.id}
                 className="border-b border-border last:border-0 hover:bg-secondary/30 cursor-pointer"
                 onClick={() => openEdit(u)}
               >
-                <td className="px-5 py-3 font-medium">{u.full_name || "—"}</td>
+                <td className="px-5 py-3 font-medium">
+                  <div>{u.full_name || "—"}</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">#{u.member_number}</div>
+                </td>
                 <td className="px-5 py-3 text-muted-foreground">{u.email || "—"}</td>
                 <td className="px-5 py-3">
+                  {u.is_legacy ? (
+                    <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">legacy</span>
+                  ) : (
+                    <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">active</span>
+                  )}
+                </td>
+                <td className="px-5 py-3">
                   <span className={`text-xs font-mono px-2 py-0.5 rounded ${
-                    u.role === "admin"
+                    u.role === "admin" || u.role === "owner"
                       ? "bg-[hsl(var(--accent-amber)/0.15)] text-[hsl(var(--accent-amber))]"
                       : u.role === "instructor"
                       ? "bg-[hsl(var(--accent-indigo)/0.15)] text-[hsl(var(--accent-indigo))]"
                       : "bg-secondary text-muted-foreground"
                   }`}>{u.role}</span>
                 </td>
-                <td className="px-5 py-3 font-mono text-xs">#{u.member_number}</td>
-                <td className="px-5 py-3 font-mono text-xs">{u.enrolment_count}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{u.city || "—"}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{u.program_vertical || "—"}</td>
+                <td className="px-5 py-3 font-mono text-xs text-right">
+                  {u.lifetime_revenue_inr && u.lifetime_revenue_inr > 0
+                    ? `₹${u.lifetime_revenue_inr.toLocaleString("en-IN")}`
+                    : "—"}
+                </td>
+                <td className="px-5 py-3 font-mono text-xs">
+                  {u.enrolment_count}
+                  {(u.legacy_enrolment_count ?? 0) > 0 && (
+                    <span className="text-amber-400 ml-1">+{u.legacy_enrolment_count}L</span>
+                  )}
+                </td>
                 <td className="px-5 py-3 font-mono text-xs">{new Date(u.created_at).toLocaleDateString("en-IN")}</td>
               </tr>
             ))}

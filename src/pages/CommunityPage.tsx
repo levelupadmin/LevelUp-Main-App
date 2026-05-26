@@ -5,12 +5,13 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import InitialsAvatar from "@/components/InitialsAvatar";
-import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell, Users, Globe } from "lucide-react";
+import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell, Users, Globe, MessageSquare } from "lucide-react";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
 import { useToast } from "@/hooks/use-toast";
 import { toast } from "@/lib/toast";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import PostSkeleton from "@/components/skeletons/PostSkeleton";
+import PeerReviewBoard from "@/components/cohort/PeerReviewBoard";
 
 interface Post {
   id: string;
@@ -27,7 +28,7 @@ interface Post {
   liked_by_me: boolean;
 }
 
-type FeedScope = "everyone" | "my_cohort";
+type FeedScope = "everyone" | "my_cohort" | "peer_review";
 
 const CommunityPage = () => {
   usePageTitle("Community");
@@ -279,7 +280,7 @@ const CommunityPage = () => {
 
         {/* Scope toggle — only when user has an active cohort */}
         {myBatchId && (
-          <div className="flex items-center gap-1.5 p-1 bg-surface border border-border rounded-lg w-fit">
+          <div className="flex items-center gap-1.5 p-1 bg-surface border border-border rounded-lg w-fit flex-wrap">
             <button
               onClick={() => setScope("everyone")}
               className={`px-3 h-8 text-xs font-medium rounded-md inline-flex items-center gap-1.5 transition-colors ${
@@ -300,9 +301,36 @@ const CommunityPage = () => {
             >
               <Users className="h-3 w-3" /> My Cohort
             </button>
+            <button
+              onClick={() => setScope("peer_review")}
+              className={`px-3 h-8 text-xs font-medium rounded-md inline-flex items-center gap-1.5 transition-colors ${
+                scope === "peer_review"
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <MessageSquare className="h-3 w-3" /> Peer Reviews
+            </button>
           </div>
         )}
 
+        {/* Peer review board (replaces post composer + feed when active) */}
+        {scope === "peer_review" && myBatchId && user?.id ? (
+          <div className="bg-surface border border-border rounded-xl p-4">
+            <div className="flex items-start gap-3 mb-4 pb-3 border-b border-border">
+              <MessageSquare className="h-5 w-5 text-cream mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium">Peer review board</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Cohort-mates' assignments where they've opted in to peer feedback. Click any
+                  card to open the critique drawer — your review is private to them.
+                </p>
+              </div>
+            </div>
+            <PeerReviewBoard cohortBatchId={myBatchId} currentUserId={user.id} />
+          </div>
+        ) : (
+        <>
         {/* New post */}
         <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
           <Textarea
@@ -456,6 +484,8 @@ const CommunityPage = () => {
               </div>
             ))}
           </div>
+        )}
+        </>
         )}
       </div>
     </>
