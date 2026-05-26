@@ -124,26 +124,31 @@ const AdminDashboard = () => {
     setLoading(true);
     const { from, to } = dateRange;
 
-    /* ── Single-shot dashboard fetch ──
-       The previous implementation fired ~150 sequential queries per
-       page load (one COUNT per day for the bar chart, four queries
-       per published course for completion rates, three per offering
-       for performance, etc.). The admin_dashboard_metrics RPC does
-       all of that in ONE round-trip with proper aggregation, joins,
-       and the indexes added in 20260417100000_foundation_hardening.
-       Typical load drops from ~30-90s to <500ms.                    */
-    const { data, error } = await supabase.rpc("admin_dashboard_metrics", {
-      p_from: from,
-      p_to: to,
-    });
+    /* ── Two RPCs fired in parallel ──
+       1) admin_dashboard_metrics — live-only stats, optimized SQL
+          single-roundtrip (unchanged).
+       2) admin_dashboard_combined + offering_performance_in_range +
+          daily_signups_combined — LEGACY-aware counterparts that
+          merge in the 73K legacy_enrolments rows. These ship as
+          their own RPCs so the dashboard reflects "all customer
+          activity" instead of just "new-app activity".
+       The combined numbers are AUTHORITATIVE for what we render —
+       the live-only payload is only used as a fallback if the new
+       RPCs error out. */
+    const [liveRes, combinedRes, offPerfRes, dailyRes] = await Promise.all([
+      supabase.rpc("admin_dashboard_metrics", { p_from: from, p_to: to }),
+      supabase.rpc("admin_dashboard_combined" as any, { p_from: from, p_to: to }),
+      supabase.rpc("offering_performance_in_range" as any, { p_from: from, p_to: to }),
+      supabase.rpc("daily_signups_combined" as any, { p_from: from, p_to: to }),
+    ]);
 
-    if (error) {
-      console.error("admin_dashboard_metrics rpc failed:", error);
+    if (liveRes.error) {
+      console.error("admin_dashboard_metrics rpc failed:", liveRes.error);
       setLoading(false);
       return;
     }
 
-    const payload = (data ?? {}) as {
+    const payload = (liveRes.data ?? {}) as {
       stats?: Stats;
       daily_signups?: DailySignup[];
       course_completions?: CourseCompletion[];
@@ -152,17 +157,52 @@ const AdminDashboard = () => {
       offerings?: OfferingOption[];
     };
 
-    setStats(
-      payload.stats ?? {
-        total_students: 0,
-        active_enrolments: 0,
-        active_offerings: 0,
-        total_revenue: 0,
-      },
-    );
-    setDailySignups(payload.daily_signups ?? []);
+    // Merge legacy-aware numbers in. combined returns one row.
+    const combined = (combinedRes.data as any[])?.[0];
+    const baseStats = payload.stats ?? { total_students: 0, active_enrolments: 0, active_offerings: 0, total_revenue: 0 };
+    if (combined && !combinedRes.error) {
+      setStats({
+        // Total users across new + legacy phantoms (60K+)
+        total_students: Number(combined.total_students_unified) || baseStats.total_students,
+        // Active live enrolments + all legacy enrolments (>73K)
+        active_enrolments: Number(combined.active_enrolments_total) || baseStats.active_enrolments,
+        active_offerings: Number(combined.active_offerings_count) || baseStats.active_offerings,
+        // ALL revenue captured in this window (live + legacy)
+        total_revenue: Number(combined.total_revenue_inr_in_window) || baseStats.total_revenue,
+      });
+    } else {
+      setStats(baseStats);
+    }
+
+    // Per-offering: prefer the unified RPC. Shape matches the existing
+    // OfferingMetric layout where possible; new fields stay extra.
+    const offPerf = (offPerfRes.data as any[]) || [];
+    if (offPerf.length && !offPerfRes.error) {
+      const mapped: OfferingMetric[] = offPerf.map((r) => ({
+        offering_id: r.offering_id,
+        offering_title: r.offering_title,
+        total_enrolments: Number(r.total_enrolments) || 0,
+        active_enrolments: Number(r.active_enrolments) || 0,
+        revenue: Number(r.total_revenue_in_window) || 0,
+      }));
+      setOfferingMetrics(mapped);
+    } else {
+      setOfferingMetrics(payload.offering_metrics ?? []);
+    }
+
+    // Daily signups: include the legacy-buyer count
+    const daily = (dailyRes.data as any[]) || [];
+    if (daily.length && !dailyRes.error) {
+      const mapped: DailySignup[] = daily.map((d) => ({
+        day: d.day,
+        count: Number(d.total) || 0,
+      }));
+      setDailySignups(mapped);
+    } else {
+      setDailySignups(payload.daily_signups ?? []);
+    }
+
     setCourseCompletions(payload.course_completions ?? []);
-    setOfferingMetrics(payload.offering_metrics ?? []);
     setRecent(payload.recent_enrolments ?? []);
     setOfferings(payload.offerings ?? []);
 

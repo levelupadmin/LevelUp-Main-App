@@ -105,7 +105,7 @@ const AdminUsers = () => {
 
     let q = supabase
       .from("users_unified" as any)
-      .select("id, full_name, email, phone, role, member_number, created_at, is_real, is_legacy, legacy_source, city, state, program_vertical, lifetime_revenue_inr, first_purchase_at, last_purchase_at, purchase_count")
+      .select("id, full_name, email, phone, role, member_number, created_at, is_real, is_legacy, legacy_source, city, state, country, program_vertical, lifetime_revenue_inr, first_purchase_at, last_purchase_at, purchase_count")
       // Ordering by lifetime_revenue_inr puts your biggest customers
       // (legacy or not) at the top of the list.
       .order("lifetime_revenue_inr", { ascending: false, nullsFirst: false })
@@ -421,9 +421,11 @@ const AdminUsers = () => {
             <tr className="border-b border-border text-left text-muted-foreground">
               <th className="px-5 py-3 font-medium">Name</th>
               <th className="px-5 py-3 font-medium">Email</th>
+              <th className="px-5 py-3 font-medium">Phone</th>
               <th className="px-5 py-3 font-medium">Type</th>
               <th className="px-5 py-3 font-medium">Role</th>
               <th className="px-5 py-3 font-medium">City</th>
+              <th className="px-5 py-3 font-medium">State</th>
               <th className="px-5 py-3 font-medium">Vertical</th>
               <th className="px-5 py-3 font-medium text-right">LTV</th>
               <th className="px-5 py-3 font-medium">Enrolments</th>
@@ -432,9 +434,9 @@ const AdminUsers = () => {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} className="px-5 py-12 text-center text-muted-foreground">Loading…</td></tr>
+              <tr><td colSpan={11} className="px-5 py-12 text-center text-muted-foreground">Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={9} className="px-5 py-12 text-center text-muted-foreground">No users found</td></tr>
+              <tr><td colSpan={11} className="px-5 py-12 text-center text-muted-foreground">No users found</td></tr>
             ) : filtered.map((u) => {
               const isPhantom = !u.id;
               return (
@@ -446,10 +448,11 @@ const AdminUsers = () => {
                 <td className="px-5 py-3 font-medium">
                   <div>{u.full_name || (isPhantom ? <span className="text-muted-foreground italic">unclaimed legacy</span> : "—")}</div>
                   <div className="font-mono text-[10px] text-muted-foreground">
-                    {u.member_number ? `#${u.member_number}` : (u.phone || "—")}
+                    {u.member_number ? `#${u.member_number}` : ""}
                   </div>
                 </td>
-                <td className="px-5 py-3 text-muted-foreground text-xs">{u.email || u.phone || "—"}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{u.email || "—"}</td>
+                <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{u.phone || "—"}</td>
                 <td className="px-5 py-3">
                   {u.is_legacy ? (
                     <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">legacy</span>
@@ -467,6 +470,7 @@ const AdminUsers = () => {
                   }`}>{u.role}</span>
                 </td>
                 <td className="px-5 py-3 text-muted-foreground text-xs">{u.city || "—"}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{u.state || "—"}</td>
                 <td className="px-5 py-3 text-muted-foreground text-xs">{u.program_vertical || "—"}</td>
                 <td className="px-5 py-3 font-mono text-xs text-right">
                   {u.lifetime_revenue_inr && u.lifetime_revenue_inr > 0
