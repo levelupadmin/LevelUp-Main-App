@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
             .select("role")
             .eq("id", user.id)
             .single();
-          if (userRow?.role !== "admin") {
+          if (userRow?.role !== "admin" && userRow?.role !== "owner") {
             return jsonRes({ error: "You don't have access to this video. Please enrol in the course to watch." }, 403);
           }
         }

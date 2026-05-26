@@ -361,6 +361,7 @@ Deno.serve(async (req) => {
           status: "active",
           source: "checkout",
           application_id: po.application_id || null,
+          total_paid_inr: Number(po.total_inr),
         })
         .select("id")
         .single();

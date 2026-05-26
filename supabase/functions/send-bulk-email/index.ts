@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
         .select("role")
         .eq("id", userRes.user.id)
         .maybeSingle();
-      if (prof?.role !== "admin") return jsonRes({ error: "Forbidden" }, 403);
+      if (prof?.role !== "admin" && prof?.role !== "owner") return jsonRes({ error: "Forbidden" }, 403);
       adminUserId = userRes.user.id;
     }
 

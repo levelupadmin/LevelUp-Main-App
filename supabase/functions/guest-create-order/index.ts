@@ -306,6 +306,7 @@ Deno.serve(async (req) => {
           payment_order_id: po.id,
           status: "active",
           source: "checkout",
+          total_paid_inr: Number(po.total_inr),
         });
       }
 

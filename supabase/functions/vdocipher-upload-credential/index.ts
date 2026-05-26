@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
       .eq("id", user.id)
       .single();
 
-    if (userRow?.role !== "admin") {
+    if (userRow?.role !== "admin" && userRow?.role !== "owner") {
       return jsonRes({ error: "Forbidden" }, 403);
     }
 

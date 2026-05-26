@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
     if (authErr || !user) return jsonRes({ error: "Unauthorized" }, 401);
 
     const { data: profile } = await admin.from("users").select("role").eq("id", user.id).maybeSingle();
-    if (profile?.role !== "admin") return jsonRes({ error: "Forbidden" }, 403);
+    if (profile?.role !== "admin" && profile?.role !== "owner") return jsonRes({ error: "Forbidden" }, 403);
 
     const { refund_id } = await req.json();
     if (!refund_id) return jsonRes({ error: "refund_id required" }, 400);

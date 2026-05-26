@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
 
     // ── Hard delete (admin escape hatch) ──
     if (isHardDelete) {
-      if (userRow.role !== "admin") {
+      if (userRow.role !== "admin" && userRow.role !== "owner") {
         return jsonRes({ error: "Forbidden" }, 403);
       }
 

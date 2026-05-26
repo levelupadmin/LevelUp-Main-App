@@ -62,6 +62,30 @@ Deno.serve(async (req) => {
     if (offering.status !== "active")
       return jsonRes({ error: "Offering is not active" }, 400);
 
+    /* ── Re-purchase guard ──
+       Block users from paying for an offering they already have active access
+       to. Skip the guard for staged-payment cohorts (app_fee/confirmation/balance
+       are multiple payments against the same offering by design). Without this
+       guard, a user can click "Buy" again, complete payment, and be charged
+       even though no new enrolment is created (the partial unique index blocks
+       the duplicate enrolment but Razorpay still captures the funds). */
+    if (offering.payment_mode !== "staged") {
+      const { data: existingEnrol } = await admin
+        .from("enrolments")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("offering_id", offering_id)
+        .eq("status", "active")
+        .maybeSingle();
+      if (existingEnrol) {
+        return jsonRes({
+          error: "You're already enrolled in this offering",
+          code: "already_enrolled",
+          enrolment_id: existingEnrol.id,
+        }, 409);
+      }
+    }
+
     /* ── Staged payment amount calculation ──
        For cohort offerings using staged payments (app_fee → confirmation
        → balance), compute the amount for the requested stage. Bumps and
