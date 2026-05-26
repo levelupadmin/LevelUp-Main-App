@@ -5,11 +5,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
   Loader2, ChevronLeft, Calendar, Video, FileText, ClipboardCheck,
-  CheckCircle2, Clock, Lock, ExternalLink, ChevronRight, AlertTriangle, Trophy, Users,
+  CheckCircle2, Clock, Lock, ExternalLink, ChevronRight, AlertTriangle, Trophy, Users, MessageSquare,
 } from "lucide-react";
 import usePageTitle from "@/hooks/usePageTitle";
 import AssignmentSubmissionForm from "@/components/cohort/AssignmentSubmissionForm";
 import AssignmentFeedbackView from "@/components/cohort/AssignmentFeedbackView";
+import PeerReviewBoard from "@/components/cohort/PeerReviewBoard";
 
 interface ProgressRow {
   cohort_batch_id: string;
@@ -56,6 +57,7 @@ export default function CohortDashboard() {
   const [attendancePct, setAttendancePct] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [activeWeekId, setActiveWeekId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"weeks" | "peer_reviews">("weeks");
 
   useEffect(() => {
     if (!offeringId || !user?.id) return;
@@ -203,27 +205,56 @@ export default function CohortDashboard() {
       </div>
 
       {/* This Week card */}
-      {currentWeek && (
+      {currentWeek && tab === "weeks" && (
         <ThisWeekCard week={currentWeek} userId={user!.id} onChange={async () => {
           const { data } = await supabase.rpc("get_cohort_progress", { p_user_id: user!.id, p_offering_id: offeringId });
           setRows((data as ProgressRow[]) || []);
         }} />
       )}
 
-      {/* All weeks accordion */}
-      <div className="mt-10 space-y-2">
-        <h2 className="text-sm font-mono uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
-          <Users className="h-3 w-3" /> All weeks
-        </h2>
-        {rows.map((r) => (
-          <WeekListItem
-            key={r.week_id}
-            row={r}
-            active={r.week_id === activeWeekId}
-            onClick={() => setActiveWeekId(r.week_id)}
-          />
-        ))}
+      {/* Tab switcher */}
+      <div className="flex items-center gap-1 p-1 bg-surface border border-border rounded-lg w-fit mt-10 mb-4">
+        <button
+          onClick={() => setTab("weeks")}
+          className={`px-3 h-8 text-xs font-medium rounded-md inline-flex items-center gap-1.5 transition-colors ${
+            tab === "weeks"
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Calendar className="h-3 w-3" /> All weeks · {rows.length}
+        </button>
+        <button
+          onClick={() => setTab("peer_reviews")}
+          className={`px-3 h-8 text-xs font-medium rounded-md inline-flex items-center gap-1.5 transition-colors ${
+            tab === "peer_reviews"
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <MessageSquare className="h-3 w-3" /> Peer reviews
+        </button>
       </div>
+
+      {tab === "weeks" && (
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <WeekListItem
+              key={r.week_id}
+              row={r}
+              active={r.week_id === activeWeekId}
+              onClick={() => setActiveWeekId(r.week_id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {tab === "peer_reviews" && rows[0]?.cohort_batch_id && (
+        <PeerReviewBoard
+          cohortBatchId={rows[0].cohort_batch_id}
+          currentUserId={user!.id}
+        />
+      )}
     </div>
   );
 }
