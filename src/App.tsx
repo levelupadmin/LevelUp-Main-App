@@ -73,6 +73,7 @@ const AdminCourseReviews = lazy(() => import("@/pages/admin/AdminCourseReviews")
 const AdminAnnouncements = lazy(() => import("@/pages/admin/AdminAnnouncements"));
 const AdminLegacyMappings = lazy(() => import("@/pages/admin/AdminLegacyMappings"));
 const AdminApi = lazy(() => import("@/pages/admin/AdminApi"));
+const AdminDocs = lazy(() => import("@/pages/admin/AdminDocs"));
 const AdminEmailTemplates = lazy(() => import("@/pages/admin/AdminEmailTemplates"));
 const AdminEmailCampaigns = lazy(() => import("@/pages/admin/AdminEmailCampaigns"));
 const AdminApplications = lazy(() => import("@/pages/admin/AdminApplications"));
@@ -241,6 +242,7 @@ const App = () => {
                 <Route path="/admin/community" element={<AdminCommunityAnalytics />} />
                 <Route path="/admin/legacy-mappings" element={<AdminLegacyMappings />} />
                 <Route path="/admin/api" element={<AdminApi />} />
+                <Route path="/admin/docs" element={<AdminDocs />} />
                 <Route path="/admin/cohorts" element={<AdminCohorts />} />
                 <Route path="/admin/offerings/:offeringId/cohort-weeks" element={<AdminCohortWeeks />} />
                 <Route path="/admin/cohort-submissions" element={<AdminCohortSubmissions />} />

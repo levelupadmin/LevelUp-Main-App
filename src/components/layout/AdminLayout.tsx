@@ -33,6 +33,7 @@ import {
   Shield,
   Repeat,
   KeyRound,
+  BookOpen as BookOpenIcon,
   type LucideIcon,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
@@ -103,6 +104,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "System",
     items: [
+      { label: "Documentation", icon: BookOpenIcon, path: "/admin/docs" },
       { label: "API & integrations", icon: KeyRound, path: "/admin/api" },
       { label: "Audit Logs", icon: ScrollText, path: "/admin/audit-logs" },
       { label: "Roles", icon: Shield, path: "/admin/roles" },

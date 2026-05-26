@@ -49,6 +49,14 @@ if not SERVICE_KEY:
 
 XLSX = Path.home() / "Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/Customer Brain/Analysis/LevelUp_Customer_Brain_Unified_v3.xlsx"
 DRY = "--dry-run" in sys.argv
+# --limit N to process only N rows (smoke test before full run)
+LIMIT = None
+for i, a in enumerate(sys.argv):
+    if a == "--limit" and i + 1 < len(sys.argv):
+        LIMIT = int(sys.argv[i + 1])
+        break
+# Stream stdout — no buffering — so we see progress as it happens
+sys.stdout.reconfigure(line_buffering=True)  # type: ignore[attr-defined]
 
 def normalize_phone(p):
     if not p or (isinstance(p, float) and pd.isna(p)):
@@ -68,8 +76,21 @@ def normalize_email(e):
     return str(e).strip().lower()
 
 print(f"Reading {XLSX.name}…")
-df = pd.read_excel(XLSX, sheet_name="All Customers")
-print(f"  → {len(df):,} rows in 'All Customers' sheet")
+t0 = datetime.now()
+# Prefer "Converted - All Students" — 100% fill on the segmentation columns,
+# only ~1K rows, much faster. Fall back to "All Customers" (111K rows) if
+# the converted sheet is missing.
+try:
+    df = pd.read_excel(XLSX, sheet_name="Converted - All Students")
+    sheet_used = "Converted - All Students"
+except Exception:
+    df = pd.read_excel(XLSX, sheet_name="All Customers")
+    sheet_used = "All Customers"
+print(f"  → {len(df):,} rows from '{sheet_used}' (took {(datetime.now() - t0).total_seconds():.1f}s)")
+print(f"  → columns: {list(df.columns)[:12]}…")
+if LIMIT:
+    df = df.head(LIMIT)
+    print(f"  → limited to first {LIMIT} rows")
 
 # Map xlsx columns to DB columns. Defensive — column names vary slightly
 # across exports.
@@ -178,8 +199,8 @@ for idx, row in df.iterrows():
     else:
         stats["errors"] += 1
 
-    if stats["matched"] % 500 == 0:
-        print(f"  ...{stats['matched']:,} matched, {stats['updated']:,} updated, {stats['errors']} errors")
+    if stats["total"] % 50 == 0:
+        print(f"  ...scanned={stats['total']:,} matched={stats['matched']:,} updated={stats['updated']:,} unmatched={stats['unmatched']:,} errors={stats['errors']}")
 
 print()
 print("=" * 50)
