@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -575,6 +576,28 @@ const AdminCohorts = () => {
                   {/* Batch detail (expanded) */}
                   {expandedBatchId === batch.id && (
                     <div className="border-t border-border px-5 py-4">
+                      {/* Quick links: weekly sprint + attendance */}
+                      <div className="flex flex-wrap items-center gap-2 mb-4">
+                        <Link
+                          to={`/admin/offerings/${selectedOfferingId}/cohort-weeks`}
+                          className="inline-flex items-center gap-1.5 h-8 px-3 bg-surface border border-border rounded-md text-xs font-medium text-foreground hover:border-cream/40"
+                        >
+                          📅 Manage weekly sprint
+                        </Link>
+                        <Link
+                          to={`/admin/cohorts/${batch.id}/attendance`}
+                          className="inline-flex items-center gap-1.5 h-8 px-3 bg-surface border border-border rounded-md text-xs font-medium text-foreground hover:border-cream/40"
+                        >
+                          ✅ Attendance
+                        </Link>
+                        <Link
+                          to="/admin/cohort-submissions"
+                          className="inline-flex items-center gap-1.5 h-8 px-3 bg-surface border border-border rounded-md text-xs font-medium text-foreground hover:border-cream/40"
+                        >
+                          📝 Review submissions
+                        </Link>
+                      </div>
+
                       <div className="flex items-center justify-between mb-3">
                         <p className="text-sm font-medium">Members</p>
                         <Button

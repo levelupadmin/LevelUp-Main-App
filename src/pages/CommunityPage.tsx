@@ -5,7 +5,8 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import InitialsAvatar from "@/components/InitialsAvatar";
-import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell } from "lucide-react";
+import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell, Users, Globe } from "lucide-react";
+import { useActiveCohort } from "@/hooks/useActiveCohort";
 import { useToast } from "@/hooks/use-toast";
 import { toast } from "@/lib/toast";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
@@ -18,11 +19,15 @@ interface Post {
   is_pinned: boolean;
   is_admin_post: boolean;
   created_at: string;
+  cohort_batch_id?: string | null;
+  post_type?: string;
   user_name: string;
   like_count: number;
   comment_count: number;
   liked_by_me: boolean;
 }
+
+type FeedScope = "everyone" | "my_cohort";
 
 const CommunityPage = () => {
   usePageTitle("Community");
@@ -33,6 +38,21 @@ const CommunityPage = () => {
   const [loading, setLoading] = useState(true);
   const [newPost, setNewPost] = useState("");
   const [posting, setPosting] = useState(false);
+  const [scope, setScope] = useState<FeedScope>("everyone");
+  const { offeringId: activeCohortId } = useActiveCohort();
+  // Resolve the user's cohort batch id (for filtering + tagging new posts).
+  const [myBatchId, setMyBatchId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user?.id || !activeCohortId) { setMyBatchId(null); return; }
+    (async () => {
+      const { data } = await supabase
+        .from("cohort_batch_members")
+        .select("batch_id, enrolments:enrolment_id (offering_id, user_id)")
+        .eq("enrolments.user_id", user.id);
+      const match = (data || []).find((m: any) => m.enrolments?.offering_id === activeCohortId);
+      setMyBatchId(match?.batch_id ?? null);
+    })();
+  }, [user?.id, activeCohortId]);
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, { id: string; comment_text: string; user_name: string; created_at: string }[]>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
@@ -60,12 +80,16 @@ const CommunityPage = () => {
 
   const loadPosts = useCallback(async () => {
     setLoading(true);
-    const { data: postsData } = await supabase
+    let query = supabase
       .from("community_posts")
-      .select("id, content_text, user_id, is_pinned, is_admin_post, created_at")
+      .select("id, content_text, user_id, is_pinned, is_admin_post, created_at, cohort_batch_id, post_type")
       .order("is_pinned", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(50);
+    if (scope === "my_cohort" && myBatchId) {
+      query = query.eq("cohort_batch_id", myBatchId);
+    }
+    const { data: postsData } = await query;
 
     if (!postsData) { setLoading(false); return; }
 
@@ -104,7 +128,7 @@ const CommunityPage = () => {
       liked_by_me: myLikes.has(p.id),
     })));
     setLoading(false);
-  }, [user]);
+  }, [user, scope, myBatchId]);
 
   const { isRefreshing, pullProgress, pullDistance } = usePullToRefresh({
     onRefresh: async () => { await loadPosts(); },
@@ -119,6 +143,7 @@ const CommunityPage = () => {
       content_text: newPost.trim(),
       user_id: user.id,
       is_admin_post: profile?.role === "admin",
+      cohort_batch_id: scope === "my_cohort" ? myBatchId : null,
     });
     if (error) {
       showToast({ title: "Error", description: error.message, variant: "destructive" });
@@ -252,10 +277,36 @@ const CommunityPage = () => {
           </p>
         </div>
 
+        {/* Scope toggle — only when user has an active cohort */}
+        {myBatchId && (
+          <div className="flex items-center gap-1.5 p-1 bg-surface border border-border rounded-lg w-fit">
+            <button
+              onClick={() => setScope("everyone")}
+              className={`px-3 h-8 text-xs font-medium rounded-md inline-flex items-center gap-1.5 transition-colors ${
+                scope === "everyone"
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Globe className="h-3 w-3" /> Everyone
+            </button>
+            <button
+              onClick={() => setScope("my_cohort")}
+              className={`px-3 h-8 text-xs font-medium rounded-md inline-flex items-center gap-1.5 transition-colors ${
+                scope === "my_cohort"
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Users className="h-3 w-3" /> My Cohort
+            </button>
+          </div>
+        )}
+
         {/* New post */}
         <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
           <Textarea
-            placeholder="Share something with the community..."
+            placeholder={scope === "my_cohort" ? "Share with your cohort…" : "Share something with the community..."}
             value={newPost}
             onChange={(e) => setNewPost(e.target.value)}
             rows={3}

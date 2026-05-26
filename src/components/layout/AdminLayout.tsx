@@ -70,6 +70,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Schedule Classes", icon: Video, path: "/admin/schedule" },
       { label: "Events", icon: CalendarDays, path: "/admin/events" },
+      { label: "Cohorts", icon: Users, path: "/admin/cohorts" },
+      { label: "Cohort Submissions", icon: ClipboardList, path: "/admin/cohort-submissions" },
     ],
   },
   {

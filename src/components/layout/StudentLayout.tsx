@@ -8,9 +8,10 @@ import Footer from "@/components/Footer";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
   Home, BookOpen, Compass, MessageSquare, User,
-  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2
+  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2, Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useActiveCohort } from "@/hooks/useActiveCohort";
 
 const NAV_ITEMS = [
   { label: "Home", icon: Home, path: "/home" },
@@ -54,6 +55,7 @@ const StudentLayout = ({ children }: Props) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const { notifications, unreadCount, loading: notifLoading, markRead, markAllRead } = useNotifications();
+  const { offeringId: activeCohortId } = useActiveCohort();
 
   const firstName = profile?.full_name?.split(" ")[0] ?? "Student";
 
@@ -85,6 +87,24 @@ const StudentLayout = ({ children }: Props) => {
               </Link>
             );
           })}
+
+          {activeCohortId && (
+            <>
+              <div className="my-3 border-t border-border" />
+              <Link
+                to={`/cohort/${activeCohortId}`}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-3 rounded-md text-sm transition-colors",
+                  location.pathname.startsWith("/cohort/")
+                    ? "text-foreground bg-surface-2 border-l-2 border-cream"
+                    : "text-cream hover:bg-cream/[0.06]"
+                )}
+              >
+                <Sparkles className="h-[18px] w-[18px]" />
+                My Cohort
+              </Link>
+            </>
+          )}
 
           {(profile?.role === "admin" || profile?.role === "owner") && (
             <>

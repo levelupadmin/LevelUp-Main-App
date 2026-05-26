@@ -80,6 +80,11 @@ const AdminQuizEditor = lazy(() => import("@/pages/admin/AdminQuizEditor"));
 const AdminRoles = lazy(() => import("@/pages/admin/AdminRoles"));
 const AdminAnalyticsSettings = lazy(() => import("@/pages/admin/AdminAnalyticsSettings"));
 const AdminCommunityAnalytics = lazy(() => import("@/pages/admin/AdminCommunityAnalytics"));
+const AdminCohorts = lazy(() => import("@/pages/admin/AdminCohorts"));
+const AdminCohortWeeks = lazy(() => import("@/pages/admin/AdminCohortWeeks"));
+const AdminCohortSubmissions = lazy(() => import("@/pages/admin/AdminCohortSubmissions"));
+const AdminCohortAttendance = lazy(() => import("@/pages/admin/AdminCohortAttendance"));
+const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
 
 const LoadingFallback = () => (
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
@@ -195,6 +200,7 @@ const App = () => {
                 <Route path="/events" element={<EventsPage />} />
                 <Route path="/events/:eventId" element={<EventDetail />} />
                 <Route path="/my-application/:applicationId" element={<ApplicationStatus />} />
+                <Route path="/cohort/:offeringId" element={<CohortDashboard />} />
               </Route>
 
               {/* ChapterViewer runs full-bleed (no student nav) but stays auth-guarded */}
@@ -233,6 +239,10 @@ const App = () => {
                 <Route path="/admin/analytics-settings" element={<AdminAnalyticsSettings />} />
                 <Route path="/admin/community" element={<AdminCommunityAnalytics />} />
                 <Route path="/admin/legacy-mappings" element={<AdminLegacyMappings />} />
+                <Route path="/admin/cohorts" element={<AdminCohorts />} />
+                <Route path="/admin/offerings/:offeringId/cohort-weeks" element={<AdminCohortWeeks />} />
+                <Route path="/admin/cohort-submissions" element={<AdminCohortSubmissions />} />
+                <Route path="/admin/cohorts/:batchId/attendance" element={<AdminCohortAttendance />} />
               </Route>
 
               {/* Instructor dashboard also uses the student layout for consistency */}

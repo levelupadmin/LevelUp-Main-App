@@ -39,6 +39,28 @@ export async function checkAndGenerateCertificate(
 
   if (existing) return null;
 
+  // For live-cohort offerings, also require attendance >= attendance_threshold_pct.
+  // The user_is_certificate_eligible RPC encapsulates this — it returns true
+  // for self-paced offerings (threshold = 0) and only blocks when a staged-
+  // payment cohort is below the configured attendance bar. We check against
+  // every linked offering; if ANY one is eligible, allow the cert.
+  const { data: offerLinks } = await supabase
+    .from("offering_courses")
+    .select("offering_id")
+    .eq("course_id", courseId);
+  const linkedOfferings = (offerLinks || []).map((o) => o.offering_id).filter(Boolean);
+  if (linkedOfferings.length > 0) {
+    let anyEligible = false;
+    for (const offId of linkedOfferings) {
+      const { data: ok } = await supabase.rpc("user_is_certificate_eligible", {
+        p_user_id: userId,
+        p_offering_id: offId,
+      });
+      if (ok === true) { anyEligible = true; break; }
+    }
+    if (!anyEligible) return null;
+  }
+
   // Get course name and batch info
   const { data: course } = await supabase
     .from("courses")
