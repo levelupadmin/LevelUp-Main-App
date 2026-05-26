@@ -155,6 +155,14 @@ export default {
           "0%": { backgroundPosition: "-200% 0" },
           "100%": { backgroundPosition: "200% 0" },
         },
+        "slide-left-in": {
+          from: { opacity: "0", transform: "translateX(24px)" },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
+        "slide-left-out": {
+          from: { opacity: "1", transform: "translateX(0)" },
+          to: { opacity: "0", transform: "translateX(-24px)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -166,6 +174,8 @@ export default {
         "milestone-in": "milestone-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)",
         "milestone-out": "milestone-out 0.4s ease-in forwards",
         "shimmer": "shimmer 2s linear infinite",
+        "slide-left-in": "slide-left-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+        "slide-left-out": "slide-left-out 200ms ease-in forwards",
       },
     },
   },
