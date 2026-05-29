@@ -102,7 +102,7 @@ const ChangePasswordSection = ({ email }: { email: string }) => {
     setSaving(false);
 
     if (updateError) {
-      toast.error(updateError.message);
+      toast.error("Couldn't change your password. Make sure it's at least 6 characters and try again.");
     } else {
       toast.success("Password changed successfully");
       resetForm();
@@ -113,7 +113,7 @@ const ChangePasswordSection = ({ email }: { email: string }) => {
   const handleForgotPassword = async () => {
     const { error } = await supabase.auth.resetPasswordForEmail(email);
     if (error) {
-      toast.error(error.message);
+      toast.error("Couldn't send the reset email. Please try again.");
     } else {
       toast.success("Password reset email sent");
     }

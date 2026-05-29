@@ -75,7 +75,7 @@ export default function CohortDashboard() {
         p_offering_id: offeringId,
       });
       if (progErr) {
-        toast({ title: "Couldn't load cohort", description: progErr.message, variant: "destructive" });
+        toast({ title: "Couldn't load cohort", description: "We couldn't load your cohort progress. Please refresh and try again.", variant: "destructive" });
       }
       setRows((progress as ProgressRow[]) || []);
 

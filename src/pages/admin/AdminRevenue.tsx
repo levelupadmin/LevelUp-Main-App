@@ -683,7 +683,7 @@ const AdminRevenue = () => {
             return (
               <>
                 <h3 className="text-sm font-semibold mb-3">Top buyers in this window</h3>
-                <div className="bg-card border border-border rounded-xl overflow-hidden mb-8">
+                <div className="bg-card border border-border rounded-xl overflow-x-auto mb-8">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border text-left text-muted-foreground">
@@ -715,7 +715,7 @@ const AdminRevenue = () => {
 
           {/* Revenue by Product Tier */}
           <h3 className="text-sm font-semibold mb-3">Revenue by Product Tier</h3>
-          <div className="bg-card border border-border rounded-xl overflow-hidden mb-8">
+          <div className="bg-card border border-border rounded-xl overflow-x-auto mb-8">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">

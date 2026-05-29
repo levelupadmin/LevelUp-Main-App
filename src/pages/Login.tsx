@@ -189,7 +189,7 @@ const Login = () => {
     });
     setLoading(false);
     if (error) {
-      toast({ title: "Couldn't send email", description: error.message, variant: "destructive" });
+      toast({ title: "Couldn't send email", description: "We couldn't send the login email. Please check the address and try again.", variant: "destructive" });
       return;
     }
     goToStep("email_sent");
