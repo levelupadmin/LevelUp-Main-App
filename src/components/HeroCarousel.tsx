@@ -48,13 +48,23 @@ const HeroCarousel = () => {
       .eq("is_active", true)
       .or("placement.eq.dashboard,placement.eq.both")
       .order("sort_order", { ascending: true })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        // Fail gracefully: on error, leave slides empty so the carousel
+        // renders nothing (see the `!slides.length` guard below) rather
+        // than crashing or flashing a broken/empty hero in the WebView.
+        if (error) {
+          if (import.meta.env.DEV) console.error("Failed to load hero slides:", error);
+          return;
+        }
         const now = new Date();
         const filtered = (data ?? []).filter((s: any) =>
           (!s.starts_at || new Date(s.starts_at) <= now) &&
           (!s.expires_at || new Date(s.expires_at) >= now)
         );
         setSlides(filtered as HeroSlide[]);
+      }, (err) => {
+        // Rejected promise (e.g. transient network failure in the WebView).
+        if (import.meta.env.DEV) console.error("Failed to load hero slides:", err);
       });
   }, []);
 

@@ -1,4 +1,4 @@
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import InitialsAvatar from "@/components/InitialsAvatar";
@@ -54,6 +54,22 @@ const StudentLayout = ({ children }: Props) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+
+  // Hardware back / Esc closes any open hand-rolled overlay first. The native
+  // back button (App.tsx) dispatches a synthetic Escape when it detects an
+  // open overlay, so this keeps the mobile sidebar + dropdowns from trapping
+  // the user or letting back-press exit the app while a menu is open.
+  useEffect(() => {
+    if (!sidebarOpen && !dropdownOpen && !notifOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setSidebarOpen(false);
+      setDropdownOpen(false);
+      setNotifOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sidebarOpen, dropdownOpen, notifOpen]);
   const { notifications, unreadCount, loading: notifLoading, markRead, markAllRead } = useNotifications();
   const { offeringId: activeCohortId } = useActiveCohort();
 
@@ -145,7 +161,7 @@ const StudentLayout = ({ children }: Props) => {
 
       {/* Mobile sidebar overlay — respects iOS safe-area */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div data-overlay-open="true" className="fixed inset-0 z-50 md:hidden">
           <div
             className="absolute inset-0 bg-black/60 animate-fade-in"
             onClick={() => setSidebarOpen(false)}
@@ -260,7 +276,7 @@ const StudentLayout = ({ children }: Props) => {
               {dropdownOpen && (
                 <>
                   <div className="fixed inset-0" onClick={() => setDropdownOpen(false)} />
-                  <div className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-lg shadow-lg py-1 z-50">
+                  <div data-overlay-open="true" className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-lg shadow-lg py-1 z-50">
                     {(profile?.role === "admin" || profile?.role === "owner") && (
                       <button
                         onClick={() => { setDropdownOpen(false); navigate("/admin"); }}

@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { Globe, MapPin, Loader2, Calendar, Clock } from "lucide-react";
 import { eventDateTimeLabel, eventDurationLabel } from "@/lib/event-format";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
+import { isNative } from "@/lib/platform";
 
 interface Speaker {
   event_id: string;
@@ -369,6 +370,13 @@ const EventsPage = () => {
                             {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
                             Register — Free
                           </button>
+                        ) : isNative() ? (
+                          // Path B (Reader Rule): no paid-register / price CTA in the
+                          // Android shell. Tapping the card navigates to /events/:id
+                          // (EventDetail), which renders the Continue-on-web gate.
+                          <span className="text-sm font-medium text-cream/80 inline-flex items-center gap-1 min-h-[44px]">
+                            View details
+                          </span>
                         ) : (
                           <button
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRegisterPaid(ev.id); }}

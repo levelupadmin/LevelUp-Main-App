@@ -5,7 +5,7 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import InitialsAvatar from "@/components/InitialsAvatar";
-import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell, Users, Globe, MessageSquare } from "lucide-react";
+import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell, Users, Globe, MessageSquare, WifiOff, RefreshCw } from "lucide-react";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
 import { useToast } from "@/hooks/use-toast";
 import { toast } from "@/lib/toast";
@@ -37,6 +37,7 @@ const CommunityPage = () => {
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [newPost, setNewPost] = useState("");
   const [posting, setPosting] = useState(false);
   const [scope, setScope] = useState<FeedScope>("everyone");
@@ -81,54 +82,62 @@ const CommunityPage = () => {
 
   const loadPosts = useCallback(async () => {
     setLoading(true);
-    let query = supabase
-      .from("community_posts")
-      .select("id, content_text, user_id, is_pinned, is_admin_post, created_at, cohort_batch_id, post_type")
-      .order("is_pinned", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (scope === "my_cohort" && myBatchId) {
-      query = query.eq("cohort_batch_id", myBatchId);
+    setError(null);
+    try {
+      let query = supabase
+        .from("community_posts")
+        .select("id, content_text, user_id, is_pinned, is_admin_post, created_at, cohort_batch_id, post_type")
+        .order("is_pinned", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (scope === "my_cohort" && myBatchId) {
+        query = query.eq("cohort_batch_id", myBatchId);
+      }
+      const { data: postsData, error: postsError } = await query;
+
+      if (postsError) throw postsError;
+      if (!postsData) { setPosts([]); setLoading(false); return; }
+
+      // Get user names. Uses the public_user_profiles view (not the
+      // users table directly) because the users RLS policy restricts
+      // non-admins to reading their OWN row — authenticated peers need
+      // the view to see each other's names. The view exposes only
+      // id/full_name/avatar_url/member_number/occupation; email, phone,
+      // bio and city are never returned through this path.
+      const userIds = [...new Set(postsData.map((p) => p.user_id))];
+      const { data: users } = await supabase
+        .from("public_user_profiles" as any)
+        .select("id, full_name")
+        .in("id", userIds);
+      const userMap = Object.fromEntries(((users as any[]) || []).map((u: any) => [u.id, u.full_name || "Anonymous"]));
+
+      // Get like & comment counts
+      const postIds = postsData.map((p) => p.id);
+      const [likesRes, commentsRes, myLikesRes] = await Promise.all([
+        supabase.from("community_post_likes").select("post_id").in("post_id", postIds),
+        supabase.from("community_post_comments").select("post_id").in("post_id", postIds),
+        user ? supabase.from("community_post_likes").select("post_id").in("post_id", postIds).eq("user_id", user.id) : Promise.resolve({ data: [] }),
+      ]);
+
+      const likeCounts: Record<string, number> = {};
+      (likesRes.data || []).forEach((l) => { likeCounts[l.post_id] = (likeCounts[l.post_id] || 0) + 1; });
+      const commentCounts: Record<string, number> = {};
+      (commentsRes.data || []).forEach((c) => { commentCounts[c.post_id] = (commentCounts[c.post_id] || 0) + 1; });
+      const myLikes = new Set((myLikesRes.data || []).map((l) => l.post_id));
+
+      setPosts(postsData.map((p) => ({
+        ...p,
+        user_name: userMap[p.user_id] || "Anonymous",
+        like_count: likeCounts[p.id] || 0,
+        comment_count: commentCounts[p.id] || 0,
+        liked_by_me: myLikes.has(p.id),
+      })));
+      setLoading(false);
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("Failed to load community posts:", err);
+      setError("We couldn't load this. Check your connection and try again.");
+      setLoading(false);
     }
-    const { data: postsData } = await query;
-
-    if (!postsData) { setLoading(false); return; }
-
-    // Get user names. Uses the public_user_profiles view (not the
-    // users table directly) because the users RLS policy restricts
-    // non-admins to reading their OWN row — authenticated peers need
-    // the view to see each other's names. The view exposes only
-    // id/full_name/avatar_url/member_number/occupation; email, phone,
-    // bio and city are never returned through this path.
-    const userIds = [...new Set(postsData.map((p) => p.user_id))];
-    const { data: users } = await supabase
-      .from("public_user_profiles" as any)
-      .select("id, full_name")
-      .in("id", userIds);
-    const userMap = Object.fromEntries(((users as any[]) || []).map((u: any) => [u.id, u.full_name || "Anonymous"]));
-
-    // Get like & comment counts
-    const postIds = postsData.map((p) => p.id);
-    const [likesRes, commentsRes, myLikesRes] = await Promise.all([
-      supabase.from("community_post_likes").select("post_id").in("post_id", postIds),
-      supabase.from("community_post_comments").select("post_id").in("post_id", postIds),
-      user ? supabase.from("community_post_likes").select("post_id").in("post_id", postIds).eq("user_id", user.id) : Promise.resolve({ data: [] }),
-    ]);
-
-    const likeCounts: Record<string, number> = {};
-    (likesRes.data || []).forEach((l) => { likeCounts[l.post_id] = (likeCounts[l.post_id] || 0) + 1; });
-    const commentCounts: Record<string, number> = {};
-    (commentsRes.data || []).forEach((c) => { commentCounts[c.post_id] = (commentCounts[c.post_id] || 0) + 1; });
-    const myLikes = new Set((myLikesRes.data || []).map((l) => l.post_id));
-
-    setPosts(postsData.map((p) => ({
-      ...p,
-      user_name: userMap[p.user_id] || "Anonymous",
-      like_count: likeCounts[p.id] || 0,
-      comment_count: commentCounts[p.id] || 0,
-      liked_by_me: myLikes.has(p.id),
-    })));
-    setLoading(false);
   }, [user, scope, myBatchId]);
 
   const { isRefreshing, pullProgress, pullDistance } = usePullToRefresh({
@@ -359,6 +368,15 @@ const CommunityPage = () => {
             {[1, 2, 3, 4].map((i) => (
               <PostSkeleton key={i} />
             ))}
+          </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <WifiOff className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-lg font-medium text-foreground mb-1">Something went wrong</p>
+            <p className="text-muted-foreground text-sm">{error}</p>
+            <Button onClick={() => loadPosts()} variant="outline" className="mt-4 gap-2">
+              <RefreshCw className="h-4 w-4" /> Retry
+            </Button>
           </div>
         ) : posts.length === 0 ? (
           <div className="text-center py-12">

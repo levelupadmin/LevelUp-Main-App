@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import LazyImage from "@/components/LazyImage";
-import { ArrowRight, Search, Heart } from "lucide-react";
+import { ArrowRight, Search, Heart, WifiOff, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import usePageTitle from "@/hooks/usePageTitle";
@@ -49,6 +50,7 @@ const BrowsePage = () => {
   const { user } = useAuth();
   const [courses, setCourses] = useState<CourseWithOffering[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
@@ -81,22 +83,26 @@ const BrowsePage = () => {
   );
   const { counts: enrolmentCounts, popularIds } = useEnrolmentCounts(offeringIds);
 
-  useEffect(() => {
-    const load = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
       // Use select("*") and client-side filter for show_on_browse so the
       // query doesn't fail if the migration hasn't run yet
-      const { data: rawCourses } = await supabase
+      const { data: rawCourses, error: coursesError } = await supabase
         .from("courses")
         .select("*")
         .in("status", ["published", "upcoming"])
         .order("sort_order", { ascending: true });
+
+      if (coursesError) throw coursesError;
 
       // Filter out courses hidden from browse (default to shown if column doesn't exist yet)
       const coursesData = (rawCourses || []).filter(
         (c: any) => c.show_on_browse !== false
       );
 
-      if (!coursesData.length) { setLoading(false); return; }
+      if (!coursesData.length) { setCourses([]); setLoading(false); return; }
 
       // Read primary_offering_id via a separate raw query since types may not be regenerated yet
       const courseIds = coursesData.map((c) => c.id);
@@ -169,9 +175,14 @@ const BrowsePage = () => {
         })
       );
       setLoading(false);
-    };
-    load();
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("Failed to load browse courses:", err);
+      setError("We couldn't load this. Check your connection and try again.");
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const filtered = courses.filter((c) => {
     const matchesTier = activeFilter === "All" || c.product_tier === TIER_MAP[activeFilter];
@@ -244,6 +255,15 @@ const BrowsePage = () => {
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <CourseCardSkeleton key={i} />
             ))}
+          </div>
+        ) : error ? (
+          <div className="text-center py-16">
+            <WifiOff className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-lg font-medium text-foreground mb-1">Something went wrong</p>
+            <p className="text-muted-foreground text-sm">{error}</p>
+            <Button onClick={() => load()} variant="outline" className="mt-4 gap-2">
+              <RefreshCw className="h-4 w-4" /> Retry
+            </Button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16">

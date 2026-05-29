@@ -7,6 +7,7 @@ import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { track } from "@/lib/analytics";
+import { isNative } from "@/lib/platform";
 import {
   CheckCircle2,
   Loader2,
@@ -824,8 +825,8 @@ export default function ThankYou() {
           </div>
         </div>
 
-        {/* Post-purchase upsells */}
-        {upsells.length > 0 && (
+        {/* Post-purchase upsells — hidden on native (Path B: no in-app purchase UI) */}
+        {!isNative() && upsells.length > 0 && (
           <>
             <Separator className="bg-border mb-8" />
             <div className="space-y-6">

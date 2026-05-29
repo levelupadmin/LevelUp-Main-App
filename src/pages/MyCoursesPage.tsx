@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { TierBadge } from "@/components/TierBadge";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import LazyImage from "@/components/LazyImage";
-import { ArrowRight, BookOpen, Sparkles, Award } from "lucide-react";
+import { ArrowRight, BookOpen, Sparkles, Award, WifiOff, RefreshCw } from "lucide-react";
 import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
+import { isNative } from "@/lib/platform";
 
 interface EnrolledCourse {
   enrolment_id: string;
@@ -39,19 +41,24 @@ const MyCoursesPage = () => {
   const [courses, setCourses] = useState<EnrolledCourse[]>([]);
   const [recommendations, setRecommendations] = useState<RecommendedCourse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetch = useCallback(async () => {
     if (!user) return;
-
-    const fetch = async () => {
+    setLoading(true);
+    setError(null);
+    try {
       // Get active enrolments
-      const { data: enrs } = await supabase
+      const { data: enrs, error: enrsError } = await supabase
         .from("enrolments")
         .select("id, offering_id")
         .eq("user_id", user.id)
         .eq("status", "active");
 
+      if (enrsError) throw enrsError;
+
       if (!enrs?.length) {
+        setCourses([]);
         setLoading(false);
         return;
       }
@@ -64,6 +71,7 @@ const MyCoursesPage = () => {
         .in("offering_id", offeringIds);
 
       if (!ocs?.length) {
+        setCourses([]);
         setLoading(false);
         return;
       }
@@ -209,9 +217,14 @@ const MyCoursesPage = () => {
       );
 
       setLoading(false);
-    };
-    fetch();
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("Failed to load my courses:", err);
+      setError("We couldn't load this. Check your connection and try again.");
+      setLoading(false);
+    }
   }, [user]);
+
+  useEffect(() => { fetch(); }, [fetch]);
 
   return (
     <>
@@ -228,6 +241,15 @@ const MyCoursesPage = () => {
             {[1, 2, 3].map((i) => (
               <CourseCardSkeleton key={i} />
             ))}
+          </div>
+        ) : error ? (
+          <div className="text-center py-16">
+            <WifiOff className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-lg font-medium text-foreground mb-1">Something went wrong</p>
+            <p className="text-muted-foreground text-sm">{error}</p>
+            <Button onClick={() => fetch()} variant="outline" className="mt-4 gap-2">
+              <RefreshCw className="h-4 w-4" /> Retry
+            </Button>
           </div>
         ) : courses.length === 0 ? (
           <div className="text-center py-16">
@@ -330,7 +352,7 @@ const MyCoursesPage = () => {
                       <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>
                     )}
                     <div className="flex items-center justify-between pt-2 border-t border-border mt-2">
-                      {c.price_inr != null ? (
+                      {!isNative() && c.price_inr != null ? (
                         <span className="text-base font-semibold">
                           ₹{new Intl.NumberFormat("en-IN").format(c.price_inr)}
                         </span>

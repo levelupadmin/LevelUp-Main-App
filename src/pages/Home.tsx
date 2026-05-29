@@ -1118,7 +1118,10 @@ const BrowsePrograms = () => {
                 <p className="text-xs font-mono text-muted-foreground mt-1">{c.duration_text}</p>
               )}
               <div className="flex items-center justify-between mt-3">
-                {c.price_inr != null ? (
+                {/* Path B (Reader Rule): no price chips in the Android shell. */}
+                {isNative() ? (
+                  <span />
+                ) : c.price_inr != null ? (
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-base font-semibold">₹{Number(c.price_inr).toLocaleString()}</span>
                     {c.mrp_inr && Number(c.mrp_inr) > Number(c.price_inr) && (
@@ -1134,7 +1137,7 @@ const BrowsePrograms = () => {
                   <span className="text-sm text-muted-foreground">Price TBA</span>
                 )}
                 <span className="text-sm text-cream flex items-center gap-1">
-                  {isEnrolled ? "Continue" : "Enroll"} <ArrowRight className="h-3 w-3" />
+                  {isEnrolled ? "Continue" : isNative() ? "View" : "Enroll"} <ArrowRight className="h-3 w-3" />
                 </span>
               </div>
             </div>

@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { bootAnalytics } from "@/lib/analytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Toaster as SonnerToaster } from "sonner";
+import { Toaster as SonnerToaster, toast as sonnerToast } from "sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/contexts/AuthContext";
 import RequireAuth from "@/components/guards/RequireAuth";
@@ -11,6 +11,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import OfflineBanner from "@/components/OfflineBanner";
 import FloatingSupport from "@/components/FloatingSupport";
 import ScrollToTop from "@/components/ScrollToTop";
+import NativeDeepLinks from "@/components/NativeDeepLinks";
 import StudentLayout from "@/components/layout/StudentLayout";
 // AdminLayout is lazy — admin paths are <1% of traffic; no reason to ship its
 // 20 KB of nav chrome + 14 admin route imports inside every anon page load.
@@ -129,18 +130,39 @@ const App = () => {
   // matches every other Android app's behaviour.
   useEffect(() => {
     let remove: (() => void) | undefined;
+    let lastBackPress = 0;
     (async () => {
       try {
         const { Capacitor } = await import("@capacitor/core");
         if (!Capacitor.isNativePlatform()) return;
         const { App: CapApp } = await import("@capacitor/app");
         const handle = await CapApp.addListener("backButton", ({ canGoBack }) => {
+          // 1) If any overlay is open (modal, sheet, drawer, dropdown, the
+          //    mobile sidebar), close THAT first instead of navigating away.
+          //    Radix + vaul close on Escape; our hand-rolled overlays listen
+          //    for the same key (see StudentLayout). We only swallow the back
+          //    press when something is actually open.
+          const overlay = document.querySelector(
+            '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [data-radix-popper-content-wrapper], [role="menu"][data-state="open"], [role="listbox"][data-state="open"], [vaul-drawer][data-state="open"], [data-overlay-open="true"]'
+          );
+          if (overlay) {
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+            return;
+          }
+          // 2) Walk the in-app history when we can.
           if (canGoBack) {
             window.history.back();
-          } else {
-            // Root of the in-app stack - hand control back to the OS so
-            // the user lands on their launcher instead of being stuck.
+            return;
+          }
+          // 3) Root of the stack: require a second press within 2s before
+          //    handing control back to the OS, so a stray tap never exits the
+          //    app (especially on /home after a post-login replace-nav, where
+          //    canGoBack can be false even though the user expects to stay).
+          if (Date.now() - lastBackPress < 2000) {
             CapApp.exitApp();
+          } else {
+            lastBackPress = Date.now();
+            sonnerToast("Press back again to exit");
           }
         });
         remove = () => handle.remove();
@@ -259,6 +281,7 @@ const App = () => {
             </Routes>
           </Suspense>
           <ScrollToTop />
+          <NativeDeepLinks />
           <FloatingSupport />
         </BrowserRouter>
       </ErrorBoundary>

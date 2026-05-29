@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import usePageTitle from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
-import { Bell, Calendar, Clock, Video, ExternalLink, PlayCircle } from "lucide-react";
+import { Bell, Calendar, Clock, Video, ExternalLink, PlayCircle, WifiOff, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { Button } from "@/components/ui/button";
 import { useSessionReminder } from "@/hooks/useSessionReminder";
 
 interface SessionRow {
@@ -26,14 +27,16 @@ const MySessionsPage = () => {
   const { user } = useAuth();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [reminderToggle, setReminderToggle] = useState(false);
   const { requestPermission, scheduleReminder, cancelReminder, isReminderSet } =
     useSessionReminder();
 
-  useEffect(() => {
-    const load = async () => {
-      if (!user) { setLoading(false); return; }
-      try {
+  const load = useCallback(async () => {
+    if (!user) { setLoading(false); return; }
+    setLoading(true);
+    setError(null);
+    try {
         // Get enrolled course IDs
         const { data: enrolments } = await supabase
           .from("enrolments")
@@ -83,12 +86,13 @@ const MySessionsPage = () => {
         );
       } catch (err) {
         if (import.meta.env.DEV) console.error("Failed to load sessions:", err);
+        setError("We couldn't load this. Check your connection and try again.");
       } finally {
         setLoading(false);
       }
-    };
-    load();
   }, [user]);
+
+  useEffect(() => { load(); }, [load]);
 
   // Re-schedule browser notifications for any sessions the user previously opted into
   useEffect(() => {
@@ -155,6 +159,15 @@ const MySessionsPage = () => {
                 <div className="h-8 bg-surface-2 rounded-lg w-16 flex-shrink-0 self-center" />
               </div>
             ))}
+          </div>
+        ) : error ? (
+          <div className="text-center py-16">
+            <WifiOff className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-lg font-medium text-foreground mb-1">Something went wrong</p>
+            <p className="text-sm text-muted-foreground">{error}</p>
+            <Button onClick={() => load()} variant="outline" className="mt-4 gap-2">
+              <RefreshCw className="h-4 w-4" /> Retry
+            </Button>
           </div>
         ) : !sessions.length ? (
           <div className="text-center py-16">

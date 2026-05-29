@@ -3,10 +3,18 @@ import type { CapacitorConfig } from "@capacitor/cli";
 /**
  * Capacitor configuration for the LevelUp Learning Android shell.
  *
- * The shell is a thin WebView wrapper around https://app.leveluplearning.in
- * (the production web app). We intentionally point `server.hostname` at the
- * live origin instead of bundling a local copy — that way the Android app
- * always runs the same JS/CSS as the web, including hot-fixes.
+ * The shell is a WebView that serves the BUNDLED Vite build
+ * (android/app/src/main/assets/public/, copied in by `npx cap sync`)
+ * under the origin https://app.leveluplearning.in. Note there is NO
+ * `server.url` — `server.hostname` alone does NOT load remote content;
+ * it only sets the origin the local bundle is served from. We do that
+ * so the WebView shares the web app's origin (App Links / assetlinks,
+ * cookies, localStorage, IndexedDB all line up) while still running
+ * fully bundled, store-reviewable assets.
+ *
+ * Consequence: web changes do NOT reach installed apps automatically.
+ * Any web fix must be re-bundled and shipped as a Play update:
+ *   vite build → npx cap sync android → ./gradlew bundleRelease.
  *
  * Per Google Play "Reader Rule" (Path B): the shell shows NO purchase UI.
  * Buy/Enrol CTAs are swapped to a "Continue on web" link at runtime via
