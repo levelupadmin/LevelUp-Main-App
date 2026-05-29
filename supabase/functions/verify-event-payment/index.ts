@@ -168,7 +168,7 @@ Deno.serve(async (req) => {
         .update({
           status: "registered",
           payment_id: razorpay_payment_id,
-          amount_paid: expectedAmount,
+          amount_paid: Number(event.price_inr ?? 0),
           registered_at: new Date().toISOString(),
         })
         .eq("id", existing.id);
@@ -179,7 +179,7 @@ Deno.serve(async (req) => {
         user_id: user.id,
         status: "registered",
         payment_id: razorpay_payment_id,
-        amount_paid: expectedAmount,
+        amount_paid: Number(event.price_inr ?? 0),
       });
       writeErr = res.error;
     }
