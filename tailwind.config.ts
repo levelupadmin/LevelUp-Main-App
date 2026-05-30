@@ -12,8 +12,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
-        body: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+        display: ['"Inter"', '-apple-system', 'system-ui', 'sans-serif'],
+        body: ['"Inter"', '-apple-system', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
         serif: ['"Instrument Serif"', 'serif'],
       },
@@ -40,6 +40,12 @@ export default {
           DEFAULT: "hsl(var(--cream))",
           text: "hsl(var(--cream-text))",
         },
+        gold: "hsl(var(--gold))",
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
+        "avatar-blue": "hsl(var(--avatar-blue))",
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -90,6 +96,7 @@ export default {
         lg: "14px",
         xl: "20px",
         "2xl": "28px",
+        "3xl": "36px",
       },
       spacing: {
         // Semantic spacing — use for page padding / section rhythm / tab-bar offset

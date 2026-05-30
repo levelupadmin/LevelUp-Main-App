@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap');
 
 @tailwind base;
 
@@ -97,7 +97,7 @@
     --surface-2: 0 0% 8%;
 
     --background: 0 0% 0%;
-    --foreground: 0 0% 100%;
+    --foreground: 40 30% 96%;        /* warm white #F7F4EC (redesign primary text) */
 
     --card: 0 0% 4%;
     --card-foreground: 0 0% 100%;
@@ -112,7 +112,7 @@
     --secondary-foreground: 240 4% 65%;
 
     --muted: 0 0% 8%;
-    --muted-foreground: 240 4% 55%;
+    --muted-foreground: 240 3% 66%;  /* secondary text #A6A6AA (redesign) */
 
     --accent: 0 0% 10%;
     --accent-foreground: 0 0% 100%;
@@ -127,8 +127,14 @@
 
     --radius: 0.625rem;
 
-    --cream: 38 47% 93%;
-    --cream-text: 0 0% 10%;
+    --cream: 40 60% 87%;             /* champagne solid #F3E5C8 */
+    --cream-text: 30 35% 11%;        /* warm-dark text on champagne */
+    --champagne-from: 43 100% 93%;   /* #FFF4DE — CTA gradient top */
+    --champagne-to: 39 56% 78%;      /* #E6CFA7 — CTA gradient bottom */
+    --gold: 40 61% 63%;              /* warm gold accent #D9B36A */
+    --success: 156 77% 41%;          /* #18B97A */
+    --success-foreground: 0 0% 100%;
+    --avatar-blue: 230 100% 68%;     /* #5B73FF avatar/profile badge */
 
     --accent-crimson: 0 72% 51%;
     --accent-indigo: 239 84% 67%;
@@ -249,6 +255,30 @@
   }
   .surface-card-muted {
     @apply bg-surface-2 border border-border rounded-xl;
+  }
+
+  /* ── Champagne CTA — the redesign's primary action button ──
+     Vertical gradient (#FFF4DE → #E6CFA7) with a soft inner highlight and
+     warm glow. Used on Send code / Enrol now / Create account / Start
+     watching. Pair with sizing utilities (px/py/text) at the callsite. */
+  .btn-champagne {
+    background-image: linear-gradient(180deg, hsl(var(--champagne-from)), hsl(var(--champagne-to)));
+    color: hsl(var(--cream-text));
+    @apply font-medium rounded-2xl transition-all;
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.35),
+                0 10px 28px hsl(var(--champagne-to) / 0.18);
+  }
+  @media (hover: hover) {
+    .btn-champagne:hover { filter: brightness(1.04); box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.45), 0 12px 32px hsl(var(--champagne-to) / 0.26); }
+  }
+  .btn-champagne:active { transform: scale(0.985); }
+
+  /* Glassy dark card — translucent surface + blur for layered hero cards. */
+  .glass-card {
+    background-color: hsl(var(--surface) / 0.72);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    @apply border border-border;
   }
 
   /* ── Section rhythm ── */

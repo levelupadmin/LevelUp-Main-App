@@ -155,7 +155,7 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
 
   if (loadingAttempt) {
     return (
-      <div className="bg-card border border-border rounded-xl p-6 animate-pulse">
+      <div className="bg-card border border-border rounded-2xl p-6 animate-pulse">
         <div className="h-4 bg-surface-2 rounded w-1/3 mb-2" />
         <div className="h-3 bg-surface-2 rounded w-1/2" />
       </div>
@@ -163,7 +163,7 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
   }
 
   return (
-    <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+    <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h4 className="font-semibold text-foreground">{quiz.title}</h4>
@@ -245,6 +245,7 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
             size="sm"
             onClick={handleSubmit}
             disabled={Object.keys(answers).length < questions.length}
+            className="btn-champagne px-5 text-[hsl(var(--cream-text))]"
           >
             Submit Quiz
           </Button>
@@ -914,7 +915,10 @@ const ChapterViewer = () => {
           <Button variant="outline" onClick={() => navigate("/my-courses")}>
             My Courses
           </Button>
-          <Button onClick={() => navigate(courseId ? `/courses/${courseId}` : "/browse")}>
+          <Button
+            onClick={() => navigate(courseId ? `/courses/${courseId}` : "/browse")}
+            className="btn-champagne px-5 text-[hsl(var(--cream-text))]"
+          >
             View Course
           </Button>
         </div>
@@ -950,7 +954,7 @@ const ChapterViewer = () => {
               Ready for the next step?
             </p>
             <div className="flex flex-col gap-3 mt-6">
-              <Button onClick={() => navigate("/browse")} size="lg" className="w-full">
+              <Button onClick={() => navigate("/browse")} size="lg" className="btn-champagne w-full text-[hsl(var(--cream-text))]">
                 Browse More Courses
               </Button>
               <Button
@@ -1008,11 +1012,11 @@ const ChapterViewer = () => {
               reads as more premium and matches the offering page's
               cinematic feel. */}
           {chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
-            <div className="rounded-[16px] overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
+            <div className="rounded-2xl overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
               <VdoCipherPlayer chapterId={chapter.id} onProgress={updateProgress} startPosition={lastPosition} />
             </div>
           ) : chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
-            <div className="aspect-video bg-card rounded-[16px] overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
+            <div className="aspect-video bg-card rounded-2xl overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
               {(() => {
                 // Multi-source dispatcher. Respects `media_provider` if set
                 // (post-TagMango-migration chapters explicitly tag their
@@ -1081,19 +1085,19 @@ const ChapterViewer = () => {
               })()}
             </div>
           ) : chapter.content_type === "pdf" && chapter.media_url ? (
-            <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card h-[55vh] sm:h-[80vh]">
+            <div className="w-full rounded-2xl border border-border overflow-hidden bg-card h-[55vh] sm:h-[80vh]">
               <iframe src={chapter.media_url} className="w-full h-full" title={`${chapter.title} — PDF`} />
             </div>
           ) : chapter.content_type === "image" && chapter.media_url ? (
-            <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card flex items-center justify-center p-4">
+            <div className="w-full rounded-2xl border border-border overflow-hidden bg-card flex items-center justify-center p-4">
               <img src={chapter.media_url} alt={chapter.title} className="max-w-full max-h-[80vh] object-contain rounded-lg" />
             </div>
           ) : chapter.content_type === "embedded" && chapter.embed_url ? (
-            <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
+            <div className="aspect-video bg-card rounded-2xl border border-border overflow-hidden">
               <iframe src={chapter.embed_url} className="w-full h-full" allow="autoplay; fullscreen" allowFullScreen frameBorder="0" title={chapter.title} />
             </div>
           ) : chapter.content_type === "article" || chapter.content_type === "text" ? (
-            <div className="bg-card rounded-[16px] border border-border p-8 flex items-center gap-4">
+            <div className="bg-card rounded-2xl border border-border p-8 flex items-center gap-4">
               <div className="text-3xl">📄</div>
               <div>
                 <p className="font-medium">{chapter.title}</p>
@@ -1101,7 +1105,7 @@ const ChapterViewer = () => {
               </div>
             </div>
           ) : (
-            <div className="aspect-video bg-card rounded-[16px] border border-border flex items-center justify-center">
+            <div className="aspect-video bg-card rounded-2xl border border-border flex items-center justify-center">
               <div className="text-center">
                 <div className="text-4xl mb-2">📚</div>
                 <p className="text-muted-foreground text-sm">{chapter.title}</p>
@@ -1139,7 +1143,7 @@ const ChapterViewer = () => {
                     onClick={handleMarkComplete}
                     disabled={submitting}
                     size="sm"
-                    className="h-11 px-4 font-semibold bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 hover:-translate-y-0.5 transition-all"
+                    className="btn-champagne h-11 px-4 font-semibold text-[hsl(var(--cream-text))] hover:-translate-y-0.5"
                   >
                     <CheckCircle2 className="h-4 w-4 mr-2" />
                     Mark complete
@@ -1475,7 +1479,7 @@ const ChapterViewer = () => {
                     size="sm"
                     onClick={handlePostQuestion}
                     disabled={!questionText.trim() || submitting}
-                    className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 font-medium"
+                    className="btn-champagne px-5 text-[hsl(var(--cream-text))]"
                   >
                     {submitting ? "Posting…" : "Post question"}
                   </Button>
@@ -1483,7 +1487,7 @@ const ChapterViewer = () => {
               </div>
               <div className="space-y-3">
                 {qna.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-border bg-[hsl(var(--surface))]/40 p-6 text-center">
+                  <div className="rounded-2xl border border-dashed border-border bg-[hsl(var(--surface))]/40 p-6 text-center">
                     <p className="text-sm text-foreground/80 font-medium">Nothing yet — be the first.</p>
                     <p className="text-xs text-muted-foreground mt-1 max-w-[34ch] mx-auto">
                       Stuck on a technique? Want a deeper breakdown? The instructor and your fellow students can answer.
@@ -1496,7 +1500,7 @@ const ChapterViewer = () => {
                     return (
                       <div
                         key={q.id}
-                        className="rounded-xl border border-border bg-[hsl(var(--surface))] p-4 space-y-3"
+                        className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-4 space-y-3"
                       >
                         <div className="flex items-start gap-3">
                           <div className="h-7 w-7 rounded-full bg-surface-2 flex items-center justify-center text-[11px] font-mono font-semibold text-muted-foreground shrink-0">

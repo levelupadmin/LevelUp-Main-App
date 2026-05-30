@@ -2,17 +2,13 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, Mail } from "lucide-react";
+import { Loader2, CheckCircle2, Mail, User, ArrowRight, ShieldCheck } from "lucide-react";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
-import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
-import { isNative } from "@/lib/platform";
 import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 type Step = "form" | "otp" | "email_sent";
@@ -25,6 +21,13 @@ const EMAIL_ONLY_AUTH = false;
 // MSG91 widget verify URL (edge fn bridges widget access token → Supabase session).
 const VERIFY_MSG91_OTP_URL =
   "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
+
+// 2026-05-30: Cinematic redesign — mirrors Login.tsx. One unified
+// responsive composition (web + native): full-bleed hero ("Learn the
+// craft") + a glassy form card with mono-uppercase labels, icon-leading
+// inputs, and a champagne "Create account →" CTA. Single column on
+// mobile/native; two columns from `lg` up. Auth logic is unchanged.
+import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
 
 const Signup = () => {
   const { toast } = useToast();
@@ -175,60 +178,80 @@ const Signup = () => {
     return res;
   };
 
-  // Native (iOS + Android) gets a stripped, logo-forward layout — no hero
-  // photo, no legal footer strip. Web keeps the hero + Card composition.
-  const native = isNative();
-  const heading = step === "otp" ? "Verify your number" : "Create your account";
-
   const stepBody = (
     <>
       {step === "form" && (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="fullName">Full name</Label>
-            <Input
-              id="fullName"
-              type="text"
-              placeholder="Your full name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-              className="h-12 text-base"
-            />
-          </div>
+        <>
+          <h1 className="text-[28px] sm:text-[30px] font-semibold tracking-[-0.015em] leading-[1.1] mb-1.5">
+            Create your <span className="font-serif-italic text-cream">account</span>
+          </h1>
+          <p className="text-sm text-muted-foreground mb-6">
+            Join LevelUp. Learn from India's best creators.
+          </p>
 
-          <div className="space-y-2">
-            <Label htmlFor="phone">Phone number</Label>
-            <PhoneInput value={phone} onChange={setPhone} />
-            <p className="text-xs text-muted-foreground">
-              {EMAIL_ONLY_AUTH
-                ? "We'll email you a sign-in link to verify your account."
-                : isIndianPhone
-                ? "We'll send a 4-digit OTP via SMS to verify."
-                : phone
-                ? "We'll email you a sign-in link to verify."
-                : "+91 by default. Tap the flag to change country."}
-            </p>
-          </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="fullName" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Full name</Label>
+              <div className="relative">
+                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  id="fullName"
+                  type="text"
+                  placeholder="Your full name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                  className="h-12 pl-10 text-base bg-surface border-border focus:border-foreground rounded-xl"
+                />
+              </div>
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="h-12 text-base"
-            />
-          </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="phone" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Phone number</Label>
+              <PhoneInput value={phone} onChange={setPhone} />
+              <p className="text-xs text-muted-foreground">
+                {EMAIL_ONLY_AUTH
+                  ? "We'll email you a sign-in link to verify your account."
+                  : isIndianPhone
+                  ? "We'll send a 4-digit OTP via SMS to verify."
+                  : phone
+                  ? "We'll email you a sign-in link to verify."
+                  : "+91 by default. Tap the flag to change country."}
+              </p>
+            </div>
 
-          <Button type="submit" className="w-full h-12 text-base" disabled={loading || !formValid}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create account
-          </Button>
-        </form>
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Email</Label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="h-12 pl-10 text-base bg-surface border-border focus:border-foreground rounded-xl"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !formValid}
+              className="btn-champagne w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Create account
+              {!loading && <ArrowRight className="h-4 w-4" />}
+            </button>
+          </form>
+
+          <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <ShieldCheck className="h-3.5 w-3.5 text-success" />
+            Secure &amp; private
+          </div>
+        </>
       )}
 
       {step === "otp" && (
@@ -249,8 +272,8 @@ const Signup = () => {
 
       {step === "email_sent" && (
         <div className="text-center space-y-5 py-4">
-          <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] mx-auto">
-            <CheckCircle2 className="h-8 w-8 text-[hsl(var(--accent-emerald))]" />
+          <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-[hsl(var(--success)/0.15)] mx-auto">
+            <CheckCircle2 className="h-8 w-8 text-[hsl(var(--success))]" />
           </div>
           <div>
             <h2 className="text-lg font-semibold">Check your email</h2>
@@ -258,88 +281,97 @@ const Signup = () => {
               We sent a sign-in link to <strong className="text-foreground">{email}</strong>. Click it to finish setting up your account.
             </p>
           </div>
-          <Button variant="outline" onClick={() => setStep("form")} className="w-full">
-            <Mail className="h-4 w-4 mr-2" /> Use a different email
-          </Button>
+          <button
+            onClick={() => setStep("form")}
+            className="w-full h-11 rounded-xl border border-border text-sm text-foreground hover:border-border-hover flex items-center justify-center gap-2"
+          >
+            <Mail className="h-4 w-4" /> Use a different email
+          </button>
         </div>
-      )}
-
-      {step === "form" && (
-        <p className="mt-4 text-center text-sm text-muted-foreground">
-          Already have an account?{" "}
-          <Link to="/login" className="font-semibold text-foreground hover:underline">
-            Sign in
-          </Link>
-        </p>
       )}
     </>
   );
 
-  // ── Native (iOS + Android): single centered column, logo as the hero ──
-  if (native) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background safe-top safe-bottom">
-        <div className="flex-1 flex flex-col px-6 pt-[10vh] pb-8">
-          <div className="w-full max-w-[380px] mx-auto">
-            <div className="flex justify-center mb-10">
-              <LevelUpWordmark className="h-10 w-auto text-foreground" />
-            </div>
-            <div className="text-center mb-7">
-              <h1 className="text-[26px] font-semibold tracking-[-0.015em] text-foreground">{heading}</h1>
-              {step === "form" && (
-                <p className="text-sm text-muted-foreground mt-2">
-                  Join LevelUp. Learn from India's best creators.
-                </p>
-              )}
-            </div>
-            {stepBody}
+  const legalFooter = (
+    <div className="space-y-2 pt-6">
+      <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-muted-foreground">
+        <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
+        <span className="opacity-30">·</span>
+        <Link to="/terms" className="hover:text-foreground">Terms</Link>
+        <span className="opacity-30">·</span>
+        <Link to="/refunds" className="hover:text-foreground">Refunds</Link>
+        <span className="opacity-30">·</span>
+        <a href="https://api.whatsapp.com/send?phone=919791520177&text=Hi" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">Support</a>
+      </div>
+      <p className="text-[10px] text-center font-mono text-muted-foreground/60">© 2026 LevelUp Learning</p>
+    </div>
+  );
+
+  // ── One responsive composition: single column on mobile + native,
+  //    two columns (form left / hero right) from `lg` up on web. ───────
+  return (
+    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row">
+      {/* HERO — top on mobile/native, right pane on desktop */}
+      <div className="relative h-[40vh] min-h-[300px] overflow-hidden lg:order-2 lg:h-auto lg:min-h-screen lg:flex-1">
+        <img
+          src={signupHeroImage}
+          alt="A creator at work on a film set"
+          className="absolute inset-0 w-full h-full object-cover"
+          loading="eager"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/65 to-canvas/10 lg:from-black/85 lg:via-black/35 lg:to-black/10" />
+
+        {/* Mobile/native hero copy */}
+        <div className="relative z-10 h-full flex flex-col justify-between p-6 safe-top lg:hidden">
+          <div className="flex items-center justify-between">
+            <LevelUpWordmark className="h-7 w-auto text-foreground" />
+          </div>
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Creators who ship</p>
+            <h2 className="text-[44px] sm:text-[52px] leading-[1] font-semibold text-foreground max-w-[14ch]">
+              Learn the <span className="font-serif-italic text-cream">craft</span>
+            </h2>
+          </div>
+        </div>
+
+        {/* Desktop hero copy */}
+        <div className="relative z-10 hidden lg:flex flex-col justify-end h-full p-12 pb-16">
+          <div className="max-w-[520px]">
+            <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground mb-4">Creators who ship</p>
+            <h2 className="text-[44px] xl:text-[56px] leading-[1.02] font-semibold text-foreground mb-4 max-w-[14ch]">
+              Learn the <span className="font-serif-italic text-cream">craft</span>
+            </h2>
+            <p className="text-base text-muted-foreground max-w-[440px] leading-relaxed">
+              Join 12,000+ creators learning directly from India's best working
+              filmmakers, editors, photographers, and storytellers.
+            </p>
           </div>
         </div>
       </div>
-    );
-  }
 
-  // ── Web: hero + Card composition ──
-  return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <div className="flex-1">
-      <div className="lg:hidden relative h-[40vh] md:h-[50vh] overflow-hidden">
-        <img src={signupHeroImage} alt="" className="absolute inset-0 w-full h-full object-cover" loading="eager" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/20" />
-        <div className="relative z-10 h-full flex flex-col justify-end p-6 pb-8">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">CREATORS WHO SHIP</p>
-          <h2 className="text-[44px] sm:text-[56px] leading-[1] font-semibold text-foreground max-w-[14ch]">
-            Learn the <span className="font-serif-italic text-cream">craft</span>
-          </h2>
+      {/* FORM COLUMN — a rounded sheet rising over the hero on mobile */}
+      <div className="relative z-10 flex flex-col flex-1 bg-canvas rounded-t-[28px] -mt-6 px-5 pt-7 pb-6 safe-bottom lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8">
+        <div className="hidden lg:block mb-8">
+          <LevelUpWordmark className="text-xl" />
         </div>
-      </div>
 
-      <div className="flex lg:min-h-screen lg:items-center lg:justify-center px-4 py-8 lg:py-12">
-        <Card className="w-full lg:max-w-[460px] border-none lg:border-border bg-transparent lg:bg-card shadow-none lg:shadow-elevated">
-          <CardHeader className="items-center gap-2 pb-2">
-            <h1 className="text-xl font-bold text-foreground">{heading}</h1>
+        <div className="flex-1 flex flex-col justify-center">
+          <div className="w-full max-w-[400px] mx-auto">
+            <div className="glass-card rounded-3xl p-6 sm:p-7">
+              {stepBody}
+            </div>
             {step === "form" && (
-              <p className="text-sm text-muted-foreground text-center">
-                Join LevelUp. Learn from India's best creators.
+              <p className="mt-6 text-center text-sm text-muted-foreground">
+                Already have an account?{" "}
+                <Link to="/login" className="font-semibold text-cream hover:underline">
+                  Sign in
+                </Link>
               </p>
             )}
-          </CardHeader>
-          <CardContent>{stepBody}</CardContent>
-        </Card>
-      </div>
-      </div>
-      {/* Minimal legal strip — no full Footer on a focused conversion page */}
-      <div className="px-6 pb-6 pt-2 space-y-2">
-        <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-muted-foreground">
-          <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
-          <span className="opacity-30">·</span>
-          <Link to="/terms" className="hover:text-foreground">Terms</Link>
-          <span className="opacity-30">·</span>
-          <Link to="/refunds" className="hover:text-foreground">Refunds</Link>
-          <span className="opacity-30">·</span>
-          <a href="https://api.whatsapp.com/send?phone=919791520177&text=Hi" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">Support</a>
+          </div>
         </div>
-        <p className="text-[10px] text-center font-mono text-muted-foreground/60">© 2026 LevelUp Learning</p>
+
+        {legalFooter}
       </div>
     </div>
   );

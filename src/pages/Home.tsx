@@ -145,7 +145,7 @@ const HeroWelcome = () => {
   // jump.
   if (resumeLoading) {
     return (
-      <div className="rounded-2xl overflow-hidden bg-surface-2 animate-pulse aspect-[5/4] sm:aspect-[16/9] lg:aspect-[21/8] max-h-[520px]" />
+      <div className="rounded-3xl overflow-hidden bg-surface-2 animate-pulse aspect-[5/4] sm:aspect-[16/9] lg:aspect-[21/8] max-h-[520px]" />
     );
   }
 
@@ -159,7 +159,7 @@ const HeroWelcome = () => {
     return (
       <Link
         to={linkTo}
-        className="block relative rounded-2xl overflow-hidden group ring-1 ring-white/5 shadow-[0_30px_60px_-30px_rgba(0,0,0,0.6)]"
+        className="block relative rounded-3xl overflow-hidden group ring-1 ring-white/5 shadow-[0_30px_60px_-30px_rgba(0,0,0,0.6)]"
       >
         <div className="aspect-[5/4] sm:aspect-[16/9] lg:aspect-[21/8] max-h-[520px] bg-surface-2 relative">
           {resume.courseThumb && (
@@ -198,7 +198,7 @@ const HeroWelcome = () => {
                 </div>
               )}
               <div className="flex items-center gap-3 pt-1">
-                <span className="inline-flex items-center gap-2 h-11 px-5 rounded-md font-semibold bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] group-hover:-translate-y-0.5 transition-transform shadow-[0_10px_30px_-10px_hsl(var(--cream)/0.5)]">
+                <span className="btn-champagne inline-flex items-center gap-2 h-11 px-6 text-sm group-hover:-translate-y-0.5">
                   <Play className="h-4 w-4 fill-current" />
                   {allComplete ? "Review course" : resume.progressPct > 0 ? "Resume watching" : "Start watching"}
                 </span>
@@ -217,7 +217,7 @@ const HeroWelcome = () => {
 
   // Fallback greeting for brand-new users with no progress yet.
   return (
-    <div className="bg-cream rounded-2xl px-6 sm:px-10 py-6 sm:py-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="bg-cream rounded-3xl px-6 sm:px-10 py-6 sm:py-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
         <h1 className="heading-1 text-cream-text">
           Welcome back,{" "}
@@ -500,7 +500,7 @@ const PopularCommunity = () => {
         {posts.map((p) => (
           <div
             key={p.id}
-            className="min-w-[75vw] sm:min-w-[340px] max-w-[360px] h-[200px] bg-surface border border-border rounded-xl p-5 card-hover flex-shrink-0 snap-start flex flex-col justify-between"
+            className="min-w-[75vw] sm:min-w-[340px] max-w-[360px] h-[200px] bg-surface border border-border rounded-2xl p-5 card-hover flex-shrink-0 snap-start flex flex-col justify-between"
           >
             <div>
               <h3 className="text-sm font-semibold line-clamp-2">{p.title}</h3>
@@ -721,7 +721,7 @@ const UpcomingEvents = () => {
             <Link
               key={ev.id}
               to={`/events/${ev.id}`}
-              className="min-w-[75vw] sm:min-w-[300px] max-w-[340px] lg:max-w-none bg-surface border border-border rounded-xl overflow-hidden card-hover flex-shrink-0 snap-start flex flex-col"
+              className="min-w-[75vw] sm:min-w-[300px] max-w-[340px] lg:max-w-none bg-surface border border-border rounded-2xl overflow-hidden card-hover flex-shrink-0 snap-start flex flex-col"
             >
               {/* Banner with overlay title */}
               <div className="relative aspect-[4/3]">
@@ -902,7 +902,7 @@ const UpcomingSessions = () => {
           return (
             <div
               key={s.id}
-              className="bg-surface border border-border rounded-xl p-4 flex items-start gap-4"
+              className="bg-surface border border-border rounded-2xl p-4 flex items-start gap-4"
             >
               {/* Date block */}
               <div className="flex-shrink-0 w-14 h-14 rounded-lg bg-[hsl(var(--accent-amber)/0.12)] flex flex-col items-center justify-center">
@@ -1087,7 +1087,7 @@ const BrowsePrograms = () => {
             to={isEnrolled
               ? `/courses/${c.id}`
               : c.offering_slug ? `/p/${c.offering_slug}` : `/courses/${c.id}`}
-            className="bg-surface border border-border rounded-xl overflow-hidden card-hover"
+            className="bg-surface border border-border rounded-2xl overflow-hidden card-hover"
           >
             <div className="aspect-video bg-surface-2 relative">
               {c.thumbnail_url && <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />}
@@ -1188,7 +1188,7 @@ const NewMembers = () => {
         {members.map((m) => (
           <div
             key={m.id}
-            className="min-w-[220px] max-w-[240px] bg-surface border border-border rounded-xl p-4 card-hover flex-shrink-0 snap-start"
+            className="min-w-[220px] max-w-[240px] bg-surface border border-border rounded-2xl p-4 card-hover flex-shrink-0 snap-start"
           >
             <div className="flex items-center gap-3">
               <InitialsAvatar name={m.full_name ?? "U"} photoUrl={m.avatar_url} size={48} />

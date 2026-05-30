@@ -80,8 +80,8 @@ const StudentLayout = ({ children }: Props) => {
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[9999] focus:bg-surface focus:text-foreground focus:px-4 focus:py-2 focus:rounded-lg">Skip to content</a>
       {/* Desktop sidebar - visible at md+ (768px) */}
       <aside className="hidden md:flex flex-col w-[260px] min-w-[260px] border-r border-border bg-canvas sticky top-0 h-screen">
-        <div className="p-6">
-          <LevelUpWordmark />
+        <div className="px-6 pt-7 pb-5">
+          <LevelUpWordmark className="h-7 w-auto text-foreground" />
         </div>
 
         <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1">
@@ -92,13 +92,14 @@ const StudentLayout = ({ children }: Props) => {
                 key={item.path}
                 to={item.path}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-3 rounded-md text-sm transition-colors",
+                  "relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200",
                   active
-                    ? "text-foreground bg-surface-2 border-l-2 border-cream"
+                    ? "text-foreground bg-cream/[0.08] font-medium"
                     : "text-muted-foreground hover:text-foreground hover:bg-surface"
                 )}
               >
-                <item.icon className="h-[18px] w-[18px]" />
+                {active && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-cream" />}
+                <item.icon className={cn("h-[18px] w-[18px]", active && "text-cream")} />
                 {item.label}
               </Link>
             );
@@ -110,12 +111,13 @@ const StudentLayout = ({ children }: Props) => {
               <Link
                 to={`/cohort/${activeCohortId}`}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-3 rounded-md text-sm transition-colors",
+                  "relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200",
                   location.pathname.startsWith("/cohort/")
-                    ? "text-foreground bg-surface-2 border-l-2 border-cream"
+                    ? "text-foreground bg-cream/[0.08] font-medium"
                     : "text-cream hover:bg-cream/[0.06]"
                 )}
               >
+                {location.pathname.startsWith("/cohort/") && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-cream" />}
                 <Sparkles className="h-[18px] w-[18px]" />
                 My Cohort
               </Link>
@@ -127,7 +129,7 @@ const StudentLayout = ({ children }: Props) => {
               <div className="my-3 border-t border-border" />
               <Link
                 to="/admin"
-                className="flex items-center gap-3 px-3 py-3 rounded-md text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-colors"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-all duration-200"
               >
                 <Shield className="h-[18px] w-[18px]" />
                 Admin Dashboard
@@ -138,7 +140,7 @@ const StudentLayout = ({ children }: Props) => {
           {profile?.role === "instructor" && (
             <>
               <div className="my-3 border-t border-border" />
-              <Link to="/instructor" className="flex items-center gap-3 px-3 py-3 rounded-md text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-colors">
+              <Link to="/instructor" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-all duration-200">
                 <BarChart3 className="h-[18px] w-[18px]" />
                 Instructor Dashboard
               </Link>
@@ -146,12 +148,12 @@ const StudentLayout = ({ children }: Props) => {
           )}
         </nav>
 
-        <div className="p-4 border-t border-border">
-          <div className="flex items-center gap-3">
+        <div className="p-3">
+          <div className="flex items-center gap-3 rounded-2xl bg-surface/60 border border-border px-3 py-2.5">
             <InitialsAvatar name={profile?.full_name ?? "U"} photoUrl={profile?.avatar_url} size={32} />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{firstName}</p>
-              <p className="text-xs font-mono text-muted-foreground">
+              <p className="text-sm font-medium truncate text-foreground">{firstName}</p>
+              <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                 #{profile?.member_number ?? "—"}
               </p>
             </div>
@@ -182,11 +184,12 @@ const StudentLayout = ({ children }: Props) => {
                     to={item.path}
                     onClick={() => setSidebarOpen(false)}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-3 rounded-md text-sm transition-colors focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2",
-                      active ? "text-foreground bg-surface-2" : "text-muted-foreground hover:text-foreground"
+                      "relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2",
+                      active ? "text-foreground bg-cream/[0.08] font-medium" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    <item.icon className="h-[18px] w-[18px]" />
+                    {active && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-cream" />}
+                    <item.icon className={cn("h-[18px] w-[18px]", active && "text-cream")} />
                     {item.label}
                   </Link>
                 );
@@ -198,7 +201,7 @@ const StudentLayout = ({ children }: Props) => {
                   <Link
                     to="/admin"
                     onClick={() => setSidebarOpen(false)}
-                    className="flex items-center gap-3 px-3 py-3 rounded-md text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-colors"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-all duration-200"
                   >
                     <Shield className="h-[18px] w-[18px]" />
                     Admin Dashboard
@@ -212,7 +215,7 @@ const StudentLayout = ({ children }: Props) => {
                   <Link
                     to="/instructor"
                     onClick={() => setSidebarOpen(false)}
-                    className="flex items-center gap-3 px-3 py-3 rounded-md text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-colors"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[hsl(var(--accent-amber))] hover:bg-[hsl(var(--accent-amber)/0.1)] transition-all duration-200"
                   >
                     <BarChart3 className="h-[18px] w-[18px]" />
                     Instructor Dashboard
@@ -227,13 +230,13 @@ const StudentLayout = ({ children }: Props) => {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar — respects iOS safe-area so the status bar doesn't overlap */}
-        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg safe-top h-16">
+        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/80 backdrop-blur-xl safe-top h-16">
           <div className="flex items-center gap-3">
             <button aria-label="Open menu" className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center focus-ring press-scale rounded-md" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
             </button>
-            <Link to="/home" className="md:hidden font-semibold tracking-tight text-foreground">
-              LevelUp
+            <Link to="/home" aria-label="LevelUp home" className="md:hidden">
+              <LevelUpWordmark className="h-6 w-auto text-foreground" />
             </Link>
           </div>
 
@@ -322,7 +325,7 @@ const StudentLayout = ({ children }: Props) => {
       {/* Mobile bottom tab bar — respects iOS safe-area inset */}
       <nav
         aria-label="Mobile navigation"
-        className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas/95 backdrop-blur-lg border-t border-border flex items-stretch safe-bottom"
+        className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas/80 backdrop-blur-xl border-t border-border flex items-stretch safe-bottom"
       >
         {MOBILE_NAV_ITEMS.map((item) => {
           const active = location.pathname === item.path || location.pathname.startsWith(item.path + "/");
@@ -331,10 +334,11 @@ const StudentLayout = ({ children }: Props) => {
               key={item.path}
               to={item.path}
               className={cn(
-                "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[11px] font-medium transition-colors focus-ring press-scale-sm",
+                "relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[11px] font-medium transition-colors focus-ring press-scale-sm",
                 active ? "text-cream" : "text-muted-foreground hover:text-foreground"
               )}
             >
+              {active && <span className="absolute top-0 left-1/2 -translate-x-1/2 h-[3px] w-9 rounded-b-full bg-cream" />}
               <item.icon className={cn("h-5 w-5 transition-transform", active && "scale-110")} />
               <span>{item.label}</span>
             </Link>

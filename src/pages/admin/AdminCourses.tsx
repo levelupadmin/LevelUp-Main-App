@@ -276,7 +276,7 @@ const AdminCourses = () => {
         </Select>
         <Button
           onClick={() => navigate("/admin/courses/new/edit")}
-          className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
+          className="btn-champagne px-5 text-[hsl(var(--cream-text))]"
         >
           <Plus className="h-4 w-4 mr-2" /> New Course
         </Button>
@@ -288,7 +288,7 @@ const AdminCourses = () => {
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div
               key={i}
-              className="bg-card border border-border rounded-xl h-[300px] animate-pulse"
+              className="bg-card border border-border rounded-2xl h-[300px] animate-pulse"
             />
           ))}
         </div>
@@ -421,7 +421,7 @@ function CourseCardComponent({
   onReviews: () => void;
 }) {
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden group relative">
+    <div className="bg-card border border-border rounded-2xl overflow-hidden group relative card-hover">
       {/* Thumbnail */}
       <div className="aspect-video bg-secondary relative">
         {c.thumbnail_url ? (

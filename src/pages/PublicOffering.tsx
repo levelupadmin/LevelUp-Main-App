@@ -114,7 +114,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 function HeroBanner({ offering }: { offering: Offering }) {
   const img = offering.banner_url || offering.thumbnail_url;
   return (
-    <div className="relative w-full aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-2xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
+    <div className="relative w-full aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-3xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
       {img ? (
         <img
           src={img}
@@ -199,7 +199,7 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
           <Button
             size="lg"
             onClick={() => navigate("/auth")}
-            className="h-12 px-6 text-base font-semibold bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
+            className="btn-champagne h-12 px-6 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))]"
           >
             Sign in to access
             <ArrowRight className="h-4 w-4 ml-2" />
@@ -282,7 +282,7 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
         <Button
           onClick={() => navigate(`/checkout/${offering.id}`)}
           size="lg"
-          className="h-12 px-7 text-base font-semibold bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 hover:-translate-y-0.5 transition-all shadow-[0_10px_30px_-10px_hsl(var(--cream)/0.5)]"
+          className="btn-champagne h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5"
         >
           {ctaLabel}
           <ArrowRight className="h-4 w-4 ml-2" />
@@ -464,7 +464,7 @@ function StatStrip({ offering }: { offering: Offering }) {
         {tiles.map((t, i) => (
           <div
             key={i}
-            className="rounded-xl border border-border bg-[hsl(var(--surface))] px-3 sm:px-4 py-3 sm:py-4 flex flex-col gap-1"
+            className="rounded-2xl border border-border bg-[hsl(var(--surface))] px-3 sm:px-4 py-3 sm:py-4 flex flex-col gap-1"
           >
             <p className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
               {t.label}
@@ -547,7 +547,7 @@ function IncludedCourses({ courses }: { courses: OfferingCourse[] }) {
       </h2>
       <div className="space-y-3">
         {courses.map((oc) => (
-          <div key={oc.course_id} className="flex gap-4 p-4 rounded-xl border border-border bg-[hsl(var(--surface))]">
+          <div key={oc.course_id} className="flex gap-4 p-4 rounded-2xl border border-border bg-[hsl(var(--surface))]">
             {oc.courses.thumbnail_url ? (
               <img
                 src={oc.courses.thumbnail_url}
@@ -615,7 +615,7 @@ function WhatYoullLearn({ sections }: { sections?: SectionRow[] }) {
             return (
               <div
                 key={ch.id}
-                className="min-w-[70vw] sm:min-w-[260px] lg:min-w-[280px] max-w-[300px] bg-surface rounded-xl overflow-hidden flex-shrink-0 snap-start ring-1 ring-white/5 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)]"
+                className="min-w-[70vw] sm:min-w-[260px] lg:min-w-[280px] max-w-[300px] bg-surface rounded-2xl overflow-hidden flex-shrink-0 snap-start ring-1 ring-white/5 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)]"
               >
                 <div className="relative aspect-video bg-surface-2 overflow-hidden">
                   {thumb ? (
@@ -709,7 +709,7 @@ function Curriculum({
           const chapters = [...(sec.chapters || [])].sort((a, b) => a.sort_order - b.sort_order);
           const isOpen = expanded.has(sec.id) || sorted.length === 1;
           return (
-            <div key={sec.id} className="rounded-xl border border-border bg-[hsl(var(--surface))] overflow-hidden">
+            <div key={sec.id} className="rounded-2xl border border-border bg-[hsl(var(--surface))] overflow-hidden">
               {sorted.length > 1 && (
                 <button
                   type="button"
@@ -776,7 +776,7 @@ function InstructorBio({
       <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
         Learn from someone who's done it
       </h2>
-      <div className="rounded-xl border border-border bg-[hsl(var(--surface))] p-5 sm:p-6 space-y-5">
+      <div className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-5 sm:p-6 space-y-5">
         <div className="flex items-start gap-4">
           {avatar ? (
             <img
@@ -852,7 +852,7 @@ function FAQs({ items }: { items?: Array<{ question: string; answer: string }> |
           return (
             <div
               key={i}
-              className="rounded-xl border border-border bg-[hsl(var(--surface))] overflow-hidden"
+              className="rounded-2xl border border-border bg-[hsl(var(--surface))] overflow-hidden"
             >
               <button
                 type="button"
@@ -902,7 +902,7 @@ function Testimonials({
         {valid.map((t, i) => (
           <figure
             key={i}
-            className="rounded-xl border border-border bg-[hsl(var(--surface))] p-5 space-y-3"
+            className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-5 space-y-3"
           >
             <blockquote className="text-sm text-foreground leading-relaxed">"{t.quote}"</blockquote>
             {(t.name || t.role) && (
@@ -1330,7 +1330,7 @@ export default function PublicOffering() {
           </div>
           <Button
             onClick={() => navigate(`/checkout/${offering.id}`)}
-            className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 font-semibold h-12 px-5 text-base shrink-0 shadow-[0_10px_30px_-10px_hsl(var(--cream)/0.5)]"
+            className="btn-champagne text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
           >
             {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}
             <ArrowRight className="h-4 w-4 ml-1.5" />

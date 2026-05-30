@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mail, Star } from "lucide-react";
+import { Loader2, Mail, Star, ArrowRight, ShieldCheck } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import usePageTitle from "@/hooks/usePageTitle";
 import { PhoneInput } from "@/components/auth/PhoneInput";
@@ -33,18 +33,14 @@ const VERIFY_MSG91_OTP_URL =
 // — Headline is now a singular question ("What's your number?") instead
 //   of the returning-user "Welcome back" framing — ~half of /login
 //   arrivals are first-touch from ads.
-// — Social-proof line under the form ("Trusted by 12,000+ Indian
-//   creators") doubles as trust signal for new + familiar for returning.
-// — Step 1 → Step 2 transition is a 240ms slide-left of just the form
-//   column; the hero stays static so the page feels like one continuous
-//   action, not a screen swap.
 //
-// 2026-05-29: Native (iOS + Android) gets its own layout.
-// The web two-column hero/footer composition reads as "cluttered" inside
-// a native app shell, so on Capacitor we render a single centered column:
-// the LevelUp logo is the focal element, no hero photo, no "Make your
-// first film" copy, no legal footer nav — just logo → form. The auth
-// logic (phone/OTP/email) is shared verbatim via `stepContent`.
+// 2026-05-30: Cinematic redesign. One unified responsive composition for
+// web AND native (reverses the earlier native logo-only layout): a
+// full-bleed hero with the "Make your first film." headline, then a glassy
+// form card with a champagne "Send code →" CTA, a Secure & private line,
+// star social proof, and a slim legal footer. Single column on mobile +
+// native; two columns (form left / hero right) from `lg` up on web. The
+// auth logic (phone/OTP/email) is unchanged.
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -203,24 +199,17 @@ const Login = () => {
     goToStep("email_sent");
   };
 
-  // Native app shells (iOS + Android) get a stripped-down, logo-forward
-  // layout. `native` gates the web-only chrome (step eyebrow, in-form
-  // social proof) so the same `stepContent` renders cleanly in both.
   const native = isNative();
+  const stepNum = step === "phone" ? 1 : step === "otp" ? 2 : null;
 
   const stepContent = (
     <>
       {step === "phone" && (
         <>
-          {!native && (
-            <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70 mb-2">
-              Sign in · Step 1 of 2
-            </p>
-          )}
-          <h1 className={`text-[34px] sm:text-[36px] font-semibold tracking-[-0.015em] leading-[1.05] mb-2 ${native ? "text-center" : ""}`}>
+          <h1 className="text-[28px] sm:text-[30px] font-semibold tracking-[-0.015em] leading-[1.1] mb-2">
             What's your <span className="font-serif-italic text-cream">number</span>?
           </h1>
-          <p className={`text-sm text-muted-foreground mb-7 ${native ? "text-center" : ""}`}>
+          <p className="text-sm text-muted-foreground mb-6">
             We'll text a code. No password to remember.
           </p>
 
@@ -229,35 +218,25 @@ const Login = () => {
             className="space-y-4"
           >
             <div className="space-y-2">
-              <Label htmlFor="phone" className="text-sm text-muted-foreground">Phone number</Label>
+              <Label htmlFor="phone" className="text-xs text-muted-foreground">Phone number</Label>
               <PhoneInput value={phone} onChange={setPhone} autoFocus={!native} />
             </div>
 
             <button
               type="submit"
               disabled={loading || !phone}
-              className="w-full h-12 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2 text-base"
+              className="btn-champagne w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Send code
+              {!loading && <ArrowRight className="h-4 w-4" />}
             </button>
           </form>
 
-          {/* Social proof — anchors trust at the moment of friction.
-              Web-only: inside a native shell it reads as marketing clutter. */}
-          {!native && (
-            <div className="mt-8 pt-6 border-t border-border/40">
-              <div className="flex items-center gap-2 mb-1.5">
-                {[...Array(5)].map((_, i) => (
-                  <Star key={i} className="h-3 w-3 fill-cream text-cream" />
-                ))}
-                <span className="text-xs font-mono text-muted-foreground ml-1">4.8 · 1,200+ reviews</span>
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Trusted by <span className="text-foreground">12,000+ Indian creators</span> learning from Lokesh, Nelson, Ravi Basrur, DRK Kiran &amp; more.
-              </p>
-            </div>
-          )}
+          <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <ShieldCheck className="h-3.5 w-3.5 text-success" />
+            Secure &amp; private
+          </div>
         </>
       )}
 
@@ -276,10 +255,10 @@ const Login = () => {
 
       {step === "email_input" && (
         <>
-          <h1 className={`text-[32px] font-semibold tracking-[-0.015em] mb-2 ${native ? "text-center" : ""}`}>
+          <h1 className="text-[28px] font-semibold tracking-[-0.015em] mb-2">
             Sign in with <span className="font-serif-italic text-cream">email</span>
           </h1>
-          <p className={`text-sm text-muted-foreground mb-7 ${native ? "text-center" : ""}`}>
+          <p className="text-sm text-muted-foreground mb-6">
             We'll email a one-click sign-in link.
           </p>
           <form
@@ -287,7 +266,7 @@ const Login = () => {
             className="space-y-4"
           >
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm text-muted-foreground">Email</Label>
+              <Label htmlFor="email" className="text-xs text-muted-foreground">Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -296,13 +275,13 @@ const Login = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 autoFocus={!native}
                 required
-                className="bg-surface border-border focus:border-foreground h-11"
+                className="bg-surface border-border focus:border-foreground h-12 rounded-xl"
               />
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="w-full h-12 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2 text-base"
+              className="btn-champagne w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Send sign-in link
@@ -311,7 +290,7 @@ const Login = () => {
               <button
                 type="button"
                 onClick={() => goToStep("phone")}
-                className="block w-full text-center text-xs text-muted-foreground hover:text-foreground"
+                className="block w-full text-center text-xs text-muted-foreground hover:text-cream"
               >
                 ← Use phone instead
               </button>
@@ -322,7 +301,7 @@ const Login = () => {
 
       {step === "email_sent" && (
         <div className="text-center space-y-4 py-6">
-          <div className="w-12 h-12 rounded-full bg-[hsl(var(--accent-amber)/0.15)] flex items-center justify-center mx-auto">
+          <div className="w-12 h-12 rounded-full bg-[hsl(var(--gold)/0.15)] flex items-center justify-center mx-auto">
             <Mail className="h-6 w-6 text-cream" />
           </div>
           <h2 className="text-lg font-semibold">Check your email</h2>
@@ -340,105 +319,98 @@ const Login = () => {
     </>
   );
 
-  // ── Native (iOS + Android): single centered column, logo as the hero ──
-  if (native) {
-    return (
-      <div className="min-h-screen flex flex-col bg-canvas safe-top safe-bottom">
-        <div className="flex-1 flex flex-col px-6 pt-[18vh]">
-          <div className="w-full max-w-[360px] mx-auto">
-            {/* Brand mark — the focal element on small screens */}
-            <div className="flex justify-center mb-12">
-              <LevelUpWordmark className="h-10 w-auto text-foreground" />
-            </div>
+  // ── Reusable composition fragments ──────────────────────────────────
+  const stepDivider = stepNum ? (
+    <div className="flex items-center gap-3 mb-4">
+      <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Sign in</span>
+      <span className="h-px flex-1 bg-border/70" />
+      <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Step {stepNum} of 2</span>
+    </div>
+  ) : null;
 
-            <div key={stepKey} className="animate-slide-left-in">
-              {stepContent}
-            </div>
-
-            {step === "phone" && (
-              <p className="mt-8 text-sm text-center text-muted-foreground">
-                New here?{" "}
-                <Link to="/signup" className="font-semibold text-foreground hover:underline">
-                  Create an account
-                </Link>
-              </p>
-            )}
-          </div>
-        </div>
+  const socialProof = (
+    <div className="mt-6">
+      <div className="flex items-center gap-2 mb-1.5">
+        {[...Array(5)].map((_, i) => (
+          <Star key={i} className="h-3 w-3 fill-cream text-cream" />
+        ))}
+        <span className="text-xs font-mono text-muted-foreground ml-1">4.8 · 1,200+ reviews</span>
       </div>
-    );
-  }
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        Trusted by <span className="text-foreground">12,000+ Indian creators</span> learning from Lokesh, Nelson, Ravi Basrur, DRK Kiran &amp; more.
+      </p>
+    </div>
+  );
 
-  // ── Web: two-column hero + footer composition ──
+  const formBlock = (
+    <div className="w-full max-w-[400px] mx-auto">
+      <div key={stepKey} className="animate-slide-left-in">
+        {stepDivider}
+        <div className="glass-card rounded-3xl p-6 sm:p-7">
+          {stepContent}
+        </div>
+        {step === "phone" && socialProof}
+        {step === "phone" && (
+          <p className="mt-6 text-sm text-center text-muted-foreground">
+            New here?{" "}
+            <Link to="/signup" className="font-semibold text-cream hover:underline">
+              Create an account
+            </Link>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+
+  const legalFooter = (
+    <div className="space-y-2 pt-6">
+      <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-muted-foreground">
+        <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
+        <span className="opacity-30">·</span>
+        <Link to="/terms" className="hover:text-foreground">Terms</Link>
+        <span className="opacity-30">·</span>
+        <Link to="/refunds" className="hover:text-foreground">Refunds</Link>
+        <span className="opacity-30">·</span>
+        <a href="https://api.whatsapp.com/send?phone=919791520177&text=Hi" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">Support</a>
+      </div>
+      <p className="text-[10px] text-center font-mono text-muted-foreground/60">
+        © 2026 LevelUp Learning
+      </p>
+    </div>
+  );
+
+  // ── One responsive composition: single column on mobile + native,
+  //    two columns (form left / hero right) from `lg` up on web. ───────
   return (
-    <div className="min-h-screen flex flex-col bg-canvas">
-    <div className="flex flex-col lg:flex-row flex-1">
-      {/* Mobile hero (collapses below the form on desktop) */}
-      <div className="lg:hidden relative h-[38vh] md:h-[44vh] overflow-hidden">
+    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row">
+      {/* HERO — top on mobile/native, right pane on desktop */}
+      <div className="relative h-[40vh] min-h-[300px] overflow-hidden lg:order-2 lg:h-auto lg:min-h-screen lg:flex-1">
         <img
           src={heroCinematic}
           alt="A filmmaker on set, locked into the moment behind a cinema camera"
           className="absolute inset-0 w-full h-full object-cover"
           loading="eager"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/10" />
-        <div className="relative z-10 h-full flex flex-col justify-end p-6 pb-7">
-          <h2 className="text-[40px] sm:text-[52px] leading-[1.02] font-semibold text-foreground max-w-[14ch]">
-            Make your <span className="font-serif-italic text-cream">first film</span>.
-          </h2>
-          <p className="text-sm text-muted-foreground mt-3 max-w-[28ch]">
-            Trusted by 12,000+ Indian creators learning from working filmmakers.
-          </p>
-        </div>
-      </div>
+        {/* Mobile gradient fades to canvas so the form sheet blends in */}
+        <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/65 to-canvas/10 lg:from-black/85 lg:via-black/35 lg:to-black/10" />
 
-      {/* Form column */}
-      <div className="w-full lg:w-[460px] lg:min-w-[460px] flex flex-col justify-between px-6 sm:px-10 py-8 lg:border-r border-border">
-        <div>
-          <LevelUpWordmark className="text-xl" />
-        </div>
-
-        <div className="flex-1 flex items-center">
-          <div className="w-full max-w-[360px] mx-auto">
-            <div key={stepKey} className="animate-slide-left-in">
-              {stepContent}
-            </div>
+        {/* Mobile/native hero copy */}
+        <div className="relative z-10 h-full flex flex-col justify-between p-6 safe-top lg:hidden">
+          <div className="flex items-center justify-between">
+            <LevelUpWordmark className="h-7 w-auto text-foreground" />
+          </div>
+          <div>
+            <h2 className="text-[40px] sm:text-[48px] leading-[1.02] font-semibold text-foreground max-w-[14ch]">
+              Make your <span className="font-serif-italic text-cream">first film</span>.
+            </h2>
+            <p className="text-sm text-muted-foreground mt-3 max-w-[32ch]">
+              Trusted by 12,000+ Indian creators learning from working filmmakers.
+            </p>
           </div>
         </div>
 
-        <div className="space-y-3">
-          <p className="text-sm text-center text-muted-foreground">
-            New here?{" "}
-            <Link to="/signup" className="font-semibold text-foreground hover:underline">
-              Create an account
-            </Link>
-          </p>
-          <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-muted-foreground">
-            <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
-            <span className="opacity-30">·</span>
-            <Link to="/terms" className="hover:text-foreground">Terms</Link>
-            <span className="opacity-30">·</span>
-            <Link to="/refunds" className="hover:text-foreground">Refunds</Link>
-            <span className="opacity-30">·</span>
-            <a href="https://api.whatsapp.com/send?phone=919791520177&text=Hi" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">Support</a>
-          </div>
-          <p className="text-[10px] text-center font-mono text-muted-foreground/60">
-            © 2026 LevelUp Learning
-          </p>
-        </div>
-      </div>
-
-      {/* Desktop hero — single static cinematic still, no carousel */}
-      <div className="hidden lg:flex flex-1 relative overflow-hidden">
-        <img
-          src={heroCinematic}
-          alt="A filmmaker on set, locked into the moment behind a cinema camera"
-          className="absolute inset-0 w-full h-full object-cover z-0"
-          loading="eager"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/10 z-[1]" />
-
-        <div className="relative z-10 flex flex-col justify-end p-12 pb-16 w-full">
+        {/* Desktop hero copy */}
+        <div className="relative z-10 hidden lg:flex flex-col justify-end h-full p-12 pb-16">
           <div className="max-w-[520px]">
             <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground mb-4">
               Make. Ship. Repeat.
@@ -453,7 +425,20 @@ const Login = () => {
           </div>
         </div>
       </div>
-    </div>
+
+      {/* FORM COLUMN — a rounded sheet rising over the hero on mobile */}
+      <div className="relative z-10 flex flex-col flex-1 bg-canvas rounded-t-[28px] -mt-6 px-5 pt-7 pb-6 safe-bottom lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8">
+        {/* Desktop wordmark (mobile shows it inside the hero) */}
+        <div className="hidden lg:block mb-8">
+          <LevelUpWordmark className="text-xl" />
+        </div>
+
+        <div className="flex-1 flex flex-col justify-center">
+          {formBlock}
+        </div>
+
+        {legalFooter}
+      </div>
     </div>
   );
 };
