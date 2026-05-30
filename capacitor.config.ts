@@ -31,8 +31,10 @@ const config: CapacitorConfig = {
   webDir: "dist",
   server: {
     androidScheme: "https",
-    // Load the production origin inside the WebView so the shell stays in
-    // sync with the web app — no rebuild needed when web ships a fix.
+    // Sets the origin the LOCAL bundle is served from (so App Links,
+    // cookies, and storage line up with the web app). This is NOT a
+    // remote loader — there's no server.url — so web fixes still require
+    // a re-bundle + Play update (see the docblock above).
     hostname: "app.leveluplearning.in",
     // First-party domains and trusted third-party scripts the WebView is
     // allowed to navigate to / load from. Anything outside this list is
