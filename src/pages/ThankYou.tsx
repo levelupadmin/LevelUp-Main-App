@@ -295,7 +295,12 @@ export default function ThankYou() {
         // Always verify payment from database — never trust client-side state
         const { data: orderData, error } = await supabase
           .from("payment_orders")
-          .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, offerings(title, subtitle, thumbnail_url, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds, thankyou_show_calendly, calendly_url)")
+          // created_at (receipt time), slug (share URL), and the
+          // offering_courses→courses join (lessons/hours chips) are all
+          // read by the render below — they must be selected here or the
+          // receipt prints the current time, a broken /p/ share link, and
+          // no benefit chips.
+          .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, created_at, offerings(title, subtitle, thumbnail_url, slug, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds, thankyou_show_calendly, calendly_url, offering_courses(courses(total_lessons, duration_minutes)))")
           .eq("id", paymentOrderId)
           .eq("status", "captured")
           .single();

@@ -438,23 +438,33 @@ const EventDetail = () => {
 
       {/* Mobile sticky bottom CTA */}
       {!isRegistered && !isSoldOut && !isCancelled && !isPast && (
-        <div className="fixed bottom-0 left-0 right-0 lg:hidden bg-background/95 backdrop-blur border-t border-border px-4 py-3 flex items-center justify-between z-50">
-          <div>
-            <p className="text-lg font-semibold">{priceDisplay}</p>
-            {spotsLeft !== null && spotsLeft > 0 && (
-              <p className="text-xs text-muted-foreground">{spotsLeft} spots left</p>
-            )}
-          </div>
-          <button
-            onClick={event.pricing_type === "free" ? handleRegisterFree : handleRegisterPaid}
-            disabled={registering}
-            className="px-6 py-2.5 rounded-lg bg-cream text-cream-text font-mono text-sm uppercase tracking-widest font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2 min-h-[44px]"
-          >
-            {registering && <Loader2 className="h-4 w-4 animate-spin" />}
-            {event.pricing_type === "free"
-              ? "Register — Free"
-              : `Register · ₹${event.price_inr ? (event.price_inr / 100).toLocaleString("en-IN") : ""}`}
-          </button>
+        <div className="fixed bottom-0 left-0 right-0 lg:hidden bg-background/95 backdrop-blur border-t border-border px-4 py-3 z-50 safe-bottom">
+          {event.pricing_type !== "free" && isNative() ? (
+            // Paid event on Android: the Reader Rule forbids in-app
+            // purchase UI, and the WebView blocks the Razorpay popup, so
+            // a "Register · ₹X" tap here is both a policy violation and a
+            // dead end. Mirror the desktop column → Continue-on-web.
+            <ContinueOnWebCTA webPath={`/events/${event.id}`} />
+          ) : (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-lg font-semibold">{priceDisplay}</p>
+                {spotsLeft !== null && spotsLeft > 0 && (
+                  <p className="text-xs text-muted-foreground">{spotsLeft} spots left</p>
+                )}
+              </div>
+              <button
+                onClick={event.pricing_type === "free" ? handleRegisterFree : handleRegisterPaid}
+                disabled={registering}
+                className="px-6 py-2.5 rounded-lg bg-cream text-cream-text font-mono text-sm uppercase tracking-widest font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2 min-h-[44px]"
+              >
+                {registering && <Loader2 className="h-4 w-4 animate-spin" />}
+                {event.pricing_type === "free"
+                  ? "Register — Free"
+                  : `Register · ₹${event.price_inr ? (event.price_inr / 100).toLocaleString("en-IN") : ""}`}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </>

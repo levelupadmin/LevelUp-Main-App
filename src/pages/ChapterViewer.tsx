@@ -713,9 +713,13 @@ const ChapterViewer = () => {
     allReplies.forEach((r: any) => userIds.add(r.user_id));
     const userNameMap: Record<string, string> = {};
     if (userIds.size > 0) {
+      // Use the RLS-safe public_user_profiles view (same as loadChapter),
+      // NOT the users table — the users RLS restricts non-admins to their
+      // own row, so querying it here collapses every OTHER author's name
+      // to "Anonymous" right after a student posts a question.
       const { data: users } = await supabase
-        .from("users").select("id, full_name").in("id", [...userIds]);
-      (users || []).forEach((u) => { userNameMap[u.id] = u.full_name || "Anonymous"; });
+        .from("public_user_profiles" as any).select("id, full_name").in("id", [...userIds]);
+      (users || []).forEach((u: any) => { userNameMap[u.id] = u.full_name || "Anonymous"; });
     }
     setQna(qnaItems.map((q) => ({
       ...q,
@@ -1367,9 +1371,9 @@ const ChapterViewer = () => {
               )}
             </TabsContent>
 
-            {/* Notes - localStorage-backed per-chapter scratchpad. v1 is
-                local-only so it doesn't sync across devices; a future
-                pass can promote this to a chapter_notes DB table. */}
+            {/* Notes - per-chapter scratchpad, DB-backed via the
+                chapter_notes table (load/save above), so they sync across
+                every device the student signs in on. */}
             <TabsContent value="notes" className="mt-4 space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-xs text-muted-foreground">

@@ -938,9 +938,10 @@ const UpcomingSessions = () => {
                     { p_session_id: s.id }
                   );
                   if (error || !link) {
-                    alert(
-                      "The join link for this session isn't available yet. It unlocks an hour before the session starts."
-                    );
+                    toast({
+                      title: "Join link not ready yet",
+                      description: "It unlocks an hour before the session starts.",
+                    });
                     return;
                   }
                   window.open(link as string, "_blank", "noopener,noreferrer");

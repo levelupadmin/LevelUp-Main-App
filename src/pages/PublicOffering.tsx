@@ -198,7 +198,7 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <Button
             size="lg"
-            onClick={() => navigate("/auth")}
+            onClick={() => navigate("/login")}
             className="btn-champagne h-12 px-6 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))]"
           >
             Sign in to access

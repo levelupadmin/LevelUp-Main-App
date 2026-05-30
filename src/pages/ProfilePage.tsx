@@ -102,7 +102,7 @@ const ChangePasswordSection = ({ email }: { email: string }) => {
     setSaving(false);
 
     if (updateError) {
-      toast.error("Couldn't change your password. Make sure it's at least 6 characters and try again.");
+      toast.error("Couldn't change your password. Use at least 8 characters with a letter and a number, then try again.");
     } else {
       toast.success("Password changed successfully");
       resetForm();
