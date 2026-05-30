@@ -100,13 +100,44 @@ Deno.serve(async (req) => {
     return json({ error: "invalid_otp", detail: verifyData.message }, 401);
   }
 
+  // ─ 1b. Bind the verified token to the phone being logged in ─────────
+  // verifyAccessToken only proves the token is REAL — not that it was
+  // issued for body.phone. Without this, an attacker who completes a
+  // genuine OTP for THEIR OWN number can POST that valid token together
+  // with any victim's phone and we'd mint the victim's session (full
+  // account takeover; phone numbers are low-entropy/public). MSG91
+  // returns the verified mobile in the success `message` and/or inside
+  // the access-token JWT, so we recover it and require it to match.
+  //
+  // We hard-reject only on a *definite* mismatch. If no identifier can be
+  // recovered ("unknown") we proceed but log loudly — a legitimate login
+  // always matches (the token's mobile == the number the user just
+  // entered == body.phone), so this can never lock users out if MSG91
+  // changes its response shape; it only ever blocks the takeover case
+  // where a real identifier is present and differs.
+  const binding = phoneBinding(normPhone, verifyData, body.accessToken);
+  if (binding === "mismatch") {
+    return json({ error: "phone_token_mismatch" }, 401);
+  }
+  if (binding === "unknown") {
+    console.warn(
+      "verify-msg91-otp: no verified phone recoverable from MSG91 response/JWT; proceeding without strict token↔phone binding",
+      { phone: normPhone },
+    );
+  }
+
   // ─ 2. Look up or create the user ────────────────────────────────────
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  // GoTrue stores phone WITHOUT the leading '+', so filter on the
+  // plus-less form. Querying "+91…" matches nothing and would
+  // misclassify a returning user as brand new (then try to re-create
+  // them). The JS candidates filter below still matches both stored
+  // formats defensively.
   const lookupResp = await fetch(
-    `${SUPABASE_URL}/auth/v1/admin/users?phone=${encodeURIComponent(normPhone)}`,
+    `${SUPABASE_URL}/auth/v1/admin/users?phone=${encodeURIComponent(normPhone.replace(/^\+/, ""))}`,
     { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } },
   );
   const lookupData = (await lookupResp.json()) as {
@@ -265,4 +296,54 @@ async function mintSession(
     access_token: verified.session.access_token,
     refresh_token: verified.session.refresh_token,
   };
+}
+
+// Last 10 digits of a phone string — the subscriber part, stable across
+// "+919788385577" / "919788385577" / "9788385577". "" if < 10 digits.
+function last10(s: string): string {
+  const d = (s || "").replace(/\D/g, "");
+  return d.length >= 10 ? d.slice(-10) : "";
+}
+
+// Does the phone MSG91 actually verified match the phone the caller
+// claims (normPhone)? We gather every phone-like value MSG91 vouched for
+// — the verify response `message` (which carries the mobile on success)
+// plus any mobile/phone/msisdn claim inside the access-token JWT — and
+// compare on the last-10 subscriber digits.
+//   "match"    — a recovered identifier equals the caller's phone
+//   "mismatch" — we recovered ≥1 identifier and NONE match → takeover
+//   "unknown"  — nothing phone-like recoverable (caller proceeds; logged)
+// Note: we ONLY inspect phone-named JWT claims, never iat/exp/nbf, so a
+// 10-digit Unix timestamp can't masquerade as a phone and produce a
+// false mismatch that would block a legitimate login.
+function phoneBinding(
+  normPhone: string,
+  verifyData: { message?: string; type?: string },
+  accessToken: string,
+): "match" | "mismatch" | "unknown" {
+  const want = last10(normPhone);
+  if (!want) return "unknown";
+
+  const candidates: string[] = [];
+  if (verifyData?.message) candidates.push(String(verifyData.message));
+
+  // Best-effort decode of the JWT payload (middle base64url segment).
+  try {
+    const seg = (accessToken || "").split(".")[1];
+    if (seg) {
+      const b64 = seg.replace(/-/g, "+").replace(/_/g, "/")
+        .padEnd(Math.ceil(seg.length / 4) * 4, "=");
+      const claims = JSON.parse(atob(b64)) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(claims)) {
+        if ((typeof v === "string" || typeof v === "number") &&
+            /mobile|phone|msisdn/i.test(k)) {
+          candidates.push(String(v));
+        }
+      }
+    }
+  } catch { /* not a decodable JWT — rely on `message` */ }
+
+  const phoneLike = candidates.map(last10).filter(Boolean);
+  if (phoneLike.length === 0) return "unknown";
+  return phoneLike.includes(want) ? "match" : "mismatch";
 }
