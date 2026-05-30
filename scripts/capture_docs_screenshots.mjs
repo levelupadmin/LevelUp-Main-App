@@ -26,7 +26,8 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const OUT = path.join(ROOT, "public", "docs", "screenshots");
+const OUT_ARG = process.argv.slice(2).find((a) => a.startsWith("--out="));
+const OUT = OUT_ARG ? path.resolve(OUT_ARG.slice(6)) : path.join(ROOT, "public", "docs", "screenshots");
 fs.mkdirSync(OUT, { recursive: true });
 
 const BASE = "http://localhost:8080";
@@ -63,7 +64,7 @@ const SHOTS = [
   // ───── Student / anon pages ─────
   { slug: "browse",                 group: "student", url: "/browse",                       waitFor: 'text=Browse', anonOk: true },
   { slug: "login-step-1",           group: "student", url: "/login",                        waitFor: "input[type='tel'], input[placeholder*='phone' i]", anonOk: true },
-  { slug: "offering-page",          group: "student", url: "/offering/nelson-dilipkumar-teaches-filmmaking", waitFor: "text=Nelson", anonOk: true },
+  { slug: "offering-page",          group: "student", url: "/p/nelson-dilipkumar-teaches-filmmaking", waitFor: "text=Nelson", anonOk: true },
 
   // ───── Student / authenticated ─────
   { slug: "home",                   group: "student", url: "/home",                         waitFor: "text=/Continue|Pick up|Welcome|My Library|Browse/i" },
@@ -73,6 +74,22 @@ const SHOTS = [
   { slug: "community-peer-reviews", group: "student", url: "/community",                    waitFor: "textarea",
       setup: async (page) => { await page.click("text=Peer Reviews").catch(() => {}); } },
   { slug: "profile",                group: "student", url: "/profile",                      waitFor: "text=/Full name|Profile|Account|Settings/i" },
+
+  // ───── Student / authenticated — full learning journey (added) ─────
+  { slug: "course-detail",          group: "student", url: "/courses/5f23fec7-b5a6-42c9-b0e1-1c039cfb7c8d", waitFor: "text=/Lokesh|Episode|Curriculum|Chapter|Lesson/i" },
+  { slug: "chapter-viewer",         group: "student", url: "/chapters/42ed8d94-8ad4-49d0-b76f-61634198589b", waitFor: "text=/Up next|Notes|Q&A|Overview|Building the LCU/i", settle: 1800 },
+  { slug: "my-courses",             group: "student", url: "/my-courses",                    waitFor: "text=/My Courses|Continue|Enrolled|Course/i" },
+  { slug: "my-sessions",            group: "student", url: "/my-sessions",                   waitFor: "text=/Session|Upcoming|Live/i" },
+  { slug: "events",                 group: "student", url: "/events",                        waitFor: "text=/Event/i" },
+
+  // ───── Student / anon — signup, checkout, legal, 404 (added) ─────
+  { slug: "signup",                 group: "student", url: "/signup",                        waitFor: "input", anonOk: true },
+  { slug: "checkout",               group: "student", url: "/checkout/190a09ee-3f34-4242-ad9f-70ddedcc8eae", waitFor: "text=/Checkout|Pay|Order|Total|Complete|Contact/i", anonOk: true },
+  { slug: "privacy",                group: "student", url: "/privacy",                       waitFor: "text=/Privacy/i", anonOk: true },
+  { slug: "terms",                  group: "student", url: "/terms",                         waitFor: "text=/Terms/i", anonOk: true },
+  { slug: "refunds",                group: "student", url: "/refunds",                       waitFor: "text=/Refund|Cancellation/i", anonOk: true },
+  { slug: "delete-account",         group: "student", url: "/delete-account",               waitFor: "text=/Delete/i", anonOk: true },
+  { slug: "not-found",              group: "student", url: "/this-page-does-not-exist-xyz",  waitFor: "text=/not found|404|doesn|Page|Home/i", anonOk: true },
 
   // ───── Admin / Overview ─────
   { slug: "admin-dashboard",        group: "admin",   url: "/admin",                        waitFor: "text=Admin" },
