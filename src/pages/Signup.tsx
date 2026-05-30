@@ -11,6 +11,8 @@ import { Loader2, CheckCircle2, Mail } from "lucide-react";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
+import LevelUpWordmark from "@/components/LevelUpWordmark";
+import { isNative } from "@/lib/platform";
 import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 type Step = "form" | "otp" | "email_sent";
@@ -173,6 +175,131 @@ const Signup = () => {
     return res;
   };
 
+  // Native (iOS + Android) gets a stripped, logo-forward layout — no hero
+  // photo, no legal footer strip. Web keeps the hero + Card composition.
+  const native = isNative();
+  const heading = step === "otp" ? "Verify your number" : "Create your account";
+
+  const stepBody = (
+    <>
+      {step === "form" && (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="fullName">Full name</Label>
+            <Input
+              id="fullName"
+              type="text"
+              placeholder="Your full name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+              className="h-12 text-base"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="phone">Phone number</Label>
+            <PhoneInput value={phone} onChange={setPhone} />
+            <p className="text-xs text-muted-foreground">
+              {EMAIL_ONLY_AUTH
+                ? "We'll email you a sign-in link to verify your account."
+                : isIndianPhone
+                ? "We'll send a 4-digit OTP via SMS to verify."
+                : phone
+                ? "We'll email you a sign-in link to verify."
+                : "+91 by default. Tap the flag to change country."}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="h-12 text-base"
+            />
+          </div>
+
+          <Button type="submit" className="w-full h-12 text-base" disabled={loading || !formValid}>
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Create account
+          </Button>
+        </form>
+      )}
+
+      {step === "otp" && (
+        <OtpEntryStep
+          phone={phone}
+          channel={channel}
+          otpLength={4}
+          onVerify={handleVerify}
+          onResendSms={() => triggerOtp(false)}
+          onSwitchToWhatsApp={handleSwitchWA}
+          onSwitchToEmail={() => {
+            // For signup, "use email instead" means: switch to email magic link
+            triggerOtp(false).then(() => setStep("email_sent")).catch(() => {});
+          }}
+          onBack={() => setStep("form")}
+        />
+      )}
+
+      {step === "email_sent" && (
+        <div className="text-center space-y-5 py-4">
+          <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] mx-auto">
+            <CheckCircle2 className="h-8 w-8 text-[hsl(var(--accent-emerald))]" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold">Check your email</h2>
+            <p className="text-sm text-muted-foreground mt-2">
+              We sent a sign-in link to <strong className="text-foreground">{email}</strong>. Click it to finish setting up your account.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => setStep("form")} className="w-full">
+            <Mail className="h-4 w-4 mr-2" /> Use a different email
+          </Button>
+        </div>
+      )}
+
+      {step === "form" && (
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          Already have an account?{" "}
+          <Link to="/login" className="font-semibold text-foreground hover:underline">
+            Sign in
+          </Link>
+        </p>
+      )}
+    </>
+  );
+
+  // ── Native (iOS + Android): single centered column, logo as the hero ──
+  if (native) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background safe-top safe-bottom">
+        <div className="flex-1 flex flex-col px-6 pt-[10vh] pb-8">
+          <div className="w-full max-w-[380px] mx-auto">
+            <div className="flex justify-center mb-10">
+              <LevelUpWordmark className="h-10 w-auto text-foreground" />
+            </div>
+            <div className="text-center mb-7">
+              <h1 className="text-[26px] font-semibold tracking-[-0.015em] text-foreground">{heading}</h1>
+              {step === "form" && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Join LevelUp. Learn from India's best creators.
+                </p>
+              )}
+            </div>
+            {stepBody}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Web: hero + Card composition ──
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <div className="flex-1">
@@ -190,107 +317,14 @@ const Signup = () => {
       <div className="flex lg:min-h-screen lg:items-center lg:justify-center px-4 py-8 lg:py-12">
         <Card className="w-full lg:max-w-[460px] border-none lg:border-border bg-transparent lg:bg-card shadow-none lg:shadow-elevated">
           <CardHeader className="items-center gap-2 pb-2">
-            <h1 className="text-xl font-bold text-foreground">
-              {step === "otp" ? "Verify your number" : "Create your account"}
-            </h1>
+            <h1 className="text-xl font-bold text-foreground">{heading}</h1>
             {step === "form" && (
               <p className="text-sm text-muted-foreground text-center">
                 Join LevelUp. Learn from India's best creators.
               </p>
             )}
           </CardHeader>
-          <CardContent>
-            {step === "form" && (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Full name</Label>
-                  <Input
-                    id="fullName"
-                    type="text"
-                    placeholder="Your full name"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    required
-                    className="h-12 text-base"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone number</Label>
-                  <PhoneInput value={phone} onChange={setPhone} />
-                  <p className="text-xs text-muted-foreground">
-                    {EMAIL_ONLY_AUTH
-                      ? "We'll email you a sign-in link to verify your account."
-                      : isIndianPhone
-                      ? "We'll send a 4-digit OTP via SMS to verify."
-                      : phone
-                      ? "We'll email you a sign-in link to verify."
-                      : "+91 by default. Tap the flag to change country."}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="h-12 text-base"
-                  />
-                </div>
-
-                <Button type="submit" className="w-full h-12 text-base" disabled={loading || !formValid}>
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Create account
-                </Button>
-              </form>
-            )}
-
-            {step === "otp" && (
-              <OtpEntryStep
-                phone={phone}
-                channel={channel}
-                otpLength={4}
-                onVerify={handleVerify}
-                onResendSms={() => triggerOtp(false)}
-                onSwitchToWhatsApp={handleSwitchWA}
-                onSwitchToEmail={() => {
-                  // For signup, "use email instead" means: switch to email magic link
-                  triggerOtp(false).then(() => setStep("email_sent")).catch(() => {});
-                }}
-                onBack={() => setStep("form")}
-              />
-            )}
-
-            {step === "email_sent" && (
-              <div className="text-center space-y-5 py-4">
-                <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] mx-auto">
-                  <CheckCircle2 className="h-8 w-8 text-[hsl(var(--accent-emerald))]" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold">Check your email</h2>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    We sent a sign-in link to <strong className="text-foreground">{email}</strong>. Click it to finish setting up your account.
-                  </p>
-                </div>
-                <Button variant="outline" onClick={() => setStep("form")} className="w-full">
-                  <Mail className="h-4 w-4 mr-2" /> Use a different email
-                </Button>
-              </div>
-            )}
-
-            {step === "form" && (
-              <p className="mt-4 text-center text-sm text-muted-foreground">
-                Already have an account?{" "}
-                <Link to="/login" className="font-semibold text-foreground hover:underline">
-                  Sign in
-                </Link>
-              </p>
-            )}
-          </CardContent>
+          <CardContent>{stepBody}</CardContent>
         </Card>
       </div>
       </div>

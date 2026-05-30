@@ -17,6 +17,11 @@ const FloatingSupport = () => {
   // Hide on the full-bleed chapter player.
   if (pathname.startsWith("/chapters/")) return null;
 
+  // Hide on the auth screens. Login/Signup are intentionally minimal — a
+  // floating support bubble adds clutter to the "front door" and reads as a
+  // web-ism inside the native app shell.
+  if (pathname === "/login" || pathname === "/signup") return null;
+
   // Hide on conversion pages (offering + checkout) on MOBILE only — they
   // already have a sticky CTA at the bottom and the bubble would overlap
   // it. On desktop the right-side bubble has plenty of room.

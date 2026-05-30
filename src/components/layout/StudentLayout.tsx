@@ -311,8 +311,10 @@ const StudentLayout = ({ children }: Props) => {
           </div>
         </main>
         {/* Footer sits below scrollable content; extra bottom padding on
-            mobile keeps it clear of the fixed bottom tab bar. */}
-        <div className="pb-20 md:pb-0">
+            mobile keeps it clear of the fixed bottom tab bar. On native the
+            <Footer/> renders null, so this padding alone provides the
+            tab-bar clearance (safe-area aware for the home indicator). */}
+        <div className="pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">
           <Footer />
         </div>
       </div>

@@ -11,6 +11,7 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
+import { isNative } from "@/lib/platform";
 import heroCinematic from "@/assets/login/hero-cinematic.jpg";
 
 type Step = "phone" | "otp" | "email_input" | "email_sent";
@@ -37,6 +38,13 @@ const VERIFY_MSG91_OTP_URL =
 // — Step 1 → Step 2 transition is a 240ms slide-left of just the form
 //   column; the hero stays static so the page feels like one continuous
 //   action, not a screen swap.
+//
+// 2026-05-29: Native (iOS + Android) gets its own layout.
+// The web two-column hero/footer composition reads as "cluttered" inside
+// a native app shell, so on Capacitor we render a single centered column:
+// the LevelUp logo is the focal element, no hero photo, no "Make your
+// first film" copy, no legal footer nav — just logo → form. The auth
+// logic (phone/OTP/email) is shared verbatim via `stepContent`.
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -195,6 +203,173 @@ const Login = () => {
     goToStep("email_sent");
   };
 
+  // Native app shells (iOS + Android) get a stripped-down, logo-forward
+  // layout. `native` gates the web-only chrome (step eyebrow, in-form
+  // social proof) so the same `stepContent` renders cleanly in both.
+  const native = isNative();
+
+  const stepContent = (
+    <>
+      {step === "phone" && (
+        <>
+          {!native && (
+            <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70 mb-2">
+              Sign in · Step 1 of 2
+            </p>
+          )}
+          <h1 className={`text-[34px] sm:text-[36px] font-semibold tracking-[-0.015em] leading-[1.05] mb-2 ${native ? "text-center" : ""}`}>
+            What's your <span className="font-serif-italic text-cream">number</span>?
+          </h1>
+          <p className={`text-sm text-muted-foreground mb-7 ${native ? "text-center" : ""}`}>
+            We'll text a code. No password to remember.
+          </p>
+
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleSendOtp(); }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="phone" className="text-sm text-muted-foreground">Phone number</Label>
+              <PhoneInput value={phone} onChange={setPhone} autoFocus={!native} />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !phone}
+              className="w-full h-12 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2 text-base"
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Send code
+            </button>
+          </form>
+
+          {/* Social proof — anchors trust at the moment of friction.
+              Web-only: inside a native shell it reads as marketing clutter. */}
+          {!native && (
+            <div className="mt-8 pt-6 border-t border-border/40">
+              <div className="flex items-center gap-2 mb-1.5">
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} className="h-3 w-3 fill-cream text-cream" />
+                ))}
+                <span className="text-xs font-mono text-muted-foreground ml-1">4.8 · 1,200+ reviews</span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Trusted by <span className="text-foreground">12,000+ Indian creators</span> learning from Lokesh, Nelson, Ravi Basrur, DRK Kiran &amp; more.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {step === "otp" && (
+        <OtpEntryStep
+          phone={phone}
+          channel={channel}
+          otpLength={4}
+          onVerify={handleVerify}
+          onResendSms={() => sendSmsOtp(false)}
+          onSwitchToWhatsApp={handleSwitchToWA}
+          onSwitchToEmail={handleSwitchToEmail}
+          onBack={() => { goToStep("phone"); setChannel("sms"); }}
+        />
+      )}
+
+      {step === "email_input" && (
+        <>
+          <h1 className={`text-[32px] font-semibold tracking-[-0.015em] mb-2 ${native ? "text-center" : ""}`}>
+            Sign in with <span className="font-serif-italic text-cream">email</span>
+          </h1>
+          <p className={`text-sm text-muted-foreground mb-7 ${native ? "text-center" : ""}`}>
+            We'll email a one-click sign-in link.
+          </p>
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleEmailSubmit(); }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-sm text-muted-foreground">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoFocus={!native}
+                required
+                className="bg-surface border-border focus:border-foreground h-11"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full h-12 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2 text-base"
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Send sign-in link
+            </button>
+            {!EMAIL_ONLY_AUTH && (
+              <button
+                type="button"
+                onClick={() => goToStep("phone")}
+                className="block w-full text-center text-xs text-muted-foreground hover:text-foreground"
+              >
+                ← Use phone instead
+              </button>
+            )}
+          </form>
+        </>
+      )}
+
+      {step === "email_sent" && (
+        <div className="text-center space-y-4 py-6">
+          <div className="w-12 h-12 rounded-full bg-[hsl(var(--accent-amber)/0.15)] flex items-center justify-center mx-auto">
+            <Mail className="h-6 w-6 text-cream" />
+          </div>
+          <h2 className="text-lg font-semibold">Check your email</h2>
+          <p className="text-sm text-muted-foreground">
+            We sent a sign-in link to <span className="text-foreground font-medium">{email}</span>
+          </p>
+          <button
+            onClick={() => { goToStep(EMAIL_ONLY_AUTH ? "email_input" : "phone"); setEmail(""); }}
+            className="text-sm text-cream hover:underline"
+          >
+            Use a different email
+          </button>
+        </div>
+      )}
+    </>
+  );
+
+  // ── Native (iOS + Android): single centered column, logo as the hero ──
+  if (native) {
+    return (
+      <div className="min-h-screen flex flex-col bg-canvas safe-top safe-bottom">
+        <div className="flex-1 flex flex-col px-6 pt-[18vh]">
+          <div className="w-full max-w-[360px] mx-auto">
+            {/* Brand mark — the focal element on small screens */}
+            <div className="flex justify-center mb-12">
+              <LevelUpWordmark className="h-10 w-auto text-foreground" />
+            </div>
+
+            <div key={stepKey} className="animate-slide-left-in">
+              {stepContent}
+            </div>
+
+            {step === "phone" && (
+              <p className="mt-8 text-sm text-center text-muted-foreground">
+                New here?{" "}
+                <Link to="/signup" className="font-semibold text-foreground hover:underline">
+                  Create an account
+                </Link>
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Web: two-column hero + footer composition ──
   return (
     <div className="min-h-screen flex flex-col bg-canvas">
     <div className="flex flex-col lg:flex-row flex-1">
@@ -226,128 +401,7 @@ const Login = () => {
         <div className="flex-1 flex items-center">
           <div className="w-full max-w-[360px] mx-auto">
             <div key={stepKey} className="animate-slide-left-in">
-              {step === "phone" && (
-                <>
-                  <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70 mb-2">
-                    Sign in · Step 1 of 2
-                  </p>
-                  <h1 className="text-[34px] sm:text-[36px] font-semibold tracking-[-0.015em] leading-[1.05] mb-2">
-                    What's your <span className="font-serif-italic text-cream">number</span>?
-                  </h1>
-                  <p className="text-sm text-muted-foreground mb-7">
-                    We'll text a code. No password to remember.
-                  </p>
-
-                  <form
-                    onSubmit={(e) => { e.preventDefault(); handleSendOtp(); }}
-                    className="space-y-4"
-                  >
-                    <div className="space-y-2">
-                      <Label htmlFor="phone" className="text-sm text-muted-foreground">Phone number</Label>
-                      <PhoneInput value={phone} onChange={setPhone} autoFocus />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={loading || !phone}
-                      className="w-full h-12 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2 text-base"
-                    >
-                      {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                      Send code
-                    </button>
-                  </form>
-
-                  {/* Social proof — anchors trust at the moment of friction */}
-                  <div className="mt-8 pt-6 border-t border-border/40">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      {[...Array(5)].map((_, i) => (
-                        <Star key={i} className="h-3 w-3 fill-cream text-cream" />
-                      ))}
-                      <span className="text-xs font-mono text-muted-foreground ml-1">4.8 · 1,200+ reviews</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      Trusted by <span className="text-foreground">12,000+ Indian creators</span> learning from Lokesh, Nelson, Ravi Basrur, DRK Kiran &amp; more.
-                    </p>
-                  </div>
-                </>
-              )}
-
-              {step === "otp" && (
-                <OtpEntryStep
-                  phone={phone}
-                  channel={channel}
-                  otpLength={4}
-                  onVerify={handleVerify}
-                  onResendSms={() => sendSmsOtp(false)}
-                  onSwitchToWhatsApp={handleSwitchToWA}
-                  onSwitchToEmail={handleSwitchToEmail}
-                  onBack={() => { goToStep("phone"); setChannel("sms"); }}
-                />
-              )}
-
-              {step === "email_input" && (
-                <>
-                  <h1 className="text-[32px] font-semibold tracking-[-0.015em] mb-2">
-                    Sign in with <span className="font-serif-italic text-cream">email</span>
-                  </h1>
-                  <p className="text-sm text-muted-foreground mb-7">
-                    We'll email a one-click sign-in link.
-                  </p>
-                  <form
-                    onSubmit={(e) => { e.preventDefault(); handleEmailSubmit(); }}
-                    className="space-y-4"
-                  >
-                    <div className="space-y-2">
-                      <Label htmlFor="email" className="text-sm text-muted-foreground">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="you@example.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        autoFocus
-                        required
-                        className="bg-surface border-border focus:border-foreground h-11"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full h-12 bg-cream text-cream-text font-semibold rounded-md hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center gap-2 text-base"
-                    >
-                      {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                      Send sign-in link
-                    </button>
-                    {!EMAIL_ONLY_AUTH && (
-                      <button
-                        type="button"
-                        onClick={() => goToStep("phone")}
-                        className="block w-full text-center text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        ← Use phone instead
-                      </button>
-                    )}
-                  </form>
-                </>
-              )}
-
-              {step === "email_sent" && (
-                <div className="text-center space-y-4 py-6">
-                  <div className="w-12 h-12 rounded-full bg-[hsl(var(--accent-amber)/0.15)] flex items-center justify-center mx-auto">
-                    <Mail className="h-6 w-6 text-cream" />
-                  </div>
-                  <h2 className="text-lg font-semibold">Check your email</h2>
-                  <p className="text-sm text-muted-foreground">
-                    We sent a sign-in link to <span className="text-foreground font-medium">{email}</span>
-                  </p>
-                  <button
-                    onClick={() => { goToStep(EMAIL_ONLY_AUTH ? "email_input" : "phone"); setEmail(""); }}
-                    className="text-sm text-cream hover:underline"
-                  >
-                    Use a different email
-                  </button>
-                </div>
-              )}
+              {stepContent}
             </div>
           </div>
         </div>

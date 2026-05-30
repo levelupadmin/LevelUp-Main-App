@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Instagram, Youtube, Twitter, Linkedin } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
+import { isNative } from "@/lib/platform";
 
 interface FooterLink {
   label: string;
@@ -66,6 +67,11 @@ const renderLink = (link: FooterLink) => {
 };
 
 const Footer = () => {
+  // Native (iOS + Android) app shells get no marketing footer — the
+  // sitemap-style link columns, external company links, and social icons
+  // read as "this is a website" inside the app. Web keeps the full footer.
+  if (isNative()) return null;
+
   return (
     <footer
       aria-label="Site footer"
