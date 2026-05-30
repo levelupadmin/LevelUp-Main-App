@@ -606,10 +606,10 @@ const Terms = () => {
             <p className="mt-3">
               You may also contact us by mail or facsimile at:{" "}
               <a
-                href="mailto:support@leveluplearning.in"
+                href="mailto:admin@leveluplearning.in"
                 className="text-cream hover:underline"
               >
-                support@leveluplearning.in
+                admin@leveluplearning.in
               </a>
             </p>
             <p className="mt-2">
@@ -943,10 +943,10 @@ const Terms = () => {
             <p>
               Please contact us at{" "}
               <a
-                href="mailto:support@leveluplearning.in"
+                href="mailto:admin@leveluplearning.in"
                 className="text-cream hover:underline"
               >
-                support@leveluplearning.in
+                admin@leveluplearning.in
               </a>{" "}
               to report any violations of these Terms of Service or to pose
               any questions regarding the Terms of Service or the Service.

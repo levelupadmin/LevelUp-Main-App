@@ -62,7 +62,7 @@ const DeleteAccount = () => {
     if (error) {
       console.error("[delete-account] insert failed:", error);
       toast.error(
-        "We couldn't submit your request. Please email ceo@leveluplearning.in directly.",
+        "We couldn't submit your request. Please email admin@leveluplearning.in directly.",
       );
       return;
     }
@@ -226,10 +226,10 @@ const DeleteAccount = () => {
               <p className="text-xs text-muted-foreground pt-2">
                 Prefer to email us directly? Write to{" "}
                 <a
-                  href="mailto:ceo@leveluplearning.in?subject=Account%20deletion%20request"
+                  href="mailto:admin@leveluplearning.in?subject=Account%20deletion%20request"
                   className="text-cream hover:underline"
                 >
-                  ceo@leveluplearning.in
+                  admin@leveluplearning.in
                 </a>
                 .
               </p>

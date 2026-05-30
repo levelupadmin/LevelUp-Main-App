@@ -23,7 +23,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State
         .slice(0, 8)
         .toUpperCase();
       const truncatedError = errorMsg.length > 80 ? errorMsg.slice(0, 80) + "..." : errorMsg;
-      const mailtoHref = `mailto:support@leveluplearning.in?subject=${encodeURIComponent(`Error Report [${errorCode}]`)}&body=${encodeURIComponent(`Hi, I encountered an error on LevelUp.\n\nError code: ${errorCode}\nDetails: ${truncatedError}\nURL: ${window.location.href}\nTime: ${new Date().toISOString()}\n\nPlease help me resolve this.`)}`;
+      const mailtoHref = `mailto:admin@leveluplearning.in?subject=${encodeURIComponent(`Error Report [${errorCode}]`)}&body=${encodeURIComponent(`Hi, I encountered an error on LevelUp.\n\nError code: ${errorCode}\nDetails: ${truncatedError}\nURL: ${window.location.href}\nTime: ${new Date().toISOString()}\n\nPlease help me resolve this.`)}`;
 
       return (
         <div className="min-h-screen bg-canvas flex items-center justify-center p-8">

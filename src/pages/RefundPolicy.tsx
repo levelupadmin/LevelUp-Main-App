@@ -522,10 +522,10 @@ const RefundPolicy = () => {
                   General support:
                 </span>{" "}
                 <a
-                  href="mailto:support@leveluplearning.in"
+                  href="mailto:admin@leveluplearning.in"
                   className="text-cream hover:underline"
                 >
-                  support@leveluplearning.in
+                  admin@leveluplearning.in
                 </a>
               </p>
             </div>

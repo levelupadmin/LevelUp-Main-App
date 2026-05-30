@@ -90,10 +90,10 @@ const Footer = () => {
               A creative education ecosystem for serious creators.
             </p>
             <a
-              href="mailto:ceo@leveluplearning.in"
+              href="mailto:admin@leveluplearning.in"
               className="text-sm text-muted-foreground hover:text-cream transition-colors duration-300"
             >
-              ceo@leveluplearning.in
+              admin@leveluplearning.in
             </a>
           </div>
 
