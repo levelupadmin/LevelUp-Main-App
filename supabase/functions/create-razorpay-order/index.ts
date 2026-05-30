@@ -214,9 +214,10 @@ Deno.serve(async (req) => {
       couponDbId = coupon.id;
       const subtotalBeforeDiscount = Number(offering.price_inr) + bumpTotal;
       if (coupon.discount_type === "percent") {
-        discountInr = Math.round(
-          (subtotalBeforeDiscount * Number(coupon.discount_value)) / 100
-        );
+        // Clamp percent to 0–100 so a mis-entered coupon (e.g. value 150)
+        // can't discount more than the subtotal.
+        const pct = Math.min(100, Math.max(0, Number(coupon.discount_value)));
+        discountInr = Math.round((subtotalBeforeDiscount * pct) / 100);
       } else {
         discountInr = Math.min(
           Number(coupon.discount_value),

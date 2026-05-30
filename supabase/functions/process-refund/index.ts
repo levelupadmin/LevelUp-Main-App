@@ -43,10 +43,28 @@ Deno.serve(async (req) => {
     // Fetch refund + payment order
     const { data: refund } = await admin.from("refunds").select("*, payment_orders(*)").eq("id", refund_id).maybeSingle();
     if (!refund) return jsonRes({ error: "Refund not found" }, 404);
-    if (refund.status !== "initiated") return jsonRes({ error: "Refund already processed" }, 400);
+    // Validate the refund amount against what was actually paid — a
+    // mis-entered refunds row must never refund more than the order total.
+    const orderTotal = Number(refund.payment_orders?.total_inr ?? 0);
+    if (!(Number(refund.amount_inr) > 0) || Number(refund.amount_inr) > orderTotal) {
+      return jsonRes({ error: "Invalid refund amount" }, 400);
+    }
 
-    // Update to processing
-    await admin.from("refunds").update({ status: "processing" }).eq("id", refund_id);
+    // Atomically claim this refund: flip initiated→processing in a single
+    // conditional UPDATE and proceed only if THIS call is the one that
+    // changed the row. Without this, two near-simultaneous admin clicks
+    // (or a retried request) can both pass a non-atomic status check and
+    // fire two Razorpay refunds for the same payment.
+    const { data: claimed, error: claimErr } = await admin
+      .from("refunds")
+      .update({ status: "processing" })
+      .eq("id", refund_id)
+      .eq("status", "initiated")
+      .select("id");
+    if (claimErr) return jsonRes({ error: "Refund claim failed" }, 500);
+    if (!claimed || claimed.length === 0) {
+      return jsonRes({ error: "Refund already processed" }, 400);
+    }
 
     // Call Razorpay Refund API
     const RAZORPAY_KEY_ID = Deno.env.get("RAZORPAY_KEY_ID")!;
