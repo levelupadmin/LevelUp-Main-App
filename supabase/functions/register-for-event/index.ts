@@ -102,27 +102,24 @@ Deno.serve(async (req) => {
     }
 
     if (isFree || event.pricing_type === "free") {
-      let regErr;
-      if (existingReg) {
-        // Reactivate the cancelled row
-        const res = await admin
-          .from("event_registrations")
-          .update({ status: "registered", amount_paid: 0, registered_at: new Date().toISOString() })
-          .eq("id", existingReg.id);
-        regErr = res.error;
-      } else {
-        const res = await admin.from("event_registrations").insert({
-          event_id,
-          user_id: user.id,
-          status: "registered",
-          amount_paid: 0,
-        });
-        regErr = res.error;
+      // Atomic seat claim — enforces capacity under concurrency (the plain
+      // count check above is only an advisory fast-fail).
+      const { data: seat, error: seatErr } = await admin.rpc("claim_event_seat", {
+        p_event_id: event_id,
+        p_user_id: user.id,
+        p_amount: 0,
+        p_payment_id: null,
+      });
+      if (seatErr) {
+        return new Response(JSON.stringify({ error: seatErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      if (regErr) {
-        return new Response(JSON.stringify({ error: regErr.message }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (seat === "sold_out") {
+        return new Response(JSON.stringify({ error: "Event is sold out" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      return new Response(JSON.stringify({ registered: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (seat === "unavailable" || seat === "not_found") {
+        return new Response(JSON.stringify({ error: "This event is no longer available" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ registered: true, already: seat === "already" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // Paid — create Razorpay order

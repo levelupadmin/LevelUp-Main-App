@@ -12,6 +12,16 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
+// Constant-time compare. HMAC-SHA256 hex output is fixed 64 chars, so the
+// length-mismatch early return leaks nothing useful. Matches the helper in
+// verify-razorpay-payment / razorpay-webhook for consistency.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 async function verifySignature(
   orderId: string,
   paymentId: string,
@@ -31,7 +41,7 @@ async function verifySignature(
   const computed = Array.from(new Uint8Array(sig))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-  return computed === signature;
+  return timingSafeEqual(computed, signature);
 }
 
 Deno.serve(async (req) => {
@@ -148,43 +158,31 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Payment was not made by this user" }, 400);
     }
 
-    // Reactivate cancelled / re-use existing registered row instead of
-    // tripping the partial unique index.
-    const { data: existing } = await admin
-      .from("event_registrations")
-      .select("id, status")
-      .eq("event_id", event_id)
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (existing && existing.status === "registered") {
-      return jsonRes({ registered: true, message: "Already registered", event_title: event.title });
+    // Atomic seat claim — reactivates a cancelled row or inserts a new one,
+    // enforcing capacity under concurrency (shared with the free path).
+    const { data: seat, error: seatErr } = await admin.rpc("claim_event_seat", {
+      p_event_id: event_id,
+      p_user_id: user.id,
+      p_amount: Number(event.price_inr ?? 0),
+      p_payment_id: razorpay_payment_id,
+    });
+    if (seatErr) return jsonRes({ error: seatErr.message }, 500);
+    if (seat === "sold_out") {
+      // Extremely rare: capacity filled between the pre-payment check in
+      // register-for-event and this post-payment claim. The payment is
+      // captured, so flag for a manual refund rather than silently overselling.
+      console.error(
+        "[verify-event-payment] seat sold out AFTER payment for event", event_id,
+        "payment", razorpay_payment_id
+      );
+      return jsonRes({
+        error: "This event sold out just as your payment completed. Our team will process a refund — please contact support.",
+        refund_required: true,
+      }, 409);
     }
-
-    let writeErr;
-    if (existing) {
-      const res = await admin
-        .from("event_registrations")
-        .update({
-          status: "registered",
-          payment_id: razorpay_payment_id,
-          amount_paid: Number(event.price_inr ?? 0),
-          registered_at: new Date().toISOString(),
-        })
-        .eq("id", existing.id);
-      writeErr = res.error;
-    } else {
-      const res = await admin.from("event_registrations").insert({
-        event_id,
-        user_id: user.id,
-        status: "registered",
-        payment_id: razorpay_payment_id,
-        amount_paid: Number(event.price_inr ?? 0),
-      });
-      writeErr = res.error;
+    if (seat === "unavailable" || seat === "not_found") {
+      return jsonRes({ error: "This event is no longer accepting registrations" }, 400);
     }
-
-    if (writeErr) return jsonRes({ error: writeErr.message }, 500);
 
     return jsonRes({ registered: true, event_title: event.title });
   } catch (err) {
