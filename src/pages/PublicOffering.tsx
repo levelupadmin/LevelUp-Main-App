@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import Footer from "@/components/Footer";
 import { isAndroid, isNative } from "@/lib/platform";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
+import AndroidAppCard from "@/components/AndroidAppCard";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 import { track } from "@/lib/analytics";
 import {
@@ -475,9 +476,7 @@ function StatStrip({ offering }: { offering: Offering }) {
           </div>
         ))}
       </div>
-      <p className="text-[11px] text-muted-foreground/70">
-        Available on the web today &middot; Android coming soon
-      </p>
+      <AndroidAppCard />
     </div>
   );
 }
