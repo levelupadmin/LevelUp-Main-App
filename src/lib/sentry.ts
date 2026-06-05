@@ -78,6 +78,20 @@ export function initSentry() {
 export const SentryErrorBoundary = Sentry.ErrorBoundary;
 
 /**
+ * Report a caught error (e.g. from our ErrorBoundary.componentDidCatch) to
+ * Sentry. A render error caught by an ErrorBoundary is "handled", so Sentry's
+ * global handlers never see it — the boundary must report it explicitly. No-op
+ * and never throws if Sentry wasn't initialised (no DSN).
+ */
+export function captureException(error: unknown, context?: Record<string, unknown>) {
+  try {
+    Sentry.captureException(error, context ? { extra: context } : undefined);
+  } catch {
+    // Error reporting must never itself throw.
+  }
+}
+
+/**
  * Attach the current user identity so error reports can be filtered by
  * who hit them. Called from AuthContext when a session loads.
  */

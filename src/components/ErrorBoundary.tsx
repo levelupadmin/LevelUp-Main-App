@@ -12,6 +12,16 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State
     return { hasError: true, error };
   }
 
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // A render error caught here is "handled", so Sentry's global handlers
+    // won't see it — report it explicitly (with the component stack). Dynamic
+    // import keeps Sentry out of this boundary's static deps and matches the
+    // pattern used in AuthContext. No-op if no DSN is configured.
+    void import("@/lib/sentry").then((m) =>
+      m.captureException(error, { componentStack: errorInfo.componentStack })
+    );
+  }
+
   render() {
     if (this.state.hasError) {
       const errorMsg = this.state.error?.message || "Unknown error";

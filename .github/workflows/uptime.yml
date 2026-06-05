@@ -38,7 +38,10 @@ jobs:
             local expect_substr="$3"
             local resp_code
             local body
-            resp_code=$(curl -s -o /tmp/body -w "%{http_code}" --max-time 15 "$url")
+            # -L: follow redirects so an apex→www 307 (or http→https) resolves
+            # to its final 200 instead of being flagged as a failure. %{http_code}
+            # then reports the FINAL status after the redirect chain.
+            resp_code=$(curl -sL -o /tmp/body -w "%{http_code}" --max-time 15 "$url")
             body=$(cat /tmp/body)
             if [ "$resp_code" != "200" ]; then
               failures="${failures}- ${label}: HTTP ${resp_code} (expected 200) — \`${url}\`\n"
@@ -100,5 +103,30 @@ jobs:
               await github.rest.issues.create({
                 owner: context.repo.owner, repo: context.repo.repo,
                 title, body: text, labels: ['uptime'],
+              });
+            }
+
+      - name: Resolve open alerts when green
+        if: steps.probe.outputs.failed == 'false'
+        uses: actions/github-script@v7
+        with:
+          # A clean probe auto-closes any open "uptime" issues so the list
+          # reflects live state instead of accumulating stale incidents.
+          script: |
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'uptime',
+            });
+            for (const issue of open) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `✅ Probe green at ${new Date().toISOString()} — auto-resolving.`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number, state: 'closed', state_reason: 'completed',
               });
             }
