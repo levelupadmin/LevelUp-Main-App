@@ -42,3 +42,7 @@ dist-ssr
 
 # Supabase CLI scratch state (project ref, pooler URL, versions, etc.)
 supabase/.temp/
+
+# Deno lockfile — only generated locally when type-checking edge functions
+# (supabase deploy bundles server-side and does not consume it).
+deno.lock

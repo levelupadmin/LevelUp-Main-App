@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeaders } from "../_shared/cors.ts";
+import { hmacSha256Hex, timingSafeEqual } from "../_shared/crypto.ts";
 
 function encodeBase64(str: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
@@ -12,36 +13,13 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
-// Constant-time compare. HMAC-SHA256 hex output is fixed 64 chars, so the
-// length-mismatch early return leaks nothing useful. Matches the helper in
-// verify-razorpay-payment / razorpay-webhook for consistency.
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
 async function verifySignature(
   orderId: string,
   paymentId: string,
   signature: string,
   secret: string
 ): Promise<boolean> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const message = `${orderId}|${paymentId}`;
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(message));
-  const computed = Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return timingSafeEqual(computed, signature);
+  return timingSafeEqual(await hmacSha256Hex(`${orderId}|${paymentId}`, secret), signature);
 }
 
 Deno.serve(async (req) => {
