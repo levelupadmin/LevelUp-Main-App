@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,7 +7,6 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,49 +17,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Upload, Award, Download, FileUp } from "lucide-react";
+import { Plus, Upload, Download, FileUp } from "lucide-react";
 import { generateAndSaveCertificate, VariablePosition } from "@/lib/certificate-generator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDebounce } from "@/hooks/useDebounce";
-
-interface EnrolmentRow {
-  id: string;
-  status: string;
-  created_at: string;
-  user_id: string;
-  user_name: string;
-  user_email: string;
-  user_phone?: string;
-  offering_id: string;
-  offering_title: string;
-  payment_order_id: string | null;
-  /** "live" = native payment_orders / admin grant; "legacy" = pre-claim row in legacy_enrolments */
-  enrolment_kind?: "live" | "legacy";
-  total_paid_inr?: number | null;
-  legacy_purchased_at?: string | null;
-}
-
-/* ── CSV Import types ── */
-interface CsvRow {
-  full_name: string;
-  email: string;
-  phone: string;
-  offering_id: string;
-}
-
-interface CsvReadyRow extends CsvRow {
-  existing_user_id: string;
-}
-
-interface CsvNewRow extends CsvRow {}
-
-interface CsvConflictRow extends CsvRow {
-  existing_user_id: string;
-  existing_email: string;
-  existing_phone: string;
-  conflict_type: "email_match_phone_diff" | "phone_match_email_diff";
-  action: "force" | "skip" | null;
-}
+import type { EnrolmentRow, CsvRow, CsvReadyRow, CsvNewRow, CsvConflictRow } from "@/components/admin/enrolments/types";
+import EnrolmentFilters from "@/components/admin/enrolments/EnrolmentFilters";
+import EnrolmentTable from "@/components/admin/enrolments/EnrolmentTable";
 
 const AdminEnrolments = () => {
   const PAGE_SIZE = 50;
@@ -833,44 +795,19 @@ const AdminEnrolments = () => {
   return (
     <>
       {/* ── Filters Row ── */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-        </div>
-
-        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }}>
-          <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-            <SelectItem value="suspended">Suspended</SelectItem>
-            <SelectItem value="expired">Expired</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={courseFilter} onValueChange={(v) => { setCourseFilter(v); setPage(0); }}>
-          <SelectTrigger className="w-44"><SelectValue placeholder="Course" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Courses</SelectItem>
-            {allCourses.map((c) => (
-              <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={offeringFilter} onValueChange={(v) => { setOfferingFilter(v); setPage(0); }}>
-          <SelectTrigger className="w-44"><SelectValue placeholder="Offering" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Offerings</SelectItem>
-            {allOfferings.map((o) => (
-              <SelectItem key={o.id} value={o.id}>{o.title}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <EnrolmentFilters
+        search={search}
+        setSearch={setSearch}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        courseFilter={courseFilter}
+        setCourseFilter={setCourseFilter}
+        offeringFilter={offeringFilter}
+        setOfferingFilter={setOfferingFilter}
+        setPage={setPage}
+        allCourses={allCourses}
+        allOfferings={allOfferings}
+      />
 
       {/* ── Actions Row ── */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -910,74 +847,16 @@ const AdminEnrolments = () => {
         </div>
       )}
 
-      <div className="bg-card border border-border rounded-xl overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-muted-foreground">
-              <th className="px-3 py-3 w-10">
-                <Checkbox
-                  checked={filtered.length > 0 && selectedIds.size === filtered.length}
-                  onCheckedChange={toggleSelectAll}
-                />
-              </th>
-              <th className="px-5 py-3 font-medium">Student</th>
-              <th className="px-5 py-3 font-medium">Offering</th>
-              <th className="px-5 py-3 font-medium">Status</th>
-              <th className="px-5 py-3 font-medium">Enrolled</th>
-              <th className="px-5 py-3 font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading...</td></tr>
-            ) : filtered.length === 0 ? (
-              <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">No enrolments found</td></tr>
-            ) : filtered.map((e) => (
-              <tr key={e.id} className="border-b border-border last:border-0 hover:bg-secondary/30">
-                <td className="px-3 py-3">
-                  <Checkbox
-                    checked={selectedIds.has(e.id)}
-                    onCheckedChange={() => toggleSelect(e.id)}
-                  />
-                </td>
-                <td className="px-5 py-3">
-                  <p className="font-medium">{e.user_name}</p>
-                  <p className="text-xs text-muted-foreground">{e.user_email}</p>
-                </td>
-                <td className="px-5 py-3">{e.offering_title}</td>
-                <td className="px-5 py-3">
-                  <Select value={e.status} onValueChange={(v) => handleStatusChange(e.id, v)}>
-                    <SelectTrigger className="w-28 h-7 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="expired">Expired</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </td>
-                <td className="px-5 py-3 font-mono text-xs">{new Date(e.created_at).toLocaleDateString("en-IN")}</td>
-                <td className="px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">{e.payment_order_id ? "Paid" : "Manual"}</span>
-                    {e.status === "active" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2"
-                        disabled={generatingCertFor === e.id}
-                        onClick={() => handleGenerateCertificate(e)}
-                        title="Generate Certificate"
-                      >
-                        <Award className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <EnrolmentTable
+        rows={filtered}
+        loading={loading}
+        selectedIds={selectedIds}
+        onToggleSelect={toggleSelect}
+        onToggleSelectAll={toggleSelectAll}
+        onStatusChange={handleStatusChange}
+        onGenerateCertificate={handleGenerateCertificate}
+        generatingCertFor={generatingCertFor}
+      />
 
       {totalCount > PAGE_SIZE && (
         <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
