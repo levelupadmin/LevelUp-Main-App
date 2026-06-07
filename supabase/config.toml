@@ -25,3 +25,14 @@ project_id = "twqagwleffjggoemzfqs"
     verify_jwt = false
   [functions.verify-msg91-otp]
     verify_jwt = false
+  [functions.register-for-event]
+    verify_jwt = true
+  # NOTE: tally-application-webhook is called by Tally with no Supabase JWT.
+  # It is verify_jwt=true on prod today, which likely stops Tally reaching it
+  # (it self-authenticates via HMAC, so false is the correct setting once the
+  # cohort Tally flow is tested end-to-end). Kept true here to match current
+  # prod and avoid an unverified behaviour change in this deploy.
+  [functions.tally-application-webhook]
+    verify_jwt = true
+  [functions.generate-invoice-pdf]
+    verify_jwt = false

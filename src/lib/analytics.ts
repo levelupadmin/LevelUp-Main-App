@@ -156,6 +156,13 @@ function loadTwitterPixel(pixelId: string) {
  * Idempotent - safe to call multiple times. Returns the loaded
  * settings so callers can branch on them if needed.
  */
+// Analytics failures are non-fatal — never spam the production console with
+// them. Log only in dev. (Uses console["warn"] so a blanket console.warn
+// rename doesn't recurse into this helper.)
+const devWarn = (...args: unknown[]) => {
+  if (import.meta.env.DEV) console["warn"](...args);
+};
+
 export async function bootAnalytics(): Promise<AnalyticsSettings | null> {
   // Skip on localhost so dev work doesn't pollute production funnels.
   if (
@@ -169,16 +176,16 @@ export async function bootAnalytics(): Promise<AnalyticsSettings | null> {
   if (!s) return null;
 
   if (s.clarity_enabled && s.clarity_project_id) {
-    try { loadClarity(s.clarity_project_id); } catch (e) { console.warn("Clarity load failed", e); }
+    try { loadClarity(s.clarity_project_id); } catch (e) { devWarn("Clarity load failed", e); }
   }
   if (s.meta_pixel_enabled && s.meta_pixel_id) {
-    try { loadMetaPixel(s.meta_pixel_id); } catch (e) { console.warn("Meta Pixel load failed", e); }
+    try { loadMetaPixel(s.meta_pixel_id); } catch (e) { devWarn("Meta Pixel load failed", e); }
   }
   if (s.ga4_enabled && s.ga4_measurement_id) {
-    try { loadGA4(s.ga4_measurement_id); } catch (e) { console.warn("GA4 load failed", e); }
+    try { loadGA4(s.ga4_measurement_id); } catch (e) { devWarn("GA4 load failed", e); }
   }
   if (s.twitter_pixel_enabled && s.twitter_pixel_id) {
-    try { loadTwitterPixel(s.twitter_pixel_id); } catch (e) { console.warn("Twitter Pixel load failed", e); }
+    try { loadTwitterPixel(s.twitter_pixel_id); } catch (e) { devWarn("Twitter Pixel load failed", e); }
   }
   return s;
 }
@@ -282,6 +289,6 @@ export function track(event: AnalyticsEvent) {
     }
   } catch (e) {
     // Pixels failing should never break the user flow.
-    console.warn("analytics track failed", e);
+    devWarn("analytics track failed", e);
   }
 }

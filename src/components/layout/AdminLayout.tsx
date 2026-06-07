@@ -28,6 +28,7 @@ import {
   Megaphone,
   Mail,
   Send,
+  Bell,
   ClipboardList,
   MessageSquare,
   Shield,
@@ -91,6 +92,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Communications",
     items: [
       { label: "Announcements", icon: Megaphone, path: "/admin/announcements" },
+      { label: "Launch Interest", icon: Bell, path: "/admin/notify-requests" },
       { label: "Email Templates", icon: Mail, path: "/admin/email-templates" },
       { label: "Email Campaigns", icon: Send, path: "/admin/email-campaigns" },
     ],
@@ -464,6 +466,9 @@ const AdminLayout = ({ children }: Props) => {
             <div className="relative">
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
+                aria-label="Account menu"
+                aria-haspopup="menu"
+                aria-expanded={dropdownOpen}
                 className="flex items-center gap-2 min-h-[44px] focus-ring press-scale rounded-md px-1"
               >
                 <InitialsAvatar name={profile?.full_name ?? "A"} size={32} />

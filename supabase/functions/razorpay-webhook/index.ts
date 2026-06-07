@@ -226,16 +226,17 @@ Deno.serve(async (req) => {
       return jsonRes({ received: true, skipped: "no payment_order" });
     }
 
-    // Idempotency: if we've already processed this order, exit fast.
-    if (po.status === "captured") {
-      // Still ensure the payment_id is recorded
-      if (!po.razorpay_payment_id) {
+    // Idempotency: terminal states exit fast. "captured" = fully processed;
+    // "needs_review" = parked for a human (wrong amount / coupon / user issue),
+    // so we must NOT auto-reprocess it on a Razorpay retry.
+    if (po.status === "captured" || po.status === "needs_review") {
+      if (po.status === "captured" && !po.razorpay_payment_id) {
         await admin
           .from("payment_orders")
           .update({ razorpay_payment_id: razorpayPaymentId })
           .eq("id", po.id);
       }
-      return jsonRes({ received: true, already_captured: true });
+      return jsonRes({ received: true, status: po.status });
     }
 
     // Defense in depth: confirm the captured amount matches what we expected.
@@ -249,48 +250,19 @@ Deno.serve(async (req) => {
         "for payment_order",
         po.id
       );
-      // Mark for manual review rather than auto-enrolling on a wrong amount
+      // Park for manual review rather than auto-enrolling on a wrong amount.
       await admin
         .from("payment_orders")
         .update({ status: "needs_review" })
         .eq("id", po.id);
-      return jsonRes({ error: "Amount mismatch" }, 400);
+      // Return 200: the amount will never change, so a 4xx here just makes
+      // Razorpay retry the same mismatch forever. Ack receipt; a human
+      // resolves the parked order.
+      return jsonRes({ received: true, parked: "amount_mismatch" });
     }
 
-    // Capture-time coupon redemption (deferred from order creation so
-    // abandoned payments do not burn coupon usage). If the cap was hit
-    // by a parallel checkout, park for review — the customer paid.
-    if (po.coupon_id) {
-      const { data: redeemed, error: redeemErr } = await admin.rpc(
-        "redeem_coupon",
-        { p_coupon_id: po.coupon_id }
-      );
-      if (redeemErr || redeemed === false) {
-        console.error(
-          "[razorpay-webhook] coupon redemption failed for",
-          po.coupon_id,
-          redeemErr
-        );
-        await admin
-          .from("payment_orders")
-          .update({ status: "needs_review" })
-          .eq("id", po.id);
-        return jsonRes({ error: "Coupon redemption failed" }, 409);
-      }
-    }
-
-    // Mark captured
-    await admin
-      .from("payment_orders")
-      .update({
-        status: "captured",
-        razorpay_payment_id: razorpayPaymentId,
-        captured_at: new Date().toISOString(),
-      })
-      .eq("id", po.id);
-
-    // Resolve user — for authenticated checkouts po.user_id is set, for
-    // guest checkouts we have to find or create the user from guest_email.
+    // Resolve user first — authenticated checkouts carry po.user_id; guests are
+    // found/created from guest_email. We need the user id to grant enrolment.
     let userId: string | null = po.user_id;
     if (!userId) {
       const resolved = await resolveGuestUserId(admin, po);
@@ -312,6 +284,26 @@ Deno.serve(async (req) => {
         .update({ user_id: userId })
         .eq("id", po.id);
     }
+
+    // Atomically claim this order for capture: a single conditional UPDATE that
+    // flips it to "captured" only if it isn't already in a terminal state.
+    // Exactly one invocation wins this claim; the winner alone performs the
+    // one-time coupon redemption (below). Losers of a concurrent duplicate
+    // delivery still fall through to the idempotent enrolment grant and then
+    // return — enrolment is independently guarded by its unique index, so it is
+    // safe to run on every delivery, while coupon usage is not.
+    const { data: claimed } = await admin
+      .from("payment_orders")
+      .update({
+        status: "captured",
+        razorpay_payment_id: razorpayPaymentId,
+        captured_at: new Date().toISOString(),
+      })
+      .eq("id", po.id)
+      .neq("status", "captured")
+      .neq("status", "needs_review")
+      .select("id");
+    const wonCaptureClaim = !!(claimed && claimed.length > 0);
 
     // ── Staged payment: update cohort_applications ──
     if (po.payment_type && po.application_id) {
@@ -425,6 +417,30 @@ Deno.serve(async (req) => {
           total_inr: po.total_inr,
         },
       });
+    }
+
+    // Capture-time coupon redemption — deferred from order creation so
+    // abandoned payments don't burn usage, and gated behind the atomic capture
+    // claim so a duplicate/retried delivery can't redeem twice. The customer is
+    // already enrolled above; a redemption failure (e.g. the cap was hit by a
+    // parallel checkout) only parks the order for accounting review — it does
+    // NOT revoke the access they paid for.
+    if (wonCaptureClaim && po.coupon_id) {
+      const { data: redeemed, error: redeemErr } = await admin.rpc(
+        "redeem_coupon",
+        { p_coupon_id: po.coupon_id }
+      );
+      if (redeemErr || redeemed === false) {
+        console.error(
+          "[razorpay-webhook] coupon redemption failed (order already captured & enrolled) for",
+          po.coupon_id,
+          redeemErr
+        );
+        await admin
+          .from("payment_orders")
+          .update({ status: "needs_review" })
+          .eq("id", po.id);
+      }
     }
 
     return jsonRes({ success: true, enrolment: enrolmentId ? "created" : "exists" });

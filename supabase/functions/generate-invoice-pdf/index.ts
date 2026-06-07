@@ -74,12 +74,18 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Order is not captured; cannot invoice yet" }, 400);
     }
 
-    // Authorization: client calls must own this order. Server callers
-    // pass the service_role key and bypass this check.
+    // Authorization: client calls must own this order. Server callers pass the
+    // service_role key as a Bearer token and bypass this check. Use an exact,
+    // constant-time compare of the token — NOT authHeader.includes(key), which
+    // would also pass if the key appeared as a substring anywhere in the header.
     const authHeader = req.headers.get("Authorization") || "";
-    const isServerCall = authHeader.includes(
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const bearer = authHeader.replace(/^Bearer\s+/i, "");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    let keyDiff = bearer.length === serviceKey.length ? 0 : 1;
+    for (let i = 0; i < bearer.length && i < serviceKey.length; i++) {
+      keyDiff |= bearer.charCodeAt(i) ^ serviceKey.charCodeAt(i);
+    }
+    const isServerCall = keyDiff === 0;
     if (!isServerCall) {
       const userClient = createClient(
         Deno.env.get("SUPABASE_URL")!,

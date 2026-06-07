@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       account_deletion_requests: {
@@ -73,6 +98,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "account_deletion_requests_processed_by_fkey"
+            columns: ["processed_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "account_deletion_requests_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -84,6 +116,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_deletion_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -137,6 +176,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "admin_announcements_sent_by_fkey"
+            columns: ["sent_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       admin_audit_logs: {
@@ -185,6 +231,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "admin_audit_logs_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       analytics_settings: {
@@ -228,6 +281,56 @@ export type Database = {
           updated_by?: string | null
         }
         Relationships: []
+      }
+      api_call_log: {
+        Row: {
+          action: string
+          api_key_id: string | null
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          id: number
+          ip: unknown
+          request_body: Json | null
+          response_summary: Json | null
+          status_code: number
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          api_key_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: number
+          ip?: unknown
+          request_body?: Json | null
+          response_summary?: Json | null
+          status_code: number
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          api_key_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: number
+          ip?: unknown
+          request_body?: Json | null
+          response_summary?: Json | null
+          status_code?: number
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_call_log_api_key_id_fkey"
+            columns: ["api_key_id"]
+            isOneToOne: false
+            referencedRelation: "team_api_keys"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       assignment_submissions: {
         Row: {
@@ -295,6 +398,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "assignment_submissions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "assignment_submissions_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -306,6 +416,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignment_submissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -366,6 +483,13 @@ export type Database = {
             columns: ["run_by"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bulk_import_jobs_run_by_fkey"
+            columns: ["run_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -477,6 +601,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "certificates_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       chapter_notes: {
@@ -577,6 +708,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "chapter_progress_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       chapter_qna: {
@@ -629,6 +767,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "chapter_qna_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       chapter_qna_replies: {
@@ -676,6 +821,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chapter_qna_replies_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -774,6 +926,7 @@ export type Database = {
           file_size_bytes: number | null
           id: string
           make_free: boolean
+          media_provider: string | null
           media_url: string | null
           original_filename: string | null
           section_id: string
@@ -798,6 +951,7 @@ export type Database = {
           file_size_bytes?: number | null
           id?: string
           make_free?: boolean
+          media_provider?: string | null
           media_url?: string | null
           original_filename?: string | null
           section_id: string
@@ -822,6 +976,7 @@ export type Database = {
           file_size_bytes?: number | null
           id?: string
           make_free?: boolean
+          media_provider?: string | null
           media_url?: string | null
           original_filename?: string | null
           section_id?: string
@@ -937,6 +1092,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "cohort_applications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       cohort_batch_members: {
@@ -1007,6 +1169,310 @@ export type Database = {
           },
         ]
       }
+      cohort_notifications_log: {
+        Row: {
+          channels: string[]
+          id: string
+          related_id: string
+          related_kind: string
+          sent_at: string
+          template_key: string
+          user_id: string
+        }
+        Insert: {
+          channels?: string[]
+          id?: string
+          related_id: string
+          related_kind: string
+          sent_at?: string
+          template_key: string
+          user_id: string
+        }
+        Update: {
+          channels?: string[]
+          id?: string
+          related_id?: string
+          related_kind?: string
+          sent_at?: string
+          template_key?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_notifications_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_notifications_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_notifications_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_week_attendance: {
+        Row: {
+          attended: boolean
+          cohort_week_id: string
+          created_at: string
+          id: string
+          marked_at: string | null
+          marked_by: string | null
+          notes: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attended?: boolean
+          cohort_week_id: string
+          created_at?: string
+          id?: string
+          marked_at?: string | null
+          marked_by?: string | null
+          notes?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attended?: boolean
+          cohort_week_id?: string
+          created_at?: string
+          id?: string
+          marked_at?: string | null
+          marked_by?: string | null
+          notes?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_week_attendance_cohort_week_id_fkey"
+            columns: ["cohort_week_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_weeks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_attendance_marked_by_fkey"
+            columns: ["marked_by"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_attendance_marked_by_fkey"
+            columns: ["marked_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_attendance_marked_by_fkey"
+            columns: ["marked_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_attendance_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_attendance_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_attendance_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_week_submissions: {
+        Row: {
+          cohort_week_id: string
+          created_at: string
+          feedback_text: string | null
+          file_urls: string[]
+          id: string
+          late: boolean
+          link_url: string | null
+          open_to_peer_review: boolean
+          rating: number | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          submitted_at: string
+          text_content: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cohort_week_id: string
+          created_at?: string
+          feedback_text?: string | null
+          file_urls?: string[]
+          id?: string
+          late?: boolean
+          link_url?: string | null
+          open_to_peer_review?: boolean
+          rating?: number | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          submitted_at?: string
+          text_content?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cohort_week_id?: string
+          created_at?: string
+          feedback_text?: string | null
+          file_urls?: string[]
+          id?: string
+          late?: boolean
+          link_url?: string | null
+          open_to_peer_review?: boolean
+          rating?: number | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          submitted_at?: string
+          text_content?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_week_submissions_cohort_week_id_fkey"
+            columns: ["cohort_week_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_weeks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_submissions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_submissions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_submissions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_submissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_submissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_week_submissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_weeks: {
+        Row: {
+          assignment_due_at: string | null
+          assignment_prompt: string | null
+          cohort_batch_id: string
+          created_at: string
+          description: string | null
+          ends_on: string
+          feedback_session_at: string | null
+          id: string
+          sort_order: number
+          starts_on: string
+          status: string
+          theme: string
+          updated_at: string
+          week_number: number
+        }
+        Insert: {
+          assignment_due_at?: string | null
+          assignment_prompt?: string | null
+          cohort_batch_id: string
+          created_at?: string
+          description?: string | null
+          ends_on: string
+          feedback_session_at?: string | null
+          id?: string
+          sort_order?: number
+          starts_on: string
+          status?: string
+          theme: string
+          updated_at?: string
+          week_number: number
+        }
+        Update: {
+          assignment_due_at?: string | null
+          assignment_prompt?: string | null
+          cohort_batch_id?: string
+          created_at?: string
+          description?: string | null
+          ends_on?: string
+          feedback_session_at?: string | null
+          id?: string
+          sort_order?: number
+          starts_on?: string
+          status?: string
+          theme?: string
+          updated_at?: string
+          week_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_weeks_cohort_batch_id_fkey"
+            columns: ["cohort_batch_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       community_post_comments: {
         Row: {
           comment_text: string
@@ -1064,6 +1530,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "community_post_comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       community_post_likes: {
@@ -1104,48 +1577,78 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "community_post_likes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       community_posts: {
         Row: {
+          cohort_batch_id: string | null
           content_text: string
           course_tag_id: string | null
           created_at: string
           id: string
           is_admin_post: boolean
           is_pinned: boolean
+          linked_submission_id: string | null
           media_urls: string[] | null
+          post_type: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          cohort_batch_id?: string | null
           content_text: string
           course_tag_id?: string | null
           created_at?: string
           id?: string
           is_admin_post?: boolean
           is_pinned?: boolean
+          linked_submission_id?: string | null
           media_urls?: string[] | null
+          post_type?: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          cohort_batch_id?: string | null
           content_text?: string
           course_tag_id?: string | null
           created_at?: string
           id?: string
           is_admin_post?: boolean
           is_pinned?: boolean
+          linked_submission_id?: string | null
           media_urls?: string[] | null
+          post_type?: string
           updated_at?: string
           user_id?: string
         }
         Relationships: [
           {
+            foreignKeyName: "community_posts_cohort_batch_id_fkey"
+            columns: ["cohort_batch_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_batches"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "community_posts_course_tag_id_fkey"
             columns: ["course_tag_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_posts_linked_submission_id_fkey"
+            columns: ["linked_submission_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_week_submissions"
             referencedColumns: ["id"]
           },
           {
@@ -1160,6 +1663,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_posts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -1270,6 +1780,62 @@ export type Database = {
           },
         ]
       }
+      course_notify_requests: {
+        Row: {
+          course_id: string
+          created_at: string
+          email: string | null
+          id: string
+          notified_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          notified_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          notified_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_notify_requests_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_notify_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_notify_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_notify_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       course_rating_stats: {
         Row: {
           avg_rating: number
@@ -1371,6 +1937,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_reviews_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -1563,6 +2136,142 @@ export type Database = {
           },
         ]
       }
+      crm_contacts: {
+        Row: {
+          converted_at: string | null
+          converted_user_id: string | null
+          created_at: string
+          crm_id: string | null
+          custom_fields: Json
+          data_sources: string[] | null
+          days_to_conversion: number | null
+          email: string | null
+          first_touch_at: string | null
+          full_name: string | null
+          id: string
+          last_contacted_at: string | null
+          lifecycle_stage: string | null
+          mql_score: number | null
+          mql_tier: string | null
+          notes: string | null
+          owner_user_id: string | null
+          phone: string | null
+          source: string | null
+          status: string
+          tags: string[] | null
+          tally_categories: string[] | null
+          updated_at: string
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+        }
+        Insert: {
+          converted_at?: string | null
+          converted_user_id?: string | null
+          created_at?: string
+          crm_id?: string | null
+          custom_fields?: Json
+          data_sources?: string[] | null
+          days_to_conversion?: number | null
+          email?: string | null
+          first_touch_at?: string | null
+          full_name?: string | null
+          id?: string
+          last_contacted_at?: string | null
+          lifecycle_stage?: string | null
+          mql_score?: number | null
+          mql_tier?: string | null
+          notes?: string | null
+          owner_user_id?: string | null
+          phone?: string | null
+          source?: string | null
+          status?: string
+          tags?: string[] | null
+          tally_categories?: string[] | null
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Update: {
+          converted_at?: string | null
+          converted_user_id?: string | null
+          created_at?: string
+          crm_id?: string | null
+          custom_fields?: Json
+          data_sources?: string[] | null
+          days_to_conversion?: number | null
+          email?: string | null
+          first_touch_at?: string | null
+          full_name?: string | null
+          id?: string
+          last_contacted_at?: string | null
+          lifecycle_stage?: string | null
+          mql_score?: number | null
+          mql_tier?: string | null
+          notes?: string | null
+          owner_user_id?: string | null
+          phone?: string | null
+          source?: string | null
+          status?: string
+          tags?: string[] | null
+          tally_categories?: string[] | null
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_contacts_converted_user_id_fkey"
+            columns: ["converted_user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_contacts_converted_user_id_fkey"
+            columns: ["converted_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_contacts_converted_user_id_fkey"
+            columns: ["converted_user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_contacts_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_contacts_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_contacts_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       custom_field_definitions: {
         Row: {
           created_at: string
@@ -1600,6 +2309,76 @@ export type Database = {
             columns: ["offering_id"]
             isOneToOne: false
             referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      doc_changelog: {
+        Row: {
+          area: string
+          author: string
+          body_md: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          shipped_at: string | null
+          status: string
+          summary: string
+          title: string
+          updated_at: string
+          user_facing: boolean
+          version: string | null
+        }
+        Insert: {
+          area: string
+          author?: string
+          body_md?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          shipped_at?: string | null
+          status?: string
+          summary: string
+          title: string
+          updated_at?: string
+          user_facing?: boolean
+          version?: string | null
+        }
+        Update: {
+          area?: string
+          author?: string
+          body_md?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          shipped_at?: string | null
+          status?: string
+          summary?: string
+          title?: string
+          updated_at?: string
+          user_facing?: boolean
+          version?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "doc_changelog_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "doc_changelog_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "doc_changelog_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -1663,6 +2442,13 @@ export type Database = {
             columns: ["sent_by"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_campaigns_sent_by_fkey"
+            columns: ["sent_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -1837,6 +2623,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "enrolment_audit_log_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "enrolment_audit_log_enrolment_id_fkey"
             columns: ["enrolment_id"]
             isOneToOne: false
@@ -1851,6 +2644,7 @@ export type Database = {
           autopay_active: boolean
           balance_due_inr: number | null
           created_at: string
+          edition_label: string | null
           expires_at: string | null
           granted_by: string | null
           id: string
@@ -1872,6 +2666,7 @@ export type Database = {
           autopay_active?: boolean
           balance_due_inr?: number | null
           created_at?: string
+          edition_label?: string | null
           expires_at?: string | null
           granted_by?: string | null
           id?: string
@@ -1893,6 +2688,7 @@ export type Database = {
           autopay_active?: boolean
           balance_due_inr?: number | null
           created_at?: string
+          edition_label?: string | null
           expires_at?: string | null
           granted_by?: string | null
           id?: string
@@ -1925,6 +2721,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "enrolments_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "enrolments_offering_id_fkey"
             columns: ["offering_id"]
             isOneToOne: false
@@ -1953,6 +2756,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "enrolments_revoked_by_fkey"
+            columns: ["revoked_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "enrolments_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -1964,6 +2774,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrolments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -2063,6 +2880,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_registrations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -2297,6 +3121,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "instructor_course_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "instructor_course_assignments_course_fk"
             columns: ["course_id"]
             isOneToOne: false
@@ -2315,6 +3146,119 @@ export type Database = {
             columns: ["instructor_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instructor_course_assignments_instructor_id_fkey"
+            columns: ["instructor_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      legacy_enrolments: {
+        Row: {
+          city: string | null
+          claimed_at: string | null
+          claimed_by_user_id: string | null
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+          legacy_amount_inr: number | null
+          legacy_order_id: string | null
+          legacy_program_name: string | null
+          legacy_purchased_at: string | null
+          offering_id: string | null
+          phone: string
+          source: string
+          state: string | null
+        }
+        Insert: {
+          city?: string | null
+          claimed_at?: string | null
+          claimed_by_user_id?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          legacy_amount_inr?: number | null
+          legacy_order_id?: string | null
+          legacy_program_name?: string | null
+          legacy_purchased_at?: string | null
+          offering_id?: string | null
+          phone: string
+          source?: string
+          state?: string | null
+        }
+        Update: {
+          city?: string | null
+          claimed_at?: string | null
+          claimed_by_user_id?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          legacy_amount_inr?: number | null
+          legacy_order_id?: string | null
+          legacy_program_name?: string | null
+          legacy_purchased_at?: string | null
+          offering_id?: string | null
+          phone?: string
+          source?: string
+          state?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legacy_enrolments_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      legacy_program_mapping: {
+        Row: {
+          created_at: string
+          decision_status: string
+          id: string
+          legacy_program_name: string
+          notes: string | null
+          offering_id: string | null
+          source: string
+          updated_at: string
+          user_count: number | null
+        }
+        Insert: {
+          created_at?: string
+          decision_status?: string
+          id?: string
+          legacy_program_name: string
+          notes?: string | null
+          offering_id?: string | null
+          source?: string
+          updated_at?: string
+          user_count?: number | null
+        }
+        Update: {
+          created_at?: string
+          decision_status?: string
+          id?: string
+          legacy_program_name?: string
+          notes?: string | null
+          offering_id?: string | null
+          source?: string
+          updated_at?: string
+          user_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legacy_program_mapping_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
             referencedColumns: ["id"]
           },
         ]
@@ -2418,6 +3362,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "notification_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       notifications: {
@@ -2470,6 +3421,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -2835,6 +3793,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "opportunities_posted_by_user_id_fkey"
+            columns: ["posted_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       opportunity_applications: {
@@ -2884,6 +3849,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "opportunity_applications_applicant_user_id_fkey"
+            columns: ["applicant_user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "opportunity_applications_opportunity_id_fkey"
             columns: ["opportunity_id"]
             isOneToOne: false
@@ -2895,18 +3867,25 @@ export type Database = {
       payment_orders: {
         Row: {
           application_id: string | null
+          bank: string | null
           bump_offering_ids: string[] | null
           captured_at: string | null
+          card_last4: string | null
+          card_network: string | null
+          coupon_code: string | null
           coupon_id: string | null
           created_at: string
           custom_field_values: Json | null
           discount_inr: number
+          fee_inr: number | null
           gst_inr: number
           guest_email: string | null
           guest_name: string | null
           guest_phone: string | null
           id: string
+          notes: Json | null
           offering_id: string
+          payment_method: string | null
           payment_type: string | null
           razorpay_order_id: string | null
           razorpay_payment_id: string | null
@@ -2914,6 +3893,7 @@ export type Database = {
           refunded_at: string | null
           status: string
           subtotal_inr: number
+          tax_inr: number | null
           total_inr: number
           updated_at: string
           user_id: string | null
@@ -2922,21 +3902,30 @@ export type Database = {
           utm_medium: string | null
           utm_source: string | null
           utm_term: string | null
+          vpa: string | null
+          wallet: string | null
         }
         Insert: {
           application_id?: string | null
+          bank?: string | null
           bump_offering_ids?: string[] | null
           captured_at?: string | null
+          card_last4?: string | null
+          card_network?: string | null
+          coupon_code?: string | null
           coupon_id?: string | null
           created_at?: string
           custom_field_values?: Json | null
           discount_inr?: number
+          fee_inr?: number | null
           gst_inr?: number
           guest_email?: string | null
           guest_name?: string | null
           guest_phone?: string | null
           id?: string
+          notes?: Json | null
           offering_id: string
+          payment_method?: string | null
           payment_type?: string | null
           razorpay_order_id?: string | null
           razorpay_payment_id?: string | null
@@ -2944,6 +3933,7 @@ export type Database = {
           refunded_at?: string | null
           status?: string
           subtotal_inr: number
+          tax_inr?: number | null
           total_inr: number
           updated_at?: string
           user_id?: string | null
@@ -2952,21 +3942,30 @@ export type Database = {
           utm_medium?: string | null
           utm_source?: string | null
           utm_term?: string | null
+          vpa?: string | null
+          wallet?: string | null
         }
         Update: {
           application_id?: string | null
+          bank?: string | null
           bump_offering_ids?: string[] | null
           captured_at?: string | null
+          card_last4?: string | null
+          card_network?: string | null
+          coupon_code?: string | null
           coupon_id?: string | null
           created_at?: string
           custom_field_values?: Json | null
           discount_inr?: number
+          fee_inr?: number | null
           gst_inr?: number
           guest_email?: string | null
           guest_name?: string | null
           guest_phone?: string | null
           id?: string
+          notes?: Json | null
           offering_id?: string
+          payment_method?: string | null
           payment_type?: string | null
           razorpay_order_id?: string | null
           razorpay_payment_id?: string | null
@@ -2974,6 +3973,7 @@ export type Database = {
           refunded_at?: string | null
           status?: string
           subtotal_inr?: number
+          tax_inr?: number | null
           total_inr?: number
           updated_at?: string
           user_id?: string | null
@@ -2982,6 +3982,8 @@ export type Database = {
           utm_medium?: string | null
           utm_source?: string | null
           utm_term?: string | null
+          vpa?: string | null
+          wallet?: string | null
         }
         Relationships: [
           {
@@ -3010,6 +4012,78 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_orders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      peer_review_assignments: {
+        Row: {
+          created_at: string
+          feedback_text: string | null
+          id: string
+          rating: number | null
+          reviewer_user_id: string
+          status: string
+          submission_id: string
+          submitted_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          feedback_text?: string | null
+          id?: string
+          rating?: number | null
+          reviewer_user_id: string
+          status?: string
+          submission_id: string
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          feedback_text?: string | null
+          id?: string
+          rating?: number | null
+          reviewer_user_id?: string
+          status?: string
+          submission_id?: string
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "peer_review_assignments_reviewer_user_id_fkey"
+            columns: ["reviewer_user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "peer_review_assignments_reviewer_user_id_fkey"
+            columns: ["reviewer_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "peer_review_assignments_reviewer_user_id_fkey"
+            columns: ["reviewer_user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "peer_review_assignments_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_week_submissions"
             referencedColumns: ["id"]
           },
         ]
@@ -3073,6 +4147,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portfolio_projects_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -3151,6 +4232,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "qna_posts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       quiz_attempts: {
@@ -3204,6 +4292,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quiz_attempts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -3343,6 +4438,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "refunds_initiated_by_fkey"
+            columns: ["initiated_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "refunds_payment_order_id_fkey"
             columns: ["payment_order_id"]
             isOneToOne: false
@@ -3390,6 +4492,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_helpful_votes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -3503,6 +4612,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "session_attendance_marked_by_fkey"
+            columns: ["marked_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "session_attendance_session_id_fkey"
             columns: ["session_id"]
             isOneToOne: false
@@ -3528,6 +4644,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_attendance_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -3556,62 +4679,381 @@ export type Database = {
         }
         Relationships: []
       }
+      team_api_keys: {
+        Row: {
+          created_at: string
+          created_by: string
+          expires_at: string | null
+          hashed_key: string
+          id: string
+          key_hint: string
+          last_used_at: string | null
+          last_used_ip: unknown
+          name: string
+          revoked_at: string | null
+          scope: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          expires_at?: string | null
+          hashed_key: string
+          id?: string
+          key_hint: string
+          last_used_at?: string | null
+          last_used_ip?: unknown
+          name: string
+          revoked_at?: string | null
+          scope: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          expires_at?: string | null
+          hashed_key?: string
+          id?: string
+          key_hint?: string
+          last_used_at?: string | null
+          last_used_ip?: unknown
+          name?: string
+          revoked_at?: string | null
+          scope?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_api_keys_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_api_keys_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_api_keys_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_marketing_prefs: {
+        Row: {
+          consent_at: string | null
+          crm_id: string | null
+          custom_fields: Json
+          email_opt_in: boolean
+          sms_opt_in: boolean
+          source: string | null
+          unsubscribed_at: string | null
+          updated_at: string
+          user_id: string
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+          whatsapp_opt_in: boolean
+        }
+        Insert: {
+          consent_at?: string | null
+          crm_id?: string | null
+          custom_fields?: Json
+          email_opt_in?: boolean
+          sms_opt_in?: boolean
+          source?: string | null
+          unsubscribed_at?: string | null
+          updated_at?: string
+          user_id: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+          whatsapp_opt_in?: boolean
+        }
+        Update: {
+          consent_at?: string | null
+          crm_id?: string | null
+          custom_fields?: Json
+          email_opt_in?: boolean
+          sms_opt_in?: boolean
+          source?: string | null
+          unsubscribed_at?: string | null
+          updated_at?: string
+          user_id?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+          whatsapp_opt_in?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_marketing_prefs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_marketing_prefs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_marketing_prefs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_notes: {
+        Row: {
+          body: string
+          created_at: string
+          created_by: string | null
+          id: string
+          source: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          source?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          source?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_notes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_notes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_notes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_notes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_notes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_notes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_tags: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          source: string | null
+          tag: string
+          user_id: string
+          value: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          source?: string | null
+          tag: string
+          user_id: string
+          value?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          source?: string | null
+          tag?: string
+          user_id?: string
+          value?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_tags_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_tags_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_tags_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_tags_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_tags_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_tags_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           avatar_url: string | null
           bio: string | null
           city: string | null
+          country: string | null
           created_at: string
           deleted_at: string | null
           email: string | null
+          first_purchase_at: string | null
           full_name: string | null
           id: string
+          is_legacy: boolean
           last_active_at: string | null
+          last_purchase_at: string | null
+          legacy_source: string | null
+          lifetime_revenue_inr: number | null
           member_number: number
           occupation: string | null
           onboarded_at: string | null
           open_to_collaborate: boolean | null
           phone: string | null
+          program_vertical: string | null
+          purchase_count: number | null
           role: string
           skills: string[] | null
+          specific_vertical: string | null
+          state: string | null
           updated_at: string
         }
         Insert: {
           avatar_url?: string | null
           bio?: string | null
           city?: string | null
+          country?: string | null
           created_at?: string
           deleted_at?: string | null
           email?: string | null
+          first_purchase_at?: string | null
           full_name?: string | null
           id: string
+          is_legacy?: boolean
           last_active_at?: string | null
+          last_purchase_at?: string | null
+          legacy_source?: string | null
+          lifetime_revenue_inr?: number | null
           member_number?: number
           occupation?: string | null
           onboarded_at?: string | null
           open_to_collaborate?: boolean | null
           phone?: string | null
+          program_vertical?: string | null
+          purchase_count?: number | null
           role?: string
           skills?: string[] | null
+          specific_vertical?: string | null
+          state?: string | null
           updated_at?: string
         }
         Update: {
           avatar_url?: string | null
           bio?: string | null
           city?: string | null
+          country?: string | null
           created_at?: string
           deleted_at?: string | null
           email?: string | null
+          first_purchase_at?: string | null
           full_name?: string | null
           id?: string
+          is_legacy?: boolean
           last_active_at?: string | null
+          last_purchase_at?: string | null
+          legacy_source?: string | null
+          lifetime_revenue_inr?: number | null
           member_number?: number
           occupation?: string | null
           onboarded_at?: string | null
           open_to_collaborate?: boolean | null
           phone?: string | null
+          program_vertical?: string | null
+          purchase_count?: number | null
           role?: string
           skills?: string[] | null
+          specific_vertical?: string | null
+          state?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -3623,7 +5065,7 @@ export type Database = {
           ip_address: unknown
           otp_issued_at: string
           user_agent: string | null
-          user_id: string
+          user_id: string | null
           vdocipher_video_id: string
         }
         Insert: {
@@ -3632,7 +5074,7 @@ export type Database = {
           ip_address?: unknown
           otp_issued_at?: string
           user_agent?: string | null
-          user_id: string
+          user_id?: string | null
           vdocipher_video_id: string
         }
         Update: {
@@ -3641,7 +5083,7 @@ export type Database = {
           ip_address?: unknown
           otp_issued_at?: string
           user_agent?: string | null
-          user_id?: string
+          user_id?: string | null
           vdocipher_video_id?: string
         }
         Relationships: [
@@ -3650,6 +5092,132 @@ export type Database = {
             columns: ["chapter_id"]
             isOneToOne: false
             referencedRelation: "chapters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      webhook_deliveries: {
+        Row: {
+          attempts: number
+          created_at: string
+          delivered_at: string | null
+          error_message: string | null
+          event_type: string
+          http_status: number | null
+          id: number
+          next_retry_at: string | null
+          payload: Json
+          response_excerpt: string | null
+          status: string
+          subscription_id: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          delivered_at?: string | null
+          error_message?: string | null
+          event_type: string
+          http_status?: number | null
+          id?: number
+          next_retry_at?: string | null
+          payload: Json
+          response_excerpt?: string | null
+          status?: string
+          subscription_id: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          delivered_at?: string | null
+          error_message?: string | null
+          event_type?: string
+          http_status?: number | null
+          id?: number
+          next_retry_at?: string | null
+          payload?: Json
+          response_excerpt?: string | null
+          status?: string
+          subscription_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhook_deliveries_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "webhook_subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      webhook_subscriptions: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          description: string | null
+          event_types: string[]
+          failure_count: number
+          id: string
+          last_failure_at: string | null
+          last_failure_reason: string | null
+          last_triggered_at: string | null
+          name: string
+          secret: string
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          event_types: string[]
+          failure_count?: number
+          id?: string
+          last_failure_at?: string | null
+          last_failure_reason?: string | null
+          last_triggered_at?: string | null
+          name: string
+          secret: string
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          event_types?: string[]
+          failure_count?: number
+          id?: string
+          last_failure_at?: string | null
+          last_failure_reason?: string | null
+          last_triggered_at?: string | null
+          name?: string
+          secret?: string
+          updated_at?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhook_subscriptions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webhook_subscriptions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webhook_subscriptions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -3695,6 +5263,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "wishlisted_offerings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
         ]
       }
       workshop_attendance: {
@@ -3738,6 +5313,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workshop_attendance_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
           {
@@ -3813,6 +5395,29 @@ export type Database = {
       }
     }
     Views: {
+      enrolments_unified: {
+        Row: {
+          created_at: string | null
+          enrolment_kind: string | null
+          expires_at: string | null
+          id: string | null
+          legacy_program_name: string | null
+          legacy_purchased_at: string | null
+          offering_id: string | null
+          offering_slug: string | null
+          offering_title: string | null
+          payment_order_id: string | null
+          source: string | null
+          starts_at: string | null
+          status: string | null
+          total_paid_inr: number | null
+          user_email: string | null
+          user_full_name: string | null
+          user_id: string | null
+          user_phone: string | null
+        }
+        Relationships: []
+      }
       events_safe: {
         Row: {
           city: string | null
@@ -3890,6 +5495,32 @@ export type Database = {
           venue_type?: string | null
         }
         Relationships: []
+      }
+      legacy_program_mapping_overview: {
+        Row: {
+          created_at: string | null
+          decision_status: string | null
+          id: string | null
+          legacy_program_name: string | null
+          notes: string | null
+          offering_id: string | null
+          offering_slug: string | null
+          offering_status: string | null
+          offering_title: string | null
+          pending_enrolments: number | null
+          source: string | null
+          total_enrolments: number | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legacy_program_mapping_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       live_sessions_safe: {
         Row: {
@@ -3979,8 +5610,77 @@ export type Database = {
           },
         ]
       }
+      users_segmented: {
+        Row: {
+          active_enrolment_count: number | null
+          city: string | null
+          country: string | null
+          created_at: string | null
+          email: string | null
+          email_opt_in: boolean | null
+          first_purchase_at: string | null
+          full_name: string | null
+          id: string | null
+          is_legacy: boolean | null
+          last_purchase_at: string | null
+          legacy_enrolment_count: number | null
+          legacy_source: string | null
+          lifetime_revenue_inr: number | null
+          live_paid_inr: number | null
+          member_number: number | null
+          phone: string | null
+          program_vertical: string | null
+          purchase_count: number | null
+          role: string | null
+          sms_opt_in: boolean | null
+          specific_vertical: string | null
+          state: string | null
+          whatsapp_opt_in: boolean | null
+        }
+        Relationships: []
+      }
+      users_unified: {
+        Row: {
+          city: string | null
+          country: string | null
+          created_at: string | null
+          email: string | null
+          first_purchase_at: string | null
+          full_name: string | null
+          id: string | null
+          is_legacy: boolean | null
+          is_real: boolean | null
+          last_active_at: string | null
+          last_purchase_at: string | null
+          legacy_source: string | null
+          lifetime_revenue_inr: number | null
+          member_number: number | null
+          phone: string | null
+          program_vertical: string | null
+          purchase_count: number | null
+          role: string | null
+          specific_vertical: string | null
+          state: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      admin_dashboard_combined: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          active_enrolments_total: number
+          active_offerings_count: number
+          enrolments_in_window: number
+          legacy_buyers_in_window: number
+          legacy_revenue_inr: number
+          live_revenue_inr: number
+          new_students_in_window: number
+          order_count_in_window: number
+          total_revenue_inr_in_window: number
+          total_students_unified: number
+        }[]
+      }
       admin_dashboard_metrics: {
         Args: {
           p_from?: string
@@ -3995,6 +5695,15 @@ export type Database = {
         Args: { p_key: string; p_max_count: number; p_window_seconds: number }
         Returns: boolean
       }
+      claim_event_seat: {
+        Args: {
+          p_amount?: number
+          p_event_id: string
+          p_payment_id?: string
+          p_user_id: string
+        }
+        Returns: string
+      }
       cleanup_deleted_users: {
         Args: never
         Returns: {
@@ -4002,9 +5711,35 @@ export type Database = {
           deleted_user_id: string
         }[]
       }
+      create_team_api_key: {
+        Args: {
+          p_created_by?: string
+          p_expires_at?: string
+          p_name: string
+          p_scope: string
+        }
+        Returns: {
+          hint: string
+          key_id: string
+          plaintext: string
+        }[]
+      }
+      daily_signups_combined: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          day: string
+          legacy_buyers: number
+          new_users: number
+          total: number
+        }[]
+      }
       delete_email:
         | { Args: { p_msg_id: number }; Returns: boolean }
         | { Args: { message_id: number; queue_name: string }; Returns: boolean }
+      emit_event: {
+        Args: { p_event_type: string; p_payload: Json }
+        Returns: undefined
+      }
       enqueue_email:
         | {
             Args: {
@@ -4017,6 +5752,46 @@ export type Database = {
             Returns: number
           }
         | { Args: { payload: Json; queue_name: string }; Returns: number }
+      find_login_identity: {
+        Args: { p_email?: string; p_phone?: string }
+        Returns: {
+          email: string
+          id: string
+          phone: string
+        }[]
+      }
+      get_attendance_pct: {
+        Args: { p_offering_id: string; p_user_id: string }
+        Returns: number
+      }
+      get_cohort_progress: {
+        Args: { p_offering_id: string; p_user_id: string }
+        Returns: {
+          assignment_due_at: string
+          assignment_prompt: string
+          attendance_marked: boolean
+          attended: boolean
+          batch_label: string
+          cohort_batch_id: string
+          description: string
+          ends_on: string
+          feedback_session_at: string
+          live_session_at: string
+          live_session_id: string
+          live_session_title: string
+          live_session_zoom_link: string
+          starts_on: string
+          submission_feedback: string
+          submission_id: string
+          submission_rating: number
+          submission_status: string
+          submission_submitted_at: string
+          theme: string
+          week_id: string
+          week_number: number
+          week_status: string
+        }[]
+      }
       get_event_registration_count: {
         Args: { p_event_id: string }
         Returns: number
@@ -4039,6 +5814,17 @@ export type Database = {
         }
         Returns: Json
       }
+      lead_capture: {
+        Args: {
+          p_custom_fields?: Json
+          p_email: string
+          p_full_name: string
+          p_phone: string
+          p_source: string
+          p_utm?: Json
+        }
+        Returns: string
+      }
       move_to_dlq:
         | { Args: { p_error?: string; p_msg_id: number }; Returns: number }
         | {
@@ -4051,6 +5837,23 @@ export type Database = {
             Returns: number
           }
       next_certificate_number: { Args: never; Returns: string }
+      offering_performance_in_range: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          active_enrolments: number
+          legacy_orders_in_window: number
+          legacy_revenue_in_window: number
+          live_orders_in_window: number
+          live_revenue_in_window: number
+          offering_id: string
+          offering_slug: string
+          offering_title: string
+          offering_type: string
+          total_enrolments: number
+          total_orders_in_window: number
+          total_revenue_in_window: number
+        }[]
+      }
       purge_old_rate_limits: { Args: never; Returns: undefined }
       read_email_batch:
         | {
@@ -4070,9 +5873,81 @@ export type Database = {
           }
       redeem_coupon: { Args: { p_coupon_id: string }; Returns: boolean }
       request_account_deletion: { Args: never; Returns: Json }
+      revenue_by_offering_in_range: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          legacy_order_count: number
+          legacy_paid_inr: number
+          live_order_count: number
+          live_paid_inr: number
+          offering_id: string
+          offering_slug: string
+          offering_title: string
+          offering_type: string
+          total_order_count: number
+          total_paid_inr: number
+        }[]
+      }
+      revenue_by_user_in_range: {
+        Args: { p_from: string; p_limit?: number; p_to: string }
+        Returns: {
+          email: string
+          full_name: string
+          order_count: number
+          paid_inr: number
+          phone: string
+          user_id: string
+        }[]
+      }
+      revenue_daily: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          day: string
+          legacy_paid_inr: number
+          live_paid_inr: number
+          order_count: number
+          total_paid_inr: number
+        }[]
+      }
+      revenue_in_range: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          legacy_order_count: number
+          legacy_paid_inr: number
+          legacy_unique_buyers: number
+          live_order_count: number
+          live_paid_inr: number
+          live_unique_buyers: number
+          refunded_inr: number
+          total_order_count: number
+          total_paid_inr: number
+        }[]
+      }
       submit_quiz: {
         Args: { p_answers: Json; p_quiz_id: string }
         Returns: Json
+      }
+      unmapped_legacy_revenue: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          first_purchase_at: string
+          last_purchase_at: string
+          legacy_program_name: string
+          paid_inr: number
+          rows_count: number
+        }[]
+      }
+      user_is_certificate_eligible: {
+        Args: { p_offering_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      verify_team_api_key: {
+        Args: { p_plaintext: string }
+        Returns: {
+          created_by: string
+          key_id: string
+          scope: string
+        }[]
       }
     }
     Enums: {
@@ -4202,6 +6077,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

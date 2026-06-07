@@ -6,7 +6,8 @@ import { TierBadge, TIER_SECTION_CONFIG } from "@/components/TierBadge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import LazyImage from "@/components/LazyImage";
-import { ArrowRight, Search, Heart, WifiOff, RefreshCw } from "lucide-react";
+import { ArrowRight, Search, Heart, WifiOff, RefreshCw, Bell, Check } from "lucide-react";
+import { useNotifyRequests } from "@/hooks/useNotifyRequests";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import usePageTitle from "@/hooks/usePageTitle";
@@ -73,6 +74,7 @@ const BrowsePage = () => {
     return () => { cancelled = true; };
   }, [user]);
   const { wishlistedIds, toggle: toggleWishlist } = useWishlist();
+  const { requestedIds: notifyRequestedIds, pending: notifyPending, requestNotify } = useNotifyRequests();
 
   usePageTitle("Browse Programs");
 
@@ -392,7 +394,18 @@ const BrowsePage = () => {
                             )}
                           </div>
                           {c.status === "upcoming" ? (
-                            <span className="text-sm font-medium text-muted-foreground">Notify me</span>
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); requestNotify(c.id, c.title); }}
+                              disabled={notifyPending.has(c.id) || notifyRequestedIds.has(c.id)}
+                              aria-label={notifyRequestedIds.has(c.id) ? `You will be notified when ${c.title} launches` : `Notify me when ${c.title} launches`}
+                              className="text-sm font-medium text-cream flex items-center gap-1.5 hover:gap-2 transition-all min-h-[44px] sm:min-h-0 items-center disabled:opacity-100 disabled:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded"
+                            >
+                              {notifyRequestedIds.has(c.id) ? (
+                                <><Check className="h-3.5 w-3.5" /> We'll notify you</>
+                              ) : (
+                                <><Bell className="h-3.5 w-3.5" /> Notify me</>
+                              )}
+                            </button>
                           ) : c.offering_id && enrolledOfferingIds.has(c.offering_id) ? (
                             <Link
                               to={`/courses/${c.id}`}

@@ -87,6 +87,7 @@ const AdminCohorts = lazy(() => import("@/pages/admin/AdminCohorts"));
 const AdminCohortWeeks = lazy(() => import("@/pages/admin/AdminCohortWeeks"));
 const AdminCohortSubmissions = lazy(() => import("@/pages/admin/AdminCohortSubmissions"));
 const AdminCohortAttendance = lazy(() => import("@/pages/admin/AdminCohortAttendance"));
+const AdminNotifyRequests = lazy(() => import("@/pages/admin/AdminNotifyRequests"));
 const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
 
 const LoadingFallback = () => (
@@ -268,6 +269,7 @@ const App = () => {
                 <Route path="/admin/cohorts" element={<AdminCohorts />} />
                 <Route path="/admin/offerings/:offeringId/cohort-weeks" element={<AdminCohortWeeks />} />
                 <Route path="/admin/cohort-submissions" element={<AdminCohortSubmissions />} />
+                <Route path="/admin/notify-requests" element={<AdminNotifyRequests />} />
                 <Route path="/admin/cohorts/:batchId/attendance" element={<AdminCohortAttendance />} />
               </Route>
 

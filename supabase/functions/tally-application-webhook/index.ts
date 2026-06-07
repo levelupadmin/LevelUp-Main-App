@@ -20,7 +20,11 @@ async function verifyTallySignature(body: string, signature: string | null): Pro
   );
   const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
   const computed = btoa(String.fromCharCode(...new Uint8Array(sig)));
-  return computed === signature;
+  // Constant-time compare (signature is non-null here — guarded above).
+  if (computed.length !== signature.length) return false;
+  let diff = 0;
+  for (let i = 0; i < computed.length; i++) diff |= computed.charCodeAt(i) ^ signature.charCodeAt(i);
+  return diff === 0;
 }
 
 function extractField(fields: any[], label: string): string {
@@ -96,24 +100,36 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check for existing user by email
-    const { data: existingUser } = await supabase
+    // Existing user by email (optional — used to link + enrich the profile).
+    // .maybeSingle() so "no such user" is a clean null, not a thrown error.
+    const { data: existingUser, error: userLookupErr } = await supabase
       .from("users")
       .select("id")
       .eq("email", email)
-      .single();
+      .maybeSingle();
+    if (userLookupErr) {
+      console.error("[tally-webhook] user lookup failed:", userLookupErr.message);
+    }
 
-    // Check for duplicate application
-    const { data: existingApp } = await supabase
+    // Re-submission by the same email updates the existing application. A retry
+    // of the SAME Tally response is absorbed by the unique index on
+    // tally_response_id (handled in the insert catch below).
+    const { data: existingApp, error: appLookupErr } = await supabase
       .from("cohort_applications")
       .select("id")
       .eq("offering_id", offering.id)
       .eq("email", email)
-      .single();
+      .maybeSingle();
+    if (appLookupErr) {
+      console.error("[tally-webhook] application lookup failed:", appLookupErr.message);
+      return new Response(JSON.stringify({ error: "Application lookup failed" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     if (existingApp) {
-      // Update existing application
-      await supabase
+      const { error: updErr } = await supabase
         .from("cohort_applications")
         .update({
           full_name: fullName || undefined,
@@ -125,6 +141,14 @@ Deno.serve(async (req) => {
           tally_data: payload.data,
         })
         .eq("id", existingApp.id);
+
+      if (updErr) {
+        console.error("[tally-webhook] application update failed:", updErr.message);
+        return new Response(JSON.stringify({ error: updErr.message }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
       return new Response(JSON.stringify({ ok: true, updated: true, application_id: existingApp.id }), {
         headers: { "Content-Type": "application/json" },
@@ -151,6 +175,19 @@ Deno.serve(async (req) => {
       .single();
 
     if (appError) {
+      // 23505 = unique_violation on tally_response_id: a concurrent retry of
+      // the same response already created the row. Idempotent success.
+      if ((appError as { code?: string }).code === "23505") {
+        const { data: dup } = await supabase
+          .from("cohort_applications")
+          .select("id")
+          .eq("tally_response_id", responseId)
+          .maybeSingle();
+        return new Response(JSON.stringify({ ok: true, deduped: true, application_id: dup?.id ?? null }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      console.error("[tally-webhook] application insert failed:", appError.message);
       return new Response(JSON.stringify({ error: appError.message }), {
         status: 500,
         headers: { "Content-Type": "application/json" },

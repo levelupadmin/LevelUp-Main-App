@@ -35,12 +35,19 @@ PLAY_RELEASE_NOTES="• line one\n• line two" \
 ```
 
 - **App:** `com.tagmango.leveluplearning` (immutable appId; updates the existing
-  TagMango Play listing ~2.05k installs in place). Currently shipped: **603 / 3.2.0**.
-- **Service-account key (device-local, NOT in repo, never commit):**
-  `~/Downloads/Tech & Workflows/levelups-tagmango-app-9a185d5fc88f.json`
+  TagMango Play listing ~2.05k installs in place). Currently shipped: **604 / 3.2.1**
+  (shipped 2026-06-08 — the pre-launch hardening + Notify-me/Android-card/polish).
+- **Service-account key (NOT in repo, never commit):** kept in the iCloud secrets
+  vault next to the keystore so it survives a machine switch —
+  `~/Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/keystores/levelups-tagmango-app-931a478c992d.json`
   — client_email `fastlane-supply@levelups-tagmango-app.iam.gserviceaccount.com`,
   granted **Release to production** in Play Console (Users & permissions).
   Play developer account id `8183819487402535302`.
+  NOTE: Google emits a SA key only once at creation. If it's ever missing locally,
+  generate a NEW JSON key for this SA in Cloud Console (project
+  `levelups-tagmango-app` → Service Accounts → fastlane-supply → Keys); the SA keeps
+  its Play access. The old `~/Downloads/Tech & Workflows/…9a185d5fc88f.json` path is
+  defunct (lost with the other laptop).
 - **After commit, Google may run the production update through review** before it
   reaches devices — `status:"completed"` means *our* side is done; device rollout
   can lag hours→a day. That's normal; nothing more to click.
@@ -50,9 +57,9 @@ PLAY_RELEASE_NOTES="• line one\n• line two" \
 ### Building the signed AAB
 
 ```bash
-export JAVA_HOME="/Users/rahul/android-build/jdk/jdk-21.0.11+10/Contents/Home"   # no-sudo JDK 21 (device-local)
-export ANDROID_HOME="$HOME/Library/Android/sdk"                                   # aapt2 at build-tools/36.0.0
-export LEVELUP_KEYSTORE_PATH="/Users/rahul/Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/keystores/upload-keystore.jks"
+export JAVA_HOME="/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"  # Homebrew JDK 21 on this Mac (old /Users/rahul/android-build path is defunct)
+export ANDROID_HOME="$HOME/Library/Android/sdk"                                    # build-tools 36.1.0 / 37.0.0
+export LEVELUP_KEYSTORE_PATH="/Users/rahulsrinivas/Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/keystores/upload-keystore.jks"
 export LEVELUP_KEYSTORE_PASSWORD="<from keystore README.md or 1Password — NEVER echo/commit>"
 npm run build && npx cap sync android
 cd android && ./gradlew bundleRelease
