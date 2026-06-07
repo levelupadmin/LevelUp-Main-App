@@ -1,5 +1,12 @@
 import { sendLovableEmail } from 'npm:@lovable.dev/email-js'
-import { createClient } from 'npm:@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
+import { timingSafeEqual } from '../_shared/crypto.ts'
+
+// Permissive client type: the supabase-js generic schema param defaults differ
+// between a call site and a bare `ReturnType<typeof createClient>`, so spell out
+// a loose client for helper params. We only use .from()/.rpc() on it.
+// deno-lint-ignore no-explicit-any
+type Admin = SupabaseClient<any, any, any>
 
 const MAX_RETRIES = 5
 const DEFAULT_BATCH_SIZE = 10
@@ -54,7 +61,7 @@ function parseJwtClaims(token: string): Record<string, unknown> | null {
 
 // Move a message to the dead letter queue and log the reason.
 async function moveToDlq(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Admin,
   queue: string,
   msg: { msg_id: number; message: Record<string, unknown> },
   reason: string
@@ -107,15 +114,7 @@ Deno.serve(async (req) => {
   // to avoid timing leaks.
   const token = authHeader.slice('Bearer '.length).trim()
   const expectedToken = supabaseServiceKey
-  function constantTimeEquals(a: string, b: string): boolean {
-    if (a.length !== b.length) return false
-    let mismatch = 0
-    for (let i = 0; i < a.length; i++) {
-      mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i)
-    }
-    return mismatch === 0
-  }
-  if (!constantTimeEquals(token, expectedToken)) {
+  if (!timingSafeEqual(token, expectedToken)) {
     // Sanity-check the parsed claim too — service_role is the only
     // accepted caller. If a future change rotates the key without
     // restarting this function, fail closed.
@@ -179,7 +178,7 @@ Deno.serve(async (req) => {
     // messages not attempted when a 429 stops processing early.
     const messageIds = Array.from(
       new Set(
-        messages
+        (messages as { message?: Record<string, unknown> }[])
           .map((msg) =>
             msg?.message?.message_id && typeof msg.message.message_id === 'string'
               ? msg.message.message_id
