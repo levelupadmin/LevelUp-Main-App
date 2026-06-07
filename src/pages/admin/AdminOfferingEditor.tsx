@@ -14,6 +14,9 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Save, Loader2, X } from "lucide-react";
 import AdminBreadcrumbs from "@/components/admin/AdminBreadcrumbs";
 import { useAuth } from "@/contexts/AuthContext";
+import PublicPageFields from "@/components/admin/offering-editor/PublicPageFields";
+import ThankYouFields from "@/components/admin/offering-editor/ThankYouFields";
+import TrackingFields from "@/components/admin/offering-editor/TrackingFields";
 
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
@@ -709,200 +712,21 @@ const AdminOfferingEditor = () => {
         {/*  TAB 2: PUBLIC PAGE                        */}
         {/* ══════════════════════════════════════════ */}
         <TabsContent value="public">
-          <div className="bg-card border border-border rounded-xl p-6 space-y-5">
-            <p className="text-sm text-muted-foreground">
-              These fields control the public offering page at{" "}
-              <span className="text-[hsl(var(--cream))] font-medium">/p/{form.slug || "slug"}</span>
-            </p>
-            <div>
-              <Label>Subtitle</Label>
-              <Input
-                value={form.subtitle}
-                onChange={(e) => f("subtitle", e.target.value)}
-                placeholder="e.g., 12-week intensive filmmaking program"
-              />
-            </div>
-            <div>
-              <Label>Banner Image URL</Label>
-              <Input
-                value={form.banner_url}
-                onChange={(e) => f("banner_url", e.target.value)}
-                placeholder="Hero image for the public page"
-              />
-              {form.banner_url && (
-                <img
-                  src={form.banner_url}
-                  alt="Banner preview"
-                  className="mt-2 h-32 w-full rounded-lg object-cover border border-border"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                />
-              )}
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Instructor Name</Label>
-                <Input value={form.instructor_name} onChange={(e) => f("instructor_name", e.target.value)} />
-              </div>
-              <div>
-                <Label>Instructor Title</Label>
-                <Input
-                  value={form.instructor_title}
-                  onChange={(e) => f("instructor_title", e.target.value)}
-                  placeholder="e.g., Filmmaker"
-                />
-              </div>
-              <div>
-                <Label>Avatar URL</Label>
-                <Input value={form.instructor_avatar_url} onChange={(e) => f("instructor_avatar_url", e.target.value)} />
-              </div>
-            </div>
-            <div>
-              <Label>Highlights (JSON array)</Label>
-              <Textarea
-                value={form.highlights}
-                onChange={(e) => f("highlights", e.target.value)}
-                placeholder='["12 live sessions", "Certificate of completion", "Lifetime access"]'
-                rows={4}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                JSON array of feature bullet points shown on the public page
-              </p>
-            </div>
-          </div>
+          <PublicPageFields form={form} f={f} />
         </TabsContent>
 
         {/* ══════════════════════════════════════════ */}
         {/*  TAB 3: THANK YOU PAGE                     */}
         {/* ══════════════════════════════════════════ */}
         <TabsContent value="thankyou">
-          <div className="bg-card border border-border rounded-xl p-6 space-y-5">
-            <p className="text-sm text-muted-foreground">
-              Customize what buyers see after a successful payment. Leave fields empty to use defaults.
-            </p>
-            <div>
-              <Label>Thank You Banner / Thumbnail URL</Label>
-              <Input
-                value={form.thankyou_thumbnail_url}
-                onChange={(e) => f("thankyou_thumbnail_url", e.target.value)}
-                placeholder="Hero image shown on the thank you page"
-              />
-              {form.thankyou_thumbnail_url && (
-                <img
-                  src={form.thankyou_thumbnail_url}
-                  alt="Thank you banner preview"
-                  className="mt-2 h-32 w-full rounded-lg object-cover border border-border"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                />
-              )}
-            </div>
-            <div>
-              <Label>Headline</Label>
-              <Input
-                value={form.thankyou_headline}
-                onChange={(e) => f("thankyou_headline", e.target.value)}
-                placeholder="Payment Successful!"
-              />
-            </div>
-            <div>
-              <Label>Body Text</Label>
-              <Textarea
-                value={form.thankyou_body}
-                onChange={(e) => f("thankyou_body", e.target.value)}
-                placeholder="Custom message shown below the headline (e.g., instructions, welcome note, WhatsApp group link info)"
-                rows={4}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>CTA Button Label</Label>
-                <Input
-                  value={form.thankyou_cta_label}
-                  onChange={(e) => f("thankyou_cta_label", e.target.value)}
-                  placeholder="Go to Dashboard"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Text shown on the main button (e.g., "Join WhatsApp Group", "Go to Dashboard")
-                </p>
-              </div>
-              <div>
-                <Label>CTA Button URL</Label>
-                <Input
-                  value={form.thankyou_cta_url}
-                  onChange={(e) => f("thankyou_cta_url", e.target.value)}
-                  placeholder="Leave empty for dashboard"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Where the button goes. Leave empty to go to the student dashboard. Can be a full URL (e.g., WhatsApp group link).
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-center gap-3">
-                <Switch
-                  checked={form.thankyou_auto_redirect}
-                  onCheckedChange={(checked) => f("thankyou_auto_redirect", checked)}
-                />
-                <div>
-                  <Label>Auto-redirect after countdown</Label>
-                  <p className="text-xs text-muted-foreground">Automatically redirect logged-in users after the timer</p>
-                </div>
-              </div>
-              <div>
-                <Label>Countdown seconds</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={120}
-                  value={form.thankyou_redirect_seconds}
-                  onChange={(e) => f("thankyou_redirect_seconds", Number(e.target.value))}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  How many seconds before auto-redirect (0–120). Set to 0 to disable.
-                </p>
-              </div>
-            </div>
-          </div>
+          <ThankYouFields form={form} f={f} />
         </TabsContent>
 
         {/* ══════════════════════════════════════════ */}
         {/*  TAB 4: TRACKING & PIXELS                  */}
         {/* ══════════════════════════════════════════ */}
         <TabsContent value="tracking">
-          <div className="bg-card border border-border rounded-xl p-6 space-y-5">
-            <p className="text-sm text-muted-foreground">
-              Conversion tracking pixels that fire on the Thank You page after purchase.
-            </p>
-            <div>
-              <Label>Meta Pixel ID</Label>
-              <Input
-                value={form.meta_pixel_id}
-                onChange={(e) => f("meta_pixel_id", e.target.value)}
-                placeholder="e.g., 1234567890"
-              />
-              <p className="text-xs text-muted-foreground mt-1">Facebook/Meta Pixel ID for tracking conversions</p>
-            </div>
-            <div>
-              <Label>Google Ads Conversion</Label>
-              <Input
-                value={form.google_ads_conversion}
-                onChange={(e) => f("google_ads_conversion", e.target.value)}
-                placeholder="e.g., AW-123456789/AbCdEfGhIjKl"
-              />
-              <p className="text-xs text-muted-foreground mt-1">Format: AW-ID/LABEL</p>
-            </div>
-            <div>
-              <Label>Custom Tracking Script</Label>
-              <Textarea
-                value={form.custom_tracking_script}
-                onChange={(e) => f("custom_tracking_script", e.target.value)}
-                placeholder="GTM or custom pixel code. Use {{value}}, {{currency}}, {{transaction_id}} as placeholders."
-                rows={5}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Runs on Thank You page. Placeholders: {"{{value}}"}, {"{{currency}}"}, {"{{transaction_id}}"}, {"{{order_id}}"}
-              </p>
-            </div>
-          </div>
+          <TrackingFields form={form} f={f} />
         </TabsContent>
 
         {/* ══════════════════════════════════════════ */}
