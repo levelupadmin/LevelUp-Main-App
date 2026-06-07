@@ -21,21 +21,18 @@ import { Plus, Upload, Download, FileUp } from "lucide-react";
 import { generateAndSaveCertificate, VariablePosition } from "@/lib/certificate-generator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDebounce } from "@/hooks/useDebounce";
+import { usePaginatedTable } from "@/hooks/usePaginatedTable";
 import type { EnrolmentRow, CsvRow, CsvReadyRow, CsvNewRow, CsvConflictRow } from "@/components/admin/enrolments/types";
 import EnrolmentFilters from "@/components/admin/enrolments/EnrolmentFilters";
 import EnrolmentTable from "@/components/admin/enrolments/EnrolmentTable";
 
 const AdminEnrolments = () => {
   const PAGE_SIZE = 50;
-  const [enrolments, setEnrolments] = useState<EnrolmentRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState("all");
   const [courseFilter, setCourseFilter] = useState("all");
   const [offeringFilter, setOfferingFilter] = useState("all");
-  const [page, setPage] = useState(0);
-  const [totalCount, setTotalCount] = useState(0);
   const [manualOpen, setManualOpen] = useState(false);
   const [allUsers, setAllUsers] = useState<{ id: string; full_name: string; email: string }[]>([]);
   const [allOfferings, setAllOfferings] = useState<{ id: string; title: string }[]>([]);
@@ -84,89 +81,92 @@ const AdminEnrolments = () => {
 
   useEffect(() => { loadFilterData(); }, []);
 
-  const load = async (p = page) => {
-    setLoading(true);
-    const from = p * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+  /* ── Server-side paginated load against the unified view ──
+   * enrolments_unified UNIONs:
+   *   - live enrolments (from public.enrolments)
+   *   - legacy enrolments (from public.legacy_enrolments — ~73K rows)
+   * The view exposes user_email/phone/full_name + offering_title + an
+   * `enrolment_kind` column so the UI can badge live vs legacy.
+   * Search is applied client-side (see `filtered` below); status/course/
+   * offering filters are server-side and drive a refetch via `deps`. */
+  const {
+    rows: enrolments,
+    loading,
+    page,
+    setPage,
+    total: totalCount,
+    refetch: load,
+  } = usePaginatedTable<EnrolmentRow>({
+    pageSize: PAGE_SIZE,
+    deps: [statusFilter, offeringFilter, courseFilter],
+    keepRowsOnError: true,
+    fetchPage: async ({ from, to }) => {
+      let countQuery = (supabase as any).from("enrolments_unified").select("id", { count: "exact", head: true });
+      let dataQuery = (supabase as any)
+        .from("enrolments_unified")
+        .select("id, status, created_at, user_id, offering_id, payment_order_id, enrolment_kind, total_paid_inr, legacy_purchased_at, user_email, user_phone, user_full_name, offering_title")
+        .order("created_at", { ascending: false });
 
-    /* ── Build server-side query against the unified view ──
-     * enrolments_unified UNIONs:
-     *   - live enrolments (from public.enrolments)
-     *   - legacy enrolments (from public.legacy_enrolments — ~73K rows)
-     * The view exposes user_email/phone/full_name + offering_title + an
-     * `enrolment_kind` column so the UI can badge live vs legacy. */
-    let countQuery = (supabase as any).from("enrolments_unified").select("id", { count: "exact", head: true });
-    let dataQuery = (supabase as any)
-      .from("enrolments_unified")
-      .select("id, status, created_at, user_id, offering_id, payment_order_id, enrolment_kind, total_paid_inr, legacy_purchased_at, user_email, user_phone, user_full_name, offering_title")
-      .order("created_at", { ascending: false });
+      // Apply offering filter (also used by course filter)
+      let targetOfferingIds: string[] | null = null;
 
-    // Apply offering filter (also used by course filter)
-    let targetOfferingIds: string[] | null = null;
-
-    if (offeringFilter !== "all") {
-      targetOfferingIds = [offeringFilter];
-    }
-
-    if (courseFilter !== "all") {
-      // Find all offerings linked to this course
-      const offeringIdsForCourse = Object.entries(offeringCourseMap)
-        .filter(([, courseIds]) => courseIds.includes(courseFilter))
-        .map(([offId]) => offId);
-
-      if (targetOfferingIds) {
-        // Intersect with offering filter
-        targetOfferingIds = targetOfferingIds.filter((id) => offeringIdsForCourse.includes(id));
-      } else {
-        targetOfferingIds = offeringIdsForCourse;
+      if (offeringFilter !== "all") {
+        targetOfferingIds = [offeringFilter];
       }
-    }
 
-    if (targetOfferingIds !== null) {
-      if (targetOfferingIds.length === 0) {
-        // No offerings match — return empty
-        setEnrolments([]);
-        setTotalCount(0);
-        setLoading(false);
-        return;
+      if (courseFilter !== "all") {
+        // Find all offerings linked to this course
+        const offeringIdsForCourse = Object.entries(offeringCourseMap)
+          .filter(([, courseIds]) => courseIds.includes(courseFilter))
+          .map(([offId]) => offId);
+
+        if (targetOfferingIds) {
+          // Intersect with offering filter
+          targetOfferingIds = targetOfferingIds.filter((id) => offeringIdsForCourse.includes(id));
+        } else {
+          targetOfferingIds = offeringIdsForCourse;
+        }
       }
-      countQuery = countQuery.in("offering_id", targetOfferingIds);
-      dataQuery = dataQuery.in("offering_id", targetOfferingIds);
-    }
 
-    if (statusFilter !== "all") {
-      countQuery = countQuery.eq("status", statusFilter);
-      dataQuery = dataQuery.eq("status", statusFilter);
-    }
+      if (targetOfferingIds !== null) {
+        if (targetOfferingIds.length === 0) {
+          // No offerings match — empty result
+          return { rows: [], count: 0 };
+        }
+        countQuery = countQuery.in("offering_id", targetOfferingIds);
+        dataQuery = dataQuery.in("offering_id", targetOfferingIds);
+      }
 
-    const { count } = await countQuery;
-    setTotalCount(count ?? 0);
+      if (statusFilter !== "all") {
+        countQuery = countQuery.eq("status", statusFilter);
+        dataQuery = dataQuery.eq("status", statusFilter);
+      }
 
-    const { data: enrols } = await dataQuery.range(from, to);
+      const { count } = await countQuery;
+      const { data: enrols } = await dataQuery.range(from, to);
 
-    if (!enrols) { setLoading(false); return; }
+      // Null data means the query failed — keepRowsOnError holds the current page.
+      if (!enrols) throw new Error("Failed to load enrolments");
 
-    let rows: EnrolmentRow[] = (enrols as any[]).map((e) => ({
-      id: e.id,
-      status: e.status,
-      created_at: e.created_at,
-      user_id: e.user_id,
-      user_name: e.user_full_name || e.user_email || e.user_phone || "Unknown",
-      user_email: e.user_email || "",
-      user_phone: e.user_phone || "",
-      offering_id: e.offering_id,
-      offering_title: e.offering_title || (e.enrolment_kind === "legacy" ? "(unmapped legacy)" : "Unknown"),
-      payment_order_id: e.payment_order_id,
-      enrolment_kind: e.enrolment_kind,
-      total_paid_inr: e.total_paid_inr ?? null,
-      legacy_purchased_at: e.legacy_purchased_at ?? null,
-    }));
+      const rows: EnrolmentRow[] = (enrols as any[]).map((e) => ({
+        id: e.id,
+        status: e.status,
+        created_at: e.created_at,
+        user_id: e.user_id,
+        user_name: e.user_full_name || e.user_email || e.user_phone || "Unknown",
+        user_email: e.user_email || "",
+        user_phone: e.user_phone || "",
+        offering_id: e.offering_id,
+        offering_title: e.offering_title || (e.enrolment_kind === "legacy" ? "(unmapped legacy)" : "Unknown"),
+        payment_order_id: e.payment_order_id,
+        enrolment_kind: e.enrolment_kind,
+        total_paid_inr: e.total_paid_inr ?? null,
+        legacy_purchased_at: e.legacy_purchased_at ?? null,
+      }));
 
-    setEnrolments(rows);
-    setLoading(false);
-  };
-
-  useEffect(() => { load(page); }, [page, statusFilter, offeringFilter, courseFilter]);
+      return { rows, count: count ?? 0 };
+    },
+  });
 
   const handleStatusChange = async (enrolId: string, newStatus: string) => {
     const { error } = await supabase.from("enrolments").update({ status: newStatus }).eq("id", enrolId);
@@ -317,7 +317,7 @@ const AdminEnrolments = () => {
         });
       }
       toast({ title: `${success} users enrolled` });
-      load(page);
+      load();
     }
     setSaving(false);
   };
@@ -781,7 +781,7 @@ const AdminEnrolments = () => {
       description: `${enrolled} enrolled, ${usersCreated} users created, ${skipped} skipped`,
     });
     setCsvPreviewOpen(false);
-    load(page);
+    load();
     loadFilterData();
   };
 
