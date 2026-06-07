@@ -24,8 +24,13 @@ const InstructorDashboard = () => {
     const load = async () => {
       setLoading(true);
 
-      // Get courses where this user is the instructor
-      const { data: myCourses } = await supabase
+      // Get courses where this user is the instructor.
+      // NOTE: `courses` has no instructor_id column (instructor info is
+      // denormalized text fields, not a per-user FK), so this query targets a
+      // non-existent column and returns nothing — the page is effectively
+      // unwired. Cast keeps it compiling without changing that behavior;
+      // tracked separately for a real instructor↔course association.
+      const { data: myCourses } = await (supabase as any)
         .from("courses")
         .select("id, title, status, instructor_id")
         .eq("instructor_id", profile.id);
@@ -70,7 +75,7 @@ const InstructorDashboard = () => {
             .from("chapter_progress")
             .select("id", { count: "exact", head: true })
             .eq("course_id", course.id)
-            .eq("is_completed", true);
+            .not("completed_at", "is", null);
           avgCompletion = Math.round(((completedChapters ?? 0) / (enrolledCount * chapterCount)) * 100);
         }
 

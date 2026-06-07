@@ -316,7 +316,8 @@ const AdminEvents = () => {
             event_id: eventId!,
             name: s.name,
             title: s.title || null,
-            bio: s.bio || null,
+            // NOTE: event_speakers has no `bio` column — including it made
+            // PostgREST reject the whole insert, so speaker saving was broken.
             avatar_url: s.avatar_url || null,
             sort_order: idx,
           }))
@@ -504,7 +505,7 @@ const AdminEvents = () => {
                       {ev.status}
                     </span>
                     {ev.issue_certificate && (
-                      <Award className="h-3 w-3 text-yellow-400 inline ml-1.5" title="Certificate enabled" />
+                      <Award className="h-3 w-3 text-yellow-400 inline ml-1.5" aria-label="Certificate enabled" />
                     )}
                   </TableCell>
                   <TableCell className="text-right">

@@ -240,6 +240,7 @@ const AdminSchedule = () => {
       zoom_link: s.zoom_link || "",
       recording_url: s.recording_url || "",
       status: s.status,
+      repeat_weeks: 0,
     });
     setEditId(s.id);
     setDialogOpen(true);

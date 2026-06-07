@@ -207,7 +207,7 @@ export default function CohortDashboard() {
       {/* This Week card */}
       {currentWeek && tab === "weeks" && (
         <ThisWeekCard week={currentWeek} userId={user!.id} onChange={async () => {
-          const { data } = await supabase.rpc("get_cohort_progress", { p_user_id: user!.id, p_offering_id: offeringId });
+          const { data } = await supabase.rpc("get_cohort_progress", { p_user_id: user!.id, p_offering_id: offeringId! });
           setRows((data as ProgressRow[]) || []);
         }} />
       )}

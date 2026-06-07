@@ -224,7 +224,7 @@ const AdminCertificates = () => {
         .select("id, full_name, email")
         .or(`full_name.ilike.%${debouncedUserSearch}%,email.ilike.%${debouncedUserSearch}%`)
         .limit(10);
-      setUserResults(data || []);
+      setUserResults((data || []).map((u) => ({ id: u.id, full_name: u.full_name ?? "", email: u.email ?? "" })));
     })();
   }, [debouncedUserSearch]);
 

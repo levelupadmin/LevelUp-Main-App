@@ -192,7 +192,7 @@ const AdminEnrolments = () => {
       supabase.from("users").select("id, full_name, email").order("full_name").limit(500),
       supabase.from("offerings").select("id, title").order("title"),
     ]);
-    setAllUsers(uRes.data || []);
+    setAllUsers((uRes.data || []).map((u) => ({ id: u.id, full_name: u.full_name ?? "", email: u.email ?? "" })));
     setAllOfferings(oRes.data || []);
     setManualUserId("");
     setManualOfferingId("");
@@ -423,7 +423,7 @@ const AdminEnrolments = () => {
           },
           userId: enrolment.user_id,
           courseId: oc.course_id,
-          generatedBy: "admin",
+          generatedBy: "admin_manual",
         });
         generated++;
       }
@@ -552,7 +552,7 @@ const AdminEnrolments = () => {
     const phones = [...new Set(rows.map((r) => r.phone).filter((p) => p.length > 0))];
 
     // Fetch users matching any of these emails
-    let emailUsers: { id: string; email: string; phone: string | null; full_name: string | null }[] = [];
+    let emailUsers: { id: string; email: string | null; phone: string | null; full_name: string | null }[] = [];
     if (emails.length > 0) {
       // Supabase .in() has a limit, so batch in chunks of 100
       for (let i = 0; i < emails.length; i += 100) {
@@ -566,7 +566,7 @@ const AdminEnrolments = () => {
     }
 
     // Also fetch users matching phones (to detect phone conflicts)
-    let phoneUsers: { id: string; email: string; phone: string | null; full_name: string | null }[] = [];
+    let phoneUsers: { id: string; email: string | null; phone: string | null; full_name: string | null }[] = [];
     if (phones.length > 0) {
       for (let i = 0; i < phones.length; i += 100) {
         const chunk = phones.slice(i, i + 100);
@@ -602,7 +602,7 @@ const AdminEnrolments = () => {
           conflicts.push({
             ...row,
             existing_user_id: byEmail.id,
-            existing_email: byEmail.email,
+            existing_email: byEmail.email || "",
             existing_phone: existingPhone,
             conflict_type: "email_match_phone_diff",
             action: null,
@@ -613,7 +613,7 @@ const AdminEnrolments = () => {
         conflicts.push({
           ...row,
           existing_user_id: byPhone.id,
-          existing_email: byPhone.email,
+          existing_email: byPhone.email || "",
           existing_phone: byPhone.phone || "",
           conflict_type: "phone_match_email_diff",
           action: null,

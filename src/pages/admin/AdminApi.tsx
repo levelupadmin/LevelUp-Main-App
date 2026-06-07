@@ -347,7 +347,7 @@ function KeysTab() {
     const { data, error } = await supabase.rpc("create_team_api_key", {
       p_name: name.trim(),
       p_scope: scope,
-      p_expires_at: null,
+      p_expires_at: undefined,
       p_created_by: userResult.user?.id,
     });
     setCreating(false);

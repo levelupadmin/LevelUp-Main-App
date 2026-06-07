@@ -105,7 +105,7 @@ const AdminRevenue = () => {
   const [customTo, setCustomTo] = useState<Date | undefined>(undefined);
   const [page, setPage] = useState(0);
   const { sort, toggle: rawToggle, comparator } = useSort<Order>("captured_at");
-  const toggle = (field: keyof Order) => { rawToggle(field); setPage(0); };
+  const toggle = (field: string) => { rawToggle(field as keyof Order); setPage(0); };
 
   const [userMap, setUserMap] = useState<Record<string, { full_name: string | null; email: string | null; phone: string | null }>>({});
   const [refundMap, setRefundMap] = useState<Record<string, RefundInfo>>({});

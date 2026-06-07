@@ -69,7 +69,7 @@ const MySessionsPage = () => {
         if (!sessionsData?.length) { setLoading(false); return; }
 
         // Get course titles
-        const sessionCourseIds = [...new Set(sessionsData.map((s) => s.course_id))];
+        const sessionCourseIds = [...new Set(sessionsData.map((s) => s.course_id).filter((id): id is string => id !== null))];
         const { data: coursesData } = await supabase
           .from("courses")
           .select("id, title")
@@ -79,9 +79,16 @@ const MySessionsPage = () => {
         (coursesData ?? []).forEach((c: any) => { courseMap[c.id] = c.title; });
 
         setSessions(
-          sessionsData.map((s) => ({
-            ...s,
-            course_title: courseMap[s.course_id] || "Course",
+          sessionsData.map((s): SessionRow => ({
+            id: s.id ?? "",
+            course_id: s.course_id ?? "",
+            title: s.title ?? "",
+            description: s.description,
+            scheduled_at: s.scheduled_at ?? "",
+            duration_minutes: s.duration_minutes ?? 0,
+            recording_url: s.recording_url,
+            status: s.status ?? "",
+            course_title: courseMap[s.course_id ?? ""] || "Course",
           }))
         );
       } catch (err) {

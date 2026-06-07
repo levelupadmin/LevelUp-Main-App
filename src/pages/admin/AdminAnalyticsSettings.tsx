@@ -78,7 +78,7 @@ const AdminAnalyticsSettings = () => {
         .limit(1)
         .maybeSingle();
       if (error) toast.error("Couldn't load settings");
-      setSettings((data as Settings) ?? null);
+      setSettings((data as unknown as Settings) ?? null);
       setLoading(false);
     })();
   }, []);

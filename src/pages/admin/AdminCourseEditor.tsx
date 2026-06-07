@@ -443,8 +443,6 @@ const AdminCourseEditor = () => {
           {field("Instructor bio", "instructor_bio", "textarea")}
           {field("Instructor avatar URL", "instructor_avatar_url")}
 
-          {(["outcomes_json", "Outcomes — JSON array of strings, e.g. [\"Shoot in natural light\", \"Edit dialogue scenes\"]"] as const) && null}
-
           <div>
             <label className="block text-sm font-medium mb-1.5">
               Outcomes <span className="text-muted-foreground font-normal">— JSON array of strings</span>

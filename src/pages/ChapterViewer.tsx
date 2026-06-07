@@ -627,7 +627,7 @@ const ChapterViewer = () => {
       completedCount,
       totalCount,
       profile?.full_name ?? "Student",
-      profile?.member_number ?? null
+      profile?.member_number != null ? String(profile.member_number) : null
     ).then((cert) => {
       if (cert) {
         toast.success("Certificate earned!", {

@@ -58,7 +58,7 @@ const AdminAuditLogs = () => {
       .range(from, to);
 
     if (data) {
-      setAdminLogs(data);
+      setAdminLogs(data as unknown as AdminLog[]);
       await resolveUsers(data.map((l) => l.actor_user_id).filter(Boolean) as string[]);
     }
     setLoading(false);
@@ -81,7 +81,7 @@ const AdminAuditLogs = () => {
       .range(from, to);
 
     if (data) {
-      setEnrolmentLogs(data);
+      setEnrolmentLogs(data as unknown as EnrolmentLog[]);
       await resolveUsers(data.map((l) => l.actor_user_id).filter(Boolean) as string[]);
     }
     setLoading(false);
