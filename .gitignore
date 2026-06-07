@@ -29,5 +29,16 @@ dist-ssr
 .env.*.local
 .vercel
 
+# Secrets — NEVER commit (this is a PUBLIC repo). Play/GCP service-account keys,
+# signing keystores, raw key material. The real files live in the iCloud
+# "LevelUp Core/keystores" vault, not here.
+*service_account*.json
+*-sa.json
+**/levelups-tagmango-app-*.json
+*.jks
+*.keystore
+*.keyfile
+*.p12
+
 # Supabase CLI scratch state (project ref, pooler URL, versions, etc.)
 supabase/.temp/
