@@ -131,33 +131,41 @@ Deno.serve(async (req) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // GoTrue stores phone WITHOUT the leading '+', so filter on the
-  // plus-less form. Querying "+91…" matches nothing and would
-  // misclassify a returning user as brand new (then try to re-create
-  // them). The JS candidates filter below still matches both stored
-  // formats defensively.
-  const lookupResp = await fetch(
-    `${SUPABASE_URL}/auth/v1/admin/users?phone=${encodeURIComponent(normPhone.replace(/^\+/, ""))}`,
-    { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } },
-  );
-  const lookupData = (await lookupResp.json()) as {
-    users?: Array<{ id: string; email?: string; phone?: string }>;
-  };
-  // Match against both phone formats Supabase has historically stored
-  // (with + and without). If multiple rows match (e.g. an old ghost
-  // row created before we hardened the signup path), prefer the one
-  // with an email - that's the usable account. The previous
-  // "first match wins" behaviour picked the newest row, which was
-  // often the email-less ghost.
-  const candidates = (lookupData.users || []).filter((u) =>
-    u.phone === normPhone || u.phone === normPhone.replace(/^\+/, "")
-  );
-  const user = candidates.find((u) => !!u.email) ?? candidates[0];
+  // Deterministic auth-user lookup, keyed ONLY on the phone the caller just
+  // OTP-verified. We deliberately do NOT use GoTrue's
+  // GET /auth/v1/admin/users?phone= list endpoint: that param is not honoured
+  // as a server-side filter — it returns the first page of ALL users — so
+  // every returning user past page 1 (i.e. essentially every one of the ~74k
+  // legacy customers) was misclassified as brand new and could not log in.
+  // find_login_identity() queries auth.users directly by the last-10 phone
+  // digits and returns the single canonical row. It is service_role-only.
+  // We pass p_email=null here on purpose: matching-and-logging-in by a
+  // user-supplied email would be account takeover (the OTP only proves the
+  // PHONE). Email is only used later, and only when it is phone-paired/trusted.
+  const { data: identityRows, error: lookupErr } = await admin.rpc("find_login_identity", {
+    p_phone: normPhone,
+    p_email: null,
+  });
+  if (lookupErr) {
+    console.error("verify-msg91-otp: find_login_identity failed", lookupErr);
+    return json({ error: "lookup_failed", detail: lookupErr.message }, 500);
+  }
+  const user = (Array.isArray(identityRows) ? identityRows[0] : identityRows) as
+    | { id: string; email?: string | null; phone?: string | null }
+    | undefined;
 
   // EXISTING USER → login
   if (user) {
-    if (!user.email) return json({ error: "user_missing_email", phone: normPhone }, 422);
-    const session = await mintSession(admin, user.email);
+    // Almost every account has an email and mints a magiclink session
+    // directly. A phone-only auth user (no email on file) can't — GoTrue has
+    // no phone-link grant — so provision a placeholder email we control and
+    // mint against that, instead of dead-ending them on a 422.
+    let loginEmail = (user.email || "").trim() || null;
+    if (!loginEmail) {
+      loginEmail = await ensureSyntheticEmail(admin, user.id, normPhone);
+      if (!loginEmail) return json({ error: "session_mint_failed" }, 500);
+    }
+    const session = await mintSession(admin, loginEmail);
     if (!session) return json({ error: "session_mint_failed" }, 500);
     return json({ ...session, user_id: user.id, is_new_user: false });
   }
@@ -174,6 +182,14 @@ Deno.serve(async (req) => {
   let signupEmail: string | null = body.email?.trim() || null;
   let signupName: string | null = body.full_name?.trim() || null;
   let isLegacy = false;
+  let legacyMatched = false;
+  // Provenance of signupEmail. "user" = typed into the signup form (NOT proven
+  // to belong to the caller). "legacy" = sourced from legacy_enrolments keyed
+  // by the OTP-verified phone (TagMango paired this phone with this email →
+  // trusted) or our own synthetic address. We only ever log a caller INTO an
+  // existing account when the email is "legacy" — never a typed one — so a
+  // signer cannot take over a stranger's account by typing their email.
+  let emailProvenance: "user" | "legacy" | null = signupEmail ? "user" : null;
 
   if (!signupEmail || !signupName) {
     // legacy_enrolments stores phone normalised to +91XXXXXXXXXX, but
@@ -187,15 +203,30 @@ Deno.serve(async (req) => {
       .from("legacy_enrolments")
       .select("email, full_name")
       .in("phone", phoneVariants);
+    legacyMatched = !!(legacyRows && legacyRows.length > 0);
     // Prefer a row that actually has an email (we need it to mint a
     // session); fall back to any matching row for the name.
     const legacy =
       (legacyRows || []).find((r) => r.email) ?? (legacyRows || [])[0];
-    if (legacy?.email) {
-      signupEmail = signupEmail || legacy.email;
+    if (legacy) {
+      if (!signupEmail && legacy.email) {
+        signupEmail = legacy.email;
+        emailProvenance = "legacy";
+      }
       signupName = signupName || (legacy.full_name?.trim() || "LevelUp Student");
       isLegacy = true;
     }
+  }
+
+  // Phone belongs to a known legacy customer but no email anywhere (some
+  // TagMango orders carried only a phone). They are a paying customer and must
+  // still get in — provision a placeholder email we control so the magiclink
+  // session can be minted; the app can prompt them for a real email later.
+  if (!signupEmail && legacyMatched) {
+    signupEmail = syntheticEmail(normPhone);
+    emailProvenance = "legacy";
+    signupName = signupName || "LevelUp Student";
+    isLegacy = true;
   }
 
   // Genuinely unknown number with nothing to provision from → ask
@@ -216,23 +247,36 @@ Deno.serve(async (req) => {
   });
 
   if (createErr || !created?.user) {
-    // The email may already belong to an existing auth account — e.g. a
-    // legacy student who registered by email before and is now logging in
-    // by phone for the first time (so the phone lookup above missed them).
-    // Recover by finding that account, attaching this phone, and logging
-    // them in, instead of failing with the opaque create error.
-    const existing = await findUserByEmail(admin, signupEmail);
-    if (existing) {
-      await admin.auth.admin
-        .updateUserById(existing.id, {
-          phone: normPhone,
-          phone_confirm: true,
-          user_metadata: { ...(existing.user_metadata || {}), phone: normPhone },
-        })
-        .catch(() => {});
-      const session = await mintSession(admin, signupEmail);
-      if (!session) return json({ error: "session_mint_failed" }, 500);
-      return json({ ...session, user_id: existing.id, is_new_user: false, is_legacy: isLegacy });
+    // The email already belongs to an existing auth account. Whether we may
+    // log the caller INTO it depends on provenance:
+    //   • "legacy" — the email is phone-paired (came from legacy_enrolments
+    //     keyed by the OTP-verified phone) or is our synthetic address. This
+    //     is the real recovery case: a legacy student who registered by email
+    //     before and is now logging in by phone for the first time. Safe to
+    //     attach this phone and log them in.
+    //   • "user"   — the email was TYPED into the signup form and is NOT
+    //     proof of ownership. Logging them in would be account takeover, so we
+    //     refuse and tell them to log in instead.
+    if (emailProvenance === "legacy") {
+      const existing = await findUserByEmail(admin, signupEmail);
+      if (existing) {
+        await admin.auth.admin
+          .updateUserById(existing.id, {
+            phone: normPhone,
+            phone_confirm: true,
+            user_metadata: { ...(existing.user_metadata || {}), phone: normPhone },
+          })
+          .catch(() => {});
+        const session = await mintSession(admin, signupEmail);
+        if (!session) return json({ error: "session_mint_failed" }, 500);
+        return json({ ...session, user_id: existing.id, is_new_user: false, is_legacy: isLegacy });
+      }
+    } else if (await findUserByEmail(admin, signupEmail)) {
+      // Typed email that already exists → never silently hijack it.
+      return json(
+        { error: "email_in_use", detail: "An account with this email already exists. Please log in instead." },
+        409,
+      );
     }
     return json({ error: "create_user_failed", detail: createErr?.message }, 500);
   }
@@ -252,22 +296,58 @@ Deno.serve(async (req) => {
   return json({ ...session, user_id: created.user.id, is_new_user: true, is_legacy: isLegacy });
 });
 
-// Find an existing auth user by exact email via the GoTrue admin API.
-// Mirrors the phone lookup above (filter server-side, then verify in JS).
+// Find an existing auth user by exact email. Uses the deterministic
+// find_login_identity RPC (NOT the broken GoTrue ?email= list filter, which
+// ignores the param and returns page 1 of all users), then hydrates the full
+// record so we can MERGE its user_metadata rather than clobber it.
 async function findUserByEmail(
   admin: ReturnType<typeof createClient>,
   email: string,
 ): Promise<{ id: string; email?: string; user_metadata?: Record<string, unknown> } | null> {
-  const resp = await fetch(
-    `${SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(email)}`,
-    { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } },
-  );
-  if (!resp.ok) return null;
-  const data = (await resp.json().catch(() => ({}))) as {
-    users?: Array<{ id: string; email?: string; user_metadata?: Record<string, unknown> }>;
+  const { data, error } = await admin.rpc("find_login_identity", { p_phone: null, p_email: email });
+  if (error) {
+    console.error("verify-msg91-otp: find_login_identity (email) failed", error);
+    return null;
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { id: string; email?: string } | undefined;
+  if (!row?.id) return null;
+  const { data: full } = await admin.auth.admin.getUserById(row.id);
+  return {
+    id: row.id,
+    email: row.email,
+    user_metadata: (full?.user?.user_metadata as Record<string, unknown>) || {},
   };
-  const lower = email.toLowerCase();
-  return (data.users || []).find((u) => (u.email || "").toLowerCase() === lower) ?? null;
+}
+
+// A placeholder email we control, derived deterministically from the phone,
+// for legacy customers with no email on file. The domain carries no MX record,
+// so nothing is ever delivered; it exists purely so GoTrue's email-based
+// magiclink can mint a session for a phone-only user. The "@phone." prefix is
+// self-documenting so the app/admin can detect these and prompt for a real
+// email later.
+function syntheticEmail(normPhone: string): string {
+  return `${normPhone.replace(/\D/g, "")}@phone.leveluplearning.in`;
+}
+
+// Attach a synthetic email to an existing phone-only auth user so we can mint a
+// magiclink session for them. Marked confirmed — the address is ours and only
+// needs to exist on the record for generateLink to work. Returns the email, or
+// null on failure.
+async function ensureSyntheticEmail(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  normPhone: string,
+): Promise<string | null> {
+  const email = syntheticEmail(normPhone);
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    email,
+    email_confirm: true,
+  });
+  if (error) {
+    console.error("verify-msg91-otp: ensureSyntheticEmail failed", error);
+    return null;
+  }
+  return email;
 }
 
 async function mintSession(
