@@ -1,5 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isIOS } from "@/lib/platform";
 
 /**
  * Android-only replacement for any Buy / Enrol / Pay / Register CTA.
@@ -44,6 +45,29 @@ export default function ContinueOnWebCTA({
   body = "Purchases happen on the LevelUp website. We'll open it in your browser.",
   className,
 }: Props) {
+  // Apple App Store anti-steering (Guidelines 3.1.1 / 3.1.3) forbids BOTH
+  // in-app non-IAP purchase AND links that steer users to an external purchase
+  // flow. The "Continue on web" link below is Google-compliant (Play Reader
+  // Rule / Path B) but NOT permitted on iOS — so on iOS we render passive,
+  // link-free, price-free copy. Already-entitled users keep full content access
+  // elsewhere in the app; this surface simply stops being a purchase/steering
+  // affordance. See src/lib/platform.ts (isIOS).
+  if (isIOS()) {
+    if (variant === "inline") return null;
+    return (
+      <div
+        className={cn(
+          "rounded-xl border border-border bg-card/40 p-5",
+          className,
+        )}
+      >
+        <p className="text-sm text-muted-foreground">
+          Your enrolled programmes are available to watch here anytime.
+        </p>
+      </div>
+    );
+  }
+
   // Always force a leading slash so we never end up with `https://app...path`.
   const normalised = webPath.startsWith("/") ? webPath : `/${webPath}`;
   const href = `${WEB_ORIGIN}${normalised}`;
