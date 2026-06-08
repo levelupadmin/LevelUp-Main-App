@@ -32,18 +32,21 @@ const val = (f) => {
 };
 const probe = has("--probe");
 const showStatus = has("--status");
+// --notes-only --version <code>: update an existing release's notes on the track
+// WITHOUT uploading a new bundle (e.g. to fix release-note formatting).
+const notesOnly = has("--notes-only");
 const saPath = val("--sa") || process.env.PLAY_SERVICE_ACCOUNT_JSON;
 const pkg = val("--package") || "com.tagmango.leveluplearning";
 const track = val("--track") || "production";
 // The only positional is the AAB path; skip any value consumed by a flag.
 const flagValueIdxs = new Set(
-  ["--sa", "--package", "--track"].map((f) => argv.indexOf(f)).filter((i) => i >= 0).map((i) => i + 1),
+  ["--sa", "--package", "--track", "--version"].map((f) => argv.indexOf(f)).filter((i) => i >= 0).map((i) => i + 1),
 );
 const aabPath = argv.find((a, i) => !a.startsWith("--") && !flagValueIdxs.has(i));
 
-if (!saPath || (!aabPath && !probe && !showStatus)) {
+if (!saPath || (!aabPath && !probe && !showStatus && !notesOnly)) {
   console.error(
-    "Usage: PLAY_SERVICE_ACCOUNT_JSON=<sa.json> node scripts/play-publish.mjs <aab> [--package P] [--track T] [--probe|--status]",
+    "Usage: PLAY_SERVICE_ACCOUNT_JSON=<sa.json> node scripts/play-publish.mjs <aab> [--package P] [--track T] [--probe|--status|--notes-only --version <code>]",
   );
   process.exit(2);
 }
@@ -133,6 +136,19 @@ async function api(token, method, path, body, isUpload = false) {
     return;
   }
 
+  if (notesOnly) {
+    const version = val("--version");
+    if (!version) { console.error("--notes-only requires --version <code>"); process.exit(2); }
+    const notes = (process.env.PLAY_RELEASE_NOTES || "").replace(/\\n/g, "\n");
+    const release = { status: "completed", versionCodes: [String(version)] };
+    if (notes) release.releaseNotes = [{ language: "en-US", text: notes }];
+    const tr = await api(token, "PUT", `/applications/${pkg}/edits/${edit.id}/tracks/${track}`, { track, releases: [release] });
+    await api(token, "POST", `/applications/${pkg}/edits/${edit.id}:validate`);
+    await api(token, "POST", `/applications/${pkg}/edits/${edit.id}:commit`);
+    console.log(`Notes-only: '${track}' release notes updated for versionCode ${version} → ${JSON.stringify(tr.releases)}`);
+    return;
+  }
+
   // Upload the bundle.
   const aab = readFileSync(aabPath);
   console.log(`Uploading ${(aab.length / 1048576).toFixed(1)} MB bundle…`);
@@ -145,7 +161,7 @@ async function api(token, method, path, body, isUpload = false) {
 
   // Assign to track at full rollout.
   const release = { status: "completed", versionCodes: [String(bundle.versionCode)] };
-  const notes = process.env.PLAY_RELEASE_NOTES;
+  const notes = (process.env.PLAY_RELEASE_NOTES || "").replace(/\\n/g, "\n");
   if (notes) release.releaseNotes = [{ language: "en-US", text: notes }];
   const trackRes = await api(
     token, "PUT",
