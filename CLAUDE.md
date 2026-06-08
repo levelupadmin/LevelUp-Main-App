@@ -94,7 +94,7 @@ v1 shipped 2026-06-09.
 ```bash
 set -a && . ./.env.ios.local && set +a
 export DEVELOPER_DIR=/Applications/Xcode-26.5.0.app/Contents/Developer   # full Xcode, not CLT
-npm run build && npx cap sync ios                                        # bundle latest web app
+npm run build && npx cap sync ios                                        # bundle web app — needs .env.local (see ⚠️ below)
 
 # Archive UNSIGNED — sidesteps the "team has no registered devices" dev-profile wall:
 xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
@@ -115,6 +115,15 @@ xcrun altool --upload-app -f /tmp/LevelUp-export/App.ipa -t ios \
   --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
 ```
 
+- ⚠️ **The local build needs `.env.local`** (gitignored) with the `VITE_` *client*
+  vars, or the bundled native app breaks. Critical pair: `VITE_MSG91_WIDGET_ID` +
+  `VITE_MSG91_TOKEN_AUTH` — without them the MSG91 widget throws "env vars missing"
+  and **OTP login fails on device**. Source them from the vault `.env.msg91`
+  (`MSG91_WIDGET_ID` → `VITE_MSG91_WIDGET_ID`, `MSG91_WIDGET_TOKEN_AUTH` →
+  `VITE_MSG91_TOKEN_AUTH`). Web builds get these from Vercel; local/native builds
+  don't. (Supabase URL/key have hardcoded fallbacks in client.ts, so only the MSG91
+  pair is fatal; `VITE_SENTRY_DSN` is optional.) Verify after build:
+  `grep -rlF "<widget id>" dist/assets`.
 - **`scripts/asc-api.mjs`** — dependency-free App Store Connect API client (Node
   stdlib JWT + fetch). Subcommands: `list-apps | find-app <bundleId> | users |
   builds <appId> | list-devices | register-device "<name>" <udid>`. Sources
