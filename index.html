@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- App-like WebView viewport. maximum-scale=1 + user-scalable=no kill
+         iOS focus auto-zoom (OTP / notes fields) and pinch-zoom; viewport-fit=cover
+         lets content extend under the Dynamic Island / home indicator so the
+         env(safe-area-inset-*) helpers in index.css can reclaim that space. -->
+    <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="LevelUp" />
@@ -46,6 +50,12 @@
       }
     }
     </script>
+    <!-- Paint the brand-dark canvas immediately so the WebView's first frame
+         (before React mounts) is the app background, not a white/black flash. -->
+    <style>
+      html, body { background-color: #0a0a0a; color-scheme: dark; }
+      #root { min-height: 100%; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

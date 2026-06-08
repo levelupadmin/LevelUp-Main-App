@@ -141,7 +141,7 @@ function HeroBanner({ offering }: { offering: Offering }) {
         <p className="text-[10px] sm:text-xs font-mono uppercase tracking-[0.18em] text-[hsl(var(--cream))]/80 mb-3">
           Masterclass
         </p>
-        <h1 className="text-[36px] leading-[1.02] sm:text-5xl lg:text-[64px] lg:leading-[1.02] font-bold text-foreground tracking-[-0.02em] max-w-[18ch]">
+        <h1 className="text-[clamp(28px,8vw,36px)] leading-[1.05] sm:text-5xl lg:text-[64px] lg:leading-[1.02] font-bold text-foreground tracking-[-0.02em] max-w-[18ch] break-words [text-wrap:balance]">
           {offering.title}
         </h1>
         {offering.subtitle && (
@@ -1108,7 +1108,7 @@ export default function PublicOffering() {
     // the data lands.
     return (
       <div className="min-h-screen bg-background animate-pulse">
-        <header className="border-b border-border bg-[hsl(var(--surface))]">
+        <header className="border-b border-border bg-[hsl(var(--surface))] safe-top">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
             <div className="h-6 w-24 rounded bg-[hsl(var(--surface-2))]" />
             <div className="h-6 w-16 rounded bg-[hsl(var(--surface-2))]" />
@@ -1147,7 +1147,7 @@ export default function PublicOffering() {
 
   if (notFound || !offering) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-6">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-6 safe-top safe-bottom">
         <AlertCircle className="h-12 w-12 text-muted-foreground" />
         <h1 className="text-xl font-semibold text-foreground">Offering not found</h1>
         <p className="text-muted-foreground text-sm">This page doesn't exist or is no longer available.</p>
@@ -1179,8 +1179,12 @@ export default function PublicOffering() {
   return (
     <div className="min-h-screen bg-background">
 
-      {/* Top bar */}
-      <header className="border-b border-border bg-[hsl(var(--surface))]">
+      {/* Top bar. This is a PUBLIC route that renders OUTSIDE StudentLayout,
+          so it must own its own notch handling — `safe-top` pushes the bar
+          below the iOS Dynamic Island / status bar instead of letting the
+          title and Sign-in link slide under it. Sticky so it stays parked
+          at the safe top while the long marketing page scrolls. */}
+      <header className="sticky top-0 z-30 border-b border-border bg-[hsl(var(--surface))]/95 backdrop-blur-lg safe-top">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <span className="text-lg font-bold text-[hsl(var(--cream))] font-['Instrument_Serif'] italic">
             LevelUp

@@ -1,17 +1,15 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2 } from "lucide-react";
+import RouteFallback from "@/components/RouteFallback";
 
 const RequireAuth = ({ children }: { children: React.ReactNode }) => {
   const { session, user, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    // Branded skeleton (on --canvas) instead of a black screen + spinner, so
+    // the auth gate doesn't flash a "frozen app" while the session resolves.
+    return <RouteFallback />;
   }
 
   if (!session && !user) {

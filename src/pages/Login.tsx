@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mail, Star, ArrowRight, ShieldCheck } from "lucide-react";
+import { Loader2, Mail, Star, ArrowRight, ShieldCheck, ChevronLeft } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import usePageTitle from "@/hooks/usePageTitle";
 import { PhoneInput } from "@/components/auth/PhoneInput";
@@ -77,7 +77,7 @@ const Login = () => {
 
   if (authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-canvas">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-canvas">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -178,6 +178,18 @@ const Login = () => {
 
   const handleSwitchToEmail = () => goToStep("email_input");
 
+  // Back affordance: step the user one level back toward the phone entry
+  // screen. Critical on iOS where there's no system back button. The OTP
+  // step owns its own in-card back control, so the top chevron is only
+  // shown for the email steps (and never on the initial phone step).
+  const canGoBack = step === "email_input" || step === "email_sent";
+  const handleBack = () => {
+    if (step === "email_input" || step === "email_sent") {
+      setEmail("");
+      goToStep("phone");
+    }
+  };
+
   const handleEmailSubmit = async () => {
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       toast({ title: "Enter a valid email", variant: "destructive" });
@@ -275,7 +287,7 @@ const Login = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 autoFocus={!native}
                 required
-                className="bg-surface border-border focus:border-foreground h-12 rounded-xl"
+                className="bg-surface border-border focus:border-foreground h-12 rounded-xl text-base"
               />
             </div>
             <button
@@ -362,29 +374,23 @@ const Login = () => {
     </div>
   );
 
-  const legalFooter = (
-    <div className="space-y-2 pt-6">
-      <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-muted-foreground">
-        <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
-        <span className="opacity-30">·</span>
-        <Link to="/terms" className="hover:text-foreground">Terms</Link>
-        <span className="opacity-30">·</span>
-        <Link to="/refunds" className="hover:text-foreground">Refunds</Link>
-        <span className="opacity-30">·</span>
-        <a href="https://api.whatsapp.com/send?phone=919791520177&text=Hi" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">Support</a>
-      </div>
-      <p className="text-[10px] text-center font-mono text-muted-foreground/60">
-        © 2026 LevelUp Learning
-      </p>
-    </div>
-  );
-
   // ── One responsive composition: single column on mobile + native,
   //    two columns (form left / hero right) from `lg` up on web. ───────
+  // Once the user is past the phone step the on-screen keyboard is up for
+  // OTP/email entry. On mobile we collapse the tall hero and stop vertically
+  // centering the form so the active input stays comfortably in view without
+  // forced scrolling or layout jumps when the keyboard opens. Desktop is
+  // unaffected (the hero is a side pane, no keyboard overlap).
+  const keyboardStep = step !== "phone";
+
   return (
-    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row">
+    <div className="min-h-[100dvh] bg-canvas flex flex-col lg:flex-row">
       {/* HERO — top on mobile/native, right pane on desktop */}
-      <div className="relative h-[40vh] min-h-[300px] overflow-hidden lg:order-2 lg:h-auto lg:min-h-screen lg:flex-1">
+      <div
+        className={`relative shrink-0 overflow-hidden transition-[height] duration-300 lg:order-2 lg:h-auto lg:min-h-[100dvh] lg:flex-1 lg:shrink ${
+          keyboardStep ? "h-[18vh] min-h-[120px]" : "h-[40vh] min-h-[300px]"
+        }`}
+      >
         <img
           src={heroCinematic}
           alt="A filmmaker on set, locked into the moment behind a cinema camera"
@@ -394,19 +400,21 @@ const Login = () => {
         {/* Mobile gradient fades to canvas so the form sheet blends in */}
         <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/65 to-canvas/10 lg:from-black/85 lg:via-black/35 lg:to-black/10" />
 
-        {/* Mobile/native hero copy */}
+        {/* Mobile/native hero copy — hidden once the keyboard is up to keep the form near the top */}
         <div className="relative z-10 h-full flex flex-col justify-between p-6 safe-top lg:hidden">
           <div className="flex items-center justify-between">
             <LevelUpWordmark className="h-7 w-auto text-foreground" />
           </div>
-          <div>
-            <h2 className="text-[40px] sm:text-[48px] leading-[1.02] font-semibold text-foreground max-w-[14ch]">
-              Make your <span className="font-serif-italic text-cream">first film</span>.
-            </h2>
-            <p className="text-sm text-muted-foreground mt-3 max-w-[32ch]">
-              Trusted by 12,000+ Indian creators learning from working filmmakers.
-            </p>
-          </div>
+          {!keyboardStep && (
+            <div>
+              <h2 className="text-[40px] sm:text-[48px] leading-[1.02] font-semibold text-foreground max-w-[14ch]">
+                Make your <span className="font-serif-italic text-cream">first film</span>.
+              </h2>
+              <p className="text-sm text-muted-foreground mt-3 max-w-[32ch]">
+                Trusted by 12,000+ Indian creators learning from working filmmakers.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Desktop hero copy */}
@@ -428,16 +436,27 @@ const Login = () => {
 
       {/* FORM COLUMN — a rounded sheet rising over the hero on mobile */}
       <div className="relative z-10 flex flex-col flex-1 bg-canvas rounded-t-[28px] -mt-6 px-5 pt-7 pb-6 safe-bottom lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8">
-        {/* Desktop wordmark (mobile shows it inside the hero) */}
-        <div className="hidden lg:block mb-8">
-          <LevelUpWordmark className="text-xl" />
+        {/* Top bar: a back affordance for the email steps (iOS has no system
+            back button, so this chevron is the way back) plus the desktop
+            wordmark. Reserves a stable 44px row so nothing shifts between
+            steps. */}
+        <div className="flex items-center gap-2 min-h-[44px] mb-4 lg:mb-8">
+          {canGoBack && (
+            <button
+              type="button"
+              onClick={handleBack}
+              aria-label="Back to sign in"
+              className="-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground active:scale-95 transition lg:-ml-3"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+          )}
+          <LevelUpWordmark className="hidden lg:block text-xl" />
         </div>
 
-        <div className="flex-1 flex flex-col justify-center">
+        <div className={`flex-1 flex flex-col ${keyboardStep ? "justify-start pt-2" : "justify-center"}`}>
           {formBlock}
         </div>
-
-        {legalFooter}
       </div>
     </div>
   );

@@ -96,6 +96,10 @@ const ChapterViewer = () => {
   const loadChapter = useCallback(async () => {
     if (!chapterId || !user) return;
     setLoading(true);
+    // Clear any stale access-denied state from a previous chapter so a
+    // switch from a locked lesson to an accessible one doesn't flash the
+    // "Enrolment required" screen while the new fetch is in flight.
+    setAccessDenied(false);
 
     // Fetch chapter
     const { data: ch, error } = await supabase
@@ -670,7 +674,12 @@ const ChapterViewer = () => {
     setSubmitting(false);
   };
 
-  if (loading) {
+  // Full-screen spinner ONLY on the very first load (no chapter yet). On
+  // episode switches we keep the previous chapter + the whole shell mounted
+  // (stale-while-revalidate) so the page never flashes to a black screen and
+  // switching feels near-instant; a thin top progress bar (below) signals the
+  // in-flight fetch instead.
+  if (loading && !chapter) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground border-t-foreground" />
@@ -749,6 +758,15 @@ const ChapterViewer = () => {
 
       {/* Top bar */}
       <div className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 flex items-center gap-3 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]">
+        {/* In-flight episode-switch indicator: a thin pulsing bar pinned to
+            the BOTTOM edge of the sticky header (below the Dynamic Island /
+            safe-area inset so it's always visible) while the next lesson's
+            data loads. The shell and previous lesson stay visible underneath
+            (stale-while-revalidate) so there's no full-screen flash. Uses
+            Tailwind's animate-pulse so no new CSS keyframe is needed. */}
+        {loading && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--cream))]/70 animate-pulse" />
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -974,12 +992,17 @@ const ChapterViewer = () => {
                   </span>
                 )}
               </div>
+              {/* font-size MUST stay >=16px on mobile or iOS WKWebView
+                  fires focus auto-zoom, which yanks the page in and lets
+                  the player iframe become a pan/scroll target. text-base
+                  (16px) on touch viewports, drop to text-sm only from sm:
+                  up where there's no zoom risk. */}
               <Textarea
                 placeholder="Jot down what stood out…"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={10}
-                className="text-sm resize-none"
+                className="text-base sm:text-sm resize-none"
               />
               <p className="text-[10px] text-muted-foreground/60">
                 Syncs to your account &mdash; you'll see these notes on any device you sign in on.

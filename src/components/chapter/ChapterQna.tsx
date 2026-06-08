@@ -39,12 +39,14 @@ export default function ChapterQna({
             </p>
           )}
         </div>
+        {/* text-base (16px) on mobile to suppress iOS focus auto-zoom;
+            text-sm only from sm: up. Same guard as the notes textarea. */}
         <Textarea
           placeholder="What's on your mind about this lesson?"
           value={questionText}
           onChange={(e) => setQuestionText(e.target.value)}
           rows={3}
-          className="text-sm resize-none bg-[hsl(var(--surface))]"
+          className="text-base sm:text-sm resize-none bg-[hsl(var(--surface))]"
         />
         <div className="flex items-center justify-end">
           <Button

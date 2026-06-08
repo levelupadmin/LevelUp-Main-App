@@ -181,6 +181,13 @@
        canvas from Tailwind, but the html element is what paints behind
        any overscroll bounce or content-not-yet-painted gap. */
     @apply bg-background;
+    /* Kill rubber-band/overscroll chaining on the scroll root too — without
+       this the document element can still bounce on iOS even when body is
+       pinned, which reads as the "rogue vertical scroll" the user reports. */
+    overscroll-behavior: none;
+    /* Guard against horizontal overflow: a single too-wide child should never
+       make the whole page pannable sideways inside the WebView. */
+    overflow-x: hidden;
   }
 
   body {
@@ -191,11 +198,28 @@
        Capacitor WebView don't trigger the system back-swipe or expose
        a white edge. */
     overscroll-behavior: none;
+    /* Belt-and-braces horizontal-overflow guard at the body level, and clamp
+       width to the visual viewport so a stray full-bleed element can't push
+       the page wider than the screen. */
+    overflow-x: hidden;
+    max-width: 100vw;
   }
 
   /* Prevent 300ms tap delay & double-tap zoom on all interactive elements */
   button, a, [role="button"], input, select, textarea, label {
     touch-action: manipulation;
+  }
+
+  /* iOS focus auto-zoom guard. Mobile Safari/WKWebView zooms the page when a
+     focused form control reports a computed font-size below 16px. Setting a
+     16px BASE on all controls keeps focus zoom off (OTP field, chapter-viewer
+     notes textarea, search inputs, etc.). It's a base only — any Tailwind
+     text-* utility (which lands in the components/utilities layers that come
+     after base) still wins for VISUAL sizing, so this never inflates inputs
+     that were deliberately styled larger; it only raises ones that were below
+     the threshold. */
+  input, textarea, select {
+    font-size: 16px;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -365,15 +389,66 @@
     display: none;
   }
 
-  /* ── Mobile safe-area insets (iOS notch / home indicator) ── */
+  /* ── Mobile safe-area insets (iOS notch / home indicator) ──
+     With viewport-fit=cover the WebView extends edge-to-edge UNDER the
+     Dynamic Island and home indicator, so any chrome that must stay visible
+     (top logo bar, bottom tab bar, sticky CTAs) has to reclaim that space
+     via env(safe-area-inset-*). These helpers are consumed by the app-shell,
+     auth, and chapter-viewer layout agents. The `max(…, 0px)` form makes them
+     safe on non-notched devices / browsers where the inset resolves to 0.
+
+     Naming: the pre-existing `.safe-top/.safe-bottom/.safe-bottom-mb` classes
+     are kept for back-compat; the `.p?-safe` set is the canonical padding API
+     mirroring Tailwind's directional naming. */
+
+  /* Directional safe-area PADDING — combine with a component's own padding via
+     the layout agents (e.g. a header wrapper gets `pt-safe` on top of px-4). */
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top), 0px);
+  }
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+  .pl-safe {
+    padding-left: max(env(safe-area-inset-left), 0px);
+  }
+  .pr-safe {
+    padding-right: max(env(safe-area-inset-right), 0px);
+  }
+  /* Horizontal pair (landscape notch on left+right). */
+  .px-safe {
+    padding-left: max(env(safe-area-inset-left), 0px);
+    padding-right: max(env(safe-area-inset-right), 0px);
+  }
+
+  /* Directional safe-area MARGIN — for when padding would distort a bordered
+     surface and the gap should sit outside it instead. */
+  .mt-safe { margin-top: max(env(safe-area-inset-top), 0px); }
+  .mb-safe { margin-bottom: max(env(safe-area-inset-bottom), 0px); }
+
+  /* Full-height that accounts for both insets, so a flex column page fills the
+     screen without the top/bottom chrome being clipped or leaving a dead band.
+     Uses 100dvh where supported so it also tracks the iOS URL-bar/keyboard. */
+  .min-h-safe {
+    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+
+  /* Sticky-header offset: a sticky/fixed top bar sets its top edge to the
+     inset so it pins just below the Dynamic Island, and content below can use
+     `.h-safe-top` as a spacer of exactly the inset height. */
+  .top-safe { top: max(env(safe-area-inset-top), 0px); }
+  .h-safe-top { height: max(env(safe-area-inset-top), 0px); }
+
+  /* Back-compat aliases (existing callsites). */
   .safe-top {
-    padding-top: env(safe-area-inset-top);
+    padding-top: max(env(safe-area-inset-top), 0px);
   }
   .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
   }
   .safe-bottom-mb {
-    margin-bottom: env(safe-area-inset-bottom);
+    margin-bottom: max(env(safe-area-inset-bottom), 0px);
   }
 
   /* Heart bounce on like */

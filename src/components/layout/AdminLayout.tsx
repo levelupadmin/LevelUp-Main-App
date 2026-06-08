@@ -410,17 +410,19 @@ const AdminLayout = ({ children }: Props) => {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar — respects iOS safe-area so the status bar doesn't overlap */}
-        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg safe-top h-16">
-          <div className="flex items-center gap-3">
+        {/* Top bar — `safe-top` pushes the row below the Dynamic Island; the
+            16-unit row sits *under* that inset (min-height, not fixed height,
+            so the inset is added rather than eating into the row). */}
+        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg safe-top min-h-16">
+          <div className="flex items-center gap-2">
             <button
               aria-label="Open menu"
-              className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center focus-ring press-scale rounded-md"
+              className="md:hidden -ml-1.5 text-muted-foreground h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl"
               onClick={() => setSidebarOpen(true)}
             >
-              <Menu className="h-5 w-5" />
+              <Menu className="h-6 w-6" />
             </button>
-            <Link to="/admin" className="md:hidden font-semibold tracking-tight text-foreground">
+            <Link to="/admin" className="md:hidden font-semibold tracking-tight text-foreground text-lg">
               Admin
             </Link>
           </div>

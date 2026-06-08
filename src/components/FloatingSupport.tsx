@@ -34,7 +34,7 @@ const FloatingSupport = () => {
       rel="noopener noreferrer"
       aria-label="Chat with us on WhatsApp"
       className={`fixed right-4 md:bottom-8 md:right-8 z-50 items-center gap-2 px-4 py-2.5 md:px-5 md:py-3 rounded-full bg-surface/90 backdrop-blur-md border border-border text-foreground text-xs md:text-sm shadow-lg hover:border-cream/50 hover:shadow-[0_0_24px_hsl(var(--cream)/0.15)] transition-all duration-300 ${
-        hasStickyCta ? "hidden md:inline-flex" : "bottom-20 inline-flex"
+        hasStickyCta ? "hidden md:inline-flex" : "bottom-[calc(6rem+env(safe-area-inset-bottom))] inline-flex"
       }`}
     >
       <MessageCircle className="w-4 h-4 text-cream" strokeWidth={1.5} />

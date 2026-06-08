@@ -138,9 +138,16 @@ const ContinueLearning = () => {
 
   if (loading) return (
     <Section title="Continue learning" density="compact">
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
+      {/* Skeleton row mirrors the real card widths (78vw on mobile, fixed on
+          larger screens) so content swaps in with no layout shift / horizontal
+          jump when the data lands. */}
+      <div className="flex gap-4 sm:gap-5 overflow-x-auto hide-scrollbar pb-2 -mx-1 px-1">
         {[1, 2, 3].map((i) => (
-          <SkeletonCard key={i} variant="media" className="min-w-[300px] max-w-[320px] flex-shrink-0" />
+          <SkeletonCard
+            key={i}
+            variant="media"
+            className="min-w-[78vw] sm:min-w-[320px] lg:min-w-[340px] max-w-[360px] flex-shrink-0 rounded-2xl"
+          />
         ))}
       </div>
     </Section>

@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, Mail, User, ArrowRight, ShieldCheck } from "lucide-react";
+import { Loader2, CheckCircle2, Mail, User, ArrowRight, ShieldCheck, ChevronLeft } from "lucide-react";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
@@ -54,7 +54,7 @@ const Signup = () => {
 
   if (authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-canvas">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-canvas">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -178,6 +178,19 @@ const Signup = () => {
     return res;
   };
 
+  // Back affordance. iOS has no system back button, so the top-left chevron
+  // is the way out. From the initial form it returns to Sign in; from the
+  // post-submit screens (email_sent) it returns to the form. The OTP step
+  // owns its own in-card back control, so the top chevron is not shown there.
+  const canGoBack = step === "form" || step === "email_sent";
+  const handleBack = () => {
+    if (step === "email_sent") {
+      setStep("form");
+    } else {
+      navigate("/login");
+    }
+  };
+
   const stepBody = (
     <>
       {step === "form" && (
@@ -292,27 +305,16 @@ const Signup = () => {
     </>
   );
 
-  const legalFooter = (
-    <div className="space-y-2 pt-6">
-      <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-muted-foreground">
-        <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
-        <span className="opacity-30">·</span>
-        <Link to="/terms" className="hover:text-foreground">Terms</Link>
-        <span className="opacity-30">·</span>
-        <Link to="/refunds" className="hover:text-foreground">Refunds</Link>
-        <span className="opacity-30">·</span>
-        <a href="https://api.whatsapp.com/send?phone=919791520177&text=Hi" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">Support</a>
-      </div>
-      <p className="text-[10px] text-center font-mono text-muted-foreground/60">© 2026 LevelUp Learning</p>
-    </div>
-  );
-
   // ── One responsive composition: single column on mobile + native,
   //    two columns (form left / hero right) from `lg` up on web. ───────
+  // Signup always asks for input (name/phone/email on the form, the code on
+  // the OTP step), so the keyboard is up the whole time on mobile. Keep the
+  // hero a slim branding strip and let the form sit near the top with its own
+  // natural scroll — no full-viewport centering that fights the keyboard.
   return (
-    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row">
-      {/* HERO — top on mobile/native, right pane on desktop */}
-      <div className="relative h-[40vh] min-h-[300px] overflow-hidden lg:order-2 lg:h-auto lg:min-h-screen lg:flex-1">
+    <div className="min-h-[100dvh] bg-canvas flex flex-col lg:flex-row">
+      {/* HERO — slim strip on mobile/native, right pane on desktop */}
+      <div className="relative h-[20vh] min-h-[140px] shrink-0 overflow-hidden lg:order-2 lg:h-auto lg:min-h-[100dvh] lg:flex-1 lg:shrink">
         <img
           src={signupHeroImage}
           alt="A creator at work on a film set"
@@ -321,17 +323,14 @@ const Signup = () => {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/65 to-canvas/10 lg:from-black/85 lg:via-black/35 lg:to-black/10" />
 
-        {/* Mobile/native hero copy */}
+        {/* Mobile/native hero copy — compact so the form has room above the keyboard */}
         <div className="relative z-10 h-full flex flex-col justify-between p-6 safe-top lg:hidden">
           <div className="flex items-center justify-between">
             <LevelUpWordmark className="h-7 w-auto text-foreground" />
           </div>
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Creators who ship</p>
-            <h2 className="text-[44px] sm:text-[52px] leading-[1] font-semibold text-foreground max-w-[14ch]">
-              Learn the <span className="font-serif-italic text-cream">craft</span>
-            </h2>
-          </div>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            Learn the craft · Creators who ship
+          </p>
         </div>
 
         {/* Desktop hero copy */}
@@ -351,11 +350,23 @@ const Signup = () => {
 
       {/* FORM COLUMN — a rounded sheet rising over the hero on mobile */}
       <div className="relative z-10 flex flex-col flex-1 bg-canvas rounded-t-[28px] -mt-6 px-5 pt-7 pb-6 safe-bottom lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8">
-        <div className="hidden lg:block mb-8">
-          <LevelUpWordmark className="text-xl" />
+        {/* Top bar: back affordance (iOS has no system back button) + desktop
+            wordmark. Reserves a stable 44px row so nothing shifts per step. */}
+        <div className="flex items-center gap-2 min-h-[44px] mb-4 lg:mb-8">
+          {canGoBack && (
+            <button
+              type="button"
+              onClick={handleBack}
+              aria-label={step === "form" ? "Back to sign in" : "Back"}
+              className="-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground active:scale-95 transition lg:-ml-3"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+          )}
+          <LevelUpWordmark className="hidden lg:block text-xl" />
         </div>
 
-        <div className="flex-1 flex flex-col justify-center">
+        <div className="flex-1 flex flex-col justify-start">
           <div className="w-full max-w-[400px] mx-auto">
             <div className="glass-card rounded-3xl p-6 sm:p-7">
               {stepBody}
@@ -370,8 +381,6 @@ const Signup = () => {
             )}
           </div>
         </div>
-
-        {legalFooter}
       </div>
     </div>
   );

@@ -299,12 +299,47 @@ const BrowsePage = () => {
                     ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
                     : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
                 )}>
-                  {items.map((c) => (
+                  {items.map((c) => {
+                    const isEntitled = !!(c.offering_id && enrolledOfferingIds.has(c.offering_id));
+                    // Where the card navigates:
+                    //  - entitled  → straight into the in-app course detail
+                    //                (the player surface) so it matches the
+                    //                "Continue" CTA.
+                    //  - browsing  → the public offering landing page when we
+                    //                have a slug, else course detail.
+                    //  - upcoming  → no detail page yet; card is non-nav and
+                    //                only exposes the "Notify me" button.
+                    // Both routes exist (/p/:slug and /courses/:courseId).
+                    const cardHref =
+                      c.status === "upcoming"
+                        ? null
+                        : isEntitled
+                          ? `/courses/${c.id}`
+                          : c.offering_slug
+                            ? `/p/${c.offering_slug}`
+                            : `/courses/${c.id}`;
+                    return (
                     <div
                       key={c.id}
-                      className="group bg-surface rounded-2xl overflow-hidden ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 hover:-translate-y-1 transition-all duration-300 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
+                      className="group relative bg-surface rounded-2xl overflow-hidden ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 hover:-translate-y-1 transition-all duration-300 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)] focus-within:ring-[hsl(var(--cream))]/40"
                     >
-                      <div className="aspect-video bg-surface-2 relative">
+                      {/* Stretched-link overlay: makes the ENTIRE card a
+                          single tap target that navigates to the detail
+                          page. Sits beneath the explicit controls (which
+                          carry `relative z-10`) so the wishlist heart,
+                          Notify button, and CTA stay independently
+                          clickable. Using a real <Link> keeps keyboard
+                          focus + middle-click + right-click "open in new
+                          tab" working, unlike an onClick on the div. */}
+                      {cardHref && (
+                        <Link
+                          to={cardHref}
+                          aria-label={`View ${c.title}`}
+                          className="absolute inset-0 z-[1] rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                          tabIndex={-1}
+                        />
+                      )}
+                      <div className="aspect-video bg-surface-2 relative pointer-events-none">
                         {c.thumbnail_url && (
                           <LazyImage
                             src={c.thumbnail_url}
@@ -320,7 +355,7 @@ const BrowsePage = () => {
                             </span>
                           )}
                         </div>
-                        <div className="absolute top-2 right-2 flex items-center gap-1">
+                        <div className="absolute top-2 right-2 z-10 flex items-center gap-1 pointer-events-auto">
                           {c.status === "upcoming" && (
                             <span className="bg-foreground/80 text-background text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded font-mono">
                               Coming Soon
@@ -347,7 +382,12 @@ const BrowsePage = () => {
                           )}
                         </div>
                       </div>
-                      <div className="p-4 flex flex-col gap-1.5">
+                      {/* Content layer sits above the stretched link so
+                          the CTA controls remain clickable. The wrapper is
+                          pointer-events-none so taps on empty text space
+                          fall through to the card-wide link; interactive
+                          controls re-enable pointer events on themselves. */}
+                      <div className="relative z-10 p-4 flex flex-col gap-1.5 pointer-events-none">
                         <h3 className={cn(
                           "font-semibold line-clamp-1",
                           tier === "workshop" ? "text-base" : "text-lg"
@@ -406,7 +446,7 @@ const BrowsePage = () => {
                               onClick={(e) => { e.preventDefault(); e.stopPropagation(); requestNotify(c.id, c.title); }}
                               disabled={notifyPending.has(c.id) || notifyRequestedIds.has(c.id)}
                               aria-label={notifyRequestedIds.has(c.id) ? `You will be notified when ${c.title} launches` : `Notify me when ${c.title} launches`}
-                              className="text-sm font-medium text-cream flex items-center gap-1.5 hover:gap-2 transition-all min-h-[44px] sm:min-h-0 items-center disabled:opacity-100 disabled:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded"
+                              className="pointer-events-auto inline-flex items-center gap-1.5 text-sm font-semibold text-cream rounded-full border border-[hsl(var(--cream))]/30 bg-[hsl(var(--cream))]/5 px-3.5 min-h-[44px] sm:min-h-[36px] hover:bg-[hsl(var(--cream))]/10 transition-colors disabled:opacity-100 disabled:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                             >
                               {notifyRequestedIds.has(c.id) ? (
                                 <><Check className="h-3.5 w-3.5" /> We'll notify you</>
@@ -414,50 +454,51 @@ const BrowsePage = () => {
                                 <><Bell className="h-3.5 w-3.5" /> Notify me</>
                               )}
                             </button>
-                          ) : c.offering_id && enrolledOfferingIds.has(c.offering_id) ? (
+                          ) : isEntitled ? (
+                            // Already enrolled → straight into the player
+                            // surface (in-app course detail). Explicit pill
+                            // so the affordance reads as a button, not a
+                            // faint text link.
                             <Link
                               to={`/courses/${c.id}`}
-                              className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all min-h-[44px] sm:min-h-0 items-center"
+                              aria-label={`Continue ${c.title}`}
+                              className="pointer-events-auto inline-flex items-center gap-1.5 text-sm font-semibold rounded-full bg-cream text-cream-text px-4 min-h-[44px] sm:min-h-[36px] hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                             >
-                              Continue <ArrowRight className="h-3 w-3" />
+                              Continue <ArrowRight className="h-3.5 w-3.5" />
                             </Link>
-                          ) : c.offering_id ? (
-                            // Path B: on Android, surface a "Continue on web"
-                            // link to the public offering URL instead of the
-                            // in-app checkout route. The slug isn't on the
-                            // browse-query payload, so we fall back to a
-                            // browse link if it's missing.
-                            isNative() ? (
-                              <ContinueOnWebCTA
-                                variant="inline"
-                                webPath={c.offering_slug ? `/p/${c.offering_slug}` : `/browse`}
-                              />
-                            ) : (
-                              // "View course" not "Enroll" - sends the
-                              // visitor to the offering page so they
-                              // can watch the free preview before they
-                              // decide to enrol. Skipping /p straight
-                              // to /checkout pressures the click and
-                              // creates a confusing back-button history.
-                              <Link
-                                to={c.offering_slug ? `/p/${c.offering_slug}` : `/courses/${c.id}`}
-                                className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all min-h-[44px] sm:min-h-0 items-center"
-                              >
-                                View course <ArrowRight className="h-3 w-3" />
-                              </Link>
-                            )
+                          ) : isAndroid() ? (
+                            // Path B (Google Play Reader Rule): non-entitled
+                            // Android users get the explicit "Continue on
+                            // web" pill, which opens the public offering URL
+                            // in the system browser. The whole-card link
+                            // still navigates to the in-app detail page for
+                            // browsing.
+                            <ContinueOnWebCTA
+                              variant="inline"
+                              className="pointer-events-auto"
+                              ctaLabel="View on web"
+                              webPath={c.offering_slug ? `/p/${c.offering_slug}` : `/browse`}
+                            />
                           ) : (
+                            // Web + iOS: an explicit "View" pill that
+                            // navigates to the detail page (offering page
+                            // when we have a slug, else course detail).
+                            // This is a marketing/detail navigation, not a
+                            // purchase/steering action, so it's allowed on
+                            // iOS — it just doesn't expose price or buy UI.
                             <Link
-                              to={`/courses/${c.id}`}
-                              className="text-sm font-medium text-cream flex items-center gap-1 hover:gap-2 transition-all"
+                              to={cardHref ?? `/courses/${c.id}`}
+                              aria-label={`View ${c.title}`}
+                              className="pointer-events-auto inline-flex items-center gap-1.5 text-sm font-semibold rounded-full bg-cream text-cream-text px-4 min-h-[44px] sm:min-h-[36px] hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                             >
-                              View <ArrowRight className="h-3 w-3" />
+                              View <ArrowRight className="h-3.5 w-3.5" />
                             </Link>
                           )}
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             ))}
