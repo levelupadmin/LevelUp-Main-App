@@ -15,11 +15,11 @@ interface Props {
  */
 export default function ChapterMediaPlayer({ chapter, updateProgress, lastPosition }: Props) {
   return chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
-    <div className="rounded-2xl overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
+    <div className="w-full max-w-full rounded-2xl overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
       <VdoCipherPlayer chapterId={chapter.id} onProgress={updateProgress} startPosition={lastPosition} />
     </div>
   ) : chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
-    <div className="aspect-video bg-card rounded-2xl overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
+    <div className="aspect-video w-full max-w-full bg-card rounded-2xl overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
       {(() => {
         // Multi-source dispatcher. Respects `media_provider` if set
         // (post-TagMango-migration chapters explicitly tag their
@@ -78,7 +78,7 @@ export default function ChapterMediaPlayer({ chapter, updateProgress, lastPositi
         return (
           <iframe
             src={src}
-            className="w-full h-full"
+            className="w-full max-w-full h-full"
             allow="autoplay; fullscreen; picture-in-picture"
             allowFullScreen
             frameBorder="0"

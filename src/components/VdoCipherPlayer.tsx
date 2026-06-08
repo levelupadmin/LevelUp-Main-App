@@ -85,7 +85,7 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition }: Props) => {
 
   if (loading) {
     return (
-      <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
+      <div className="aspect-video w-full max-w-full bg-card rounded-[16px] border border-border overflow-hidden">
         <Skeleton className="w-full h-full" />
       </div>
     );
@@ -94,7 +94,7 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition }: Props) => {
   if (error) {
     const Icon = errorType === "access" ? Lock : errorType === "rate" ? Clock : AlertCircle;
     return (
-      <div className="aspect-video bg-card rounded-[16px] border border-border flex items-center justify-center">
+      <div className="aspect-video w-full max-w-full bg-card rounded-[16px] border border-border flex items-center justify-center">
         <div className="text-center max-w-md px-6">
           <Icon className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">{error}</p>
@@ -104,10 +104,17 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition }: Props) => {
   }
 
   return (
-    <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
+    // Fixed aspect-ratio box with max-w-full + overflow-hidden so the player
+    // can never exceed the viewport width (no sideways pan) and the iframe is
+    // clipped to the box. The iframe is absolutely positioned inside, so when
+    // the notes/Q&A keyboard opens and the page reflows, the player keeps its
+    // own fixed-size box instead of becoming a scroll/pan target. We do NOT
+    // set touch-action here — VdoCipher needs touch events for its own
+    // play/pause + scrub controls.
+    <div className="relative aspect-video w-full max-w-full bg-card rounded-[16px] border border-border overflow-hidden">
       <iframe
         src={`https://player.vdocipher.com/v2/?otp=${otp}&playbackInfo=${playbackInfo}${startPosition ? `&t=${startPosition}` : ""}`}
-        style={{ border: 0, width: "100%", height: "100%" }}
+        style={{ border: 0, position: "absolute", inset: 0, width: "100%", height: "100%", maxWidth: "100%" }}
         allow="encrypted-media"
         allowFullScreen
         title="DRM Video Player"

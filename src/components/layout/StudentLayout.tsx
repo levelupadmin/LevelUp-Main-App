@@ -41,9 +41,23 @@ interface Props {
   children?: React.ReactNode;
 }
 
+// Calm content skeleton (no spinner) shown while a lazy page chunk loads inside
+// the shell. The top bar + tab bar are already painted by the layout, so this
+// only fills the content area — reads as "content arriving", not "app frozen".
 const ContentSuspenseFallback = () => (
-  <div className="flex min-h-[40vh] items-center justify-center">
-    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+  <div className="px-4 md:px-8 py-6 space-y-6 max-w-5xl mx-auto w-full" role="status" aria-busy="true">
+    <span className="sr-only">Loading…</span>
+    <div className="h-44 rounded-2xl bg-surface/60 animate-pulse" />
+    <div className="space-y-3">
+      <div className="h-4 w-2/5 rounded bg-surface/60 animate-pulse" />
+      <div className="h-3 w-4/5 rounded bg-surface/60 animate-pulse" />
+      <div className="h-3 w-3/5 rounded bg-surface/60 animate-pulse" />
+    </div>
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <div className="h-32 rounded-xl bg-surface/60 animate-pulse" />
+      <div className="h-32 rounded-xl bg-surface/60 animate-pulse" />
+      <div className="h-32 rounded-xl bg-surface/60 animate-pulse" />
+    </div>
   </div>
 );
 
@@ -170,9 +184,9 @@ const StudentLayout = ({ children }: Props) => {
           />
           <aside className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex flex-col safe-top safe-bottom animate-fade-in">
             <div className="flex items-center justify-between p-6">
-              <LevelUpWordmark />
-              <button aria-label="Close menu" onClick={() => setSidebarOpen(false)}>
-                <X className="h-5 w-5 text-muted-foreground" />
+              <LevelUpWordmark className="h-8 w-auto text-foreground" />
+              <button aria-label="Close menu" onClick={() => setSidebarOpen(false)} className="-mr-1.5 h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl text-muted-foreground">
+                <X className="h-6 w-6" />
               </button>
             </div>
             <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1">
@@ -229,14 +243,17 @@ const StudentLayout = ({ children }: Props) => {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar — respects iOS safe-area so the status bar doesn't overlap */}
-        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/80 backdrop-blur-xl safe-top h-16">
-          <div className="flex items-center gap-3">
-            <button aria-label="Open menu" className="md:hidden text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center focus-ring press-scale rounded-md" onClick={() => setSidebarOpen(true)}>
-              <Menu className="h-5 w-5" />
+        {/* Top bar — `safe-top` pushes the row below the Dynamic Island; the
+            16-unit row sits *under* that inset (min-height, not fixed height,
+            so the inset is added rather than eating into the row and clipping
+            the logo). */}
+        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/80 backdrop-blur-xl safe-top min-h-16">
+          <div className="flex items-center gap-2">
+            <button aria-label="Open menu" className="md:hidden -ml-1.5 text-muted-foreground h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl" onClick={() => setSidebarOpen(true)}>
+              <Menu className="h-6 w-6" />
             </button>
-            <Link to="/home" aria-label="LevelUp home" className="md:hidden">
-              <LevelUpWordmark className="h-6 w-auto text-foreground" />
+            <Link to="/home" aria-label="LevelUp home" className="md:hidden flex items-center">
+              <LevelUpWordmark className="h-8 w-auto text-foreground" />
             </Link>
           </div>
 

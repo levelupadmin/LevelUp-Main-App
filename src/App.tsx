@@ -13,6 +13,7 @@ import FloatingSupport from "@/components/FloatingSupport";
 import ScrollToTop from "@/components/ScrollToTop";
 import NativeDeepLinks from "@/components/NativeDeepLinks";
 import StudentLayout from "@/components/layout/StudentLayout";
+import RouteFallback from "@/components/RouteFallback";
 // AdminLayout is lazy — admin paths are <1% of traffic; no reason to ship its
 // 20 KB of nav chrome + 14 admin route imports inside every anon page load.
 const AdminLayout = lazy(() => import("@/components/layout/AdminLayout"));
@@ -89,22 +90,6 @@ const AdminCohortSubmissions = lazy(() => import("@/pages/admin/AdminCohortSubmi
 const AdminCohortAttendance = lazy(() => import("@/pages/admin/AdminCohortAttendance"));
 const AdminNotifyRequests = lazy(() => import("@/pages/admin/AdminNotifyRequests"));
 const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
-
-const LoadingFallback = () => (
-  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
-    <div
-      style={{
-        width: 40,
-        height: 40,
-        border: "4px solid #e5e7eb",
-        borderTop: "4px solid #6366f1",
-        borderRadius: "50%",
-        animation: "spin 0.8s linear infinite",
-      }}
-    />
-    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-  </div>
-);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -190,7 +175,7 @@ const App = () => {
             Suspense lives INSIDE each layout (around <Outlet/>), so lazy chunk
             loading only swaps the content area, not the entire UI.
           */}
-          <Suspense fallback={<LoadingFallback />}>
+          <Suspense fallback={<RouteFallback />}>
             <Routes>
               {/* Public */}
               <Route path="/" element={<RootRedirect />} />
