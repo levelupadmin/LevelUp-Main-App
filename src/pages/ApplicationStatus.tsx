@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { isIOS } from "@/lib/platform";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -275,10 +276,17 @@ const ApplicationStatus = () => {
                     {step.label}
                   </p>
 
-                  {/* Pay Now buttons */}
+                  {/* Pay buttons — hidden on iOS per Apple anti-steering
+                      (no in-app purchase entry points or external-pay links).
+                      Web + Android keep the existing checkout flow. */}
                   {state === "current" &&
                     step.key === "confirmation_paid" &&
-                    application.status === "accepted" && (
+                    application.status === "accepted" &&
+                    (isIOS() ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Complete this step from a web browser.
+                      </p>
+                    ) : (
                       <Link
                         to={`/checkout/${application.offering_id}?type=confirmation&app=${application.id}`}
                       >
@@ -287,11 +295,16 @@ const ApplicationStatus = () => {
                           <ArrowRight className="h-4 w-4 ml-1" />
                         </Button>
                       </Link>
-                    )}
+                    ))}
 
                   {state === "current" &&
                     step.key === "balance_paid" &&
-                    application.status === "confirmation_paid" && (
+                    application.status === "confirmation_paid" &&
+                    (isIOS() ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Complete this step from a web browser.
+                      </p>
+                    ) : (
                       <Link
                         to={`/checkout/${application.offering_id}?type=balance&app=${application.id}`}
                       >
@@ -300,7 +313,7 @@ const ApplicationStatus = () => {
                           <ArrowRight className="h-4 w-4 ml-1" />
                         </Button>
                       </Link>
-                    )}
+                    ))}
                 </div>
               </div>
             );

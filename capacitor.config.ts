@@ -26,6 +26,12 @@ const config: CapacitorConfig = {
   // ranking signals + reviews) in-place. The package name is
   // immutable once installs exist, so changing this would force a
   // fresh listing and lose everything.
+  //
+  // NOTE: this value is the Android applicationId only. iOS is greenfield
+  // (no existing installs) and deliberately uses a clean bundle id
+  // `com.leveluplearning.app`, set in ios/App/App.xcodeproj
+  // (PRODUCT_BUNDLE_IDENTIFIER). `cap sync` does not overwrite either
+  // native id, so the two platforms intentionally diverge.
   appId: "com.tagmango.leveluplearning",
   appName: "LevelUp Learning",
   webDir: "dist",

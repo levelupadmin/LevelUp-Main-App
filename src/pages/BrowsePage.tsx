@@ -376,6 +376,11 @@ const BrowsePage = () => {
                           <div className="flex items-baseline gap-2">
                             {c.status === "upcoming" ? (
                               <span className="text-sm font-medium text-muted-foreground">Upcoming</span>
+                            ) : isNative() ? (
+                              // Native (iOS App Store anti-steering 3.1.1/3.1.3 + Play Reader
+                              // Rule): show no price or discount incentive — purchases happen
+                              // on the web. Mirrors the gating on every other card surface.
+                              null
                             ) : c.price_inr != null ? (
                               <>
                                 <span className="text-base font-semibold">
