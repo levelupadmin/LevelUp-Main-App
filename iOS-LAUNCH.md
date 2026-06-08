@@ -59,11 +59,13 @@ npx cap open ios            # opens ios/App/App.xcworkspace in Xcode
 
 In Xcode:
 - [ ] **App** target → **Signing & Capabilities** → tick **Automatically manage signing**, pick your **Team**.
-      Bundle id `com.tagmango.leveluplearning` registers automatically. (It's only taken on Google — Apple's namespace is separate.)
+      Bundle id `com.leveluplearning.app` registers automatically. (Apple's namespace is separate from Google's — iOS uses this clean id; Android stays `com.tagmango.leveluplearning`, which is immutable on Play.)
 - [ ] **General** → **Version** `1.0.0`, **Build** `1`. 👉 **Bump Build by 1 every upload** (`1`,`2`,`3`…) or App Store Connect rejects a duplicate.
 - [ ] Run destination → **Any iOS Device (arm64)**.
 - [ ] **Product → Archive** (~2–5 min) → in the Organizer, **Distribute App → App Store Connect → Upload**.
 - [ ] Wait ~5–15 min for processing (email arrives).
+
+> Export compliance is pre-answered: `Info.plist` now sets `ITSAppUsesNonExemptEncryption = false`, so App Store Connect won't prompt for it on each upload (the app uses only standard HTTPS/TLS). The `BrowsePage` catalog price/discount badges are now `isNative()`-gated too, so no commerce pricing shows on iOS.
 
 App Store Connect → your app → **TestFlight**:
 - [ ] **Internal Testing** → add yourself + team (up to 100, **no Apple review**, instant).
@@ -78,7 +80,7 @@ App Store Connect → your app → **TestFlight**:
 
 (Do this when going public — *after* Track 2 makes DRM work. Internal TestFlight above needs none of it.)
 
-Create the app: **My Apps → + → New App** (iOS, your bundle id, primary language English (India), SKU e.g. `levelup-ios-001`).
+Create the app: **My Apps → + → New App** (iOS, bundle id `com.leveluplearning.app`, primary language English (India), SKU e.g. `levelup-ios-001`).
 
 - [ ] **Name** `LevelUp Learning`, **Subtitle** (≤30), **Category** Education.
 - [ ] **Description**, **Keywords**, **Promotional text**, **What's New**.
@@ -153,7 +155,7 @@ When we build it (me, after TestFlight):
 | 5.1.1(v) in-app account deletion | Blocker | ✅ Already implemented |
 | Privacy usage strings (camera/photo) | Reject | ✅ Added to Info.plist |
 | Sign-in for reviewer (phone-OTP) | Reject | ⏳ §3 — reviewer demo login (ping me) |
-| 4.2 minimum functionality (web wrapper) | Medium | 🟡 Has splash/status-bar/deep-links/offline; acceptable. Optional: enable haptics |
+| 4.2 minimum functionality (web wrapper) | Medium | 🟡 Has splash/status-bar/offline; acceptable. Optional: enable haptics. (Deep/universal links are Android-only — no iOS associated-domains entitlement; not required for TestFlight) |
 | DRM video plays | Functional | ❌ Track 2 |
 
 ---
