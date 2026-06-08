@@ -96,6 +96,7 @@ interface Offering {
   confirmation_amount_inr: number | null;
   show_coupon_on_page: boolean | null;
   page_coupon_code: string | null;
+  currency: string | null;
   offering_courses: OfferingCourse[];
 }
 
@@ -122,7 +123,7 @@ function HeroBanner({ offering }: { offering: Offering }) {
           alt={offering.title}
           className="absolute inset-0 w-full h-full object-cover"
           loading="eager"
-          fetchpriority="high"
+          fetchPriority="high"
           decoding="async"
         />
       ) : (

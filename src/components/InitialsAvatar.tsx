@@ -28,25 +28,31 @@ function getInitials(name: string): string {
 interface InitialsAvatarProps {
   name: string;
   photoUrl?: string | null;
-  size?: 28 | 32 | 40 | 48 | 64 | 96;
+  size?: 24 | 28 | 32 | 36 | 40 | 48 | 64 | 80 | 96;
   className?: string;
 }
 
 const sizeClasses: Record<number, string> = {
+  24: "h-6 w-6",
   28: "h-7 w-7",
   32: "h-8 w-8",
+  36: "h-9 w-9",
   40: "h-10 w-10",
   48: "h-12 w-12",
   64: "h-16 w-16",
+  80: "h-20 w-20",
   96: "h-24 w-24",
 };
 
 const fontSizes: Record<number, string> = {
+  24: "text-[9px]",
   28: "text-[10px]",
   32: "text-xs",
+  36: "text-xs",
   40: "text-sm",
   48: "text-base",
   64: "text-xl",
+  80: "text-2xl",
   96: "text-2xl",
 };
 

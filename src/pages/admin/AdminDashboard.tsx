@@ -136,7 +136,7 @@ const AdminDashboard = () => {
        the live-only payload is only used as a fallback if the new
        RPCs error out. */
     const [liveRes, combinedRes, offPerfRes, dailyRes] = await Promise.all([
-      supabase.rpc("admin_dashboard_metrics", { p_from: from, p_to: to }),
+      supabase.rpc("admin_dashboard_metrics", { p_from: from ?? undefined, p_to: to ?? undefined }),
       supabase.rpc("admin_dashboard_combined" as any, { p_from: from, p_to: to }),
       supabase.rpc("offering_performance_in_range" as any, { p_from: from, p_to: to }),
       supabase.rpc("daily_signups_combined" as any, { p_from: from, p_to: to }),
@@ -183,7 +183,7 @@ const AdminDashboard = () => {
         offering_title: r.offering_title,
         total_enrolments: Number(r.total_enrolments) || 0,
         active_enrolments: Number(r.active_enrolments) || 0,
-        revenue: Number(r.total_revenue_in_window) || 0,
+        revenue_inr: Number(r.total_revenue_in_window) || 0,
       }));
       setOfferingMetrics(mapped);
     } else {
@@ -194,7 +194,7 @@ const AdminDashboard = () => {
     const daily = (dailyRes.data as any[]) || [];
     if (daily.length && !dailyRes.error) {
       const mapped: DailySignup[] = daily.map((d) => ({
-        day: d.day,
+        date: d.day,
         count: Number(d.total) || 0,
       }));
       setDailySignups(mapped);

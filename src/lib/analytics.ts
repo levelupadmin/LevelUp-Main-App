@@ -52,7 +52,7 @@ export async function loadSettings(): Promise<AnalyticsSettings | null> {
     .limit(1)
     .maybeSingle();
   if (!data) return null;
-  cached = data as AnalyticsSettings;
+  cached = data as unknown as AnalyticsSettings;
   return cached;
 }
 
@@ -118,8 +118,11 @@ function loadMetaPixel(pixelId: string) {
     s.parentNode.insertBefore(t, s);
   })(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
   /* eslint-enable */
-  window.fbq?.("init", pixelId);
-  window.fbq?.("track", "PageView");
+  // The IIFE above assigns window.fbq, which TS's control-flow analysis can't
+  // see (it's passed in as an `any` param), so it stays narrowed to undefined
+  // from the early-return guard. Assert non-null on these post-init calls.
+  window.fbq!("init", pixelId);
+  window.fbq!("track", "PageView");
 }
 
 function loadGA4(measurementId: string) {
@@ -136,7 +139,7 @@ function loadGA4(measurementId: string) {
 function loadTwitterPixel(pixelId: string) {
   if (window.twq) return;
   /* eslint-disable */
-  (function (e: any, t: any, n: any, s: any, u: any, a: any) {
+  (function (e: any, t: any, n: any, s?: any, u?: any, a?: any) {
     e.twq || ((s = e.twq = function () {
       s.exe ? s.exe.apply(s, arguments) : s.queue.push(arguments);
     }), (s.version = "1.1"), (s.queue = []));
@@ -148,7 +151,8 @@ function loadTwitterPixel(pixelId: string) {
     u2.parentNode!.insertBefore(t2, u2);
   })(window, document, "script");
   /* eslint-enable */
-  window.twq?.("config", pixelId);
+  // window.twq is assigned inside the IIFE (invisible to TS narrowing); assert.
+  window.twq!("config", pixelId);
 }
 
 /**

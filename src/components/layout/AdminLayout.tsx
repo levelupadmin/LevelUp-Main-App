@@ -118,6 +118,9 @@ interface Props {
   /** Optional — when omitted, the layout renders <Outlet/> so it can be used as a
    * React Router v6 layout route. Keeps backward-compat with wrapper-style usage. */
   children?: ReactNode;
+  /** Page title passed by wrapper-style callers. The layout does not render it
+   * (the header is derived from the route), but it's accepted for compatibility. */
+  title?: string;
 }
 
 const AdminSuspenseFallback = () => (
@@ -172,7 +175,7 @@ const AdminLayout = ({ children }: Props) => {
     ]);
     const results: typeof searchResults = [];
     (usersRes.data || []).forEach((u) =>
-      results.push({ type: "User", label: u.full_name || u.email, sub: u.role, path: "/admin/users" }),
+      results.push({ type: "User", label: u.full_name || u.email || "", sub: u.role, path: "/admin/users" }),
     );
     (coursesRes.data || []).forEach((c) =>
       results.push({ type: "Course", label: c.title, sub: c.status, path: `/admin/courses/${c.id}/edit` }),

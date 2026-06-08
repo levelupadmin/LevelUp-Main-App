@@ -74,6 +74,7 @@ interface PaymentOrder {
   offering_id: string;
   total_inr: number;
   status: string;
+  created_at?: string | null;
   razorpay_payment_id: string | null;
   guest_email: string | null;
   guest_name: string | null;

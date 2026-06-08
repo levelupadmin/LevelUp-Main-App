@@ -42,6 +42,9 @@ interface CourseWithOffering {
   offering_id: string | null;
   price_inr: number | null;
   mrp_inr: number | null;
+  /** Not always present on the browse-query payload; read defensively with a
+   *  fallback link when missing. */
+  offering_slug?: string | null;
 }
 
 const formatPrice = (amount: number) =>

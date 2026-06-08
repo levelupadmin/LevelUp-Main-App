@@ -1,40 +1,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const ALLOWED_ORIGIN = Deno.env.get("SITE_URL") ?? "https://app.leveluplearning.in";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Vary": "Origin",
-};
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function constantTimeEquals(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return mismatch === 0;
-}
-
-function sanitizeVar(v: unknown, maxLen = 500): string {
-  if (v == null) return "";
-  const s = String(v).slice(0, maxLen);
-  return s
-    .replace(/[\r\n]+/g, " ")
-    .replace(/[<>]/g, "")
-    .replace(/https?:\/\/\S+/gi, "");
-}
-
-function jsonRes(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
+import { timingSafeEqual } from "../_shared/crypto.ts";
+import {
+  emailCorsHeaders,
+  emailJsonRes as jsonRes,
+  enqueueEmail,
+  fetchSuppressedSet,
+  sanitizeVar,
+  UUID_RE,
+} from "../_shared/email.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response(null, { headers: emailCorsHeaders() });
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -47,7 +23,7 @@ Deno.serve(async (req) => {
     }
     const token = authHeader.slice("bearer ".length).trim();
 
-    const isServiceRole = constantTimeEquals(token, serviceKey);
+    const isServiceRole = timingSafeEqual(token, serviceKey);
     let adminUserId: string | null = null;
 
     if (!isServiceRole) {
@@ -141,19 +117,7 @@ Deno.serve(async (req) => {
     }
 
     // ── Fetch suppressed emails ──────────────────────────────────
-    const recipientEmails = recipients.map((r) => r.email);
-    const suppressedSet = new Set<string>();
-    if (recipientEmails.length > 0) {
-      // Batch check in chunks of 500
-      for (let i = 0; i < recipientEmails.length; i += 500) {
-        const chunk = recipientEmails.slice(i, i + 500);
-        const { data: suppressed } = await admin
-          .from("suppressed_emails")
-          .select("email")
-          .in("email", chunk);
-        (suppressed || []).forEach((s: any) => suppressedSet.add(s.email));
-      }
-    }
+    const suppressedSet = await fetchSuppressedSet(admin, recipients.map((r) => r.email));
 
     // ── Enqueue emails ───────────────────────────────────────────
     let enqueued = 0;
@@ -170,24 +134,15 @@ Deno.serve(async (req) => {
       const message_id = crypto.randomUUID();
       const idempotency_key = `campaign:${campaign_id}:${recipient.id}:${message_id}`;
 
-      const payload = {
-        run_id,
+      const { error: enqueueErr } = await enqueueEmail(admin, {
+        runId: run_id,
         to: recipient.email,
-        from: "LevelUp Learning <noreply@leveluplearning.in>",
-        sender_domain: "leveluplearning.in",
         subject: renderedSubject,
         html: renderedHtml,
         text: renderedText,
-        purpose: "transactional",
         label: `campaign:${campaign_id}`,
-        idempotency_key,
-        message_id,
-        queued_at: new Date().toISOString(),
-      };
-
-      const { error: enqueueErr } = await admin.rpc("enqueue_email", {
-        queue_name: "transactional_emails",
-        payload,
+        idempotencyKey: idempotency_key,
+        messageId: message_id,
       });
 
       if (enqueueErr) {

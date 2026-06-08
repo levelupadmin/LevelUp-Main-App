@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeaders } from "../_shared/cors.ts";
+import { hmacSha256Hex, timingSafeEqual } from "../_shared/crypto.ts";
 
 function encodeBase64(str: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
@@ -62,37 +63,13 @@ async function findAuthUserByEmail(
   }
 }
 
-// Constant-time hex string comparison. HMAC-SHA256 hex is fixed-length (64
-// chars) so the length check leaks nothing useful in normal operation.
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
 async function verifyHmac(
   orderId: string,
   paymentId: string,
   signature: string,
   secret: string
 ): Promise<boolean> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const data = `${orderId}|${paymentId}`;
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(data));
-  const computed = Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return timingSafeEqual(computed, signature);
+  return timingSafeEqual(await hmacSha256Hex(`${orderId}|${paymentId}`, secret), signature);
 }
 
 async function verifyViaApi(

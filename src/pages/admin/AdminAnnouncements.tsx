@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
+import { usePaginatedTable } from "@/hooks/usePaginatedTable";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
@@ -40,11 +41,6 @@ const PAGE_SIZE = 20;
 const AdminAnnouncements = () => {
   const { profile } = useAuth();
   const { toast } = useToast();
-  const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -62,70 +58,71 @@ const AdminAnnouncements = () => {
   const [cohorts, setCohorts] = useState<{ value: string; label: string }[]>([]);
   const [courses, setCourses] = useState<{ value: string; label: string }[]>([]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const from = page * PAGE_SIZE;
-    const to = from + PAGE_SIZE;
+  const {
+    rows: announcements,
+    loading,
+    page,
+    setPage,
+    hasMore,
+    refetch: load,
+  } = usePaginatedTable<AnnouncementRow>({
+    pageSize: PAGE_SIZE,
+    keepRowsOnError: true,
+    fetchPage: async ({ from, pageSize }) => {
+      // Fetch one extra row past the page to detect whether a next page exists.
+      const { data, error } = await (supabase as any)
+        .from("admin_announcements")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .range(from, from + pageSize);
 
-    const { data, error } = await (supabase as any)
-      .from("admin_announcements")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .range(from, to);
+      if (error) throw error; // keepRowsOnError keeps the current page on failure
 
-    if (error) {
-      if (import.meta.env.DEV) console.error(error);
-      setLoading(false);
-      return;
-    }
+      const rows = (data || []) as AnnouncementRow[];
+      const hasMore = rows.length > pageSize;
+      const pageRows = rows.slice(0, pageSize);
 
-    const rows = (data || []) as AnnouncementRow[];
-    setHasMore(rows.length > PAGE_SIZE);
-    const pageRows = rows.slice(0, PAGE_SIZE);
+      // Enrich with sender names
+      const senderIds = [...new Set(pageRows.map((r) => r.sent_by))];
+      if (senderIds.length > 0) {
+        const { data: users } = await supabase
+          .from("users")
+          .select("id, full_name")
+          .in("id", senderIds);
+        const nameMap: Record<string, string> = {};
+        (users || []).forEach((u: any) => { nameMap[u.id] = u.full_name || "Admin"; });
+        pageRows.forEach((r) => { r.sender_name = nameMap[r.sent_by] || "Admin"; });
+      }
 
-    // Enrich with sender names
-    const senderIds = [...new Set(pageRows.map((r) => r.sent_by))];
-    if (senderIds.length > 0) {
-      const { data: users } = await supabase
-        .from("users")
-        .select("id, full_name")
-        .in("id", senderIds);
-      const nameMap: Record<string, string> = {};
-      (users || []).forEach((u: any) => { nameMap[u.id] = u.full_name || "Admin"; });
-      pageRows.forEach((r) => { r.sender_name = nameMap[r.sent_by] || "Admin"; });
-    }
+      // Enrich audience labels
+      const cohortIds = pageRows.filter((r) => r.audience_type === "cohort" && r.audience_id).map((r) => r.audience_id!);
+      const courseIds = pageRows.filter((r) => r.audience_type === "course" && r.audience_id).map((r) => r.audience_id!);
 
-    // Enrich audience labels
-    const cohortIds = pageRows.filter((r) => r.audience_type === "cohort" && r.audience_id).map((r) => r.audience_id!);
-    const courseIds = pageRows.filter((r) => r.audience_type === "course" && r.audience_id).map((r) => r.audience_id!);
+      const labelMap: Record<string, string> = {};
 
-    const labelMap: Record<string, string> = {};
+      if (cohortIds.length > 0) {
+        const { data: ch } = await (supabase as any)
+          .from("cohort_batches")
+          .select("id, name")
+          .in("id", cohortIds);
+        (ch || []).forEach((c: any) => { labelMap[c.id] = c.name; });
+      }
+      if (courseIds.length > 0) {
+        const { data: co } = await supabase
+          .from("courses")
+          .select("id, title")
+          .in("id", courseIds);
+        (co || []).forEach((c: any) => { labelMap[c.id] = c.title; });
+      }
 
-    if (cohortIds.length > 0) {
-      const { data: ch } = await (supabase as any)
-        .from("cohort_batches")
-        .select("id, name")
-        .in("id", cohortIds);
-      (ch || []).forEach((c: any) => { labelMap[c.id] = c.name; });
-    }
-    if (courseIds.length > 0) {
-      const { data: co } = await supabase
-        .from("courses")
-        .select("id, title")
-        .in("id", courseIds);
-      (co || []).forEach((c: any) => { labelMap[c.id] = c.title; });
-    }
+      pageRows.forEach((r) => {
+        if (r.audience_type === "all") r.audience_label = "All Users";
+        else if (r.audience_id) r.audience_label = `${r.audience_type === "cohort" ? "Cohort" : "Course"}: ${labelMap[r.audience_id] || r.audience_id}`;
+      });
 
-    pageRows.forEach((r) => {
-      if (r.audience_type === "all") r.audience_label = "All Users";
-      else if (r.audience_id) r.audience_label = `${r.audience_type === "cohort" ? "Cohort" : "Course"}: ${labelMap[r.audience_id] || r.audience_id}`;
-    });
-
-    setAnnouncements(pageRows);
-    setLoading(false);
-  }, [page]);
-
-  useEffect(() => { load(); }, [load]);
+      return { rows: pageRows, hasMore };
+    },
+  });
 
   const openDialog = async () => {
     setTitle("");

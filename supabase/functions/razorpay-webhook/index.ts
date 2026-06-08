@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
+import { hmacSha256Hex, timingSafeEqual } from "../_shared/crypto.ts";
 
 // Razorpay webhooks are server-to-server, so browsers never hit this
 // function with credentialed CORS. We intentionally do NOT echo
@@ -48,36 +49,12 @@ async function findAuthUserByEmail(
   }
 }
 
-// Constant-time string comparison. Both inputs must be the same length or we
-// fail immediately (which is itself a timing signal for length, but HMAC hex
-// output is fixed-length so in practice we only compare 64-char strings).
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
 async function verifySignature(
   body: string,
   signature: string,
   secret: string
 ): Promise<boolean> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(body));
-  const computed = Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return timingSafeEqual(computed, signature);
+  return timingSafeEqual(await hmacSha256Hex(body, secret), signature);
 }
 
 /**

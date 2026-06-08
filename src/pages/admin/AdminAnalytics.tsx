@@ -91,9 +91,9 @@ const AdminAnalytics = () => {
         // Average progress
         const { data: progress } = await supabase
           .from("chapter_progress")
-          .select("user_id, is_completed")
+          .select("user_id, completed_at")
           .eq("course_id", course.id)
-          .eq("is_completed", true)
+          .not("completed_at", "is", null)
           .in("user_id", enrolledUserIds.slice(0, 100));
 
         const completedPerUser: Record<string, number> = {};

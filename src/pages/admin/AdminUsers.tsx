@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { TablesUpdate } from "@/integrations/supabase/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -159,7 +160,7 @@ const AdminUsers = () => {
     };
     if (!isSelf) updates.role = editForm.role;
 
-    const { error } = await supabase.from("users").update(updates).eq("id", editUser.id);
+    const { error } = await supabase.from("users").update(updates as unknown as TablesUpdate<"users">).eq("id", editUser.id);
 
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -330,7 +331,7 @@ const AdminUsers = () => {
 
         const { error } = await supabase
           .from("users")
-          .update(updates)
+          .update(updates as unknown as TablesUpdate<"users">)
           .eq("email", email);
 
         if (error) failedRows.push(i + 1);

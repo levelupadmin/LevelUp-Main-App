@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
+import { usePaginatedTable } from "@/hooks/usePaginatedTable";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -115,11 +116,6 @@ interface OfferingOption {
 const PAGE_SIZE = 20;
 
 const AdminApplications = () => {
-  const [applications, setApplications] = useState<ApplicationRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
-
   // Stats
   const [stats, setStats] = useState({
     total: 0,
@@ -177,42 +173,45 @@ const AdminApplications = () => {
     });
   }, []);
 
-  /* ── Fetch applications ── */
-  const fetchApplications = useCallback(async () => {
-    setLoading(true);
-    let query = (supabase as any)
-      .from("cohort_applications")
-      .select("*, offerings(title)", { count: "exact" });
+  /* ── Fetch applications (paginated) ── */
+  const {
+    rows: applications,
+    loading,
+    page,
+    setPage,
+    total,
+    totalPages,
+    refetch: fetchApplications,
+  } = usePaginatedTable<ApplicationRow>({
+    pageSize: PAGE_SIZE,
+    deps: [search, statusFilter, offeringFilter],
+    fetchPage: async ({ from, to }) => {
+      let query = (supabase as any)
+        .from("cohort_applications")
+        .select("*, offerings(title)", { count: "exact" });
 
-    if (search.trim()) {
-      const escaped = search.trim().replace(/%/g, "\\%").replace(/_/g, "\\_");
-      const pattern = `%${escaped}%`;
-      query = query.or(`full_name.ilike.${pattern},email.ilike.${pattern}`);
-    }
-    if (statusFilter !== "all") {
-      query = query.eq("status", statusFilter);
-    }
-    if (offeringFilter !== "all") {
-      query = query.eq("offering_id", offeringFilter);
-    }
+      if (search.trim()) {
+        const escaped = search.trim().replace(/%/g, "\\%").replace(/_/g, "\\_");
+        const pattern = `%${escaped}%`;
+        query = query.or(`full_name.ilike.${pattern},email.ilike.${pattern}`);
+      }
+      if (statusFilter !== "all") {
+        query = query.eq("status", statusFilter);
+      }
+      if (offeringFilter !== "all") {
+        query = query.eq("offering_id", offeringFilter);
+      }
 
-    query = query
-      .order("created_at", { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      query = query.order("created_at", { ascending: false }).range(from, to);
 
-    const { data, count, error } = await query;
-    if (error) {
-      toast.error("Failed to load applications");
-      if (import.meta.env.DEV) console.error(error);
-    }
-    setApplications(data || []);
-    setTotal(count || 0);
-    setLoading(false);
-  }, [search, statusFilter, offeringFilter, page]);
-
-  useEffect(() => {
-    fetchApplications();
-  }, [fetchApplications]);
+      const { data, count, error } = await query;
+      if (error) {
+        toast.error("Failed to load applications");
+        if (import.meta.env.DEV) console.error(error);
+      }
+      return { rows: (data || []) as ApplicationRow[], count: count || 0 };
+    },
+  });
 
   useEffect(() => {
     fetchStats();
@@ -280,8 +279,6 @@ const AdminApplications = () => {
     // reminders are going out.
     toast.info("Payment reminders aren't wired up yet — email the student directly.");
   };
-
-  const totalPages = Math.ceil(total / PAGE_SIZE);
 
   /* ── Stat cards ── */
   const statCards = [

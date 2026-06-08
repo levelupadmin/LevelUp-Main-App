@@ -201,7 +201,7 @@ const AdminOfferingEditor = () => {
 
         const upsellData = (upsellsRes.data || []).map((u) => {
           const off = (offsRes.data || []).find((o) => o.id === u.upsell_offering_id);
-          return { ...u, upsell_title: off?.title || "Unknown" };
+          return { ...u, sort_order: u.sort_order ?? 0, upsell_title: off?.title || "Unknown" };
         });
         setUpsells(upsellData);
 

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { hmacSha256Base64, timingSafeEqual } from "../_shared/crypto.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -10,21 +11,7 @@ async function verifyTallySignature(body: string, signature: string | null): Pro
     return false;
   }
   if (!signature) return false;
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(tallySigningSecret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
-  const computed = btoa(String.fromCharCode(...new Uint8Array(sig)));
-  // Constant-time compare (signature is non-null here — guarded above).
-  if (computed.length !== signature.length) return false;
-  let diff = 0;
-  for (let i = 0; i < computed.length; i++) diff |= computed.charCodeAt(i) ^ signature.charCodeAt(i);
-  return diff === 0;
+  return timingSafeEqual(await hmacSha256Base64(body, tallySigningSecret), signature);
 }
 
 function extractField(fields: any[], label: string): string {

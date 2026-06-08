@@ -54,7 +54,7 @@ const UpcomingSessions = () => {
         if (!sessionsData?.length) { setLoading(false); return; }
 
         // Get course titles for display
-        const sessionCourseIds = [...new Set(sessionsData.map((s) => s.course_id))];
+        const sessionCourseIds = [...new Set(sessionsData.map((s) => s.course_id).filter((id): id is string => id !== null))];
         const { data: coursesData } = await supabase
           .from("courses")
           .select("id, title")
@@ -63,7 +63,7 @@ const UpcomingSessions = () => {
         const courseMap: Record<string, string> = {};
         (coursesData ?? []).forEach((c: any) => { courseMap[c.id] = c.title; });
 
-        setSessions(sessionsData.map((s) => ({ ...s, course_title: courseMap[s.course_id] || "Course" })));
+        setSessions(sessionsData.map((s) => ({ ...s, course_title: courseMap[s.course_id ?? ""] || "Course" })));
       } catch (err) {
         if (import.meta.env.DEV) console.error("Failed to load upcoming sessions:", err);
       } finally {
