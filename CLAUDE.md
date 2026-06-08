@@ -75,6 +75,61 @@ cd android && ./gradlew bundleRelease
   true`) + run an emulator smoke test** (tracked as task #160).
 - Bump `versionCode`/`versionName` in `android/app/build.gradle` before each build.
 
+### iOS → TestFlight / App Store (headless, via App Store Connect API key)
+
+Like Android, iOS builds + uploads run entirely from the terminal — no Xcode GUI,
+no screen control. Requires the **full Xcode** installed (not just CLT) and the dev
+account signed into Xcode once (Settings → Accounts). First TestFlight build of
+v1 shipped 2026-06-09.
+
+- **iOS bundle id = `com.leveluplearning.app`** — NOTE this DIFFERS from Android's
+  immutable `com.tagmango.leveluplearning` (iOS is greenfield; divergence documented
+  in `capacitor.config.ts`). Team ID `456W8MPQWH` (LevelUp Edu Private Limited).
+  App Store Connect app id `6778137800`.
+- **ASC API key (NOT in repo):** `~/Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/keystores/AuthKey_73S9MAX725.p8`
+  — Key ID `73S9MAX725`, Issuer ID `945f1837-a6db-4daf-943f-035c9bcbf6c0`, role Admin.
+  Identifiers + path live in the gitignored `.env.ios.local`; the `.p8` stays in iCloud.
+  Revoke/regenerate at App Store Connect → Users and Access → Integrations.
+
+```bash
+set -a && . ./.env.ios.local && set +a
+export DEVELOPER_DIR=/Applications/Xcode-26.5.0.app/Contents/Developer   # full Xcode, not CLT
+npm run build && npx cap sync ios                                        # bundle latest web app
+
+# Archive UNSIGNED — sidesteps the "team has no registered devices" dev-profile wall:
+xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath /tmp/LevelUp.xcarchive \
+  archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+
+# Export App Store IPA — distribution cert + App Store profile minted via the API key:
+xcodebuild -exportArchive -archivePath /tmp/LevelUp.xcarchive \
+  -exportPath /tmp/LevelUp-export -exportOptionsPlist ios/ExportOptions-AppStore.plist \
+  -allowProvisioningUpdates \
+  -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" \
+  -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+# Upload to TestFlight (altool wants the key under ~/.appstoreconnect/private_keys/):
+mkdir -p ~/.appstoreconnect/private_keys
+cp "$ASC_KEY_PATH" ~/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8
+xcrun altool --upload-app -f /tmp/LevelUp-export/App.ipa -t ios \
+  --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+```
+
+- **`scripts/asc-api.mjs`** — dependency-free App Store Connect API client (Node
+  stdlib JWT + fetch). Subcommands: `list-apps | find-app <bundleId> | users |
+  builds <appId> | list-devices | register-device "<name>" <udid>`. Sources
+  `.env.ios.local`. Use `builds 6778137800` to poll processing (state VALID = ready).
+- **Bump the Build number (CURRENT_PROJECT_VERSION) before every upload** — App Store
+  Connect rejects a duplicate build for the same CFBundleShortVersionString.
+- **A NEW app record is web-only** (Apple's API can't create one): App Store Connect
+  → Apps → ＋ → New App. Already done for v1.
+- **DRM:** VdoCipher (FairPlay) does not play in the WKWebView yet — known gap, needs
+  the FairPlay cert + likely a native plugin (see `iOS-LAUNCH.md` Track 2).
+- One-time human prereqs: full Xcode on macOS 26.2+ (Xcode 26.x needs Tahoe), the
+  Apple ID sign-in in Xcode, the App Store Connect app record, and adding TestFlight
+  testers. The account's Apple ID is a phone number but its ASC identity / tester
+  email is `ceo@leveluplearning.in`.
+
 ### Supabase → production (`npx -y supabase@latest`)
 
 CLI is **not** globally installed — always invoke via `npx -y supabase@latest`.

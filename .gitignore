@@ -39,6 +39,8 @@ dist-ssr
 *.keystore
 *.keyfile
 *.p12
+*.p8
+AuthKey_*.p8
 
 # Supabase CLI scratch state (project ref, pooler URL, versions, etc.)
 supabase/.temp/
