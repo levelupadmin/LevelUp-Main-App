@@ -10,12 +10,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
-import { Loader2, Tag, ShieldCheck, BookOpen, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { Loader2, Tag, BookOpen, ArrowLeft, CheckCircle2, Lock } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import TrustPanel from "@/components/checkout/TrustPanel";
+import StickyPayBar from "@/components/checkout/StickyPayBar";
 import GuaranteeBadge from "@/components/offering/GuaranteeBadge";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import { isAndroid, isNative } from "@/lib/platform";
+import { hapticImpact } from "@/lib/haptics";
 import { track } from "@/lib/analytics";
 
 /* ── Razorpay global type ── */
@@ -267,6 +269,14 @@ export default function CheckoutPage() {
   const total =
     offering?.gst_mode === "exclusive" ? afterDiscount + gstAmount : afterDiscount;
 
+  // Combined "you saved" figure: MRP markdown (sticker → price) plus any
+  // coupon discount. Shared by the in-card savings chip and the mobile
+  // StickyPayBar so the two never disagree. Only meaningful on full
+  // (non-staged) purchases where an MRP exists.
+  const mrpInr = Number((offering as any)?.mrp_inr || 0);
+  const mrpSavings = !isStaged && mrpInr > subtotal ? mrpInr - subtotal : 0;
+  const totalSavings = mrpSavings + discount;
+
   /* ── Apply coupon ──
    *
    * The coupons table is locked down to admin reads only (see the
@@ -323,6 +333,7 @@ export default function CheckoutPage() {
   const handlePay = async () => {
     if (!offering) return;
     if (paymentInFlightRef.current) return;
+    void hapticImpact("medium");
 
     // Validate guest fields when anon. Touch all so inline errors
     // surface immediately on the first paint of the form.
@@ -436,7 +447,7 @@ export default function CheckoutPage() {
           email: prefillEmail,
           contact: prefillContact,
         },
-        theme: { color: "#ffffff", backdrop_color: "rgba(0,0,0,0.8)" },
+        theme: { color: "#F5F1E8", backdrop_color: "rgba(0,0,0,0.8)" },
         handler: async (response: {
           razorpay_payment_id: string;
           razorpay_order_id: string;
@@ -525,7 +536,7 @@ export default function CheckoutPage() {
   const trustPanelThumb = (linkedCourses[0]?.courses as any)?.thumbnail_url ?? null;
 
   return (
-    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20">
+    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
       <Card className="w-full max-w-[560px] border-border bg-surface">
         <CardContent className="p-6 md:p-8 space-y-6">
           {/* ── Back link ── */}
@@ -868,59 +879,65 @@ export default function CheckoutPage() {
 
           <Separator className="bg-border" />
 
-          {/* ── Order summary ── */}
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span className="text-foreground font-medium">
-                {hasMrp && (
-                  <span className="text-muted-foreground line-through mr-2">
-                    ₹{Number((offering as any).mrp_inr).toLocaleString("en-IN")}
+          {/* ── Order summary ──
+              Dotted-leader rows (label … value, like a printed receipt) under
+              an Instrument-Serif heading. The leader is a flex-1 dotted border
+              between each label and its amount. */}
+          <div className="space-y-2.5">
+            <h2 className="font-['Instrument_Serif'] text-2xl italic text-foreground leading-none">
+              Order summary
+            </h2>
+            <div className="space-y-2 text-sm pt-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-muted-foreground shrink-0">Subtotal</span>
+                <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
+                <span className="text-foreground font-medium shrink-0 tabular-nums">
+                  {hasMrp && (
+                    <span className="text-muted-foreground line-through mr-2">
+                      ₹{Number((offering as any).mrp_inr).toLocaleString("en-IN")}
+                    </span>
+                  )}
+                  ₹{subtotal.toLocaleString("en-IN")}
+                </span>
+              </div>
+              {discount > 0 && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-muted-foreground shrink-0">Discount</span>
+                  <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
+                  <span className="text-accent-emerald font-medium shrink-0 tabular-nums">
+                    −₹{discount.toLocaleString("en-IN")}
                   </span>
-                )}
-                ₹{subtotal.toLocaleString("en-IN")}
-              </span>
-            </div>
-            {discount > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Discount</span>
-                <span className="text-accent-emerald font-medium">
-                  −₹{discount.toLocaleString("en-IN")}
+                </div>
+              )}
+              {gstAmount > 0 && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-muted-foreground shrink-0">
+                    GST ({gstRate}%
+                    {offering.gst_mode === "inclusive" ? " incl." : ""})
+                  </span>
+                  <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
+                  <span className="text-foreground font-medium shrink-0 tabular-nums">
+                    ₹{gstAmount.toLocaleString("en-IN")}
+                  </span>
+                </div>
+              )}
+              <Separator className="bg-border" />
+              <div className="flex items-baseline gap-2 text-base font-semibold">
+                <span className="text-foreground shrink-0">Total</span>
+                <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
+                <span className="text-foreground shrink-0 tabular-nums">
+                  ₹{total.toLocaleString("en-IN")}
                 </span>
               </div>
-            )}
-            {gstAmount > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">
-                  GST ({gstRate}%
-                  {offering.gst_mode === "inclusive" ? " incl." : ""})
-                </span>
-                <span className="text-foreground font-medium">
-                  ₹{gstAmount.toLocaleString("en-IN")}
-                </span>
-              </div>
-            )}
-            <Separator className="bg-border" />
-            <div className="flex justify-between text-base font-semibold">
-              <span className="text-foreground">Total</span>
-              <span className="text-foreground">
-                ₹{total.toLocaleString("en-IN")}
-              </span>
-            </div>
-            {gstAmount > 0 && (
-              <p className="text-[11px] text-muted-foreground text-right -mt-1">
-                Includes GST
-              </p>
-            )}
-            {/* Celebrate the savings - MRP markdown + coupon discount
-                combined. Shopify-style; the emotional reinforcement
-                lifts conversion at the exact decision moment. */}
-            {(() => {
-              const mrpInr = Number((offering as any).mrp_inr || 0);
-              const mrpSavings = hasMrp && mrpInr > subtotal ? mrpInr - subtotal : 0;
-              const totalSavings = mrpSavings + discount;
-              if (totalSavings <= 0) return null;
-              return (
+              {gstAmount > 0 && (
+                <p className="text-[11px] text-muted-foreground text-right -mt-1">
+                  Includes GST
+                </p>
+              )}
+              {/* Celebrate the savings - MRP markdown + coupon discount
+                  combined. Shopify-style; the emotional reinforcement
+                  lifts conversion at the exact decision moment. */}
+              {totalSavings > 0 && (
                 <div className="flex justify-between items-center px-3 py-2 rounded-lg bg-[hsl(var(--accent-emerald)/0.10)] border border-[hsl(var(--accent-emerald)/0.25)]">
                   <span className="text-xs font-mono uppercase tracking-wider text-[hsl(var(--accent-emerald))]">
                     Total savings
@@ -929,16 +946,12 @@ export default function CheckoutPage() {
                     ₹{totalSavings.toLocaleString("en-IN")}
                   </span>
                 </div>
-              );
-            })()}
+              )}
+            </div>
           </div>
 
           {/* ── Trust signals ── */}
           <div className="flex flex-col items-center gap-2">
-            <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Secure Razorpay checkout
-            </div>
             <GuaranteeBadge days={offering.refund_policy_days} />
           </div>
 
@@ -961,8 +974,17 @@ export default function CheckoutPage() {
             )}
           </Button>
 
-          <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            Powered by Razorpay
+          {/* Reassurance capsule directly under the pay button — lock icon +
+              gateway + refund window in one quiet pill. */}
+          <div className="flex justify-center">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[11px] text-muted-foreground">
+              <Lock className="h-3 w-3 text-[hsl(var(--accent-emerald))]" />
+              Secured by Razorpay
+              <span className="text-muted-foreground/40">·</span>
+              {offering.refund_policy_days
+                ? `${offering.refund_policy_days}-day refund`
+                : "7-day refund"}
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -979,6 +1001,17 @@ export default function CheckoutPage() {
           batchStartsAt={(offering as any).starts_at ?? null}
         />
       )}
+
+      {/* Mobile sticky pay bar — always-visible total + Pay on phones. Only
+          ever reached on web (native returns the Continue-on-web card above). */}
+      <StickyPayBar
+        total={total}
+        savings={totalSavings}
+        stagedLabel={isStaged ? stagedLabel : undefined}
+        paying={paying}
+        disabled={total <= 0}
+        onPay={handlePay}
+      />
     </div>
   );
 }

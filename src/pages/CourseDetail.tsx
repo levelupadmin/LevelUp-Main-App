@@ -12,8 +12,10 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { toast } from "@/lib/toast";
-import { CheckCircle2, Lock, Play, Clock, BookOpen, Star } from "lucide-react";
-import { isAndroid, isNative } from "@/lib/platform";
+import { CheckCircle2, Lock, Play, Clock, BookOpen, Star, Sparkles } from "lucide-react";
+import { isNative } from "@/lib/platform";
+import { ProgressRing } from "@/components/progress/ProgressRing";
+import { CompletionRecap } from "@/components/progress/CompletionRecap";
 import ReviewList from "@/components/reviews/ReviewList";
 import Outcomes from "@/components/course-detail/Outcomes";
 import PortfolioPieces from "@/components/course-detail/PortfolioPieces";
@@ -93,6 +95,7 @@ const CourseDetail = () => {
   const [loading, setLoading] = useState(true);
   const [categoryName, setCategoryName] = useState<string | null>(null);
   const [offeringUrgency, setOfferingUrgency] = useState<OfferingUrgency | null>(null);
+  const [recapOpen, setRecapOpen] = useState(false);
 
   usePageTitle(course?.title ?? "Course");
 
@@ -104,6 +107,25 @@ const CourseDetail = () => {
     }
     loadCourse();
   }, [courseId, user, authLoading, profile]);
+
+  // Auto-open the completion recap the first time the user views this course at
+  // 100%. Gated per course+user via sessionStorage so it celebrates once per
+  // session and never nags on revisits.
+  useEffect(() => {
+    if (loading || !courseId || !user) return;
+    const total = chapters.length;
+    if (total === 0) return;
+    const done = progress.filter((p) => p.completed_at).length;
+    if (done < total) return;
+    const key = `recap-seen:${user.id}:${courseId}`;
+    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(key)) return;
+    setRecapOpen(true);
+    try {
+      sessionStorage.setItem(key, "1");
+    } catch {
+      /* storage may be unavailable (private mode) — recap simply re-shows */
+    }
+  }, [loading, courseId, user, chapters, progress]);
 
   const loadCourse = async () => {
     if (!courseId || !user) return;
@@ -326,6 +348,14 @@ const CourseDetail = () => {
 
   const totalChapters = chapters.length;
   const completedCount = progress.filter((p) => p.completed_at).length;
+  const progressPct =
+    totalChapters > 0 ? Math.round((completedCount / totalChapters) * 100) : 0;
+  const isComplete = totalChapters > 0 && completedCount >= totalChapters;
+  // Total watch time proxy: furthest position reached across this course's
+  // chapters (in minutes). Lower-bound, since we don't log per-session deltas.
+  const watchMinutes = Math.round(
+    progress.reduce((sum, p) => sum + (p.last_position_seconds || 0), 0) / 60
+  );
 
   return (
     <>
@@ -399,9 +429,23 @@ const CourseDetail = () => {
                 </Button>
               )}
               {hasAccess && totalChapters > 0 && (
-                <span className="text-sm text-muted-foreground">
-                  {completedCount}/{totalChapters} completed
-                </span>
+                <div className="flex items-center gap-2.5">
+                  <ProgressRing pct={progressPct} size={40} label />
+                  <span className="text-sm text-muted-foreground">
+                    {completedCount}/{totalChapters} lessons
+                  </span>
+                </div>
+              )}
+              {hasAccess && isComplete && (
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setRecapOpen(true)}
+                  className="gap-1.5"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  View recap
+                </Button>
               )}
             </div>
           </div>
@@ -535,6 +579,16 @@ const CourseDetail = () => {
           </Accordion>
         </div>
       </div>
+
+      <CompletionRecap
+        open={recapOpen}
+        onClose={() => setRecapOpen(false)}
+        courseTitle={course.title}
+        instructorName={course.instructor_display_name}
+        lessonsCompleted={completedCount}
+        minutesWatched={watchMinutes}
+        imageUrl={course.hero_image_url}
+      />
     </>
   );
 };

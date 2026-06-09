@@ -6,7 +6,6 @@ import {
   Calendar,
   BookOpen,
   CheckCheck,
-  Inbox,
   Award,
   RotateCcw,
   CheckCircle,
@@ -14,21 +13,33 @@ import {
   Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { hapticSelection } from "@/lib/haptics";
 import type { Notification } from "@/hooks/useNotifications";
 
-const TYPE_ICONS: Record<string, typeof Bell> = {
-  community_reply: MessageSquare,
-  session_reminder: Calendar,
-  course_update: BookOpen,
-  admin_announcement: Megaphone,
-  assignment_feedback: BookOpen,
-  review_reply: Star,
-  refund_processed: RotateCcw,
-  enrollment_confirmed: CheckCircle,
-  course_completed: Award,
-  certificate_ready: Award,
-  new_course_available: BookOpen,
+/**
+ * Per-type thumbnail treatment. The notifications table carries no image, so
+ * instead of a tiny gray glyph we render a 36px rounded tile in a tuned tint
+ * with the type's icon — it reads as "course art" at a glance and keeps the
+ * list scannable.
+ */
+const TYPE_META: Record<
+  string,
+  { icon: typeof Bell; tint: string }
+> = {
+  community_reply: { icon: MessageSquare, tint: "bg-sky-500/15 text-sky-300" },
+  review_reply: { icon: Star, tint: "bg-amber-500/15 text-amber-300" },
+  session_reminder: { icon: Calendar, tint: "bg-violet-500/15 text-violet-300" },
+  course_update: { icon: BookOpen, tint: "bg-cream/15 text-cream" },
+  new_course_available: { icon: BookOpen, tint: "bg-cream/15 text-cream" },
+  assignment_feedback: { icon: BookOpen, tint: "bg-cream/15 text-cream" },
+  admin_announcement: { icon: Megaphone, tint: "bg-rose-500/15 text-rose-300" },
+  refund_processed: { icon: RotateCcw, tint: "bg-emerald-500/15 text-emerald-300" },
+  enrollment_confirmed: { icon: CheckCircle, tint: "bg-emerald-500/15 text-emerald-300" },
+  course_completed: { icon: Award, tint: "bg-cream/15 text-cream" },
+  certificate_ready: { icon: Award, tint: "bg-cream/15 text-cream" },
 };
+
+const FALLBACK_META = { icon: Bell, tint: "bg-surface-2 text-muted-foreground" } as const;
 
 function timeAgo(date: string) {
   const diff = Date.now() - new Date(date).getTime();
@@ -42,6 +53,22 @@ function timeAgo(date: string) {
   return `${Math.floor(days / 7)}w ago`;
 }
 
+type GroupKey = "Today" | "Yesterday" | "This week" | "Earlier";
+
+/** Bucket a timestamp into a human date group, calendar-day aware. */
+function groupFor(dateStr: string): GroupKey {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const d = new Date(dateStr).getTime();
+  const dayMs = 86_400_000;
+  if (d >= startOfToday) return "Today";
+  if (d >= startOfToday - dayMs) return "Yesterday";
+  if (d >= startOfToday - 7 * dayMs) return "This week";
+  return "Earlier";
+}
+
+const GROUP_ORDER: GroupKey[] = ["Today", "Yesterday", "This week", "Earlier"];
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -51,6 +78,25 @@ interface Props {
   onMarkRead: (id: string) => void;
   onMarkAllRead: () => void;
 }
+
+/** Soft clapperboard line-art for the "all caught up" rest state. */
+const ClapperboardArt = () => (
+  <svg
+    width="56"
+    height="56"
+    viewBox="0 0 56 56"
+    fill="none"
+    aria-hidden
+    className="text-cream"
+  >
+    <g stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round">
+      <rect x="8" y="22" width="40" height="26" rx="3" opacity="0.85" />
+      <path d="M8 26.5 L48 26.5" opacity="0.55" />
+      <path d="M9 22 L17 13 M19 22 L27 13 M29 22 L37 13 M39 22 L47 13" opacity="0.85" />
+      <path d="M8 22 L48 13" opacity="0.5" />
+    </g>
+  </svg>
+);
 
 export default function NotificationDropdown({
   open,
@@ -79,12 +125,20 @@ export default function NotificationDropdown({
   if (!open) return null;
 
   const handleClick = (notif: Notification) => {
+    hapticSelection();
     if (!notif.is_read) onMarkRead(notif.id);
     if (notif.link) {
       navigate(notif.link);
       onClose();
     }
   };
+
+  // Group notifications by date bucket, preserving the incoming (newest-first)
+  // order within each bucket.
+  const grouped = GROUP_ORDER.map((key) => ({
+    key,
+    items: notifications.filter((n) => groupFor(n.created_at) === key),
+  })).filter((g) => g.items.length > 0);
 
   return (
     <div
@@ -108,60 +162,87 @@ export default function NotificationDropdown({
       {/* List */}
       <div className="max-h-[400px] overflow-y-auto">
         {loading ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            Loading...
+          <div className="px-4 py-3 space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-start gap-3">
+                <div className="h-9 w-9 rounded-lg skeleton-shimmer flex-shrink-0" />
+                <div className="flex-1 space-y-2 py-0.5">
+                  <div className="h-3 w-3/4 rounded skeleton-shimmer" />
+                  <div className="h-2.5 w-1/2 rounded skeleton-shimmer" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : notifications.length === 0 ? (
-          <div className="px-4 py-10 text-center">
-            <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground opacity-40" />
-            <p className="text-sm text-muted-foreground">You're all caught up</p>
+          <div className="px-6 py-12 text-center flex flex-col items-center">
+            <ClapperboardArt />
+            <p className="mt-4 font-serif-italic text-lg text-cream">All caught up</p>
+            <p className="mt-1.5 text-sm text-muted-foreground max-w-[240px]">
+              No new notifications. We'll let you know the moment something happens.
+            </p>
           </div>
         ) : (
-          notifications.map((notif) => {
-            const Icon = TYPE_ICONS[notif.type] || Bell;
-            return (
-              <button
-                key={notif.id}
-                onClick={() => handleClick(notif)}
-                className={cn(
-                  "w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2",
-                  !notif.is_read && "bg-surface-2/50"
-                )}
-              >
-                {/* Unread dot */}
-                <div className="pt-1.5 w-2 flex-shrink-0">
-                  {!notif.is_read && (
-                    <span className="block h-2 w-2 rounded-full bg-blue-500" />
-                  )}
-                </div>
-
-                {/* Type icon */}
-                <div className="pt-0.5 flex-shrink-0">
-                  <Icon className="h-4 w-4 text-muted-foreground" />
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <p
+          grouped.map((group) => (
+            <div key={group.key}>
+              <p className="sticky top-0 z-[1] bg-surface/95 backdrop-blur-sm px-4 pt-3 pb-1.5 text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                {group.key}
+              </p>
+              {group.items.map((notif) => {
+                const meta = TYPE_META[notif.type] ?? FALLBACK_META;
+                const Icon = meta.icon;
+                return (
+                  <button
+                    key={notif.id}
+                    onClick={() => handleClick(notif)}
                     className={cn(
-                      "text-sm leading-snug",
-                      !notif.is_read ? "font-semibold text-foreground" : "text-foreground"
+                      "w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2",
+                      !notif.is_read && "bg-surface-2/50"
                     )}
                   >
-                    {notif.title}
-                  </p>
-                  {notif.body && (
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                      {notif.body}
-                    </p>
-                  )}
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    {timeAgo(notif.created_at)}
-                  </p>
-                </div>
-              </button>
-            );
-          })
+                    {/* 36px rounded thumbnail tile */}
+                    <div
+                      className={cn(
+                        "h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0",
+                        meta.tint
+                      )}
+                    >
+                      <Icon className="h-4 w-4" strokeWidth={1.75} />
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start gap-2">
+                        <p
+                          className={cn(
+                            "text-sm leading-snug flex-1 min-w-0",
+                            !notif.is_read
+                              ? "font-semibold text-foreground"
+                              : "text-foreground"
+                          )}
+                        >
+                          {notif.title}
+                        </p>
+                        {!notif.is_read && (
+                          <span
+                            aria-label="Unread"
+                            className="mt-1.5 h-2 w-2 rounded-full bg-cream flex-shrink-0"
+                          />
+                        )}
+                      </div>
+                      {notif.body && (
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                          {notif.body}
+                        </p>
+                      )}
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        {timeAgo(notif.created_at)}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ))
         )}
       </div>
     </div>

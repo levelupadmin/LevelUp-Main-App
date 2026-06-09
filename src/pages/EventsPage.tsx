@@ -10,6 +10,8 @@ import { Globe, MapPin, Loader2, Calendar, Clock } from "lucide-react";
 import { eventDateTimeLabel, eventDurationLabel } from "@/lib/event-format";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import { isNative } from "@/lib/platform";
+import { format, isSameDay } from "date-fns";
+import { TimeStateBadge } from "@/components/live/TimeStateBadge";
 
 interface Speaker {
   event_id: string;
@@ -82,6 +84,23 @@ const EventsPage = () => {
   const past = events.filter((e) => new Date(e.starts_at) < now || ["completed", "cancelled"].includes(e.status));
   const myEvents = events.filter((e) => myRegs.has(e.id));
   const displayed = tab === "upcoming" ? upcoming : tab === "past" ? past : myEvents;
+
+  // (33) Group the upcoming feed by calendar day so it reads as a scannable
+  // agenda with sticky "14 June · Saturday" headers. Single query (fetchEvents,
+  // already ordered by starts_at asc) — we just bucket client-side here.
+  const upcomingGroups = (() => {
+    const groups: { key: string; date: Date; events: any[] }[] = [];
+    for (const ev of upcoming) {
+      const d = new Date(ev.starts_at);
+      const last = groups[groups.length - 1];
+      if (last && isSameDay(last.date, d)) {
+        last.events.push(ev);
+      } else {
+        groups.push({ key: `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`, date: d, events: [ev] });
+      }
+    }
+    return groups;
+  })();
 
   const handleRegisterFree = async (eventId: string) => {
     if (!user) return;
@@ -210,6 +229,128 @@ const EventsPage = () => {
     return { name: ev.host_name, title: ev.host_title, avatar_url: ev.host_avatar_url, count: 1 };
   };
 
+  const renderEventCard = (ev: any) => {
+    const isRegistered = myRegs.has(ev.id);
+    const isSoldOut = ev.status === "sold_out";
+    const isCancelled = ev.status === "cancelled";
+    const isPast = tab === "past";
+    const speaker = getSpeaker(ev);
+    return (
+      <Link
+        key={ev.id}
+        to={`/events/${ev.id}`}
+        className={cn("bg-surface border border-border rounded-xl overflow-hidden card-hover flex flex-col", isPast && "opacity-60")}
+      >
+        <div className="relative aspect-[4/3]">
+          {ev.image_url ? (
+            <img src={ev.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+          ) : (
+            // Fallback so events without a thumbnail don't render
+            // as a big black empty block. Subtle branded gradient +
+            // decorative icon keeps the card visually intentional.
+            <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--surface-2))] via-[hsl(var(--surface))] to-[hsl(var(--accent-amber)/0.15)] flex items-center justify-center">
+              <Calendar className="h-12 w-12 text-muted-foreground/30" />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+          {/* Relative-time badge in the corner so a grouped agenda still shows
+              at-a-glance proximity (LIVE / IN 40 MIN) per card. */}
+          {!isPast && !isSoldOut && !isCancelled && (
+            <div className="absolute top-3 right-3">
+              <TimeStateBadge date={ev.starts_at} durationMin={ev.duration_minutes} />
+            </div>
+          )}
+          {isSoldOut && (
+            <div className="absolute top-3 right-3 bg-destructive/90 text-destructive-foreground text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
+              Sold Out
+            </div>
+          )}
+          {isCancelled && (
+            <div className="absolute top-3 right-3 bg-muted text-muted-foreground text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
+              Cancelled
+            </div>
+          )}
+          {isRegistered && tab === "my" && (
+            <div className="absolute top-3 left-3 bg-green-500/20 text-green-400 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
+              Registered ✓
+            </div>
+          )}
+          <div className="absolute bottom-4 left-4 right-4">
+            <h3 className="text-base font-semibold text-white line-clamp-2 leading-snug">{ev.title}</h3>
+          </div>
+        </div>
+        <div className="p-4 flex items-center justify-between mt-auto">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {speaker.avatar_url ? (
+              <img src={speaker.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0 border border-border" />
+            ) : (
+              <InitialsAvatar name={speaker.name} size={32} />
+            )}
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">
+                {speaker.name}
+                {speaker.count > 1 && <span className="text-muted-foreground"> +{speaker.count - 1}</span>}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-0.5 flex-shrink-0 ml-3">
+            <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+              <Calendar className="h-3 w-3" /> {eventDateTimeLabel(ev.starts_at)}
+            </span>
+            <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+              {ev.event_type === "online" || ev.venue_type !== "in_person" ? (
+                <><Globe className="h-3 w-3" /> Online</>
+              ) : (
+                <><MapPin className="h-3 w-3" /> {ev.city || "In-Person"}</>
+              )}
+            </span>
+            {eventDurationLabel(ev.duration_minutes) && (
+              <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                <Clock className="h-3 w-3" /> {eventDurationLabel(ev.duration_minutes)}
+              </span>
+            )}
+          </div>
+        </div>
+        {!isPast && !isCancelled && (
+          <div className="px-4 pb-4 pt-0">
+            <div className="pt-3 border-t border-border">
+              {isRegistered ? (
+                <span className="text-sm text-muted-foreground font-medium">Registered ✓</span>
+              ) : isSoldOut ? (
+                <span className="text-sm text-muted-foreground">No spots available</span>
+              ) : ev.pricing_type === "free" ? (
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRegisterFree(ev.id); }}
+                  disabled={registering === ev.id}
+                  className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
+                >
+                  {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                  Register — Free
+                </button>
+              ) : isNative() ? (
+                // Path B (Reader Rule): no paid-register / price CTA in the
+                // Android shell. Tapping the card navigates to /events/:id
+                // (EventDetail), which renders the Continue-on-web gate.
+                <span className="text-sm font-medium text-cream/80 inline-flex items-center gap-1 min-h-[44px]">
+                  View details
+                </span>
+              ) : (
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRegisterPaid(ev.id); }}
+                  disabled={registering === ev.id}
+                  className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
+                >
+                  {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                  Register · ₹{ev.price_inr ? (ev.price_inr / 100).toLocaleString("en-IN") : ""}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Link>
+    );
+  };
+
   return (
     <>
       <div className="space-y-6">
@@ -277,122 +418,30 @@ const EventsPage = () => {
               </button>
             )}
           </div>
+        ) : tab === "upcoming" ? (
+          // (33) Upcoming = a date-grouped agenda with sticky day headers.
+          <div className="space-y-8">
+            {upcomingGroups.map((group) => (
+              <section key={group.key}>
+                <div className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-canvas/95 backdrop-blur-sm border-b border-border/60 mb-4">
+                  <h2 className="flex items-baseline gap-2">
+                    <span className="text-sm font-semibold tracking-tight text-foreground">
+                      {format(group.date, "d MMMM")}
+                    </span>
+                    <span className="text-[11px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+                      {format(group.date, "EEEE")}
+                    </span>
+                  </h2>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {group.events.map((ev) => renderEventCard(ev))}
+                </div>
+              </section>
+            ))}
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {displayed.map((ev) => {
-              const isRegistered = myRegs.has(ev.id);
-              const isSoldOut = ev.status === "sold_out";
-              const isCancelled = ev.status === "cancelled";
-              const isPast = tab === "past";
-              const speaker = getSpeaker(ev);
-              return (
-                <Link
-                  key={ev.id}
-                  to={`/events/${ev.id}`}
-                  className={cn("bg-surface border border-border rounded-xl overflow-hidden card-hover flex flex-col", isPast && "opacity-60")}
-                >
-                  <div className="relative aspect-[4/3]">
-                    {ev.image_url ? (
-                      <img src={ev.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                    ) : (
-                      // Fallback so events without a thumbnail don't render
-                      // as a big black empty block. Subtle branded gradient +
-                      // decorative icon keeps the card visually intentional.
-                      <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--surface-2))] via-[hsl(var(--surface))] to-[hsl(var(--accent-amber)/0.15)] flex items-center justify-center">
-                        <Calendar className="h-12 w-12 text-muted-foreground/30" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-                    {isSoldOut && (
-                      <div className="absolute top-3 right-3 bg-destructive/90 text-destructive-foreground text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
-                        Sold Out
-                      </div>
-                    )}
-                    {isCancelled && (
-                      <div className="absolute top-3 right-3 bg-muted text-muted-foreground text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
-                        Cancelled
-                      </div>
-                    )}
-                    {isRegistered && tab === "my" && (
-                      <div className="absolute top-3 left-3 bg-green-500/20 text-green-400 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
-                        Registered ✓
-                      </div>
-                    )}
-                    <div className="absolute bottom-4 left-4 right-4">
-                      <h3 className="text-base font-semibold text-white line-clamp-2 leading-snug">{ev.title}</h3>
-                    </div>
-                  </div>
-                  <div className="p-4 flex items-center justify-between mt-auto">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      {speaker.avatar_url ? (
-                        <img src={speaker.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0 border border-border" />
-                      ) : (
-                        <InitialsAvatar name={speaker.name} size={32} />
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
-                          {speaker.name}
-                          {speaker.count > 1 && <span className="text-muted-foreground"> +{speaker.count - 1}</span>}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-0.5 flex-shrink-0 ml-3">
-                      <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                        <Calendar className="h-3 w-3" /> {eventDateTimeLabel(ev.starts_at)}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                        {ev.event_type === "online" || ev.venue_type !== "in_person" ? (
-                          <><Globe className="h-3 w-3" /> Online</>
-                        ) : (
-                          <><MapPin className="h-3 w-3" /> {ev.city || "In-Person"}</>
-                        )}
-                      </span>
-                      {eventDurationLabel(ev.duration_minutes) && (
-                        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                          <Clock className="h-3 w-3" /> {eventDurationLabel(ev.duration_minutes)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {!isPast && !isCancelled && (
-                    <div className="px-4 pb-4 pt-0">
-                      <div className="pt-3 border-t border-border">
-                        {isRegistered ? (
-                          <span className="text-sm text-muted-foreground font-medium">Registered ✓</span>
-                        ) : isSoldOut ? (
-                          <span className="text-sm text-muted-foreground">No spots available</span>
-                        ) : ev.pricing_type === "free" ? (
-                          <button
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRegisterFree(ev.id); }}
-                            disabled={registering === ev.id}
-                            className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
-                          >
-                            {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                            Register — Free
-                          </button>
-                        ) : isNative() ? (
-                          // Path B (Reader Rule): no paid-register / price CTA in the
-                          // Android shell. Tapping the card navigates to /events/:id
-                          // (EventDetail), which renders the Continue-on-web gate.
-                          <span className="text-sm font-medium text-cream/80 inline-flex items-center gap-1 min-h-[44px]">
-                            View details
-                          </span>
-                        ) : (
-                          <button
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRegisterPaid(ev.id); }}
-                            disabled={registering === ev.id}
-                            className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
-                          >
-                            {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                            Register · ₹{ev.price_inr ? (ev.price_inr / 100).toLocaleString("en-IN") : ""}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </Link>
-              );
-            })}
+            {displayed.map((ev) => renderEventCard(ev))}
           </div>
         )}
       </div>

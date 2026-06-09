@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       account_deletion_requests: {
@@ -606,6 +581,41 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chapter_moments: {
+        Row: {
+          chapter_id: string
+          created_at: string
+          id: string
+          label: string
+          seconds: number
+          sort_order: number
+        }
+        Insert: {
+          chapter_id: string
+          created_at?: string
+          id?: string
+          label: string
+          seconds: number
+          sort_order?: number
+        }
+        Update: {
+          chapter_id?: string
+          created_at?: string
+          id?: string
+          label?: string
+          seconds?: number
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chapter_moments_chapter_id_fkey"
+            columns: ["chapter_id"]
+            isOneToOne: false
+            referencedRelation: "chapters"
             referencedColumns: ["id"]
           },
         ]
@@ -3561,6 +3571,7 @@ export type Database = {
       offerings: {
         Row: {
           app_fee_inr: number | null
+          application_deadline: string | null
           attendance_threshold_pct: number | null
           balance_deadline_days: number | null
           banner_url: string | null
@@ -3569,6 +3580,7 @@ export type Database = {
           checkout_guarantee_text: string | null
           checkout_testimonials: Json | null
           cohort_sessions: Json | null
+          cohort_start_date: string | null
           confirmation_amount_inr: number | null
           confirmation_deadline_days: number | null
           confirmation_grace_hours: number | null
@@ -3616,6 +3628,7 @@ export type Database = {
         }
         Insert: {
           app_fee_inr?: number | null
+          application_deadline?: string | null
           attendance_threshold_pct?: number | null
           balance_deadline_days?: number | null
           banner_url?: string | null
@@ -3624,6 +3637,7 @@ export type Database = {
           checkout_guarantee_text?: string | null
           checkout_testimonials?: Json | null
           cohort_sessions?: Json | null
+          cohort_start_date?: string | null
           confirmation_amount_inr?: number | null
           confirmation_deadline_days?: number | null
           confirmation_grace_hours?: number | null
@@ -3671,6 +3685,7 @@ export type Database = {
         }
         Update: {
           app_fee_inr?: number | null
+          application_deadline?: string | null
           attendance_threshold_pct?: number | null
           balance_deadline_days?: number | null
           banner_url?: string | null
@@ -3679,6 +3694,7 @@ export type Database = {
           checkout_guarantee_text?: string | null
           checkout_testimonials?: Json | null
           cohort_sessions?: Json | null
+          cohort_start_date?: string | null
           confirmation_amount_inr?: number | null
           confirmation_deadline_days?: number | null
           confirmation_grace_hours?: number | null
@@ -4974,6 +4990,7 @@ export type Database = {
           bio: string | null
           city: string | null
           country: string | null
+          craft_interests: string[] | null
           created_at: string
           deleted_at: string | null
           email: string | null
@@ -5003,6 +5020,7 @@ export type Database = {
           bio?: string | null
           city?: string | null
           country?: string | null
+          craft_interests?: string[] | null
           created_at?: string
           deleted_at?: string | null
           email?: string | null
@@ -5032,6 +5050,7 @@ export type Database = {
           bio?: string | null
           city?: string | null
           country?: string | null
+          craft_interests?: string[] | null
           created_at?: string
           deleted_at?: string | null
           email?: string | null
@@ -6077,9 +6096,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

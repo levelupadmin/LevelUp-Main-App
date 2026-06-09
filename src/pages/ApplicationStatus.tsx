@@ -6,26 +6,24 @@ import { isIOS } from "@/lib/platform";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  CheckCircle2,
-  Circle,
-  XCircle,
+  Check,
   Loader2,
   ArrowRight,
   ArrowLeft,
 } from "lucide-react";
 
-/* ── Step definitions ── */
+/* ── Step definitions ──
+   Each step carries a one-line expectation so the student knows what happens
+   next at that stage (item 36). */
 const STEPS = [
-  { key: "submitted", label: "Applied" },
-  { key: "app_fee_paid", label: "App Fee Paid" },
-  { key: "interview_done", label: "Interview" },
-  { key: "accepted", label: "Accepted" },
-  { key: "confirmation_paid", label: "Confirmation Paid" },
-  { key: "balance_paid", label: "Balance Paid" },
-  { key: "enrolled", label: "Enrolled" },
+  { key: "submitted", label: "Applied", expect: "We've received your application." },
+  { key: "app_fee_paid", label: "App Fee Paid", expect: "Pay the application fee to unlock your interview." },
+  { key: "interview_done", label: "Interview", expect: "A mentor reviews your work in a short interview." },
+  { key: "accepted", label: "Accepted", expect: "We let you know if you've earned a seat." },
+  { key: "confirmation_paid", label: "Confirmation Paid", expect: "Confirm your seat with the booking amount." },
+  { key: "balance_paid", label: "Balance Paid", expect: "Clear the remaining fee before the cohort starts." },
+  { key: "enrolled", label: "Enrolled", expect: "You're in — welcome to the cohort." },
 ] as const;
-
-type StepKey = (typeof STEPS)[number]["key"];
 
 /* Which step index each status maps to (the highest completed step) */
 const STATUS_TO_STEP: Record<string, number> = {
@@ -40,20 +38,6 @@ const STATUS_TO_STEP: Record<string, number> = {
   rejected: -1,
   withdrawn: -1,
   waitlisted: -1,
-};
-
-const STATUS_BADGE_COLORS: Record<string, string> = {
-  submitted: "bg-gray-600/20 text-gray-300 border-gray-600/40",
-  app_fee_paid: "bg-blue-600/20 text-blue-300 border-blue-600/40",
-  interview_scheduled: "bg-amber-600/20 text-amber-300 border-amber-600/40",
-  interview_done: "bg-cyan-600/20 text-cyan-300 border-cyan-600/40",
-  accepted: "bg-green-600/20 text-green-300 border-green-600/40",
-  rejected: "bg-red-600/20 text-red-300 border-red-600/40",
-  confirmation_paid: "bg-violet-600/20 text-violet-300 border-violet-600/40",
-  balance_paid: "bg-indigo-600/20 text-indigo-300 border-indigo-600/40",
-  enrolled: "bg-emerald-600/20 text-emerald-300 border-emerald-600/40",
-  withdrawn: "bg-orange-600/20 text-orange-300 border-orange-600/40",
-  waitlisted: "bg-yellow-600/20 text-yellow-300 border-yellow-600/40",
 };
 
 function statusLabel(s: string) {
@@ -181,6 +165,26 @@ const ApplicationStatus = () => {
     return "upcoming";
   };
 
+  /* ── Progress summary (item 36) ──
+     "Step N of M" + a thin cream progress bar. We count the active step as the
+     current one (1-based); failed applications show how far they reached. */
+  const totalSteps = STEPS.length;
+  const stepNumber = isFailed
+    ? Math.max(failedAtIndex, 1)
+    : Math.min(currentStepIndex + 1, totalSteps);
+  const progressPct = Math.round(
+    ((isFailed ? failedAtIndex : currentStepIndex + 1) / totalSteps) * 100
+  );
+
+  /* The first step's date is the real application date; later steps are
+     forward-looking, so we show "Applied <date>" only on step 0 and a soft
+     "Pending" hint on the active step. */
+  const appliedDate = new Date(application.created_at).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
   return (
     <div className="min-h-screen bg-canvas">
       {/* Header */}
@@ -205,58 +209,75 @@ const ApplicationStatus = () => {
           </h2>
           <Badge
             variant="outline"
-            className={`text-sm ${STATUS_BADGE_COLORS[application.status] || "bg-gray-600/20 text-gray-300"}`}
+            className="text-sm border-[hsl(var(--cream))]/30 bg-[hsl(var(--cream))]/10 text-[hsl(var(--cream))]"
           >
             {statusLabel(application.status)}
           </Badge>
         </div>
 
-        {/* Rejection reason */}
+        {/* Rejection reason — neutral surface, no red, to match the
+            monochrome timeline. The reason text is still surfaced. */}
         {isRejected && application.rejection_reason && (
-          <div className="mb-8 p-4 rounded-lg bg-red-950/30 border border-red-800/40">
-            <p className="text-sm font-medium text-red-300 mb-1">
-              Rejection Reason
+          <div className="mb-8 p-4 rounded-lg bg-surface border border-border">
+            <p className="text-sm font-medium text-foreground mb-1">
+              Decision note
             </p>
-            <p className="text-sm text-red-200/80">
+            <p className="text-sm text-muted-foreground">
               {application.rejection_reason}
             </p>
           </div>
         )}
 
-        {/* Timeline */}
+        {/* Step summary + thin cream progress bar */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-foreground">
+              Step {stepNumber} of {totalSteps}
+            </p>
+            <p className="text-xs font-mono text-muted-foreground">{progressPct}%</p>
+          </div>
+          <div className="h-1 w-full overflow-hidden rounded-full bg-surface-2">
+            <div
+              className="h-full rounded-full bg-[hsl(var(--cream))] transition-[width] duration-500 ease-out"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Timeline — monochrome cream */}
         <div className="relative">
           {STEPS.map((step, index) => {
             const state = getStepState(index);
             const isLast = index === STEPS.length - 1;
+            const isDone = state === "completed";
+            const isCurrent = state === "current";
 
             return (
               <div key={step.key} className="relative flex gap-4 pb-8">
-                {/* Vertical line */}
+                {/* Vertical line — cream once the step is done, dim otherwise */}
                 {!isLast && (
                   <div
                     className={`absolute left-[15px] top-[32px] w-0.5 h-[calc(100%-16px)] ${
-                      state === "completed"
-                        ? "bg-green-500"
-                        : state === "failed"
-                          ? "bg-red-500"
-                          : "bg-border"
+                      isDone ? "bg-[hsl(var(--cream))]" : "bg-border"
                     }`}
                   />
                 )}
 
-                {/* Icon */}
+                {/* Icon — filled cream check (done), pulsing cream ring
+                    (current), dim ring (future / not reached) */}
                 <div className="relative z-10 shrink-0 flex items-center justify-center w-[32px] h-[32px]">
-                  {state === "completed" ? (
-                    <CheckCircle2 className="h-7 w-7 text-green-500" />
-                  ) : state === "current" ? (
-                    <div className="relative">
-                      <Circle className="h-7 w-7 text-[hsl(var(--accent-amber))]" />
-                      <div className="absolute inset-0 h-7 w-7 rounded-full bg-[hsl(var(--accent-amber)/0.3)] animate-pulse" />
+                  {isDone ? (
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[hsl(var(--cream))]">
+                      <Check className="h-4 w-4 text-[hsl(var(--cream-text))]" strokeWidth={3} />
                     </div>
-                  ) : state === "failed" ? (
-                    <XCircle className="h-7 w-7 text-red-500" />
+                  ) : isCurrent ? (
+                    <div className="relative flex h-7 w-7 items-center justify-center">
+                      <div className="absolute inset-0 rounded-full bg-[hsl(var(--cream))]/25 animate-pulse" />
+                      <div className="h-7 w-7 rounded-full border-2 border-[hsl(var(--cream))] bg-canvas" />
+                      <div className="absolute h-2 w-2 rounded-full bg-[hsl(var(--cream))]" />
+                    </div>
                   ) : (
-                    <Circle className="h-7 w-7 text-muted-foreground/40" />
+                    <div className="h-7 w-7 rounded-full border-2 border-border bg-canvas" />
                   )}
                 </div>
 
@@ -264,17 +285,30 @@ const ApplicationStatus = () => {
                 <div className="flex-1 pt-0.5">
                   <p
                     className={`font-medium ${
-                      state === "completed"
-                        ? "text-green-400"
-                        : state === "current"
-                          ? "text-[hsl(var(--accent-amber))]"
-                          : state === "failed"
-                            ? "text-red-400"
-                            : "text-muted-foreground/60"
+                      isDone
+                        ? "text-foreground"
+                        : isCurrent
+                          ? "text-[hsl(var(--cream))]"
+                          : "text-muted-foreground/60"
                     }`}
                   >
                     {step.label}
                   </p>
+
+                  {/* Date + one-line expectation copy per step */}
+                  <p className="mt-0.5 text-xs text-muted-foreground/80">
+                    {step.expect}
+                  </p>
+                  {index === 0 && (
+                    <p className="mt-0.5 font-mono text-[11px] text-muted-foreground/60">
+                      Applied {appliedDate}
+                    </p>
+                  )}
+                  {isCurrent && index !== 0 && (
+                    <p className="mt-0.5 font-mono text-[11px] text-[hsl(var(--cream))]/70">
+                      In progress
+                    </p>
+                  )}
 
                   {/* Pay buttons — hidden on iOS per Apple anti-steering
                       (no in-app purchase entry points or external-pay links).
@@ -318,18 +352,6 @@ const ApplicationStatus = () => {
               </div>
             );
           })}
-        </div>
-
-        {/* Applied date */}
-        <div className="mt-4 pt-4 border-t border-border">
-          <p className="text-xs text-muted-foreground">
-            Applied on{" "}
-            {new Date(application.created_at).toLocaleDateString("en-IN", {
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            })}
-          </p>
         </div>
       </div>
     </div>

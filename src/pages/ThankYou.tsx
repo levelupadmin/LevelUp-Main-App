@@ -9,6 +9,8 @@ import { Separator } from "@/components/ui/separator";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import { track } from "@/lib/analytics";
 import { isNative } from "@/lib/platform";
+import { SuccessCheck, DownloadInvoiceButton } from "@/components/checkout/SuccessMoment";
+import type { InvoiceOrder } from "@/lib/invoice";
 import {
   CheckCircle2,
   Loader2,
@@ -583,6 +585,22 @@ export default function ThankYou() {
     confirmedAt = new Date(order.created_at || Date.now()).toISOString();
   }
 
+  // Shape the loaded order into the InvoiceOrder the PDF builder expects.
+  // Subtotal/discount/GST aren't on this query, so the invoice prints the
+  // captured total as both subtotal and total (taxes treated as inclusive),
+  // which is correct for the receipt the buyer needs.
+  const invoiceOrder: InvoiceOrder = {
+    id: order.id,
+    total_inr: Number(order.total_inr),
+    captured_at: order.created_at,
+    created_at: order.created_at,
+    razorpay_payment_id: order.razorpay_payment_id,
+    offering_title: order.offerings?.title || "LevelUp masterclass",
+    buyer_name: order.guest_name || session?.user?.user_metadata?.full_name || null,
+    buyer_email: order.guest_email || session?.user?.email || null,
+    buyer_phone: order.guest_phone || null,
+  };
+
   // Course-side facts for the celebration strip. Each chip falls out
   // if the underlying data is missing - never show "0 lessons".
   const course = (order.offerings as any)?.offering_courses?.[0]?.courses;
@@ -622,13 +640,9 @@ export default function ThankYou() {
               className="w-full max-h-72 object-cover rounded-2xl mx-auto shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
             />
           ) : (
-            <div className="relative inline-flex items-center justify-center h-24 w-24 mx-auto">
-              {/* Soft pulsing halo behind the check */}
-              <span className="absolute inset-0 rounded-full bg-[hsl(var(--accent-emerald)/0.18)] animate-ping" />
-              <span className="relative inline-flex items-center justify-center h-24 w-24 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] ring-1 ring-[hsl(var(--accent-emerald)/0.3)]">
-                <CheckCircle2 className="h-12 w-12 text-[hsl(var(--accent-emerald))]" strokeWidth={1.75} />
-              </span>
-            </div>
+            // One-shot confetti burst + cream radial-glow orb behind the check
+            // (replaces the old infinite animate-ping halo).
+            <SuccessCheck />
           )}
 
           <div className="space-y-3">
@@ -823,12 +837,17 @@ export default function ThankYou() {
           </div>
 
           {/* Discreet receipt strip - the meta you want one tap away but
-              never crowding the celebration moment. */}
+              never crowding the celebration moment. Now carries a
+              Download-invoice affordance (renders our branded GST PDF and
+              hands it to the OS share sheet / browser download). */}
           <div className="pt-4 border-t border-border/50 max-w-md mx-auto text-xs text-muted-foreground/80 font-mono space-y-1">
             <p>Order {order.id.slice(0, 8).toUpperCase()} &middot; {confirmedAt}</p>
             {order.razorpay_payment_id && (
               <p className="text-muted-foreground/60">Payment {order.razorpay_payment_id}</p>
             )}
+            <div className="pt-1 font-sans">
+              <DownloadInvoiceButton order={invoiceOrder} />
+            </div>
           </div>
         </div>
 

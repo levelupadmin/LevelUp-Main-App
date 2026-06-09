@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Mail } from "lucide-react";
+import { Loader2, Mail, RotateCw } from "lucide-react";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { hapticSelection, hapticNotification } from "@/lib/haptics";
 
 interface Props {
   phone: string;
@@ -15,10 +16,32 @@ interface Props {
   onBack: () => void;
 }
 
+// Mask the number so it reads "+91 ····· ··321" — keep the country code and
+// the last three digits (enough for the user to recognise their own number),
+// dot out everything in between. Falls back to the raw string for numbers too
+// short to mask meaningfully (shouldn't happen for a +91 mobile).
 function maskPhone(phone: string): string {
-  if (phone.length < 7) return phone;
-  return phone.slice(0, 4) + " " + phone.slice(4, 7) + " ••••• " + phone.slice(-2);
+  const trimmed = phone.trim();
+  if (trimmed.length < 6) return trimmed;
+  // Country code = leading "+" plus digits up to the standard 10-digit local
+  // part. For +91XXXXXXXXXX this yields "+91"; generalises for other codes.
+  const digits = trimmed.replace(/[^\d]/g, "");
+  const last3 = digits.slice(-3);
+  const localLen = 10;
+  const ccDigits = digits.length > localLen ? digits.slice(0, digits.length - localLen) : "";
+  const cc = ccDigits ? `+${ccDigits}` : trimmed.startsWith("+") ? `+${digits.slice(0, Math.max(0, digits.length - 10))}` : "";
+  const prefix = cc || "+91";
+  return `${prefix} ••••• ••${last3}`;
 }
+
+// Seconds → "0:NN" for the resend chip (e.g. 30 → "0:30", 5 → "0:05").
+function fmtCountdown(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+const RESEND_SECONDS = 30;
 
 export function OtpEntryStep({
   phone,
@@ -35,7 +58,7 @@ export function OtpEntryStep({
   const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendCount, setResendCount] = useState(0);
-  const [resendTimer, setResendTimer] = useState(30);
+  const [resendTimer, setResendTimer] = useState(RESEND_SECONDS);
 
   useEffect(() => {
     if (resendTimer === 0) return;
@@ -44,6 +67,7 @@ export function OtpEntryStep({
   }, [resendTimer]);
 
   useEffect(() => {
+    // Auto-submit the moment the last digit lands — no "Verify" button to tap.
     if (otp.length !== otpLength) return;
     // Note: `verifying` is intentionally NOT in the deps array. If we
     // include it, setVerifying(true) below changes deps -> cleanup
@@ -61,14 +85,18 @@ export function OtpEntryStep({
         const res = await onVerify(otp);
         if (cancelled) return;
         if (!res.ok) {
+          hapticNotification("error");
           setError(res.error || "Invalid code. Please try again.");
           setOtp("");
+        } else {
+          hapticNotification("success");
         }
       } catch (e) {
         // onVerify should always return a result object, but if it
         // throws anyway (e.g. fetch rejection on the verify edge fn)
         // we still need to clear the spinner.
         if (!cancelled) {
+          hapticNotification("error");
           setError(e instanceof Error ? e.message : "Verification error. Try again.");
           setOtp("");
         }
@@ -84,6 +112,7 @@ export function OtpEntryStep({
   }, [otp, otpLength]);
 
   const handleResendSms = async () => {
+    hapticSelection();
     setResending(true);
     setError(null);
     setOtp("");
@@ -94,8 +123,10 @@ export function OtpEntryStep({
       return;
     }
     setResendCount((c) => c + 1);
-    setResendTimer(30);
+    setResendTimer(RESEND_SECONDS);
   };
+
+  const counting = resendTimer > 0;
 
   return (
     <div className="space-y-5">
@@ -113,7 +144,20 @@ export function OtpEntryStep({
       </div>
 
       <div className="flex justify-center">
-        <InputOTP value={otp} onChange={setOtp} maxLength={otpLength} disabled={verifying} autoFocus>
+        <InputOTP
+          value={otp}
+          onChange={(v) => {
+            if (v.length > otp.length) hapticSelection();
+            setOtp(v);
+          }}
+          maxLength={otpLength}
+          disabled={verifying}
+          autoFocus
+          // Surfaces the iOS/Android SMS-autofill chip ("From Messages") so the
+          // code can be tapped in instead of memorised + re-typed.
+          autoComplete="one-time-code"
+          inputMode="numeric"
+        >
           <InputOTPGroup className="gap-2">
             {Array.from({ length: otpLength }).map((_, i) => (
               <InputOTPSlot
@@ -138,22 +182,35 @@ export function OtpEntryStep({
       )}
 
       <div className="space-y-2 pt-2">
-        <button
-          type="button"
-          disabled={resendTimer > 0 || resending || verifying}
-          onClick={handleResendSms}
-          className="w-full h-10 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:hover:text-muted-foreground transition-colors"
-        >
-          {resending ? (
-            <span className="inline-flex items-center gap-2">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Resending…
+        {/* Resend control: a static countdown chip while the timer runs, then
+            it morphs into a tappable button at 0:00. */}
+        <div className="flex justify-center">
+          {counting ? (
+            <span
+              className="inline-flex items-center gap-1.5 h-9 px-4 rounded-full bg-surface-2 text-xs font-mono text-muted-foreground select-none"
+              aria-live="polite"
+            >
+              Resend in {fmtCountdown(resendTimer)}
             </span>
-          ) : resendTimer > 0 ? (
-            `Resend SMS in ${resendTimer}s`
           ) : (
-            "Resend SMS"
+            <button
+              type="button"
+              disabled={resending || verifying}
+              onClick={handleResendSms}
+              className="pressable inline-flex items-center gap-1.5 h-9 px-4 rounded-full border border-border text-xs text-cream hover:border-border-hover disabled:opacity-50 transition-colors"
+            >
+              {resending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Resending…
+                </>
+              ) : (
+                <>
+                  <RotateCw className="h-3.5 w-3.5" /> Resend code
+                </>
+              )}
+            </button>
           )}
-        </button>
+        </div>
 
         {resendCount >= 1 && onSwitchToEmail && (
           <button

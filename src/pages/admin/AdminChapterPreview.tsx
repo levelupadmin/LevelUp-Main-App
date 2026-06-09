@@ -151,7 +151,7 @@ export default function AdminChapterPreview() {
           <div className="flex-1 space-y-6">
             {/* Content renderer — mirrors ChapterViewer exactly */}
             {chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
-              <VdoCipherPlayer chapterId={chapter.id} />
+              <VdoCipherPlayer chapterId={chapter.id} title={chapter.title} />
             ) : chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
               <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
                 <iframe

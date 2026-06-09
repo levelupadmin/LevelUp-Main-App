@@ -5,14 +5,39 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mail, Star, ArrowRight, ShieldCheck, ChevronLeft } from "lucide-react";
+import { Loader2, Mail, ArrowRight, ShieldCheck, ChevronLeft } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import usePageTitle from "@/hooks/usePageTitle";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
+import { InstructorProof } from "@/components/auth/InstructorProof";
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
 import { isNative } from "@/lib/platform";
+import { hapticImpact } from "@/lib/haptics";
 import heroCinematic from "@/assets/login/hero-cinematic.jpg";
+
+// After a session is minted, brand-new phone-first accounts haven't told us
+// their crafts yet (and signups haven't given a name/email) — route them
+// through /onboarding. Returning users with craft_interests already set go
+// straight to their intended destination. Defensive: any read failure falls
+// back to /onboarding so we never strand a user who lacks crafts.
+const resolvePostAuthDestination = async (
+  userId: string,
+  fallback: string
+): Promise<string> => {
+  try {
+    const { data, error } = await supabase
+      .from("users")
+      .select("craft_interests")
+      .eq("id", userId)
+      .single();
+    if (error) return "/onboarding";
+    const crafts = (data?.craft_interests ?? []).filter(Boolean);
+    return crafts.length > 0 ? fallback : "/onboarding";
+  } catch {
+    return "/onboarding";
+  }
+};
 
 type Step = "phone" | "otp" | "email_input" | "email_sent";
 
@@ -53,12 +78,23 @@ const Login = () => {
   const [channel, setChannel] = useState<"sms" | "whatsapp">("sms");
   const [loading, setLoading] = useState(false);
 
+  // Welcome V2: the first paint is a full-bleed brand hero with "Sign in" /
+  // "Create account" pills. Tapping "Sign in" expands the phone form up from
+  // the bottom (bottom-sheet feel) — `formOpen` drives that reveal. On the
+  // email-only fallback we skip straight into the form so the welcome layer
+  // never traps a non-Indian user. Once the user is past the phone step
+  // (OTP / email), the form is always open.
+  const [formOpen, setFormOpen] = useState(EMAIL_ONLY_AUTH);
+
   // Animation key so the form column re-mounts the slide-in animation
   // on every step transition.
   const [stepKey, setStepKey] = useState(0);
   const goToStep = useCallback((next: Step) => {
     setStep(next);
     setStepKey((k) => k + 1);
+    // Any step beyond the initial phone entry is a committed flow — keep the
+    // form sheet open so back-navigation lands on the form, not the welcome.
+    if (next !== "phone") setFormOpen(true);
   }, []);
 
   usePageTitle("Sign In");
@@ -84,7 +120,8 @@ const Login = () => {
   }
   if (user) return null;
 
-  const rawFrom = (location.state as any)?.from?.pathname || "/home";
+  const rawFrom =
+    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/home";
   const redirectTarget = rawFrom.startsWith("/") && !rawFrom.includes("//") ? rawFrom : "/home";
   const isIndianPhone = phone.startsWith("+91");
 
@@ -158,12 +195,16 @@ const Login = () => {
         if (data?.error === "user_missing_email") return { ok: false, error: "Account is missing an email — contact support." };
         return { ok: false, error: data?.detail || data?.error || "Verification failed" };
       }
-      const { error: setErr } = await supabase.auth.setSession({
+      const { data: sessionData, error: setErr } = await supabase.auth.setSession({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
       });
       if (setErr) return { ok: false, error: setErr.message };
-      navigate(redirectTarget, { replace: true });
+      const uid = sessionData.user?.id;
+      const dest = uid
+        ? await resolvePostAuthDestination(uid, redirectTarget)
+        : redirectTarget;
+      navigate(dest, { replace: true });
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Invalid OTP" };
@@ -340,19 +381,7 @@ const Login = () => {
     </div>
   ) : null;
 
-  const socialProof = (
-    <div className="mt-6">
-      <div className="flex items-center gap-2 mb-1.5">
-        {[...Array(5)].map((_, i) => (
-          <Star key={i} className="h-3 w-3 fill-cream text-cream" />
-        ))}
-        <span className="text-xs font-mono text-muted-foreground ml-1">4.8 · 1,200+ reviews</span>
-      </div>
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        Trusted by <span className="text-foreground">12,000+ Indian creators</span> learning from Lokesh, Nelson, Ravi Basrur, DRK Kiran &amp; more.
-      </p>
-    </div>
-  );
+  const socialProof = <InstructorProof className="mt-6" />;
 
   const formBlock = (
     <div className="w-full max-w-[400px] mx-auto">
@@ -374,48 +403,37 @@ const Login = () => {
     </div>
   );
 
-  // ── One responsive composition: single column on mobile + native,
-  //    two columns (form left / hero right) from `lg` up on web. ───────
-  // Once the user is past the phone step the on-screen keyboard is up for
-  // OTP/email entry. On mobile we collapse the tall hero and stop vertically
-  // centering the form so the active input stays comfortably in view without
-  // forced scrolling or layout jumps when the keyboard opens. Desktop is
-  // unaffected (the hero is a side pane, no keyboard overlap).
-  const keyboardStep = step !== "phone";
+  // ── Welcome V2 (mobile/native) + two-column web composition ─────────
+  // Mobile: the hero is FULL-BLEED behind everything (absolute inset-0), never
+  //   collapsing — even on the OTP step (item 7). On first paint the welcome
+  //   pills sit over it; tapping "Sign in" slides the phone form up as a
+  //   bottom-sheet over the (now heavily scrimmed) hero.
+  // Desktop (lg+): unchanged two-column — form left, hero right pane.
+  const showWelcome = step === "phone" && !formOpen && !EMAIL_ONLY_AUTH;
+  // Heavier scrim once the form sheet is up so card text never fights the photo.
+  const sheetUp = !showWelcome;
 
   return (
-    <div className="min-h-[100dvh] bg-canvas flex flex-col lg:flex-row">
-      {/* HERO — top on mobile/native, right pane on desktop */}
-      <div
-        className={`relative shrink-0 overflow-hidden transition-[height] duration-300 lg:order-2 lg:h-auto lg:min-h-[100dvh] lg:flex-1 lg:shrink ${
-          keyboardStep ? "h-[18vh] min-h-[120px]" : "h-[40vh] min-h-[300px]"
-        }`}
-      >
+    <div className="relative min-h-[100dvh] bg-canvas flex flex-col lg:flex-row lg:overflow-hidden">
+      {/* HERO — full-bleed behind on mobile, right pane on desktop */}
+      <div className="absolute inset-0 overflow-hidden lg:static lg:order-2 lg:h-auto lg:min-h-[100dvh] lg:flex-1 lg:inset-auto">
         <img
           src={heroCinematic}
           alt="A filmmaker on set, locked into the moment behind a cinema camera"
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover kenburns"
           loading="eager"
         />
-        {/* Mobile gradient fades to canvas so the form sheet blends in */}
-        <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/65 to-canvas/10 lg:from-black/85 lg:via-black/35 lg:to-black/10" />
-
-        {/* Mobile/native hero copy — hidden once the keyboard is up to keep the form near the top */}
-        <div className="relative z-10 h-full flex flex-col justify-between p-6 safe-top lg:hidden">
-          <div className="flex items-center justify-between">
-            <LevelUpWordmark className="h-7 w-auto text-foreground" />
-          </div>
-          {!keyboardStep && (
-            <div>
-              <h2 className="text-[40px] sm:text-[48px] leading-[1.02] font-semibold text-foreground max-w-[14ch]">
-                Make your <span className="font-serif-italic text-cream">first film</span>.
-              </h2>
-              <p className="text-sm text-muted-foreground mt-3 max-w-[32ch]">
-                Trusted by 12,000+ Indian creators learning from working filmmakers.
-              </p>
-            </div>
-          )}
-        </div>
+        {/* Mobile scrim — light on the welcome screen (let the photo breathe),
+            heavy once the form sheet rises so card copy stays legible. */}
+        <div
+          className={`absolute inset-0 transition-opacity duration-500 bg-gradient-to-t lg:hidden ${
+            sheetUp
+              ? "from-canvas via-canvas/85 to-canvas/55"
+              : "from-canvas via-canvas/55 to-canvas/15"
+          }`}
+        />
+        {/* Desktop scrim */}
+        <div className="absolute inset-0 hidden lg:block bg-gradient-to-t from-black/85 via-black/35 to-black/10" />
 
         {/* Desktop hero copy */}
         <div className="relative z-10 hidden lg:flex flex-col justify-end h-full p-12 pb-16">
@@ -434,30 +452,70 @@ const Login = () => {
         </div>
       </div>
 
-      {/* FORM COLUMN — a rounded sheet rising over the hero on mobile */}
-      <div className="relative z-10 flex flex-col flex-1 bg-canvas rounded-t-[28px] -mt-6 px-5 pt-7 pb-6 safe-bottom lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8">
-        {/* Top bar: a back affordance for the email steps (iOS has no system
-            back button, so this chevron is the way back) plus the desktop
-            wordmark. Reserves a stable 44px row so nothing shifts between
-            steps. */}
-        <div className="flex items-center gap-2 min-h-[44px] mb-4 lg:mb-8">
-          {canGoBack && (
-            <button
-              type="button"
-              onClick={handleBack}
-              aria-label="Back to sign in"
-              className="-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground active:scale-95 transition lg:-ml-3"
-            >
-              <ChevronLeft className="h-6 w-6" />
-            </button>
-          )}
-          <LevelUpWordmark className="hidden lg:block text-xl" />
-        </div>
+      {/* MOBILE WELCOME LAYER — full-bleed brand hero + entry pills (item 9) */}
+      {showWelcome && (
+        <div className="relative z-10 flex flex-col flex-1 px-6 pb-8 pt-6 safe-top safe-bottom lg:hidden">
+          <LevelUpWordmark className="h-7 w-auto text-foreground" />
+          <div className="flex-1 flex flex-col justify-end">
+            <h1 className="text-[44px] sm:text-[52px] leading-[1.02] font-semibold text-foreground max-w-[12ch]">
+              Make your <span className="font-serif-italic text-cream">first film</span>.
+            </h1>
+            <p className="text-sm text-muted-foreground mt-4 max-w-[34ch]">
+              Learn the craft directly from India's best working filmmakers.
+            </p>
 
-        <div className={`flex-1 flex flex-col ${keyboardStep ? "justify-start pt-2" : "justify-center"}`}>
-          {formBlock}
+            <div className="mt-7 space-y-3">
+              <button
+                type="button"
+                onClick={() => { hapticImpact("light"); setFormOpen(true); }}
+                className="btn-champagne w-full h-[52px] flex items-center justify-center gap-2 text-base font-semibold"
+              >
+                Sign in
+                <ArrowRight className="h-4 w-4" />
+              </button>
+              <Link
+                to="/signup"
+                className="pressable w-full h-[52px] rounded-full border border-border bg-canvas/40 backdrop-blur-sm flex items-center justify-center text-base font-semibold text-foreground hover:border-border-hover"
+              >
+                Create account
+              </Link>
+            </div>
+
+            <InstructorProof className="mt-7" />
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* FORM COLUMN — a rounded bottom-sheet rising over the hero on mobile */}
+      {!showWelcome && (
+        <div className="relative z-10 flex flex-col flex-1 bg-canvas rounded-t-[28px] mt-auto px-5 pt-7 pb-6 safe-bottom animate-fade-in-up lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8 lg:animate-none">
+          {/* Grabber handle (mobile only) reinforces the bottom-sheet feel */}
+          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border lg:hidden" />
+
+          {/* Top bar: back affordance (iOS has no system back button) + desktop
+              wordmark. Reserves a stable 44px row so nothing shifts per step. */}
+          <div className="flex items-center gap-2 min-h-[44px] mb-4 lg:mb-8">
+            {(canGoBack || step === "phone") && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (canGoBack) handleBack();
+                  else setFormOpen(false);
+                }}
+                aria-label="Back"
+                className="-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground active:scale-95 transition lg:-ml-3"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+            )}
+            <LevelUpWordmark className="hidden lg:block text-xl" />
+          </div>
+
+          <div className="flex-1 flex flex-col justify-start pt-2 lg:justify-center lg:pt-0">
+            {formBlock}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -18,8 +18,11 @@ const ctaClasses =
   "focus-ring pressable mt-6 inline-flex items-center justify-center h-10 px-5 rounded-full bg-cream text-cream-text font-medium text-sm hover:bg-cream/90 transition-colors";
 
 /**
- * The standardized empty state: centered icon in a soft circle, sentence-case
- * title, muted sub line, optional cream pill CTA (Link or button).
+ * The standardized empty state: a cream-ringed icon, a serif-italic headline,
+ * a muted sub line, and an optional cream pill CTA (Link or button).
+ *
+ * Shares its voice with <SystemState> so every dead-end — an empty list or a
+ * lost page — feels like the same room: calm, warm, plain-spoken.
  */
 export const EmptyState = ({ icon: Icon, title, sub, cta, className }: EmptyStateProps) => (
   <div
@@ -28,11 +31,13 @@ export const EmptyState = ({ icon: Icon, title, sub, cta, className }: EmptyStat
       className
     )}
   >
-    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-2 text-muted-foreground mb-4">
+    <div className="flex h-14 w-14 items-center justify-center rounded-full border border-cream/20 bg-surface/60 text-cream mb-5">
       <Icon size={22} strokeWidth={1.5} />
     </div>
-    <h3 className="font-semibold text-foreground">{title}</h3>
-    {sub && <p className="text-muted-foreground text-sm mt-1.5 max-w-[300px]">{sub}</p>}
+    <h3 className="font-serif-italic text-xl text-cream">{title}</h3>
+    {sub && (
+      <p className="text-muted-foreground text-sm mt-2 max-w-[300px] leading-relaxed">{sub}</p>
+    )}
     {cta &&
       ("to" in cta ? (
         <Link to={cta.to} className={ctaClasses}>

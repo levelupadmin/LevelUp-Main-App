@@ -4,14 +4,16 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { TierBadge } from "@/components/TierBadge";
-import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import LazyImage from "@/components/LazyImage";
-import { ArrowRight, BookOpen, Sparkles, Award, WifiOff, RefreshCw } from "lucide-react";
+import { ArrowRight, BookOpen, Sparkles, Award, WifiOff, RefreshCw, GraduationCap, PlayCircle } from "lucide-react";
 import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { isNative } from "@/lib/platform";
+import { ProgressRing } from "@/components/progress/ProgressRing";
+import { WeeklyStats } from "@/components/progress/WeeklyStats";
+import { CountUp } from "@/components/motion/CountUp";
 
 interface EnrolledCourse {
   enrolment_id: string;
@@ -36,11 +38,22 @@ interface RecommendedCourse {
   price_inr: number | null;
 }
 
+interface LearningStats {
+  lessonsCompleted: number;
+  coursesInProgress: number;
+  certificates: number;
+}
+
 const MyCoursesPage = () => {
   usePageTitle("My courses");
   const { user } = useAuth();
   const [courses, setCourses] = useState<EnrolledCourse[]>([]);
   const [recommendations, setRecommendations] = useState<RecommendedCourse[]>([]);
+  const [stats, setStats] = useState<LearningStats>({
+    lessonsCompleted: 0,
+    coursesInProgress: 0,
+    certificates: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -165,6 +178,24 @@ const MyCoursesPage = () => {
 
       setCourses(result);
 
+      // ── Aggregate learning stats for the 3-stat strip ──
+      // lessonsCompleted: every completed chapter across enrolled courses.
+      // coursesInProgress: enrolled courses started but not yet 100%.
+      // certificates: count of issued certificates for this user.
+      const lessonsCompleted = completedChapterIds.size;
+      const coursesInProgress = result.filter(
+        (c) => c.progress_pct > 0 && c.progress_pct < 100
+      ).length;
+      const { count: certCount } = await (supabase as any)
+        .from("certificates")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id);
+      setStats({
+        lessonsCompleted,
+        coursesInProgress,
+        certificates: certCount ?? 0,
+      });
+
       // ── Recommendations: courses the user hasn't enrolled in ──
       const enrolledCourseIds = new Set(result.map((c) => c.course_id));
       const enrolledTiers = [...new Set(
@@ -237,6 +268,31 @@ const MyCoursesPage = () => {
           </p>
         </div>
 
+        {/* This-week watch-time card + 3-stat strip — only once the user has courses */}
+        {!loading && !error && courses.length > 0 && user && (
+          <div className="space-y-4">
+            <WeeklyStats userId={user.id} />
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { icon: GraduationCap, value: stats.lessonsCompleted, label: "Lessons completed" },
+                { icon: PlayCircle, value: stats.coursesInProgress, label: "In progress" },
+                { icon: Award, value: stats.certificates, label: "Certificates" },
+              ].map((s) => (
+                <div
+                  key={s.label}
+                  className="rounded-xl border border-border bg-surface p-4 flex flex-col gap-1"
+                >
+                  <s.icon className="h-4 w-4 text-cream" />
+                  <span className="text-2xl font-semibold leading-none mt-1 tabular-nums">
+                    <CountUp value={s.value} />
+                  </span>
+                  <span className="text-xs text-muted-foreground leading-tight">{s.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => (
@@ -280,25 +336,24 @@ const MyCoursesPage = () => {
                   {c.instructor_display_name && (
                     <p className="text-sm text-muted-foreground">{c.instructor_display_name}</p>
                   )}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs text-muted-foreground">
+                  <div className="flex items-center gap-3 pt-1">
+                    <ProgressRing pct={c.progress_pct} size={44} label />
+                    <div className="min-w-0">
+                      {c.progress_pct >= 100 ? (
+                        <span className="flex items-center gap-1 text-sm font-medium text-cream">
+                          <Award className="h-3.5 w-3.5" />
+                          Completed
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-sm font-medium text-cream">
+                          {c.progress_pct > 0 ? "Continue" : "Start course"}{" "}
+                          <ArrowRight className="h-3 w-3" />
+                        </span>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         {c.progress_pct}% complete
-                      </span>
+                      </p>
                     </div>
-                    <Progress value={c.progress_pct} className="h-1.5" />
-                  </div>
-                  <div className="flex items-center gap-1 text-sm text-cream pt-1">
-                    {c.progress_pct >= 100 ? (
-                      <>
-                        <Award className="h-3.5 w-3.5" />
-                        Completed
-                      </>
-                    ) : (
-                      <>
-                        Continue <ArrowRight className="h-3 w-3" />
-                      </>
-                    )}
                   </div>
                 </div>
               </Link>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,45 +8,64 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle2, Mail, User, ArrowRight, ShieldCheck, ChevronLeft } from "lucide-react";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
+import { InstructorProof } from "@/components/auth/InstructorProof";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
+import { hapticImpact } from "@/lib/haptics";
 import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
-type Step = "form" | "otp" | "email_sent";
+// 2026-06-10: Phone-first signup (item 11). The form now collects ONLY a phone
+// number; name + email move to the post-OTP onboarding step (Onboarding.tsx),
+// which is the first thing a verified account sees. This drops the signup form
+// to a single field — the lowest-friction path to a verified account — and
+// matches the phone-first Login flow.
+//
+// Mechanics: the verify-msg91-otp edge fn needs an email + name to mint a NEW
+// auth user. For a +91 phone we hand it a synthetic placeholder email
+// (<digits>@phone.leveluplearning.in, the exact pattern the backend itself
+// uses for phone-only legacy users) and "LevelUp Student" as the name, then
+// Onboarding collects the real values and overwrites them in the users row.
+// Non-+91 phones can't use MSG91; they fall back to an inline email magic-link
+// (which DOES need an email up front), so for those we reveal a compact
+// email+name capture before sending the link.
 
-// Mirrors Login.tsx. 2026-05-23: flipped back to false after switching
-// from MSG91 Flow API (silently dropping ##number## substitution) to
-// the MSG91 widget pattern the Forge app ships.
 const EMAIL_ONLY_AUTH = false;
 
-// MSG91 widget verify URL (edge fn bridges widget access token → Supabase session).
 const VERIFY_MSG91_OTP_URL =
   "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
 
-// 2026-05-30: Cinematic redesign — mirrors Login.tsx. One unified
-// responsive composition (web + native): full-bleed hero ("Learn the
-// craft") + a glassy form card with mono-uppercase labels, icon-leading
-// inputs, and a champagne "Create account →" CTA. Single column on
-// mobile/native; two columns from `lg` up. Auth logic is unchanged.
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
+
+type Step = "phone" | "email_form" | "otp" | "email_sent";
+
+// Synthetic placeholder email for the phone-first signup. Mirrors the
+// edge function's own legacy fallback so the account can be created before we
+// ask for the real address (captured in Onboarding).
+const syntheticEmail = (phone: string) =>
+  `${phone.replace(/\D/g, "")}@phone.leveluplearning.in`;
+const PLACEHOLDER_NAME = "LevelUp Student";
 
 const Signup = () => {
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
-  const [step, setStep] = useState<Step>("form");
+  const [step, setStep] = useState<Step>(EMAIL_ONLY_AUTH ? "email_form" : "phone");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [channel, setChannel] = useState<"sms" | "whatsapp">("sms");
   const [loading, setLoading] = useState(false);
 
+  const [stepKey, setStepKey] = useState(0);
+  const goToStep = useCallback((next: Step) => {
+    setStep(next);
+    setStepKey((k) => k + 1);
+  }, []);
+
   useEffect(() => {
     if (!authLoading && user) navigate("/home", { replace: true });
   }, [user, authLoading, navigate]);
 
-  // Best-effort widget init on mount. If the script is blocked or env
-  // vars are missing we'll surface the error inside triggerOtp.
   useEffect(() => {
     if (EMAIL_ONLY_AUTH) return;
     initMsg91().catch(() => {});
@@ -65,31 +84,29 @@ const Signup = () => {
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const phoneValid = phone.length >= 8;
   const nameValid = fullName.trim().length >= 2;
-  const formValid = nameValid && phoneValid && emailValid;
 
-  const triggerOtp = async (waMode = false): Promise<{ ok: boolean; error?: string }> => {
-    // +91 phones: MSG91 widget. window.sendOtp drops the SMS via MSG91's
-    // own pipeline so the ##number## substitution issue that bit the
-    // Flow API path can't happen here.
-    if (!EMAIL_ONLY_AUTH && isIndianPhone) {
-      try {
-        await initMsg91();
-        if (waMode) {
-          await widgetRetryOtp("whatsapp");
-        } else {
-          await widgetSendOtp(phone);
-        }
-        return { ok: true };
-      } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : "Couldn't send OTP" };
+  // For +91 phones: send a real MSG91 OTP. For everyone else (or when
+  // EMAIL_ONLY_AUTH): email magic link, which needs email + name up front.
+  const sendSmsOtp = async (waMode = false): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      await initMsg91();
+      if (waMode) {
+        await widgetRetryOtp("whatsapp");
+      } else {
+        await widgetSendOtp(phone);
       }
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Couldn't send OTP" };
     }
-    // Non-Indian phones (or fallback when EMAIL_ONLY_AUTH=true): email magic link.
+  };
+
+  const sendEmailLink = async (): Promise<{ ok: boolean; error?: string }> => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
         shouldCreateUser: true,
-        emailRedirectTo: `${window.location.origin}/home`,
+        emailRedirectTo: `${window.location.origin}/onboarding`,
         data: { full_name: fullName.trim(), phone },
       },
     });
@@ -97,40 +114,53 @@ const Signup = () => {
     return { ok: true };
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Phone-first submit: a +91 number goes straight to OTP (no name/email).
+  // A non-+91 number reveals the inline email+name capture instead.
+  const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formValid) {
-      toast({ title: "Please complete all fields", variant: "destructive" });
+    if (!phoneValid) {
+      toast({ title: "Enter your phone number", variant: "destructive" });
+      return;
+    }
+    if (EMAIL_ONLY_AUTH || !isIndianPhone) {
+      goToStep("email_form");
       return;
     }
     setLoading(true);
-    const res = await triggerOtp(false);
+    const res = await sendSmsOtp(false);
+    setLoading(false);
+    if (!res.ok) {
+      toast({ title: "Couldn't send OTP", description: res.error, variant: "destructive" });
+      return;
+    }
+    setChannel("sms");
+    goToStep("otp");
+  };
+
+  // Non-+91 path: collect email+name, then email magic link.
+  const handleEmailFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nameValid || !emailValid) {
+      toast({ title: "Add your name and a valid email", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    const res = await sendEmailLink();
     setLoading(false);
     if (!res.ok) {
       const msg = (res.error || "").toLowerCase();
       if (msg.includes("already") || msg.includes("exists") || msg.includes("registered")) {
-        toast({
-          title: "Account already exists",
-          description: "Try signing in instead.",
-          variant: "destructive",
-        });
+        toast({ title: "Account already exists", description: "Try signing in instead.", variant: "destructive" });
       } else {
         toast({ title: "Couldn't create account", description: res.error, variant: "destructive" });
       }
       return;
     }
-    setChannel("sms");
-    // While DLT pending → email link for everyone. After flag flips,
-    // Indian users get the OTP entry screen and others still get email.
-    setStep(!EMAIL_ONLY_AUTH && isIndianPhone ? "otp" : "email_sent");
+    goToStep("email_sent");
   };
 
   const handleVerify = async (otp: string): Promise<{ ok: boolean; error?: string }> => {
     try {
-      // Step 1: ask the widget to verify the digits with MSG91. On
-      // success we get a short-lived access token (JWT) we hand to our
-      // backend, which re-verifies with MSG91 server-to-server and
-      // then mints the actual Supabase session for this phone.
       let token: string;
       try {
         const r = await widgetVerifyOtp(otp);
@@ -143,20 +173,21 @@ const Signup = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // Matches Forge's pattern - belt-and-braces against future
-          // verify_jwt flips.
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
         body: JSON.stringify({
           phone,
           accessToken: token,
-          email,
-          full_name: fullName.trim(),
+          // Phone-first: provision with placeholders so the new account can be
+          // created. Onboarding immediately collects the real name + email.
+          email: syntheticEmail(phone),
+          full_name: PLACEHOLDER_NAME,
         }),
       });
       const data = await resp.json();
       if (!resp.ok) {
         if (data?.error === "invalid_otp") return { ok: false, error: "Wrong code. Try again." };
+        if (data?.error === "email_in_use") return { ok: false, error: "An account already exists. Please sign in instead." };
         if (data?.error === "create_user_failed") return { ok: false, error: data?.detail || "Couldn't create account" };
         return { ok: false, error: data?.detail || data?.error || "Couldn't verify OTP" };
       }
@@ -165,7 +196,11 @@ const Signup = () => {
         refresh_token: data.refresh_token,
       });
       if (setErr) return { ok: false, error: setErr.message };
-      navigate("/home", { replace: true });
+      // Brand-new accounts always go through onboarding (name/email + crafts).
+      // A returning/legacy phone (is_new_user=false) that already has crafts is
+      // bounced to /home by Onboarding's own guard, so /onboarding is always safe.
+      hapticImpact("medium");
+      navigate("/onboarding", { replace: true });
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Invalid OTP" };
@@ -173,36 +208,75 @@ const Signup = () => {
   };
 
   const handleSwitchWA = async (): Promise<{ ok: boolean; error?: string }> => {
-    const res = await triggerOtp(true);
+    const res = await sendSmsOtp(true);
     if (res.ok) setChannel("whatsapp");
     return res;
   };
 
-  // Back affordance. iOS has no system back button, so the top-left chevron
-  // is the way out. From the initial form it returns to Sign in; from the
-  // post-submit screens (email_sent) it returns to the form. The OTP step
-  // owns its own in-card back control, so the top chevron is not shown there.
-  const canGoBack = step === "form" || step === "email_sent";
+  // Back affordance. iOS has no system back button, so the top-left chevron is
+  // the way out. From the phone step it returns to Sign in; the email_form and
+  // email_sent steps return to the phone step. The OTP step owns its own back.
+  const canGoBack = step === "phone" || step === "email_form" || step === "email_sent";
   const handleBack = () => {
-    if (step === "email_sent") {
-      setStep("form");
-    } else {
+    if (step === "phone") {
       navigate("/login");
+    } else {
+      goToStep("phone");
     }
   };
 
   const stepBody = (
     <>
-      {step === "form" && (
+      {step === "phone" && (
         <>
           <h1 className="text-[28px] sm:text-[30px] font-semibold tracking-[-0.015em] leading-[1.1] mb-1.5">
             Create your <span className="font-serif-italic text-cream">account</span>
           </h1>
           <p className="text-sm text-muted-foreground mb-6">
-            Join LevelUp. Learn from India's best creators.
+            Start with your number. We'll set up the rest in a sec.
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handlePhoneSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="phone" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Phone number</Label>
+              <PhoneInput value={phone} onChange={setPhone} autoFocus={false} />
+              <p className="text-xs text-muted-foreground">
+                {isIndianPhone
+                  ? "We'll send a 4-digit OTP via SMS to verify."
+                  : phone
+                  ? "We'll email you a sign-in link to verify."
+                  : "+91 by default. Tap the flag to change country."}
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !phoneValid}
+              className="btn-champagne w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Continue
+              {!loading && <ArrowRight className="h-4 w-4" />}
+            </button>
+          </form>
+
+          <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <ShieldCheck className="h-3.5 w-3.5 text-success" />
+            Secure &amp; private
+          </div>
+        </>
+      )}
+
+      {step === "email_form" && (
+        <>
+          <h1 className="text-[28px] sm:text-[30px] font-semibold tracking-[-0.015em] leading-[1.1] mb-1.5">
+            A couple of <span className="font-serif-italic text-cream">details</span>
+          </h1>
+          <p className="text-sm text-muted-foreground mb-6">
+            We'll email you a one-click sign-in link to finish.
+          </p>
+
+          <form onSubmit={handleEmailFormSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="fullName" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Full name</Label>
               <div className="relative">
@@ -213,24 +287,11 @@ const Signup = () => {
                   placeholder="Your full name"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
+                  autoComplete="name"
                   required
                   className="h-12 pl-10 text-base bg-surface border-border focus:border-foreground rounded-xl"
                 />
               </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="phone" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Phone number</Label>
-              <PhoneInput value={phone} onChange={setPhone} />
-              <p className="text-xs text-muted-foreground">
-                {EMAIL_ONLY_AUTH
-                  ? "We'll email you a sign-in link to verify your account."
-                  : isIndianPhone
-                  ? "We'll send a 4-digit OTP via SMS to verify."
-                  : phone
-                  ? "We'll email you a sign-in link to verify."
-                  : "+91 by default. Tap the flag to change country."}
-              </p>
             </div>
 
             <div className="space-y-1.5">
@@ -243,6 +304,7 @@ const Signup = () => {
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
                   required
                   className="h-12 pl-10 text-base bg-surface border-border focus:border-foreground rounded-xl"
                 />
@@ -251,19 +313,14 @@ const Signup = () => {
 
             <button
               type="submit"
-              disabled={loading || !formValid}
+              disabled={loading || !nameValid || !emailValid}
               className="btn-champagne w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Create account
+              Send sign-in link
               {!loading && <ArrowRight className="h-4 w-4" />}
             </button>
           </form>
-
-          <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <ShieldCheck className="h-3.5 w-3.5 text-success" />
-            Secure &amp; private
-          </div>
         </>
       )}
 
@@ -273,13 +330,10 @@ const Signup = () => {
           channel={channel}
           otpLength={4}
           onVerify={handleVerify}
-          onResendSms={() => triggerOtp(false)}
+          onResendSms={() => sendSmsOtp(false)}
           onSwitchToWhatsApp={handleSwitchWA}
-          onSwitchToEmail={() => {
-            // For signup, "use email instead" means: switch to email magic link
-            triggerOtp(false).then(() => setStep("email_sent")).catch(() => {});
-          }}
-          onBack={() => setStep("form")}
+          onSwitchToEmail={() => goToStep("email_form")}
+          onBack={() => goToStep("phone")}
         />
       )}
 
@@ -295,7 +349,7 @@ const Signup = () => {
             </p>
           </div>
           <button
-            onClick={() => setStep("form")}
+            onClick={() => goToStep("email_form")}
             className="w-full h-11 rounded-xl border border-border text-sm text-foreground hover:border-border-hover flex items-center justify-center gap-2"
           >
             <Mail className="h-4 w-4" /> Use a different email
@@ -305,12 +359,8 @@ const Signup = () => {
     </>
   );
 
-  // ── One responsive composition: single column on mobile + native,
-  //    two columns (form left / hero right) from `lg` up on web. ───────
-  // Signup always asks for input (name/phone/email on the form, the code on
-  // the OTP step), so the keyboard is up the whole time on mobile. Keep the
-  // hero a slim branding strip and let the form sit near the top with its own
-  // natural scroll — no full-viewport centering that fights the keyboard.
+  // One responsive composition: single column on mobile + native, two columns
+  // (form left / hero right) from `lg` up on web. Mirrors Login.tsx.
   return (
     <div className="min-h-[100dvh] bg-canvas flex flex-col lg:flex-row">
       {/* HERO — slim strip on mobile/native, right pane on desktop */}
@@ -323,7 +373,6 @@ const Signup = () => {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/65 to-canvas/10 lg:from-black/85 lg:via-black/35 lg:to-black/10" />
 
-        {/* Mobile/native hero copy — compact so the form has room above the keyboard */}
         <div className="relative z-10 h-full flex flex-col justify-between p-6 safe-top lg:hidden">
           <div className="flex items-center justify-between">
             <LevelUpWordmark className="h-7 w-auto text-foreground" />
@@ -333,7 +382,6 @@ const Signup = () => {
           </p>
         </div>
 
-        {/* Desktop hero copy */}
         <div className="relative z-10 hidden lg:flex flex-col justify-end h-full p-12 pb-16">
           <div className="max-w-[520px]">
             <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground mb-4">Creators who ship</p>
@@ -350,14 +398,12 @@ const Signup = () => {
 
       {/* FORM COLUMN — a rounded sheet rising over the hero on mobile */}
       <div className="relative z-10 flex flex-col flex-1 bg-canvas rounded-t-[28px] -mt-6 px-5 pt-7 pb-6 safe-bottom lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8">
-        {/* Top bar: back affordance (iOS has no system back button) + desktop
-            wordmark. Reserves a stable 44px row so nothing shifts per step. */}
         <div className="flex items-center gap-2 min-h-[44px] mb-4 lg:mb-8">
           {canGoBack && (
             <button
               type="button"
               onClick={handleBack}
-              aria-label={step === "form" ? "Back to sign in" : "Back"}
+              aria-label={step === "phone" ? "Back to sign in" : "Back"}
               className="-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground active:scale-95 transition lg:-ml-3"
             >
               <ChevronLeft className="h-6 w-6" />
@@ -368,17 +414,20 @@ const Signup = () => {
 
         <div className="flex-1 flex flex-col justify-start">
           <div className="w-full max-w-[400px] mx-auto">
-            <div className="glass-card rounded-3xl p-6 sm:p-7">
-              {stepBody}
+            <div key={stepKey} className="animate-slide-left-in">
+              <div className="glass-card rounded-3xl p-6 sm:p-7">
+                {stepBody}
+              </div>
+              {step === "phone" && <InstructorProof className="mt-6" />}
+              {step === "phone" && (
+                <p className="mt-6 text-center text-sm text-muted-foreground">
+                  Already have an account?{" "}
+                  <Link to="/login" className="font-semibold text-cream hover:underline">
+                    Sign in
+                  </Link>
+                </p>
+              )}
             </div>
-            {step === "form" && (
-              <p className="mt-6 text-center text-sm text-muted-foreground">
-                Already have an account?{" "}
-                <Link to="/login" className="font-semibold text-cream hover:underline">
-                  Sign in
-                </Link>
-              </p>
-            )}
           </div>
         </div>
       </div>

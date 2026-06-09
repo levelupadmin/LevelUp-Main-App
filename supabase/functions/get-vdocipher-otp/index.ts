@@ -216,7 +216,9 @@ Deno.serve(async (req) => {
       user_agent: ua,
     });
 
-    return jsonRes({ otp: vdoData.otp, playbackInfo: vdoData.playbackInfo });
+    // videoId: needed by the iOS native FairPlay player (VdoAsset.createAsset).
+    // The web iframe ignores it — purely additive, backward compatible.
+    return jsonRes({ otp: vdoData.otp, playbackInfo: vdoData.playbackInfo, videoId: chapter.vdocipher_video_id });
   } catch (err) {
     console.error("get-vdocipher-otp error:", err);
     return jsonRes({ error: "Internal server error" }, 500);

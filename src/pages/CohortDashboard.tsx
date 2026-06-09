@@ -11,6 +11,8 @@ import usePageTitle from "@/hooks/usePageTitle";
 import AssignmentSubmissionForm from "@/components/cohort/AssignmentSubmissionForm";
 import AssignmentFeedbackView from "@/components/cohort/AssignmentFeedbackView";
 import PeerReviewBoard from "@/components/cohort/PeerReviewBoard";
+import { differenceInCalendarDays } from "date-fns";
+import { TimeStateBadge } from "@/components/live/TimeStateBadge";
 
 interface ProgressRow {
   cohort_batch_id: string;
@@ -110,6 +112,20 @@ export default function CohortDashboard() {
   const certThreshold = offering?.attendance_threshold_pct || 0;
   const certEligible = certThreshold === 0 || attendancePct >= certThreshold;
 
+  // (34) Footer summary — current week index, weeks completed, and the soonest
+  // open (un-submitted) assignment deadline still in the future.
+  const weekOfM = Math.max(1, progressIdx + 1);
+  const progressPct = totalWeeks > 0 ? Math.round((completedCount / totalWeeks) * 100) : 0;
+  const nextDue = (() => {
+    const now = Date.now();
+    const open = rows
+      .filter((r) => r.assignment_due_at && !r.submission_id && new Date(r.assignment_due_at).getTime() > now)
+      .sort((a, b) => new Date(a.assignment_due_at!).getTime() - new Date(b.assignment_due_at!).getTime());
+    if (!open.length) return null;
+    const due = new Date(open[0].assignment_due_at!);
+    return { date: due, days: Math.max(0, differenceInCalendarDays(due, new Date())) };
+  })();
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -141,7 +157,7 @@ export default function CohortDashboard() {
   }
 
   return (
-    <div className="container max-w-6xl py-6 px-4">
+    <div className="container max-w-6xl py-6 px-4 pb-28">
       {/* Breadcrumb */}
       <button
         onClick={() => navigate(-1)}
@@ -255,6 +271,118 @@ export default function CohortDashboard() {
           currentUserId={user!.id}
         />
       )}
+
+      {/* (34) Sticky bottom progress footer — always-visible glance at where the
+          learner is in the cohort + the next thing due, anchored by a ring. */}
+      <CohortFooter
+        weekOf={weekOfM}
+        totalWeeks={totalWeeks}
+        completedCount={completedCount}
+        progressPct={progressPct}
+        nextDue={nextDue}
+      />
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────── */
+
+/**
+ * Minimal SVG progress ring. The progress agent owns the canonical
+ * `@/components/progress/ProgressRing`; until that lands this inline version
+ * keeps the footer self-contained. Swap the import when it's available.
+ */
+function ProgressRing({
+  pct,
+  size = 40,
+  stroke = 4,
+  label,
+}: {
+  pct: number;
+  size?: number;
+  stroke?: number;
+  label?: string;
+}) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const offset = c - (clamped / 100) * c;
+  return (
+    <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="hsl(var(--muted))"
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="hsl(var(--cream))"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={offset}
+          style={{ transition: "stroke-dashoffset 600ms ease-out" }}
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-mono font-medium text-cream">
+        {label ?? `${clamped}%`}
+      </span>
+    </div>
+  );
+}
+
+function CohortFooter({
+  weekOf,
+  totalWeeks,
+  completedCount,
+  progressPct,
+  nextDue,
+}: {
+  weekOf: number;
+  totalWeeks: number;
+  completedCount: number;
+  progressPct: number;
+  nextDue: { date: Date; days: number } | null;
+}) {
+  const dueLabel = nextDue
+    ? nextDue.days === 0
+      ? "assignment due today"
+      : nextDue.days === 1
+      ? "assignment due in 1d"
+      : `assignment due in ${nextDue.days}d`
+    : null;
+
+  return (
+    <div className="fixed bottom-0 inset-x-0 z-30 border-t border-border bg-canvas/95 backdrop-blur-md pb-safe">
+      <div className="container max-w-6xl px-4 py-3 flex items-center gap-3">
+        <ProgressRing pct={progressPct} label={`${weekOf}`} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-foreground truncate">
+            Week {weekOf} of {totalWeeks}
+            <span className="text-muted-foreground"> · {completedCount} done</span>
+          </p>
+          {dueLabel ? (
+            <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 truncate">
+              <Clock className="h-3 w-3 flex-shrink-0" />
+              {dueLabel}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+              No assignments due — you're all caught up.
+            </p>
+          )}
+        </div>
+        {nextDue && (
+          <TimeStateBadge date={nextDue.date} className="flex-shrink-0" />
+        )}
+      </div>
     </div>
   );
 }
@@ -322,7 +450,13 @@ function ThisWeekCard({
           </div>
           {week.live_session_title ? (
             <>
-              <p className="text-base font-medium text-foreground leading-tight">{week.live_session_title}</p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-base font-medium text-foreground leading-tight">{week.live_session_title}</p>
+                {/* (30) relative-time badge replaces the static "Upcoming" label */}
+                {week.live_session_at && (
+                  <TimeStateBadge date={week.live_session_at} className="flex-shrink-0 mt-0.5" />
+                )}
+              </div>
               {week.live_session_at && (
                 <p className="text-xs text-muted-foreground mt-1.5 font-mono">
                   {formatDateTime(week.live_session_at)}

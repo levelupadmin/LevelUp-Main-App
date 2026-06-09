@@ -3,12 +3,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import usePageTitle from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
-import { Bell, Calendar, Clock, Video, ExternalLink, PlayCircle, WifiOff, RefreshCw } from "lucide-react";
+import { Bell, Calendar, Clock, Video, PlayCircle, WifiOff, RefreshCw, CalendarPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { useSessionReminder } from "@/hooks/useSessionReminder";
+import { TimeStateBadge } from "@/components/live/TimeStateBadge";
+import { Countdown } from "@/components/live/Countdown";
+import { addToCalendar } from "@/lib/calendar";
+import { hapticSelection } from "@/lib/haptics";
 
 interface SessionRow {
   id: string;
@@ -195,7 +199,12 @@ const MySessionsPage = () => {
                 <div className="space-y-3">
                   {upcoming.map((s) => {
                     const dt = new Date(s.scheduled_at);
-                    const badge = statusBadge(s);
+                    const msUntil = dt.getTime() - Date.now();
+                    const hoursUntil = Math.ceil(msUntil / (1000 * 60 * 60));
+                    // Join unlocks 1h before. Within that window the Countdown
+                    // morphs into a real Join button backed by the gated RPC,
+                    // which only mints the link in the narrow live window.
+                    const joinUnlocked = msUntil <= 60 * 60 * 1000;
                     return (
                       <div key={s.id} className="bg-surface border border-border rounded-xl p-4 flex items-start gap-4">
                         {/* Date block */}
@@ -208,9 +217,8 @@ const MySessionsPage = () => {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="text-sm font-semibold">{s.title}</h3>
-                            <span className={cn("text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded", badge.cls)}>
-                              {badge.label}
-                            </span>
+                            {/* (30) live relative-time badge replaces the static "Upcoming" pill */}
+                            <TimeStateBadge date={s.scheduled_at} durationMin={s.duration_minutes} />
                           </div>
                           <p className="text-xs text-muted-foreground mt-0.5">{s.course_title}</p>
                           {s.description && (
@@ -223,54 +231,40 @@ const MySessionsPage = () => {
                             <span className="flex items-center gap-1">
                               <Clock className="h-3 w-3" /> {format(dt, "h:mm a")}
                             </span>
-                            {s.duration_minutes && <span>{s.duration_minutes} min</span>}
+                            {s.duration_minutes ? <span>{s.duration_minutes} min</span> : null}
                           </div>
                         </div>
 
                         {/* Action buttons */}
                         <div className="flex-shrink-0 self-center flex flex-col gap-2 items-end">
-                          {/* Join button — link is fetched on click via the
-                              gated RPC, which only returns a value in a narrow
-                              window around the session start. */}
-                          {(() => {
-                            const msUntil = dt.getTime() - Date.now();
-                            const hoursUntil = Math.ceil(msUntil / (1000 * 60 * 60));
-                            const joinAvailable = msUntil <= 60 * 60 * 1000; // 1 hour before
-                            return joinAvailable ? (
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  const { data: link, error } = await supabase.rpc(
-                                    "get_live_session_zoom_link",
-                                    { p_session_id: s.id }
+                          {/* (31) Countdown ticks until T-0, then morphs into a Join
+                              button. The join link is fetched on click via the gated
+                              RPC — only returns a value in the window around start. */}
+                          {joinUnlocked ? (
+                            <Countdown
+                              target={s.scheduled_at}
+                              joinUrl={async () => {
+                                const { data: link, error } = await supabase.rpc(
+                                  "get_live_session_zoom_link",
+                                  { p_session_id: s.id }
+                                );
+                                if (error || !link) {
+                                  toast.error(
+                                    "The join link for this session isn't available yet. It unlocks an hour before the session starts."
                                   );
-                                  if (error || !link) {
-                                    toast.error(
-                                      "The join link for this session isn't available yet. It unlocks an hour before the session starts."
-                                    );
-                                    return;
-                                  }
-                                  window.open(link as string, "_blank", "noopener,noreferrer");
-                                }}
-                                className="px-4 py-2 rounded-lg bg-[hsl(var(--accent-amber))] text-background text-sm font-medium flex items-center gap-1.5 hover:opacity-90 transition-opacity"
-                              >
-                                Join <ExternalLink className="h-3.5 w-3.5" />
-                              </button>
-                            ) : (
-                              <div className="flex flex-col items-end gap-1">
-                                <button
-                                  type="button"
-                                  disabled
-                                  className="px-4 py-2 rounded-lg bg-[hsl(var(--accent-amber)/0.3)] text-muted-foreground text-sm font-medium flex items-center gap-1.5 cursor-not-allowed"
-                                >
-                                  Join <ExternalLink className="h-3.5 w-3.5" />
-                                </button>
-                                <span className="text-xs text-muted-foreground text-right max-w-[140px]">
-                                  Join link available {hoursUntil}h before session
-                                </span>
-                              </div>
-                            );
-                          })()}
+                                  return null;
+                                }
+                                return link as string;
+                              }}
+                            />
+                          ) : (
+                            <div className="flex flex-col items-end gap-1">
+                              <Countdown target={s.scheduled_at} />
+                              <span className="text-[11px] text-muted-foreground text-right max-w-[140px]">
+                                Join unlocks {hoursUntil}h before
+                              </span>
+                            </div>
+                          )}
 
                           {/* Remind Me toggle */}
                           <button
@@ -299,6 +293,29 @@ const MySessionsPage = () => {
                           >
                             <Bell className="h-3.5 w-3.5" />
                             {isReminderSet(s.id) ? "Reminder set" : "Remind me"}
+                          </button>
+
+                          {/* (32) Add to calendar — .ics download (Apple/Outlook) with
+                              Google Calendar fallback. Course title rides along as the
+                              event description for context. */}
+                          <button
+                            type="button"
+                            aria-label="Add to calendar"
+                            onClick={() => {
+                              void hapticSelection();
+                              addToCalendar(
+                                s.title,
+                                s.scheduled_at,
+                                s.duration_minutes,
+                                null,
+                                s.course_title
+                              );
+                              toast.success("Added to your calendar");
+                            }}
+                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-border-hover transition-colors"
+                          >
+                            <CalendarPlus className="h-3.5 w-3.5" />
+                            Add to calendar
                           </button>
                         </div>
                       </div>

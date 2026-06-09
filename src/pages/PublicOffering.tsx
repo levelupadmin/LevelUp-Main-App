@@ -18,6 +18,9 @@ import GuaranteeBadge from "@/components/offering/GuaranteeBadge";
 import ProofRow, { useOfferingProof } from "@/components/offering/ProofRow";
 import PurchaseRail from "@/components/offering/PurchaseRail";
 import TestimonialCard from "@/components/offering/TestimonialCard";
+import LessonBrowser from "@/components/offering/LessonBrowser";
+import CohortInfoBlock from "@/components/offering/CohortInfoBlock";
+import HeroPlayChip from "@/components/offering/HeroPlayChip";
 import { track } from "@/lib/analytics";
 import {
   Check,
@@ -101,6 +104,9 @@ interface Offering {
   thankyou_redirect_seconds: number | null;
   payment_mode: string | null;
   tally_form_url: string | null;
+  cohort_start_date: string | null;
+  application_deadline: string | null;
+  seats_total: number | null;
   app_fee_inr: number | null;
   confirmation_amount_inr: number | null;
   show_coupon_on_page: boolean | null;
@@ -146,13 +152,23 @@ function useInView<T extends HTMLElement = HTMLDivElement>(): [(node: T | null) 
  * bottom-fade gradient for legibility. Matches the visual weight of
  * Masterclass / Reforge / Maven course pages.
  */
-function HeroBanner({ offering }: { offering: Offering }) {
+function HeroBanner({
+  offering,
+  onPlayPreview,
+}: {
+  offering: Offering;
+  /** When set, a champagne play chip overlays the hero (free preview exists). */
+  onPlayPreview?: (() => void) | null;
+}) {
   const img = offering.banner_url || offering.thumbnail_url;
   // Live-cohort offerings carry a square brand LOGO (not a wide hero photo), so
   // object-cover would crop its sides. Detect them (they set tally_form_url) and
   // contain the logo in the top portion on a branded backdrop instead.
   const isApply = !!(offering as any).tally_form_url;
   const eyebrow = isApply ? "Live Cohort" : "Masterclass";
+  // The play chip only makes sense over a cinematic cover photo. Live-cohort
+  // logo heroes get the chip surfaced via the CTA row instead, not the logo.
+  const showPlayChip = !!onPlayPreview && !isApply && !!img;
   return (
     <div className="relative w-full aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-3xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
       {img ? (
@@ -189,6 +205,9 @@ function HeroBanner({ offering }: { offering: Offering }) {
       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent pointer-events-none" />
       {/* Subtle left vignette so a busy background never compromises the cream title */}
       <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none" />
+
+      {/* Centred champagne play chip — opens the free preview lesson. */}
+      {showPlayChip && onPlayPreview && <HeroPlayChip onClick={onPlayPreview} />}
 
       {/* Overlaid title block */}
       <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8 lg:p-12">
@@ -288,19 +307,28 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
   const applyUrl = (offering as any)?.tally_form_url || null;
   if (applyUrl) {
     return (
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6 py-2">
-        <span className="inline-flex items-center self-start rounded-full bg-[hsl(var(--cream))]/10 border border-[hsl(var(--cream))]/30 px-3 py-1 text-xs font-medium uppercase tracking-[0.14em] text-[hsl(var(--cream))]">
-          Application-only
-        </span>
-        <a
-          href={applyUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-champagne inline-flex items-center justify-center h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5 transition-transform"
-        >
-          Apply for an invite
-          <ArrowRight className="h-4 w-4 ml-2" />
-        </a>
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6">
+          <span className="inline-flex items-center self-start rounded-full bg-[hsl(var(--cream))]/10 border border-[hsl(var(--cream))]/30 px-3 py-1 text-xs font-medium uppercase tracking-[0.14em] text-[hsl(var(--cream))]">
+            Application-only
+          </span>
+          <a
+            href={applyUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-champagne inline-flex items-center justify-center h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5 transition-transform"
+          >
+            Apply for an invite
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </a>
+        </div>
+        {/* Cohort facts (start date / deadline / seats) — each chip hides
+            when its source field is null, block vanishes if none survive. */}
+        <CohortInfoBlock
+          cohortStartDate={offering.cohort_start_date}
+          applicationDeadline={offering.application_deadline}
+          seatsTotal={offering.seats_total}
+        />
       </div>
     );
   }
@@ -388,11 +416,16 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
 function FreePreviewPlayer({
   chapter,
   instructorName,
+  playing,
+  onPlay,
 }: {
   chapter: ChapterRow & { thumbnail_url: string | null; vdocipher_thumbnail_url: string | null } | null;
   instructorName: string | null;
+  /** Controlled playback: lifted to the page so the hero chip + lesson
+   *  rows can start the player. Falls back to local state when absent. */
+  playing: boolean;
+  onPlay: () => void;
 }) {
-  const [playing, setPlaying] = useState(false);
   if (!chapter) return null;
   const thumb = chapter.thumbnail_url || chapter.vdocipher_thumbnail_url || null;
   const mins = chapter.duration_seconds
@@ -408,12 +441,12 @@ function FreePreviewPlayer({
         // Lazy-load the actual VdoCipher player only after first click
         // so anon visitors who scroll past don't consume our DRM minutes.
         <div className="rounded-2xl overflow-hidden ring-1 ring-white/5 shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
-          <VdoCipherPlayer chapterId={chapter.id} />
+          <VdoCipherPlayer chapterId={chapter.id} title={chapter.title} />
         </div>
       ) : (
         <button
           type="button"
-          onClick={() => setPlaying(true)}
+          onClick={onPlay}
           className="group relative w-full aspect-video rounded-2xl overflow-hidden ring-1 ring-white/5 shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)] bg-surface-2 text-left"
           aria-label={`Play free preview: ${chapter.title}`}
         >
@@ -660,199 +693,6 @@ function IncludedCourses({ courses }: { courses: OfferingCourse[] }) {
   );
 }
 
-/* ────────────────────────────────────────────────── */
-/*  WhatYoullLearn — marketing preview rail above the */
-/*  full curriculum accordion. Shows the first handful */
-/*  of lessons as thumbnail cards so a prospect can    */
-/*  see the actual content rather than just titles in  */
-/*  an accordion. Non-interactive: cards don't link    */
-/*  anywhere because most viewers here are unauthed.   */
-/* ────────────────────────────────────────────────── */
-function WhatYoullLearn({ sections }: { sections?: SectionRow[] }) {
-  if (!sections?.length) return null;
-  // Flatten sections in their declared order, then pick the first 6
-  // lessons. That tends to be the most enticing preview - early
-  // lessons set the tone and let buyers gauge fit.
-  const sorted = [...sections].sort((a, b) => a.sort_order - b.sort_order);
-  const flat = sorted.flatMap((s) =>
-    [...(s.chapters || [])].sort((a, b) => a.sort_order - b.sort_order),
-  );
-  if (!flat.length) return null;
-  const visible = flat.slice(0, 6);
-
-  return (
-    <div className="space-y-5">
-      <div className="space-y-3">
-        <SectionEyebrow>A look inside</SectionEyebrow>
-        <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
-          What you'll learn
-        </h2>
-      </div>
-      <div className="relative">
-        <div className="flex gap-3 sm:gap-4 overflow-x-auto snap-x hide-scrollbar pb-2 -mx-1 px-1">
-          {visible.map((ch, idx) => {
-            const thumb = ch.thumbnail_url || ch.vdocipher_thumbnail_url || null;
-            const mins = ch.duration_seconds
-              ? Math.max(1, Math.round(ch.duration_seconds / 60))
-              : null;
-            return (
-              <div
-                key={ch.id}
-                className="min-w-[70vw] sm:min-w-[260px] lg:min-w-[280px] max-w-[300px] bg-surface rounded-2xl overflow-hidden flex-shrink-0 snap-start ring-1 ring-white/5 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)]"
-              >
-                <div className="relative aspect-video bg-surface-2 overflow-hidden">
-                  {thumb ? (
-                    <img
-                      src={thumb}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="absolute inset-0 flex items-center justify-center font-mono text-2xl font-semibold text-muted-foreground/30">
-                      {String(idx + 1).padStart(2, "0")}
-                    </div>
-                  )}
-                  {/* Lesson number chip, always visible so the buyer
-                      sees the sequencing at a glance. */}
-                  <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-[10px] font-mono text-white tracking-wider">
-                    LESSON {String(idx + 1).padStart(2, "0")}
-                  </span>
-                  {ch.make_free && (
-                    <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-[hsl(var(--accent-emerald))]/90 text-[10px] font-mono text-white uppercase tracking-wider">
-                      Free preview
-                    </span>
-                  )}
-                </div>
-                <div className="p-3 sm:p-4 space-y-1">
-                  <p className="text-sm font-semibold leading-snug line-clamp-2">
-                    {ch.title}
-                  </p>
-                  {mins && (
-                    <p className="text-[11px] text-muted-foreground font-mono">
-                      {mins} min
-                    </p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {/* Right-edge fade hint - matches the Continue Learning pattern
-            on Home, gives a visual cue that more content scrolls. */}
-        {flat.length > visible.length && (
-          <div className="pointer-events-none absolute top-0 right-0 bottom-0 w-12 bg-gradient-to-l from-background to-transparent" />
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ────────────────────────────────────────────────── */
-/*  Curriculum — sections + chapters accordion        */
-/* ────────────────────────────────────────────────── */
-function Curriculum({
-  sections,
-  durationMinutes,
-  totalLessons,
-}: {
-  sections?: SectionRow[];
-  durationMinutes?: number | null;
-  totalLessons?: number | null;
-}) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const toggle = (id: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  if (!sections?.length) return null;
-  const sorted = [...sections].sort((a, b) => a.sort_order - b.sort_order);
-  const allChapters = sorted.flatMap((s) => s.chapters || []);
-  if (!allChapters.length) return null;
-
-  return (
-    <div className="space-y-4">
-      <SectionEyebrow>Curriculum</SectionEyebrow>
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
-          Every lesson, mapped out
-        </h2>
-        <div className="text-xs text-muted-foreground font-mono">
-          {totalLessons || allChapters.length} lessons
-          {durationMinutes ? ` · ${Math.round(durationMinutes / 60)}h` : ""}
-        </div>
-      </div>
-      <div className="space-y-2">
-        {sorted.map((sec) => {
-          const chapters = [...(sec.chapters || [])].sort((a, b) => a.sort_order - b.sort_order);
-          const isOpen = expanded.has(sec.id) || sorted.length === 1;
-          return (
-            <div key={sec.id} className="rounded-2xl border border-border bg-[hsl(var(--surface))] overflow-hidden">
-              {sorted.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => toggle(sec.id)}
-                  className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-[hsl(var(--surface-2))] transition-colors min-h-[48px]"
-                  aria-expanded={isOpen}
-                >
-                  <span className="font-medium text-foreground">{sec.title}</span>
-                  <span className="text-xs text-muted-foreground font-mono">
-                    {chapters.length} lesson{chapters.length === 1 ? "" : "s"}
-                  </span>
-                </button>
-              )}
-              {isOpen && (
-                <ol className="divide-y divide-border">
-                  {chapters.map((ch, i) => {
-                    const poster = ch.thumbnail_url || ch.vdocipher_thumbnail_url || null;
-                    return (
-                      <li key={ch.id} className="flex items-start gap-3 p-4">
-                        {poster ? (
-                          <div className="relative w-24 h-[54px] sm:w-28 sm:h-[63px] rounded-lg overflow-hidden bg-[hsl(var(--surface-2))] flex-shrink-0">
-                            <img
-                              src={poster}
-                              alt=""
-                              loading="lazy"
-                              decoding="async"
-                              className="absolute inset-0 w-full h-full object-cover"
-                            />
-                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 font-mono text-[10px] text-white tabular-nums">
-                              {String(i + 1).padStart(2, "0")}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="font-mono text-xs text-muted-foreground tabular-nums w-6 mt-0.5">
-                            {String(i + 1).padStart(2, "0")}
-                          </span>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground">{ch.title}</p>
-                          {ch.description && (
-                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{ch.description}</p>
-                          )}
-                        </div>
-                        {ch.make_free && (
-                          <span className="text-[10px] font-mono uppercase tracking-wider text-[hsl(var(--accent-emerald))] border border-[hsl(var(--accent-emerald)/0.4)] rounded px-1.5 py-0.5 mt-0.5 flex-shrink-0">
-                            Free
-                          </span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ol>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 /* ────────────────────────────────────────────────── */
 /*  InstructorBio — full bio + credentials + portfolio */
@@ -1036,6 +876,17 @@ export default function PublicOffering() {
   // Hero-CTA visibility drives the mobile sticky bar — it only slides up
   // once the in-flow CTA has scrolled out of view.
   const [heroCtaRef, heroCtaInView] = useInView<HTMLDivElement>();
+
+  // Free-preview playback is lifted here so three surfaces can trigger the
+  // same player: the hero play chip, the in-flow FreePreviewPlayer poster,
+  // and any tapped make_free row in the LessonBrowser. playPreview scrolls
+  // the preview block into view and starts it in one gesture.
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const playPreview = useCallback(() => {
+    setPreviewPlaying(true);
+    const el = document.getElementById("free-preview");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
 
   // Social proof (avg rating + enrolment count) shared by the hero proof
   // row and the desktop purchase rail — one fetch, two placements. Skipped
@@ -1341,7 +1192,10 @@ export default function PublicOffering() {
         <div className={railEligible ? "lg:flex lg:gap-10" : undefined}>
         <div className="space-y-10 sm:space-y-14 lg:flex-1 lg:min-w-0">
           <div className="space-y-5 sm:space-y-6">
-            <HeroBanner offering={offering} />
+            <HeroBanner
+              offering={offering}
+              onPlayPreview={freeChapter ? playPreview : null}
+            />
             {/* Coupon banner is a price-discount affordance, so it has
                 to be hidden on Android for Reader Rule compliance. */}
             {couponInfo && !isNative() && (
@@ -1386,6 +1240,8 @@ export default function PublicOffering() {
             <FreePreviewPlayer
               chapter={freeChapter as any}
               instructorName={offering.instructor_name}
+              playing={previewPlaying}
+              onPlay={playPreview}
             />
 
             {/* One strong voice right after the trailer — the full
@@ -1432,15 +1288,16 @@ export default function PublicOffering() {
             <IncludedCourses courses={offering.offering_courses || []} />
 
             {/* Below-the-fold rich content sourced from the linked course.
-                Each section bails to null if data isn't populated. */}
-            <WhatYoullLearn
-              sections={offering.offering_courses?.[0]?.courses?.sections}
-            />
-
-            <Curriculum
+                Bails to null if no sections/chapters are populated. The
+                merged MasterClass-style list replaces the old preview rail
+                + separate curriculum accordion; tapping the free row opens
+                the FreePreviewPlayer above. */}
+            <LessonBrowser
               sections={offering.offering_courses?.[0]?.courses?.sections}
               durationMinutes={offering.offering_courses?.[0]?.courses?.duration_minutes}
               totalLessons={offering.offering_courses?.[0]?.courses?.total_lessons}
+              freeChapterId={freeChapter?.id ?? null}
+              onPreview={freeChapter ? playPreview : undefined}
             />
 
             <InstructorBio course={offering.offering_courses?.[0]?.courses} />
