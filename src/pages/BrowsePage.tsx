@@ -416,6 +416,8 @@ const BrowsePage = () => {
                           <div className="flex items-baseline gap-2">
                             {c.status === "upcoming" ? (
                               <span className="text-sm font-medium text-muted-foreground">Upcoming</span>
+                            ) : c.product_tier === "live_cohort" ? (
+                              <span className="text-sm font-semibold text-[hsl(var(--cream))]">Application-only</span>
                             ) : isNative() ? (
                               // Native (iOS App Store anti-steering 3.1.1/3.1.3 + Play Reader
                               // Rule): show no price or discount incentive — purchases happen

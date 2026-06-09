@@ -226,6 +226,32 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
     );
   }
 
+  // Live-cohort / application-only offerings (Breakthrough Filmmakers'
+  // Program, Video Editing Academy, etc.) are not sold in-app. The CTA
+  // opens the program's landing page on the web, where the student
+  // applies via the Tally form and our sales team takes payment. Same on
+  // every platform, and Reader-Rule-safe on iOS/Android (an application,
+  // not an in-app digital-goods purchase).
+  const applyUrl = (offering as any)?.tally_form_url || null;
+  if (applyUrl) {
+    return (
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6 py-2">
+        <span className="inline-flex items-center self-start rounded-full bg-[hsl(var(--cream))]/10 border border-[hsl(var(--cream))]/30 px-3 py-1 text-xs font-medium uppercase tracking-[0.14em] text-[hsl(var(--cream))]">
+          Application-only
+        </span>
+        <a
+          href={applyUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn-champagne inline-flex items-center justify-center h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5 transition-transform"
+        >
+          Apply on the web
+          <ArrowRight className="h-4 w-4 ml-2" />
+        </a>
+      </div>
+    );
+  }
+
   // Path B / Google Play Reader Rule: the Android shell cannot show
   // price labels or buy/enrol buttons in-app, even if they link to a
   // web checkout. Swap the entire pricing+CTA row for the trailer
@@ -1161,6 +1187,7 @@ export default function PublicOffering() {
 
   const highlights: string[] = Array.isArray(offering.highlights) ? offering.highlights : [];
   const isFree = Number(offering.price_inr) === 0;
+  const applyUrl = (offering as any).tally_form_url || null;
 
   // Find the first make_free chapter to power the trailer / free
   // preview. Walking sections in declared order matches the way the
@@ -1318,7 +1345,9 @@ export default function PublicOffering() {
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            {isFree ? (
+            {applyUrl ? (
+              <span className="text-sm font-semibold uppercase tracking-[0.12em] text-[hsl(var(--cream))]">Application-only</span>
+            ) : isFree ? (
               <span className="text-2xl font-bold text-[hsl(var(--accent-emerald))]">Free</span>
             ) : (
               <div className="flex items-baseline gap-2">
@@ -1333,13 +1362,25 @@ export default function PublicOffering() {
               </div>
             )}
           </div>
-          <Button
-            onClick={() => navigate(`/checkout/${offering.id}`)}
-            className="btn-champagne text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
-          >
-            {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}
-            <ArrowRight className="h-4 w-4 ml-1.5" />
-          </Button>
+          {applyUrl ? (
+            <a
+              href={applyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-champagne inline-flex items-center justify-center text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
+            >
+              Apply on the web
+              <ArrowRight className="h-4 w-4 ml-1.5" />
+            </a>
+          ) : (
+            <Button
+              onClick={() => navigate(`/checkout/${offering.id}`)}
+              className="btn-champagne text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
+            >
+              {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}
+              <ArrowRight className="h-4 w-4 ml-1.5" />
+            </Button>
+          )}
         </div>
       </div>
       )}
