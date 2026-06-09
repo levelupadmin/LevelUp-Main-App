@@ -341,11 +341,25 @@ const BrowsePage = () => {
                       )}
                       <div className="aspect-video bg-surface-2 relative pointer-events-none">
                         {c.thumbnail_url && (
-                          <LazyImage
-                            src={c.thumbnail_url}
-                            alt={c.title}
-                            className="w-full h-full"
-                          />
+                          c.product_tier === "live_cohort" ? (
+                            // Live-cohort thumbnails are square brand LOGOS, so
+                            // object-cover (LazyImage) crops them. Contain on a
+                            // branded backdrop instead — same fix as the hero.
+                            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[hsl(var(--surface-2))] to-[hsl(var(--canvas))] p-6">
+                              <img
+                                src={c.thumbnail_url}
+                                alt={c.title}
+                                loading="lazy"
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <LazyImage
+                              src={c.thumbnail_url}
+                              alt={c.title}
+                              className="w-full h-full"
+                            />
+                          )
                         )}
                         <div className="absolute top-2 left-2 flex items-center gap-1.5">
                           <TierBadge tier={c.product_tier} />
