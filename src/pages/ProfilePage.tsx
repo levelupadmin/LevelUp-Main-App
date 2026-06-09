@@ -18,10 +18,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Pencil, X, Award, AlertTriangle } from "lucide-react";
+import { ArrowRight, Pencil, X, Award, AlertTriangle, Download, FileText } from "lucide-react";
 import { toast } from "@/lib/toast";
 import CertificateGallery from "@/components/certificates/CertificateGallery";
 import NotificationPreferences from "@/components/notifications/NotificationPreferences";
+import { downloadInvoice, invoiceNumber } from "@/lib/invoice";
 
 interface Enrolment {
   id: string;
@@ -644,108 +645,124 @@ const ProfilePage = () => {
 };
 
 // ── Invoices section ────────────────────────────────────────────────
-// Lists the user's captured orders with a "Download invoice (PDF)" button
-// for each. Clicking the button mints a fresh signed URL via the
-// generate-invoice-pdf edge function and opens the PDF in a new tab.
-//
-// Why not pre-generate signed URLs on load: they expire (we use 90-day
-// TTL but defensive). On-demand minting also lets us lazily generate
-// the PDF for any order that doesn't have one yet (e.g. orders captured
-// before this feature shipped).
+// Lists the student's captured purchases with a polished, downloadable GST
+// invoice. The PDF is generated CLIENT-SIDE (src/lib/invoice.ts) and handed to
+// the OS share sheet on native (the only reliable way to save a file from the
+// iOS/Android Capacitor WebView) or downloaded directly on web. No edge
+// function / Storage / signed-URL round-trip — which is what used to fail.
+interface OrderRow {
+  id: string;
+  total_inr: number;
+  subtotal_inr: number | null;
+  discount_inr: number | null;
+  gst_inr: number | null;
+  captured_at: string | null;
+  created_at: string | null;
+  razorpay_payment_id: string | null;
+  razorpay_order_id: string | null;
+  offering_title: string;
+  instructor_name: string | null;
+}
+
 const InvoicesSection = () => {
   const { user } = useAuth();
-  const [orders, setOrders] = useState<Array<{
-    id: string;
-    total_inr: number;
-    captured_at: string | null;
-    razorpay_payment_id: string | null;
-    offering_title: string;
-  }>>([]);
+  const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [buyer, setBuyer] = useState<{ name: string; email: string; phone: string }>({ name: "", email: "", phone: "" });
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from("payment_orders")
-        .select("id, total_inr, captured_at, razorpay_payment_id, offerings(title)")
-        .eq("user_id", user.id)
-        .eq("status", "captured")
-        .order("captured_at", { ascending: false });
-      setOrders(
-        (data ?? []).map((o: any) => ({
-          id: o.id,
-          total_inr: Number(o.total_inr),
-          captured_at: o.captured_at,
-          razorpay_payment_id: o.razorpay_payment_id,
-          offering_title: o.offerings?.title ?? "Order",
-        }))
-      );
+      const [{ data: ords }, { data: prof }] = await Promise.all([
+        supabase
+          .from("payment_orders")
+          .select("id, total_inr, subtotal_inr, discount_inr, gst_inr, captured_at, created_at, razorpay_payment_id, razorpay_order_id, offerings(title, instructor_name)")
+          .eq("user_id", user.id)
+          .eq("status", "captured")
+          .order("captured_at", { ascending: false }),
+        supabase.from("users").select("full_name, email, phone").eq("id", user.id).maybeSingle(),
+      ]);
+      if (cancelled) return;
+      setOrders((ords ?? []).map((o: any) => ({
+        id: o.id,
+        total_inr: Number(o.total_inr),
+        subtotal_inr: o.subtotal_inr != null ? Number(o.subtotal_inr) : null,
+        discount_inr: o.discount_inr != null ? Number(o.discount_inr) : null,
+        gst_inr: o.gst_inr != null ? Number(o.gst_inr) : null,
+        captured_at: o.captured_at,
+        created_at: o.created_at,
+        razorpay_payment_id: o.razorpay_payment_id,
+        razorpay_order_id: o.razorpay_order_id,
+        offering_title: o.offerings?.title ?? "LevelUp purchase",
+        instructor_name: o.offerings?.instructor_name ?? null,
+      })));
+      setBuyer({ name: (prof as any)?.full_name ?? "", email: (prof as any)?.email ?? user.email ?? "", phone: (prof as any)?.phone ?? "" });
       setLoading(false);
     })();
+    return () => { cancelled = true; };
   }, [user]);
 
-  const downloadInvoice = async (orderId: string) => {
-    setDownloadingId(orderId);
+  const handleDownload = async (o: OrderRow) => {
+    setBusyId(o.id);
     try {
-      // Ensure the PDF exists in Storage (regenerates if missing - cheap)
-      const { data: genData, error: genErr } = await supabase.functions.invoke<{
-        path?: string;
-        bucket?: string;
-        error?: string;
-      }>("generate-invoice-pdf", { body: { payment_order_id: orderId } });
-      if (genErr || !genData?.path) {
-        toast.error(genData?.error || "Couldn't generate invoice");
-        return;
-      }
-      // Mint a fresh signed URL (5 min TTL is plenty - user opens
-      // immediately and the browser keeps the PDF after).
-      const { data: signed, error: signedErr } = await supabase.storage
-        .from(genData.bucket || "invoices")
-        .createSignedUrl(genData.path, 60 * 5);
-      if (signedErr || !signed?.signedUrl) {
-        toast.error("Couldn't get invoice link");
-        return;
-      }
-      window.open(signed.signedUrl, "_blank", "noopener");
+      const res = await downloadInvoice({
+        ...o,
+        buyer_name: buyer.name,
+        buyer_email: buyer.email,
+        buyer_phone: buyer.phone,
+      });
+      if (res === "downloaded") toast.success("Invoice downloaded");
+    } catch {
+      toast.error("Couldn't generate the invoice. Please try again.");
     } finally {
-      setDownloadingId(null);
+      setBusyId(null);
     }
   };
 
-  if (loading) return null;
-  if (!orders.length) return null;
+  if (loading || !orders.length) return null;
 
   return (
     <section className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold">Invoices</h2>
+        <h2 className="text-xl font-semibold">Invoices &amp; receipts</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Receipts + tax invoices for every masterclass you've enrolled in.
+          A GST invoice for every purchase — download or share as a PDF.
         </p>
       </div>
-      <div className="rounded-2xl border border-border overflow-hidden">
-        {orders.map((o, i) => (
+      <div className="grid gap-3">
+        {orders.map((o) => (
           <div
             key={o.id}
-            className={`flex items-center gap-4 px-4 py-3 sm:px-5 sm:py-4 ${i > 0 ? "border-t border-border" : ""}`}
+            className="flex items-center gap-4 rounded-2xl border border-border bg-card/40 p-4 sm:p-5"
           >
+            <div className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--cream))]/10 text-[hsl(var(--cream))]">
+              <FileText className="h-5 w-5" />
+            </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate">{o.offering_title}</p>
-              <p className="text-xs text-muted-foreground mt-0.5 font-mono">
-                ₹{o.total_inr.toLocaleString("en-IN")}
-                {o.captured_at ? ` · ${new Date(o.captured_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : ""}
+              <p className="text-xs text-muted-foreground mt-0.5">
+                <span className="font-mono">{invoiceNumber(o.id)}</span>
+                {(o.captured_at || o.created_at) && (
+                  <> · {new Date(o.captured_at || o.created_at!).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</>
+                )}
               </p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <span className="text-sm font-bold">₹{o.total_inr.toLocaleString("en-IN")}</span>
+                <Badge variant="secondary" className="border-0 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/15 text-[10px] font-bold uppercase tracking-wider">
+                  Paid
+                </Badge>
+              </div>
             </div>
             <Button
-              variant="outline"
+              onClick={() => handleDownload(o)}
+              disabled={busyId === o.id}
               size="sm"
-              onClick={() => downloadInvoice(o.id)}
-              disabled={downloadingId === o.id}
-              className="shrink-0"
+              className="shrink-0 gap-1.5"
             >
-              {downloadingId === o.id ? "Preparing…" : "PDF"}
+              <Download className="h-4 w-4" />
+              {busyId === o.id ? "Preparing…" : "Invoice"}
             </Button>
           </div>
         ))}
