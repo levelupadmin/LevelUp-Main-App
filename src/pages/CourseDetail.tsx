@@ -290,7 +290,7 @@ const CourseDetail = () => {
       const first = chapters[0];
       if (first) navigate(`/chapters/${first.id}`);
     } else {
-      navigate(`/browse`);
+      navigate(`/`);
     }
   };
 
@@ -394,7 +394,7 @@ const CourseDetail = () => {
                   {hasAccess
                     ? "Continue Learning →"
                     : isNative()
-                      ? "Browse courses →"
+                      ? "Explore programs →"
                       : "Enroll Now"}
                 </Button>
               )}
@@ -487,7 +487,7 @@ const CourseDetail = () => {
                           <div key={chapter.id}>
                             <button
                               onClick={() => handleChapterClick(chapter, sectionChapters)}
-                              className="w-full flex items-start gap-3 min-h-[40px] py-2 px-4 rounded-lg text-left text-sm transition-colors hover:bg-accent/50 group"
+                              className="pressable w-full flex items-start gap-3 min-h-[40px] py-2 px-4 rounded-lg text-left text-sm hover:bg-accent/50 group"
                             >
                               <span className="w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">
                                 {completed ? (

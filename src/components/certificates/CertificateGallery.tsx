@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { Award } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
 import CertificateCard from "./CertificateCard";
 
 interface CertificateRow {
@@ -72,9 +74,12 @@ const CertificateGallery = ({ userId }: CertificateGalleryProps) => {
 
   if (certificates.length === 0) {
     return (
-      <div className="text-center py-16 text-white/60">
-        <p>No certificates earned yet. Complete a course to get your first certificate!</p>
-      </div>
+      <EmptyState
+        icon={Award}
+        title="No certificates yet"
+        sub="Complete a course to earn your first certificate."
+        cta={{ label: "Explore programs", to: "/" }}
+      />
     );
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,6 +11,13 @@ import { isAndroid, isNative } from "@/lib/platform";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import AndroidAppCard from "@/components/AndroidAppCard";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
+import Reveal from "@/components/motion/Reveal";
+import DescriptionBlocks from "@/components/offering/DescriptionBlocks";
+import ApplicationTimeline from "@/components/offering/ApplicationTimeline";
+import GuaranteeBadge from "@/components/offering/GuaranteeBadge";
+import ProofRow, { useOfferingProof } from "@/components/offering/ProofRow";
+import PurchaseRail from "@/components/offering/PurchaseRail";
+import TestimonialCard from "@/components/offering/TestimonialCard";
 import { track } from "@/lib/analytics";
 import {
   Check,
@@ -99,10 +106,34 @@ interface Offering {
   show_coupon_on_page: boolean | null;
   page_coupon_code: string | null;
   currency: string | null;
+  refund_policy_days: number | null;
   offering_courses: OfferingCourse[];
 }
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+
+/**
+ * Tiny local in-view tracker for the hero CTA block. Drives the mobile
+ * sticky bar: it only slides up once the hero CTA has scrolled out of
+ * view, so the same price/CTA never shows twice on screen. Callback-ref
+ * based because the observed block mounts after the data loads.
+ */
+function useInView<T extends HTMLElement = HTMLDivElement>(): [(node: T | null) => void, boolean] {
+  const [inView, setInView] = useState(true);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const setRef = useCallback((node: T | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => setInView(entries.some((e) => e.isIntersecting)),
+      { threshold: 0 },
+    );
+    observer.observe(node);
+    observerRef.current = observer;
+  }, []);
+  return [setRef, inView];
+}
 
 /* ────────────────────────────────────────────────── */
 /*  Subcomponents                                     */
@@ -133,18 +164,20 @@ function HeroBanner({ offering }: { offering: Offering }) {
               alt={offering.title}
               className="absolute inset-x-0 top-0 h-[60%] w-full object-contain p-8 sm:p-10"
               loading="eager"
-              fetchPriority="high"
               decoding="async"
+              // React 18 doesn't know the camelCase fetchPriority prop and
+              // warns; the lowercase DOM attribute passes straight through.
+              {...({ fetchpriority: "high" } as any)}
             />
           </>
         ) : (
           <img
             src={img}
             alt={offering.title}
-            className="absolute inset-0 w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-cover kenburns"
             loading="eager"
-            fetchPriority="high"
             decoding="async"
+            {...({ fetchpriority: "high" } as any)}
           />
         )
       ) : (
@@ -302,41 +335,44 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
   }
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6 py-2">
-      <div className="flex items-baseline gap-3">
-        <span className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em]">
-          {price > 0 ? `₹${Number(price).toLocaleString("en-IN")}` : "Free"}
-        </span>
-        {showStrike && (
-          <span className="text-base sm:text-lg text-muted-foreground line-through font-mono">
-            ₹{Number(mrp).toLocaleString("en-IN")}
+    <div className="space-y-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6 py-2">
+        <div className="flex items-baseline gap-3">
+          <span className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em]">
+            {price > 0 ? `₹${Number(price).toLocaleString("en-IN")}` : "Free"}
           </span>
-        )}
-      </div>
-      <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-        {freeChapterId && (
+          {showStrike && (
+            <span className="text-base sm:text-lg text-muted-foreground line-through font-mono">
+              ₹{Number(mrp).toLocaleString("en-IN")}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          {freeChapterId && (
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => {
+                const el = document.getElementById("free-preview");
+                if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+              }}
+              className="h-12 px-5 text-base font-medium border-[hsl(var(--cream))]/40 hover:bg-[hsl(var(--cream))]/10"
+            >
+              <Play className="h-4 w-4 mr-2 fill-current" />
+              Watch trailer
+            </Button>
+          )}
           <Button
-            variant="outline"
+            onClick={() => navigate(`/checkout/${offering.id}`)}
             size="lg"
-            onClick={() => {
-              const el = document.getElementById("free-preview");
-              if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-            }}
-            className="h-12 px-5 text-base font-medium border-[hsl(var(--cream))]/40 hover:bg-[hsl(var(--cream))]/10"
+            className="btn-champagne h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5"
           >
-            <Play className="h-4 w-4 mr-2 fill-current" />
-            Watch trailer
+            {ctaLabel}
+            <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
-        )}
-        <Button
-          onClick={() => navigate(`/checkout/${offering.id}`)}
-          size="lg"
-          className="btn-champagne h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5"
-        >
-          {ctaLabel}
-          <ArrowRight className="h-4 w-4 ml-2" />
-        </Button>
+        </div>
       </div>
+      <GuaranteeBadge days={offering.refund_policy_days} />
     </div>
   );
 }
@@ -772,24 +808,42 @@ function Curriculum({
               )}
               {isOpen && (
                 <ol className="divide-y divide-border">
-                  {chapters.map((ch, i) => (
-                    <li key={ch.id} className="flex items-start gap-3 p-4">
-                      <span className="font-mono text-xs text-muted-foreground tabular-nums w-6 mt-0.5">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground">{ch.title}</p>
-                        {ch.description && (
-                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{ch.description}</p>
+                  {chapters.map((ch, i) => {
+                    const poster = ch.thumbnail_url || ch.vdocipher_thumbnail_url || null;
+                    return (
+                      <li key={ch.id} className="flex items-start gap-3 p-4">
+                        {poster ? (
+                          <div className="relative w-24 h-[54px] sm:w-28 sm:h-[63px] rounded-lg overflow-hidden bg-[hsl(var(--surface-2))] flex-shrink-0">
+                            <img
+                              src={poster}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              className="absolute inset-0 w-full h-full object-cover"
+                            />
+                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 font-mono text-[10px] text-white tabular-nums">
+                              {String(i + 1).padStart(2, "0")}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-mono text-xs text-muted-foreground tabular-nums w-6 mt-0.5">
+                            {String(i + 1).padStart(2, "0")}
+                          </span>
                         )}
-                      </div>
-                      {ch.make_free && (
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-[hsl(var(--accent-emerald))] border border-[hsl(var(--accent-emerald)/0.4)] rounded px-1.5 py-0.5 mt-0.5 flex-shrink-0">
-                          Free
-                        </span>
-                      )}
-                    </li>
-                  ))}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">{ch.title}</p>
+                          {ch.description && (
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{ch.description}</p>
+                          )}
+                        </div>
+                        {ch.make_free && (
+                          <span className="text-[10px] font-mono uppercase tracking-wider text-[hsl(var(--accent-emerald))] border border-[hsl(var(--accent-emerald)/0.4)] rounded px-1.5 py-0.5 mt-0.5 flex-shrink-0">
+                            Free
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ol>
               )}
             </div>
@@ -978,6 +1032,18 @@ export default function PublicOffering() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [couponInfo, setCouponInfo] = useState<{code: string; discount_type: string; discount_value: number} | null>(null);
+
+  // Hero-CTA visibility drives the mobile sticky bar — it only slides up
+  // once the in-flow CTA has scrolled out of view.
+  const [heroCtaRef, heroCtaInView] = useInView<HTMLDivElement>();
+
+  // Social proof (avg rating + enrolment count) shared by the hero proof
+  // row and the desktop purchase rail — one fetch, two placements. Skipped
+  // entirely on native, where price/proof contexts stay hidden (Reader Rule).
+  const proof = useOfferingProof(
+    !isNative() && offering ? offering.id : null,
+    offering?.offering_courses?.[0]?.courses?.id ?? null,
+  );
 
   usePageTitle(offering?.title || "LevelUp Learning");
 
@@ -1224,6 +1290,10 @@ export default function PublicOffering() {
     return null;
   })();
 
+  // Desktop purchase rail: web-only (NEVER on native — it's a price/buy
+  // surface) and never for archived offerings (nothing left to sell).
+  const railEligible = !isNative() && offering.status !== "archived";
+
   return (
     <div className="min-h-screen bg-background">
 
@@ -1262,12 +1332,14 @@ export default function PublicOffering() {
         </div>
       </header>
 
-      <main className="max-w-5xl xl:max-w-6xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 py-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
-        {/* Single-column marketing flow. Checkout lives on its own
-            route now (/checkout/&lt;offeringId&gt;) so this page can stay
-            purely about helping the buyer decide. The Enrol CTA in
-            HeroActions ships them to checkout when they're ready. */}
-        <div className="space-y-10 sm:space-y-14">
+      <main className={`mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 py-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8 ${railEligible ? "max-w-5xl lg:max-w-7xl" : "max-w-5xl xl:max-w-6xl"}`}>
+        {/* Marketing flow + (on lg, web only) a sticky purchase rail.
+            Checkout lives on its own route (/checkout/&lt;offeringId&gt;) so
+            this page can stay purely about helping the buyer decide. The
+            Enrol CTA in HeroActions ships them to checkout when they're
+            ready; on lg+ the rail carries that affordance instead. */}
+        <div className={railEligible ? "lg:flex lg:gap-10" : undefined}>
+        <div className="space-y-10 sm:space-y-14 lg:flex-1 lg:min-w-0">
           <div className="space-y-5 sm:space-y-6">
             <HeroBanner offering={offering} />
             {/* Coupon banner is a price-discount affordance, so it has
@@ -1292,7 +1364,17 @@ export default function PublicOffering() {
                 </div>
               </div>
             )}
-            <HeroActions offering={offering} freeChapterId={freeChapter?.id ?? null} />
+            {/* In-flow hero CTA: stays for <lg; on lg+ the sticky rail
+                takes over (when eligible). The ref feeds the mobile
+                sticky bar's show-on-scroll behaviour. */}
+            <div ref={heroCtaRef} className={railEligible ? "lg:hidden" : undefined}>
+              <HeroActions offering={offering} freeChapterId={freeChapter?.id ?? null} />
+              {/* Proof row sits under the hero price row — web only, and
+                  only when real numbers exist (never fake social proof). */}
+              {railEligible && (
+                <ProofRow avg={proof.avg} enrolled={proof.enrolled} className="mt-3" />
+              )}
+            </div>
           </div>
 
           <InstructorCard offering={offering} />
@@ -1305,6 +1387,22 @@ export default function PublicOffering() {
               chapter={freeChapter as any}
               instructorName={offering.instructor_name}
             />
+
+            {/* One strong voice right after the trailer — the full
+                testimonial grid still renders further down. */}
+            {(() => {
+              const first = (offering.checkout_testimonials || []).find((t) => t.quote);
+              if (!first?.quote) return null;
+              return (
+                <Reveal>
+                  <TestimonialCard
+                    quote={first.quote}
+                    name={first.name ?? null}
+                    role={first.role ?? null}
+                  />
+                </Reveal>
+              );
+            })()}
 
             {highlights.length > 0 && (
               <div className="space-y-4">
@@ -1324,11 +1422,12 @@ export default function PublicOffering() {
                     ? `Inside ${offering.instructor_name.split(" ")[0]}'s masterclass`
                     : "Inside this masterclass"}
                 </h2>
-                <p className="text-base sm:text-lg text-muted-foreground whitespace-pre-line leading-relaxed max-w-[68ch]">
-                  {offering.description}
-                </p>
+                <DescriptionBlocks description={offering.description} />
               </div>
             )}
+
+            {/* Admission journey for application-only cohorts. */}
+            {applyUrl && <ApplicationTimeline />}
 
             <IncludedCourses courses={offering.offering_courses || []} />
 
@@ -1368,20 +1467,56 @@ export default function PublicOffering() {
               </div>
             </div>
         </div>
+
+        {/* Desktop sticky purchase rail (lg+, web only — see railEligible). */}
+        {railEligible && (
+          <aside className="hidden lg:block w-[360px] shrink-0">
+            <PurchaseRail
+              offeringId={offering.id}
+              price={Number(offering.price_inr)}
+              mrp={offering.mrp_inr}
+              highlights={highlights}
+              refundPolicyDays={offering.refund_policy_days}
+              applyUrl={applyUrl}
+              isStaged={isStaged}
+              proof={proof}
+            />
+          </aside>
+        )}
+        </div>
       </main>
 
       {/* Mobile sticky CTA — hidden on Android (Path B compliance) and
-          on archived offerings (no longer for sale). Price + Enrol Now
-          persistent across the page so the buyer never has to scroll
-          back to act. The Masterclass iOS pattern. Navigates to the
-          dedicated checkout route. */}
+          on archived offerings (no longer for sale). Slides up only once
+          the in-flow hero CTA has scrolled out of view (useInView above)
+          so price/CTA never doubles up on screen. The Masterclass iOS
+          pattern. Navigates to the dedicated checkout route. */}
       {(applyUrl || !isNative()) && offering.status !== "archived" && (
-      <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+      <div
+        aria-hidden={heroCtaInView}
+        className={`lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] transition-transform duration-200 ${
+          heroCtaInView ? "translate-y-full pointer-events-none" : "translate-y-0"
+        }`}
+      >
+        {applyUrl ? (
+          <div className="space-y-2">
+            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-[hsl(var(--cream))]/70 whitespace-nowrap text-center">
+              Application-only
+            </p>
+            <a
+              href={applyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-champagne flex w-full items-center justify-center text-[hsl(var(--cream-text))] font-semibold h-12 text-base rounded-2xl"
+            >
+              Apply for an invite
+              <ArrowRight className="h-4 w-4 ml-1.5" />
+            </a>
+          </div>
+        ) : (
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            {applyUrl ? (
-              <span className="text-sm font-semibold uppercase tracking-[0.12em] text-[hsl(var(--cream))]">Application-only</span>
-            ) : isFree ? (
+            {isFree ? (
               <span className="text-2xl font-bold text-[hsl(var(--accent-emerald))]">Free</span>
             ) : (
               <div className="flex items-baseline gap-2">
@@ -1396,26 +1531,15 @@ export default function PublicOffering() {
               </div>
             )}
           </div>
-          {applyUrl ? (
-            <a
-              href={applyUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-champagne inline-flex items-center justify-center text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
-            >
-              Apply for an invite
-              <ArrowRight className="h-4 w-4 ml-1.5" />
-            </a>
-          ) : (
-            <Button
-              onClick={() => navigate(`/checkout/${offering.id}`)}
-              className="btn-champagne text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
-            >
-              {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}
-              <ArrowRight className="h-4 w-4 ml-1.5" />
-            </Button>
-          )}
+          <Button
+            onClick={() => navigate(`/checkout/${offering.id}`)}
+            className="btn-champagne text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
+          >
+            {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}
+            <ArrowRight className="h-4 w-4 ml-1.5" />
+          </Button>
         </div>
+        )}
       </div>
       )}
 

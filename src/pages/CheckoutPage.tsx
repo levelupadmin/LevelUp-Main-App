@@ -13,6 +13,7 @@ import { toast } from "@/lib/toast";
 import { Loader2, Tag, ShieldCheck, BookOpen, ArrowLeft, CheckCircle2 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import TrustPanel from "@/components/checkout/TrustPanel";
+import GuaranteeBadge from "@/components/offering/GuaranteeBadge";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import { isAndroid, isNative } from "@/lib/platform";
 import { track } from "@/lib/analytics";
@@ -540,23 +541,42 @@ export default function CheckoutPage() {
             Back
           </button>
 
-          {/* ── Header ── */}
+          {/* ── Header: mini product summary — thumbnail + title +
+              instructor for continuity from the sales page. ── */}
           <div>
             {isStaged && stagedLabel && (
               <Badge variant="secondary" className="mb-2">{stagedLabel}</Badge>
             )}
-            <h1 className="text-xl font-semibold text-foreground">
-              {offering.title}
-            </h1>
+            <div className="flex items-start gap-4">
+              {(offering.thumbnail_url || offering.banner_url) && (
+                <img
+                  src={offering.thumbnail_url || offering.banner_url || ""}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  className="h-16 w-16 rounded-xl object-cover shrink-0"
+                />
+              )}
+              <div className="min-w-0">
+                <h1 className="text-xl font-semibold text-foreground">
+                  {offering.title}
+                </h1>
+                {offering.instructor_name && (
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    with {offering.instructor_name}
+                  </p>
+                )}
+              </div>
+            </div>
             {isStaged && (
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-sm text-muted-foreground mt-2">
                 {paymentType === "app_fee" ? "Submit your application fee to begin the review process." :
                  paymentType === "confirmation" ? "Confirm your seat with this payment." :
                  paymentType === "balance" ? "Complete your remaining balance payment." : ""}
               </p>
             )}
             {!isStaged && offering.description && (
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-sm text-muted-foreground mt-2">
                 {offering.description}
               </p>
             )}
@@ -887,6 +907,11 @@ export default function CheckoutPage() {
                 ₹{total.toLocaleString("en-IN")}
               </span>
             </div>
+            {gstAmount > 0 && (
+              <p className="text-[11px] text-muted-foreground text-right -mt-1">
+                Includes GST
+              </p>
+            )}
             {/* Celebrate the savings - MRP markdown + coupon discount
                 combined. Shopify-style; the emotional reinforcement
                 lifts conversion at the exact decision moment. */}
@@ -909,9 +934,12 @@ export default function CheckoutPage() {
           </div>
 
           {/* ── Trust signals ── */}
-          <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            {(offering as any).checkout_guarantee_text || "7-day refund policy"} · Secure payment
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Secure Razorpay checkout
+            </div>
+            <GuaranteeBadge days={offering.refund_policy_days} />
           </div>
 
           {/* ── Pay button ── */}

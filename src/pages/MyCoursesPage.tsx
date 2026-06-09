@@ -10,6 +10,7 @@ import LazyImage from "@/components/LazyImage";
 import { ArrowRight, BookOpen, Sparkles, Award, WifiOff, RefreshCw } from "lucide-react";
 import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
+import { EmptyState } from "@/components/EmptyState";
 import { isNative } from "@/lib/platform";
 
 interface EnrolledCourse {
@@ -36,7 +37,7 @@ interface RecommendedCourse {
 }
 
 const MyCoursesPage = () => {
-  usePageTitle("My Courses");
+  usePageTitle("My courses");
   const { user } = useAuth();
   const [courses, setCourses] = useState<EnrolledCourse[]>([]);
   const [recommendations, setRecommendations] = useState<RecommendedCourse[]>([]);
@@ -230,7 +231,7 @@ const MyCoursesPage = () => {
     <>
       <div className="space-y-8">
         <div>
-          <h1 className="text-[32px] font-semibold leading-tight">My Courses</h1>
+          <h1 className="text-[32px] font-semibold leading-tight">My courses</h1>
           <p className="text-base text-muted-foreground mt-1">
             Your enrolled programs and progress
           </p>
@@ -252,28 +253,19 @@ const MyCoursesPage = () => {
             </Button>
           </div>
         ) : courses.length === 0 ? (
-          <div className="text-center py-16">
-            <BookOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-lg font-medium text-foreground mb-1">
-              You haven't enrolled in any courses yet
-            </p>
-            <p className="text-muted-foreground text-sm">
-              Explore our catalog and find the perfect program for you.
-            </p>
-            <Link
-              to="/browse"
-              className="inline-flex items-center gap-1.5 mt-4 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
-            >
-              Browse Programs <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
+          <EmptyState
+            icon={BookOpen}
+            title="You haven't enrolled in any courses yet"
+            sub="Explore our catalog and find the perfect program for you."
+            cta={{ label: "Explore programs", to: "/" }}
+          />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {courses.map((c) => (
               <Link
                 key={c.course_id}
                 to={`/courses/${c.course_id}`}
-                className="bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
+                className="pressable bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
               >
                 <div className="aspect-video bg-surface-2">
                   {c.thumbnail_url && (
@@ -318,7 +310,7 @@ const MyCoursesPage = () => {
           <section className="pt-4">
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="h-5 w-5 text-cream" />
-              <h2 className="text-xl font-semibold">Recommended for You</h2>
+              <h2 className="text-xl font-semibold">Recommended for you</h2>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {recommendations.map((c) => (
@@ -330,7 +322,7 @@ const MyCoursesPage = () => {
                   // weird and pressures the user into a buy decision
                   // before they've seen the trailer.
                   to={c.offering_slug ? `/p/${c.offering_slug}` : `/courses/${c.id}`}
-                  className="bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
+                  className="pressable bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
                 >
                   <div className="aspect-video bg-surface-2 relative">
                     {c.thumbnail_url && (

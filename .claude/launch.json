@@ -1,11 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    {
-      "name": "levelup-lms",
-      "runtimeExecutable": "bun",
-      "runtimeArgs": ["dev"],
-      "port": 8080
-    }
+    { "name": "levelup-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 8080 }
   ]
 }

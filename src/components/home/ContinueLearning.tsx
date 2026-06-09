@@ -3,8 +3,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import LazyImage from "@/components/LazyImage";
 import { Link } from "react-router-dom";
-import { ArrowRight, BookOpen, Play } from "lucide-react";
-import { Section, EmptyState, ErrorState, SkeletonCard } from "@/components/patterns";
+import { ArrowRight, Play } from "lucide-react";
+import { Section, ErrorState, SkeletonCard } from "@/components/patterns";
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
 
 // ── Continue Learning ──
@@ -164,16 +164,9 @@ const ContinueLearning = () => {
     </Section>
   );
 
-  if (!courses.length) return (
-    <Section title="Continue learning" density="compact">
-      <EmptyState
-        icon={<BookOpen className="h-5 w-5" />}
-        title="You're not enrolled in any courses yet"
-        description="Browse programs below to get started."
-        action={{ to: "/browse", label: "Browse courses" }}
-      />
-    </Section>
-  );
+  // No enrolments → no section at all. The catalog below is the call to
+  // action; a "you have nothing" card is just a dead section.
+  if (!courses.length) return null;
 
   return (
     <Section title="Continue learning" density="compact">
@@ -191,7 +184,7 @@ const ContinueLearning = () => {
                 <Link
                   key={c.id}
                   to={linkTo}
-                  className="group min-w-[78vw] sm:min-w-[320px] lg:min-w-[340px] max-w-[360px] bg-surface rounded-2xl overflow-hidden flex-shrink-0 snap-start ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 hover:-translate-y-1 transition-all duration-300 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
+                  className="pressable group min-w-[78vw] sm:min-w-[320px] lg:min-w-[340px] max-w-[360px] bg-surface rounded-2xl overflow-hidden flex-shrink-0 snap-start ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 hover:-translate-y-1 transition-all duration-300 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
                 >
                   <div className="aspect-video bg-surface-2 relative overflow-hidden">
                     {c.thumbnail_url && (

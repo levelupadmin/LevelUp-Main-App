@@ -7,25 +7,24 @@ const WHATSAPP_URL =
 /**
  * Floating WhatsApp support bubble.
  *
- * Mounted globally in App.tsx so it is visible across every page (logged-in
- * or not). Hidden on the ChapterViewer route because that view is full-bleed
- * video and the bubble would overlap the player UI.
+ * Mounted in App.tsx but route-gated here: it only renders on the surfaces
+ * where a human nudge actually helps — the offering pages (/p/*), checkout,
+ * and the profile/account page. Everywhere else (the Home feed, course
+ * player, community…) it was visual noise hovering over content.
  */
 const FloatingSupport = () => {
   const { pathname } = useLocation();
 
-  // Hide on the full-bleed chapter player.
-  if (pathname.startsWith("/chapters/")) return null;
+  const onOffering = pathname.startsWith("/p/");
+  const onCheckout = pathname.startsWith("/checkout/");
+  const onProfile = pathname === "/profile" || pathname.startsWith("/profile/");
 
-  // Hide on the auth screens. Login/Signup are intentionally minimal — a
-  // floating support bubble adds clutter to the "front door" and reads as a
-  // web-ism inside the native app shell.
-  if (pathname === "/login" || pathname === "/signup") return null;
+  if (!onOffering && !onCheckout && !onProfile) return null;
 
-  // Hide on conversion pages (offering + checkout) on MOBILE only — they
-  // already have a sticky CTA at the bottom and the bubble would overlap
-  // it. On desktop the right-side bubble has plenty of room.
-  const hasStickyCta = pathname.startsWith("/p/") || pathname.startsWith("/checkout/");
+  // Conversion pages (offering + checkout) have a sticky CTA at the bottom
+  // on MOBILE — hide the bubble there so they don't overlap. On desktop the
+  // right-side bubble has plenty of room.
+  const hasStickyCta = onOffering || onCheckout;
 
   return (
     <a

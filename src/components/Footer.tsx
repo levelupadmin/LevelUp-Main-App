@@ -11,6 +11,7 @@ interface FooterLink {
 }
 
 const MARKETING_ORIGIN = "https://leveluplearning.in";
+const SUPPORT_URL = "https://api.whatsapp.com/send?phone=919791520177&text=Hi";
 
 const footerLinks: Record<string, FooterLink[]> = {
   Learn: [
@@ -31,7 +32,7 @@ const footerLinks: Record<string, FooterLink[]> = {
     { label: "Delete Account", href: "/delete-account" },
     {
       label: "Contact Support",
-      href: "https://api.whatsapp.com/send?phone=919791520177&text=Hi",
+      href: SUPPORT_URL,
       external: true,
     },
   ],
@@ -66,11 +67,42 @@ const renderLink = (link: FooterLink) => {
   );
 };
 
-const Footer = () => {
-  // Native (iOS + Android) app shells get no marketing footer — the
+interface FooterProps {
+  /**
+   * "marketing" (default) — full link-column footer for public pages.
+   * "app" — slim one-row footer (wordmark + copyright + Support) for the
+   * authed app shell.
+   */
+  variant?: "marketing" | "app";
+}
+
+/** Minimal one-row footer for inside the authed app shell. */
+const AppFooter = () => (
+  <footer aria-label="App footer" className="border-t border-border bg-canvas">
+    <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <LevelUpWordmark className="h-6 w-auto text-foreground" />
+      <p className="text-xs text-muted-foreground">
+        (c) 2026 LevelUp Edu Pvt Ltd. All rights reserved.
+      </p>
+      <a
+        href={SUPPORT_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-300"
+      >
+        Support
+      </a>
+    </div>
+  </footer>
+);
+
+const Footer = ({ variant = "marketing" }: FooterProps) => {
+  // Native (iOS + Android) app shells get no footer chrome — the
   // sitemap-style link columns, external company links, and social icons
-  // read as "this is a website" inside the app. Web keeps the full footer.
+  // read as "this is a website" inside the app. Web keeps the footer.
   if (isNative()) return null;
+
+  if (variant === "app") return <AppFooter />;
 
   return (
     <footer
@@ -84,7 +116,7 @@ const Footer = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 md:gap-12 lg:gap-8">
           <div className="lg:col-span-1">
             <div className="mb-4">
-              <LevelUpWordmark className="h-10 w-auto text-foreground" />
+              <LevelUpWordmark className="h-8 w-auto text-foreground" />
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-[260px]">
               A creative education ecosystem for serious creators.

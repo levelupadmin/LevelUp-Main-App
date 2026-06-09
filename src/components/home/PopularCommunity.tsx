@@ -21,18 +21,12 @@ const PopularCommunity = () => {
       });
   }, []);
 
-  if (!posts.length) {
-    return (
-      <section>
-        <h2 className="text-lg font-semibold mb-4">Popular in Community</h2>
-        <p className="text-sm text-muted-foreground">The community feed is warming up — check back soon.</p>
-      </section>
-    );
-  }
+  // No posts → no section. Placeholder copy reads as a dead feature.
+  if (!posts.length) return null;
 
   return (
     <section>
-      <h2 className="text-lg font-semibold mb-4">Popular in Community</h2>
+      <h2 className="text-lg font-semibold mb-4">Popular in community</h2>
       <div className="flex gap-4 overflow-x-auto snap-x hide-scrollbar pb-2">
         {posts.map((p) => (
           <div

@@ -182,17 +182,8 @@ const UpcomingEvents = () => {
     return { name: ev.host_name, title: ev.host_title, avatar_url: ev.host_avatar_url, count: 1 };
   };
 
-  if (!events.length) {
-    return (
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Upcoming Events</h2>
-          <Link to="/events" className="text-sm text-cream flex items-center gap-1">View all <ArrowRight className="h-3 w-3" /></Link>
-        </div>
-        <p className="text-sm text-muted-foreground">No events on the horizon yet.</p>
-      </section>
-    );
-  }
+  // No events → no section at all (no placeholder copy).
+  if (!events.length) return null;
 
   return (
     <section>

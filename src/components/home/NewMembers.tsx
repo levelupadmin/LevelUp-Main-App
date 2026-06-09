@@ -26,18 +26,12 @@ const NewMembers = () => {
   // Only show for admins — RLS restricts users table reads to own row
   if (!isAdmin) return null;
 
-  if (!members.length) {
-    return (
-      <section>
-        <h2 className="text-lg font-semibold mb-4">New Members</h2>
-        <p className="text-sm text-muted-foreground">No members yet.</p>
-      </section>
-    );
-  }
+  // Nothing to show → no section.
+  if (!members.length) return null;
 
   return (
     <section>
-      <h2 className="text-lg font-semibold mb-4">New Members</h2>
+      <h2 className="text-lg font-semibold mb-4">New members</h2>
       <div className="flex gap-4 overflow-x-auto snap-x hide-scrollbar pb-2">
         {members.map((m) => (
           <div

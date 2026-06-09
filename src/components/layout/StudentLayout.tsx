@@ -7,27 +7,27 @@ import NotificationDropdown from "@/components/NotificationDropdown";
 import Footer from "@/components/Footer";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
-  Home, BookOpen, Compass, MessageSquare, User,
+  Home, BookOpen, MessageSquare, User,
   Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2, Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
+import { hapticSelection } from "@/lib/haptics";
 
+// Browse merged into Home — the catalog now lives in the Home feed.
 const NAV_ITEMS = [
   { label: "Home", icon: Home, path: "/home" },
   { label: "My Courses", icon: BookOpen, path: "/my-courses" },
   { label: "Sessions", icon: Video, path: "/my-sessions" },
-  { label: "Browse", icon: Compass, path: "/browse" },
   { label: "Events", icon: Calendar, path: "/events" },
   { label: "Community", icon: MessageSquare, path: "/community" },
   { label: "Profile", icon: User, path: "/profile" },
 ];
 
-// Mobile bottom bar: max 5 items to avoid cramping on small screens
+// Mobile bottom bar: 4 tabs (Browse folded into Home)
 const MOBILE_NAV_ITEMS = [
   { label: "Home", icon: Home, path: "/home" },
   { label: "My Courses", icon: BookOpen, path: "/my-courses" },
-  { label: "Browse", icon: Compass, path: "/browse" },
   { label: "Sessions", icon: Video, path: "/my-sessions" },
   { label: "Profile", icon: User, path: "/profile" },
 ];
@@ -338,7 +338,7 @@ const StudentLayout = ({ children }: Props) => {
             <Footer/> renders null, so this padding alone provides the
             tab-bar clearance (safe-area aware for the home indicator). */}
         <div className="pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">
-          <Footer />
+          <Footer variant="app" />
         </div>
       </div>
 
@@ -353,8 +353,9 @@ const StudentLayout = ({ children }: Props) => {
             <Link
               key={item.path}
               to={item.path}
+              onClick={() => { void hapticSelection(); }}
               className={cn(
-                "relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[11px] font-medium transition-colors focus-ring press-scale-sm",
+                "pressable relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[11px] font-medium transition-colors focus-ring",
                 active ? "text-cream" : "text-muted-foreground hover:text-foreground"
               )}
             >

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { bootAnalytics } from "@/lib/analytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster as SonnerToaster, toast as sonnerToast } from "sonner";
@@ -34,7 +34,6 @@ const Home = lazy(() => import("@/pages/Home"));
 const CourseDetail = lazy(() => import("@/pages/CourseDetail"));
 const ChapterViewer = lazy(() => import("@/pages/ChapterViewer"));
 const CheckoutPage = lazy(() => import("@/pages/CheckoutPage"));
-const BrowsePage = lazy(() => import("@/pages/BrowsePage"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const MyCoursesPage = lazy(() => import("@/pages/MyCoursesPage"));
 const MySessionsPage = lazy(() => import("@/pages/MySessionsPage"));
@@ -198,12 +197,16 @@ const App = () => {
               */}
               <Route path="/delete-account" element={<DeleteAccount />} />
 
+              {/* Browse merged into Home — keep old deep links working. */}
+              <Route path="/browse" element={<Navigate to="/" replace />} />
+              {/* Friendly alias for the sessions tab. */}
+              <Route path="/sessions" element={<Navigate to="/my-sessions" replace />} />
+
               {/* ─── Student routes share a single persistent layout ─── */}
               <Route element={<RequireAuth><StudentLayout /></RequireAuth>}>
                 <Route path="/home" element={<Home />} />
                 <Route path="/courses/:courseId" element={<CourseDetail />} />
                 <Route path="/profile" element={<ProfilePage />} />
-                <Route path="/browse" element={<BrowsePage />} />
                 <Route path="/community" element={<CommunityPage />} />
                 <Route path="/my-courses" element={<MyCoursesPage />} />
                 <Route path="/my-sessions" element={<MySessionsPage />} />

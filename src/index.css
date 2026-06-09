@@ -518,3 +518,71 @@
   .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   MOTION SYSTEM — shared entrance / press / reveal primitives.
+   Class names are a cross-agent contract (consumed app-wide):
+     .anim-rise  .anim-stagger  .pressable  .kenburns  .reveal/.reveal-in
+   Everything lives under prefers-reduced-motion: no-preference, so
+   reduced-motion users get an instant, fully-visible UI: no keyframes,
+   no transforms, and .reveal never hides content (useReveal also adds
+   .reveal-in immediately in that case). Kept OUTSIDE Tailwind layers so
+   the classes are always emitted.
+   ════════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes motion-rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes motion-kenburns {
+    from { transform: scale(1); }
+    to   { transform: scale(1.04); }
+  }
+
+  /* Fade in + rise on mount */
+  .anim-rise {
+    animation: motion-rise 280ms ease-out both;
+  }
+
+  /* Children rise with incremental 40ms stagger (explicit up to 10) */
+  .anim-stagger > * {
+    animation: motion-rise 280ms ease-out both;
+  }
+  .anim-stagger > *:nth-child(1)  { animation-delay: 40ms;  }
+  .anim-stagger > *:nth-child(2)  { animation-delay: 80ms;  }
+  .anim-stagger > *:nth-child(3)  { animation-delay: 120ms; }
+  .anim-stagger > *:nth-child(4)  { animation-delay: 160ms; }
+  .anim-stagger > *:nth-child(5)  { animation-delay: 200ms; }
+  .anim-stagger > *:nth-child(6)  { animation-delay: 240ms; }
+  .anim-stagger > *:nth-child(7)  { animation-delay: 280ms; }
+  .anim-stagger > *:nth-child(8)  { animation-delay: 320ms; }
+  .anim-stagger > *:nth-child(9)  { animation-delay: 360ms; }
+  .anim-stagger > *:nth-child(10) { animation-delay: 400ms; }
+  .anim-stagger > *:nth-child(n+11) { animation-delay: 440ms; }
+
+  /* Tactile press for buttons / cards */
+  .pressable {
+    transition: transform 150ms ease-out;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pressable:active {
+    transform: scale(0.97);
+  }
+
+  /* Slow drift for hero imagery */
+  .kenburns {
+    animation: motion-kenburns 9s ease-in-out infinite alternate;
+  }
+
+  /* Scroll reveal — paired with useReveal()/<Reveal>, which add .reveal-in
+     on first intersection */
+  .reveal {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 320ms ease-out, transform 320ms ease-out;
+  }
+  .reveal.reveal-in {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

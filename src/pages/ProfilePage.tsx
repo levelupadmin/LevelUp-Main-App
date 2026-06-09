@@ -18,11 +18,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Pencil, X, Award, AlertTriangle, Download, FileText } from "lucide-react";
+import { ArrowRight, ChevronRight, Pencil, X, Award, AlertTriangle, Download, FileText, Heart } from "lucide-react";
 import { toast } from "@/lib/toast";
 import CertificateGallery from "@/components/certificates/CertificateGallery";
 import NotificationPreferences from "@/components/notifications/NotificationPreferences";
 import { downloadInvoice, invoiceNumber } from "@/lib/invoice";
+import { useWishlist } from "@/hooks/useWishlist";
+import { isNative } from "@/lib/platform";
 
 interface Enrolment {
   id: string;
@@ -123,7 +125,7 @@ const ChangePasswordSection = ({ email }: { email: string }) => {
   if (!open) {
     return (
       <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        Change Password
+        Change password
       </Button>
     );
   }
@@ -514,7 +516,7 @@ const ProfilePage = () => {
                     className="mt-4"
                     onClick={() => setEditing(true)}
                   >
-                    <Pencil className="h-3 w-3 mr-1" /> Edit Profile
+                    <Pencil className="h-3 w-3 mr-1" /> Edit profile
                   </Button>
                 </>
               )}
@@ -529,12 +531,15 @@ const ProfilePage = () => {
             <section>
               <div className="flex items-center gap-2 mb-4">
                 <Award className="h-5 w-5 text-cream" />
-                <h3 className="text-lg font-semibold">My Certificates</h3>
+                <h3 className="text-lg font-semibold">Certificates</h3>
               </div>
               <CertificateGallery userId={user.id} />
             </section>
           </>
         )}
+
+        {/* Saved — wishlisted offerings; hides itself when empty */}
+        {user && <SavedSection />}
 
         {/* Notification Preferences */}
         {user && (
@@ -549,12 +554,12 @@ const ProfilePage = () => {
 
         {/* Enrolments */}
         <section>
-          <h3 className="text-lg font-semibold mb-4">My Enrolments</h3>
+          <h3 className="text-lg font-semibold mb-4">Enrolments</h3>
           {enrolments.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No enrolments yet — your first course is just a click away.{" "}
-              <Link to="/browse" className="text-cream hover:underline">
-                Browse programs →
+              <Link to="/" className="text-cream hover:underline">
+                Explore programs →
               </Link>
             </p>
           ) : (
@@ -598,7 +603,7 @@ const ProfilePage = () => {
 
         {/* Change Password */}
         <section>
-          <h3 className="text-lg font-semibold mb-2">Change Password</h3>
+          <h3 className="text-lg font-semibold mb-2">Change password</h3>
           <p className="text-sm text-muted-foreground mb-4">
             Update your account password.
           </p>
@@ -640,6 +645,84 @@ const ProfilePage = () => {
         {/* Danger zone — account deletion (Google Play requirement) */}
         <DangerZoneSection />
       </div>
+    </>
+  );
+};
+
+// ── Saved section ───────────────────────────────────────────────────
+// Compact rows for the user's wishlisted offerings, linking to /p/{slug}.
+// Renders nothing (including its divider) when the wishlist is empty.
+// Prices stay hidden on native builds (Google Reader Rule / Apple
+// anti-steering) — native rows show the title only.
+interface SavedOffering {
+  id: string;
+  slug: string | null;
+  title: string;
+  thumbnail_url: string | null;
+  price_inr: number | null;
+}
+
+const SavedSection = () => {
+  const { wishlistedIds, loading: wishlistLoading } = useWishlist();
+  const [offerings, setOfferings] = useState<SavedOffering[]>([]);
+
+  useEffect(() => {
+    if (wishlistLoading) return;
+    if (!wishlistedIds.size) {
+      setOfferings([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("offerings")
+        .select("id, slug, title, thumbnail_url, price_inr")
+        .in("id", [...wishlistedIds])
+        .eq("status", "active");
+      if (cancelled) return;
+      // Rows without a slug have no public page to link to — skip them.
+      setOfferings(((data ?? []) as SavedOffering[]).filter((o) => o.slug));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wishlistedIds, wishlistLoading]);
+
+  if (!offerings.length) return null;
+
+  return (
+    <>
+      <div className="border-t border-border" />
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <Heart className="h-5 w-5 text-cream" />
+          <h3 className="text-lg font-semibold">Saved</h3>
+        </div>
+        <div className="space-y-2">
+          {offerings.map((o) => (
+            <Link
+              key={o.id}
+              to={`/p/${o.slug}`}
+              className="pressable flex items-center gap-4 bg-surface border border-border rounded-lg p-3 hover:border-border-hover"
+            >
+              <div className="w-14 h-14 rounded-lg bg-surface-2 overflow-hidden flex-shrink-0">
+                {o.thumbnail_url && (
+                  <img src={o.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{o.title}</p>
+                {!isNative() && o.price_inr != null && (
+                  <p className="font-mono text-xs text-muted-foreground mt-0.5">
+                    ₹{new Intl.NumberFormat("en-IN").format(o.price_inr)}
+                  </p>
+                )}
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            </Link>
+          ))}
+        </div>
+      </section>
     </>
   );
 };
