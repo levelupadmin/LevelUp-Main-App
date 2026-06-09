@@ -6,6 +6,7 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import Footer from "@/components/Footer";
+import LevelUpWordmark from "@/components/LevelUpWordmark";
 import { isAndroid, isNative } from "@/lib/platform";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import AndroidAppCard from "@/components/AndroidAppCard";
@@ -1186,9 +1187,9 @@ export default function PublicOffering() {
           at the safe top while the long marketing page scrolls. */}
       <header className="sticky top-0 z-30 border-b border-border bg-[hsl(var(--surface))]/95 backdrop-blur-lg safe-top">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <span className="text-lg font-bold text-[hsl(var(--cream))] font-['Instrument_Serif'] italic">
-            LevelUp
-          </span>
+          <Link to="/" aria-label="LevelUp Learning home" className="flex items-center">
+            <LevelUpWordmark className="h-7 w-auto text-foreground" />
+          </Link>
           {!session && (
             <a
               href="/login"

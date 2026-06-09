@@ -6,6 +6,7 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import LevelUpWordmark from "@/components/LevelUpWordmark";
 import { track } from "@/lib/analytics";
 import { isNative } from "@/lib/platform";
 import {
@@ -605,9 +606,9 @@ export default function ThankYou() {
       {/* Header */}
       <header className="relative border-b border-border bg-[hsl(var(--surface))]/60 backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
-          <span className="text-lg font-bold text-[hsl(var(--cream))] font-['Instrument_Serif'] italic">
-            LevelUp
-          </span>
+          <Link to="/" aria-label="LevelUp Learning home" className="inline-flex items-center">
+            <LevelUpWordmark className="h-7 w-auto text-foreground" />
+          </Link>
         </div>
       </header>
 
