@@ -117,19 +117,28 @@ Deno.serve(async (req) => {
         const lengthSeconds =
           typeof data?.length === "number" ? Math.round(data.length) : null;
 
-        type Poster = { url?: string; width?: number; height?: number };
-        let posters: Poster[] = [];
+        // VdoCipher /api/videos keys the URL as `posterUrl` (NOT `url`); accept
+        // both plus a bare-string entry. Reading only `url` dropped every poster.
+        type Poster = { url?: string; posterUrl?: string; poster?: string; width?: number; height?: number };
+        const posterUrlOf = (p: Poster | string): string | undefined =>
+          typeof p === "string" ? p : (p?.posterUrl || p?.url || p?.poster);
+        let posters: (Poster | string)[] = [];
         if (Array.isArray(data?.posters)) posters = data.posters as Poster[];
         else if (data?.posters && typeof data.posters === "object") {
           posters = [data.posters as Poster];
+        } else if (data?.poster) {
+          posters = Array.isArray(data.poster) ? data.poster : [data.poster];
         }
         let bestPoster: string | null = null;
-        let bestArea = 0;
+        let bestArea = -1;
         for (const p of posters) {
-          if (!p?.url || typeof p.url !== "string") continue;
-          const area = (p.width ?? 0) * (p.height ?? 0);
+          const url = posterUrlOf(p);
+          if (!url || typeof url !== "string") continue;
+          const w = typeof p === "string" ? 0 : (p.width ?? 0);
+          const h = typeof p === "string" ? 0 : (p.height ?? 0);
+          const area = w * h || h;
           if (!bestPoster || area > bestArea) {
-            bestPoster = p.url;
+            bestPoster = url;
             bestArea = area;
           }
         }

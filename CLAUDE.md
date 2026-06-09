@@ -160,6 +160,38 @@ npx -y supabase@latest functions deploy <name>                   # server-side b
   config.toml default; always `link --project-ref ivkvluezuiojovpotlyb` first.**
 - Secrets live in `~/Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/.env.supabase`.
 
+### Chapter thumbnails
+
+Every chapter card / Up Next rail / offering tile renders
+`thumbnail_url || vdocipher_thumbnail_url || numbered-placeholder`, so populating
+either column lights up ALL surfaces with no front-end change.
+
+- **VdoCipher chapters** (the masterclasses): poster cached in
+  `vdocipher_thumbnail_url`, auto-fetched by `get-vdocipher-video-meta` (on admin
+  save / curriculum open) and in bulk by `vdocipher-metadata-backfill-all`.
+  ⚠️ VdoCipher returns posters keyed as **`posterUrl`** (not `url`) — both edge fns
+  were fixed for this 2026-06-09; before that every poster silently came back null.
+- **Everything else** — `scripts/backfill-thumbnails.mjs` (Node stdlib; no deps).
+  Idempotent (only fills NULL `thumbnail_url`), re-runnable, per-row try/catch:
+
+  ```bash
+  node scripts/backfill-thumbnails.mjs                  # all types, NULLs only
+  node scripts/backfill-thumbnails.mjs --dry-run        # no writes
+  node scripts/backfill-thumbnails.mjs --only=pdf|video|image
+  node scripts/backfill-thumbnails.mjs --force          # redo even if set
+  ```
+
+  - image → `thumbnail_url` points at the image itself (no upload)
+  - video mp4/hls → ffmpeg frame (~10% in) → public `thumbnails` bucket
+  - pdf → pdftoppm page 1 → public `thumbnails` bucket
+  - vimeo/youtube → provider CDN URL (no upload) [no such content yet]
+  - Needs `ffmpeg`+`ffprobe` and `poppler`/`pdftoppm` (`brew install poppler`).
+  - Reads `SUPABASE_PAT` (Management API for SQL) + fetches the `service_role` key
+    at runtime for storage upload. Source files live in the PUBLIC `workshop-archive`
+    bucket (no download auth needed).
+  - **Going forward:** re-run after adding workshop content — new rows get thumbs,
+    done rows are skipped. VdoCipher self-heals via the edge fn on save.
+
 ---
 
 ## Secret-handling rules (non-negotiable)

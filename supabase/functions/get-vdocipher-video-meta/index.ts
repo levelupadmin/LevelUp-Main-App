@@ -100,24 +100,33 @@ Deno.serve(async (req) => {
         ? Math.round(vdoData.length)
         : null;
 
-    // posters is sometimes an array of { url, width, height } objects,
-    // sometimes a single object, sometimes absent. Normalise.
-    type Poster = { url?: string; width?: number; height?: number };
-    let posters: Poster[] = [];
+    // posters is sometimes an array of objects, sometimes a single object,
+    // sometimes absent. The VdoCipher /api/videos response keys the URL as
+    // `posterUrl` (NOT `url`); /api/meta uses `url`. Accept both, plus a bare
+    // string entry. Reading only `url` silently dropped every poster.
+    type Poster = { url?: string; posterUrl?: string; poster?: string; width?: number; height?: number };
+    const posterUrlOf = (p: Poster | string): string | undefined =>
+      typeof p === "string" ? p : (p?.posterUrl || p?.url || p?.poster);
+    let posters: (Poster | string)[] = [];
     if (Array.isArray(vdoData?.posters)) {
       posters = vdoData.posters as Poster[];
     } else if (vdoData?.posters && typeof vdoData.posters === "object") {
       posters = [vdoData.posters as Poster];
+    } else if (vdoData?.poster) {
+      posters = Array.isArray(vdoData.poster) ? vdoData.poster : [vdoData.poster];
     }
 
     // Pick the highest-resolution poster with a non-empty url.
     let bestPoster: string | null = null;
-    let bestArea = 0;
+    let bestArea = -1;
     for (const p of posters) {
-      if (!p?.url || typeof p.url !== "string") continue;
-      const area = (p.width ?? 0) * (p.height ?? 0);
+      const url = posterUrlOf(p);
+      if (!url || typeof url !== "string") continue;
+      const w = typeof p === "string" ? 0 : (p.width ?? 0);
+      const h = typeof p === "string" ? 0 : (p.height ?? 0);
+      const area = w * h || h; // fall back to height when width is absent
       if (!bestPoster || area > bestArea) {
-        bestPoster = p.url;
+        bestPoster = url;
         bestArea = area;
       }
     }
