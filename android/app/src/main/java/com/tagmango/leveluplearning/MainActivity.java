@@ -4,6 +4,7 @@ import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.webkit.WebChromeClient;
 import android.widget.FrameLayout;
 
@@ -37,6 +38,17 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // FLAG_SECURE: block screenshots and make screen recordings capture
+        // black, app-wide. WebView plays Widevine at L3 (software decrypt),
+        // which does NOT enforce a secure output path — so without this flag
+        // testers could screen-record DRM masterclass video. App-wide is the
+        // Netflix/Hotstar approach and avoids racy per-screen toggling. The
+        // share sheet (invoices) is unaffected — it shares files, not pixels.
+        getWindow().setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        );
 
         // Swap in our fullscreen-aware chrome client. Done here in
         // onCreate (the activity is CREATED, not yet STARTED) so the

@@ -29,6 +29,7 @@ import NotFoundPage from "@/pages/NotFoundPage";
 // and never see it. Lazy so the 40 KB source (TanStack-Query'd home grid +
 // course cards + hero carousel) doesn't ride along with the main bundle.
 const Home = lazy(() => import("@/pages/Home"));
+const Onboarding = lazy(() => import("@/pages/Onboarding"));
 
 // Lazy-loaded student pages
 const CourseDetail = lazy(() => import("@/pages/CourseDetail"));
@@ -180,6 +181,9 @@ const App = () => {
               <Route path="/" element={<RootRedirect />} />
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
+              {/* Full-bleed post-OTP onboarding — self-guards, renders OUTSIDE
+                  the StudentLayout shell (no bottom nav). */}
+              <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/p/:slug" element={<PublicOffering />} />
               <Route path="/thank-you/:paymentOrderId" element={<ThankYou />} />
               {/* Checkout sits in the public block - anon visitors landing

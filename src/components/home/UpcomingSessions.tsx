@@ -69,13 +69,16 @@ const UpcomingSessions = () => {
         (coursesData ?? []).forEach((c) => { courseMap[c.id] = c.title; });
 
         setSessions(
-          sessionsData.map((s) => ({
-            id: s.id,
-            title: s.title,
-            scheduled_at: s.scheduled_at,
-            duration_minutes: s.duration_minutes,
-            course_title: courseMap[s.course_id ?? ""] || "Course",
-          }))
+          sessionsData
+            .filter((s): s is typeof s & { id: string; scheduled_at: string } =>
+              !!s.id && !!s.scheduled_at)
+            .map((s) => ({
+              id: s.id,
+              title: s.title ?? "Live session",
+              scheduled_at: s.scheduled_at,
+              duration_minutes: s.duration_minutes,
+              course_title: courseMap[s.course_id ?? ""] || "Course",
+            }))
         );
       } catch (err) {
         if (import.meta.env.DEV) console.error("Failed to load upcoming sessions:", err);

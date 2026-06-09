@@ -30,6 +30,7 @@ import type { Chapter, Resource, QnaItem, QnaReply } from "@/components/chapter/
 import QuizBlock from "@/components/chapter/QuizBlock";
 import ChapterMediaPlayer from "@/components/chapter/ChapterMediaPlayer";
 import UpNextList from "@/components/chapter/UpNextList";
+import CompletionTakeover from "@/components/chapter/CompletionTakeover";
 import ChapterQna from "@/components/chapter/ChapterQna";
 
 const ChapterViewer = () => {
@@ -728,33 +729,18 @@ const ChapterViewer = () => {
           </div>
         </div>
       )}
-      {/* Course completion banner */}
-      {showCompletionBanner && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-card border border-border rounded-2xl px-5 sm:px-8 py-6 sm:py-8 shadow-2xl text-center max-w-sm sm:max-w-md mx-4">
-            <div className="text-5xl mb-4">🎉</div>
-            <h2 className="text-xl font-bold text-foreground">
-              You've completed {courseTitle || "this course"}!
-            </h2>
-            <p className="text-muted-foreground mt-2">
-              Ready for the next step?
-            </p>
-            <div className="flex flex-col gap-3 mt-6">
-              <Button onClick={() => navigate("/browse")} size="lg" className="btn-champagne w-full text-[hsl(var(--cream-text))]">
-                Browse More Courses
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowCompletionBanner(false)}
-                className="w-full"
-              >
-                Stay Here
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Course completion — cinematic takeover (replaces the old emoji card) */}
+      <CompletionTakeover
+        open={showCompletionBanner}
+        variant="course"
+        title={courseTitle || "this course"}
+        subtitle="You've finished every lesson. Onwards."
+        artUrl={siblings.map((s) => s.thumbnail_url || s.vdocipher_thumbnail_url).find(Boolean) || null}
+        continueLabel="Browse more courses"
+        onContinue={() => navigate("/")}
+        onShare={handleShare}
+        onClose={() => setShowCompletionBanner(false)}
+      />
 
       {/* Top bar */}
       <div className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 flex items-center gap-3 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]">
