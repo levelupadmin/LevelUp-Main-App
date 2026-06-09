@@ -18,6 +18,7 @@ import {
   AlertCircle,
   BookOpen,
   ArrowRight,
+  ArrowLeft,
   Play,
   Archive,
 } from "lucide-react";
@@ -116,17 +117,36 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
  */
 function HeroBanner({ offering }: { offering: Offering }) {
   const img = offering.banner_url || offering.thumbnail_url;
+  // Live-cohort offerings carry a square brand LOGO (not a wide hero photo), so
+  // object-cover would crop its sides. Detect them (they set tally_form_url) and
+  // contain the logo in the top portion on a branded backdrop instead.
+  const isApply = !!(offering as any).tally_form_url;
+  const eyebrow = isApply ? "Live Cohort" : "Masterclass";
   return (
     <div className="relative w-full aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-3xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
       {img ? (
-        <img
-          src={img}
-          alt={offering.title}
-          className="absolute inset-0 w-full h-full object-cover"
-          loading="eager"
-          fetchPriority="high"
-          decoding="async"
-        />
+        isApply ? (
+          <>
+            <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--surface-2))] via-[hsl(var(--surface))] to-[hsl(var(--canvas))]" />
+            <img
+              src={img}
+              alt={offering.title}
+              className="absolute inset-x-0 top-0 h-[60%] w-full object-contain p-8 sm:p-10"
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
+            />
+          </>
+        ) : (
+          <img
+            src={img}
+            alt={offering.title}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
+          />
+        )
       ) : (
         <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
           <BookOpen className="h-16 w-16 opacity-30" />
@@ -140,7 +160,7 @@ function HeroBanner({ offering }: { offering: Offering }) {
       {/* Overlaid title block */}
       <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8 lg:p-12">
         <p className="text-[10px] sm:text-xs font-mono uppercase tracking-[0.18em] text-[hsl(var(--cream))]/80 mb-3">
-          Masterclass
+          {eyebrow}
         </p>
         <h1 className="text-[clamp(28px,8vw,36px)] leading-[1.05] sm:text-5xl lg:text-[64px] lg:leading-[1.02] font-bold text-foreground tracking-[-0.02em] max-w-[18ch] break-words [text-wrap:balance]">
           {offering.title}
@@ -245,7 +265,7 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
           rel="noopener noreferrer"
           className="btn-champagne inline-flex items-center justify-center h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5 transition-transform"
         >
-          Apply on the web
+          Apply for an invite
           <ArrowRight className="h-4 w-4 ml-2" />
         </a>
       </div>
@@ -1214,9 +1234,23 @@ export default function PublicOffering() {
           at the safe top while the long marketing page scrolls. */}
       <header className="sticky top-0 z-30 border-b border-border bg-[hsl(var(--surface))]/95 backdrop-blur-lg safe-top">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <Link to="/" aria-label="LevelUp Learning home" className="flex items-center">
-            <LevelUpWordmark className="h-7 w-auto text-foreground" />
-          </Link>
+          <div className="flex items-center gap-1">
+            {/* Explicit back affordance — this public route renders OUTSIDE the
+                app shell (no bottom nav), so without this a user who taps in
+                from Browse on iOS has no way out. Falls back to /browse when
+                there's no history (deep link / first navigation). */}
+            <button
+              type="button"
+              onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/browse"))}
+              aria-label="Go back"
+              className="flex items-center justify-center h-11 w-11 -ml-2 rounded-full text-foreground hover:bg-white/5 active:scale-95 transition"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <Link to="/" aria-label="LevelUp Learning home" className="flex items-center">
+              <LevelUpWordmark className="h-7 w-auto text-foreground" />
+            </Link>
+          </div>
           {!session && (
             <a
               href="/login"
@@ -1341,7 +1375,7 @@ export default function PublicOffering() {
           persistent across the page so the buyer never has to scroll
           back to act. The Masterclass iOS pattern. Navigates to the
           dedicated checkout route. */}
-      {!isNative() && offering.status !== "archived" && (
+      {(applyUrl || !isNative()) && offering.status !== "archived" && (
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -1369,7 +1403,7 @@ export default function PublicOffering() {
               rel="noopener noreferrer"
               className="btn-champagne inline-flex items-center justify-center text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
             >
-              Apply on the web
+              Apply for an invite
               <ArrowRight className="h-4 w-4 ml-1.5" />
             </a>
           ) : (
