@@ -179,12 +179,21 @@ Deno.serve(async (req) => {
           ttl: 300,
           annotate: JSON.stringify([
             {
+              // VdoCipher scales `size` (px against a reference frame) UP to fill
+              // the render surface, so a value tuned for the ~640px web iframe
+              // explodes on the native iOS FairPlay player (fullscreen, 4K,
+              // Retina). Keep `rtext` (the only type the iOS SDK renders) but
+              // shrink size 15→9, drop alpha 0.60→0.35, and add `skip` so the
+              // mark is PERIODIC (visible ~5s, hidden 15s) instead of constant —
+              // subtle on iPhone, still forensically traceable (can't be cropped
+              // out across the runtime). Tunable: go size 8 if still large.
               type: "rtext",
               text: watermarkText,
-              alpha: "0.60",
+              alpha: "0.35",
               color: "0xFFFFFF",
-              size: "15",
+              size: "9",
               interval: "5000",
+              skip: "15000",
             },
           ]),
         }),
