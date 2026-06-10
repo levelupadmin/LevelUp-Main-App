@@ -134,7 +134,7 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title }: Props)
     try {
       const result = await fetchVdoOtp(chapterId);
       if (!result.ok) {
-        toast.error("Couldn't start playback. Try again.");
+        toast.error(`Couldn't start playback (${result.errorType}). Try again.`);
         return;
       }
       await VdoPlayerNative.play({
@@ -144,8 +144,12 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title }: Props)
         title,
         startPosition,
       });
-    } catch {
-      toast.error("Couldn't start playback. Try again.");
+    } catch (e) {
+      // Surface the native plugin's reject reason so a failing device reports
+      // the actual cause (SDK error / "not implemented") instead of a generic
+      // message — the iOS FairPlay path can't be debugged any other way.
+      const msg = (e as { message?: string })?.message;
+      toast.error(msg ? `Playback error: ${msg}`.slice(0, 140) : "Couldn't start playback. Try again.");
     } finally {
       setNativeLaunching(false);
     }
