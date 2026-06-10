@@ -1,7 +1,7 @@
 // Sentry wiring.
 // ----------------------------------------------------------------------------
 // Initialised early in main.tsx so any error during module evaluation or
-// React render reaches us. The DSN comes from VITE_SENTRY_DSN — if it's
+// React render reaches us. The DSN comes from VITE_SENTRY_DSN; if it's
 // not set (local dev, preview builds, or before the production DSN is
 // minted in the Sentry dashboard), init is a no-op so the rest of the
 // app continues unaffected.
@@ -9,7 +9,7 @@
 // Once you have a Sentry account:
 // 1. Create a project at https://sentry.io for the React app
 // 2. Copy the DSN it gives you (format: https://abc...@o....ingest.sentry.io/12345)
-// 3. Add VITE_SENTRY_DSN in Vercel → Project Settings → Environment Variables
+// 3. Add VITE_SENTRY_DSN in Vercel under Project Settings, Environment Variables
 // 4. Redeploy. Errors will start flowing into Sentry within minutes.
 
 import * as Sentry from "@sentry/react";
@@ -17,7 +17,7 @@ import * as Sentry from "@sentry/react";
 export function initSentry() {
   const dsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
   if (!dsn) {
-    // No DSN configured — common during local dev. Stay silent; users
+    // No DSN configured, common during local dev. Stay silent; users
     // shouldn't see a console error just because the team hasn't
     // hooked up error reporting yet.
     return;
@@ -35,7 +35,7 @@ export function initSentry() {
     // errors to a specific deploy). Vercel injects this automatically.
     release: import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA as string | undefined,
     environment: import.meta.env.MODE === "production" ? "production" : "preview",
-    // Don't sample performance traces too aggressively — full session
+    // Don't sample performance traces too aggressively; full session
     // replay costs Sentry quota. 10% gives a useful sample without
     // burning through it.
     tracesSampleRate: 0.1,
@@ -47,7 +47,7 @@ export function initSentry() {
     integrations: [
       Sentry.browserTracingIntegration(),
       Sentry.replayIntegration({
-        // PII masking — never capture text content or form inputs in
+        // PII masking: never capture text content or form inputs in
         // replays. We sell to creators and need to respect their work.
         maskAllText: true,
         blockAllMedia: true,
@@ -60,7 +60,7 @@ export function initSentry() {
         const msg = err.message || "";
         // Browser extension noise
         if (/extension|chrome-extension|moz-extension/.test(msg)) return null;
-        // ResizeObserver loop limit exceeded — benign, fires from CSS
+        // ResizeObserver loop limit exceeded, benign, fires from CSS
         // animation libs and is not user-visible
         if (/ResizeObserver/.test(msg)) return null;
         // Network errors from third-party trackers (we can't fix them)
@@ -80,7 +80,7 @@ export const SentryErrorBoundary = Sentry.ErrorBoundary;
 /**
  * Report a caught error (e.g. from our ErrorBoundary.componentDidCatch) to
  * Sentry. A render error caught by an ErrorBoundary is "handled", so Sentry's
- * global handlers never see it — the boundary must report it explicitly. No-op
+ * global handlers never see it, so the boundary must report it explicitly. No-op
  * and never throws if Sentry wasn't initialised (no DSN).
  */
 export function captureException(error: unknown, context?: Record<string, unknown>) {

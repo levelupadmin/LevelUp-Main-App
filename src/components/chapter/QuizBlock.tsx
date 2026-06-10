@@ -19,8 +19,8 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
       quiz_options: (q.quiz_options || []).sort((a: any, b: any) => a.sort_order - b.sort_order),
     }));
 
-  // Load previous attempt on mount. Column is `total`, not `total_questions`
-  // — prior code referenced a non-existent column.
+  // Load previous attempt on mount. Column is `total`, not `total_questions`;
+  // prior code referenced a non-existent column.
   useEffect(() => {
     if (!userId || !quiz.id) { setLoadingAttempt(false); return; }
     (async () => {
@@ -54,7 +54,7 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
       return;
     }
 
-    // Server-side scoring — the RPC verifies enrolment, reads is_correct
+    // Server-side scoring: the RPC verifies enrolment, reads is_correct
     // from the locked-down base table, and records the attempt in one
     // SECURITY DEFINER transaction. Client no longer sees the answer key.
     const { data, error } = await (supabase as any).rpc("submit_quiz", {
@@ -79,7 +79,7 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
       hapticNotification("success");
       toast.success(`Passed! ${score}/${total} correct`);
     } else {
-      toast.error(`Not quite — ${score}/${total}. You need ${quiz.pass_percentage}% to pass.`);
+      toast.error(`Not quite. ${score}/${total}. You need ${quiz.pass_percentage}% to pass.`);
     }
   };
 
@@ -115,7 +115,7 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
                 : "bg-rose-500/15 text-rose-400"
             }`}
           >
-            {result.passed ? "PASSED" : "FAILED"} — {result.score}/{result.total}
+            {result.passed ? "PASSED" : "FAILED"} - {result.score}/{result.total}
           </span>
         )}
       </div>

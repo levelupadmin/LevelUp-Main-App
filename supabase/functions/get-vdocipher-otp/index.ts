@@ -184,7 +184,7 @@ Deno.serve(async (req) => {
               // explodes on the native iOS FairPlay player (fullscreen, 4K,
               // Retina). Keep `rtext` (the only type the iOS SDK renders) but
               // shrink size 15→9, drop alpha 0.60→0.35, and add `skip` so the
-              // mark is PERIODIC (visible ~5s, hidden 15s) instead of constant —
+              // mark is PERIODIC (visible ~5s, hidden 15s) instead of constant:
               // subtle on iPhone, still forensically traceable (can't be cropped
               // out across the runtime). Tunable: go size 8 if still large.
               type: "rtext",
@@ -230,7 +230,7 @@ Deno.serve(async (req) => {
     });
 
     // videoId: needed by the iOS native FairPlay player (VdoAsset.createAsset).
-    // The web iframe ignores it — purely additive, backward compatible.
+    // The web iframe ignores it; purely additive, backward compatible.
     return jsonRes({ otp: vdoData.otp, playbackInfo: vdoData.playbackInfo, videoId: chapter.vdocipher_video_id });
   } catch (err) {
     console.error("get-vdocipher-otp error:", err);

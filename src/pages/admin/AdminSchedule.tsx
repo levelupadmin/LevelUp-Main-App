@@ -267,7 +267,7 @@ const AdminSchedule = () => {
       return;
     }
 
-    // Block scheduling in the past (only for new sessions — allow edits to past sessions)
+    // Block scheduling in the past (only for new sessions, allow edits to past sessions)
     if (!editId && new Date(scheduledIso) < new Date()) {
       toast({ title: "Cannot schedule in the past", description: "Pick a future date and time.", variant: "destructive" });
       return;
@@ -319,7 +319,7 @@ const AdminSchedule = () => {
         toast({ title: "Session updated" });
       }
     } else if (form.repeat_weeks > 0) {
-      // Create recurring sessions — check conflicts for all weeks
+      // Create recurring sessions - check conflicts for all weeks
       const rows = [];
       for (let w = 0; w <= form.repeat_weeks; w++) {
         const dt = new Date(scheduledIso);
@@ -519,7 +519,7 @@ const AdminSchedule = () => {
           continue;
         }
 
-        // Validate zoom URL if provided — must be http/https and ideally
+        // Validate zoom URL if provided - must be http/https and ideally
         // a zoom.us or levelupadmin-hosted host. We do a soft protocol
         // check here so bad values don't slip into live_sessions.zoom_link
         // where they're later rendered into anchor tags.

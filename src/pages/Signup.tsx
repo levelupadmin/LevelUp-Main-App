@@ -16,7 +16,7 @@ import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 // 2026-06-10: Phone-first signup (item 11). The form now collects ONLY a phone
 // number; name + email move to the post-OTP onboarding step (Onboarding.tsx),
 // which is the first thing a verified account sees. This drops the signup form
-// to a single field — the lowest-friction path to a verified account — and
+// to a single field (the lowest-friction path to a verified account) and
 // matches the phone-first Login flow.
 //
 // Mechanics: the verify-msg91-otp edge fn needs an email + name to mint a NEW
@@ -363,7 +363,7 @@ const Signup = () => {
   // (form left / hero right) from `lg` up on web. Mirrors Login.tsx.
   return (
     <div className="min-h-[100dvh] bg-canvas flex flex-col lg:flex-row">
-      {/* HERO — slim strip on mobile/native, right pane on desktop */}
+      {/* HERO: slim strip on mobile/native, right pane on desktop */}
       <div className="relative h-[20vh] min-h-[140px] shrink-0 overflow-hidden lg:order-2 lg:h-auto lg:min-h-[100dvh] lg:flex-1 lg:shrink">
         <img
           src={signupHeroImage}
@@ -396,7 +396,7 @@ const Signup = () => {
         </div>
       </div>
 
-      {/* FORM COLUMN — a rounded sheet rising over the hero on mobile */}
+      {/* FORM COLUMN: a rounded sheet rising over the hero on mobile */}
       <div className="relative z-10 flex flex-col flex-1 bg-canvas rounded-t-[28px] -mt-6 px-5 pt-7 pb-6 safe-bottom lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8">
         <div className="flex items-center gap-2 min-h-[44px] mb-4 lg:mb-8">
           {canGoBack && (

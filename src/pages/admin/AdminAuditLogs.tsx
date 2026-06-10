@@ -201,7 +201,7 @@ const AdminAuditLogs = () => {
                     {l.target_id && <span className="ml-1 text-muted-foreground/60">{l.target_id.slice(0, 8)}</span>}
                   </td>
                   <td className="px-5 py-3 text-xs text-muted-foreground max-w-xs truncate">
-                    {l.metadata && Object.keys(l.metadata).length > 0 ? JSON.stringify(l.metadata) : "—"}
+                    {l.metadata && Object.keys(l.metadata).length > 0 ? JSON.stringify(l.metadata) : "-"}
                   </td>
                 </tr>
               ))}
@@ -230,9 +230,9 @@ const AdminAuditLogs = () => {
                   </td>
                   <td className="px-5 py-3 text-sm">{actorName(l.actor_user_id)}</td>
                   <td className="px-5 py-3">{actionBadge(l.action)}</td>
-                  <td className="px-5 py-3 text-sm">{l.reason || "—"}</td>
+                  <td className="px-5 py-3 text-sm">{l.reason || "-"}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground max-w-xs truncate">
-                    {l.metadata && Object.keys(l.metadata).length > 0 ? JSON.stringify(l.metadata) : "—"}
+                    {l.metadata && Object.keys(l.metadata).length > 0 ? JSON.stringify(l.metadata) : "-"}
                   </td>
                 </tr>
               ))}

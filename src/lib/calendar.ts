@@ -1,5 +1,5 @@
 /**
- * Calendar helpers — turn a session/event into either a downloadable .ics file
+ * Calendar helpers: turn a session/event into either a downloadable .ics file
  * (works with Apple Calendar, Outlook, most native calendars) or a Google
  * Calendar "add event" URL (web fallback / Android quick-add).
  *
@@ -47,7 +47,7 @@ const slugForFilename = (title: string): string =>
 
 /**
  * Build a Google Calendar "create event" URL. Opens a pre-filled event the
- * user just has to save — the most reliable cross-platform path on the web and
+ * user just has to save, the most reliable cross-platform path on the web and
  * inside an Android WebView.
  */
 export function googleCalendarUrl(event: CalendarEvent): string {
@@ -129,8 +129,8 @@ export function downloadICS(event: CalendarEvent): boolean {
 /**
  * One-call "Add to calendar". Downloads an .ics on platforms that support blob
  * downloads (web + iOS/Android WebView), otherwise opens Google Calendar. The
- * .ics route is the most universal — Apple Calendar, Outlook and Google all
- * import it — so it's preferred, with the hosted Google URL as the fallback.
+ * .ics route is the most universal (Apple Calendar, Outlook and Google all
+ * import it) so it's preferred, with the hosted Google URL as the fallback.
  */
 export function addToCalendar(
   title: string,

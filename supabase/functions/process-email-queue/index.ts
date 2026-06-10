@@ -25,7 +25,7 @@ function isRateLimited(error: unknown): boolean {
 }
 
 // Check if an error is a forbidden (403) response, which means emails are
-// disabled for this project. Retrying won't help — move straight to DLQ.
+// disabled for this project. Retrying won't help, so move straight to DLQ.
 function isForbidden(error: unknown): boolean {
   if (error && typeof error === 'object' && 'status' in error) {
     return (error as { status: number }).status === 403
@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
   const token = authHeader.slice('Bearer '.length).trim()
   const expectedToken = supabaseServiceKey
   if (!timingSafeEqual(token, expectedToken)) {
-    // Sanity-check the parsed claim too — service_role is the only
+    // Sanity-check the parsed claim too; service_role is the only
     // accepted caller. If a future change rotates the key without
     // restarting this function, fail closed.
     const claims = parseJwtClaims(token)
@@ -284,7 +284,7 @@ Deno.serve(async (req) => {
             unsubscribe_token: payload.unsubscribe_token,
             message_id: payload.message_id,
           },
-          // sendUrl is optional — when LOVABLE_SEND_URL is not set, the library
+          // sendUrl is optional; when LOVABLE_SEND_URL is not set, the library
           // falls back to the default Lovable API endpoint (https://api.lovable.dev).
           // Set LOVABLE_SEND_URL as a Supabase secret to override (e.g. for local dev).
           { apiKey, sendUrl: Deno.env.get('LOVABLE_SEND_URL') }
@@ -337,14 +337,14 @@ Deno.serve(async (req) => {
             })
             .eq('id', 1)
 
-          // Stop processing — remaining messages stay in queue (VT expires, retried next cycle)
+          // Stop processing; remaining messages stay in queue (VT expires, retried next cycle)
           return new Response(
             JSON.stringify({ processed: totalProcessed, stopped: 'rate_limited' }),
             { headers: { 'Content-Type': 'application/json' } }
           )
         }
 
-        // 403 means emails are disabled for this project — retrying won't help.
+        // 403 means emails are disabled for this project; retrying won't help.
         // Move straight to DLQ and stop processing the rest of the batch.
         if (isForbidden(error)) {
           await moveToDlq(supabase, queue, msg, 'Emails disabled for this project')

@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
     }
 
     if (isFree || event.pricing_type === "free") {
-      // Atomic seat claim — enforces capacity under concurrency (the plain
+      // Atomic seat claim: enforces capacity under concurrency (the plain
       // count check above is only an advisory fast-fail).
       const { data: seat, error: seatErr } = await admin.rpc("claim_event_seat", {
         p_event_id: event_id,
@@ -122,7 +122,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ registered: true, already: seat === "already" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Paid — create Razorpay order
+    // Paid: create Razorpay order
     const keyId = Deno.env.get("RAZORPAY_KEY_ID")!;
     const keySecret = Deno.env.get("RAZORPAY_KEY_SECRET")!;
 

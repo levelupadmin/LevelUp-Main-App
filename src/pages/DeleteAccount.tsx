@@ -11,7 +11,7 @@ import { toast } from "@/lib/toast";
 import usePageTitle from "@/hooks/usePageTitle";
 
 // Public self-serve account-deletion page required by Google Play.
-// Anyone can submit (no auth) — this is the path for users who cannot
+// Anyone can submit (no auth); this is the path for users who cannot
 // sign in to use the in-app flow. Submissions go into
 // `account_deletion_requests` for the support team to verify and process.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -208,7 +208,7 @@ const DeleteAccount = () => {
                   id="reason"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder="Tell us why you're leaving — helps us improve."
+                  placeholder="Tell us why you're leaving, it helps us improve."
                   rows={4}
                   disabled={submitting}
                 />

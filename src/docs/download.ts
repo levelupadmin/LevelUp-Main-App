@@ -27,7 +27,7 @@ export function buildMarkdown(changelog: ChangelogRow[]): string {
   const lines: string[] = [];
   const now = new Date().toISOString();
 
-  lines.push("# LevelUp Main App — Documentation Bundle");
+  lines.push("# LevelUp Main App: Documentation Bundle");
   lines.push("");
   lines.push(`> Generated ${now} from \`/admin/docs\`. This bundle is the canonical reference for the LevelUp Main App. Paste it as a system prompt to any LLM (Claude, GPT, Gemini) and they'll have full context on what's built.`);
   lines.push("");
@@ -45,7 +45,7 @@ export function buildMarkdown(changelog: ChangelogRow[]): string {
   /* ─────────── Features ─────────── */
   lines.push("# Features (catalogue)");
   lines.push("");
-  lines.push("Every capability in the app with its status. **Greppable** — if a feature shows as ✅ Shipped with codeRefs, don't rebuild it.");
+  lines.push("Every capability in the app with its status. **Greppable**: if a feature shows as ✅ Shipped with codeRefs, don't rebuild it.");
   lines.push("");
   const byArea: Record<string, typeof FEATURES> = {};
   for (const f of FEATURES) {
@@ -55,7 +55,7 @@ export function buildMarkdown(changelog: ChangelogRow[]): string {
     lines.push(`## ${area}`);
     lines.push("");
     for (const f of byArea[area]) {
-      lines.push(`### ${f.title}  —  ${statusLabel(f.status)}`);
+      lines.push(`### ${f.title}  -  ${statusLabel(f.status)}`);
       lines.push("");
       lines.push(`**Slug:** \`${f.slug}\`  ·  **Area:** ${f.area}`);
       lines.push("");
@@ -118,7 +118,7 @@ export function buildMarkdown(changelog: ChangelogRow[]): string {
       lines.push("**Key columns:**");
       lines.push("");
       for (const col of t.keyColumns) {
-        lines.push(`- \`${col.name}\` (${col.type}) — ${col.description}`);
+        lines.push(`- \`${col.name}\` (${col.type}) - ${col.description}`);
       }
       lines.push("");
     }
@@ -147,7 +147,7 @@ export function buildMarkdown(changelog: ChangelogRow[]): string {
   lines.push("");
   for (const c of changelog) {
     const date = c.shipped_at ? new Date(c.shipped_at).toISOString().slice(0, 10) : "unscheduled";
-    lines.push(`## ${date} — ${c.title}  ${statusLabel(c.status)}`);
+    lines.push(`## ${date} - ${c.title}  ${statusLabel(c.status)}`);
     lines.push("");
     lines.push(`*${c.area}${c.version ? ` · ${c.version}` : ""}${c.user_facing ? " · user-facing" : " · internal"}*`);
     lines.push("");

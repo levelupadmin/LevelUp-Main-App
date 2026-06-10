@@ -109,7 +109,7 @@ const UpcomingEvents = () => {
       const data = await res.json();
 
       if (data.registered) {
-        toast({ title: "Registered! ✓", description: "You're in — see you there." });
+        toast({ title: "Registered! ✓", description: "You're in. See you there." });
         setMyRegs((prev) => new Set(prev).add(eventId));
       } else if (data.razorpay_order_id) {
         const options = {

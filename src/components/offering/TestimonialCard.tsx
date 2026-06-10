@@ -5,7 +5,7 @@ interface TestimonialCardProps {
 }
 
 /**
- * Single pull-quote testimonial — used right after the free-preview /
+ * Single pull-quote testimonial, used right after the free-preview /
  * trailer section on the offering page, where one strong voice lands
  * harder than a grid. The full Testimonials grid still renders further
  * down the page.

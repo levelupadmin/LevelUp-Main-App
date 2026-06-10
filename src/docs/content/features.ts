@@ -1,5 +1,5 @@
 /**
- * The Features catalogue — atomic inventory of every capability in the
+ * The Features catalogue: atomic inventory of every capability in the
  * app, with a precise "shipped / partial / planned / deprecated" status.
  *
  * This is the single source of truth for "is X built or not?". When a
@@ -14,7 +14,7 @@ export const FEATURES: Feature[] = [
   {
     slug: "phone-otp-signup",
     title: "Phone OTP signup + login",
-    summary: "Sign up and sign in with a phone number; OTP delivered via MSG91. Idempotent — re-using the same phone returns the existing account.",
+    summary: "Sign up and sign in with a phone number; OTP delivered via MSG91. Idempotent: re-using the same phone returns the existing account.",
     area: "Auth",
     status: "shipped",
     shipped_at: "2026-05-26",
@@ -25,7 +25,7 @@ export const FEATURES: Feature[] = [
   {
     slug: "google-oauth",
     title: "Google OAuth (planned)",
-    summary: "Optional social sign-in to reduce friction for desktop users. Not yet implemented — Supabase Auth supports it but the UI hookup is pending.",
+    summary: "Optional social sign-in to reduce friction for desktop users. Not yet implemented; Supabase Auth supports it but the UI hookup is pending.",
     area: "Auth",
     status: "planned",
   },
@@ -41,7 +41,7 @@ export const FEATURES: Feature[] = [
   {
     slug: "role-system",
     title: "Role-based access (owner/admin/instructor/author/support/student)",
-    summary: "Five admin roles + student. Each gets a different slice of /admin via canAccessRoute. Owner is the CEO tier — never demotable.",
+    summary: "Five admin roles + student. Each gets a different slice of /admin via canAccessRoute. Owner is the CEO tier, never demotable.",
     area: "Auth",
     status: "shipped",
     codeRefs: ["src/lib/permissions.ts", "supabase/migrations/20260523120000_add_owner_role.sql"],
@@ -234,7 +234,7 @@ export const FEATURES: Feature[] = [
     summary: "Users can mute their own posts to stop notifications. Stored in localStorage.",
     area: "Community",
     status: "partial",
-    details: "Currently localStorage-only — doesn't sync across devices. Future work: store in user_thread_mutes table.",
+    details: "Currently localStorage-only, doesn't sync across devices. Future work: store in user_thread_mutes table.",
   },
   {
     slug: "announcements",
@@ -323,7 +323,7 @@ export const FEATURES: Feature[] = [
   {
     slug: "admin-api",
     title: "API + integrations console (this page!)",
-    summary: "/admin/api — tabs for Keys, Install (CLI + MCP setup), Webhooks, Activity log, Surface browser.",
+    summary: "/admin/api: tabs for Keys, Install (CLI + MCP setup), Webhooks, Activity log, Surface browser.",
     area: "Admin",
     status: "shipped",
     shipped_at: "2026-05-26",
@@ -332,7 +332,7 @@ export const FEATURES: Feature[] = [
   {
     slug: "admin-docs",
     title: "Documentation portal (this page!)",
-    summary: "/admin/docs — tabs for Overview, Features, Flows, Tech, Schema, API, Changelog. Search per tab, screenshot mobile/desktop toggle, downloadable as markdown.",
+    summary: "/admin/docs: tabs for Overview, Features, Flows, Tech, Schema, API, Changelog. Search per tab, screenshot mobile/desktop toggle, downloadable as markdown.",
     area: "Admin",
     status: "shipped",
     shipped_at: "2026-05-27",
@@ -420,7 +420,7 @@ export const FEATURES: Feature[] = [
   {
     slug: "meta-capi",
     title: "Meta Conversions API (server-side dedup)",
-    summary: "Server-side purchase events sent to Meta with event_id matching the browser pixel — Meta deduplicates so each purchase counts once but is robust to ad-blockers.",
+    summary: "Server-side purchase events sent to Meta with event_id matching the browser pixel, so Meta deduplicates and each purchase counts once but is robust to ad-blockers.",
     area: "Analytics",
     status: "shipped",
   },
@@ -485,7 +485,7 @@ export const FEATURES: Feature[] = [
   {
     slug: "ios-shell",
     title: "iOS app shell (Capacitor)",
-    summary: "Capacitor WebView wrapper around the React app. Apple Reader Rule compliant — purchases stay on the web, in-app is read-only for paid content.",
+    summary: "Capacitor WebView wrapper around the React app. Apple Reader Rule compliant: purchases stay on the web, in-app is read-only for paid content.",
     area: "Platform",
     status: "shipped",
   },

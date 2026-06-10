@@ -209,7 +209,7 @@ const AdminEmailTemplates = () => {
                       onClick={() => insertVariable(v.key, "html")}
                       title={`Click to insert {{${v.key}}} into HTML body`}
                     >
-                      {`{{${v.key}}}`} — {v.label}
+                      {`{{${v.key}}}`} - {v.label}
                     </Badge>
                   ))}
                 </div>

@@ -51,7 +51,7 @@ export function parseDescription(text: string): ParsedDescription {
 
   for (const raw of text.split("\n")) {
     const line = raw.trim();
-    // Blank lines are soft separators — they keep a held heading or an
+    // Blank lines are soft separators, they keep a held heading or an
     // open bullet group alive (admins often blank-line between them).
     if (!line) continue;
 

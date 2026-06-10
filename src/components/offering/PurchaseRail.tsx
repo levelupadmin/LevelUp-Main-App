@@ -10,7 +10,7 @@ interface PurchaseRailProps {
   mrp?: number | null;
   highlights: string[];
   refundPolicyDays?: number | null;
-  /** Tally form URL for application-only cohorts — switches the CTA. */
+  /** Tally form URL for application-only cohorts; switches the CTA. */
   applyUrl?: string | null;
   isStaged: boolean;
   proof: OfferingProof;
@@ -21,7 +21,7 @@ interface PurchaseRailProps {
  * + top highlights + guarantee + CTA, parked at top-24 beside the long
  * marketing column so the buy affordance never scrolls away.
  *
- * NEVER render this on native — it is a price/buy surface and must stay
+ * NEVER render this on native: it is a price/buy surface and must stay
  * behind the !isNative() gate at the callsite (Google Reader Rule /
  * Apple anti-steering). The in-flow hero CTA covers <lg.
  */

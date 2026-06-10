@@ -4,13 +4,13 @@ import "react-phone-number-input/style.css";
 
 // India-first by design. The signup/login copy promises "+91 by default",
 // the audience is "12,000+ Indian creators", and every legacy enrolment is
-// stored as a +91 number — so an Indian (or NRI) student should never have to
+// stored as a +91 number, so an Indian (or NRI) student should never have to
 // fix the country code to log in. Anyone outside India taps the flag to switch
 // (the on-screen helper text says exactly that).
 //
 // We deliberately do NOT timezone-detect the country. A TZ map (Asia/Singapore
 // → SG, Asia/Dubai → AE, …) contradicted the on-screen "+91 by default" promise
-// and, worse, pushed NRI/legacy users — whose LevelUp accounts ARE +91 numbers —
+// and, worse, pushed NRI/legacy users (whose LevelUp accounts ARE +91 numbers)
 // onto a foreign calling code, adding friction to the exact login path we want
 // to keep seamless.
 const DEFAULT_COUNTRY: Country = "IN";

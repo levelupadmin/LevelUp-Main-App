@@ -1,5 +1,5 @@
 /**
- * User flows — every important journey through the app, grouped by
+ * User flows: every important journey through the app, grouped by
  * persona, ordered into a logical sequence.
  *
  * Each step has a real screenshot pair (desktop + mobile) captured
@@ -18,7 +18,7 @@ const S = (slug: string) => ({
 
 export const FLOWS: Flow[] = [
   /* ═══════════════════════════════════════════════════════════════
-     STUDENT PERSPECTIVE — what the end-user experiences
+     STUDENT PERSPECTIVE: what the end-user experiences
      ═══════════════════════════════════════════════════════════════ */
 
   {
@@ -30,17 +30,17 @@ export const FLOWS: Flow[] = [
       {
         title: "1. Browse the public catalogue",
         description: "Anonymous visitors hit /browse and see every public offering grouped by tier (Masterclass / Live Cohort / Workshop / Resources). Each card has hero art, price, and a CTA. UTM params from ad clicks are captured into crm_contacts for attribution.",
-        screenshot: { ...S("browse"), placeholder: "Browse — public offering grid" },
+        screenshot: { ...S("browse"), placeholder: "Browse: public offering grid" },
       },
       {
         title: "2. Drill into an offering",
-        description: "Clicking a card opens /offering/<slug> — the sales page. Hero video, what-you'll-learn rail, curriculum modules with free-preview chapters surfaced, instructor bio, social proof, FAQ. The CTA either jumps straight to /checkout or to /login first depending on the offering's gating.",
+        description: "Clicking a card opens /offering/<slug>, the sales page. Hero video, what-you'll-learn rail, curriculum modules with free-preview chapters surfaced, instructor bio, social proof, FAQ. The CTA either jumps straight to /checkout or to /login first depending on the offering's gating.",
         screenshot: { ...S("offering-page"), placeholder: "Public offering sales page" },
       },
       {
         title: "3. Log in with phone OTP",
         description: "Returning students hit /login. Mobbin-grounded UX: a single cinematic still, 'What's your number?' headline, unified country pill, slide-left transition to the OTP screen. MSG91 delivers the 6-digit code; rate-limited at 5 attempts per 15 minutes via phone_otp_attempts.",
-        screenshot: { ...S("login-step-1"), placeholder: "Login — phone entry" },
+        screenshot: { ...S("login-step-1"), placeholder: "Login: phone entry" },
       },
       {
         title: "4. Razorpay checkout (external)",
@@ -64,7 +64,7 @@ export const FLOWS: Flow[] = [
       {
         title: "1. Continue from home",
         description: "Home's 'Pick up where you left off' card jumps directly to the chapter the student last paused on. Their progress (watched seconds + completion %) is per-chapter, cross-device.",
-        screenshot: { ...S("home"), placeholder: "Home — Continue Learning rail" },
+        screenshot: { ...S("home"), placeholder: "Home: Continue Learning rail" },
       },
       {
         title: "2. Chapter viewer (placeholder)",
@@ -74,17 +74,17 @@ export const FLOWS: Flow[] = [
       {
         title: "3. Community feed",
         description: "Between watches, students chat in /community. Three scopes: Everyone (app-wide), My Cohort (members-only feed, scoped by cohort_batch_id), and Peer Reviews (cohort-mates' opted-in assignments surfaced for critique).",
-        screenshot: { ...S("community-everyone"), placeholder: "Community — Everyone scope" },
+        screenshot: { ...S("community-everyone"), placeholder: "Community: Everyone scope" },
       },
       {
         title: "4. My Cohort scope",
-        description: "Live-cohort enrolees switch to My Cohort to talk privately with their batch — same UI, scoped feed. Mute-thread (localStorage) keeps notifications under control.",
-        screenshot: { ...S("community-my-cohort"), placeholder: "Community — My Cohort scope" },
+        description: "Live-cohort enrolees switch to My Cohort to talk privately with their batch, same UI, scoped feed. Mute-thread (localStorage) keeps notifications under control.",
+        screenshot: { ...S("community-my-cohort"), placeholder: "Community: My Cohort scope" },
       },
       {
         title: "5. Peer Reviews",
         description: "The Peer Reviews scope replaces the post composer with the PeerReviewBoard: cohort-mates' submissions that opted in to peer feedback. Click any card → drawer with critique textarea, 5-star rating, save-as-draft, and the original submission inline.",
-        screenshot: { ...S("community-peer-reviews"), placeholder: "Community — Peer Reviews board" },
+        screenshot: { ...S("community-peer-reviews"), placeholder: "Community: Peer Reviews board" },
       },
       {
         title: "6. Profile",
@@ -95,7 +95,7 @@ export const FLOWS: Flow[] = [
   },
 
   /* ═══════════════════════════════════════════════════════════════
-     ADMIN PERSPECTIVE — every screen behind /admin
+     ADMIN PERSPECTIVE: every screen behind /admin
      ═══════════════════════════════════════════════════════════════ */
 
   {
@@ -110,7 +110,7 @@ export const FLOWS: Flow[] = [
         screenshot: { ...S("admin-dashboard"), placeholder: "Admin dashboard" },
       },
       {
-        title: "2. Revenue — combined live + legacy",
+        title: "2. Revenue: combined live + legacy",
         description: "/admin/revenue. Top strip: 'Combined revenue (live + legacy)' showing total ₹X across all-time from this app + 73,926 TagMango legacy_enrolments. KPI cards split out: Live (this app), Legacy (TagMango), Refunded. Sub-strip below: filtered-window cards from in-memory orders. Per-tier breakdown, top buyers, CSV export, refund issuance.",
         screenshot: { ...S("admin-revenue"), placeholder: "Revenue page with combined + filtered cards" },
       },
@@ -130,7 +130,7 @@ export const FLOWS: Flow[] = [
       },
       {
         title: "2. Offerings list",
-        description: "/admin/offerings — every SKU. Sortable + filterable by status (draft/active/archived) and tier (masterclass/cohort/workshop/bundle). Click 'New' to create or click any row to edit.",
+        description: "/admin/offerings: every SKU. Sortable + filterable by status (draft/active/archived) and tier (masterclass/cohort/workshop/bundle). Click 'New' to create or click any row to edit.",
         screenshot: { ...S("admin-offerings"), placeholder: "Offerings list" },
       },
       {
@@ -140,7 +140,7 @@ export const FLOWS: Flow[] = [
       },
       {
         title: "4. Courses list",
-        description: "/admin/courses — the container that holds chapters. Each offering links to one course via offering_courses. Click a course to open its curriculum editor.",
+        description: "/admin/courses: the container that holds chapters. Each offering links to one course via offering_courses. Click a course to open its curriculum editor.",
         screenshot: { ...S("admin-courses"), placeholder: "Courses list" },
       },
       {
@@ -169,7 +169,7 @@ export const FLOWS: Flow[] = [
       },
       {
         title: "2. Events",
-        description: "/admin/events — public-facing events (free webinars, AMAs, demo days). Sales page, RSVP form, calendar invite via .ics, post-event recording link.",
+        description: "/admin/events: public-facing events (free webinars, AMAs, demo days). Sales page, RSVP form, calendar invite via .ics, post-event recording link.",
         screenshot: { ...S("admin-events"), placeholder: "Events" },
       },
       {
@@ -189,7 +189,7 @@ export const FLOWS: Flow[] = [
     slug: "admin-people",
     title: "Admin · People (applications + enrolments + users)",
     audience: "admin",
-    summary: "Manage who's applied, who has access, and the master user table — including the 60K+ legacy phantom users.",
+    summary: "Manage who's applied, who has access, and the master user table, including the 60K+ legacy phantom users.",
     steps: [
       {
         title: "1. Applications inbox",
@@ -197,18 +197,18 @@ export const FLOWS: Flow[] = [
         screenshot: { ...S("admin-applications"), placeholder: "Applications inbox" },
       },
       {
-        title: "2. Enrolments — live + legacy unified",
+        title: "2. Enrolments: live + legacy unified",
         description: "/admin/enrolments. Reads from enrolments_unified view which UNIONs live enrolments (this app) + legacy_enrolments (TagMango era). Each row has an enrolment_kind column. Grant/revoke access, filter by status / offering / course, export CSV.",
         screenshot: { ...S("admin-enrolments"), placeholder: "Enrolments unified" },
       },
       {
-        title: "3. Users — 60,648 across new + legacy",
+        title: "3. Users: 60,648 across new + legacy",
         description: "/admin/users now reads users_unified: every real user PLUS every distinct phantom legacy customer (one row per legacy phone with no matching users row). Phantom rows have an italic 'unclaimed legacy' name + phone. Default sort by lifetime_revenue_inr DESC so biggest TagMango customers (₹2.7L LTV) top the list.",
         screenshot: { ...S("admin-users"), placeholder: "Users unified" },
       },
       {
         title: "4. Coupons",
-        description: "/admin/coupons. Discount codes — percent or flat. max_redemptions + valid_until. applies_to_offering_id NULL = applies to everything. Used_count + total_discount_given auto-tracked on payment_orders captures.",
+        description: "/admin/coupons. Discount codes, percent or flat. max_redemptions + valid_until. applies_to_offering_id NULL = applies to everything. Used_count + total_discount_given auto-tracked on payment_orders captures.",
         screenshot: { ...S("admin-coupons"), placeholder: "Coupons" },
       },
       {
@@ -228,7 +228,7 @@ export const FLOWS: Flow[] = [
     slug: "admin-comms",
     title: "Admin · Communications (announcements + email)",
     audience: "admin",
-    summary: "Reach students — community announcements, email templates, bulk campaigns.",
+    summary: "Reach students: community announcements, email templates, bulk campaigns.",
     steps: [
       {
         title: "1. Announcements composer",
@@ -256,12 +256,12 @@ export const FLOWS: Flow[] = [
     steps: [
       {
         title: "1. Keys",
-        description: "Issue per-teammate / per-tool keys with read / write / admin scope. Plaintext shown only once at creation. Revoke clicks one button — anything using the key stops working within seconds.",
+        description: "Issue per-teammate / per-tool keys with read / write / admin scope. Plaintext shown only once at creation. Revoke clicks one button, and anything using the key stops working within seconds.",
         screenshot: { ...S("admin-api-keys"), placeholder: "API keys" },
       },
       {
         title: "2. Install",
-        description: "Three setup paths — CLI for shell + scripts, MCP for AI agents (Claude Desktop / Claude Code / Cursor), curl/HTTP for Zapier + n8n + custom code. Per-key 'download icon' on each row opens a key-scoped install dialog.",
+        description: "Three setup paths: CLI for shell + scripts, MCP for AI agents (Claude Desktop / Claude Code / Cursor), curl/HTTP for Zapier + n8n + custom code. Per-key 'download icon' on each row opens a key-scoped install dialog.",
         screenshot: { ...S("admin-api-install"), placeholder: "Install instructions" },
       },
       {
@@ -290,7 +290,7 @@ export const FLOWS: Flow[] = [
     steps: [
       {
         title: "1. Overview",
-        description: "Plain-prose introduction — what LevelUp is, the four pillars, who uses the app, the tech stack. Where you point a new teammate first.",
+        description: "Plain-prose introduction: what LevelUp is, the four pillars, who uses the app, the tech stack. Where you point a new teammate first.",
         screenshot: { ...S("admin-docs-overview"), placeholder: "Docs · Overview" },
       },
       {
@@ -330,7 +330,7 @@ export const FLOWS: Flow[] = [
     slug: "admin-system",
     title: "Admin · System (audit + roles + analytics)",
     audience: "admin",
-    summary: "Things you touch rarely — but critical when you do.",
+    summary: "Things you touch rarely, but critical when you do.",
     steps: [
       {
         title: "1. Audit logs",
@@ -358,16 +358,16 @@ export const FLOWS: Flow[] = [
     slug: "instructor",
     title: "Instructor · Teach + review (subset of /admin)",
     audience: "instructor",
-    summary: "Instructors land in the same /admin shell but canAccessRoute restricts their nav to Dashboard, Schedule, and Cohorts — they teach + grade, they don't manage the SKU catalogue or finances.",
+    summary: "Instructors land in the same /admin shell but canAccessRoute restricts their nav to Dashboard, Schedule, and Cohorts. They teach + grade, they don't manage the SKU catalogue or finances.",
     steps: [
       {
         title: "1. Dashboard (instructor scope)",
-        description: "Same /admin route as owner/admin, same KPI cards, but the left-rail nav only renders the items the instructor role is allowed: Overview · Dashboard, Scheduling · Schedule Classes / Events / Cohorts. Everything else (Revenue, Users, Offerings, API, Docs) is hidden — both UI-side via filteredNavGroups and DB-side via RLS.",
-        screenshot: { ...S("admin-dashboard"), placeholder: "Admin dashboard — instructor sees the same body but a smaller sidebar" },
+        description: "Same /admin route as owner/admin, same KPI cards, but the left-rail nav only renders the items the instructor role is allowed: Overview · Dashboard, Scheduling · Schedule Classes / Events / Cohorts. Everything else (Revenue, Users, Offerings, API, Docs) is hidden, both UI-side via filteredNavGroups and DB-side via RLS.",
+        screenshot: { ...S("admin-dashboard"), placeholder: "Admin dashboard: instructor sees the same body but a smaller sidebar" },
       },
       {
         title: "2. Schedule live sessions",
-        description: "/admin/schedule. Instructors set up their own live_sessions for cohorts they're assigned to. Same UI as the admin view — calendar + form.",
+        description: "/admin/schedule. Instructors set up their own live_sessions for cohorts they're assigned to. Same UI as the admin view: calendar + form.",
         screenshot: { ...S("admin-schedule"), placeholder: "Schedule" },
       },
       {

@@ -162,7 +162,7 @@ const AdminCourseEditor = () => {
         return JSON.parse(raw);
       } catch (err) {
         setJsonErrors((prev) => ({ ...prev, [key]: (err as Error).message }));
-        throw new Error(`${label} JSON is invalid — ${(err as Error).message}`);
+        throw new Error(`${label} JSON is invalid: ${(err as Error).message}`);
       }
     };
     setJsonErrors({});
@@ -326,7 +326,7 @@ const AdminCourseEditor = () => {
                   { value: "none", label: "None (hide price on Browse)" },
                   ...availableOfferings.map((off) => ({
                     value: off.id,
-                    label: `${off.title} — ₹${formatPrice(off.price_inr)}`,
+                    label: `${off.title} - ₹${formatPrice(off.price_inr)}`,
                   })),
                 ]}
                 value={form.primary_offering_id || "none"}
@@ -375,7 +375,7 @@ const AdminCourseEditor = () => {
         <div className="border border-border rounded-xl p-4 space-y-3">
           <h3 className="text-sm font-semibold">Linked Offerings</h3>
           <p className="text-xs text-muted-foreground">
-            Select which offerings grant access to this course. This is the same link you see from the Offerings editor — managed from both sides.
+            Select which offerings grant access to this course. This is the same link you see from the Offerings editor, managed from both sides.
           </p>
           <div className="space-y-2 max-h-48 overflow-y-auto border border-border rounded-lg p-3">
             {allOfferings.length === 0 ? (
@@ -445,7 +445,7 @@ const AdminCourseEditor = () => {
 
           <div>
             <label className="block text-sm font-medium mb-1.5">
-              Outcomes <span className="text-muted-foreground font-normal">— JSON array of strings</span>
+              Outcomes <span className="text-muted-foreground font-normal">- JSON array of strings</span>
             </label>
             <Textarea
               value={form.outcomes_json}
@@ -461,7 +461,7 @@ const AdminCourseEditor = () => {
 
           <div>
             <label className="block text-sm font-medium mb-1.5">
-              Portfolio pieces <span className="text-muted-foreground font-normal">— {"[{title, description, image_url}]"}</span>
+              Portfolio pieces <span className="text-muted-foreground font-normal">- {"[{title, description, image_url}]"}</span>
             </label>
             <Textarea
               value={form.portfolio_pieces_json}
@@ -477,7 +477,7 @@ const AdminCourseEditor = () => {
 
           <div>
             <label className="block text-sm font-medium mb-1.5">
-              Instructor credentials <span className="text-muted-foreground font-normal">— JSON array of strings</span>
+              Instructor credentials <span className="text-muted-foreground font-normal">- JSON array of strings</span>
             </label>
             <Textarea
               value={form.instructor_credentials_json}
@@ -493,7 +493,7 @@ const AdminCourseEditor = () => {
 
           <div>
             <label className="block text-sm font-medium mb-1.5">
-              Instructor links <span className="text-muted-foreground font-normal">— {"[{label, url}]"}</span>
+              Instructor links <span className="text-muted-foreground font-normal">- {"[{label, url}]"}</span>
             </label>
             <Textarea
               value={form.instructor_links_json}
@@ -509,12 +509,12 @@ const AdminCourseEditor = () => {
 
           <div>
             <label className="block text-sm font-medium mb-1.5">
-              FAQs <span className="text-muted-foreground font-normal">— {"[{question, answer}]"}</span>
+              FAQs <span className="text-muted-foreground font-normal">- {"[{question, answer}]"}</span>
             </label>
             <Textarea
               value={form.faqs_json}
               onChange={(e) => setForm((f) => ({ ...f, faqs_json: e.target.value }))}
-              placeholder={'[{"question": "Is there a refund policy?", "answer": "Yes — 7 days, no questions asked."}]'}
+              placeholder={'[{"question": "Is there a refund policy?", "answer": "Yes, 7 days, no questions asked."}]'}
               rows={6}
               className="font-mono text-xs"
             />
@@ -647,7 +647,7 @@ const AdminCourseEditor = () => {
             </div>
           </div>
           <p className="text-[10px] text-muted-foreground mt-2 text-center">
-            Live preview — updates as you type
+            Live preview, updates as you type
           </p>
         </div>
       </div>

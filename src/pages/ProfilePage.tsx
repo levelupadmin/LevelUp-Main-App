@@ -548,7 +548,7 @@ const ProfilePage = () => {
         </section>
       )}
 
-      {/* Saved — wishlisted offerings; hides itself when empty */}
+      {/* Saved: wishlisted offerings; hides itself when empty */}
       {user && <SavedSection />}
 
       {/* Notification Preferences */}
@@ -567,7 +567,7 @@ const ProfilePage = () => {
         <h3 className="text-lg font-semibold mb-4">Enrolments</h3>
         {enrolments.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No enrolments yet — your first course is just a click away.{" "}
+            No enrolments yet. Your first course is just a click away.{" "}
             <Link to="/" className="text-cream hover:underline">
               Explore programs →
             </Link>
@@ -646,7 +646,7 @@ const ProfilePage = () => {
       {/* Divider */}
       <div className="border-t border-border" />
 
-      {/* Invoices section — past purchases, tap a row for the detail sheet */}
+      {/* Invoices section: past purchases, tap a row for the detail sheet */}
       <div ref={invoicesRef}>
         <InvoicesSection />
       </div>
@@ -662,7 +662,7 @@ const ProfilePage = () => {
 // Compact rows for the user's wishlisted offerings, linking to /p/{slug}.
 // Renders nothing (including its divider) when the wishlist is empty.
 // Prices stay hidden on native builds (Google Reader Rule / Apple
-// anti-steering) — native rows show the title only.
+// anti-steering); native rows show the title only.
 interface SavedOffering {
   id: string;
   slug: string | null;
@@ -689,7 +689,7 @@ const SavedSection = () => {
         .in("id", [...wishlistedIds])
         .eq("status", "active");
       if (cancelled) return;
-      // Rows without a slug have no public page to link to — skip them.
+      // Rows without a slug have no public page to link to, so skip them.
       setOfferings(((data ?? []) as SavedOffering[]).filter((o) => o.slug));
     })();
     return () => {
@@ -815,7 +815,7 @@ const InvoicesSection = () => {
       <div>
         <h2 className="text-xl font-semibold">Invoices &amp; receipts</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          A GST invoice for every purchase — tap to view, download or email.
+          A GST invoice for every purchase. Tap to view, download or email.
         </p>
       </div>
       <div className="grid gap-3">

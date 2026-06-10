@@ -63,7 +63,7 @@ interface AutoAdvanceCountdownProps {
  * A 5-second "Up next…" auto-advance card. Counts down with a sweeping cream
  * ring; reaching zero (or tapping "Play now") calls onGo, "Cancel" calls
  * onCancel. Honours prefers-reduced-motion by skipping the ring animation
- * (the numeric countdown still runs). Mount/unmount is the caller's job — it
+ * (the numeric countdown still runs). Mount/unmount is the caller's job; it
  * renders nothing once mounted is decided by ChapterViewer.
  */
 export function AutoAdvanceCountdown({

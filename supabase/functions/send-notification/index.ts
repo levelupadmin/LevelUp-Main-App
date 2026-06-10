@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Lock CORS to the production site. The Supabase dashboard and
-// server-to-server calls don't need a matching Origin header — they
+// server-to-server calls don't need a matching Origin header; they
 // send the Authorization token directly and CORS preflight is skipped.
 const ALLOWED_ORIGIN = Deno.env.get("SITE_URL") ?? "https://app.leveluplearning.in";
 
@@ -15,7 +15,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // Strip anything that could turn a plain-text template variable into
 // HTML, a clickable URL, or an email-header injection. We are not
-// trying to be a full sanitizer — we're ensuring attacker-controlled
+// trying to be a full sanitizer; we're ensuring attacker-controlled
 // values can't inject links/scripts/headers into transactional emails.
 function sanitizeVar(v: unknown, maxLen = 500): string {
   if (v == null) return "";
@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
     // ── AUTH ──────────────────────────────────────────────────────
     // Require EITHER a direct service-role token (internal cron/RPC
     // callers) OR an authenticated admin session. Previously this
-    // function had NO auth at all — any internet caller could POST
+    // function had NO auth at all: any internet caller could POST
     // and insert notifications under any user_id, enumerate templates
     // via PostgREST filter injection, and cause arbitrary content to
     // be rendered into transactional emails/WhatsApp messages.
@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
     if (!trigger_type || !user_id) return jsonRes({ error: "trigger_type and user_id required" }, 400);
     if (!UUID_RE.test(user_id)) return jsonRes({ error: "Invalid user_id" }, 400);
     if (course_id && !UUID_RE.test(course_id)) {
-      // Reject rather than interpolate — previously this was spliced
+      // Reject rather than interpolate. Previously this was spliced
       // straight into a PostgREST .or() filter and was a filter-injection
       // vector that could leak every template row.
       return jsonRes({ error: "Invalid course_id" }, 400);
@@ -109,7 +109,7 @@ Deno.serve(async (req) => {
       .eq("user_id", user_id)
       .gte("scheduled_for", oneHourAgo);
     if ((recentCount ?? 0) >= 100)
-      return jsonRes({ error: "Rate limited — too many notifications for this user" }, 429);
+      return jsonRes({ error: "Rate limited: too many notifications for this user" }, 429);
 
     // ── Profile lookup ────────────────────────────────────────────
     const { data: profile } = await admin
@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
       "{{score}}":        sanitizeVar(data.score, 20),
       "{{feedback}}":     sanitizeVar(data.feedback, 1000),
       "{{date}}":         new Date().toLocaleDateString("en-IN"),
-      "{{zoom_link}}":    // zoom_link is a URL, so we only allow https:// + strict charset
+      "{{zoom_link}}":    // zoom_link is a URL, so we only allow https:// plus strict charset
         typeof data.zoom_link === "string" && /^https:\/\/[a-zA-Z0-9._\-\/?=&%#]+$/.test(data.zoom_link)
           ? data.zoom_link.slice(0, 500)
           : "",

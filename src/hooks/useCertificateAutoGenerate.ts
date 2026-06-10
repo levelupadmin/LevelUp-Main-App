@@ -40,7 +40,7 @@ export async function checkAndGenerateCertificate(
   if (existing) return null;
 
   // For live-cohort offerings, also require attendance >= attendance_threshold_pct.
-  // The user_is_certificate_eligible RPC encapsulates this — it returns true
+  // The user_is_certificate_eligible RPC encapsulates this; it returns true
   // for self-paced offerings (threshold = 0) and only blocks when a staged-
   // payment cohort is below the configured attendance bar. We check against
   // every linked offering; if ANY one is eligible, allow the cert.
@@ -71,7 +71,7 @@ export async function checkAndGenerateCertificate(
   // Get batch number from the enrolment that covers THIS course.
   // (The previous .maybeSingle() threw "more than one row" whenever a user
   // had multiple active enrolments, and even on success picked an arbitrary
-  // offering — so the batch label printed on the cert was random.)
+  // offering, so the batch label printed on the cert was random.)
   // We resolve the offering via offering_courses and pick the user's active
   // enrolment on one of those offerings, preferring the most recent.
   let batchNumber = "";

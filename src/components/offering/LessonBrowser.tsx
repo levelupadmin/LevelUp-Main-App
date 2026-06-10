@@ -41,7 +41,7 @@ function formatDuration(seconds: number | null): string | null {
 }
 
 /**
- * LessonBrowser — the single MasterClass-style curriculum list that
+ * LessonBrowser: the single MasterClass-style curriculum list that
  * replaces the old "What you'll learn" preview rail + separate text
  * curriculum accordion. Every chapter renders as one numbered row with a
  * thumbnail, title, optional description, and a duration chip.

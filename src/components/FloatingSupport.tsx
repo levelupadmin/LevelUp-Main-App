@@ -17,7 +17,7 @@ const waLink = (text: string) =>
 
 /**
  * Topic chips prefill the WhatsApp message so the team lands on context, and
- * the user doesn't face an empty thread. Keep it to a handful — the surfaces
+ * the user doesn't face an empty thread. Keep it to a handful, the surfaces
  * this renders on (offerings, checkout, profile) all share these intents.
  */
 const TOPICS: { label: string; text: string }[] = [
@@ -32,12 +32,12 @@ const DEFAULT_TEXT = "Hi! I have a question about LevelUp.";
  * Floating WhatsApp support bubble.
  *
  * Mounted in App.tsx but route-gated here: it only renders on the surfaces
- * where a human nudge actually helps — the offering pages (/p/*), checkout,
+ * where a human nudge actually helps: the offering pages (/p/*), checkout,
  * and the profile/account page. Everywhere else (the Home feed, course
  * player, community…) it was visual noise hovering over content.
  *
  * Tapping the bubble opens a branded bottom sheet (team avatar + reassurance
- * + topic chips) instead of bouncing straight to WhatsApp — the chips prefill
+ * + topic chips) instead of bouncing straight to WhatsApp. The chips prefill
  * the deep link so the conversation starts with context.
  */
 const FloatingSupport = () => {
@@ -51,7 +51,7 @@ const FloatingSupport = () => {
   if (!onOffering && !onCheckout && !onProfile) return null;
 
   // Conversion pages (offering + checkout) have a sticky CTA at the bottom
-  // on MOBILE — hide the bubble there so they don't overlap. On desktop the
+  // on MOBILE, hide the bubble there so they don't overlap. On desktop the
   // right-side bubble has plenty of room.
   const hasStickyCta = onOffering || onCheckout;
 
@@ -120,7 +120,7 @@ const FloatingSupport = () => {
             ))}
           </div>
 
-          {/* Primary deep link — keeps a generic entry working regardless of chip choice */}
+          {/* Primary deep link, keeps a generic entry working regardless of chip choice */}
           <button
             type="button"
             onClick={() => openWhatsApp(DEFAULT_TEXT)}

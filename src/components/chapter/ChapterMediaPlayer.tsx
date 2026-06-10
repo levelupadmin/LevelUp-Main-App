@@ -8,7 +8,7 @@ interface Props {
 }
 
 /**
- * Renders a chapter's primary media based on content_type — VdoCipher DRM, HLS
+ * Renders a chapter's primary media based on content_type: VdoCipher DRM, HLS
  * (.m3u8 / WebinarKit), Vimeo / YouTube / generic iframe, PDF, image, embedded,
  * article placeholder, or a "not available" fallback. Extracted verbatim from
  * ChapterViewer; behaviour unchanged.
@@ -36,7 +36,7 @@ export default function ChapterMediaPlayer({ chapter, updateProgress, lastPositi
         const provider = (chapter as any).media_provider || "";
 
         // HLS playlists (Bunny CDN from WebinarKit, or any .m3u8)
-        // render in a <video> tag — iframe wouldn't be able to play
+        // render in a <video> tag, iframe wouldn't be able to play
         // m3u8 natively. Safari + iOS handle this directly; Chrome
         // gets dynamic hls.js fallback.
         const isHls = /\.m3u8(\?|$)/i.test(url) || provider === "webinarkit";
@@ -96,7 +96,7 @@ export default function ChapterMediaPlayer({ chapter, updateProgress, lastPositi
     </div>
   ) : chapter.content_type === "pdf" && chapter.media_url ? (
     <div className="w-full rounded-2xl border border-border overflow-hidden bg-card h-[55vh] sm:h-[80vh]">
-      <iframe src={chapter.media_url} className="w-full h-full" title={`${chapter.title} — PDF`} />
+      <iframe src={chapter.media_url} className="w-full h-full" title={`${chapter.title} - PDF`} />
     </div>
   ) : chapter.content_type === "image" && chapter.media_url ? (
     <div className="w-full rounded-2xl border border-border overflow-hidden bg-card flex items-center justify-center p-4">

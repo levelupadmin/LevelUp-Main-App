@@ -1,5 +1,5 @@
 // Barrel export for design-system primitives.
-// Always import patterns from "@/components/patterns" — keeps page imports tidy
+// Always import patterns from "@/components/patterns", keeps page imports tidy
 // and lets us reorganize the underlying modules without touching consumers.
 export { PageHeader } from "./PageHeader";
 export type { PageHeaderProps } from "./PageHeader";

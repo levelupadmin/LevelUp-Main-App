@@ -149,7 +149,7 @@ export default function AdminChapterPreview() {
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Main content */}
           <div className="flex-1 space-y-6">
-            {/* Content renderer — mirrors ChapterViewer exactly */}
+            {/* Content renderer - mirrors ChapterViewer exactly */}
             {chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
               <VdoCipherPlayer chapterId={chapter.id} title={chapter.title} />
             ) : chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
@@ -172,7 +172,7 @@ export default function AdminChapterPreview() {
               </div>
             ) : chapter.content_type === "pdf" && chapter.media_url ? (
               <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card" style={{ height: "70vh" }}>
-                <iframe src={chapter.media_url} className="w-full h-full" title={`${chapter.title} — PDF`} />
+                <iframe src={chapter.media_url} className="w-full h-full" title={`${chapter.title} - PDF`} />
               </div>
             ) : chapter.content_type === "image" && chapter.media_url ? (
               <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card flex items-center justify-center p-4">
@@ -298,7 +298,7 @@ export default function AdminChapterPreview() {
 
               <TabsContent value="discussion" className="mt-4">
                 <p className="text-sm text-muted-foreground/60">
-                  Q&A and comments are visible to students. Preview-only mode — no posting.
+                  Q&A and comments are visible to students. Preview-only mode, no posting.
                 </p>
               </TabsContent>
             </Tabs>

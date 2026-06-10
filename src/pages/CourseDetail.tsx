@@ -38,7 +38,7 @@ interface Course {
   total_lessons: number | null;
   level: string | null;
   category_id: string | null;
-  // Phase 4 content blocks — populated once the 20260420120000 migration ships
+  // Phase 4 content blocks: populated once the 20260420120000 migration ships
   outcomes?: string[] | null;
   portfolio_pieces?: { title: string; description?: string | null; image_url?: string | null }[] | null;
   instructor_bio?: string | null;
@@ -123,7 +123,7 @@ const CourseDetail = () => {
     try {
       sessionStorage.setItem(key, "1");
     } catch {
-      /* storage may be unavailable (private mode) — recap simply re-shows */
+      /* storage may be unavailable (private mode); recap simply re-shows */
     }
   }, [loading, courseId, user, chapters, progress]);
 
@@ -221,7 +221,7 @@ const CourseDetail = () => {
         // Fallback: check enrolments for offerings that actually include THIS
         // course. A global "does this user have any active enrolment" check
         // would grant course B to anyone who paid for course A on transient
-        // RPC failures — the old fallback was far too permissive.
+        // RPC failures; the old fallback was far too permissive.
         const { data: offeringLinks } = await supabase
           .from("offering_courses")
           .select("offering_id")
@@ -410,7 +410,7 @@ const CourseDetail = () => {
             <div className="flex items-center gap-3 mt-2">
               {hasAccess && totalChapters === 0 ? (
                 // Enrolled but the course has no chapters yet. Don't show a
-                // "Continue Learning" button that does nothing — be honest.
+                // "Continue Learning" button that does nothing; be honest.
                 <Button size="lg" disabled>
                   Content coming soon
                 </Button>
@@ -461,7 +461,7 @@ const CourseDetail = () => {
           </div>
         )}
 
-        {/* Phase 4 content blocks — each renders-and-hides if the data isn't there yet */}
+        {/* Phase 4 content blocks: each renders-and-hides if the data isn't there yet */}
         <UrgencyStrip
           seatsLeft={offeringUrgency?.seats_left}
           batchStartsAt={offeringUrgency?.batch_starts_at}

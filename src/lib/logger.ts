@@ -1,4 +1,4 @@
-/** Production-safe logger — only outputs in development mode */
+/** Production-safe logger, only outputs in development mode */
 const isDev = import.meta.env.DEV;
 
 export const logger = {

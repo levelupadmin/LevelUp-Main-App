@@ -7,7 +7,7 @@ const tallySigningSecret = Deno.env.get("TALLY_SIGNING_SECRET") || "";
 
 async function verifyTallySignature(body: string, signature: string | null): Promise<boolean> {
   if (!tallySigningSecret) {
-    console.error("TALLY_SIGNING_SECRET is not configured — rejecting webhook");
+    console.error("TALLY_SIGNING_SECRET is not configured, rejecting webhook");
     return false;
   }
   if (!signature) return false;
@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Existing user by email (optional — used to link + enrich the profile).
+    // Existing user by email (optional, used to link + enrich the profile).
     // .maybeSingle() so "no such user" is a clean null, not a thrown error.
     const { data: existingUser, error: userLookupErr } = await supabase
       .from("users")

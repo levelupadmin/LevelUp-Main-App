@@ -2,7 +2,7 @@
  * Build a polished PDF of the docs Flows tab.
  *
  * Layout (per flow):
- *   • Cover page: brand wordmark + "LevelUp Main App — Flows" title + generated date
+ *   • Cover page: brand wordmark + "LevelUp Main App - Flows" title + generated date
  *   • One flow per section, sections separated by a flow-title page
  *   • For each step: title (H2) + description (wrapped prose) + screenshot
  *     (centered, scaled to fit, full-width on landscape; falls back to a
@@ -10,7 +10,7 @@
  *
  * Implementation notes:
  *   - jsPDF only. No html2canvas. We load each screenshot URL into an
- *     <img>, draw it to a canvas, then read the dataURL — fast + clean.
+ *     <img>, draw it to a canvas, then read the dataURL, fast + clean.
  *   - Footer on every content page: "<flow title> · page n of N".
  *   - Portrait A4 (595×842 pt). 50pt margins. Cream + indigo accent
  *     swatches keep the brand consistent with the in-app UI.

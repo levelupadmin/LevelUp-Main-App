@@ -138,7 +138,7 @@ const MySessionsPage = () => {
   return (
     <>
       <div className="space-y-8 max-w-3xl">
-        {/* Editorial hero — matches Home + Browse + PublicOffering's
+        {/* Editorial hero: matches Home + Browse + PublicOffering's
             cinematic voice so My Sessions doesn't feel like an
             afterthought next to the other polished surfaces. */}
         <div className="space-y-3">
@@ -239,7 +239,7 @@ const MySessionsPage = () => {
                         <div className="flex-shrink-0 self-center flex flex-col gap-2 items-end">
                           {/* (31) Countdown ticks until T-0, then morphs into a Join
                               button. The join link is fetched on click via the gated
-                              RPC — only returns a value in the window around start. */}
+                              RPC, only returns a value in the window around start. */}
                           {joinUnlocked ? (
                             <Countdown
                               target={s.scheduled_at}
@@ -295,7 +295,7 @@ const MySessionsPage = () => {
                             {isReminderSet(s.id) ? "Reminder set" : "Remind me"}
                           </button>
 
-                          {/* (32) Add to calendar — .ics download (Apple/Outlook) with
+                          {/* (32) Add to calendar: .ics download (Apple/Outlook) with
                               Google Calendar fallback. Course title rides along as the
                               event description for context. */}
                           <button

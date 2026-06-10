@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
 
     // Authorization: client calls must own this order. Server callers pass the
     // service_role key as a Bearer token and bypass this check. Use an exact,
-    // constant-time compare of the token — NOT authHeader.includes(key), which
+    // constant-time compare of the token, NOT authHeader.includes(key), which
     // would also pass if the key appeared as a substring anywhere in the header.
     const authHeader = req.headers.get("Authorization") || "";
     const bearer = authHeader.replace(/^Bearer\s+/i, "");
@@ -177,7 +177,7 @@ Deno.serve(async (req) => {
     };
 
     drawRow("Invoice number", po.id.slice(0, 8).toUpperCase());
-    drawRow("Payment ID", po.razorpay_payment_id || "—");
+    drawRow("Payment ID", po.razorpay_payment_id || "-");
     drawRow("Issued", formatDate(po.captured_at || po.created_at));
 
     y -= 12;

@@ -5,7 +5,7 @@ import { toast } from "@/lib/toast";
 
 // Backs the "Notify me" affordance on upcoming courses (Browse page). Loads the
 // set of course ids the current user has already asked about, and exposes a
-// requestNotify() that inserts interest (idempotent — a duplicate is treated as
+// requestNotify() that inserts interest (idempotent, a duplicate is treated as
 // already-requested). The table isn't in the generated Supabase types yet, so
 // we go through an `any`-typed client, matching the pattern used elsewhere for
 // freshly-added tables.
@@ -55,7 +55,7 @@ export function useNotifyRequests() {
         return n;
       });
 
-      // 23505 = unique violation = already on the list → idempotent success.
+      // 23505 = unique violation = already on the list, idempotent success.
       if (error && error.code !== "23505") {
         toast.error("Couldn't save that. Please try again.");
         return;

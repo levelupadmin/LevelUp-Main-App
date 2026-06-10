@@ -4,7 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * PageHeader — unified page title block.
+ * PageHeader: unified page title block.
  *
  * Replaces the bespoke "h1 + description + actions" cluster that every
  * screen was hand-rolling. Gives LevelUp a single visual rhythm for every
@@ -36,7 +36,7 @@ export interface PageHeaderProps {
   actions?: ReactNode;
   /** Meta info rendered as a row below the title (stats, dates, counts). */
   meta?: ReactNode;
-  /** Back link — when provided, renders a chevron+label tappable target. */
+  /** Back link: when provided, renders a chevron+label tappable target. */
   back?: { to: string; label?: string };
   /** Extra class names applied to the wrapper. */
   className?: string;

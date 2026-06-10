@@ -19,7 +19,7 @@ import type { Notification } from "@/hooks/useNotifications";
 /**
  * Per-type thumbnail treatment. The notifications table carries no image, so
  * instead of a tiny gray glyph we render a 36px rounded tile in a tuned tint
- * with the type's icon — it reads as "course art" at a glance and keeps the
+ * with the type's icon, it reads as "course art" at a glance and keeps the
  * list scannable.
  */
 const TYPE_META: Record<

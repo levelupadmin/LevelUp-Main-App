@@ -106,7 +106,7 @@ async function verifyViaApi(
     // This prevents an attacker from verifying a cheap payment against an
     // expensive order even if they obtained a signature for a matching
     // order_id. If expectedAmountPaise is null (caller had no order yet),
-    // we skip this check — the caller must perform it later.
+    // we skip this check; the caller must perform it later.
     const amountOk =
       expectedAmountPaise === null ||
       (typeof payment.amount === "number" && payment.amount === expectedAmountPaise);
@@ -297,7 +297,7 @@ Deno.serve(async (req) => {
        Redemption is intentionally deferred from order-creation to here so
        that abandoned / failed payments do not burn coupon usage. We use
        the atomic redeem_coupon() RPC which enforces the cap inside a
-       single UPDATE — if it returns false the coupon was exhausted by a
+       single UPDATE; if it returns false the coupon was exhausted by a
        parallel checkout and we park the order for ops review (the
        customer's money is already with Razorpay). */
     if (po.coupon_id) {
@@ -357,7 +357,7 @@ Deno.serve(async (req) => {
         let matchedUserId: string | null = null;
 
         if (existingUser) {
-          // Existing user found in public.users — use them
+          // Existing user found in public.users, so use them
           console.log("[verify] Found existing user in public.users:", existingUser.id);
           matchedUserId = existingUser.id;
         }
@@ -370,7 +370,7 @@ Deno.serve(async (req) => {
             .eq("id", payment_order_id);
         } else {
           // Previously this called admin.auth.admin.listUsers() with no
-          // pagination — an unbounded scan of the entire auth.users
+          // pagination, an unbounded scan of the entire auth.users
           // table on every guest checkout. On a large user base this
           // can time out or return a truncated page (missing the user
           // we care about) and drop the order to needs_review.
@@ -449,7 +449,7 @@ Deno.serve(async (req) => {
                       .update({ user_id: userId })
                       .eq("id", payment_order_id);
                   } else {
-                    // Don't throw — the customer's payment was captured
+                    // Don't throw; the customer's payment was captured
                     // and we cannot afford to lose them. Park the order
                     // for ops review and tell the client to contact
                     // support, instead of erroring out.
@@ -717,7 +717,7 @@ Deno.serve(async (req) => {
     // ── Generate PDF invoice + queue receipt email ───────────────────
     // Fire-and-forget; the client doesn't need to wait for the receipt
     // pipeline before showing the ThankYou page. If either step fails,
-    // log and continue - the user can still re-download via the
+    // log and continue; the user can still re-download via the
     // dashboard, and we can retry the email queue from admin.
     void (async () => {
       try {

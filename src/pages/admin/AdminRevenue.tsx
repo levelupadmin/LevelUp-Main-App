@@ -150,7 +150,7 @@ const AdminRevenue = () => {
     setLoading(true);
 
     // Fetch captured/refunded payment orders, newest first. The
-    // previous implementation had no .limit() — once the orders table
+    // previous implementation had no .limit() - once the orders table
     // grew past a few thousand rows this query became the single
     // slowest call on the site. We cap at 5000 because:
     //   - any org with more than 5000 lifetime orders should be using
@@ -241,7 +241,7 @@ const AdminRevenue = () => {
   /* Refetch combined (live + legacy) totals whenever the date filter
    * changes. revenue_in_range is an SQL RPC that does the aggregation
    * server-side across both payment_orders and the 73K-row
-   * legacy_enrolments table — cheap, indexed. */
+   * legacy_enrolments table - cheap, indexed. */
   useEffect(() => {
     const now = Date.now();
     const IST_OFFSET_MS = 5.5 * 3600 * 1000;
@@ -282,7 +282,7 @@ const AdminRevenue = () => {
 
   const now = new Date();
   // Use IST for "today" / "this month" because the business operates
-  // in India — an order captured at 10pm PDT ("yesterday" in PDT) was
+  // in India - an order captured at 10pm PDT ("yesterday" in PDT) was
   // placed at 10:30am the NEXT day IST and absolutely counts towards
   // today's and this-month's revenue for the operator in Mumbai. We
   // compute the start-of-IST-day as (now - (now's IST offset from UTC)
@@ -386,7 +386,7 @@ const AdminRevenue = () => {
       return Math.max(gross - Number(refund.amount_inr), 0);
     }
     if (o.status === "refunded") {
-      // Legacy refund path (pre-refunds-table) — the whole order is gone.
+      // Legacy refund path (pre-refunds-table) - the whole order is gone.
       return 0;
     }
     return gross;
@@ -585,7 +585,7 @@ const AdminRevenue = () => {
         <p className="text-muted-foreground text-sm">Loading...</p>
       ) : (
         <>
-          {/* Combined live + legacy revenue strip — server-aggregated
+          {/* Combined live + legacy revenue strip - server-aggregated
               via revenue_in_range RPC. Surfaces the 73K legacy_enrolments
               alongside new-app payment_orders so the headline number
               actually reflects all TagMango-era revenue too. */}
@@ -662,7 +662,7 @@ const AdminRevenue = () => {
             ))}
           </div>
 
-          {/* Top buyers — aggregate filtered orders by customer.
+          {/* Top buyers - aggregate filtered orders by customer.
               Shows who's spending the most in the active date window. */}
           {(() => {
             const buyerMap = new Map<string, { name: string; email: string; phone: string; total: number; orderCount: number }>();
@@ -757,7 +757,7 @@ const AdminRevenue = () => {
             return (
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold">{tierData.label} — Transactions ({tierOrders.length})</h3>
+                  <h3 className="text-sm font-semibold">{tierData.label}: Transactions ({tierOrders.length})</h3>
                   <button onClick={() => setTierTransactions(null)} className="text-xs text-muted-foreground hover:text-foreground">
                     <X className="h-4 w-4" />
                   </button>

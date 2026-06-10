@@ -6,8 +6,8 @@ import { useNavigate } from "react-router-dom";
  *
  * When the app is ALREADY running (backgrounded) and the user taps a
  * https://app.leveluplearning.in/<path> link elsewhere, Android routes
- * it back into this app — our activity is singleTask with an
- * autoVerify'd intent-filter — WITHOUT reloading the WebView. Capacitor
+ * it back into this app (our activity is singleTask with an
+ * autoVerify'd intent-filter) WITHOUT reloading the WebView. Capacitor
  * surfaces that as an `appUrlOpen` event. We translate the URL's path
  * into an in-app navigation so the deep link lands on the right screen
  * instead of dumping the user wherever they last were.
@@ -15,7 +15,7 @@ import { useNavigate } from "react-router-dom";
  * Cold-start deep links (app not running) need no handling here: the
  * WebView boots the bundled SPA directly at the deep-linked path.
  *
- * Renders nothing. No-op on web — the dynamic import resolves but
+ * Renders nothing. No-op on web: the dynamic import resolves but
  * isNativePlatform() is false, so no listener is attached.
  */
 const NativeDeepLinks = () => {
@@ -40,12 +40,12 @@ const NativeDeepLinks = () => {
               navigate(path);
             }
           } catch {
-            /* malformed URL — ignore */
+            /* malformed URL, ignore */
           }
         });
         remove = () => handle.remove();
       } catch {
-        /* @capacitor/app not available (web) — no-op */
+        /* @capacitor/app not available (web), no-op */
       }
     })();
     return () => {

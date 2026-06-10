@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
 import { hapticSelection } from "@/lib/haptics";
 
-// Browse merged into Home — the catalog now lives in the Home feed.
+// Browse merged into Home, the catalog now lives in the Home feed.
 const NAV_ITEMS = [
   { label: "Home", icon: Home, path: "/home" },
   { label: "My Courses", icon: BookOpen, path: "/my-courses" },
@@ -34,7 +34,7 @@ const MOBILE_NAV_ITEMS = [
 
 interface Props {
   /**
-   * Optional — if omitted the layout will render an <Outlet/> so it can be
+   * Optional. If omitted the layout will render an <Outlet/> so it can be
    * used as a React Router v6 layout route. Existing usages that pass
    * children continue to work (e.g. wrapper-style pages during migration).
    */
@@ -43,7 +43,7 @@ interface Props {
 
 // Calm content skeleton (no spinner) shown while a lazy page chunk loads inside
 // the shell. The top bar + tab bar are already painted by the layout, so this
-// only fills the content area — reads as "content arriving", not "app frozen".
+// only fills the content area, reads as "content arriving", not "app frozen".
 const ContentSuspenseFallback = () => (
   <div className="px-4 md:px-8 py-6 space-y-6 max-w-5xl mx-auto w-full" role="status" aria-busy="true">
     <span className="sr-only">Loading…</span>
@@ -168,14 +168,14 @@ const StudentLayout = ({ children }: Props) => {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate text-foreground">{firstName}</p>
               <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                #{profile?.member_number ?? "—"}
+                #{profile?.member_number ?? "-"}
               </p>
             </div>
           </div>
         </div>
       </aside>
 
-      {/* Mobile sidebar overlay — respects iOS safe-area */}
+      {/* Mobile sidebar overlay, respects iOS safe-area */}
       {sidebarOpen && (
         <div data-overlay-open="true" className="fixed inset-0 z-50 md:hidden">
           <div
@@ -243,7 +243,7 @@ const StudentLayout = ({ children }: Props) => {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar — `safe-top` pushes the row below the Dynamic Island; the
+        {/* Top bar: `safe-top` pushes the row below the Dynamic Island; the
             16-unit row sits *under* that inset (min-height, not fixed height,
             so the inset is added rather than eating into the row and clipping
             the logo). */}
@@ -323,7 +323,7 @@ const StudentLayout = ({ children }: Props) => {
           </div>
         </header>
 
-        {/* Content area — Suspense is INSIDE the layout so lazy chunk loads
+        {/* Content area: Suspense is INSIDE the layout so lazy chunk loads
             don't swap out the entire shell (fixes the "page reloads on every
             navigation" feeling). The nav, sidebar, and tab bar stay mounted. */}
         <main id="main-content" className="flex-1 grain">
@@ -342,7 +342,7 @@ const StudentLayout = ({ children }: Props) => {
         </div>
       </div>
 
-      {/* Mobile bottom tab bar — respects iOS safe-area inset */}
+      {/* Mobile bottom tab bar, respects iOS safe-area inset */}
       <nav
         aria-label="Mobile navigation"
         className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas/80 backdrop-blur-xl border-t border-border flex items-stretch safe-bottom"

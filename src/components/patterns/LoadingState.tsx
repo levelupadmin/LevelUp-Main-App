@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * LoadingState — unified loading primitives.
+ * LoadingState: unified loading primitives.
  *
  * `<SkeletonLine />`, `<SkeletonBlock />`, `<SkeletonCard />`, and the
  * grid-of-skeleton `<SkeletonGrid />` all use the `.skeleton-shimmer`
@@ -39,7 +39,7 @@ export function SkeletonBlock({
 }
 
 /**
- * SkeletonCard — visually-matched placeholder for `SurfaceCard` content.
+ * SkeletonCard: visually-matched placeholder for `SurfaceCard` content.
  * Pass `variant="media"` for cards that have a top image block.
  */
 export function SkeletonCard({
@@ -66,7 +66,7 @@ export function SkeletonCard({
   );
 }
 
-/** Grid of skeleton cards — handy for list loading states. */
+/** Grid of skeleton cards, handy for list loading states. */
 export function SkeletonGrid({
   count = 4,
   variant = "default",

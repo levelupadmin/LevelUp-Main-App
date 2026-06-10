@@ -1,7 +1,7 @@
 import { SkeletonLine, SkeletonBlock } from "@/components/patterns";
 
 /**
- * RouteFallback — the Suspense fallback for top-level lazy routes.
+ * RouteFallback - the Suspense fallback for top-level lazy routes.
  *
  * Replaces the old black-screen + centered-spinner fallback that made every
  * lazy navigation feel like the app had stalled. Instead we paint a calm,
@@ -29,7 +29,7 @@ const RouteFallback = () => (
       <SkeletonLine width={36} height="36px" className="rounded-full" />
     </div>
 
-    {/* Content placeholder — a hero block + a couple of text rows + a card row.
+    {/* Content placeholder: a hero block + a couple of text rows + a card row.
         Generic enough to fit any page, specific enough to feel like real content. */}
     <div className="px-4 md:px-8 py-6 space-y-6 max-w-5xl mx-auto w-full">
       <SkeletonBlock height={180} className="rounded-2xl" />

@@ -4,7 +4,7 @@ import type { Database } from './types';
 // Supabase project: ivkvluezuiojovpotlyb (Tokyo, Pro tier).
 // URL + anon key are hard-coded here because Vercel's dashboard env vars
 // were stale from a previous (abandoned) project and silently shipped the
-// wrong URL to production. Anon key is designed to be public — RLS on
+// wrong URL to production. Anon key is designed to be public; RLS on
 // every table is what protects the data, not key secrecy.
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL || 'https://ivkvluezuiojovpotlyb.supabase.co';

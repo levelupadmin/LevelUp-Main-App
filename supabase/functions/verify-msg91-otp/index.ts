@@ -1,5 +1,5 @@
 /**
- * verify-msg91-otp — Validate a MSG91 widget access token and mint a
+ * verify-msg91-otp: Validate a MSG91 widget access token and mint a
  * Supabase session for the matching phone.
  *
  * Flow:
@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
   }
 
   // ─ 1b. Bind the verified token to the phone being logged in ─────────
-  // verifyAccessToken only proves the token is REAL — not that it was
+  // verifyAccessToken only proves the token is REAL, not that it was
   // issued for body.phone. Without this, an attacker who completes a
   // genuine OTP for THEIR OWN number can POST that valid token together
   // with any victim's phone and we'd mint the victim's session (full
@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
   // the access-token JWT, so we recover it and require it to match.
   //
   // We hard-reject only on a *definite* mismatch. If no identifier can be
-  // recovered ("unknown") we proceed but log loudly — a legitimate login
+  // recovered ("unknown") we proceed but log loudly; a legitimate login
   // always matches (the token's mobile == the number the user just
   // entered == body.phone), so this can never lock users out if MSG91
   // changes its response shape; it only ever blocks the takeover case
@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
   // Deterministic auth-user lookup, keyed ONLY on the phone the caller just
   // OTP-verified. We deliberately do NOT use GoTrue's
   // GET /auth/v1/admin/users?phone= list endpoint: that param is not honoured
-  // as a server-side filter — it returns the first page of ALL users — so
+  // as a server-side filter (it returns the first page of ALL users), so
   // every returning user past page 1 (i.e. essentially every one of the ~74k
   // legacy customers) was misclassified as brand new and could not log in.
   // find_login_identity() queries auth.users directly by the last-10 phone
@@ -157,8 +157,8 @@ Deno.serve(async (req) => {
   // EXISTING USER → login
   if (user) {
     // Almost every account has an email and mints a magiclink session
-    // directly. A phone-only auth user (no email on file) can't — GoTrue has
-    // no phone-link grant — so provision a placeholder email we control and
+    // directly. A phone-only auth user (no email on file) can't, since GoTrue has
+    // no phone-link grant, so provision a placeholder email we control and
     // mint against that, instead of dead-ending them on a 422.
     let loginEmail = (user.email || "").trim() || null;
     if (!loginEmail) {
@@ -172,7 +172,7 @@ Deno.serve(async (req) => {
 
   // ─ 3. No auth user for this phone ──────────────────────────────────
   // Resolve the email + name we'll provision with. On the signup path
-  // Signup.tsx sends them. On the LOGIN path they're absent — but the
+  // Signup.tsx sends them. On the LOGIN path they're absent, but the
   // phone may belong to a LEGACY TagMango student we already hold. Those
   // are existing, paying customers; they must log in seamlessly, NOT be
   // bounced to "create an account". legacy_enrolments carries their email
@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
   // to belong to the caller). "legacy" = sourced from legacy_enrolments keyed
   // by the OTP-verified phone (TagMango paired this phone with this email →
   // trusted) or our own synthetic address. We only ever log a caller INTO an
-  // existing account when the email is "legacy" — never a typed one — so a
+  // existing account when the email is "legacy", never a typed one, so a
   // signer cannot take over a stranger's account by typing their email.
   let emailProvenance: "user" | "legacy" | null = signupEmail ? "user" : null;
 
@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
 
   // Phone belongs to a known legacy customer but no email anywhere (some
   // TagMango orders carried only a phone). They are a paying customer and must
-  // still get in — provision a placeholder email we control so the magiclink
+  // still get in, so provision a placeholder email we control so the magiclink
   // session can be minted; the app can prompt them for a real email later.
   if (!signupEmail && legacyMatched) {
     signupEmail = syntheticEmail(normPhone);
@@ -249,12 +249,12 @@ Deno.serve(async (req) => {
   if (createErr || !created?.user) {
     // The email already belongs to an existing auth account. Whether we may
     // log the caller INTO it depends on provenance:
-    //   • "legacy" — the email is phone-paired (came from legacy_enrolments
+    //   • "legacy": the email is phone-paired (came from legacy_enrolments
     //     keyed by the OTP-verified phone) or is our synthetic address. This
     //     is the real recovery case: a legacy student who registered by email
     //     before and is now logging in by phone for the first time. Safe to
     //     attach this phone and log them in.
-    //   • "user"   — the email was TYPED into the signup form and is NOT
+    //   • "user":   the email was TYPED into the signup form and is NOT
     //     proof of ownership. Logging them in would be account takeover, so we
     //     refuse and tell them to log in instead.
     if (emailProvenance === "legacy") {
@@ -330,7 +330,7 @@ function syntheticEmail(normPhone: string): string {
 }
 
 // Attach a synthetic email to an existing phone-only auth user so we can mint a
-// magiclink session for them. Marked confirmed — the address is ours and only
+// magiclink session for them. Marked confirmed; the address is ours and only
 // needs to exist on the record for generateLink to work. Returns the email, or
 // null on failure.
 async function ensureSyntheticEmail(
@@ -378,7 +378,7 @@ async function mintSession(
   };
 }
 
-// Last 10 digits of a phone string — the subscriber part, stable across
+// Last 10 digits of a phone string, the subscriber part, stable across
 // "+919788385577" / "919788385577" / "9788385577". "" if < 10 digits.
 function last10(s: string): string {
   const d = (s || "").replace(/\D/g, "");
@@ -387,12 +387,12 @@ function last10(s: string): string {
 
 // Does the phone MSG91 actually verified match the phone the caller
 // claims (normPhone)? We gather every phone-like value MSG91 vouched for
-// — the verify response `message` (which carries the mobile on success)
-// plus any mobile/phone/msisdn claim inside the access-token JWT — and
+// (the verify response `message`, which carries the mobile on success,
+// plus any mobile/phone/msisdn claim inside the access-token JWT) and
 // compare on the last-10 subscriber digits.
-//   "match"    — a recovered identifier equals the caller's phone
-//   "mismatch" — we recovered ≥1 identifier and NONE match → takeover
-//   "unknown"  — nothing phone-like recoverable (caller proceeds; logged)
+//   "match":    a recovered identifier equals the caller's phone
+//   "mismatch": we recovered ≥1 identifier and NONE match → takeover
+//   "unknown":  nothing phone-like recoverable (caller proceeds; logged)
 // Note: we ONLY inspect phone-named JWT claims, never iat/exp/nbf, so a
 // 10-digit Unix timestamp can't masquerade as a phone and produce a
 // false mismatch that would block a legitimate login.
@@ -421,7 +421,7 @@ function phoneBinding(
         }
       }
     }
-  } catch { /* not a decodable JWT — rely on `message` */ }
+  } catch { /* not a decodable JWT, rely on `message` */ }
 
   const phoneLike = candidates.map(last10).filter(Boolean);
   if (phoneLike.length === 0) return "unknown";

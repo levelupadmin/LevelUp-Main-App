@@ -5,7 +5,7 @@ import { useReveal } from "@/hooks/useReveal";
 interface RevealProps {
   children?: ReactNode;
   className?: string;
-  /** Extra delay before the reveal transition starts — manual stagger. */
+  /** Extra delay before the reveal transition starts, for manual stagger. */
   delayMs?: number;
   /** Rendered element, defaults to a div. */
   as?: ElementType;

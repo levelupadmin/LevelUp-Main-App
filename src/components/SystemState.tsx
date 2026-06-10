@@ -21,7 +21,7 @@ interface SystemStateProps {
   action?: SystemStateAction;
   /**
    * Optional dimmed key-art behind the copy. When omitted, a tasteful
-   * champagne gradient fades to the canvas instead — safer than pinning one
+   * champagne gradient fades to the canvas instead, safer than pinning one
    * instructor's face to every error screen.
    */
   keyArt?: string;
@@ -43,7 +43,7 @@ const DEFAULTS: Record<
     eyebrow: "Something broke",
     title: "That didn't go to plan",
     description:
-      "A scene glitched on our end. Give it another take — most of the time it just works.",
+      "A scene glitched on our end. Give it another take, most of the time it just works.",
     icon: RotateCcw,
   },
   offline: {
@@ -59,7 +59,7 @@ const actionClasses =
   "focus-ring pressable inline-flex items-center justify-center h-11 px-6 rounded-full bg-cream text-cream-text font-semibold text-sm hover:bg-cream/90 transition-colors";
 
 /**
- * SystemState — one cinematic full-bleed state for 404 / error / offline.
+ * SystemState - one cinematic full-bleed state for 404 / error / offline.
  *
  * Dimmed masterclass key-art (or a tasteful champagne gradient) feathering
  * down into the near-black canvas, a serif-italic headline, plain-spoken

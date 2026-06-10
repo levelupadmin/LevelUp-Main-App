@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { WifiOff } from "lucide-react";
 
 /**
- * Calm offline pill. Not an alarm — a quiet, reassuring note that floats in
+ * Calm offline pill. Not an alarm, just a quiet, reassuring note that floats in
  * under the notch and tells the user we're still here when their connection
  * drops. Cream icon on a translucent surface, no red destructive panel.
  */
@@ -31,7 +31,7 @@ const OfflineBanner = () => {
     >
       <div className="anim-rise pointer-events-auto inline-flex items-center gap-2 rounded-full bg-surface/90 backdrop-blur-md border border-border px-4 py-2 text-sm text-foreground shadow-[0_8px_24px_-12px_rgba(0,0,0,0.6)]">
         <WifiOff className="h-4 w-4 text-cream flex-shrink-0" strokeWidth={1.5} />
-        <span>You're offline — we'll be right here.</span>
+        <span>You're offline, we'll be right here.</span>
       </div>
     </div>
   );

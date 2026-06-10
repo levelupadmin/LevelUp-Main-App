@@ -125,14 +125,14 @@ const AdminDashboard = () => {
     const { from, to } = dateRange;
 
     /* ── Two RPCs fired in parallel ──
-       1) admin_dashboard_metrics — live-only stats, optimized SQL
+       1) admin_dashboard_metrics - live-only stats, optimized SQL
           single-roundtrip (unchanged).
        2) admin_dashboard_combined + offering_performance_in_range +
-          daily_signups_combined — LEGACY-aware counterparts that
+          daily_signups_combined - LEGACY-aware counterparts that
           merge in the 73K legacy_enrolments rows. These ship as
           their own RPCs so the dashboard reflects "all customer
           activity" instead of just "new-app activity".
-       The combined numbers are AUTHORITATIVE for what we render —
+       The combined numbers are AUTHORITATIVE for what we render -
        the live-only payload is only used as a fallback if the new
        RPCs error out. */
     const [liveRes, combinedRes, offPerfRes, dailyRes] = await Promise.all([

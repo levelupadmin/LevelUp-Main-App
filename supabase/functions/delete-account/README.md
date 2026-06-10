@@ -20,16 +20,16 @@ Authorization: Bearer <user JWT>
 ### Response
 
 ```jsonc
-// 200 — soft-delete succeeded
+// 200 - soft-delete succeeded
 { "status": "deleted", "recoverable_until": "2026-05-29T18:00:00.000Z" }
 
-// 200 — caller had already requested deletion previously
+// 200 - caller had already requested deletion previously
 { "status": "already_deleted", "recoverable_until": "2026-05-29T18:00:00.000Z" }
 
-// 200 — admin hard delete (no recovery)
+// 200 - admin hard delete (no recovery)
 { "status": "deleted", "recoverable_until": null }
 
-// 401 / 403 / 405 / 500 — { "error": "..." }
+// 401 / 403 / 405 / 500 - { "error": "..." }
 ```
 
 ## What soft-delete actually does
@@ -47,12 +47,12 @@ Then it revokes all active refresh tokens via `auth.admin.signOut(userId, 'globa
 so any other open sessions are kicked out immediately.
 
 The RLS policy `users_read_own` (see migration `20260522180000_account_deletion.sql`)
-hides the row from the user once `deleted_at IS NOT NULL`, so on next page load the
+hides the row from the user once `deleted_at IS NOT NULL`, so on the next page load the
 app receives `null` from `fetchProfile()` and treats them as logged out. The
 auth.users row is left intact during the grace window so the user cannot accidentally
 re-register the same email and revive cascade-linked rows.
 
-Admins (`role = 'admin'`) can still SELECT deleted rows — that's how recovery works.
+Admins (`role = 'admin'`) can still SELECT deleted rows, which is how recovery works.
 
 ## The 7-day grace period
 
@@ -122,15 +122,15 @@ UPDATE public.users u
    AND u.id = '<user-uuid>';
 ```
 
-After the grace window expires there is no recovery — the cleanup job
+After the grace window expires there is no recovery: the cleanup job
 hard-deletes auth.users which cascades through every child table.
 
 ## Public deletion form
 
 The public `/delete-account` page inserts into `account_deletion_requests`
-(unauthenticated, RLS-restricted policy permits anonymous INSERT with a
+(unauthenticated; an RLS-restricted policy permits anonymous INSERT with a
 locked-down WITH CHECK clause). Admins review the queue in
-`AdminUsers` (or directly via SQL) and process each ticket manually —
+`AdminUsers` (or directly via SQL) and process each ticket manually,
 typically by emailing the requester for verification and then either
 issuing the in-app `request_account_deletion()` RPC on their behalf or
 performing a hard delete via `?hard=true` with their own admin JWT.

@@ -13,7 +13,7 @@ import { toast } from "@/lib/toast";
 import { hapticImpact } from "@/lib/haptics";
 
 // Post-OTP onboarding. Phone-first auth means a brand-new account lands here
-// with only a phone number on file — so this page is where we collect the
+// with only a phone number on file, so this page is where we collect the
 // name + email (step 1, only when missing) and the craft interests (step 2)
 // before dropping the student on /home.
 //
@@ -38,7 +38,7 @@ const Onboarding = () => {
   // Does the profile still need name/email? Phone-first signup provisions a
   // synthetic "<digits>@phone.leveluplearning.in" placeholder email and a
   // generic "LevelUp Student" name so the account can be created before we ask
-  // — both are treated as missing here so onboarding collects the real values.
+  // both are treated as missing here so onboarding collects the real values.
   const needsProfile = useMemo(() => {
     if (!profile) return true;
     const name = (profile.full_name ?? "").trim();
@@ -55,7 +55,7 @@ const Onboarding = () => {
   const [saving, setSaving] = useState(false);
   const [guardChecked, setGuardChecked] = useState(false);
 
-  // Seed the inputs from whatever the profile already has — but never with the
+  // Seed the inputs from whatever the profile already has, but never with the
   // synthetic placeholders the signup path writes, or the user would have to
   // delete "LevelUp Student" / a junk email before typing their own.
   useEffect(() => {
@@ -95,7 +95,7 @@ const Onboarding = () => {
     return () => {
       cancelled = true;
     };
-    // hasCrafts intentionally omitted — derived inside the effect from a fresh fetch.
+    // hasCrafts intentionally omitted; derived inside the effect from a fresh fetch.
   }, [authLoading, user, needsProfile, navigate]);
 
   if (authLoading || !user || !guardChecked) {
@@ -187,7 +187,7 @@ const Onboarding = () => {
             {step === "profile" && (
               <>
                 <h1 className="text-[28px] sm:text-[32px] font-semibold tracking-[-0.015em] leading-[1.1] mb-2">
-                  Almost in — what's your <span className="font-serif-italic text-cream">name</span>?
+                  Almost in, what's your <span className="font-serif-italic text-cream">name</span>?
                 </h1>
                 <p className="text-sm text-muted-foreground mb-7">
                   We use this on your certificates and to keep your account secure.
@@ -252,7 +252,7 @@ const Onboarding = () => {
                   What do you want to <span className="font-serif-italic text-cream">make</span>?
                 </h1>
                 <p className="text-sm text-muted-foreground mb-7">
-                  Pick a few — we'll tune your home feed to the crafts you care about. Change it anytime.
+                  Pick a few and we'll tune your home feed to the crafts you care about. Change it anytime.
                 </p>
 
                 <Reveal>

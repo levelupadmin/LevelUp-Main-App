@@ -160,7 +160,7 @@ function loadTwitterPixel(pixelId: string) {
  * Idempotent - safe to call multiple times. Returns the loaded
  * settings so callers can branch on them if needed.
  */
-// Analytics failures are non-fatal — never spam the production console with
+// Analytics failures are non-fatal, never spam the production console with
 // them. Log only in dev. (Uses console["warn"] so a blanket console.warn
 // rename doesn't recurse into this helper.)
 const devWarn = (...args: unknown[]) => {

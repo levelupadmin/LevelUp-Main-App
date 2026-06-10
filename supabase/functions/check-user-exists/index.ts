@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
 
     const normalizedPhone = normalizePhone(phone);
     if (!normalizedPhone) {
-      return jsonRes({ error: "Invalid phone — must be 10 digits" }, 400);
+      return jsonRes({ error: "Invalid phone, must be 10 digits" }, 400);
     }
 
     const admin = createClient(

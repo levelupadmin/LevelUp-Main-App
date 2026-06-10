@@ -569,7 +569,7 @@ const AdminCourseCurriculum = () => {
                         <div>
                           <label className="block text-xs font-medium mb-1">
                             Custom Thumbnail URL
-                            <span className="text-muted-foreground/60 font-normal ml-1">— optional override. Falls back to the VdoCipher poster.</span>
+                            <span className="text-muted-foreground/60 font-normal ml-1">- optional override. Falls back to the VdoCipher poster.</span>
                           </label>
                           <Input
                             value={ch.thumbnail_url}
@@ -604,7 +604,7 @@ const AdminCourseCurriculum = () => {
                               </>
                             ) : (
                               <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/60">
-                                No thumbnail yet — set a VdoCipher video ID or paste a custom URL.
+                                No thumbnail yet. Set a VdoCipher video ID or paste a custom URL.
                               </span>
                             )}
                           </div>

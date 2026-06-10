@@ -141,7 +141,7 @@ Deno.serve(async (req) => {
        bump that belongs to a *different* parent offering to smuggle it in
        cheap, or (b) race price changes between the two separate queries
        the old code made. We also require the underlying bump offering to
-       be active — otherwise a draft/archived offering could be added via
+       be active, otherwise a draft/archived offering could be added via
        someone else's bump_ids list. */
     let bumpTotal = 0;
     const validBumpIds: string[] = [];
@@ -173,7 +173,7 @@ Deno.serve(async (req) => {
 
     /* ── Coupon ──
        Previously, a coupon that was expired, over cap, or tied to a
-       different offering would SILENTLY set discountInr = 0 — the user
+       different offering would SILENTLY set discountInr = 0, so the user
        thought their coupon applied, but it didn't. We now fail loudly on
        mismatches so the frontend can show a proper error. Only a null
        coupon is treated as "no coupon." */

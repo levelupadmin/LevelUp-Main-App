@@ -15,12 +15,12 @@ import { Reveal } from "@/components/motion/Reveal";
 import { hapticSelection } from "@/lib/haptics";
 
 /**
- * AccountHub (item 35) — a Revolut-style account hub.
+ * AccountHub (item 35): a Revolut-style account hub.
  *
  * Layout, top to bottom:
  *   1. Identity header (avatar, name, email, member #)
- *   2. Two quick-action tiles — My Certificates, Invoices
- *   3. Grouped rounded menu cards — Edit profile, Notifications, Legal, Delete account
+ *   2. Two quick-action tiles: My Certificates, Invoices
+ *   3. Grouped rounded menu cards: Edit profile, Notifications, Legal, Delete account
  *
  * The hub is purely presentational + navigational: the parent (ProfilePage)
  * owns the actual flows (edit form, notification prefs, account deletion) and
@@ -156,11 +156,11 @@ const AccountHub = ({
           <InitialsAvatar name={name || "U"} photoUrl={avatarUrl} size={64} />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-xl font-semibold leading-tight text-foreground">
-              {name || "—"}
+              {name || "-"}
             </h2>
             <p className="truncate text-sm text-muted-foreground">{email}</p>
             <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-              Member #{memberNumber ?? "—"}
+              Member #{memberNumber ?? "-"}
             </p>
           </div>
         </div>

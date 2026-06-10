@@ -111,7 +111,7 @@ function firePixels(order: PaymentOrder) {
   const currency = "INR";
   const offering = order.offerings;
 
-  // 1. Meta Pixel — sanitize pixelId to numeric only
+  // 1. Meta Pixel: sanitize pixelId to numeric only
   if (offering?.meta_pixel_id) {
     const pixelId = offering.meta_pixel_id.replace(/[^0-9]/g, "");
     if (pixelId.length > 0) {
@@ -129,7 +129,7 @@ function firePixels(order: PaymentOrder) {
     }
   }
 
-  // 2. Google Ads Conversion — sanitize conversion string
+  // 2. Google Ads Conversion: sanitize conversion string
   if (offering?.google_ads_conversion) {
     const conversionStr = offering.google_ads_conversion.replace(/[^a-zA-Z0-9_\-\/]/g, "");
     if (conversionStr.length > 0) {
@@ -156,7 +156,7 @@ function firePixels(order: PaymentOrder) {
     }
   }
 
-  // 3. Custom tracking script — render inside a sandboxed iframe so any
+  // 3. Custom tracking script: render inside a sandboxed iframe so any
   // remaining XSS in the admin-supplied snippet cannot read cookies, the
   // current session, localStorage, or DOM of the parent ThankYou page.
   //
@@ -171,7 +171,7 @@ function firePixels(order: PaymentOrder) {
   // unique origin with no script execution, no top navigation, no form
   // submission, and no same-origin DOM access. We *do* re-add
   // allow-scripts because the whole point is to fire pixel/tracking
-  // scripts — but without allow-same-origin those scripts cannot reach
+  // scripts, but without allow-same-origin those scripts cannot reach
   // back into the parent or read its cookies.
   if (offering?.custom_tracking_script) {
     const safeTxId = (order.razorpay_payment_id || "").replace(/[^a-zA-Z0-9_\-]/g, "");
@@ -277,7 +277,7 @@ export default function ThankYou() {
 
   const pixelsFired = useRef(false);
 
-  usePageTitle("Payment Successful — LevelUp Learning");
+  usePageTitle("Payment Successful | LevelUp Learning");
 
   const isGuest = !session && order?.guest_email !== null && order?.guest_email !== undefined;
 
@@ -296,12 +296,12 @@ export default function ThankYou() {
     if (!paymentOrderId) return;
     (async () => {
       try {
-        // Always verify payment from database — never trust client-side state
+        // Always verify payment from database; never trust client-side state
         const { data: orderData, error } = await supabase
           .from("payment_orders")
           // created_at (receipt time), slug (share URL), and the
           // offering_courses→courses join (lessons/hours chips) are all
-          // read by the render below — they must be selected here or the
+          // read by the render below; they must be selected here or the
           // receipt prints the current time, a broken /p/ share link, and
           // no benefit chips.
           .select("id, offering_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, created_at, offerings(title, subtitle, thumbnail_url, slug, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds, thankyou_show_calendly, calendly_url, offering_courses(courses(total_lessons, duration_minutes)))")
@@ -349,7 +349,7 @@ export default function ThankYou() {
     firePixels(order);
     // Global analytics fan-out for the platforms configured under
     // /admin/analytics-settings (Meta, GA4, Twitter, Clarity).
-    // Idempotent at the platform level — Meta Pixel + GA4 dedupe
+    // Idempotent at the platform level; Meta Pixel + GA4 dedupe
     // identical transaction_ids server-side.
     track({
       name: "purchase",
@@ -361,7 +361,7 @@ export default function ThankYou() {
     });
   }, [order]);
 
-  /* ── Countdown — respects custom thank you page settings ──
+  /* ── Countdown: respects custom thank you page settings ──
      thankyou_cta_url is admin-authored and gets shoved directly into
      window.location.href. We validate it client-side to prevent an admin
      (or a stolen admin session) from using it as an open redirect:
@@ -426,8 +426,8 @@ export default function ThankYou() {
 
   /* ── Go to Dashboard / Custom CTA (auto-login for guests) ── */
   const handleGoToDashboard = async () => {
-    // Use the already-validated customCtaUrl (see useMemo above) — never
-    // the raw DB value — so open-redirect guards can't be skipped on the
+    // Use the already-validated customCtaUrl (see useMemo above), never
+    // the raw DB value, so open-redirect guards can't be skipped on the
     // manual-click path.
     if (session) {
       if (isSafeRedirectUrl(customCtaUrl)) {
@@ -470,7 +470,7 @@ export default function ThankYou() {
         if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
         data = await res.json();
       } else if (order?.guest_email) {
-        // Guest flow — reuse parent order guest info
+        // Guest flow: reuse parent order guest info
         const res = await fetch(`${SUPABASE_URL}/functions/v1/guest-create-order`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -851,7 +851,7 @@ export default function ThankYou() {
           </div>
         </div>
 
-        {/* Post-purchase upsells — hidden on native (Path B: no in-app purchase UI) */}
+        {/* Post-purchase upsells: hidden on native (Path B: no in-app purchase UI) */}
         {!isNative() && upsells.length > 0 && (
           <>
             <Separator className="bg-border mb-8" />

@@ -28,7 +28,7 @@ interface Chip {
 }
 
 /**
- * Cohort fact chips for application-only (tally_form_url) offerings —
+ * Cohort fact chips for application-only (tally_form_url) offerings,
  * sits beside the "Application-only" pill so a prospect sees the start
  * date, application deadline, and seat count at a glance.
  *

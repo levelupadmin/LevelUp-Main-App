@@ -316,7 +316,7 @@ const AdminEvents = () => {
             event_id: eventId!,
             name: s.name,
             title: s.title || null,
-            // NOTE: event_speakers has no `bio` column — including it made
+            // NOTE: event_speakers has no `bio` column - including it made
             // PostgREST reject the whole insert, so speaker saving was broken.
             avatar_url: s.avatar_url || null,
             sort_order: idx,
@@ -570,8 +570,8 @@ const AdminEvents = () => {
               ) : (
                 registrations.map((r: any) => (
                   <TableRow key={r.id}>
-                    <TableCell>{r.users?.full_name || "—"}</TableCell>
-                    <TableCell className="font-mono text-xs">{r.users?.email || "—"}</TableCell>
+                    <TableCell>{r.users?.full_name || "-"}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.users?.email || "-"}</TableCell>
                     <TableCell className="capitalize text-xs">{r.status}</TableCell>
                     <TableCell className="font-mono text-xs">{r.amount_paid ? `₹${(r.amount_paid / 100).toLocaleString()}` : "Free"}</TableCell>
                     <TableCell className="font-mono text-xs">{format(new Date(r.registered_at), "MMM d, yyyy")}</TableCell>

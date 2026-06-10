@@ -15,7 +15,7 @@ export interface OfferingProof {
  * Fetches the social-proof numbers once per page: avg rating from the same
  * course_rating_stats view CourseRatingBadge reads, plus a cheap head-count
  * of active enrolments for the offering. Both signals resolve to null when
- * the data is zero or absent — callers render nothing in that case, we
+ * the data is zero or absent; callers render nothing in that case, we
  * never fake numbers. Pass a null offeringId to skip fetching entirely
  * (e.g. on native, where price/proof contexts are hidden).
  */
@@ -53,7 +53,7 @@ export function useOfferingProof(
         const count = countRes.count ?? 0;
         if (count > 0) setEnrolled(count);
       } catch {
-        // Proof row is a nice-to-have — fail silent, render nothing.
+        // Proof row is a nice-to-have, fail silent, render nothing.
       }
     })();
     return () => {
@@ -69,7 +69,7 @@ interface ProofRowProps extends OfferingProof {
 }
 
 /**
- * "★ {avg} · {count} enrolled" — display-only; pair with useOfferingProof
+ * "★ {avg} · {count} enrolled", display-only; pair with useOfferingProof
  * hoisted in the page so two placements (hero + purchase rail) share one
  * fetch. Renders nothing when both signals are absent.
  */

@@ -129,7 +129,7 @@ export async function generateAndSaveCertificate(opts: {
   courseId: string;
   generatedBy: "auto" | "admin_manual";
 }): Promise<{ certificateUrl: string; certificateNumber: string } | null> {
-  // Check if certificate already exists. If yes, return the stored URL —
+  // Check if certificate already exists. If yes, return the stored URL.
   // we'd still get there via the RPC's idempotency path, but short-circuiting
   // here skips the placeholder image upload entirely on re-runs.
   const { data: existing } = await (supabase as any)
@@ -179,7 +179,7 @@ export async function generateAndSaveCertificate(opts: {
     return { certificateUrl: imageUrl, certificateNumber };
   }
 
-  // Student auto-generate path — two-step because issue_certificate generates
+  // Student auto-generate path, two-step because issue_certificate generates
   // the cert number server-side but the image we store needs that number
   // painted on. Upload a placeholder first, call the RPC, then re-render
   // with the real number and upsert (Supabase storage upsert overwrites the

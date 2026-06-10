@@ -5,16 +5,16 @@
  * (the edge function the CLI + MCP + every CRM/automation tool talks
  * to). Four tabs:
  *
- *   • Keys      — issue/revoke team API keys (eat our own dog food via
+ *   • Keys      - issue/revoke team API keys (eat our own dog food via
  *                 the `create_team_api_key` RPC, so we never roll our
  *                 own bcrypt in TS).
- *   • Webhooks  — subscribe external systems to events (user.created,
+ *   • Webhooks  - subscribe external systems to events (user.created,
  *                 enrolment.granted, crm_contact.created, …). Includes
  *                 a "test ping" button that does an actual POST.
- *   • Activity  — last 200 rows of `api_call_log` so the Founders Office
+ *   • Activity  - last 200 rows of `api_call_log` so the Founders Office
  *                 can spot which keys are noisy and which actions
  *                 break.
- *   • Surface   — auto-generated browser of every action exposed by
+ *   • Surface   - auto-generated browser of every action exposed by
  *                 the edge function. Click an action → see params,
  *                 scope, copy a curl recipe.
  */
@@ -116,7 +116,7 @@ const SCOPE_COLORS: Record<string, string> = {
 /* ─────────────────── helpers ─────────────────── */
 
 function fmtDate(iso: string | null) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleString();
 }
 
@@ -142,7 +142,7 @@ async function copy(text: string) {
 
 /* ───────────────── reusable install snippets ───────────────── */
 // Re-used by the top-level Install tab AND the per-key install dialog.
-// `keyVar` is what we drop into examples — actual plaintext if we have
+// `keyVar` is what we drop into examples, actual plaintext if we have
 // it (only at creation time), else the placeholder env var name.
 
 function CodeBlock({ children, lang }: { children: string; lang?: string }) {
@@ -253,7 +253,7 @@ function CurlInstall({ keyVar }: { keyVar: string }) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        For Zapier, Make, n8n, custom scripts, Postman — anything that can POST JSON.
+        For Zapier, Make, n8n, custom scripts, Postman, anything that can POST JSON.
         No software install needed.
       </p>
       <div>
@@ -426,7 +426,7 @@ function KeysTab() {
                       <Badge className={SCOPE_COLORS[k.scope]}>{k.scope}</Badge>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">…{k.key_hint}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{k.users?.email ?? "—"}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{k.users?.email ?? "-"}</td>
                     <td className="px-4 py-3 text-muted-foreground">{fmtRelative(k.last_used_at)}</td>
                     <td className="px-4 py-3">
                       <Badge variant={status === "active" ? "default" : "secondary"}>{status}</Badge>
@@ -468,7 +468,7 @@ function KeysTab() {
           <div className="space-y-3 py-2">
             <div>
               <label className="text-sm font-medium">Name</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Founders Office — HubSpot sync" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Founders Office - HubSpot sync" />
               <p className="text-xs text-muted-foreground mt-1">Only you and other admins see this label.</p>
             </div>
             <div>
@@ -476,9 +476,9 @@ function KeysTab() {
               <Select value={scope} onValueChange={(v) => setScope(v as any)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="read">read — list/get only</SelectItem>
-                  <SelectItem value="write">write — read + non-destructive writes</SelectItem>
-                  <SelectItem value="admin">admin — everything (issue keys, delete rows)</SelectItem>
+                  <SelectItem value="read">read - list/get only</SelectItem>
+                  <SelectItem value="write">write - read + non-destructive writes</SelectItem>
+                  <SelectItem value="admin">admin - everything (issue keys, delete rows)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -492,7 +492,7 @@ function KeysTab() {
         </DialogContent>
       </Dialog>
 
-      {/* Reveal dialog — shows once with full install instructions */}
+      {/* Reveal dialog - shows once with full install instructions */}
       <Dialog open={!!revealed} onOpenChange={(o) => !o && setRevealed(null)}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
@@ -788,7 +788,7 @@ function WebhooksTab() {
           <div className="space-y-3 py-2">
             <div>
               <label className="text-sm font-medium">Name</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. HubSpot — new enrolments" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. HubSpot - new enrolments" />
             </div>
             <div>
               <label className="text-sm font-medium">URL</label>
@@ -939,8 +939,8 @@ function ActivityTab() {
                       {r.status_code}
                     </Badge>
                   </td>
-                  <td className="px-4 py-2 text-muted-foreground text-xs">{r.duration_ms ?? "—"}ms</td>
-                  <td className="px-4 py-2 text-muted-foreground text-xs font-mono">{r.ip ?? "—"}</td>
+                  <td className="px-4 py-2 text-muted-foreground text-xs">{r.duration_ms ?? "-"}ms</td>
+                  <td className="px-4 py-2 text-muted-foreground text-xs font-mono">{r.ip ?? "-"}</td>
                   <td className="px-4 py-2 text-rose-500 text-xs truncate max-w-[260px]">{r.error_message ?? ""}</td>
                 </tr>
               ))}
@@ -1072,7 +1072,7 @@ function InstallTab() {
         <h2 className="text-lg font-semibold tracking-tight">Setting up CLI, MCP, or HTTP access</h2>
         <p className="text-sm text-muted-foreground max-w-2xl mt-1">
           Three ways to hit the LevelUp admin-api. None of them need access to the main
-          LevelUp-Main-App repo — they're separate, isolated clients.
+          LevelUp-Main-App repo. They're separate, isolated clients.
         </p>
       </div>
 
@@ -1089,7 +1089,7 @@ function InstallTab() {
               <li>Every call is logged to <code>api_call_log</code> with action, status, latency, IP.
                   See the <em>Activity</em> tab.</li>
               <li>Revoke a key here and the CLI/MCP/HTTP using it stops working within seconds.</li>
-              <li>The standalone CLI repo (<a className="underline" href="https://github.com/levelupadmin/levelup-cli" target="_blank" rel="noreferrer">levelupadmin/levelup-cli</a>) and MCP repo (<a className="underline" href="https://github.com/levelupadmin/levelup-mcp" target="_blank" rel="noreferrer">levelupadmin/levelup-mcp</a>) contain only client code — no business logic, no DB access, no secrets.</li>
+              <li>The standalone CLI repo (<a className="underline" href="https://github.com/levelupadmin/levelup-cli" target="_blank" rel="noreferrer">levelupadmin/levelup-cli</a>) and MCP repo (<a className="underline" href="https://github.com/levelupadmin/levelup-mcp" target="_blank" rel="noreferrer">levelupadmin/levelup-mcp</a>) contain only client code: no business logic, no DB access, no secrets.</li>
             </ul>
           </div>
         </div>
@@ -1114,7 +1114,7 @@ function InstallTab() {
               <strong>MCP</strong>
             </div>
             <p className="text-xs text-muted-foreground">
-              For Claude Desktop, Claude Code, Cursor — any MCP-aware AI agent. Each action
+              For Claude Desktop, Claude Code, Cursor, any MCP-aware AI agent. Each action
               becomes a tool the agent can call autonomously.
             </p>
           </div>
@@ -1124,7 +1124,7 @@ function InstallTab() {
               <strong>HTTP</strong>
             </div>
             <p className="text-xs text-muted-foreground">
-              For Zapier, Make, n8n, HubSpot workflows, custom scripts. No software install —
+              For Zapier, Make, n8n, HubSpot workflows, custom scripts. No software install,
               just POST to the endpoint.
             </p>
           </div>
@@ -1160,7 +1160,7 @@ const AdminApi = () => {
           </Badge>
         </div>
         <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-          Single console for the LevelUp admin-api — the surface your Founders Office, marketing
+          Single console for the LevelUp admin-api: the surface your Founders Office, marketing
           team, CRMs, and automation tools talk to. Issue keys, wire up webhooks, browse the
           action catalogue, and audit every call.
         </p>

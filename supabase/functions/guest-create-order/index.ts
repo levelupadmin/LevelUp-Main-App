@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
 
     const normalizedPhone = normalizePhone(guest_phone);
     if (!normalizedPhone) {
-      return jsonRes({ error: "Invalid phone number — must be 10 digits" }, 400);
+      return jsonRes({ error: "Invalid phone number, must be 10 digits" }, 400);
     }
 
     const admin = createClient(
@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
     const totalInr =
       offering.gst_mode === "exclusive" ? afterDiscount + gstInr : afterDiscount;
 
-    /* ── payment_orders row (guest — no user_id) ── */
+    /* ── payment_orders row (guest, no user_id) ── */
     const { data: po, error: poErr } = await admin
       .from("payment_orders")
       .insert({
@@ -219,7 +219,7 @@ Deno.serve(async (req) => {
        for paid orders, or right below for free orders that are auto-captured).
        This ensures used_count only goes up on real conversions. */
     if (couponDbId && totalInr <= 0) {
-      // Free offering — capture is happening right now, redeem the coupon.
+      // Free offering: capture is happening right now, redeem the coupon.
       const { data: redeemed, error: redeemErr } = await admin.rpc(
         "redeem_coupon",
         { p_coupon_id: couponDbId }

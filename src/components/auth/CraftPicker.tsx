@@ -16,7 +16,7 @@ export interface CraftOption {
 }
 
 // Cinematic stills sourced from Unsplash (royalty-free, hotlink-stable CDN).
-// Each is cropped to a craft moment — a hand on a camera, an edit bay, a mic —
+// Each is cropped to a craft moment (a hand on a camera, an edit bay, a mic)
 // so the grid reads as "people making things", not stock clip-art.
 export const CRAFT_OPTIONS: CraftOption[] = [
   {

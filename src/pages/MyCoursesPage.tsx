@@ -268,7 +268,7 @@ const MyCoursesPage = () => {
           </p>
         </div>
 
-        {/* This-week watch-time card + 3-stat strip — only once the user has courses */}
+        {/* This-week watch-time card + 3-stat strip, only once the user has courses */}
         {!loading && !error && courses.length > 0 && user && (
           <div className="space-y-4">
             <WeeklyStats userId={user.id} />

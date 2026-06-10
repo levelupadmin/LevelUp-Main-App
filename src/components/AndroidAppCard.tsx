@@ -3,7 +3,7 @@ import { isNative } from "@/lib/platform";
 
 // LevelUp's live Android app (the TagMango-published shell, ~2k installs).
 // Tweak these as the real Play Store numbers grow. RATING stays null until we
-// want to surface a confirmed score — we never render a fabricated star rating
+// want to surface a confirmed score, we never render a fabricated star rating
 // on a public page.
 const PLAY_URL =
   "https://play.google.com/store/apps/details?id=com.tagmango.leveluplearning";
@@ -13,7 +13,7 @@ const RATING: number | null = null; // e.g. 4.7 once confirmed in Play Console
 /**
  * Compact "Also on Android" card for the public offering page. Links to the
  * Play Store listing as social proof / a second install path. Hidden inside the
- * Android app itself (no point advertising the app you're already in) — which
+ * Android app itself (no point advertising the app you're already in), which
  * also keeps it clear of the Reader-Rule purchase surfaces.
  */
 export default function AndroidAppCard({ className = "" }: { className?: string }) {

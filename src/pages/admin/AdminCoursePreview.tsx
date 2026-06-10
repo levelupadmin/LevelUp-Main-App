@@ -134,7 +134,7 @@ export default function AdminCoursePreview() {
         </div>
       ) : (
         <div className="max-w-4xl mx-auto space-y-8">
-          {/* Hero — same as student view */}
+          {/* Hero - same as student view */}
           <div className="relative rounded-[20px] overflow-hidden bg-card border border-border">
             {course.hero_image_url && (
               <img
@@ -203,7 +203,7 @@ export default function AdminCoursePreview() {
             </div>
           )}
 
-          {/* Sections + Chapters — show all unlocked like a student with access */}
+          {/* Sections + Chapters - show all unlocked like a student with access */}
           <div className="bg-card border border-border rounded-[16px] overflow-hidden">
             <div className="px-6 py-4 border-b border-border">
               <h2 className="text-lg font-semibold">

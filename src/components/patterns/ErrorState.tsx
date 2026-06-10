@@ -3,7 +3,7 @@ import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * ErrorState — shown when a data fetch fails or a screen can't render.
+ * ErrorState: shown when a data fetch fails or a screen can't render.
  *
  * Pairs with EmptyState / LoadingState so every data-dependent view has
  * the same set of affordances.

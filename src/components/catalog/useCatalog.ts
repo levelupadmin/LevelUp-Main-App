@@ -32,7 +32,7 @@ interface OfferingLite {
 // One parallel fetch instead of the old 5-step sequential waterfall:
 // courses + active offerings + offering_courses land together, then the
 // course→offering join happens client-side (primary_offering_id first,
-// offering_courses fallback — same semantics as the old Browse page).
+// offering_courses fallback, same semantics as the old Browse page).
 const fetchCatalog = async (): Promise<CatalogCourse[]> => {
   const [coursesRes, offeringsRes, ocsRes] = await Promise.all([
     supabase
@@ -101,7 +101,7 @@ export function useCatalog() {
 
 export const ENROLLED_OFFERINGS_QUERY_KEY = "enrolled-offering-ids";
 
-/** offering_ids the current user is actively enrolled in — drives the
+/** offering_ids the current user is actively enrolled in, drives the
  *  Continue-vs-View card CTA and the greeting sub-line on Home. */
 export function useEnrolledOfferingIds() {
   const { user } = useAuth();

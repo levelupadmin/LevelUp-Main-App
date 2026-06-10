@@ -25,7 +25,7 @@ function normalizePhone(phone: string): string | null {
 
 /**
  * O(1) lookup of auth.users by email via the GoTrue admin REST API.
- * See the same helper in verify-razorpay-payment for rationale — the
+ * See the same helper in verify-razorpay-payment for rationale: the
  * supabase-js listUsers() call does not accept a filter and scans the
  * entire table with a default page size of 50, losing records past it.
  */
@@ -83,7 +83,7 @@ async function resolveGuestUserId(
     return { userId: existingUser.id };
   }
 
-  // 2. existing auth.users by email — O(1) via REST, see helper
+  // 2. existing auth.users by email, O(1) via REST, see helper
   let existingAuthUser: any = null;
   try {
     existingAuthUser = await findAuthUserByEmail(
@@ -134,7 +134,7 @@ async function resolveGuestUserId(
 }
 
 Deno.serve(async (req) => {
-  // No CORS preflight path — this endpoint is only hit by Razorpay's
+  // No CORS preflight path; this endpoint is only hit by Razorpay's
   // delivery workers, not by browsers.
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -182,7 +182,7 @@ Deno.serve(async (req) => {
     );
 
     // Look up the payment_order by razorpay_order_id. This is the source of
-    // truth for what was actually purchased — never trust payment.notes for
+    // truth for what was actually purchased; never trust payment.notes for
     // anything beyond a sanity check.
     const { data: po, error: poErr } = await admin
       .from("payment_orders")
@@ -196,7 +196,7 @@ Deno.serve(async (req) => {
         razorpayOrderId,
         poErr
       );
-      // Return 200 so Razorpay doesn't retry forever — this likely means
+      // Return 200 so Razorpay doesn't retry forever; this likely means
       // the payment was made against an order created outside this app
       // (e.g. event registration via verify-event-payment which doesn't
       // create a payment_orders row).
@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
     const expectedAmountPaise = Math.round(Number(po.total_inr) * 100);
     if (typeof payment.amount === "number" && payment.amount !== expectedAmountPaise) {
       console.error(
-        "[razorpay-webhook] amount mismatch — expected",
+        "[razorpay-webhook] amount mismatch, expected",
         expectedAmountPaise,
         "got",
         payment.amount,
@@ -238,7 +238,7 @@ Deno.serve(async (req) => {
       return jsonRes({ received: true, parked: "amount_mismatch" });
     }
 
-    // Resolve user first — authenticated checkouts carry po.user_id; guests are
+    // Resolve user first: authenticated checkouts carry po.user_id; guests are
     // found/created from guest_email. We need the user id to grant enrolment.
     let userId: string | null = po.user_id;
     if (!userId) {
@@ -267,7 +267,7 @@ Deno.serve(async (req) => {
     // Exactly one invocation wins this claim; the winner alone performs the
     // one-time coupon redemption (below). Losers of a concurrent duplicate
     // delivery still fall through to the idempotent enrolment grant and then
-    // return — enrolment is independently guarded by its unique index, so it is
+    // return; enrolment is independently guarded by its unique index, so it is
     // safe to run on every delivery, while coupon usage is not.
     const { data: claimed } = await admin
       .from("payment_orders")
@@ -396,11 +396,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Capture-time coupon redemption — deferred from order creation so
+    // Capture-time coupon redemption, deferred from order creation so
     // abandoned payments don't burn usage, and gated behind the atomic capture
     // claim so a duplicate/retried delivery can't redeem twice. The customer is
     // already enrolled above; a redemption failure (e.g. the cap was hit by a
-    // parallel checkout) only parks the order for accounting review — it does
+    // parallel checkout) only parks the order for accounting review; it does
     // NOT revoke the access they paid for.
     if (wonCaptureClaim && po.coupon_id) {
       const { data: redeemed, error: redeemErr } = await admin.rpc(

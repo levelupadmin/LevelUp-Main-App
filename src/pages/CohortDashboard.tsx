@@ -87,7 +87,7 @@ export default function CohortDashboard() {
       });
       setAttendancePct(Number(pct) || 0);
 
-      // Pick the "current" week — first non-completed, or the latest
+      // Pick the "current" week: first non-completed, or the latest
       const current = (progress as ProgressRow[] | null)?.find((r) =>
         ["active", "upcoming"].includes(r.week_status)
       );
@@ -112,7 +112,7 @@ export default function CohortDashboard() {
   const certThreshold = offering?.attendance_threshold_pct || 0;
   const certEligible = certThreshold === 0 || attendancePct >= certThreshold;
 
-  // (34) Footer summary — current week index, weeks completed, and the soonest
+  // (34) Footer summary: current week index, weeks completed, and the soonest
   // open (un-submitted) assignment deadline still in the future.
   const weekOfM = Math.max(1, progressIdx + 1);
   const progressPct = totalWeeks > 0 ? Math.round((completedCount / totalWeeks) * 100) : 0;
@@ -272,7 +272,7 @@ export default function CohortDashboard() {
         />
       )}
 
-      {/* (34) Sticky bottom progress footer — always-visible glance at where the
+      {/* (34) Sticky bottom progress footer: always-visible glance at where the
           learner is in the cohort + the next thing due, anchored by a ring. */}
       <CohortFooter
         weekOf={weekOfM}
@@ -375,7 +375,7 @@ function CohortFooter({
             </p>
           ) : (
             <p className="text-xs text-muted-foreground mt-0.5 truncate">
-              No assignments due — you're all caught up.
+              No assignments due, you're all caught up.
             </p>
           )}
         </div>

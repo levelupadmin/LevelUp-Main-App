@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
  * processing) so the two never drift.
  *
  * Hidden on lg+ (the desktop layout keeps the pay button in view) and never
- * rendered on native — the parent CheckoutPage already swaps the whole pay UI
+ * rendered on native: the parent CheckoutPage already swaps the whole pay UI
  * for a Continue-on-web card on Capacitor (Apple/Play reader-rule gating), so
  * this component is only ever mounted on web.
  */

@@ -267,7 +267,7 @@ const AdminOfferingEditor = () => {
       return;
     }
 
-    // Validate thank-you CTA URL — this value gets written into
+    // Validate thank-you CTA URL - this value gets written into
     // window.location.href on the ThankYou page (see ThankYou.tsx). Accept
     // only http/https absolute URLs. Empty string = default dashboard.
     if (form.thankyou_cta_url && form.thankyou_cta_url.trim()) {
@@ -735,7 +735,7 @@ const AdminOfferingEditor = () => {
         <TabsContent value="checkout">
           <div className="bg-card border border-border rounded-xl p-6 space-y-5">
             <p className="text-sm text-muted-foreground">
-              Customize the checkout experience — social proof, guarantees, coupons, and order bumps.
+              Customize the checkout experience: social proof, guarantees, coupons, and order bumps.
             </p>
 
             {/* Checkout Testimonials */}
@@ -853,7 +853,7 @@ const AdminOfferingEditor = () => {
                             o.id !== offeringId &&
                             !bumps.find((b) => b.bump_offering_id === o.id)
                         )
-                        .map((o) => ({ value: o.id, label: `${o.title} — ₹${o.price_inr}` }))}
+                        .map((o) => ({ value: o.id, label: `${o.title} - ₹${o.price_inr}` }))}
                       value=""
                       onValueChange={addBump}
                       placeholder="Add an order bump offering…"
@@ -872,7 +872,7 @@ const AdminOfferingEditor = () => {
         <TabsContent value="cohort">
           <div className="bg-card border border-border rounded-xl p-6 space-y-5">
             <p className="text-sm text-muted-foreground">
-              Settings for live cohort offerings — staged payments, external integrations, and completion criteria.
+              Settings for live cohort offerings: staged payments, external integrations, and completion criteria.
             </p>
 
             {/* Payment Mode */}
@@ -1065,7 +1065,7 @@ const AdminOfferingEditor = () => {
                         o.id !== offeringId &&
                         !upsells.find((u) => u.upsell_offering_id === o.id)
                     )
-                    .map((o) => ({ value: o.id, label: `${o.title} — ₹${o.price_inr}` }))}
+                    .map((o) => ({ value: o.id, label: `${o.title} - ₹${o.price_inr}` }))}
                   value=""
                   onValueChange={addUpsell}
                   placeholder="Add an upsell offering…"

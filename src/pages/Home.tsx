@@ -23,7 +23,7 @@ import {
 const greetingForHour = (hour: number) =>
   hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
-// ── Home — the single feed ──
+// ── Home: the single feed ──
 // Browse is merged in: resume, what's next, then shop. Every section hides
 // itself when it has nothing to show, so the feed never renders dead blocks.
 const Home = () => {
@@ -64,7 +64,7 @@ const Home = () => {
         </div>
       )}
 
-      {/* One warm line — no date, no member number, no big cream card. */}
+      {/* One warm line, no date, no member number, no big cream card. */}
       <header>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-[-0.01em]">
           {greetingForHour(new Date().getHours())},{" "}
@@ -89,12 +89,12 @@ const Home = () => {
         <FeaturedHero />
       </Reveal>
 
-      {/* Quick Pick — four highest-intent jumps, directly under the hero. */}
+      {/* Quick Pick: four highest-intent jumps, directly under the hero. */}
       <Reveal>
         <QuickPick />
       </Reveal>
 
-      {/* Editorial breaker — full-bleed typographic band marking the seam
+      {/* Editorial breaker: full-bleed typographic band marking the seam
           between the personal "resume" half of the feed and the catalogue. */}
       <EditorialBreaker />
 

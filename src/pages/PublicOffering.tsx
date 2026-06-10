@@ -206,7 +206,7 @@ function HeroBanner({
       {/* Subtle left vignette so a busy background never compromises the cream title */}
       <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none" />
 
-      {/* Centred champagne play chip — opens the free preview lesson. */}
+      {/* Centred champagne play chip that opens the free preview lesson. */}
       {showPlayChip && onPlayPreview && <HeroPlayChip onClick={onPlayPreview} />}
 
       {/* Overlaid title block */}
@@ -228,7 +228,7 @@ function HeroBanner({
 }
 
 /**
- * HeroActions — the conversion CTA that sits right under the hero on
+ * HeroActions: the conversion CTA that sits right under the hero on
  * the marketing/landing page. Carries the price (with strike-through
  * MRP) and the primary Enrol-Now button that ships the buyer to the
  * dedicated /checkout/&lt;offeringId&gt; review screen. PublicOffering is
@@ -266,7 +266,7 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
         </div>
         <p className="text-base text-foreground/90 leading-relaxed">
           This programme is closed to new enrolments. If you previously
-          enrolled — including through the old LevelUp app on TagMango —
+          enrolled (including through the old LevelUp app on TagMango),
           sign in with the phone you used and your materials will be
           waiting for you.
         </p>
@@ -322,7 +322,7 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
             <ArrowRight className="h-4 w-4 ml-2" />
           </a>
         </div>
-        {/* Cohort facts (start date / deadline / seats) — each chip hides
+        {/* Cohort facts (start date / deadline / seats): each chip hides
             when its source field is null, block vanishes if none survive. */}
         <CohortInfoBlock
           cohortStartDate={offering.cohort_start_date}
@@ -406,7 +406,7 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
 }
 
 /**
- * FreePreviewPlayer — sample-before-buy on the marketing page. Renders
+ * FreePreviewPlayer: sample-before-buy on the marketing page. Renders
  * the first make_free chapter's poster with a Play overlay. On click,
  * the VdoCipher player loads inline and starts playing - no sign-in
  * required, thanks to the anon-friendly branch in get-vdocipher-otp.
@@ -493,7 +493,7 @@ function FreePreviewPlayer({
 }
 
 /**
- * AggregatedReviews — high-signal review summary block. Compresses a
+ * AggregatedReviews: high-signal review summary block. Compresses a
  * long testimonials list into a scannable rating/tags summary the way
  * Skillshare does. v1 reads counts from offering.checkout_testimonials
  * and uses a hand-curated tag shortlist; future versions can compute
@@ -548,7 +548,7 @@ function AggregatedReviews({
 }
 
 /**
- * Outcome tile grid — kept in source for now but no longer rendered.
+ * Outcome tile grid, kept in source for now but no longer rendered.
  * Removed from the marketing page on 2026-05-24 per design call:
  * Masterclass's actual class detail pages don't use it; only their
  * Sessions pages do. Leaving the component in place in case we want
@@ -695,7 +695,7 @@ function IncludedCourses({ courses }: { courses: OfferingCourse[] }) {
 
 
 /* ────────────────────────────────────────────────── */
-/*  InstructorBio — full bio + credentials + portfolio */
+/*  InstructorBio - full bio + credentials + portfolio */
 /* ────────────────────────────────────────────────── */
 function InstructorBio({
   course,
@@ -776,7 +776,7 @@ function InstructorBio({
 }
 
 /* ────────────────────────────────────────────────── */
-/*  FAQs — accordion                                  */
+/*  FAQs - accordion                                  */
 /* ────────────────────────────────────────────────── */
 function FAQs({ items }: { items?: Array<{ question: string; answer: string }> | null }) {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
@@ -824,7 +824,7 @@ function FAQs({ items }: { items?: Array<{ question: string; answer: string }> |
 }
 
 /* ────────────────────────────────────────────────── */
-/*  Testimonials — quote cards                        */
+/*  Testimonials - quote cards                        */
 /* ────────────────────────────────────────────────── */
 function Testimonials({
   items,
@@ -873,7 +873,7 @@ export default function PublicOffering() {
   const [notFound, setNotFound] = useState(false);
   const [couponInfo, setCouponInfo] = useState<{code: string; discount_type: string; discount_value: number} | null>(null);
 
-  // Hero-CTA visibility drives the mobile sticky bar — it only slides up
+  // Hero-CTA visibility drives the mobile sticky bar; it only slides up
   // once the in-flow CTA has scrolled out of view.
   const [heroCtaRef, heroCtaInView] = useInView<HTMLDivElement>();
 
@@ -889,7 +889,7 @@ export default function PublicOffering() {
   }, []);
 
   // Social proof (avg rating + enrolment count) shared by the hero proof
-  // row and the desktop purchase rail — one fetch, two placements. Skipped
+  // row and the desktop purchase rail (one fetch, two placements). Skipped
   // entirely on native, where price/proof contexts stay hidden (Reader Rule).
   const proof = useOfferingProof(
     !isNative() && offering ? offering.id : null,
@@ -971,7 +971,7 @@ export default function PublicOffering() {
   /* ── Per-offering SEO meta (title + description + OG/Twitter share preview) ── */
   useEffect(() => {
     if (!offering) return;
-    const title = `${offering.title} — LevelUp Learning`;
+    const title = `${offering.title} | LevelUp Learning`;
     const desc = offering.subtitle || offering.description?.slice(0, 160) || "Learn from the people behind some of India's most loved films and creative work.";
     const img = offering.banner_url || offering.thumbnail_url || "";
 
@@ -1043,7 +1043,7 @@ export default function PublicOffering() {
     }
     script.textContent = JSON.stringify(payload);
 
-    // Preload the hero image so the browser fetches it ASAP — Lighthouse
+    // Preload the hero image so the browser fetches it ASAP. Lighthouse
     // flagged LCP because the hero <img> tag was discovered late by the
     // pre-load scanner. A preload link in head pulls it forward.
     const PRELOAD_ID = "offering-hero-preload";
@@ -1141,7 +1141,7 @@ export default function PublicOffering() {
     return null;
   })();
 
-  // Desktop purchase rail: web-only (NEVER on native — it's a price/buy
+  // Desktop purchase rail: web-only (NEVER on native, it's a price/buy
   // surface) and never for archived offerings (nothing left to sell).
   const railEligible = !isNative() && offering.status !== "archived";
 
@@ -1149,14 +1149,14 @@ export default function PublicOffering() {
     <div className="min-h-screen bg-background">
 
       {/* Top bar. This is a PUBLIC route that renders OUTSIDE StudentLayout,
-          so it must own its own notch handling — `safe-top` pushes the bar
+          so it must own its own notch handling: `safe-top` pushes the bar
           below the iOS Dynamic Island / status bar instead of letting the
           title and Sign-in link slide under it. Sticky so it stays parked
           at the safe top while the long marketing page scrolls. */}
       <header className="sticky top-0 z-30 border-b border-border bg-[hsl(var(--surface))]/95 backdrop-blur-lg safe-top">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-1">
-            {/* Explicit back affordance — this public route renders OUTSIDE the
+            {/* Explicit back affordance: this public route renders OUTSIDE the
                 app shell (no bottom nav), so without this a user who taps in
                 from Browse on iOS has no way out. Falls back to /browse when
                 there's no history (deep link / first navigation). */}
@@ -1223,7 +1223,7 @@ export default function PublicOffering() {
                 sticky bar's show-on-scroll behaviour. */}
             <div ref={heroCtaRef} className={railEligible ? "lg:hidden" : undefined}>
               <HeroActions offering={offering} freeChapterId={freeChapter?.id ?? null} />
-              {/* Proof row sits under the hero price row — web only, and
+              {/* Proof row sits under the hero price row, web only, and
                   only when real numbers exist (never fake social proof). */}
               {railEligible && (
                 <ProofRow avg={proof.avg} enrolled={proof.enrolled} className="mt-3" />
@@ -1244,7 +1244,7 @@ export default function PublicOffering() {
               onPlay={playPreview}
             />
 
-            {/* One strong voice right after the trailer — the full
+            {/* One strong voice right after the trailer; the full
                 testimonial grid still renders further down. */}
             {(() => {
               const first = (offering.checkout_testimonials || []).find((t) => t.quote);
@@ -1309,7 +1309,7 @@ export default function PublicOffering() {
             <FAQs items={offering.offering_courses?.[0]?.courses?.faqs} />
 
             {/* Final-CTA reminder. By the time the buyer's scrolled this
-                far they've consumed the page — give them an obvious way
+                far they've consumed the page, give them an obvious way
                 back to checkout without scrolling up. Mirrors the hero
                 actions but framed as a reminder. */}
             <div className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-6 sm:p-8 text-center space-y-4">
@@ -1325,7 +1325,7 @@ export default function PublicOffering() {
             </div>
         </div>
 
-        {/* Desktop sticky purchase rail (lg+, web only — see railEligible). */}
+        {/* Desktop sticky purchase rail (lg+, web only, see railEligible). */}
         {railEligible && (
           <aside className="hidden lg:block w-[360px] shrink-0">
             <PurchaseRail
@@ -1343,7 +1343,7 @@ export default function PublicOffering() {
         </div>
       </main>
 
-      {/* Mobile sticky CTA — hidden on Android (Path B compliance) and
+      {/* Mobile sticky CTA: hidden on Android (Path B compliance) and
           on archived offerings (no longer for sale). Slides up only once
           the in-flow hero CTA has scrolled out of view (useInView above)
           so price/CTA never doubles up on screen. The Masterclass iOS

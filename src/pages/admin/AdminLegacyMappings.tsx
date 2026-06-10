@@ -333,7 +333,7 @@ function MappingRowCard({ row, offerings, saving, onMap, onSkip, onUndoSkip }: M
             disabled={saving}
             className="flex-1 h-10 rounded-md border border-input bg-background px-3 text-sm"
           >
-            <option value="">— pick an offering —</option>
+            <option value="">Pick an offering...</option>
             {offerings.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.title} {o.status === "archived" ? "(archived)" : ""}
@@ -359,7 +359,7 @@ function MappingRowCard({ row, offerings, saving, onMap, onSkip, onUndoSkip }: M
       {row.decision_status === "skipped" && (
         <div className="flex justify-between items-center">
           <p className="text-xs text-muted-foreground">
-            Marked as skipped — no enrolments will be granted from this programme.
+            Marked as skipped. No enrolments will be granted from this programme.
           </p>
           <Button variant="ghost" size="sm" onClick={onUndoSkip} disabled={saving}>
             Undo skip

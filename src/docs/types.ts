@@ -36,7 +36,7 @@ export interface Feature {
   codeRefs?: string[];
   /** Where in the app to see it (so a non-dev can click and see it work) */
   appRefs?: string[];
-  /** Optional deep dive — markdown-style prose, rendered with prose styles */
+  /** Optional deep dive, markdown-style prose, rendered with prose styles */
   details?: string;
   /** ISO date this feature went live in prod. Used by the docs date
    *  filter so the team can see "what shipped in the last 7 days". */
@@ -46,7 +46,7 @@ export interface Feature {
 export interface FlowStep {
   title: string;
   description: string;
-  /** Optional screenshot keys — will be looked up in /docs/screenshots/ */
+  /** Optional screenshot keys, will be looked up in /docs/screenshots/ */
   screenshot?: {
     desktop?: string;
     mobile?: string;

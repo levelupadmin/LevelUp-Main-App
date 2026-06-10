@@ -69,8 +69,8 @@ const renderLink = (link: FooterLink) => {
 
 interface FooterProps {
   /**
-   * "marketing" (default) — full link-column footer for public pages.
-   * "app" — slim one-row footer (wordmark + copyright + Support) for the
+   * "marketing" (default): full link-column footer for public pages.
+   * "app": slim one-row footer (wordmark + copyright + Support) for the
    * authed app shell.
    */
   variant?: "marketing" | "app";
@@ -97,7 +97,7 @@ const AppFooter = () => (
 );
 
 const Footer = ({ variant = "marketing" }: FooterProps) => {
-  // Native (iOS + Android) app shells get no footer chrome — the
+  // Native (iOS + Android) app shells get no footer chrome, the
   // sitemap-style link columns, external company links, and social icons
   // read as "this is a website" inside the app. Web keeps the footer.
   if (isNative()) return null;

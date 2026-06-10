@@ -20,7 +20,7 @@ import { isAndroid, isNative } from "@/lib/platform";
 import { hapticImpact } from "@/lib/haptics";
 import { track } from "@/lib/analytics";
 
-/* ── Razorpay global type ── */
+/* -- Razorpay global type -- */
 declare global {
   interface Window {
     Razorpay: new (options: Record<string, unknown>) => {
@@ -63,7 +63,7 @@ export default function CheckoutPage() {
   const [selectedBumps, setSelectedBumps] = useState<Set<string>>(new Set());
   const [couponCode, setCouponCode] = useState("");
   // Coupon preview returned by the validate-coupon edge function.
-  // We deliberately do NOT reuse Tables<"coupons"> here — the coupons
+  // We deliberately do NOT reuse Tables<"coupons"> here. The coupons
   // table is locked down and we should only ever hold the discount
   // preview fields in client state. id/code are safe because
   // create-razorpay-order re-fetches and re-validates the full row.
@@ -90,7 +90,7 @@ export default function CheckoutPage() {
   const [guestPhone, setGuestPhone] = useState("");
   const [guestTouched, setGuestTouched] = useState<{ name?: boolean; email?: boolean; phone?: boolean }>({});
 
-  /* ── Load offering data ── */
+  /* -- Load offering data -- */
   useEffect(() => {
     // Wait for auth to settle; load works for both signed-in users
     // and anon (guest) visitors. Staged-payment offerings still need
@@ -124,7 +124,7 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Archived offerings are no longer for sale — they only exist
+      // Archived offerings are no longer for sale; they only exist
       // for past enrolees to access materials. Anyone landing on
       // /checkout/<id> for an archived offering gets redirected to
       // /p/<slug> where the archive notice + "Sign in" CTA lives.
@@ -224,7 +224,7 @@ export default function CheckoutPage() {
     : paymentType === "confirmation" ? "Confirmation Amount"
     : paymentType === "balance" ? "Balance Payment" : "";
 
-  /* ── Pricing ── */
+  /* -- Pricing -- */
   const subtotal = (() => {
     if (!offering) return 0;
     // Staged payment: use the specific stage amount
@@ -269,7 +269,7 @@ export default function CheckoutPage() {
   const total =
     offering?.gst_mode === "exclusive" ? afterDiscount + gstAmount : afterDiscount;
 
-  // Combined "you saved" figure: MRP markdown (sticker → price) plus any
+  // Combined "you saved" figure: MRP markdown (sticker to price) plus any
   // coupon discount. Shared by the in-card savings chip and the mobile
   // StickyPayBar so the two never disagree. Only meaningful on full
   // (non-staged) purchases where an MRP exists.
@@ -277,7 +277,7 @@ export default function CheckoutPage() {
   const mrpSavings = !isStaged && mrpInr > subtotal ? mrpInr - subtotal : 0;
   const totalSavings = mrpSavings + discount;
 
-  /* ── Apply coupon ──
+  /* -- Apply coupon --
    *
    * The coupons table is locked down to admin reads only (see the
    * coupons_read_lockdown migration), so this page can no longer
@@ -318,7 +318,7 @@ export default function CheckoutPage() {
     }
   }, [couponCode, offeringId]);
 
-  /* ── Load Razorpay script ── */
+  /* -- Load Razorpay script -- */
   useEffect(() => {
     if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]'))
       return;
@@ -329,7 +329,7 @@ export default function CheckoutPage() {
     document.body.appendChild(script);
   }, []);
 
-  /* ── Pay ── */
+  /* -- Pay -- */
   const handlePay = async () => {
     if (!offering) return;
     if (paymentInFlightRef.current) return;
@@ -359,7 +359,7 @@ export default function CheckoutPage() {
 
     paymentInFlightRef.current = true;
 
-    // Validate custom fields — mark all as touched so inline errors appear
+    // Validate custom fields: mark all as touched so inline errors appear
     const touchAll: Record<string, boolean> = {};
     let hasFieldError = false;
     for (const field of customFields) {
@@ -378,8 +378,8 @@ export default function CheckoutPage() {
     setPaying(true);
 
     try {
-      // Anon → guest-create-order (creates the auth.users row on
-      // payment verify, no OTP). Logged-in → create-razorpay-order
+      // Anon: guest-create-order (creates the auth.users row on
+      // payment verify, no OTP). Logged-in: create-razorpay-order
       // (existing path, ties to user.id).
       const { data, error } = isAnon
         ? await supabase.functions.invoke("guest-create-order", {
@@ -494,7 +494,7 @@ export default function CheckoutPage() {
     }
   };
 
-  /* ── UI ── */
+  /* -- UI -- */
   if (loading || authLoading) {
     return (
       <div
@@ -530,7 +530,7 @@ export default function CheckoutPage() {
     Number((offering as any).mrp_inr) > Number(offering.price_inr);
 
   // Pull display metadata for the trust panel. Uses the first linked course
-  // as the "what you're buying" preview — safe fallback if none exists.
+  // as the "what you're buying" preview, with a safe fallback if none exists.
   const primaryCourseId = linkedCourses[0]?.course_id ?? null;
   const trustPanelCourseTitle = (linkedCourses[0]?.courses as any)?.title ?? offering.title;
   const trustPanelThumb = (linkedCourses[0]?.courses as any)?.thumbnail_url ?? null;
@@ -539,7 +539,7 @@ export default function CheckoutPage() {
     <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
       <Card className="w-full max-w-[560px] border-border bg-surface">
         <CardContent className="p-6 md:p-8 space-y-6">
-          {/* ── Back link ── */}
+          {/* -- Back link -- */}
           <button
             onClick={() => {
               if (offering?.slug) navigate(`/p/${offering.slug}`);
@@ -552,8 +552,8 @@ export default function CheckoutPage() {
             Back
           </button>
 
-          {/* ── Header: mini product summary — thumbnail + title +
-              instructor for continuity from the sales page. ── */}
+          {/* -- Header: mini product summary, thumbnail + title +
+              instructor for continuity from the sales page. -- */}
           <div>
             {isStaged && stagedLabel && (
               <Badge variant="secondary" className="mb-2">{stagedLabel}</Badge>
@@ -595,7 +595,7 @@ export default function CheckoutPage() {
 
           <Separator className="bg-border" />
 
-          {/* ── What you get ── */}
+          {/* -- What you get -- */}
           {linkedCourses.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -658,7 +658,7 @@ export default function CheckoutPage() {
             } catch { return null; }
           })()}
 
-          {/* ── Custom fields ── */}
+          {/* -- Custom fields -- */}
           {customFields.length > 0 && (
             <div className="space-y-3">
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -703,7 +703,7 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* ── Bumps ── */}
+          {/* -- Bumps -- */}
           {!isStaged && bumps.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -752,7 +752,7 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* ── Guest fields (anon checkout) ──
+          {/* -- Guest fields (anon checkout) --
               Friction-free: just name + email + phone. No OTP. The
               edge function uses these to create the auth.users row
               on payment verify, so the buyer becomes a logged-in
@@ -805,12 +805,12 @@ export default function CheckoutPage() {
                 />
               </div>
               <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                We'll create your account on this phone number. No password, no OTP — just sign in with this phone later to access your masterclass.
+                We'll create your account on this phone number. No password, no OTP, just sign in with this phone later to access your masterclass.
               </p>
             </div>
           )}
 
-          {/* ── Coupon ── */}
+          {/* -- Coupon -- */}
           {!isStaged && (
           <div className="space-y-2">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -879,7 +879,7 @@ export default function CheckoutPage() {
 
           <Separator className="bg-border" />
 
-          {/* ── Order summary ──
+          {/* -- Order summary --
               Dotted-leader rows (label … value, like a printed receipt) under
               an Instrument-Serif heading. The leader is a flex-1 dotted border
               between each label and its amount. */}
@@ -950,12 +950,12 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* ── Trust signals ── */}
+          {/* -- Trust signals -- */}
           <div className="flex flex-col items-center gap-2">
             <GuaranteeBadge days={offering.refund_policy_days} />
           </div>
 
-          {/* ── Pay button ── */}
+          {/* -- Pay button -- */}
           <Button
             size="xl"
             className="w-full"
@@ -969,12 +969,12 @@ export default function CheckoutPage() {
               </>
             ) : (
               isStaged
-                ? `Pay ${stagedLabel} — ₹${total.toLocaleString("en-IN")}`
+                ? `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
                 : `Pay ₹${total.toLocaleString("en-IN")}`
             )}
           </Button>
 
-          {/* Reassurance capsule directly under the pay button — lock icon +
+          {/* Reassurance capsule directly under the pay button: lock icon +
               gateway + refund window in one quiet pill. */}
           <div className="flex justify-center">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[11px] text-muted-foreground">
@@ -1002,7 +1002,7 @@ export default function CheckoutPage() {
         />
       )}
 
-      {/* Mobile sticky pay bar — always-visible total + Pay on phones. Only
+      {/* Mobile sticky pay bar: always-visible total + Pay on phones. Only
           ever reached on web (native returns the Continue-on-web card above). */}
       <StickyPayBar
         total={total}

@@ -144,7 +144,7 @@ export default function PeerReviewBoard({ cohortBatchId, currentUserId }: PeerRe
           <p className="text-sm text-muted-foreground">
             {mode === "to_review"
               ? "Nothing from your cohort-mates to review right now."
-              : "You haven't reviewed any work yet. Critique sharpens your own eye — start with the first card."}
+              : "You haven't reviewed any work yet. Critique sharpens your own eye, so start with the first card."}
           </p>
         </div>
       ) : (

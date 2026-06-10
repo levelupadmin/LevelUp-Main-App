@@ -57,7 +57,7 @@ function clock(totalSeconds: number): string {
 /**
  * Timestamped notes for a lesson. Persists to the existing per-user/chapter
  * `chapter_notes.body` text column (same store ChapterViewer's scratchpad
- * uses) — there is no per-note table or seconds column, so each note lives as
+ * uses). There is no per-note table or seconds column, so each note lives as
  * a `[MM:SS] …` line inside `body`. That keeps notes interoperable with the
  * plain scratchpad and synced across devices.
  *
@@ -129,7 +129,7 @@ export default function ChapterNotes({ chapterId, getCurrentTime, onSeek }: Prop
             if (!error && (count ?? 0) > 0) setSavedAt(Date.now());
           }
         } catch {
-          // Offline / network blip — notes stay in component state and the
+          // Offline / network blip, notes stay in component state and the
           // next edit (or the unmount flush) retries.
         }
       })();
@@ -137,7 +137,7 @@ export default function ChapterNotes({ chapterId, getCurrentTime, onSeek }: Prop
     return () => window.clearTimeout(handle);
   }, [body, chapterId, user]);
 
-  // Final flush on unmount / chapter switch — can't rely on setState here.
+  // Final flush on unmount / chapter switch, can't rely on setState here.
   useEffect(() => {
     return () => {
       if (!user || !hydratedRef.current) return;
@@ -247,7 +247,7 @@ export default function ChapterNotes({ chapterId, getCurrentTime, onSeek }: Prop
         </ul>
       )}
 
-      {/* Free-form editor — also the raw store for the timestamped lines.
+      {/* Free-form editor, also the raw store for the timestamped lines.
           font-size stays >=16px on mobile (text-base) so iOS WKWebView
           doesn't fire focus auto-zoom; drop to text-sm from sm: up. */}
       <Textarea

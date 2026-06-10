@@ -3,7 +3,7 @@ import SystemState from "@/components/SystemState";
 
 const NotFoundPage = () => {
   useEffect(() => {
-    document.title = "Page Not Found — LevelUp Learning";
+    document.title = "Page Not Found | LevelUp Learning";
   }, []);
 
   return <SystemState kind="404" />;

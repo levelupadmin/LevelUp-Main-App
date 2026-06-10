@@ -8,7 +8,7 @@ import { useEffect, useRef, type RefObject } from "react";
  * Why fail-safe matters: the previous version relied solely on
  * IntersectionObserver (threshold 0.15). On Android System WebView the
  * observer can fire late or not at all (and 0.15 never triggers for sections
- * taller than ~6.6x the viewport) — which left every below-the-fold section
+ * taller than ~6.6x the viewport), which left every below-the-fold section
  * stuck at opacity:0, so users "couldn't scroll down" (the content was there
  * but invisible). Now we:
  *   1. reveal immediately if the element is already in view at mount,
@@ -36,7 +36,7 @@ export function useReveal<T extends HTMLElement = HTMLDivElement>(): RefObject<T
     }
 
     // Already on screen at mount (above the fold, or IO's initial callback is
-    // delayed) → reveal now so the first screenful is never blank.
+    // delayed), reveal now so the first screenful is never blank.
     const rect = el.getBoundingClientRect();
     if (rect.top < window.innerHeight && rect.bottom > 0) {
       reveal();

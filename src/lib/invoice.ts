@@ -4,7 +4,7 @@
 // flow, which does NOT produce a downloadable Razorpay invoice PDF (that only
 // exists for Razorpay's separate Invoices product). So we render our own
 // branded GST invoice. Doing it in the browser (vs a server edge function +
-// Storage + signed URL) removes every fragile link and — crucially — lets us
+// Storage + signed URL) removes every fragile link and, crucially, lets us
 // hand the file to the OS share sheet, which is the only reliable way to
 // "download" inside the iOS/Android Capacitor WebView (window.open is a no-op
 // there). jsPDF is lazy-imported so it stays out of the main bundle.
@@ -41,7 +41,7 @@ const SELLER = {
     "Chennai, Tamil Nadu 600018",
   ],
   email: "admin@leveluplearning.in",
-  gstin: "" as string, // e.g. "33AABCL1234M1Z5" — leave blank if not registered
+  gstin: "" as string, // e.g. "33AABCL1234M1Z5", leave blank if not registered
 };
 
 export const invoiceNumber = (orderId: string) => `LU-${orderId.slice(0, 8).toUpperCase()}`;
@@ -50,7 +50,7 @@ const amt = (n: number | null | undefined) =>
   "INR " + new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n || 0));
 
 const fmtDate = (iso?: string | null) => {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }).format(new Date(iso));
   } catch { return iso; }
@@ -98,8 +98,8 @@ export async function buildInvoiceBlob(o: InvoiceOrder): Promise<Blob> {
   const meta: [string, string][] = [
     ["Invoice No.", invoiceNumber(o.id)],
     ["Date", fmtDate(o.captured_at || o.created_at)],
-    ["Payment ID", o.razorpay_payment_id || "—"],
-    ["Order ID", o.razorpay_order_id || "—"],
+    ["Payment ID", o.razorpay_payment_id || "-"],
+    ["Order ID", o.razorpay_order_id || "-"],
   ];
   let my = y + 15;
   doc.setFontSize(9);

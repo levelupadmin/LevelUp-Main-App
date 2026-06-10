@@ -65,7 +65,7 @@ const CatalogSection = () => {
   return (
     <div className="space-y-6">
       {/* Compressed header: eyebrow + one-line heading + search + chip rail.
-          No paragraph subtitle — first card must land inside one viewport. */}
+          No paragraph subtitle, first card must land inside one viewport. */}
       <div className="space-y-2">
         <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
           Explore
@@ -85,7 +85,7 @@ const CatalogSection = () => {
         />
       </div>
 
-      {/* Single horizontally-scrollable chip rail — never wraps. */}
+      {/* Single horizontally-scrollable chip rail, never wraps. */}
       <div className="flex gap-2 overflow-x-auto hide-scrollbar -mx-1 px-1">
         {TIER_FILTERS.map((f) => (
           <button

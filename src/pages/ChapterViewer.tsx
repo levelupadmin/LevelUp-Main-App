@@ -147,7 +147,7 @@ const ChapterViewer = () => {
           .from("offerings")
           .select("slug")
           .eq("id", courseData.primary_offering_id)
-          // Resolve slug for active OR archived offerings — legacy
+          // Resolve slug for active OR archived offerings; legacy
           // enrolees on archived programs still need the "Back to
           // offering" link from inside ChapterViewer to work.
           .in("status", ["active", "archived"])
@@ -182,7 +182,7 @@ const ChapterViewer = () => {
       setOfferingSlug(resolvedSlug);
     }
 
-    // Access check — if not free, verify access before rendering content
+    // Access check: if not free, verify access before rendering content
     if (!ch.make_free && cid) {
       const isAdmin = profile?.role === "admin";
       if (!isAdmin) {
@@ -305,7 +305,7 @@ const ChapterViewer = () => {
     setQna(qnaWithReplies);
 
     // Fetch quizzes for this chapter. Options come from `quiz_options_public`
-    // — a view that never exposes `is_correct`. Scoring moved to the
+    // a view that never exposes `is_correct`. Scoring moved to the
     // `submit_quiz` RPC (see migration 20260417120000) so students can no
     // longer read the answer key.
     const { data: quizData } = await (supabase as any)
@@ -460,9 +460,9 @@ const ChapterViewer = () => {
     };
   }, [chapterId, user]);
 
-  // Lightweight refresh for Q&A only — used after posting a question so we don't
+  // Lightweight refresh for Q&A only, used after posting a question so we don't
   // unmount the whole page (which would flash the loader and reset the Tabs back
-  // to Overview — especially disruptive on mobile).
+  // to Overview, especially disruptive on mobile).
   const refreshQna = useCallback(async () => {
     if (!chapterId) return;
     const { data: qnaData } = await supabase
@@ -492,7 +492,7 @@ const ChapterViewer = () => {
     const userNameMap: Record<string, string> = {};
     if (userIds.size > 0) {
       // Use the RLS-safe public_user_profiles view (same as loadChapter),
-      // NOT the users table — the users RLS restricts non-admins to their
+      // NOT the users table; the users RLS restricts non-admins to their
       // own row, so querying it here collapses every OTHER author's name
       // to "Anonymous" right after a student posts a question.
       const { data: users } = await supabase
@@ -563,7 +563,7 @@ const ChapterViewer = () => {
         await (navigator as any).share({ url, title });
         return;
       } catch {
-        // User cancelled, or share unavailable — fall through to clipboard.
+        // User cancelled, or share unavailable; fall through to clipboard.
       }
     }
     try {
@@ -648,7 +648,7 @@ const ChapterViewer = () => {
       return;
     }
 
-    // Auto-advance to next (with safety check) — delay longer if milestone shown
+    // Auto-advance to next (with safety check); delay longer if milestone shown
     const advanceDelay = hit ? 2500 : 800;
     if (siblings && currentIndex >= 0 && currentIndex < siblings.length - 1 && siblings[currentIndex + 1]?.id) {
       autoAdvanceTimerRef.current = setTimeout(() => {
@@ -668,7 +668,7 @@ const ChapterViewer = () => {
     });
     if (error) toast.error("Failed to post question");
     else {
-      toast.success("Question sent — your instructor will see it.");
+      toast.success("Question sent. Your instructor will see it.");
       setQuestionText("");
       refreshQna();
     }
@@ -729,7 +729,7 @@ const ChapterViewer = () => {
           </div>
         </div>
       )}
-      {/* Course completion — cinematic takeover (replaces the old emoji card) */}
+      {/* Course completion: cinematic takeover (replaces the old emoji card) */}
       <CompletionTakeover
         open={showCompletionBanner}
         variant="course"
@@ -775,7 +775,7 @@ const ChapterViewer = () => {
             viewports (16-inch+, ultra-wide). Text blocks have their own
             per-element max-w to keep line lengths comfortable. */}
         <div className="flex-1 min-w-0 p-4 lg:p-8 xl:p-10 2xl:p-12 space-y-6">
-          {/* Breadcrumb — hidden on mobile since top bar has back + title */}
+          {/* Breadcrumb: hidden on mobile since top bar has back + title */}
           <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
             <Link to="/my-courses" className="hover:text-foreground transition-colors">My Courses</Link>
             <span>&rsaquo;</span>
@@ -902,7 +902,7 @@ const ChapterViewer = () => {
         {/* Right sidebar - grows proportionally on wider viewports so
             it doesn't feel cramped next to a giant 2K+ player. */}
         <div className="lg:w-[380px] xl:w-[420px] 2xl:w-[480px] shrink-0 border-t lg:border-t-0 lg:border-l border-border p-4 lg:p-6">
-          {/* Sidebar header — course context above the tabs, matching the
+          {/* Sidebar header: course context above the tabs, matching the
               Masterclass watching pattern where the course identity is
               always visible above the lesson navigator. */}
           {courseTitle && (
@@ -1053,7 +1053,7 @@ const ChapterViewer = () => {
               )}
             </TabsContent>
 
-            {/* Q&A — threaded discussion per chapter. Visually upgraded
+            {/* Q&A: threaded discussion per chapter. Visually upgraded
                 to match the cinematic UX of the rest of the watching
                 page: editorial eyebrow, instructor-reply visual tagging,
                 cleaner empty state. */}

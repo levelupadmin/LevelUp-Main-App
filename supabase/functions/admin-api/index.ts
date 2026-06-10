@@ -1,5 +1,5 @@
 /**
- * admin-api — the single edge endpoint that powers the CLI + MCP.
+ * admin-api - the single edge endpoint that powers the CLI + MCP.
  *
  * Surface (v1):
  *   - offerings.{list,get,create,update,archive}
@@ -657,7 +657,7 @@ const HANDLERS: Record<string, Handler> = {
     scope: "write",
     fn: async (admin, p) => {
       if (!p?.email && !p?.phone) throw new Error("email or phone required");
-      // idempotent — use lead_capture RPC so callers can replay safely
+      // idempotent: use lead_capture RPC so callers can replay safely
       const { data: id, error } = await admin.rpc("lead_capture", {
         p_email: p.email ?? null, p_phone: p.phone ?? null,
         p_full_name: p.full_name ?? null, p_source: p.source ?? null,
@@ -929,7 +929,7 @@ const HANDLERS: Record<string, Handler> = {
       return {
         key: { id: row.key_id, name: p.name, scope: p.scope, key_hint: row.hint },
         plaintext: row.plaintext,
-        warning: "Save this plaintext now — it is shown only once.",
+        warning: "Save this plaintext now. It is shown only once.",
       };
     },
   },

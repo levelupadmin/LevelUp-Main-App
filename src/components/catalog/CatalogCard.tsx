@@ -135,7 +135,7 @@ const CatalogCard = ({
           wrapper so taps on empty space fall through to the card link. */}
       <div className="relative z-10 p-4 flex flex-col gap-1.5 pointer-events-none">
         {parsed ? (
-          // Masterclass hierarchy: craft as eyebrow, instructor as headline —
+          // Masterclass hierarchy: craft as eyebrow, instructor as headline,
           // kills the "X Teaches Y" + instructor-name redundancy/truncation.
           <>
             <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
@@ -185,7 +185,7 @@ const CatalogCard = ({
               </span>
             ) : isNative() ? (
               // Native (iOS App Store anti-steering 3.1.1/3.1.3 + Play Reader
-              // Rule): show no price or discount incentive — purchases happen
+              // Rule): show no price or discount incentive, purchases happen
               // on the web. Mirrors the gating on every other card surface.
               null
             ) : c.price_inr != null ? (
@@ -244,7 +244,7 @@ const CatalogCard = ({
             </Link>
           ) : isAndroid() ? (
             // Path B (Google Play Reader Rule): non-entitled Android users get
-            // the explicit "Continue on web" pill — opens the public offering
+            // the explicit "Continue on web" pill, opens the public offering
             // URL in the system browser.
             <ContinueOnWebCTA
               variant="inline"
@@ -255,7 +255,7 @@ const CatalogCard = ({
           ) : (
             // Web + iOS: an explicit "View" pill to the detail page. This is
             // marketing/detail navigation, not purchase/steering, so it's
-            // allowed on iOS — it just doesn't expose price or buy UI.
+            // allowed on iOS, it just doesn't expose price or buy UI.
             <Link
               to={cardHref ?? `/courses/${c.id}`}
               aria-label={`View ${c.title}`}

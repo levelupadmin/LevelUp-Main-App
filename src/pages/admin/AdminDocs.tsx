@@ -4,19 +4,19 @@
  * World-class documentation portal for the LevelUp Main App.
  *
  * Seven tabs:
- *   • Overview   — what the app is, business model, where to start
- *   • Features   — atomic capability catalogue with shipped/partial/
+ *   • Overview   - what the app is, business model, where to start
+ *   • Features   - atomic capability catalogue with shipped/partial/
  *                  planned/deprecated status badges
- *   • Flows      — user journeys with mobile/desktop screenshot toggle
- *   • Tech       — architecture, stack, deployment, secrets
- *   • Schema     — every public.* table that matters
- *   • API        — admin-api / CLI / MCP reference (cross-link to /admin/api)
- *   • Changelog  — human-readable change log from doc_changelog table
+ *   • Flows      - user journeys with mobile/desktop screenshot toggle
+ *   • Tech       - architecture, stack, deployment, secrets
+ *   • Schema     - every public.* table that matters
+ *   • API        - admin-api / CLI / MCP reference (cross-link to /admin/api)
+ *   • Changelog  - human-readable change log from doc_changelog table
  *
  * Cross-cutting features:
  *   • Per-tab search box (filters subsections by title + body)
  *   • Screenshot mobile/desktop toggle (global, sticky)
- *   • "Download as markdown" — one big .md for LLM consumption
+ *   • "Download as markdown" - one big .md for LLM consumption
  *   • Sidebar of subsections in each tab (anchor links)
  */
 import { useEffect, useMemo, useState } from "react";
@@ -157,7 +157,7 @@ function StatusPill({ status }: { status: FeatureStatus }) {
 }
 
 /* ─────────── markdown-lite renderer (prose) ─────────── */
-/* We don't ship a full markdown parser — the prose in our content
+/* We don't ship a full markdown parser - the prose in our content
  * files uses a small subset: paragraphs separated by blank lines,
  * **bold**, *italic*, `code`, and bullet lists with leading "- ".
  * This keeps the bundle tiny and gives us full control over styling. */
@@ -470,7 +470,7 @@ function FeaturesTab({ search }: { search: string }) {
         ))}
       </div>
 
-      {/* Date window filter — filters by feature.shipped_at */}
+      {/* Date window filter - filters by feature.shipped_at */}
       <div className="flex items-baseline justify-between flex-wrap gap-2">
         <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Shipped in</span>
         <DateWindowFilter
@@ -879,7 +879,7 @@ const AdminDocs = () => {
           </div>
           <p className="text-sm text-muted-foreground max-w-2xl">
             World-class reference for the LevelUp Main App. Built so any teammate, new dev, or AI assistant
-            can read this and understand exactly what's been built — and what hasn't.
+            can read this and understand exactly what's been built, and what hasn't.
           </p>
         </div>
         <Button onClick={handleDownload} variant="outline">

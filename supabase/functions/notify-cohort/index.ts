@@ -1,5 +1,5 @@
 /**
- * notify-cohort — scans cohort state and queues email + WhatsApp pings.
+ * notify-cohort: scans cohort state and queues email + WhatsApp pings.
  *
  * Runs every 15 minutes via pg_cron. Three event classes:
  *
@@ -16,7 +16,7 @@
  *      still hasn't submitted, send a one-time nudge.
  *
  * Idempotency is enforced via cohort_notifications_log's UNIQUE constraint
- * on (template_key, user_id, related_kind, related_id) — re-runs are safe.
+ * on (template_key, user_id, related_kind, related_id), so re-runs are safe.
  *
  * Auth: service_role token only (called by pg_cron via supabase.net).
  */
@@ -48,7 +48,7 @@ interface Counters {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  // Auth — service_role only.
+  // Auth: service_role only.
   // We can't do a strict string equality on SERVICE_KEY because the deployed
   // function's SUPABASE_SERVICE_ROLE_KEY env var occasionally returns a
   // different representation than what's stored in the vault (Supabase
@@ -172,7 +172,7 @@ async function queueEmail(
 
 async function sendWhatsApp(phone: string, templateName: string, vars: string[]): Promise<boolean> {
   if (!INTERAKT_KEY || !phone) return false;
-  // Interakt API format — public-templates with body params.
+  // Interakt API format: public-templates with body params.
   // Phone needs to be +<country><number>. We trust users.phone format.
   try {
     const cleaned = phone.replace(/\s/g, "");
@@ -228,7 +228,7 @@ async function processAssignmentDueIn24h(admin: any, counters: Counters) {
 
   for (const w of weeks || []) {
     const members = await getBatchMembers(admin, w.cohort_batch_id);
-    // Pull submissions for this week — if a user already submitted, skip
+    // Pull submissions for this week; if a user already submitted, skip
     const { data: subs } = await admin
       .from("cohort_week_submissions")
       .select("user_id")

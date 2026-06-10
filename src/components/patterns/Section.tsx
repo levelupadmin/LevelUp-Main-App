@@ -4,7 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Section — a labeled block of content with consistent spacing and header.
+ * Section: a labeled block of content with consistent spacing and header.
  *
  * Pages are built out of a vertical stack of Sections. A Section has an
  * optional title + description + action, and children rendered in the body.
@@ -26,7 +26,7 @@ export interface SectionProps {
   title?: ReactNode;
   /** One-line description under the title. */
   description?: ReactNode;
-  /** Right-aligned action — a "View all" link, button, or custom node. */
+  /** Right-aligned action: a "View all" link, button, or custom node. */
   action?:
     | { to: string; label: string }
     | { onClick: () => void; label: string }
@@ -35,7 +35,7 @@ export interface SectionProps {
   className?: string;
   /** Extra className on the body (below the title row). */
   bodyClassName?: string;
-  /** Visual density — "relaxed" (default) or "compact". */
+  /** Visual density: "relaxed" (default) or "compact". */
   density?: "relaxed" | "compact";
   children: ReactNode;
 }

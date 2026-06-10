@@ -15,8 +15,8 @@ interface HeroSlide {
   slug: string;
 }
 
-// Full-bleed rotating banner of up to 3 masterclass offerings. No prices —
-// purely editorial — so no native price gating is needed here.
+// Full-bleed rotating banner of up to 3 masterclass offerings. No prices,
+// purely editorial, so no native price gating is needed here.
 const FeaturedHero = () => {
   const { data: courses } = useCatalog();
 

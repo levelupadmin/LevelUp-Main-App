@@ -677,7 +677,7 @@ const AdminCohorts = () => {
               <Input
                 value={newBatchName}
                 onChange={(e) => setNewBatchName(e.target.value)}
-                placeholder="e.g. Batch A — Morning"
+                placeholder="e.g. Batch A - Morning"
               />
             </div>
             <div>

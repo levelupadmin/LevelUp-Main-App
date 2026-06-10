@@ -42,7 +42,7 @@ export const CountUp = ({
       return;
     }
 
-    // Already counted once — just track subsequent value changes directly.
+    // Already counted once, just track subsequent value changes directly.
     if (startedRef.current) {
       setDisplay(value);
       return;

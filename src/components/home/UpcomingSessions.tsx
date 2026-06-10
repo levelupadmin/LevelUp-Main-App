@@ -15,7 +15,7 @@ interface SessionStripRow {
 
 // ── "Your next live session" strip ──
 // Next 1-2 upcoming sessions for the user's enrolled offerings. Renders
-// nothing while loading or when there's nothing scheduled — no dead section.
+// nothing while loading or when there's nothing scheduled, no dead section.
 const UpcomingSessions = () => {
   const { user } = useAuth();
   const [sessions, setSessions] = useState<SessionStripRow[]>([]);

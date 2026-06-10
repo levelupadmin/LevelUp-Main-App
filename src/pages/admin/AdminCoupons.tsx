@@ -204,7 +204,7 @@ const AdminCoupons = () => {
                   {c.used_count} / {c.max_redemptions ?? "∞"}
                 </td>
                 <td className="px-5 py-3 font-mono text-xs">
-                  {c.valid_until ? new Date(c.valid_until).toLocaleDateString("en-IN") : "—"}
+                  {c.valid_until ? new Date(c.valid_until).toLocaleDateString("en-IN") : "-"}
                 </td>
                 <td className="px-5 py-3">
                   <span className={`text-xs font-mono px-2 py-0.5 rounded ${c.is_active ? "bg-[hsl(var(--accent-emerald)/0.15)] text-[hsl(var(--accent-emerald))]" : "bg-secondary text-muted-foreground"}`}>
@@ -212,7 +212,7 @@ const AdminCoupons = () => {
                   </span>
                 </td>
                 <td className="px-5 py-3 text-right font-mono text-xs">
-                  {c.total_discount_given > 0 ? `₹${c.total_discount_given.toLocaleString("en-IN")}` : "—"}
+                  {c.total_discount_given > 0 ? `₹${c.total_discount_given.toLocaleString("en-IN")}` : "-"}
                 </td>
                 <td className="px-5 py-3">
                   <div className="flex items-center gap-1">

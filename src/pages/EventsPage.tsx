@@ -87,7 +87,7 @@ const EventsPage = () => {
 
   // (33) Group the upcoming feed by calendar day so it reads as a scannable
   // agenda with sticky "14 June · Saturday" headers. Single query (fetchEvents,
-  // already ordered by starts_at asc) — we just bucket client-side here.
+  // already ordered by starts_at asc); we just bucket client-side here.
   const upcomingGroups = (() => {
     const groups: { key: string; date: Date; events: any[] }[] = [];
     for (const ev of upcoming) {
@@ -144,7 +144,7 @@ const EventsPage = () => {
       const data = await res.json();
 
       if (data.registered) {
-        toast({ title: "Registered! ✓", description: "You're in — see you there." });
+        toast({ title: "Registered! ✓", description: "You're in, see you there." });
         setMyRegs((prev) => new Set(prev).add(eventId));
         paymentInFlightRef.current = false;
         fetchEvents();
@@ -325,7 +325,7 @@ const EventsPage = () => {
                   className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
                 >
                   {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                  Register — Free
+                  Register - Free
                 </button>
               ) : isNative() ? (
                 // Path B (Reader Rule): no paid-register / price CTA in the
@@ -363,7 +363,7 @@ const EventsPage = () => {
             Workshops, panels, <span className="font-serif-italic text-cream">live</span>
           </h1>
           <p className="text-base sm:text-lg text-muted-foreground max-w-[52ch]">
-            Standalone sessions outside the masterclass series — workshops, webinars, alumni meets, and one-off live classes.
+            Standalone sessions outside the masterclass series: workshops, webinars, alumni meets, and one-off live classes.
           </p>
         </div>
 
@@ -396,7 +396,7 @@ const EventsPage = () => {
             </p>
             <p className="text-muted-foreground text-sm">
               {tab === "upcoming"
-                ? "New events are added regularly — check back soon."
+                ? "New events are added regularly, check back soon."
                 : tab === "past"
                 ? "Past events will appear here once they conclude."
                 : "Browse upcoming events and register to save your spot."}

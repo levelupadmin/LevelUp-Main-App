@@ -17,7 +17,7 @@ import { hapticImpact } from "@/lib/haptics";
 import heroCinematic from "@/assets/login/hero-cinematic.jpg";
 
 // After a session is minted, brand-new phone-first accounts haven't told us
-// their crafts yet (and signups haven't given a name/email) — route them
+// their crafts yet (and signups haven't given a name/email), so we route them
 // through /onboarding. Returning users with craft_interests already set go
 // straight to their intended destination. Defensive: any read failure falls
 // back to /onboarding so we never strand a user who lacks crafts.
@@ -52,11 +52,11 @@ const VERIFY_MSG91_OTP_URL =
   "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
 
 // 2026-05-26: Login refactor (Mobbin synthesis).
-// — Killed the 5-slide carousel; replaced with one static cinematic still
+// - Killed the 5-slide carousel; replaced with one static cinematic still
 //   (generated via gpt-image-2). Carousels split attention and tank the
 //   only metric that matters here: did the user complete OTP.
-// — Headline is now a singular question ("What's your number?") instead
-//   of the returning-user "Welcome back" framing — ~half of /login
+// - Headline is now a singular question ("What's your number?") instead
+//   of the returning-user "Welcome back" framing; ~half of /login
 //   arrivals are first-touch from ads.
 //
 // 2026-05-30: Cinematic redesign. One unified responsive composition for
@@ -80,7 +80,7 @@ const Login = () => {
 
   // Welcome V2: the first paint is a full-bleed brand hero with "Sign in" /
   // "Create account" pills. Tapping "Sign in" expands the phone form up from
-  // the bottom (bottom-sheet feel) — `formOpen` drives that reveal. On the
+  // the bottom (bottom-sheet feel); `formOpen` drives that reveal. On the
   // email-only fallback we skip straight into the form so the welcome layer
   // never traps a non-Indian user. Once the user is past the phone step
   // (OTP / email), the form is always open.
@@ -92,7 +92,7 @@ const Login = () => {
   const goToStep = useCallback((next: Step) => {
     setStep(next);
     setStepKey((k) => k + 1);
-    // Any step beyond the initial phone entry is a committed flow — keep the
+    // Any step beyond the initial phone entry is a committed flow, so keep the
     // form sheet open so back-navigation lands on the form, not the welcome.
     if (next !== "phone") setFormOpen(true);
   }, []);
@@ -104,7 +104,7 @@ const Login = () => {
   }, [user, authLoading, navigate]);
 
   // Best-effort widget init on mount. If it fails (script blocked, env
-  // vars missing) we'll retry inside handleSendOtp — the UI doesn't
+  // vars missing) we'll retry inside handleSendOtp; the UI doesn't
   // surface this until the user actually clicks "Continue".
   useEffect(() => {
     if (EMAIL_ONLY_AUTH) return;
@@ -192,7 +192,7 @@ const Login = () => {
           return { ok: false, error: "No account with this number. Sign up first." };
         }
         if (data?.error === "invalid_otp") return { ok: false, error: "Wrong code. Try again." };
-        if (data?.error === "user_missing_email") return { ok: false, error: "Account is missing an email — contact support." };
+        if (data?.error === "user_missing_email") return { ok: false, error: "Account is missing an email, please contact support." };
         return { ok: false, error: data?.detail || data?.error || "Verification failed" };
       }
       const { data: sessionData, error: setErr } = await supabase.auth.setSession({
@@ -405,17 +405,17 @@ const Login = () => {
 
   // ── Welcome V2 (mobile/native) + two-column web composition ─────────
   // Mobile: the hero is FULL-BLEED behind everything (absolute inset-0), never
-  //   collapsing — even on the OTP step (item 7). On first paint the welcome
+  //   collapsing, even on the OTP step (item 7). On first paint the welcome
   //   pills sit over it; tapping "Sign in" slides the phone form up as a
   //   bottom-sheet over the (now heavily scrimmed) hero.
-  // Desktop (lg+): unchanged two-column — form left, hero right pane.
+  // Desktop (lg+): unchanged two-column, form left, hero right pane.
   const showWelcome = step === "phone" && !formOpen && !EMAIL_ONLY_AUTH;
   // Heavier scrim once the form sheet is up so card text never fights the photo.
   const sheetUp = !showWelcome;
 
   return (
     <div className="relative min-h-[100dvh] bg-canvas flex flex-col lg:flex-row lg:overflow-hidden">
-      {/* HERO — full-bleed behind on mobile, right pane on desktop */}
+      {/* HERO: full-bleed behind on mobile, right pane on desktop */}
       <div className="absolute inset-0 overflow-hidden lg:static lg:order-2 lg:h-auto lg:min-h-[100dvh] lg:flex-1 lg:inset-auto">
         <img
           src={heroCinematic}
@@ -423,7 +423,7 @@ const Login = () => {
           className="absolute inset-0 w-full h-full object-cover kenburns"
           loading="eager"
         />
-        {/* Mobile scrim — light on the welcome screen (let the photo breathe),
+        {/* Mobile scrim: light on the welcome screen (let the photo breathe),
             heavy once the form sheet rises so card copy stays legible. */}
         <div
           className={`absolute inset-0 transition-opacity duration-500 bg-gradient-to-t lg:hidden ${
@@ -452,7 +452,7 @@ const Login = () => {
         </div>
       </div>
 
-      {/* MOBILE WELCOME LAYER — full-bleed brand hero + entry pills (item 9) */}
+      {/* MOBILE WELCOME LAYER: full-bleed brand hero + entry pills (item 9) */}
       {showWelcome && (
         <div className="relative z-10 flex flex-col flex-1 px-6 pb-8 pt-6 safe-top safe-bottom lg:hidden">
           <LevelUpWordmark className="h-7 w-auto text-foreground" />
@@ -486,7 +486,7 @@ const Login = () => {
         </div>
       )}
 
-      {/* FORM COLUMN — a rounded bottom-sheet rising over the hero on mobile */}
+      {/* FORM COLUMN: a rounded bottom-sheet rising over the hero on mobile */}
       {!showWelcome && (
         <div className="relative z-10 flex flex-col flex-1 bg-canvas rounded-t-[28px] mt-auto px-5 pt-7 pb-6 safe-bottom animate-fade-in-up lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8 lg:animate-none">
           {/* Grabber handle (mobile only) reinforces the bottom-sheet feel */}

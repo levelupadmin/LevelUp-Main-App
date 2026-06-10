@@ -10,7 +10,7 @@ import { toast } from "@/lib/toast";
  *
  * Two pieces, deliberately scoped so ThankYou can drop them in without
  * reinventing motion:
- *  1. A ONE-SHOT confetti burst (fires once on mount, then never again — the
+ *  1. A ONE-SHOT confetti burst (fires once on mount, then never again, the
  *     old page used an infinite `animate-ping` halo that kept pulsing) plus a
  *     static cream radial-glow orb sitting behind the check mark.
  *  2. A "Download invoice" affordance for the receipt strip, wired to the
@@ -39,11 +39,11 @@ export function SuccessCheck() {
 
   return (
     <div className="relative inline-flex items-center justify-center h-24 w-24 mx-auto">
-      {/* One-shot confetti — fixed full-screen overlay, fires a single burst. */}
+      {/* One-shot confetti: fixed full-screen overlay, fires a single burst. */}
       <Confetti active={burst} duration={2600} />
 
       {/* Cream radial-glow orb behind the check (replaces the infinite ping).
-          Static, soft, on-brand — reads as a warm spotlight, not a pulse. */}
+          Static, soft, on-brand, reads as a warm spotlight, not a pulse. */}
       <span
         aria-hidden
         className="absolute -inset-6 rounded-full blur-2xl opacity-70"

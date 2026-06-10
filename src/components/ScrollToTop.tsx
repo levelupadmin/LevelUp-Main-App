@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 
 /**
  * Scrolls the window to the top whenever the route changes. React Router v6
- * does NOT do this by default — without this, navigating from a long
+ * does NOT do this by default. Without this, navigating from a long
  * masterclass page to e.g. /privacy lands you partway down /privacy at
  * the same Y position you left, which feels broken on mobile.
  *

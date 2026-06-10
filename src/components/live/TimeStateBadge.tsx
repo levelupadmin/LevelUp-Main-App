@@ -12,7 +12,7 @@ interface TimeStateBadgeProps {
   /** The session/event start. ISO string or Date. */
   date: string | Date;
   /**
-   * How long the session runs, in minutes — used to keep the badge in the
+   * How long the session runs, in minutes, used to keep the badge in the
    * "LIVE" state for the full duration rather than flipping to "Past" the
    * instant the clock passes the start time. Defaults to 60.
    */
@@ -47,7 +47,7 @@ const computeState = (target: Date, durationMin: number): State => {
     return { kind: "past", label: format(target, "EEE d MMM") };
   }
 
-  // Imminent — within the hour, show the minute countdown label.
+  // Imminent: within the hour, show the minute countdown label.
   if (minsUntil < 60) {
     return { kind: "soon", label: `In ${Math.max(1, minsUntil)} min` };
   }
@@ -61,7 +61,7 @@ const computeState = (target: Date, durationMin: number): State => {
     return { kind: "tomorrow" };
   }
 
-  // Further out — "Sat 14 Jun".
+  // Further out, "Sat 14 Jun".
   return { kind: "relative", label: format(target, "EEE d MMM") };
 };
 
@@ -69,11 +69,11 @@ const computeState = (target: Date, durationMin: number): State => {
  * Relative-time badge for live sessions / events.
  *
  * Renders a compact pill whose copy + colour reflect how close the session is:
- *   • LIVE ●     — pulsing red dot, while the session is in its run window
- *   • IN 43 MIN  — amber, when under an hour away
- *   • TODAY · 6:00 PM / TOMORROW — cream, near-term
- *   • SAT 14 JUN — muted, further out
- *   • TODAY · 6:00 PM / SAT 14 JUN — muted, already finished
+ *   • LIVE ●     : pulsing red dot, while the session is in its run window
+ *   • IN 43 MIN  : amber, when under an hour away
+ *   • TODAY · 6:00 PM / TOMORROW : cream, near-term
+ *   • SAT 14 JUN : muted, further out
+ *   • TODAY · 6:00 PM / SAT 14 JUN : muted, already finished
  *
  * The badge self-updates every 30s so a card left open transitions through the
  * states (e.g. "IN 2 MIN" → "LIVE ●") without a reload.

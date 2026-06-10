@@ -20,7 +20,7 @@ interface ResumeMeta {
 
 // ── Continue Learning ──
 // Ordered by LAST TOUCHED (most-recent chapter_progress.updated_at per
-// course), not catalogue sort_order — so the course you watched five
+// course), not catalogue sort_order, so the course you watched five
 // minutes ago sits first. Each card carries a "Lesson N of M" chip on the
 // artwork and an always-visible thin cream progress bar.
 const ContinueLearning = () => {
@@ -68,7 +68,7 @@ const ContinueLearning = () => {
 
       const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
 
-      // Fire courses + sections in parallel — both only need courseIds.
+      // Fire courses + sections in parallel, both only need courseIds.
       const [coursesRes, sectionsRes] = await Promise.all([
         supabase
           .from("courses")
@@ -98,7 +98,7 @@ const ContinueLearning = () => {
 
       const sectionIds = (sectionsData ?? []).map((s: any) => s.id);
 
-      // chapters wait for sectionIds; chapter_progress fired at the top —
+      // chapters wait for sectionIds; chapter_progress fired at the top,
       // await whichever lands last.
       const [chaptersRes, progressRes] = await Promise.all([
         sectionIds.length
@@ -252,7 +252,7 @@ const ContinueLearning = () => {
                     />
                   )}
 
-                  {/* Resume-meta chip on the artwork — "Lesson 4 of 29". Only
+                  {/* Resume-meta chip on the artwork, "Lesson 4 of 29". Only
                       shown once we know the lesson count; suppressed for a
                       fully-complete course (the CTA reads "Review" instead). */}
                   {total > 0 && !allComplete && lessonNumber > 0 && (
@@ -261,14 +261,14 @@ const ContinueLearning = () => {
                     </span>
                   )}
 
-                  {/* Hover Play overlay — subtle, only on hover. */}
+                  {/* Hover Play overlay, subtle, only on hover. */}
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                     <span className="h-12 w-12 rounded-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] flex items-center justify-center shadow-lg">
                       <Play className="h-5 w-5 fill-current ml-0.5" />
                     </span>
                   </div>
 
-                  {/* Always-visible thin cream progress bar — no 0<pct<100
+                  {/* Always-visible thin cream progress bar, no 0<pct<100
                       gate. At 0% the track shows with an empty fill; at 100%
                       it reads as a full cream line. */}
                   <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">

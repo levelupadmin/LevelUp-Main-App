@@ -27,7 +27,7 @@ function clock(totalSeconds: number): string {
 }
 
 /**
- * The "Up Next" sidebar lesson navigator — up to 6 lessons from the current
+ * The "Up Next" sidebar lesson navigator: up to 6 lessons from the current
  * position. Each row shows a thumbnail (or numbered fallback), title,
  * description excerpt, and a watch-state line:
  *   - "Played ✓" once chapter_progress.completed_at is set

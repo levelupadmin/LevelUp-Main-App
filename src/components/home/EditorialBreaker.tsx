@@ -7,7 +7,7 @@ import Reveal from "@/components/motion/Reveal";
 // feed between the resume rail and the catalogue. Oversized "NEW THIS WEEK"
 // wordmark over the canvas, with a live count of how many courses landed in
 // the last seven days as the supporting line. Renders even with zero new
-// arrivals — the band is an editorial divider first, a stat second.
+// arrivals, the band is an editorial divider first, a stat second.
 //
 // Full-bleed: the Home content sits inside a padded, max-width container
 // (px-4 → md:px-8 → lg:px-10 → xl:px-12 in StudentLayout). Negative margins

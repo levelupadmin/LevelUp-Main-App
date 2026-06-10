@@ -13,7 +13,7 @@ interface Props {
 }
 
 /**
- * The Q&A / discussion panel for a chapter — ask box + threaded questions with
+ * The Q&A / discussion panel for a chapter: ask box + threaded questions with
  * instructor-reply tagging and "show more" paging. Extracted verbatim from
  * ChapterViewer; behaviour unchanged.
  */
@@ -62,7 +62,7 @@ export default function ChapterQna({
       <div className="space-y-3">
         {qna.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border bg-[hsl(var(--surface))]/40 p-6 text-center">
-            <p className="text-sm text-foreground/80 font-medium">Nothing yet — be the first.</p>
+            <p className="text-sm text-foreground/80 font-medium">Nothing yet. Be the first.</p>
             <p className="text-xs text-muted-foreground mt-1 max-w-[34ch] mx-auto">
               Stuck on a technique? Want a deeper breakdown? The instructor and your fellow students can answer.
             </p>

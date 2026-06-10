@@ -26,7 +26,7 @@ interface Props {
  * ring medallion frames the course key-art (or a check fallback), a one-shot
  * confetti burst fires on open, and the student gets Share + Continue actions.
  * Entirely props-driven and reusable for both a single-lesson and a
- * whole-course completion — ChapterViewer owns the open/close lifecycle and
+ * whole-course completion. ChapterViewer owns the open/close lifecycle and
  * wires onContinue/onShare to real navigation/share handlers.
  */
 export default function CompletionTakeover({

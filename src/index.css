@@ -2,7 +2,7 @@
 
 @tailwind base;
 
-/* react-phone-number-input — unified pill+input look (no visible gap).
+/* react-phone-number-input - unified pill+input look (no visible gap).
    The flag/code pill on the left and the number field share borders so
    the whole thing reads as one input. Country pill shows "🇮🇳 +91 ▾". */
 .PhoneInput {
@@ -129,8 +129,8 @@
 
     --cream: 40 60% 87%;             /* champagne solid #F3E5C8 */
     --cream-text: 30 35% 11%;        /* warm-dark text on champagne */
-    --champagne-from: 43 100% 93%;   /* #FFF4DE — CTA gradient top */
-    --champagne-to: 39 56% 78%;      /* #E6CFA7 — CTA gradient bottom */
+    --champagne-from: 43 100% 93%;   /* #FFF4DE - CTA gradient top */
+    --champagne-to: 39 56% 78%;      /* #E6CFA7 - CTA gradient bottom */
     --gold: 40 61% 63%;              /* warm gold accent #D9B36A */
     --success: 156 77% 41%;          /* #18B97A */
     --success-foreground: 0 0% 100%;
@@ -181,7 +181,7 @@
        canvas from Tailwind, but the html element is what paints behind
        any overscroll bounce or content-not-yet-painted gap. */
     @apply bg-background;
-    /* Kill rubber-band/overscroll chaining on the scroll root too — without
+    /* Kill rubber-band/overscroll chaining on the scroll root too, without
        this the document element can still bounce on iOS even when body is
        pinned, which reads as the "rogue vertical scroll" the user reports. */
     overscroll-behavior: none;
@@ -213,7 +213,7 @@
   /* iOS focus auto-zoom guard. Mobile Safari/WKWebView zooms the page when a
      focused form control reports a computed font-size below 16px. Setting a
      16px BASE on all controls keeps focus zoom off (OTP field, chapter-viewer
-     notes textarea, search inputs, etc.). It's a base only — any Tailwind
+     notes textarea, search inputs, etc.). It's a base only, any Tailwind
      text-* utility (which lands in the components/utilities layers that come
      after base) still wins for VISUAL sizing, so this never inflates inputs
      that were deliberately styled larger; it only raises ones that were below
@@ -281,7 +281,7 @@
     @apply bg-surface-2 border border-border rounded-xl;
   }
 
-  /* ── Champagne CTA — the redesign's primary action button ──
+  /* ── Champagne CTA - the redesign's primary action button ──
      Vertical gradient (#FFF4DE → #E6CFA7) with a soft inner highlight and
      warm glow. Used on Send code / Enrol now / Create account / Start
      watching. Pair with sizing utilities (px/py/text) at the callsite. */
@@ -297,7 +297,7 @@
   }
   .btn-champagne:active { transform: scale(0.985); }
 
-  /* Glassy dark card — translucent surface + blur for layered hero cards. */
+  /* Glassy dark card - translucent surface + blur for layered hero cards. */
   .glass-card {
     background-color: hsl(var(--surface) / 0.72);
     -webkit-backdrop-filter: blur(16px);
@@ -364,7 +364,7 @@
     }
   }
 
-  /* ── Tactile press on touch/tap — gives mobile a satisfying feel ── */
+  /* ── Tactile press on touch/tap - gives mobile a satisfying feel ── */
   .press-scale {
     transition: transform var(--motion-fast) var(--ease-out);
     -webkit-tap-highlight-color: transparent;
@@ -376,7 +376,7 @@
     transform: scale(0.96);
   }
 
-  /* ── Focus ring — consistent, accessible ── */
+  /* ── Focus ring - consistent, accessible ── */
   .focus-ring {
     @apply outline-none focus-visible:ring-2 focus-visible:ring-cream/60 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas;
   }
@@ -401,7 +401,7 @@
      are kept for back-compat; the `.p?-safe` set is the canonical padding API
      mirroring Tailwind's directional naming. */
 
-  /* Directional safe-area PADDING — combine with a component's own padding via
+  /* Directional safe-area PADDING - combine with a component's own padding via
      the layout agents (e.g. a header wrapper gets `pt-safe` on top of px-4). */
   .pt-safe {
     padding-top: max(env(safe-area-inset-top), 0px);
@@ -421,7 +421,7 @@
     padding-right: max(env(safe-area-inset-right), 0px);
   }
 
-  /* Directional safe-area MARGIN — for when padding would distort a bordered
+  /* Directional safe-area MARGIN - for when padding would distort a bordered
      surface and the gap should sit outside it instead. */
   .mt-safe { margin-top: max(env(safe-area-inset-top), 0px); }
   .mb-safe { margin-bottom: max(env(safe-area-inset-bottom), 0px); }
@@ -461,7 +461,7 @@
     animation: fade-in-up 0.3s ease-out;
   }
 
-  /* Staggered list entry — apply data-stagger-index on children */
+  /* Staggered list entry - apply data-stagger-index on children */
   .stagger-in > * {
     opacity: 0;
     animation: fade-in-up 0.4s var(--ease-out) forwards;
@@ -502,7 +502,7 @@
     box-shadow: 0 0 0 2px hsl(var(--cream) / 0.3);
   }
 
-  /* Dark mode image polish — slight brightness reduction for thumbnails */
+  /* Dark mode image polish - slight brightness reduction for thumbnails */
   .dark-img {
     filter: brightness(0.92) contrast(1.02);
     transition: filter var(--motion-base) ease;
@@ -520,7 +520,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   MOTION SYSTEM — shared entrance / press / reveal primitives.
+   MOTION SYSTEM - shared entrance / press / reveal primitives.
    Class names are a cross-agent contract (consumed app-wide):
      .anim-rise  .anim-stagger  .pressable  .kenburns  .reveal/.reveal-in
    Everything lives under prefers-reduced-motion: no-preference, so
@@ -574,7 +574,7 @@
     animation: motion-kenburns 9s ease-in-out infinite alternate;
   }
 
-  /* Scroll reveal — paired with useReveal()/<Reveal>, which add .reveal-in
+  /* Scroll reveal - paired with useReveal()/<Reveal>, which add .reveal-in
      on first intersection */
   .reveal {
     opacity: 0;

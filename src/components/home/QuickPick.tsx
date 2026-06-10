@@ -11,7 +11,7 @@ import { hapticSelection } from "@/lib/haptics";
 // jumps for a member, each resolved to a live destination. Any tile whose
 // target can't be resolved (no in-progress course, nothing scheduled, empty
 // catalog) falls back to a sensible always-valid route, so the grid is
-// always four complete tiles — never a dead cell.
+// always four complete tiles, never a dead cell.
 
 interface QuickTile {
   key: string;
@@ -43,7 +43,7 @@ const QuickPick = () => {
 
     const load = async () => {
       try {
-        // 1) Last course the user touched — newest chapter_progress row.
+        // 1) Last course the user touched, newest chapter_progress row.
         const lastCoursePromise = user
           ? supabase
               .from("chapter_progress")

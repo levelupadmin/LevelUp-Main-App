@@ -23,7 +23,7 @@ const NewMembers = () => {
       });
   }, [isAdmin]);
 
-  // Only show for admins — RLS restricts users table reads to own row
+  // Only show for admins; RLS restricts users table reads to own row
   if (!isAdmin) return null;
 
   // Nothing to show → no section.

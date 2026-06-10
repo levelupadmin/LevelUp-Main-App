@@ -15,8 +15,8 @@ interface Props {
 }
 
 const InstructorCard = ({ name, bio, credentials, avatarUrl, links }: Props) => {
-  // Hide the whole section if we don't have at least a bio or credentials
-  // — just a name is not enough to justify an "About the instructor" block.
+  // Hide the whole section if we don't have at least a bio or credentials;
+  // just a name is not enough to justify an "About the instructor" block.
   const hasContent = bio || (credentials && credentials.length > 0);
   if (!hasContent || !name) return null;
 

@@ -21,7 +21,7 @@ import { corsHeadersFor } from "../_shared/cors.ts";
 //
 // Query parameters:
 //
-//   ?hard=true  — admin-only escape hatch that performs the hard
+//   ?hard=true  : admin-only escape hatch that performs the hard
 //                 delete immediately. Caller must have role = 'admin'
 //                 in public.users. NOT exposed in the in-app UI.
 //
@@ -38,7 +38,7 @@ const GRACE_DAYS = 7;
 
 Deno.serve(async (req) => {
   // Origin-aware CORS so the iOS native shell origin
-  // (capacitor://app.leveluplearning.in) is allowed — in-app account deletion
+  // (capacitor://app.leveluplearning.in) is allowed, since in-app account deletion
   // is an Apple requirement, so this must work from the iOS app, not just web.
   const cors = corsHeadersFor(req);
   const jsonRes = (body: unknown, status = 200) =>
@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
 
     // Admin (service-role) client is used for the mutation itself
     // because the RLS policy on public.users does not permit a user to
-    // null out their own columns en masse — and we also need to write
+    // null out their own columns en masse, and we also need to write
     // to auth.users for the hard-delete path.
     const admin = createClient(supabaseUrl, serviceKey);
 
@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Could not load account" }, 500);
     }
     if (!userRow) {
-      // Auth user exists but no public.users row — treat as already
+      // Auth user exists but no public.users row, so treat as already
       // gone. Drop the auth row too for cleanliness.
       await admin.auth.admin.deleteUser(userId);
       return jsonRes({ status: "deleted", recoverable_until: null });
@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
 
     // Best-effort: revoke the caller's active refresh tokens so any
     // other open sessions are signed out immediately. This is
-    // belt-and-braces — the frontend already calls supabase.auth.signOut()
+    // belt-and-braces; the frontend already calls supabase.auth.signOut()
     // after our 200 response.
     try {
       await admin.auth.admin.signOut(userId, "global");

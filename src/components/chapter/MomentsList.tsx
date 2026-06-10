@@ -28,7 +28,7 @@ function clock(totalSeconds: number): string {
 }
 
 /**
- * "Moments" / chapter-marker list — instructor-authored jump points read from
+ * "Moments" / chapter-marker list: instructor-authored jump points read from
  * the chapter_moments table (label + seconds), ordered by sort_order then
  * timestamp. Each row is a tap target that seeks the player via onSeek.
  * Renders nothing when a chapter has no moments, so it can be dropped into the

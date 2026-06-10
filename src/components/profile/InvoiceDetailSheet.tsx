@@ -24,11 +24,11 @@ import { downloadInvoice, invoiceNumber, type InvoiceOrder } from "@/lib/invoice
  *
  * Tapping an invoice row in the Account hub opens this. It shows a big ₹ header,
  * a Paid status pill, stacked info cards (order id, payment id, date,
- * masterclass) and two actions: Download PDF (via downloadInvoice — same
+ * masterclass) and two actions: Download PDF (via downloadInvoice, same
  * client-side jsPDF path used elsewhere, native-share-safe) and Email.
  *
  * Email is a mailto: hand-off to the buyer's mail client pre-filled with a
- * request to (re)send the invoice — there's no transactional-email edge function
+ * request to (re)send the invoice. There's no transactional-email edge function
  * for invoices, so this keeps the promise honest without inventing backend.
  */
 
@@ -46,7 +46,7 @@ interface InvoiceDetailSheetProps {
 }
 
 const fmtFullDate = (iso?: string | null): string => {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Date(iso).toLocaleDateString("en-IN", {
       day: "numeric",
@@ -168,13 +168,13 @@ const InvoiceDetailSheet = ({ order, open, onOpenChange }: InvoiceDetailSheetPro
               <InfoRow
                 icon={Hash}
                 label="Order ID"
-                value={order.razorpay_order_id ?? "—"}
+                value={order.razorpay_order_id ?? "-"}
                 mono
               />
               <InfoRow
                 icon={CreditCard}
                 label="Payment ID"
-                value={order.razorpay_payment_id ?? "—"}
+                value={order.razorpay_payment_id ?? "-"}
                 mono
               />
             </div>

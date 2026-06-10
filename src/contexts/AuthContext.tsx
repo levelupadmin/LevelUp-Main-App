@@ -41,13 +41,13 @@ export const useAuth = () => {
 //
 // The runtime guards below are belt-and-braces:
 //
-//   1. `safeHostname` — even if someone accidentally ships a dev build
+//   1. `safeHostname`: even if someone accidentally ships a dev build
 //      (or flips the env var in a prod build), refuse to activate the
 //      bypass unless the page is served from localhost / 127.0.0.1 /
 //      an IPv6 loopback. This prevents a compromised build pipeline
 //      from turning every visitor into an admin.
 //
-//   2. `console.error` + banner — any time the bypass is active we
+//   2. `console.error` + banner: any time the bypass is active we
 //      scream about it. A developer who forgot the flag is on will
 //      notice immediately; a leaked build in a QA environment will be
 //      caught by the banner visible on every page.
@@ -71,7 +71,7 @@ if (DEV_BYPASS_REQUESTED && !DEV_BYPASS) {
     "[AuthContext] VITE_DEV_ADMIN_BYPASS is set but the page is not " +
     "served from localhost. Ignoring bypass and enforcing real auth. " +
     "If you see this in production, your build pipeline is leaking " +
-    "dev flags — investigate immediately."
+    "dev flags. Investigate immediately."
   );
 }
 
@@ -80,7 +80,7 @@ if (DEV_BYPASS) {
   console.warn(
     "%c[AuthContext] DEV ADMIN BYPASS ACTIVE",
     "background:#ff0;color:#000;font-weight:bold;padding:2px 6px;",
-    "— real authentication is disabled. DO NOT SHIP."
+    "- real authentication is disabled. DO NOT SHIP."
   );
 }
 
@@ -117,7 +117,7 @@ const DevBypassBanner = () => (
     }}
     role="status"
   >
-    DEV ADMIN BYPASS ACTIVE — auth is disabled. Unset VITE_DEV_ADMIN_BYPASS before deploying.
+    DEV ADMIN BYPASS ACTIVE - auth is disabled. Unset VITE_DEV_ADMIN_BYPASS before deploying.
   </div>
 );
 
@@ -127,7 +127,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const currentUserIdRef = useRef<string | null>(null);
 
-  // Dev bypass — skip Supabase auth entirely (localhost only, see
+  // Dev bypass: skip Supabase auth entirely (localhost only, see
   // runtime guards above).
   if (DEV_BYPASS) {
     return (
@@ -182,7 +182,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       hadSession = true;
 
       // If this is a background token refresh and the user id hasn't
-      // changed, skip the profile refetch entirely — nothing to update.
+      // changed, skip the profile refetch entirely; nothing to update.
       if (initialLoadDone && currentUserIdRef.current === nextSession.user.id) {
         return;
       }

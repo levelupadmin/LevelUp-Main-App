@@ -17,7 +17,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEKDAY = ["S", "M", "T", "W", "T", "F", "S"];
 
 /**
- * "This week" card — minutes-watched bars for the last 7 days, with a
+ * "This week" card: minutes-watched bars for the last 7 days, with a
  * week-over-week delta vs the prior 7 days. Watch-time is derived from
  * chapter_progress: each row that advanced this period contributes its
  * last_position_seconds (a lower-bound proxy for time spent, since we don't
@@ -119,7 +119,7 @@ export const WeeklyStats = ({ userId }: WeeklyStatsProps) => {
     );
   }
 
-  // Nothing watched in the last two weeks — keep the dashboard clean.
+  // Nothing watched in the last two weeks, keep the dashboard clean.
   if (!hasData) return null;
 
   const trendUp = deltaPct > 0;

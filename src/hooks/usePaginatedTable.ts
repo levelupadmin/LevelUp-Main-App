@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * usePaginatedTable — the fetch + page-state + nav boilerplate shared by the
+ * usePaginatedTable: the fetch + page-state + nav boilerplate shared by the
  * admin tables (applications, announcements, enrolments).
  *
  * It owns `page`, `loading`, the row list, the total/hasMore bookkeeping, and
  * the effect that re-fetches when the page (or a caller-supplied dependency)
- * changes. The page-specific query stays in the caller's `fetchPage` callback —
- * different tables join, filter, and enrich differently — so this hook makes no
+ * changes. The page-specific query stays in the caller's `fetchPage` callback,
+ * different tables join, filter, and enrich differently, so this hook makes no
  * assumptions about the data source.
  *
  * Two pagination styles are supported by what `fetchPage` returns:
@@ -20,9 +20,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export interface PaginatedFetchContext {
   page: number;
   pageSize: number;
-  /** `page * pageSize` — the inclusive lower bound for a Supabase `.range()`. */
+  /** `page * pageSize`, the inclusive lower bound for a Supabase `.range()`. */
   from: number;
-  /** `from + pageSize - 1` — the inclusive upper bound for a Supabase `.range()`. */
+  /** `from + pageSize - 1`, the inclusive upper bound for a Supabase `.range()`. */
   to: number;
 }
 
@@ -39,7 +39,7 @@ export interface UsePaginatedTableOptions<T> {
   pageSize: number;
   fetchPage: (ctx: PaginatedFetchContext) => Promise<PaginatedFetchResult<T>>;
   /**
-   * Re-fetch (on the current page) whenever any of these values change — pass
+   * Re-fetch (on the current page) whenever any of these values change. Pass
    * the server-side filters here. To jump back to page 0 on a filter change,
    * call `setPage(0)` in the filter's onChange handler (React batches it with
    * the filter state update, so the fetch still runs only once). This mirrors
@@ -85,7 +85,7 @@ export function usePaginatedTable<T>(opts: UsePaginatedTableOptions<T>): Paginat
   const [reloadToken, setReloadToken] = useState(0);
 
   // Call the latest `fetchPage` closure (it captures current filter values)
-  // without making it an effect dependency — a fresh closure each render would
+  // without making it an effect dependency; a fresh closure each render would
   // otherwise refetch on every render.
   const fetchPageRef = useRef(opts.fetchPage);
   fetchPageRef.current = opts.fetchPage;

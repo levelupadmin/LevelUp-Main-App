@@ -84,7 +84,7 @@ const AdminEnrolments = () => {
   /* ── Server-side paginated load against the unified view ──
    * enrolments_unified UNIONs:
    *   - live enrolments (from public.enrolments)
-   *   - legacy enrolments (from public.legacy_enrolments — ~73K rows)
+   *   - legacy enrolments (from public.legacy_enrolments, ~73K rows)
    * The view exposes user_email/phone/full_name + offering_title + an
    * `enrolment_kind` column so the UI can badge live vs legacy.
    * Search is applied client-side (see `filtered` below); status/course/
@@ -130,7 +130,7 @@ const AdminEnrolments = () => {
 
       if (targetOfferingIds !== null) {
         if (targetOfferingIds.length === 0) {
-          // No offerings match — empty result
+          // No offerings match - empty result
           return { rows: [], count: 0 };
         }
         countQuery = countQuery.in("offering_id", targetOfferingIds);
@@ -145,7 +145,7 @@ const AdminEnrolments = () => {
       const { count } = await countQuery;
       const { data: enrols } = await dataQuery.range(from, to);
 
-      // Null data means the query failed — keepRowsOnError holds the current page.
+      // Null data means the query failed - keepRowsOnError holds the current page.
       if (!enrols) throw new Error("Failed to load enrolments");
 
       const rows: EnrolmentRow[] = (enrols as any[]).map((e) => ({
@@ -260,7 +260,7 @@ const AdminEnrolments = () => {
 
     for (const entry of rawEntries) {
       if (!emailRegex.test(entry)) {
-        failed.push(`${entry} — invalid format`);
+        failed.push(`${entry}: invalid format`);
       } else {
         emails.push(entry);
       }
@@ -274,7 +274,7 @@ const AdminEnrolments = () => {
         .maybeSingle();
 
       if (!user) {
-        failed.push(`${email} — user not found`);
+        failed.push(`${email}: user not found`);
         continue;
       }
 
@@ -287,7 +287,7 @@ const AdminEnrolments = () => {
         .maybeSingle();
 
       if (existing) {
-        skipped.push(`${email} — already has active enrolment`);
+        skipped.push(`${email}: already has active enrolment`);
         continue;
       }
 
@@ -299,7 +299,7 @@ const AdminEnrolments = () => {
       });
 
       if (error) {
-        failed.push(`${email} — ${error.message}`);
+        failed.push(`${email}: ${error.message}`);
       } else {
         success++;
       }
@@ -586,16 +586,16 @@ const AdminEnrolments = () => {
       const byPhone = row.phone ? phoneMap.get(row.phone) : undefined;
 
       if (byEmail && byPhone && byEmail.id === byPhone.id) {
-        // Both match same user — ready to enroll
+        // Both match same user - ready to enroll
         ready.push({ ...row, existing_user_id: byEmail.id });
       } else if (byEmail && !row.phone) {
-        // Email matches, no phone in CSV — treat as ready
+        // Email matches, no phone in CSV - treat as ready
         ready.push({ ...row, existing_user_id: byEmail.id });
       } else if (byEmail) {
         // Email matches but phone differs
         const existingPhone = byEmail.phone || "";
         if (existingPhone === row.phone || !existingPhone) {
-          // Phone matches or user has no phone — ready
+          // Phone matches or user has no phone - ready
           ready.push({ ...row, existing_user_id: byEmail.id });
         } else {
           // Phone conflict
@@ -619,7 +619,7 @@ const AdminEnrolments = () => {
           action: null,
         });
       } else {
-        // No match at all — new user
+        // No match at all - new user
         newRows.push(row);
       }
     }
@@ -709,7 +709,7 @@ const AdminEnrolments = () => {
       let userId = signUpData.user.id;
       usersCreated++;
 
-      // Try to enrol — the users table row may take a moment
+      // Try to enrol - the users table row may take a moment
       let retries = 3;
       let enrollSuccess = false;
       while (retries > 0) {
@@ -1002,7 +1002,7 @@ const AdminEnrolments = () => {
                   <tbody>
                     {csvReady.map((r, i) => (
                       <tr key={i} className="border-b border-green-400/10 last:border-0">
-                        <td className="px-3 py-1.5">{r.full_name || "—"}</td>
+                        <td className="px-3 py-1.5">{r.full_name || "-"}</td>
                         <td className="px-3 py-1.5">{r.email}</td>
                         <td className="px-3 py-1.5 font-mono text-[10px]">{r.offering_id.slice(0, 8)}...</td>
                       </tr>
@@ -1017,7 +1017,7 @@ const AdminEnrolments = () => {
           {csvNew.length > 0 && (
             <div className="mb-4">
               <h3 className="text-sm font-semibold text-blue-400 mb-2">
-                New users — will be created ({csvNew.length})
+                New users, will be created ({csvNew.length})
               </h3>
               <div className="bg-blue-400/5 border border-blue-400/20 rounded-lg overflow-x-auto">
                 <table className="w-full text-xs">
@@ -1032,9 +1032,9 @@ const AdminEnrolments = () => {
                   <tbody>
                     {csvNew.map((r, i) => (
                       <tr key={i} className="border-b border-blue-400/10 last:border-0">
-                        <td className="px-3 py-1.5">{r.full_name || "—"}</td>
+                        <td className="px-3 py-1.5">{r.full_name || "-"}</td>
                         <td className="px-3 py-1.5">{r.email}</td>
-                        <td className="px-3 py-1.5">{r.phone || "—"}</td>
+                        <td className="px-3 py-1.5">{r.phone || "-"}</td>
                         <td className="px-3 py-1.5 font-mono text-[10px]">{r.offering_id.slice(0, 8)}...</td>
                       </tr>
                     ))}
@@ -1048,7 +1048,7 @@ const AdminEnrolments = () => {
           {csvConflicts.length > 0 && (
             <div className="mb-4">
               <h3 className="text-sm font-semibold text-yellow-400 mb-2">
-                Conflicts — review required ({csvConflicts.length})
+                Conflicts, review required ({csvConflicts.length})
               </h3>
               <div className="bg-yellow-400/5 border border-yellow-400/20 rounded-lg overflow-x-auto">
                 <table className="w-full text-xs">
@@ -1066,9 +1066,9 @@ const AdminEnrolments = () => {
                     {csvConflicts.map((c, i) => (
                       <tr key={i} className="border-b border-yellow-400/10 last:border-0">
                         <td className="px-3 py-1.5">{c.email}</td>
-                        <td className="px-3 py-1.5">{c.phone || "—"}</td>
+                        <td className="px-3 py-1.5">{c.phone || "-"}</td>
                         <td className="px-3 py-1.5">{c.existing_email}</td>
-                        <td className="px-3 py-1.5">{c.existing_phone || "—"}</td>
+                        <td className="px-3 py-1.5">{c.existing_phone || "-"}</td>
                         <td className="px-3 py-1.5">
                           {c.conflict_type === "email_match_phone_diff"
                             ? "Email matches, phone differs"

@@ -10,7 +10,7 @@ const STEPS = [
 
 /**
  * Vertical 5-step admission timeline for application-only (live cohort)
- * offerings — rendered after the description when tally_form_url is set.
+ * offerings, rendered after the description when tally_form_url is set.
  */
 export default function ApplicationTimeline() {
   return (

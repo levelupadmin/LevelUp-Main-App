@@ -60,7 +60,7 @@ const CommunityPage = () => {
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [commentLoading, setCommentLoading] = useState(false);
 
-  // Muted threads — stored in localStorage so muted state persists
+  // Muted threads, stored in localStorage so muted state persists
   const [mutedThreads, setMutedThreads] = useState<Set<string>>(() => {
     try {
       const stored = localStorage.getItem("muted_threads");
@@ -100,7 +100,7 @@ const CommunityPage = () => {
 
       // Get user names. Uses the public_user_profiles view (not the
       // users table directly) because the users RLS policy restricts
-      // non-admins to reading their OWN row — authenticated peers need
+      // non-admins to reading their OWN row, so authenticated peers need
       // the view to see each other's names. The view exposes only
       // id/full_name/avatar_url/member_number/occupation; email, phone,
       // bio and city are never returned through this path.
@@ -196,7 +196,7 @@ const CommunityPage = () => {
 
     if (data) {
       const uids = [...new Set(data.map((c) => c.user_id))];
-      // public_user_profiles view — see comment in loadPosts above.
+      // public_user_profiles view, see comment in loadPosts above.
       const { data: users } = await supabase
         .from("public_user_profiles" as any)
         .select("id, full_name")
@@ -287,7 +287,7 @@ const CommunityPage = () => {
           </p>
         </div>
 
-        {/* Scope toggle — only when user has an active cohort */}
+        {/* Scope toggle, only when user has an active cohort */}
         {myBatchId && (
           <div className="flex items-center gap-1.5 p-1 bg-surface border border-border rounded-lg w-fit flex-wrap">
             <button
@@ -332,7 +332,7 @@ const CommunityPage = () => {
                 <p className="text-sm font-medium">Peer review board</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Cohort-mates' assignments where they've opted in to peer feedback. Click any
-                  card to open the critique drawer — your review is private to them.
+                  card to open the critique drawer. Your review is private to them.
                 </p>
               </div>
             </div>
@@ -381,7 +381,7 @@ const CommunityPage = () => {
         ) : posts.length === 0 ? (
           <div className="text-center py-12">
             <MessageCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-            <p className="text-lg font-medium text-foreground mb-1">No posts yet — be the first!</p>
+            <p className="text-lg font-medium text-foreground mb-1">No posts yet, be the first!</p>
             <p className="text-muted-foreground text-sm mb-5">Not sure where to start? Pick a prompt:</p>
             <div className="flex flex-wrap justify-center gap-2">
               {[
@@ -392,7 +392,7 @@ const CommunityPage = () => {
                 <button
                   key={prompt}
                   onClick={() => {
-                    setNewPost(prompt + " — ");
+                    setNewPost(prompt + ": ");
                     const textarea = document.querySelector<HTMLTextAreaElement>('textarea[placeholder="Share something with the community..."]');
                     if (textarea) {
                       textarea.focus();

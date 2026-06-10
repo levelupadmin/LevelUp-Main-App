@@ -125,7 +125,7 @@ const HeroCarousel = () => {
         </motion.div>
       </AnimatePresence>
 
-      {/* ── Text overlay — left-center, animated ── */}
+      {/* ── Text overlay, left-center, animated ── */}
       <div className="relative z-10 flex items-center h-full px-8 md:px-12">
         <AnimatePresence mode="wait">
           <motion.div
@@ -200,7 +200,7 @@ const HeroCarousel = () => {
         </AnimatePresence>
       </div>
 
-      {/* ── Dots — bottom-right ── */}
+      {/* ── Dots, bottom-right ── */}
       <div className="absolute bottom-5 right-6 flex gap-2 z-20">
         {slides.map((_, i) => (
           <button

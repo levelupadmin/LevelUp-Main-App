@@ -208,7 +208,7 @@ const AdminCourses = () => {
       .update({ show_on_browse: next } as any)
       .eq("id", courseId);
     if (error) {
-      // Revert on failure — column may not exist yet if migration hasn't run
+      // Revert on failure - column may not exist yet if migration hasn't run
       setCourses((prev) =>
         prev.map((c) => (c.id === courseId ? { ...c, show_on_browse: current } : c))
       );

@@ -200,7 +200,7 @@ const CertificateGallery = ({ userId }: CertificateGalleryProps) => {
           </div>
         </Reveal>
       ) : (
-        // Enrolled but none earned yet — encouraging header above the locked shelf.
+        // Enrolled but none earned yet, encouraging header above the locked shelf.
         <Reveal className="rounded-2xl border border-border bg-surface p-6 text-center">
           <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-surface-2 text-muted-foreground">
             <Award size={22} strokeWidth={1.5} />

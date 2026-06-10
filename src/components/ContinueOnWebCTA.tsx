@@ -6,7 +6,7 @@ import { isIOS } from "@/lib/platform";
  * Android-only replacement for any Buy / Enrol / Pay / Register CTA.
  *
  * Google Play's "Reader Rule" (Path B) requires that the Android shell
- * contain no purchase UI whatsoever — not even price chips that look like
+ * contain no purchase UI whatsoever, not even price chips that look like
  * they could lead to checkout. Anywhere the web app would offer a paid
  * action, the Android build renders this card instead. It opens the
  * matching public URL in the system browser, where Razorpay handles the
@@ -18,9 +18,9 @@ import { isIOS } from "@/lib/platform";
  * WebView.
  *
  * Two visual variants:
- *   - `card`  — full block with explanatory copy (use on offering pages,
+ *   - `card`  - full block with explanatory copy (use on offering pages,
  *               checkout pages, and other large primary surfaces).
- *   - `inline` — compact pill suitable for course-card grids.
+ *   - `inline` - compact pill suitable for course-card grids.
  */
 
 const WEB_ORIGIN = "https://app.leveluplearning.in";
@@ -48,7 +48,7 @@ export default function ContinueOnWebCTA({
   // Apple App Store anti-steering (Guidelines 3.1.1 / 3.1.3) forbids BOTH
   // in-app non-IAP purchase AND links that steer users to an external purchase
   // flow. The "Continue on web" link below is Google-compliant (Play Reader
-  // Rule / Path B) but NOT permitted on iOS — so on iOS we render passive,
+  // Rule / Path B) but NOT permitted on iOS, so on iOS we render passive,
   // link-free, price-free copy. Already-entitled users keep full content access
   // elsewhere in the app; this surface simply stops being a purchase/steering
   // affordance. See src/lib/platform.ts (isIOS).

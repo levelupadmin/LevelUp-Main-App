@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Payment was not made by this user" }, 400);
     }
 
-    // Atomic seat claim — reactivates a cancelled row or inserts a new one,
+    // Atomic seat claim: reactivates a cancelled row or inserts a new one,
     // enforcing capacity under concurrency (shared with the free path).
     const { data: seat, error: seatErr } = await admin.rpc("claim_event_seat", {
       p_event_id: event_id,
@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
         "payment", razorpay_payment_id
       );
       return jsonRes({
-        error: "This event sold out just as your payment completed. Our team will process a refund — please contact support.",
+        error: "This event sold out just as your payment completed. Our team will process a refund, please contact support.",
         refund_required: true,
       }, 409);
     }

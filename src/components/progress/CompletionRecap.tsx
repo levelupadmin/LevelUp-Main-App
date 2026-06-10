@@ -104,7 +104,7 @@ export const CompletionRecap = ({
       big: <CountUp value={lessonsCompleted} />,
       caption:
         lessonsCompleted === 1
-          ? "One lesson down — and a habit started."
+          ? "One lesson down, and a habit started."
           : `Every one of ${lessonsCompleted} lessons, watched to completion.`,
     },
     ...(instructorName

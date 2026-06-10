@@ -5,7 +5,7 @@ const MILESTONES = [25, 50, 75, 100];
 const MILESTONE_MESSAGES: Record<number, { title: string; subtitle: string }> = {
   25: {
     title: "Quarter of the way there!",
-    subtitle: "Great momentum — keep building.",
+    subtitle: "Great momentum. Keep building.",
   },
   50: {
     title: "Halfway through!",

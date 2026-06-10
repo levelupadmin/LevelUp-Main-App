@@ -1,5 +1,5 @@
 /**
- * Database schema reference — every public table that a teammate is
+ * Database schema reference, every public table that a teammate is
  * likely to read, query, or edit. Internal plumbing tables
  * (audit_logs, attempt counters, queue rows) are referenced briefly
  * but not exhaustively documented here.
@@ -307,7 +307,7 @@ export const SCHEMA_TABLES: SchemaTable[] = [
     purpose: "Threaded comments on community_posts.",
     surfacedInAdmin: false,
     keyColumns: [
-      { name: "post_id, user_id, comment_text", type: "uuid + uuid + text", description: "—" },
+      { name: "post_id, user_id, comment_text", type: "uuid + uuid + text", description: "-" },
     ],
   },
   {

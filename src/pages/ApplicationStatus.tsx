@@ -22,7 +22,7 @@ const STEPS = [
   { key: "accepted", label: "Accepted", expect: "We let you know if you've earned a seat." },
   { key: "confirmation_paid", label: "Confirmation Paid", expect: "Confirm your seat with the booking amount." },
   { key: "balance_paid", label: "Balance Paid", expect: "Clear the remaining fee before the cohort starts." },
-  { key: "enrolled", label: "Enrolled", expect: "You're in — welcome to the cohort." },
+  { key: "enrolled", label: "Enrolled", expect: "You're in. Welcome to the cohort." },
 ] as const;
 
 /* Which step index each status maps to (the highest completed step) */
@@ -215,7 +215,7 @@ const ApplicationStatus = () => {
           </Badge>
         </div>
 
-        {/* Rejection reason — neutral surface, no red, to match the
+        {/* Rejection reason: neutral surface, no red, to match the
             monochrome timeline. The reason text is still surfaced. */}
         {isRejected && application.rejection_reason && (
           <div className="mb-8 p-4 rounded-lg bg-surface border border-border">
@@ -244,7 +244,7 @@ const ApplicationStatus = () => {
           </div>
         </div>
 
-        {/* Timeline — monochrome cream */}
+        {/* Timeline: monochrome cream */}
         <div className="relative">
           {STEPS.map((step, index) => {
             const state = getStepState(index);
@@ -254,7 +254,7 @@ const ApplicationStatus = () => {
 
             return (
               <div key={step.key} className="relative flex gap-4 pb-8">
-                {/* Vertical line — cream once the step is done, dim otherwise */}
+                {/* Vertical line: cream once the step is done, dim otherwise */}
                 {!isLast && (
                   <div
                     className={`absolute left-[15px] top-[32px] w-0.5 h-[calc(100%-16px)] ${
@@ -263,7 +263,7 @@ const ApplicationStatus = () => {
                   />
                 )}
 
-                {/* Icon — filled cream check (done), pulsing cream ring
+                {/* Icon: filled cream check (done), pulsing cream ring
                     (current), dim ring (future / not reached) */}
                 <div className="relative z-10 shrink-0 flex items-center justify-center w-[32px] h-[32px]">
                   {isDone ? (
@@ -310,7 +310,7 @@ const ApplicationStatus = () => {
                     </p>
                   )}
 
-                  {/* Pay buttons — hidden on iOS per Apple anti-steering
+                  {/* Pay buttons: hidden on iOS per Apple anti-steering
                       (no in-app purchase entry points or external-pay links).
                       Web + Android keep the existing checkout flow. */}
                   {state === "current" &&

@@ -25,7 +25,7 @@ function getClientIp(req: Request): string {
  * discount without exposing the full coupons row (which includes
  * max_redemptions, used_count, admin-only fields).
  *
- * It is intentionally read-only — redemption still happens atomically at
+ * It is intentionally read-only; redemption still happens atomically at
  * capture time inside verify-razorpay-payment / razorpay-webhook.
  */
 Deno.serve(async (req) => {
@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
     );
 
     // ── Rate limit: 20 coupon probes per 15 min per (ip, offering). ──
-    // Without this the endpoint is a public coupon oracle — an attacker
+    // Without this the endpoint is a public coupon oracle: an attacker
     // could brute-force short alpha codes (ABC, LAUNCH, etc.) at
     // thousands of rps. 20/15min is generous enough for a real shopper
     // who mis-types a few times but cuts automated scanners off early.
@@ -109,7 +109,7 @@ Deno.serve(async (req) => {
       discountInr = Math.min(Number(coupon.discount_value), price);
     }
 
-    // Only return fields the UI needs — never expose used_count / max_redemptions.
+    // Only return fields the UI needs. Never expose used_count / max_redemptions.
     // id and code are safe: create-razorpay-order re-fetches and re-validates
     // the coupon row before writing it to payment_orders, so nothing trusts
     // this value alone.

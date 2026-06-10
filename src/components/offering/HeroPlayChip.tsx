@@ -2,7 +2,7 @@ import { Play } from "lucide-react";
 import { hapticImpact } from "@/lib/haptics";
 
 interface HeroPlayChipProps {
-  /** Fired on tap — caller scrolls to + starts the free preview player. */
+  /** Fired on tap; caller scrolls to + starts the free preview player. */
   onClick: () => void;
   /** Label under the chip; defaults to the first-lesson framing. */
   label?: string;
@@ -10,7 +10,7 @@ interface HeroPlayChipProps {
 
 /**
  * Champagne circular play chip overlaid on the HeroBanner. Surfaces the
- * free preview lesson directly on the fold — a MasterClass-style "play
+ * free preview lesson directly on the fold, a MasterClass-style "play
  * the trailer right here" affordance. Only render this when a make_free
  * chapter actually exists. On tap it bubbles up to the page, which
  * scrolls to and auto-plays the FreePreviewPlayer.

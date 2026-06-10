@@ -115,7 +115,7 @@ const EventDetail = () => {
       const data = await res.json();
 
       if (data.registered) {
-        toast({ title: "Registered! ✓", description: "You're in — see you there." });
+        toast({ title: "Registered! ✓", description: "You're in, see you there." });
         setIsRegistered(true);
         setRegCount((c) => c + 1);
         paymentInFlightRef.current = false;
@@ -245,7 +245,7 @@ const EventDetail = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-8">
-        {/* Left Column — sticky */}
+        {/* Left Column: sticky */}
         <div className="lg:sticky lg:top-6 lg:self-start space-y-6">
           {/* Banner */}
           {event.image_url && (
@@ -333,7 +333,7 @@ const EventDetail = () => {
                 className="w-full py-3 rounded-lg bg-cream text-cream-text font-mono text-sm uppercase tracking-widest font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2 min-h-[48px]"
               >
                 {registering && <Loader2 className="h-4 w-4 animate-spin" />}
-                Register — Free
+                Register - Free
               </button>
             ) : isNative() ? (
               // Paid event on Android: swap the Register-with-price CTA
@@ -353,7 +353,7 @@ const EventDetail = () => {
           </div>
         </div>
 
-        {/* Right Column — scrollable */}
+        {/* Right Column: scrollable */}
         <div className="space-y-8">
           {/* Title */}
           <div>
@@ -460,7 +460,7 @@ const EventDetail = () => {
               >
                 {registering && <Loader2 className="h-4 w-4 animate-spin" />}
                 {event.pricing_type === "free"
-                  ? "Register — Free"
+                  ? "Register - Free"
                   : `Register · ₹${event.price_inr ? (event.price_inr / 100).toLocaleString("en-IN") : ""}`}
               </button>
             </div>

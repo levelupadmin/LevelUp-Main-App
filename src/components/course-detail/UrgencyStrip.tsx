@@ -16,7 +16,7 @@ const UrgencyStrip = ({ seatsLeft, batchStartsAt }: Props) => {
     const d = new Date(batchStartsAt!);
     const days = differenceInCalendarDays(d, new Date());
     if (days < 0) {
-      dateLabel = null; // Batch already started — don't show stale urgency
+      dateLabel = null; // Batch already started, don't show stale urgency
     } else if (days === 0) {
       dateLabel = "Batch starts today";
     } else if (days === 1) {

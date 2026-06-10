@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 /**
- * EmptyState — shown when a list/page has no data to display.
+ * EmptyState: shown when a list/page has no data to display.
  *
  * Replaces the ad-hoc "No courses yet" / "No events found" patterns each
  * page was rendering differently.
@@ -25,7 +25,7 @@ export interface EmptyStateProps {
     | { to: string; label: string }
     | { onClick: () => void; label: string };
   className?: string;
-  /** Visual density — "default" centers in a surface card, "inline" uses inline spacing only. */
+  /** Visual density: "default" centers in a surface card, "inline" uses inline spacing only. */
   variant?: "default" | "inline";
 }
 

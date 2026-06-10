@@ -94,7 +94,7 @@ const AdminUsers = () => {
     const from = p * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    // Query the users_unified view — adds legacy flag, city, vertical, LTV.
+    // Query the users_unified view - adds legacy flag, city, vertical, LTV.
     let countQuery = supabase
       .from("users_unified" as any)
       .select("id", { count: "exact", head: true });
@@ -447,13 +447,13 @@ const AdminUsers = () => {
                 onClick={() => !isPhantom && openEdit(u)}
               >
                 <td className="px-5 py-3 font-medium">
-                  <div>{u.full_name || (isPhantom ? <span className="text-muted-foreground italic">unclaimed legacy</span> : "—")}</div>
+                  <div>{u.full_name || (isPhantom ? <span className="text-muted-foreground italic">unclaimed legacy</span> : "-")}</div>
                   <div className="font-mono text-[10px] text-muted-foreground">
                     {u.member_number ? `#${u.member_number}` : ""}
                   </div>
                 </td>
-                <td className="px-5 py-3 text-muted-foreground text-xs">{u.email || "—"}</td>
-                <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{u.phone || "—"}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{u.email || "-"}</td>
+                <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{u.phone || "-"}</td>
                 <td className="px-5 py-3">
                   {u.is_legacy ? (
                     <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">legacy</span>
@@ -470,13 +470,13 @@ const AdminUsers = () => {
                       : "bg-secondary text-muted-foreground"
                   }`}>{u.role}</span>
                 </td>
-                <td className="px-5 py-3 text-muted-foreground text-xs">{u.city || "—"}</td>
-                <td className="px-5 py-3 text-muted-foreground text-xs">{u.state || "—"}</td>
-                <td className="px-5 py-3 text-muted-foreground text-xs">{u.program_vertical || "—"}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{u.city || "-"}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{u.state || "-"}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{u.program_vertical || "-"}</td>
                 <td className="px-5 py-3 font-mono text-xs text-right">
                   {u.lifetime_revenue_inr && u.lifetime_revenue_inr > 0
                     ? `₹${u.lifetime_revenue_inr.toLocaleString("en-IN")}`
-                    : "—"}
+                    : "-"}
                 </td>
                 <td className="px-5 py-3 font-mono text-xs">
                   {isPhantom ? (
@@ -490,7 +490,7 @@ const AdminUsers = () => {
                     </>
                   )}
                 </td>
-                <td className="px-5 py-3 font-mono text-xs">{u.created_at ? new Date(u.created_at).toLocaleDateString("en-IN") : "—"}</td>
+                <td className="px-5 py-3 font-mono text-xs">{u.created_at ? new Date(u.created_at).toLocaleDateString("en-IN") : "-"}</td>
               </tr>
             );})}
           </tbody>
@@ -522,7 +522,7 @@ const AdminUsers = () => {
             <div>
               <label className="block text-sm font-medium mb-1">Role</label>
               {isSelf ? (
-                <p className="text-sm text-muted-foreground py-2">You can't change your own role — ask another admin.</p>
+                <p className="text-sm text-muted-foreground py-2">You can't change your own role. Ask another admin.</p>
               ) : (
                 <Select value={editForm.role} onValueChange={(v) => setEditForm((f) => ({ ...f, role: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>

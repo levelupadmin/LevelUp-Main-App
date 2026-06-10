@@ -115,7 +115,7 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 interface Props {
-  /** Optional — when omitted, the layout renders <Outlet/> so it can be used as a
+  /** Optional. When omitted, the layout renders <Outlet/> so it can be used as a
    * React Router v6 layout route. Keeps backward-compat with wrapper-style usage. */
   children?: ReactNode;
   /** Page title passed by wrapper-style callers. The layout does not render it
@@ -312,7 +312,7 @@ const AdminLayout = ({ children }: Props) => {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{profile?.full_name || "Admin"}</p>
             <p className="text-xs font-mono text-muted-foreground">
-              #{profile?.member_number ?? "—"}
+              #{profile?.member_number ?? "-"}
             </p>
           </div>
         </div>
@@ -328,7 +328,7 @@ const AdminLayout = ({ children }: Props) => {
         <SidebarContent />
       </aside>
 
-      {/* Mobile sidebar overlay — respects iOS safe-area */}
+      {/* Mobile sidebar overlay, respects iOS safe-area */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div
@@ -410,7 +410,7 @@ const AdminLayout = ({ children }: Props) => {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar — `safe-top` pushes the row below the Dynamic Island; the
+        {/* Top bar: `safe-top` pushes the row below the Dynamic Island; the
             16-unit row sits *under* that inset (min-height, not fixed height,
             so the inset is added rather than eating into the row). */}
         <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-lg safe-top min-h-16">
@@ -505,7 +505,7 @@ const AdminLayout = ({ children }: Props) => {
           </div>
         </header>
 
-        {/* Content area — Suspense sits INSIDE the shell so lazy chunk loads
+        {/* Content area: Suspense sits INSIDE the shell so lazy chunk loads
             don't blank out the entire admin nav. */}
         <main id="main-content" className="flex-1 grain">
           <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-6 md:py-10 relative z-10">

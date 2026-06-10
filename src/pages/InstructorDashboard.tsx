@@ -27,7 +27,7 @@ const InstructorDashboard = () => {
       // Get courses where this user is the instructor.
       // NOTE: `courses` has no instructor_id column (instructor info is
       // denormalized text fields, not a per-user FK), so this query targets a
-      // non-existent column and returns nothing — the page is effectively
+      // non-existent column and returns nothing, so the page is effectively
       // unwired. Cast keeps it compiling without changing that behavior;
       // tracked separately for a real instructor↔course association.
       const { data: myCourses } = await (supabase as any)

@@ -206,7 +206,7 @@ const AdminNotifyRequests = () => {
                     }`}
                     title={`${r.notified_at ? "Notified" : "Pending"} · requested ${fmtDate(r.created_at)}`}
                   >
-                    {r.email || "—"}
+                    {r.email || "-"}
                   </span>
                 ))}
                 {g.rows.length > 24 && (

@@ -12,7 +12,7 @@ import { isIOS, isNative } from "@/lib/platform";
  *
  * No npm package backs this: registerPlugin() returns a proxy that resolves
  * the natively registered implementation at call time. There is deliberately
- * NO web fallback implementation — callers must gate on
+ * NO web fallback implementation - callers must gate on
  * isNativeDrmAvailable(). Web and Android keep the iframe embed (Widevine
  * works in the Android WebView); calling play() there would reject with
  * "not implemented".
@@ -23,7 +23,7 @@ export interface VdoPlayerNativePlugin {
    * Present the native fullscreen player and start FairPlay playback.
    *
    * OTPs are minted with ttl=300s, so fetch the OTP at tap time and call
-   * this immediately (never mint at page load — VdoCipher error 2013
+   * this immediately (never mint at page load; VdoCipher error 2013
    * "OTP expired" otherwise).
    *
    * `videoId` is needed by the native SDK (VdoAsset.createAsset) and is
@@ -64,7 +64,7 @@ export interface VdoPlayerNativePlugin {
 export const VdoPlayerNative = registerPlugin<VdoPlayerNativePlugin>("VdoPlayer");
 
 /**
- * True only inside the iOS Capacitor shell — the one runtime where FairPlay
+ * True only inside the iOS Capacitor shell, the one runtime where FairPlay
  * requires the native handoff. Everywhere else the iframe path stays.
  */
 export const isNativeDrmAvailable = (): boolean => isIOS() && isNative();

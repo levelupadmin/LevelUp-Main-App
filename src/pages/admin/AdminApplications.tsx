@@ -277,7 +277,7 @@ const AdminApplications = () => {
     // No edge function / email integration is wired up yet. Rather than
     // falsely toast success, surface the real state so admins don't assume
     // reminders are going out.
-    toast.info("Payment reminders aren't wired up yet — email the student directly.");
+    toast.info("Payment reminders aren't wired up yet. Email the student directly.");
   };
 
   /* ── Stat cards ── */
@@ -418,13 +418,13 @@ const AdminApplications = () => {
                       </Badge>
                     </td>
                     <td className="px-4 py-3 font-medium">
-                      {app.full_name || "—"}
+                      {app.full_name || "-"}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
                       {app.email}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">
-                      {app.offerings?.title || "—"}
+                      {app.offerings?.title || "-"}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">
                       {new Date(app.created_at).toLocaleDateString("en-IN", {
@@ -456,7 +456,7 @@ const AdminApplications = () => {
                           Done
                         </Badge>
                       ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
+                        <span className="text-muted-foreground text-xs">-</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -593,7 +593,7 @@ const AdminApplications = () => {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              Interview Notes — {notesDialog?.full_name}
+              Interview Notes: {notesDialog?.full_name}
             </DialogTitle>
           </DialogHeader>
           <Textarea
@@ -625,7 +625,7 @@ const AdminApplications = () => {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Reject Application — {rejectDialog?.full_name}
+              Reject Application: {rejectDialog?.full_name}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground mb-2">

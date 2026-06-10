@@ -38,7 +38,7 @@ type VdoOtpResult =
 /**
  * Shared OTP mint used by BOTH playback paths: the web/Android iframe embed
  * (fetched on mount) and the iOS native FairPlay handoff (fetched at tap
- * time — OTP ttl is 300s, so native must mint as late as possible).
+ * time, OTP ttl is 300s, so native must mint as late as possible).
  * Error classification mirrors the original inline logic exactly.
  */
 async function fetchVdoOtp(chapterId: string): Promise<VdoOtpResult> {
@@ -49,7 +49,7 @@ async function fetchVdoOtp(chapterId: string): Promise<VdoOtpResult> {
 
     if (fnErr) {
       // On a non-2xx, supabase-js puts the function's JSON body on
-      // fnErr.context (a Response), NOT on `data` — so reading data?.error
+      // fnErr.context (a Response), NOT on `data`, so reading data?.error
       // always missed and we defaulted to "network", masking the real reason
       // (sign-in required / no access / rate limited). Read the body.
       let msg = (data as any)?.error || fnErr.message || "Unable to load video";
@@ -90,7 +90,7 @@ async function fetchVdoOtp(chapterId: string): Promise<VdoOtpResult> {
 
 const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUrl, durationSeconds }: Props) => {
   // iOS Capacitor shell: WKWebView cannot play FairPlay, so the iframe is
-  // never mounted there — playback hands off to the native plugin instead.
+  // never mounted there; playback hands off to the native plugin instead.
   // Web + Android keep the iframe path untouched (Widevine works in the
   // Android WebView).
   const nativeDrm = isNativeDrmAvailable();
@@ -132,10 +132,10 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
   }, [chapterId, nativeDrm]);
 
   // Listen for VdoCipher postMessage progress events. These come from the
-  // iframe embed only — on iOS native there is no iframe, so don't attach
+  // iframe embed only; on iOS native there is no iframe, so don't attach
   // the listener at all. (Progress/completion tracking from the native
   // player is out of scope for now; when added it will flow through plugin
-  // events — VdoPlayerNative.addListener — not window postMessage.)
+  // events (VdoPlayerNative.addListener), not window postMessage.)
   useEffect(() => {
     if (!onProgress || nativeDrm) return;
     const handler = (event: MessageEvent) => {
@@ -210,7 +210,7 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
     } catch (e) {
       // Surface the native plugin's reject reason so a failing device reports
       // the actual cause (SDK error / "not implemented") instead of a generic
-      // message — the iOS FairPlay path can't be debugged any other way.
+      // message, the iOS FairPlay path can't be debugged any other way.
       const msg = (e as { message?: string })?.message;
       toast.error(msg ? `Playback error: ${msg}`.slice(0, 140) : "Couldn't start playback. Try again.");
     } finally {
@@ -222,7 +222,7 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
     // FairPlay can't play in WKWebView, so iOS hands off to the native
     // fullscreen player. In place of the iframe we render a REAL video poster
     // (chapter thumbnail + scrim + play affordance + duration), framed like the
-    // embed, so tapping it reads as one intentional gesture into fullscreen —
+    // embed, so tapping it reads as one intentional gesture into fullscreen,
     // not a jarring jump out of a blank box. The whole poster is the tap target.
     return (
       <div className="relative aspect-video w-full max-w-full bg-card rounded-[16px] border border-border overflow-hidden">
@@ -287,7 +287,7 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
     // clipped to the box. The iframe is absolutely positioned inside, so when
     // the notes/Q&A keyboard opens and the page reflows, the player keeps its
     // own fixed-size box instead of becoming a scroll/pan target. We do NOT
-    // set touch-action here — VdoCipher needs touch events for its own
+    // set touch-action here, VdoCipher needs touch events for its own
     // play/pause + scrub controls.
     <div className="relative aspect-video w-full max-w-full bg-card rounded-[16px] border border-border overflow-hidden">
       <iframe

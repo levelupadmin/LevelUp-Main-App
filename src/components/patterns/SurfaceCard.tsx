@@ -3,15 +3,15 @@ import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 /**
- * SurfaceCard — the canonical card surface.
+ * SurfaceCard: the canonical card surface.
  *
  * Replaces the pattern `bg-surface border border-border rounded-xl ...`
  * that was re-inlined across 8+ pages. Three variants:
  *
- *   interactive (default) — hover lift + press scale, renders as a button/Link
+ *   interactive (default): hover lift + press scale, renders as a button/Link
  *                           when `as` or `to`/`onClick` is provided.
- *   static               — no interactivity, just the surface.
- *   muted                — bg-surface-2 variant for nested cards.
+ *   static               : no interactivity, just the surface.
+ *   muted                : bg-surface-2 variant for nested cards.
  *
  * ```tsx
  * <SurfaceCard to={`/courses/${id}`} padding="md">

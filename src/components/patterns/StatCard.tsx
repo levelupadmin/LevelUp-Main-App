@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import SurfaceCard from "./SurfaceCard";
 
 /**
- * StatCard — a dashboard tile for a single metric.
+ * StatCard: a dashboard tile for a single metric.
  *
  * Used across AdminDashboard, AdminRevenue, InstructorDashboard. Replaces
  * the hand-rolled `<div className="bg-surface p-4 ..."><Icon /><h3 /></div>`

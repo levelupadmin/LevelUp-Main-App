@@ -14,18 +14,18 @@ import ScrollToTop from "@/components/ScrollToTop";
 import NativeDeepLinks from "@/components/NativeDeepLinks";
 import StudentLayout from "@/components/layout/StudentLayout";
 import RouteFallback from "@/components/RouteFallback";
-// AdminLayout is lazy — admin paths are <1% of traffic; no reason to ship its
+// AdminLayout is lazy: admin paths are <1% of traffic; no reason to ship its
 // 20 KB of nav chrome + 14 admin route imports inside every anon page load.
 const AdminLayout = lazy(() => import("@/components/layout/AdminLayout"));
 
-// Critical student paths – keep synchronous so first-paint of the most common
+// Critical student paths, keep synchronous so first-paint of the most common
 // anon landings (/, /login, /signup) doesn't await a chunk fetch.
 import RootRedirect from "@/pages/RootRedirect";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import NotFoundPage from "@/pages/NotFoundPage";
 
-// Home is the authenticated dashboard — anon visitors land on Login or /p/<slug>
+// Home is the authenticated dashboard; anon visitors land on Login or /p/<slug>
 // and never see it. Lazy so the 40 KB source (TanStack-Query'd home grid +
 // course cards + hero carousel) doesn't ride along with the main bundle.
 const Home = lazy(() => import("@/pages/Home"));
@@ -181,7 +181,7 @@ const App = () => {
               <Route path="/" element={<RootRedirect />} />
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
-              {/* Full-bleed post-OTP onboarding — self-guards, renders OUTSIDE
+              {/* Full-bleed post-OTP onboarding, self-guards, renders OUTSIDE
                   the StudentLayout shell (no bottom nav). */}
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/p/:slug" element={<PublicOffering />} />
@@ -197,11 +197,11 @@ const App = () => {
               <Route path="/refunds" element={<RefundPolicy />} />
               {/*
                 Public self-serve account deletion (Google Play requirement).
-                Unauthenticated — must be reachable without signing in.
+                Unauthenticated, must be reachable without signing in.
               */}
               <Route path="/delete-account" element={<DeleteAccount />} />
 
-              {/* Browse merged into Home — keep old deep links working. */}
+              {/* Browse merged into Home, keep old deep links working. */}
               <Route path="/browse" element={<Navigate to="/" replace />} />
               {/* Friendly alias for the sessions tab. */}
               <Route path="/sessions" element={<Navigate to="/my-sessions" replace />} />

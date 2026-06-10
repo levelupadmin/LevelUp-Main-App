@@ -21,8 +21,8 @@ const ctaClasses =
  * The standardized empty state: a cream-ringed icon, a serif-italic headline,
  * a muted sub line, and an optional cream pill CTA (Link or button).
  *
- * Shares its voice with <SystemState> so every dead-end — an empty list or a
- * lost page — feels like the same room: calm, warm, plain-spoken.
+ * Shares its voice with <SystemState> so every dead-end (an empty list or a
+ * lost page) feels like the same room: calm, warm, plain-spoken.
  */
 export const EmptyState = ({ icon: Icon, title, sub, cta, className }: EmptyStateProps) => (
   <div

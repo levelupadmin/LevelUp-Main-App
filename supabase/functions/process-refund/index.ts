@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
     // Fetch refund + payment order
     const { data: refund } = await admin.from("refunds").select("*, payment_orders(*)").eq("id", refund_id).maybeSingle();
     if (!refund) return jsonRes({ error: "Refund not found" }, 404);
-    // Validate the refund amount against what was actually paid — a
+    // Validate the refund amount against what was actually paid: a
     // mis-entered refunds row must never refund more than the order total.
     const orderTotal = Number(refund.payment_orders?.total_inr ?? 0);
     if (!(Number(refund.amount_inr) > 0) || Number(refund.amount_inr) > orderTotal) {

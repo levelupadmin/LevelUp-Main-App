@@ -6,11 +6,11 @@
 // the Capacitor NATIVE shells:
 //   • Android serves the bundle from https://app.leveluplearning.in
 //     (androidScheme:"https" + server.hostname) so its origin already matches
-//     the web origin — that's why Android playback worked.
+//     the web origin, which is why Android playback worked.
 //   • iOS has no iosScheme set, so it uses Capacitor's default `capacitor`
 //     scheme: its origin is capacitor://app.leveluplearning.in. Before this
 //     allowlist that origin was rejected, so EVERY edge-function call from the
-//     iOS app (notably the VdoCipher OTP mint) was CORS-blocked — the fetch
+//     iOS app (notably the VdoCipher OTP mint) was CORS-blocked, so the fetch
 //     threw and surfaced as a misleading "couldn't start playback (network)".
 //
 // Webhook-style endpoints invoked server-to-server (razorpay-webhook,
@@ -57,7 +57,7 @@ export function corsHeadersFor(req: Request): Record<string, string> {
 
 /**
  * Static web-origin headers. Back-compat for functions not yet migrated to
- * corsHeadersFor(req). Does NOT cover the iOS native origin — any function
+ * corsHeadersFor(req). Does NOT cover the iOS native origin; any function
  * the iOS app calls must use corsHeadersFor(req) instead.
  */
 export const corsHeaders: Record<string, string> = {

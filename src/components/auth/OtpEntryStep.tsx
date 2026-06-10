@@ -16,7 +16,7 @@ interface Props {
   onBack: () => void;
 }
 
-// Mask the number so it reads "+91 ····· ··321" — keep the country code and
+// Mask the number so it reads "+91 ····· ··321", keep the country code and
 // the last three digits (enough for the user to recognise their own number),
 // dot out everything in between. Falls back to the raw string for numbers too
 // short to mask meaningfully (shouldn't happen for a +91 mobile).
@@ -67,7 +67,7 @@ export function OtpEntryStep({
   }, [resendTimer]);
 
   useEffect(() => {
-    // Auto-submit the moment the last digit lands — no "Verify" button to tap.
+    // Auto-submit the moment the last digit lands, no "Verify" button to tap.
     if (otp.length !== otpLength) return;
     // Note: `verifying` is intentionally NOT in the deps array. If we
     // include it, setVerifying(true) below changes deps -> cleanup

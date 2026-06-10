@@ -192,7 +192,7 @@ export default function AssignmentSubmissionForm({
           className="rounded border-border"
         />
         <span className="text-xs text-muted-foreground">
-          Open to peer review — cohort-mates can see this and offer critique
+          Open to peer review, cohort-mates can see this and offer critique
         </span>
       </label>
 
