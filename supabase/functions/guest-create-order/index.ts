@@ -262,10 +262,15 @@ Deno.serve(async (req) => {
           .update({ user_id: userId })
           .eq("id", po.id);
       } else {
+        // email_confirm stays FALSE: the guest-typed email is unproven, and a
+        // confirmed account minted here let anyone pre-register (squat) an
+        // arbitrary victim email through this unauthenticated endpoint. The
+        // magic link below lands only in the real inbox, and clicking it is
+        // what confirms ownership and activates sign-in.
         const { data: newUser, error: createError } =
           await admin.auth.admin.createUser({
             email: guest_email,
-            email_confirm: true,
+            email_confirm: false,
             user_metadata: {
               full_name: guest_name,
               phone: normalizedPhone,

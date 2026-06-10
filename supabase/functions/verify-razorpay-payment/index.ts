@@ -609,10 +609,30 @@ Deno.serve(async (req) => {
 
     /* ── Create enrolment for main offering (with duplicate guard) ──
          For staged payments: enrol only after balance is paid (or after
-         confirmation if there is no balance stage). For non-staged,
-         enrol immediately. ── */
+         confirmation when there is genuinely no balance stage). For
+         non-staged, enrol immediately. The old check enrolled on EVERY
+         confirmation payment, granting the full course before the balance
+         was ever paid. ── */
     const isStaged = !!po.payment_type;
-    const shouldEnrol = !isStaged || po.payment_type === "balance" || po.payment_type === "confirmation";
+    let confirmationCoversAll = false;
+    if (isStaged && po.payment_type === "confirmation" && po.offering_id) {
+      const { data: stagedOffering } = await admin
+        .from("offerings")
+        .select("price_inr, app_fee_inr, confirmation_amount_inr")
+        .eq("id", po.offering_id)
+        .single();
+      if (stagedOffering) {
+        const balanceOwed =
+          Number(stagedOffering.price_inr ?? 0) -
+          Number(stagedOffering.app_fee_inr ?? 0) -
+          Number(stagedOffering.confirmation_amount_inr ?? 0);
+        confirmationCoversAll = balanceOwed <= 0;
+      }
+    }
+    const shouldEnrol =
+      !isStaged ||
+      po.payment_type === "balance" ||
+      (po.payment_type === "confirmation" && confirmationCoversAll);
 
     let enrolmentId: string | null = null;
 

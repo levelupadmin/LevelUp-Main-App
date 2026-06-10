@@ -117,13 +117,28 @@ const Onboarding = () => {
       return;
     }
     setSaving(true);
-    const { error } = await supabase
-      .from("users")
-      .update({ full_name: fullName.trim(), email: email.trim() })
-      .eq("id", user.id);
+    // Identity write goes through a SECURITY DEFINER RPC: the RLS freeze on
+    // users.email (anti-entitlement-hijack) rejects a plain update() of the
+    // phone-signup placeholder, which stranded every phone-first user here.
+    // The RPC allows exactly this placeholder->real-email transition, keeps
+    // the legacy-claim trigger suppressed (email is unverified), and raises
+    // typed errors we can map to useful messages.
+    // Cast: the RPC ships in migration 20260611100000; regenerate the typed
+    // client (supabase gen types) to drop this.
+    const { error } = await (supabase.rpc as CallableFunction)("set_onboarding_profile", {
+      p_full_name: fullName.trim(),
+      p_email: email.trim(),
+    }) as { error: { message?: string } | null };
     setSaving(false);
     if (error) {
-      toast.error("Couldn't save your details. Please try again.");
+      const msg = error.message || "";
+      if (msg.includes("email_taken")) {
+        toast.error("That email is already linked to another account. Sign in with it instead, or use a different one.");
+      } else if (msg.includes("email_locked")) {
+        toast.error("Your email can't be changed here. Contact support if it needs updating.");
+      } else {
+        toast.error("Couldn't save your details. Please try again.");
+      }
       return;
     }
     hapticImpact("light");

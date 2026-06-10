@@ -378,6 +378,29 @@ export default function CheckoutPage() {
     setPaying(true);
 
     try {
+      // Free total for a signed-in user: no Razorpay leg exists for a
+      // zero-rupee order (create-razorpay-order rejects <= 0), so enrol
+      // through the dedicated authenticated free path and go straight to
+      // ThankYou. Server recomputes the total, so this can't be spoofed.
+      if (!isAnon && !isStaged && total <= 0) {
+        const { data: freeData, error: freeErr } = await supabase.functions.invoke(
+          "create-free-enrolment",
+          {
+            body: {
+              offering_id: offeringId,
+              coupon_id: appliedCoupon?.id ?? null,
+            },
+          }
+        );
+        if (freeErr || !freeData?.success) {
+          toast.error(freeData?.error ?? "Couldn't complete the enrolment. Please try again.");
+          setPaying(false); paymentInFlightRef.current = false;
+          return;
+        }
+        navigate(freeData.payment_order_id ? `/thank-you/${freeData.payment_order_id}` : "/my-courses");
+        return;
+      }
+
       // Anon: guest-create-order (creates the auth.users row on
       // payment verify, no OTP). Logged-in: create-razorpay-order
       // (existing path, ties to user.id).
@@ -956,21 +979,27 @@ export default function CheckoutPage() {
           </div>
 
           {/* -- Pay button -- */}
+          {/* total <= 0 is a valid, payable state for non-staged orders (free
+              offering or 100%-off coupon): guests go through guest-create-order's
+              free capture, signed-in users through create-free-enrolment. Only
+              staged payments require a positive amount. */}
           <Button
             size="xl"
             className="w-full"
             onClick={handlePay}
-            disabled={paying || total <= 0}
+            disabled={paying || (isStaged && total <= 0)}
           >
             {paying ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Processing…
               </>
+            ) : isStaged ? (
+              `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
+            ) : total <= 0 ? (
+              "Enrol free"
             ) : (
-              isStaged
-                ? `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
-                : `Pay ₹${total.toLocaleString("en-IN")}`
+              `Pay ₹${total.toLocaleString("en-IN")}`
             )}
           </Button>
 
@@ -1009,7 +1038,7 @@ export default function CheckoutPage() {
         savings={totalSavings}
         stagedLabel={isStaged ? stagedLabel : undefined}
         paying={paying}
-        disabled={total <= 0}
+        disabled={isStaged && total <= 0}
         onPay={handlePay}
       />
     </div>
