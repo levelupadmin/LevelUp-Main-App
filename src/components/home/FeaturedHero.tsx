@@ -104,7 +104,7 @@ const FeaturedHero = () => {
       onMouseLeave={resume}
       onTouchStart={pause}
       onTouchEnd={resume}
-      className="relative rounded-3xl overflow-hidden ring-1 ring-white/5 shadow-[0_30px_60px_-30px_rgba(0,0,0,0.6)]"
+      className="relative -mx-4 md:mx-0 rounded-none md:rounded-3xl overflow-hidden ring-0 md:ring-1 ring-white/5 shadow-[0_30px_60px_-30px_rgba(0,0,0,0.6)]"
     >
       <div className="relative aspect-[4/5] sm:aspect-[16/8] lg:aspect-[21/8] max-h-[520px] w-full bg-surface-2">
         {slides.map((s, i) => (
