@@ -34,12 +34,24 @@ async function fetchVdoOtp(chapterId: string): Promise<VdoOtpResult> {
     });
 
     if (fnErr) {
-      // Parse error from edge function
-      const msg = (data as any)?.error || fnErr.message || "Unable to load video";
+      // On a non-2xx, supabase-js puts the function's JSON body on
+      // fnErr.context (a Response), NOT on `data` — so reading data?.error
+      // always missed and we defaulted to "network", masking the real reason
+      // (sign-in required / no access / rate limited). Read the body.
+      let msg = (data as any)?.error || fnErr.message || "Unable to load video";
+      try {
+        const ctx = (fnErr as { context?: Response })?.context;
+        if (ctx && typeof ctx.clone === "function") {
+          const body = await ctx.clone().json().catch(() => null);
+          if (body?.error) msg = body.error;
+        }
+      } catch {
+        // keep the fallback msg
+      }
       let errorType: OtpErrorType = "network";
-      if (msg.includes("enrol") || msg.includes("access")) {
+      if (msg.includes("enrol") || msg.includes("access") || msg.includes("Sign in")) {
         errorType = "access";
-      } else if (msg.includes("Too many")) {
+      } else if (msg.includes("Too many") || msg.includes("wait")) {
         errorType = "rate";
       }
       return { ok: false, errorType, message: msg };
@@ -134,7 +146,13 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title }: Props)
     try {
       const result = await fetchVdoOtp(chapterId);
       if (!result.ok) {
-        toast.error(`Couldn't start playback (${result.errorType}). Try again.`);
+        // errorType is now accurate (see fetchVdoOtp). Show the real reason for
+        // access/rate; keep a clean, actionable line for genuine network fails.
+        toast.error(
+          result.errorType === "network"
+            ? "Couldn't start playback. Check your connection and try again."
+            : result.message,
+        );
         return;
       }
       await VdoPlayerNative.play({

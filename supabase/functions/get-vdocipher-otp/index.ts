@@ -1,15 +1,19 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
-import { corsHeaders } from "../_shared/cors.ts";
-
-function jsonRes(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
+import { corsHeadersFor } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  // Origin-aware CORS so the iOS native shell origin
+  // (capacitor://app.leveluplearning.in) is allowed, not just the web origin.
+  // Without this the OTP fetch is CORS-blocked on iOS and the player surfaces
+  // a misleading "couldn't start playback (network)".
+  const cors = corsHeadersFor(req);
+  const jsonRes = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   try {
     // Anon visitors are allowed for make_free chapters only - this powers

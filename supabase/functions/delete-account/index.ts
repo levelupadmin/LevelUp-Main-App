@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
 // ─────────────────────────────────────────────────────────────────────
 // delete-account
@@ -34,18 +34,21 @@ import { corsHeaders } from "../_shared/cors.ts";
 //   500 { error: "..." }
 // ─────────────────────────────────────────────────────────────────────
 
-function jsonRes(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
 const GRACE_DAYS = 7;
 
 Deno.serve(async (req) => {
+  // Origin-aware CORS so the iOS native shell origin
+  // (capacitor://app.leveluplearning.in) is allowed — in-app account deletion
+  // is an Apple requirement, so this must work from the iOS app, not just web.
+  const cors = corsHeadersFor(req);
+  const jsonRes = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers: cors });
   }
 
   if (req.method !== "POST") {
