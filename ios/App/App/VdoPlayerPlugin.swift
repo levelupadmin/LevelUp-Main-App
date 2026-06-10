@@ -62,6 +62,14 @@ public class VdoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
     private var startPosition: Double?
     private weak var hostController: VdoPlayerHostViewController?
 
+    // Progress reporting: the native fullscreen player has no iframe/postMessage,
+    // so we observe the SDK's AVPlayer and emit periodic + final position to JS
+    // (mirrors the web iframe's onProgress so iOS records watch progress too).
+    private var timeObserverToken: Any?
+    private weak var observedPlayer: AVPlayer?
+    private var lastKnownSeconds: Double = 0
+    private var lastKnownDuration: Double = 0
+
     /// play({ otp, playbackInfo, videoId, title? })
     /// Presents the VdoCipher native FairPlay player full-screen over the bridge
     /// view controller. Resolves once the player is presented; rejects with code
@@ -157,6 +165,7 @@ public class VdoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func handlePlayerClosed(errorMessage: String? = nil) {
+        removeTimeObserver()
         asset = nil
         startPosition = nil
         hostController = nil
@@ -165,7 +174,42 @@ public class VdoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
         if let errorMessage = errorMessage {
             data["error"] = errorMessage
         }
+        // Final position so JS can persist completion/resume on dismissal.
+        if lastKnownDuration > 0 {
+            data["currentSeconds"] = lastKnownSeconds
+            data["totalSeconds"] = lastKnownDuration
+        }
         notifyListeners("playerClosed", data: data)
+        lastKnownSeconds = 0
+        lastKnownDuration = 0
+    }
+
+    /// Periodic position updates from the SDK's AVPlayer → "playerTimeUpdate".
+    private func attachTimeObserver(to player: AVPlayer) {
+        removeTimeObserver()
+        observedPlayer = player
+        let interval = CMTime(seconds: 5, preferredTimescale: 600)
+        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self, weak player] time in
+            guard let self = self, let player = player else { return }
+            let current = time.seconds
+            if current.isFinite { self.lastKnownSeconds = current }
+            if let dur = player.currentItem?.duration.seconds, dur.isFinite, dur > 0 {
+                self.lastKnownDuration = dur
+            }
+            guard self.lastKnownDuration > 0 else { return }
+            self.notifyListeners("playerTimeUpdate", data: [
+                "currentSeconds": self.lastKnownSeconds,
+                "totalSeconds": self.lastKnownDuration,
+            ])
+        }
+    }
+
+    private func removeTimeObserver() {
+        if let token = timeObserverToken {
+            observedPlayer?.removeTimeObserver(token)
+        }
+        timeObserverToken = nil
+        observedPlayer = nil
     }
 }
 
@@ -173,6 +217,8 @@ public class VdoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
 
 extension VdoPlayerPlugin: AssetPlaybackDelegate {
     public func streamPlaybackManager(playerReadyToPlay player: AVPlayer) {
+        // Start emitting progress to JS for the whole playback session.
+        attachTimeObserver(to: player)
         // Resume parity with the web iframe's `&t=` param.
         if let position = startPosition, position > 0 {
             startPosition = nil

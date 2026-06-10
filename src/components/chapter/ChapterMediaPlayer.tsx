@@ -16,7 +16,14 @@ interface Props {
 export default function ChapterMediaPlayer({ chapter, updateProgress, lastPosition }: Props) {
   return chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
     <div className="w-full max-w-full rounded-2xl overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
-      <VdoCipherPlayer chapterId={chapter.id} onProgress={updateProgress} startPosition={lastPosition} title={chapter.title} />
+      <VdoCipherPlayer
+        chapterId={chapter.id}
+        onProgress={updateProgress}
+        startPosition={lastPosition}
+        title={chapter.title}
+        posterUrl={chapter.thumbnail_url || chapter.vdocipher_thumbnail_url}
+        durationSeconds={chapter.duration_seconds}
+      />
     </div>
   ) : chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
     <div className="aspect-video w-full max-w-full bg-card rounded-2xl overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">

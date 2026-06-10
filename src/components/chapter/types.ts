@@ -12,6 +12,8 @@ export interface Chapter {
   section_id: string;
   sort_order: number;
   duration_seconds: number | null;
+  thumbnail_url: string | null;
+  vdocipher_thumbnail_url: string | null;
 }
 
 export interface ChapterSibling {

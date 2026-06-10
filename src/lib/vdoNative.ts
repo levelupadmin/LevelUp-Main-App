@@ -1,4 +1,4 @@
-import { registerPlugin } from "@capacitor/core";
+import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { isIOS, isNative } from "@/lib/platform";
 
 /**
@@ -38,6 +38,26 @@ export interface VdoPlayerNativePlugin {
     videoId?: string;
     startPosition?: number;
   }): Promise<void>;
+
+  /**
+   * Periodic playback position from the native player (~every 5s) so the iOS
+   * fullscreen path can record watch progress the way the web iframe does via
+   * postMessage. There is no iframe to listen to on iOS.
+   */
+  addListener(
+    eventName: "playerTimeUpdate",
+    listenerFunc: (data: { currentSeconds: number; totalSeconds: number }) => void,
+  ): Promise<PluginListenerHandle>;
+
+  /**
+   * Fired when the native player is dismissed. Carries the final position so the
+   * caller can persist completion/resume; `error` is set if it closed on an SDK
+   * failure rather than a user close.
+   */
+  addListener(
+    eventName: "playerClosed",
+    listenerFunc: (data: { error?: string; currentSeconds?: number; totalSeconds?: number }) => void,
+  ): Promise<PluginListenerHandle>;
 }
 
 /** Name must equal the Swift plugin's `jsName` ("VdoPlayer"), not its identifier. */

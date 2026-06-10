@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Lock, Clock, Loader2, Play } from "lucide-react";
@@ -13,6 +13,20 @@ interface Props {
   startPosition?: number;
   /** Shown in the native fullscreen player chrome (iOS only). */
   title?: string;
+  /** iOS native poster image behind the tap-to-play affordance. */
+  posterUrl?: string | null;
+  /** Duration badge on the iOS native poster (seconds). */
+  durationSeconds?: number | null;
+}
+
+/** Compact h:mm:ss / m:ss for the poster duration badge. */
+function formatDuration(total: number): string {
+  const s = Math.max(0, Math.floor(total));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
+  return `${h > 0 ? `${h}:` : ""}${mm}:${String(sec).padStart(2, "0")}`;
 }
 
 type OtpErrorType = "access" | "rate" | "network";
@@ -74,7 +88,7 @@ async function fetchVdoOtp(chapterId: string): Promise<VdoOtpResult> {
   }
 }
 
-const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title }: Props) => {
+const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUrl, durationSeconds }: Props) => {
   // iOS Capacitor shell: WKWebView cannot play FairPlay, so the iframe is
   // never mounted there — playback hands off to the native plugin instead.
   // Web + Android keep the iframe path untouched (Widevine works in the
@@ -139,6 +153,37 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title }: Props)
     return () => window.removeEventListener("message", handler);
   }, [onProgress, nativeDrm]);
 
+  // iOS native progress: the fullscreen FairPlay player has no iframe/postMessage,
+  // so the Swift plugin emits "playerTimeUpdate" (every ~5s) and a final
+  // "playerClosed" carrying the last position. Feed both into onProgress so
+  // resume/completion track on iOS exactly like the web iframe. We subscribe once
+  // (deps: [nativeDrm]) and read onProgress through a ref to avoid re-subscribing
+  // when the parent passes a fresh callback each render.
+  const onProgressRef = useRef(onProgress);
+  useEffect(() => { onProgressRef.current = onProgress; }, [onProgress]);
+  useEffect(() => {
+    if (!nativeDrm) return;
+    let active = true;
+    const handles: Array<{ remove: () => void }> = [];
+    const report = (cur?: number, total?: number) => {
+      if (cur != null && total && total > 0) {
+        onProgressRef.current?.(Math.floor(cur), Math.floor(total));
+      }
+    };
+    (async () => {
+      const h1 = await VdoPlayerNative.addListener("playerTimeUpdate", (d) =>
+        report(d?.currentSeconds, d?.totalSeconds),
+      );
+      const h2 = await VdoPlayerNative.addListener("playerClosed", (d) => {
+        report(d?.currentSeconds, d?.totalSeconds);
+        setNativeLaunching(false);
+      });
+      if (!active) { h1.remove(); h2.remove(); return; }
+      handles.push(h1, h2);
+    })();
+    return () => { active = false; handles.forEach((h) => h.remove()); };
+  }, [nativeDrm]);
+
   const handleNativePlay = async () => {
     if (nativeLaunching) return;
     setNativeLaunching(true);
@@ -174,23 +219,44 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title }: Props)
   };
 
   if (nativeDrm) {
-    // Poster/handoff card in place of the iframe: same dark aspect-video
-    // shell as the embed, with a cream play affordance that launches the
-    // native fullscreen FairPlay player.
+    // FairPlay can't play in WKWebView, so iOS hands off to the native
+    // fullscreen player. In place of the iframe we render a REAL video poster
+    // (chapter thumbnail + scrim + play affordance + duration), framed like the
+    // embed, so tapping it reads as one intentional gesture into fullscreen —
+    // not a jarring jump out of a blank box. The whole poster is the tap target.
     return (
-      <div className="relative aspect-video w-full max-w-full bg-card rounded-[16px] border border-border overflow-hidden flex flex-col items-center justify-center gap-3">
+      <div className="relative aspect-video w-full max-w-full bg-card rounded-[16px] border border-border overflow-hidden">
+        {posterUrl ? (
+          <img
+            src={posterUrl}
+            alt={title ? `${title} thumbnail` : "Lesson thumbnail"}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : null}
+        {/* Scrim: depth + keeps the play glyph legible over any thumbnail. */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-black/35" />
         <button
           type="button"
           onClick={handleNativePlay}
           disabled={nativeLaunching}
           aria-label={nativeLaunching ? "Starting playback" : "Play video"}
-          className="pressable inline-flex h-16 w-16 items-center justify-center rounded-full bg-cream text-cream-text shadow-[0_8px_24px_-8px_rgba(243,229,200,0.45)] disabled:opacity-60"
+          className="group absolute inset-0 flex items-center justify-center"
         >
-          {nativeLaunching
-            ? <Loader2 className="h-7 w-7 animate-spin" aria-hidden="true" />
-            : <Play className="h-7 w-7 ml-0.5 fill-current" aria-hidden="true" />}
+          <span className="pressable inline-flex h-16 w-16 items-center justify-center rounded-full bg-cream text-cream-text shadow-[0_8px_28px_-6px_rgba(243,229,200,0.55)] transition-transform group-active:scale-95 disabled:opacity-60">
+            {nativeLaunching
+              ? <Loader2 className="h-7 w-7 animate-spin" aria-hidden="true" />
+              : <Play className="h-7 w-7 ml-0.5 fill-current" aria-hidden="true" />}
+          </span>
         </button>
-        <p className="text-xs text-muted-foreground">Plays in fullscreen player</p>
+        <span className="pointer-events-none absolute bottom-2.5 left-3 text-[11px] font-medium text-white/80 drop-shadow">
+          Plays fullscreen
+        </span>
+        {durationSeconds ? (
+          <span className="pointer-events-none absolute bottom-2.5 right-2.5 flex items-center gap-1 rounded-md bg-black/70 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white">
+            <Clock className="h-3 w-3" aria-hidden="true" /> {formatDuration(durationSeconds)}
+          </span>
+        ) : null}
       </div>
     );
   }
