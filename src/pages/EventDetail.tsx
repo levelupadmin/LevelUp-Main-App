@@ -172,6 +172,9 @@ const EventDetail = () => {
           theme: { color: "#F5F1E8" },
         };
         if (!(window as any).Razorpay) {
+          // Release the in-flight lock, otherwise the guard above
+          // silently swallows every retry once the SDK does load.
+          paymentInFlightRef.current = false;
           toast({ title: "Payment unavailable", description: "Payment system is loading. Please try again in a moment.", variant: "destructive" });
           return;
         }
@@ -229,10 +232,12 @@ const EventDetail = () => {
       ? [{ id: "host", name: event.host_name, title: event.host_title, avatar_url: event.host_avatar_url, sort_order: 0 }]
       : [];
 
+  // price_inr is stored in rupees (register-for-event multiplies by 100
+  // for Razorpay), so render it directly: no /100.
   const priceDisplay = event.pricing_type === "free"
     ? "Free"
     : event.price_inr
-      ? `₹${(event.price_inr / 100).toLocaleString()}`
+      ? `₹${event.price_inr.toLocaleString("en-IN")}`
       : "Free";
 
   return (
@@ -347,7 +352,7 @@ const EventDetail = () => {
                 className="w-full py-3 rounded-lg bg-cream text-cream-text font-mono text-sm uppercase tracking-widest font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2 min-h-[48px]"
               >
                 {registering && <Loader2 className="h-4 w-4 animate-spin" />}
-                Register · ₹{event.price_inr ? (event.price_inr / 100).toLocaleString("en-IN") : ""}
+                Register · ₹{event.price_inr ? event.price_inr.toLocaleString("en-IN") : ""}
               </button>
             )}
           </div>
@@ -461,7 +466,7 @@ const EventDetail = () => {
                 {registering && <Loader2 className="h-4 w-4 animate-spin" />}
                 {event.pricing_type === "free"
                   ? "Register - Free"
-                  : `Register · ₹${event.price_inr ? (event.price_inr / 100).toLocaleString("en-IN") : ""}`}
+                  : `Register · ₹${event.price_inr ? event.price_inr.toLocaleString("en-IN") : ""}`}
               </button>
             </div>
           )}

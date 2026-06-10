@@ -80,8 +80,12 @@ const EventsPage = () => {
   }, [user]);
 
   const now = new Date();
-  const upcoming = events.filter((e) => new Date(e.starts_at) >= now && ["upcoming", "live"].includes(e.status));
-  const past = events.filter((e) => new Date(e.starts_at) < now || ["completed", "cancelled"].includes(e.status));
+  // A live event has already started, so a plain starts_at >= now check
+  // would shove it into Past mid-session. Treat status "live" as happening
+  // now regardless of starts_at; it leaves Upcoming only once the admin
+  // marks it completed/cancelled.
+  const upcoming = events.filter((e) => e.status === "live" || (new Date(e.starts_at) >= now && e.status === "upcoming"));
+  const past = events.filter((e) => ["completed", "cancelled"].includes(e.status) || (e.status !== "live" && new Date(e.starts_at) < now));
   const myEvents = events.filter((e) => myRegs.has(e.id));
   const displayed = tab === "upcoming" ? upcoming : tab === "past" ? past : myEvents;
 
@@ -199,6 +203,9 @@ const EventsPage = () => {
           theme: { color: "#F5F1E8" },
         };
         if (!(window as any).Razorpay) {
+          // Release the in-flight lock, otherwise the guard above
+          // silently swallows every retry once the SDK does load.
+          paymentInFlightRef.current = false;
           toast({ title: "Payment unavailable", description: "Payment system is loading. Please try again in a moment.", variant: "destructive" });
           return;
         }
@@ -341,7 +348,7 @@ const EventsPage = () => {
                   className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
                 >
                   {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                  Register · ₹{ev.price_inr ? (ev.price_inr / 100).toLocaleString("en-IN") : ""}
+                  Register · ₹{ev.price_inr ? ev.price_inr.toLocaleString("en-IN") : ""}
                 </button>
               )}
             </div>

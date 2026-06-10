@@ -20,12 +20,15 @@ const UpcomingEvents = () => {
   useEffect(() => {
     const load = async () => {
       try {
+        // A live event has already started, so a flat starts_at >= now
+        // filter would drop it from the rail mid-session. Keep "live"
+        // rows regardless of starts_at; "upcoming" still needs a future
+        // start time.
         const { data } = await supabase
           .from("events_safe")
           .select("*")
           .eq("is_active", true)
-          .in("status", ["upcoming", "live"])
-          .gte("starts_at", new Date().toISOString())
+          .or(`status.eq.live,and(status.eq.upcoming,starts_at.gte.${new Date().toISOString()})`)
           .order("starts_at", { ascending: true })
           .limit(4);
         setEvents(data ?? []);
@@ -280,7 +283,7 @@ const UpcomingEvents = () => {
                         className="text-sm font-medium text-cream hover:underline flex items-center gap-1 min-h-[44px]"
                       >
                         {registering === ev.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                        Register · ₹{ev.price_inr ? (ev.price_inr / 100).toLocaleString() : ""}
+                        Register · ₹{ev.price_inr ? ev.price_inr.toLocaleString("en-IN") : ""}
                       </button>
                     )}
                   </div>

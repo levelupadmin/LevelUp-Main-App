@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, Lock, Clock, Loader2, Play } from "lucide-react";
+import { AlertCircle, Lock, Clock, Loader2, Play, RotateCcw } from "lucide-react";
 import { VdoPlayerNative, isNativeDrmAvailable } from "@/lib/vdoNative";
 import { toast } from "@/lib/toast";
 import { hapticImpact } from "@/lib/haptics";
@@ -95,12 +97,18 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
   // Android WebView).
   const nativeDrm = isNativeDrmAvailable();
 
+  // Session only steers the error-state CTA (anon → Sign in, signed-in →
+  // enrol guidance); the OTP mint itself stays server-authorised.
+  const { session } = useAuth();
+
   const [otp, setOtp] = useState<string | null>(null);
   const [playbackInfo, setPlaybackInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorType, setErrorType] = useState<OtpErrorType>("network");
   const [loading, setLoading] = useState(!nativeDrm);
   const [nativeLaunching, setNativeLaunching] = useState(false);
+  // Bumped by the Retry button on network errors; re-runs the OTP mint.
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     // Native path mints its OTP at tap time (ttl 300s), not page load.
@@ -129,7 +137,7 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
 
     run();
     return () => { cancelled = true; };
-  }, [chapterId, nativeDrm]);
+  }, [chapterId, nativeDrm, retryKey]);
 
   // Listen for VdoCipher postMessage progress events. These come from the
   // iframe embed only; on iOS native there is no iframe, so don't attach
@@ -273,9 +281,37 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
     const Icon = errorType === "access" ? Lock : errorType === "rate" ? Clock : AlertCircle;
     return (
       <div className="aspect-video w-full max-w-full bg-card rounded-[16px] border border-border flex items-center justify-center">
-        <div className="text-center max-w-md px-6">
-          <Icon className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+        <div className="text-center max-w-md px-6 space-y-3">
+          <Icon className="h-10 w-10 mx-auto text-muted-foreground" />
           <p className="text-sm text-muted-foreground">{error}</p>
+          {/* Dead-end recovery: each error class gets a next step instead
+              of a bare message. Anon access errors route to sign-in (and
+              back here via Login's location.state.from); signed-in access
+              errors point at enrolment; network errors re-mint the OTP. */}
+          {errorType === "access" &&
+            (!session ? (
+              <Link
+                to={`/login?next=${encodeURIComponent(window.location.pathname)}`}
+                state={{ from: { pathname: window.location.pathname } }}
+                className="inline-flex items-center justify-center h-10 px-5 rounded-md bg-cream text-cream-text text-sm font-semibold hover:opacity-90 transition-opacity"
+              >
+                Sign in
+              </Link>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                View the program page to enrol and unlock this lesson.
+              </p>
+            ))}
+          {errorType === "network" && (
+            <button
+              type="button"
+              onClick={() => setRetryKey((k) => k + 1)}
+              className="inline-flex items-center justify-center gap-1.5 h-10 px-5 rounded-md border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+              Retry
+            </button>
+          )}
         </div>
       </div>
     );

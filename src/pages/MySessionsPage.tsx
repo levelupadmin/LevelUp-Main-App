@@ -13,6 +13,7 @@ import { TimeStateBadge } from "@/components/live/TimeStateBadge";
 import { Countdown } from "@/components/live/Countdown";
 import { addToCalendar } from "@/lib/calendar";
 import { hapticSelection } from "@/lib/haptics";
+import { isNative } from "@/lib/platform";
 
 interface SessionRow {
   id: string;
@@ -279,7 +280,14 @@ const MySessionsPage = () => {
                                   scheduleReminder(s.id, s.title, s.scheduled_at);
                                   toast.success("Reminder set for 15 min before");
                                 } else {
-                                  toast.error("Notifications are blocked. To re-enable, click the lock icon next to the URL in your browser's address bar, set Notifications to \"Allow\", then reload this page.");
+                                  // The web instructions reference browser chrome that
+                                  // doesn't exist inside the Capacitor WebView, so point
+                                  // native users at system Settings instead.
+                                  toast.error(
+                                    isNative()
+                                      ? "Notifications are blocked. To re-enable, open your device's Settings, find LevelUp Learning, and allow Notifications."
+                                      : "Notifications are blocked. To re-enable, click the lock icon next to the URL in your browser's address bar, set Notifications to \"Allow\", then reload this page."
+                                  );
                                 }
                               }
                               setReminderToggle((prev) => !prev);

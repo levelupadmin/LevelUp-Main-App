@@ -38,6 +38,10 @@ export default function PurchaseRail({
   const navigate = useNavigate();
   const isFree = Number(price) <= 0;
   const showStrike = !!mrp && Number(mrp) > Number(price);
+  // Make the discount concrete: "Save ₹X (N% off)" reads stronger than a
+  // bare strike-through the buyer has to do mental math on.
+  const savings = showStrike ? Number(mrp) - Number(price) : 0;
+  const savingsPct = showStrike ? Math.round((savings / Number(mrp)) * 100) : 0;
   const top4 = highlights.slice(0, 4);
 
   return (
@@ -47,14 +51,22 @@ export default function PurchaseRail({
           Application-only
         </p>
       ) : (
-        <div className="flex items-baseline gap-3">
-          <span className="text-3xl font-bold text-foreground tracking-[-0.01em]">
-            {isFree ? "Free" : `₹${Number(price).toLocaleString("en-IN")}`}
-          </span>
-          {showStrike && (
-            <span className="text-base text-muted-foreground line-through font-mono">
-              ₹{Number(mrp).toLocaleString("en-IN")}
+        <div className="space-y-1">
+          <div className="flex items-baseline gap-3">
+            <span className="text-3xl font-bold text-foreground tracking-[-0.01em]">
+              {isFree ? "Free" : `₹${Number(price).toLocaleString("en-IN")}`}
             </span>
+            {showStrike && (
+              <span className="text-base text-muted-foreground line-through font-mono">
+                ₹{Number(mrp).toLocaleString("en-IN")}
+              </span>
+            )}
+          </div>
+          {savings > 0 && (
+            <p className="text-xs font-medium text-[hsl(var(--accent-emerald))]">
+              Save ₹{savings.toLocaleString("en-IN")}
+              {savingsPct > 0 ? ` (${savingsPct}% off)` : ""}
+            </p>
           )}
         </div>
       )}

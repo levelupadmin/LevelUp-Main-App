@@ -95,6 +95,10 @@ const CourseDetail = () => {
   const [loading, setLoading] = useState(true);
   const [categoryName, setCategoryName] = useState<string | null>(null);
   const [offeringUrgency, setOfferingUrgency] = useState<OfferingUrgency | null>(null);
+  // Public slug of the course's primary offering. Locked-chapter taps and
+  // the non-entitled hero CTA route to /p/<slug> so there's always a path
+  // to enrol instead of a dead-end toast.
+  const [offeringSlug, setOfferingSlug] = useState<string | null>(null);
   const [recapOpen, setRecapOpen] = useState(false);
 
   usePageTitle(course?.title ?? "Course");
@@ -105,7 +109,14 @@ const CourseDetail = () => {
       setLoading(false);
       return;
     }
-    loadCourse();
+    // Cancellation guard: loadCourse awaits several fetches, and a course
+    // switch (or unmount) mid-flight would otherwise let a stale load
+    // overwrite the newer course's state. Checked after every await.
+    let cancelled = false;
+    loadCourse(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [courseId, user, authLoading, profile]);
 
   // Auto-open the completion recap the first time the user views this course at
@@ -127,15 +138,21 @@ const CourseDetail = () => {
     }
   }, [loading, courseId, user, chapters, progress]);
 
-  const loadCourse = async () => {
+  const loadCourse = async (isCancelled: () => boolean = () => false) => {
     if (!courseId || !user) return;
 
     setLoading(true);
+    // Reset per-course offering state so a course switch can't leak the
+    // previous course's slug/urgency if the new course has no offering
+    // (the IIFE below returns early in that case and would never clear it).
+    setOfferingUrgency(null);
+    setOfferingSlug(null);
     const [courseRes, sectionsRes, dripRes] = await Promise.all([
       supabase.from("courses").select("*").eq("id", courseId!).maybeSingle(),
       supabase.from("sections").select("*").eq("course_id", courseId!).order("sort_order"),
       supabase.from("course_drip_config").select("drip_mode").eq("course_id", courseId!).maybeSingle(),
     ]);
+    if (isCancelled()) return;
 
     if (courseRes.error) {
       if (import.meta.env.DEV) console.error("[CourseDetail] course fetch error:", courseRes.error);
@@ -154,24 +171,30 @@ const CourseDetail = () => {
     setSections((sectionsRes.data || []) as Section[]);
     setDripMode(dripRes.data?.drip_mode || "no_drip");
 
-    // Load the primary offering for urgency + cohort schedule (Phase 4.1).
-    // Safe if the migration hasn't run: missing columns come back undefined
-    // and downstream components hide themselves via graceful-empty rendering.
+    // Load the primary offering for urgency + cohort schedule (Phase 4.1)
+    // and its public slug (locked-chapter / hero CTA routing). Safe if the
+    // migration hasn't run: missing columns come back undefined and
+    // downstream components hide themselves via graceful-empty rendering.
+    // Deliberately un-awaited so the page doesn't block on it, but covered
+    // by the same isCancelled guard as the rest of the load.
     (async () => {
       const { data: ocs } = await supabase
         .from("offering_courses")
         .select("offering_id")
         .eq("course_id", courseId!)
         .limit(1);
+      if (isCancelled()) return;
       const offId = ocs?.[0]?.offering_id;
       if (!offId) return;
       const { data: off } = await (supabase as any)
         .from("offerings")
-        .select("id, seats_total, starts_at, cohort_sessions")
+        .select("id, slug, seats_total, starts_at, cohort_sessions")
         .eq("id", offId)
         .eq("status", "active")
         .maybeSingle();
+      if (isCancelled()) return;
       if (!off) return;
+      setOfferingSlug(off.slug ?? null);
       let seatsLeft: number | null = null;
       if (off.seats_total) {
         const { count } = await supabase
@@ -179,6 +202,7 @@ const CourseDetail = () => {
           .select("id", { count: "exact", head: true })
           .eq("offering_id", offId)
           .eq("status", "active");
+        if (isCancelled()) return;
         seatsLeft = Math.max(0, off.seats_total - (count ?? 0));
       }
       setOfferingUrgency({
@@ -196,6 +220,7 @@ const CourseDetail = () => {
         .select("name")
         .eq("id", courseRes.data.category_id)
         .maybeSingle();
+      if (isCancelled()) return;
       setCategoryName(cat?.name || null);
     }
 
@@ -207,6 +232,7 @@ const CourseDetail = () => {
         .select("id, title, section_id, sort_order, content_type, duration_seconds, make_free")
         .in("section_id", sectionIds)
         .order("sort_order");
+      if (isCancelled()) return;
       setChapters((chapData || []) as Chapter[]);
     }
 
@@ -215,6 +241,7 @@ const CourseDetail = () => {
       const { data: accessData, error: accessErr } = await supabase.rpc("has_course_access", {
         p_course_id: courseId!,
       });
+      if (isCancelled()) return;
       const isAdmin = profile?.role === "admin";
       if (accessErr) {
         toast.error("Couldn't verify your access, retrying...");
@@ -226,6 +253,7 @@ const CourseDetail = () => {
           .from("offering_courses")
           .select("offering_id")
           .eq("course_id", courseId!);
+        if (isCancelled()) return;
         const offeringIds = (offeringLinks || []).map((o) => o.offering_id).filter(Boolean);
         let fallbackAccess = false;
         if (offeringIds.length > 0) {
@@ -236,6 +264,7 @@ const CourseDetail = () => {
             .eq("status", "active")
             .in("offering_id", offeringIds)
             .limit(1);
+          if (isCancelled()) return;
           fallbackAccess = !!enrolmentCheck?.length;
         }
         setHasAccess(fallbackAccess || isAdmin);
@@ -249,6 +278,7 @@ const CourseDetail = () => {
         .select("chapter_id, completed_at, last_position_seconds")
         .eq("user_id", user.id)
         .eq("course_id", courseId!);
+      if (isCancelled()) return;
       setProgress((prog || []) as ChapterProgress[]);
     }
 
@@ -290,8 +320,19 @@ const CourseDetail = () => {
 
   const handleChapterClick = (chapter: Chapter, sectionChapters: Chapter[]) => {
     if (isChapterLocked(chapter, sectionChapters)) {
+      // Don't dead-end the user on a toast: give them a path to the
+      // program page where they can enrol (web) or apply (native; the
+      // offering page hides price/buy UI itself per the Reader Rule).
       toast("This chapter is locked", {
         description: "Enrol in this course to unlock all chapters.",
+        ...(offeringSlug
+          ? {
+              action: {
+                label: "View program",
+                onClick: () => navigate(`/p/${offeringSlug}`),
+              },
+            }
+          : {}),
       });
       return;
     }
@@ -312,7 +353,10 @@ const CourseDetail = () => {
       const first = chapters[0];
       if (first) navigate(`/chapters/${first.id}`);
     } else {
-      navigate(`/`);
+      // Not entitled: send them to the offering page where they can
+      // actually enrol, not back to the homepage. Fall back to browse
+      // when no public offering is linked to this course.
+      navigate(offeringSlug ? `/p/${offeringSlug}` : `/`);
     }
   };
 
@@ -525,7 +569,12 @@ const CourseDetail = () => {
 
                         const chapterProg = getChapterProgress(chapter.id);
                         const posSeconds = chapterProg?.last_position_seconds || 0;
-                        const showProgressBar = posSeconds > 0 && !completed;
+                        // Only draw the bar when we know the chapter's real
+                        // duration; dividing by an arbitrary fallback (600s)
+                        // produced bogus widths for untimed content. Without
+                        // a duration the row simply shows no bar.
+                        const durationSeconds = chapter.duration_seconds ?? 0;
+                        const showProgressBar = posSeconds > 0 && !completed && durationSeconds > 0;
 
                         return (
                           <div key={chapter.id}>
@@ -564,7 +613,7 @@ const CourseDetail = () => {
                               <div className="h-0.5 bg-surface-2 rounded-full overflow-hidden mx-4 mt-0.5">
                                 <div
                                   className="h-full bg-[hsl(var(--cream))] rounded-full transition-all"
-                                  style={{ width: `${Math.min((posSeconds / (chapter.duration_seconds || 600)) * 100, 100)}%` }}
+                                  style={{ width: `${Math.min((posSeconds / durationSeconds) * 100, 100)}%` }}
                                 />
                               </div>
                             )}

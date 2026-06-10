@@ -1,4 +1,4 @@
-import { BookOpen, Play } from "lucide-react";
+import { BookOpen, Lock, Play } from "lucide-react";
 import Reveal from "@/components/motion/Reveal";
 import { hapticSelection } from "@/lib/haptics";
 
@@ -66,6 +66,15 @@ export default function LessonBrowser({
 
   const multiSection = sorted.length > 1;
   const lessonCount = totalLessons || allChapters.length;
+  // Counted header: prefer the course's duration_minutes, fall back to
+  // summing chapter durations so the runtime still shows when the course
+  // row hasn't been backfilled.
+  const chapterSeconds = allChapters.reduce(
+    (sum, ch) => sum + (ch.duration_seconds ?? 0),
+    0,
+  );
+  const totalMins = durationMinutes || Math.round(chapterSeconds / 60);
+  const totalHrs = totalMins >= 60 ? Math.round(totalMins / 60) : null;
   // Running 1-based lesson index across all sections, so a 3-section
   // course numbers 01 → 12 continuously rather than restarting each block.
   let runningIndex = 0;
@@ -78,11 +87,12 @@ export default function LessonBrowser({
         </p>
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
-            What you'll learn, lesson by lesson
+            The full curriculum, lesson by lesson
           </h2>
           <div className="text-xs text-muted-foreground font-mono">
             {lessonCount} lesson{lessonCount === 1 ? "" : "s"}
-            {durationMinutes ? ` · ${Math.round(durationMinutes / 60)}h` : ""}
+            {totalHrs ? ` · ${totalHrs} hrs` : totalMins > 0 ? ` · ${totalMins} min` : ""}
+            {" · 4K"}
           </div>
         </div>
       </div>
@@ -135,7 +145,10 @@ export default function LessonBrowser({
                           {number}
                         </span>
                         {isPreview && (
-                          <span className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
+                          // Always-visible play glyph: a tappable preview
+                          // row should read as playable at a glance, not
+                          // only on hover (touch has no hover).
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/25 transition-colors group-hover:bg-black/40">
                             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))]">
                               <Play className="ml-0.5 h-4 w-4 fill-current" />
                             </span>
@@ -153,10 +166,18 @@ export default function LessonBrowser({
                         )}
                       </div>
                       <div className="flex flex-shrink-0 flex-col items-end gap-1.5 self-start pt-0.5">
-                        {ch.make_free && (
+                        {ch.make_free ? (
                           <span className="rounded border border-[hsl(var(--accent-emerald)/0.4)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-[hsl(var(--accent-emerald))]">
                             {isPreview ? "Preview" : "Free"}
                           </span>
+                        ) : (
+                          // Quiet lock: signals "enrol to unlock" without
+                          // shouting; the free rows' play/Preview marks do
+                          // the selling.
+                          <Lock
+                            className="h-3.5 w-3.5 text-muted-foreground/50"
+                            aria-label="Unlocks after enrolment"
+                          />
                         )}
                         {duration && (
                           <span className="font-mono text-[11px] text-muted-foreground tabular-nums">

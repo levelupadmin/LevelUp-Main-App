@@ -138,14 +138,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     );
   }
 
-  const fetchProfile = async (userId: string) => {
+  // Distinguishes "fetch failed" (transient network/API error: keep the
+  // session, retry later) from "fetch succeeded but no row" (RLS hides
+  // soft-deleted accounts, so a signed-in user with no visible profile
+  // row is in the 7-day deletion grace window and must be signed out).
+  type ProfileFetchResult =
+    | { ok: true; profile: UserProfile | null }
+    | { ok: false };
+
+  const fetchProfile = async (userId: string): Promise<ProfileFetchResult> => {
     const { data, error } = await supabase
       .from("users")
       .select("id, email, full_name, role, avatar_url, member_number, bio, city, occupation")
       .eq("id", userId)
-      .single();
-    if (error && import.meta.env.DEV) console.error("[AuthContext] fetchProfile error:", error);
-    return (data as UserProfile | null) ?? null;
+      .maybeSingle();
+    if (error) {
+      if (import.meta.env.DEV) console.error("[AuthContext] fetchProfile error:", error);
+      return { ok: false };
+    }
+    return { ok: true, profile: (data as UserProfile | null) ?? null };
   };
 
   useEffect(() => {
@@ -188,11 +199,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       currentUserIdRef.current = nextSession.user.id;
 
-      const nextProfile = await fetchProfile(nextSession.user.id);
+      const result = await fetchProfile(nextSession.user.id);
 
       if (!isMounted) return;
 
-      setProfile(nextProfile);
+      if (result.ok && result.profile === null) {
+        // Soft-deleted account inside the grace window: the session
+        // minted but RLS returns no profile row, which would leave the
+        // app half-working (RequireAuth passes, every profile-driven
+        // surface breaks). Sign out instead. Resetting hadSession first
+        // keeps the SIGNED_OUT event below from also firing the generic
+        // "session expired" toast, and because sign-out clears the
+        // session this branch cannot re-enter in a loop.
+        hadSession = false;
+        currentUserIdRef.current = null;
+        setProfile(null);
+        setLoading(false);
+        initialLoadDone = true;
+        toast.error("This account is scheduled for deletion. Contact support to recover it.");
+        void supabase.auth.signOut();
+        return;
+      }
+
+      setProfile(result.ok ? result.profile : null);
       // Attach the current user identity to Sentry so error reports
       // can be filtered + searched by who hit them. Dynamic import so
       // unauthenticated pages don't pull Sentry into their bundle.

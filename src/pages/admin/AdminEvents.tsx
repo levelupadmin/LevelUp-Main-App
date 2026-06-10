@@ -372,7 +372,9 @@ const AdminEvents = () => {
       escapeCSV(r.users?.full_name || ""),
       escapeCSV(r.users?.email || ""),
       escapeCSV(r.status || ""),
-      r.amount_paid ? `${(r.amount_paid / 100).toFixed(2)}` : "0",
+      // amount_paid is stored in rupees (claim_event_seat receives
+      // price_inr directly), same as events.price_inr: no /100.
+      r.amount_paid ? `${Number(r.amount_paid).toFixed(2)}` : "0",
       escapeCSV(r.registered_at ? format(new Date(r.registered_at), "yyyy-MM-dd HH:mm") : ""),
     ]);
 
@@ -417,9 +419,11 @@ const AdminEvents = () => {
     </div>
   );
 
+  // price_inr is stored in rupees (the register-for-event edge fn converts
+  // to paise for Razorpay), so display values directly: no /100.
   const priceDisplay = (ev: any) => {
     if (ev.pricing_type === "free") return "Free";
-    if (ev.price_inr) return `₹${(ev.price_inr / 100).toLocaleString("en-IN")}`;
+    if (ev.price_inr) return `₹${ev.price_inr.toLocaleString("en-IN")}`;
     return "Free";
   };
 
@@ -485,7 +489,7 @@ const AdminEvents = () => {
                     {ev.gst_enabled && <span className="text-muted-foreground ml-1">+GST</span>}
                     {ev.early_bird_price_inr > 0 && (
                       <span className="block text-[10px] text-green-400">
-                        Early: ₹{(ev.early_bird_price_inr / 100).toLocaleString("en-IN")}
+                        Early: ₹{ev.early_bird_price_inr.toLocaleString("en-IN")}
                       </span>
                     )}
                   </TableCell>
@@ -573,7 +577,7 @@ const AdminEvents = () => {
                     <TableCell>{r.users?.full_name || "-"}</TableCell>
                     <TableCell className="font-mono text-xs">{r.users?.email || "-"}</TableCell>
                     <TableCell className="capitalize text-xs">{r.status}</TableCell>
-                    <TableCell className="font-mono text-xs">{r.amount_paid ? `₹${(r.amount_paid / 100).toLocaleString()}` : "Free"}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.amount_paid ? `₹${Number(r.amount_paid).toLocaleString("en-IN")}` : "Free"}</TableCell>
                     <TableCell className="font-mono text-xs">{format(new Date(r.registered_at), "MMM d, yyyy")}</TableCell>
                   </TableRow>
                 ))
@@ -778,8 +782,8 @@ const AdminEvents = () => {
                   {form.pricing_type !== "free" && (
                     <>
                       <div>
-                        {field("Price (in paise)", "price_inr", "number")}
-                        <p className="text-xs text-muted-foreground mt-1">Enter in paise -- e.g. 49900 = ₹499</p>
+                        {field("Price (in rupees)", "price_inr", "number")}
+                        <p className="text-xs text-muted-foreground mt-1">Enter in rupees -- e.g. 499 = ₹499</p>
                       </div>
 
                       <label className="flex items-center gap-2 text-sm">
@@ -792,7 +796,7 @@ const AdminEvents = () => {
                         <p className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Early Bird Pricing (optional)</p>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-sm font-medium mb-1">Early Bird Price (paise)</label>
+                            <label className="block text-sm font-medium mb-1">Early Bird Price (rupees)</label>
                             <Input
                               type="number"
                               value={form.early_bird_price_inr}
@@ -811,7 +815,7 @@ const AdminEvents = () => {
                         </div>
                         {form.early_bird_price_inr > 0 && (
                           <p className="text-xs text-green-400">
-                            Early bird: ₹{(form.early_bird_price_inr / 100).toLocaleString("en-IN")} (save ₹{((form.price_inr - form.early_bird_price_inr) / 100).toLocaleString("en-IN")})
+                            Early bird: ₹{form.early_bird_price_inr.toLocaleString("en-IN")} (save ₹{(form.price_inr - form.early_bird_price_inr).toLocaleString("en-IN")})
                             {form.early_bird_deadline && ` until ${format(new Date(form.early_bird_deadline), "MMM d, yyyy h:mm a")}`}
                           </p>
                         )}

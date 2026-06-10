@@ -10,6 +10,12 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState<{ score: number; total: number; passed: boolean } | null>(null);
+  // Per-question answer key ({ question_id: correct_option_id }) returned by
+  // the submit_quiz RPC AFTER an attempt is recorded. Options themselves come
+  // from quiz_options_public, which strips is_correct so students can't read
+  // the key pre-submit. Null until the RPC supplies it (older deployments
+  // without the 20260611110000 migration just skip the highlighting).
+  const [answerKey, setAnswerKey] = useState<Record<string, string> | null>(null);
   const [loadingAttempt, setLoadingAttempt] = useState(true);
 
   const questions: any[] = (quiz.quiz_questions || [])
@@ -71,8 +77,15 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
     const score: number = Number(data.score) || 0;
     const total: number = Number(data.total) || questions.length;
     const passed: boolean = !!data.passed;
+    // answer_key is absent until the 20260611110000 migration is applied;
+    // degrade to score-only feedback rather than crashing or mis-marking.
+    const key =
+      data.answer_key && typeof data.answer_key === "object" && !Array.isArray(data.answer_key)
+        ? (data.answer_key as Record<string, string>)
+        : null;
 
     setResult({ score, total, passed });
+    setAnswerKey(key);
     setSubmitted(true);
 
     if (passed) {
@@ -87,6 +100,7 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
     setAnswers({});
     setSubmitted(false);
     setResult(null);
+    setAnswerKey(null);
   };
 
   if (loadingAttempt) {
@@ -123,9 +137,9 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
       <div className="space-y-4">
         {questions.map((q: any, qi: number) => {
           const selectedId = answers[q.id];
-          const correctOptionId = q.quiz_options.find((o: any) => o.is_correct)?.id;
-          const isCorrect = submitted && selectedId === correctOptionId;
-          const isWrong = submitted && selectedId && selectedId !== correctOptionId;
+          // Options never carry is_correct (quiz_options_public strips it);
+          // the only source of truth post-submit is the RPC's answer key.
+          const correctOptionId = answerKey?.[q.id];
 
           return (
             <div key={q.id} className="space-y-2">
@@ -138,9 +152,15 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
                   const isSelected = selectedId === o.id;
                   let optClass = "bg-surface hover:bg-surface-2";
                   if (submitted) {
-                    if (o.is_correct) optClass = "bg-emerald-500/10 border-emerald-500/30";
-                    else if (isSelected && !o.is_correct) optClass = "bg-rose-500/10 border-rose-500/30";
-                    else optClass = "bg-surface opacity-60";
+                    if (correctOptionId) {
+                      if (o.id === correctOptionId) optClass = "bg-emerald-500/10 border-emerald-500/30";
+                      else if (isSelected) optClass = "bg-rose-500/10 border-rose-500/30";
+                      else optClass = "bg-surface opacity-60";
+                    } else {
+                      // No answer key (older RPC or pre-filled past attempt):
+                      // neutral post-submit styling, score badge still shows.
+                      optClass = isSelected ? "bg-surface-2" : "bg-surface opacity-60";
+                    }
                   }
 
                   return (
@@ -158,7 +178,7 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
                         className="accent-emerald-500"
                       />
                       <span className="text-sm">{o.option_text}</span>
-                      {submitted && o.is_correct && (
+                      {submitted && correctOptionId === o.id && (
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 ml-auto" />
                       )}
                     </label>

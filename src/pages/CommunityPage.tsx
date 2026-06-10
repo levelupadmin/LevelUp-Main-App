@@ -227,18 +227,9 @@ const CommunityPage = () => {
     if (error) {
       showToast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      // Notify the post author about the reply (skip if commenting on own post or thread is muted)
-      const post = posts.find((p) => p.id === postId);
-      if (post && post.user_id !== user.id && !isThreadMuted(postId)) {
-        await (supabase as any).from("notifications").insert({
-          user_id: post.user_id,
-          type: "community_reply",
-          title: "New comment on your post",
-          body: draft.slice(0, 100),
-          link: "/community",
-        });
-      }
-
+      // Post-author reply notification is created server-side by the
+      // community_comment_notify trigger (a client insert for another
+      // user's notification is rejected by RLS for non-admins).
       setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
       await fetchComments(postId);
       setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comment_count: p.comment_count + 1 } : p));

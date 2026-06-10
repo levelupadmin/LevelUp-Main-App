@@ -152,16 +152,10 @@ const Login = () => {
     const res = await sendSmsOtp(false);
     setLoading(false);
     if (!res.ok) {
-      const msg = (res.error || "").toLowerCase();
-      if (msg.includes("not found") || msg.includes("invalid")) {
-        toast({
-          title: "No account with this number",
-          description: "Create an account first or check the number.",
-          variant: "destructive",
-        });
-      } else {
-        toast({ title: "Couldn't send OTP", description: res.error, variant: "destructive" });
-      }
+      // Send failures here are widget/env errors, never "no account":
+      // the MSG91 widget sends to any number, account existence is only
+      // known after verification (handled in handleVerify).
+      toast({ title: "Couldn't send OTP", description: res.error, variant: "destructive" });
       return;
     }
     setChannel("sms");

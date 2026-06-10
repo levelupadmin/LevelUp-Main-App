@@ -42,7 +42,7 @@ export default function ContinueOnWebCTA({
   webPath,
   variant = "card",
   ctaLabel = "Continue on web",
-  body = "Purchases happen on the LevelUp website. We'll open it in your browser.",
+  body = "Enrolment takes about a minute on the LevelUp website, and your access syncs back to this app automatically.",
   className,
 }: Props) {
   // Apple App Store anti-steering (Guidelines 3.1.1 / 3.1.3) forbids BOTH
@@ -62,7 +62,8 @@ export default function ContinueOnWebCTA({
         )}
       >
         <p className="text-sm text-muted-foreground">
-          Your enrolled programmes are available to watch here anytime.
+          Everything you're enrolled in lives right here in the app: every
+          lesson, ready whenever you are.
         </p>
       </div>
     );

@@ -11,13 +11,11 @@ import { isAndroid, isNative } from "@/lib/platform";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import AndroidAppCard from "@/components/AndroidAppCard";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
-import Reveal from "@/components/motion/Reveal";
 import DescriptionBlocks from "@/components/offering/DescriptionBlocks";
 import ApplicationTimeline from "@/components/offering/ApplicationTimeline";
 import GuaranteeBadge from "@/components/offering/GuaranteeBadge";
 import ProofRow, { useOfferingProof } from "@/components/offering/ProofRow";
 import PurchaseRail from "@/components/offering/PurchaseRail";
-import TestimonialCard from "@/components/offering/TestimonialCard";
 import LessonBrowser from "@/components/offering/LessonBrowser";
 import CohortInfoBlock from "@/components/offering/CohortInfoBlock";
 import HeroPlayChip from "@/components/offering/HeroPlayChip";
@@ -240,14 +238,30 @@ function HeroBanner({
  * application-fee copy and the link still goes to /checkout, where
  * CheckoutPage's existing paymentType logic routes them through the
  * staged-application flow.
+ *
+ * `variant="slim"` renders the CTA button alone (no price row, no
+ * guarantee) for the final-CTA reminder at the foot of the page, where
+ * the price has already appeared twice.
  */
-function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChapterId?: string | null }) {
+function HeroActions({
+  offering,
+  freeChapterId,
+  variant = "full",
+}: {
+  offering: Offering;
+  freeChapterId?: string | null;
+  variant?: "full" | "slim";
+}) {
   const navigate = useNavigate();
   const isStaged = (offering as any)?.payment_mode === "staged";
   const isArchived = (offering as any)?.status === "archived";
   const price = offering.price_inr ?? 0;
   const mrp = (offering as any).mrp_inr ?? null;
   const showStrike = mrp && Number(mrp) > Number(price);
+  // Concrete savings copy beats a bare strike-through the buyer has to
+  // do mental math on.
+  const savings = showStrike ? Number(mrp) - Number(price) : 0;
+  const savingsPct = showStrike ? Math.round((savings / Number(mrp)) * 100) : 0;
   const ctaLabel = isStaged ? "Apply now" : price > 0 ? "Enrol now" : "Start for free";
 
   // Archived offerings represent past programs (legacy TagMango
@@ -306,29 +320,35 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
   // not an in-app digital-goods purchase).
   const applyUrl = (offering as any)?.tally_form_url || null;
   if (applyUrl) {
+    const applyButton = (
+      <a
+        href={applyUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="btn-champagne inline-flex items-center justify-center h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5 transition-transform"
+      >
+        Apply for an invite
+        <ArrowRight className="h-4 w-4 ml-2" />
+      </a>
+    );
+    if (variant === "slim") return applyButton;
     return (
       <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6">
-          <span className="inline-flex items-center self-start rounded-full bg-[hsl(var(--cream))]/10 border border-[hsl(var(--cream))]/30 px-3 py-1 text-xs font-medium uppercase tracking-[0.14em] text-[hsl(var(--cream))]">
-            Application-only
-          </span>
-          <a
-            href={applyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-champagne inline-flex items-center justify-center h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5 transition-transform"
-          >
-            Apply for an invite
-            <ArrowRight className="h-4 w-4 ml-2" />
-          </a>
-        </div>
-        {/* Cohort facts (start date / deadline / seats): each chip hides
-            when its source field is null, block vanishes if none survive. */}
+        {/* Cohort facts first, the scarcity engine: live deadline
+            countdown + start date + seats make the cutoff concrete
+            before the ask. Each chip hides when its source field is
+            null, block vanishes if none survive. */}
         <CohortInfoBlock
           cohortStartDate={offering.cohort_start_date}
           applicationDeadline={offering.application_deadline}
           seatsTotal={offering.seats_total}
         />
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6">
+          <span className="inline-flex items-center self-start rounded-full bg-[hsl(var(--cream))]/10 border border-[hsl(var(--cream))]/30 px-3 py-1 text-xs font-medium uppercase tracking-[0.14em] text-[hsl(var(--cream))]">
+            Application-only
+          </span>
+          {applyButton}
+        </div>
       </div>
     );
   }
@@ -339,6 +359,26 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
   // affordance + a Continue-on-web card. This keeps the marketing
   // page useful for browsing while compliant for store review.
   if (isNative()) {
+    if (variant === "slim") {
+      return (
+        <ContinueOnWebCTA
+          webPath={offering.slug ? `/p/${offering.slug}` : "/browse"}
+        />
+      );
+    }
+    // Reader-Rule-safe value summary: states what the programme IS (no
+    // price, no purchase language) so the native page still communicates
+    // worth above the continue-on-web card. Segments drop out when their
+    // source data is missing.
+    const course = offering.offering_courses?.[0]?.courses;
+    const lessonCount =
+      course?.total_lessons ??
+      (course?.sections?.reduce((sum, s) => sum + (s.chapters?.length ?? 0), 0) || null);
+    const valueBits = [
+      "Full masterclass",
+      lessonCount ? `${lessonCount} lessons in 4K` : null,
+      offering.instructor_name ? `taught by ${offering.instructor_name}` : null,
+    ].filter(Boolean);
     return (
       <div className="space-y-3">
         {freeChapterId && (
@@ -355,6 +395,7 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
             Watch the free lesson
           </Button>
         )}
+        <p className="text-sm text-muted-foreground">{valueBits.join(" · ")}</p>
         <ContinueOnWebCTA
           webPath={offering.slug ? `/p/${offering.slug}` : "/browse"}
         />
@@ -362,17 +403,38 @@ function HeroActions({ offering, freeChapterId }: { offering: Offering; freeChap
     );
   }
 
+  if (variant === "slim") {
+    return (
+      <Button
+        onClick={() => navigate(`/checkout/${offering.id}`)}
+        size="lg"
+        className="btn-champagne h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5"
+      >
+        {ctaLabel}
+        <ArrowRight className="h-4 w-4 ml-2" />
+      </Button>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6 py-2">
-        <div className="flex items-baseline gap-3">
-          <span className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em]">
-            {price > 0 ? `₹${Number(price).toLocaleString("en-IN")}` : "Free"}
-          </span>
-          {showStrike && (
-            <span className="text-base sm:text-lg text-muted-foreground line-through font-mono">
-              ₹{Number(mrp).toLocaleString("en-IN")}
+        <div className="space-y-1">
+          <div className="flex items-baseline gap-3">
+            <span className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em]">
+              {price > 0 ? `₹${Number(price).toLocaleString("en-IN")}` : "Free"}
             </span>
+            {showStrike && (
+              <span className="text-base sm:text-lg text-muted-foreground line-through font-mono">
+                ₹{Number(mrp).toLocaleString("en-IN")}
+              </span>
+            )}
+          </div>
+          {savings > 0 && (
+            <p className="text-xs sm:text-sm font-medium text-[hsl(var(--accent-emerald))]">
+              Save ₹{savings.toLocaleString("en-IN")}
+              {savingsPct > 0 ? ` (${savingsPct}% off)` : ""}
+            </p>
           )}
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -418,6 +480,7 @@ function FreePreviewPlayer({
   instructorName,
   playing,
   onPlay,
+  signedIn,
 }: {
   chapter: ChapterRow & { thumbnail_url: string | null; vdocipher_thumbnail_url: string | null } | null;
   instructorName: string | null;
@@ -425,6 +488,8 @@ function FreePreviewPlayer({
    *  rows can start the player. Falls back to local state when absent. */
   playing: boolean;
   onPlay: () => void;
+  /** Anon visitors get a real Sign-in button next to the gate copy. */
+  signedIn: boolean;
 }) {
   if (!chapter) return null;
   const thumb = chapter.thumbnail_url || chapter.vdocipher_thumbnail_url || null;
@@ -485,74 +550,35 @@ function FreePreviewPlayer({
           </div>
         </button>
       )}
-      <p className="text-xs sm:text-sm text-muted-foreground max-w-[60ch]">
-        No card needed. Sign in to keep watching the rest of the masterclass.
-      </p>
-    </div>
-  );
-}
-
-/**
- * AggregatedReviews: high-signal review summary block. Compresses a
- * long testimonials list into a scannable rating/tags summary the way
- * Skillshare does. v1 reads counts from offering.checkout_testimonials
- * and uses a hand-curated tag shortlist; future versions can compute
- * tag aggregates from a real reviews table.
- */
-function AggregatedReviews({
-  testimonials,
-}: {
-  testimonials: Array<{ quote?: string; author?: string }> | null | undefined;
-}) {
-  if (!testimonials?.length || testimonials.length < 2) return null;
-  // v1: hand-curated "what learners appreciate" tags. These map well
-  // to every masterclass on the platform; per-offering overrides can
-  // come via offering metadata later.
-  const tags = [
-    "Clarity of instruction",
-    "Real-world examples",
-    "Production quality",
-    "Worth the investment",
-  ];
-  return (
-    <div className="space-y-5">
-      <SectionEyebrow>What learners say</SectionEyebrow>
-      <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
-        Loved by {testimonials.length}+ students
-      </h2>
-      <div className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-5 sm:gap-6">
-        <div className="space-y-1">
-          <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">Rating</p>
-          <p className="text-3xl font-bold tracking-[-0.01em]">4.9 / 5</p>
-          <p className="text-xs text-muted-foreground">From {testimonials.length} verified reviews</p>
-        </div>
-        <div className="space-y-1 sm:col-span-2">
-          <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-            Most appreciated
-          </p>
-          <div className="flex flex-wrap gap-2 pt-1">
-            {tags.map((t) => (
-              <span
-                key={t}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[hsl(var(--surface-2))] text-sm text-foreground"
-              >
-                <Check className="h-3.5 w-3.5 text-[hsl(var(--accent-emerald))]" />
-                {t}
-              </span>
-            ))}
-          </div>
-        </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <p className="text-xs sm:text-sm text-muted-foreground max-w-[60ch]">
+          No card needed. Sign in to keep watching the rest of the lessons.
+        </p>
+        {/* Don't just tell anon viewers to sign in, hand them the door.
+            Login honours location.state.from for the post-auth return;
+            the ?next= param mirrors it for link sharing/debugging. */}
+        {!signedIn && (
+          <Link
+            to={`/login?next=${encodeURIComponent(window.location.pathname)}`}
+            state={{ from: { pathname: window.location.pathname } }}
+            className="inline-flex items-center h-9 px-4 rounded-xl border border-[hsl(var(--cream))]/40 text-sm font-medium text-foreground hover:bg-[hsl(var(--cream))]/10 transition-colors"
+          >
+            Sign in
+          </Link>
+        )}
       </div>
     </div>
   );
 }
 
 /**
- * Outcome tile grid, kept in source for now but no longer rendered.
- * Removed from the marketing page on 2026-05-24 per design call:
- * Masterclass's actual class detail pages don't use it; only their
- * Sessions pages do. Leaving the component in place in case we want
- * to revisit for Sessions-style offerings.
+ * StatStrip: the "This course includes" manifest. Lessons count, runtime,
+ * format, captions, and access in one scannable tile strip, rendered after
+ * the free preview on masterclass pages. Numbers derive from the already-
+ * loaded course (total_lessons / duration_minutes, falling back to summing
+ * chapter durations); a numeric tile is omitted when its value is unknown.
+ * Format/captions/access are platform constants: masterclasses ship as 4K
+ * masters with burned-in subtitles and lifetime access.
  */
 function StatStrip({ offering }: { offering: Offering }) {
   const course = offering.offering_courses?.[0]?.courses;
@@ -560,24 +586,30 @@ function StatStrip({ offering }: { offering: Offering }) {
     (sum, s) => sum + (s.chapters?.length ?? 0),
     0,
   );
-  const minutes = course?.duration_minutes ?? 0;
-  const hours = minutes > 0 ? Math.round(minutes / 60) : null;
+  const chapterSeconds = (course?.sections ?? []).reduce(
+    (sum, s) =>
+      sum + (s.chapters ?? []).reduce((acc, c) => acc + (c.duration_seconds ?? 0), 0),
+    0,
+  );
+  const minutes = course?.duration_minutes || Math.round(chapterSeconds / 60);
+  const hours = minutes >= 60 ? Math.round(minutes / 60) : null;
 
   const tiles: { label: string; value: string }[] = [];
   if (lessons && lessons > 0) {
     tiles.push({ label: "Lessons", value: String(lessons) });
   }
-  if (hours && hours > 0) {
+  if (hours) {
     tiles.push({ label: "Runtime", value: `${hours}+ hrs` });
+  } else if (minutes > 0) {
+    tiles.push({ label: "Runtime", value: `${minutes} min` });
   }
   tiles.push({ label: "Format", value: "4K video" });
   tiles.push({ label: "Captions", value: "Subtitles" });
   tiles.push({ label: "Access", value: "Lifetime" });
 
-  if (tiles.length === 0) return null;
-
   return (
     <div className="space-y-3">
+      <SectionEyebrow>This course includes</SectionEyebrow>
       <div className={`grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3 ${tiles.length >= 5 ? "lg:grid-cols-5" : tiles.length === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         {tiles.map((t, i) => (
           <div
@@ -593,7 +625,6 @@ function StatStrip({ offering }: { offering: Offering }) {
           </div>
         ))}
       </div>
-      <AndroidAppCard />
     </div>
   );
 }
@@ -611,29 +642,59 @@ function SectionEyebrow({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Compact instructor credibility line for the space directly under the
+ * hero: small avatar + "Taught by {name} · {credential}" in one row, so
+ * the page's strongest trust signal lands before the price ask. The full
+ * InstructorBio (story, milestones, portfolio) stays further down.
+ */
 function InstructorCard({ offering }: { offering: Offering }) {
   if (!offering.instructor_name) return null;
   return (
-    <div className="flex items-center gap-4 sm:gap-5 py-4 sm:py-5 border-y border-border">
+    <div className="flex items-center gap-3">
       {offering.instructor_avatar_url ? (
         <img
           src={offering.instructor_avatar_url}
           alt={offering.instructor_name}
           loading="lazy"
           decoding="async"
-          className="h-14 w-14 sm:h-16 sm:w-16 rounded-full object-cover ring-2 ring-[hsl(var(--cream))] ring-offset-2 ring-offset-background"
+          className="h-10 w-10 rounded-full object-cover ring-1 ring-[hsl(var(--cream))]/60 flex-shrink-0"
         />
       ) : (
-        <div className="h-14 w-14 sm:h-16 sm:w-16 rounded-full bg-[hsl(var(--surface-2))] flex items-center justify-center text-2xl font-bold text-[hsl(var(--cream))]">
+        <div className="h-10 w-10 rounded-full bg-[hsl(var(--surface-2))] flex items-center justify-center text-base font-bold text-[hsl(var(--cream))] flex-shrink-0">
           {offering.instructor_name.charAt(0)}
         </div>
       )}
-      <div className="min-w-0">
-        <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">Taught by</p>
-        <p className="text-lg sm:text-xl font-semibold text-foreground truncate">{offering.instructor_name}</p>
-        {offering.instructor_title && (
-          <p className="text-sm text-muted-foreground truncate">{offering.instructor_title}</p>
-        )}
+      <p className="text-sm text-muted-foreground min-w-0">
+        Taught by{" "}
+        <span className="font-semibold text-foreground">{offering.instructor_name}</span>
+        {offering.instructor_title && <span> · {offering.instructor_title}</span>}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * "What you'll learn" check grid fed by course.outcomes, rendered directly
+ * under the hero CTA block. Capped at six items so the fold stays tight;
+ * renders nothing when no outcomes are populated.
+ */
+function OutcomesGrid({ outcomes }: { outcomes?: string[] | null }) {
+  const items = (outcomes || []).filter((o) => typeof o === "string" && o.trim()).slice(0, 6);
+  if (!items.length) return null;
+  return (
+    <div className="space-y-4">
+      <SectionEyebrow>Outcomes</SectionEyebrow>
+      <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+        What you'll learn
+      </h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {items.map((o, i) => (
+          <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-border bg-[hsl(var(--surface))]">
+            <Check className="h-5 w-5 mt-0.5 text-[hsl(var(--accent-emerald))] flex-shrink-0" />
+            <span className="text-sm text-foreground">{o}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -654,12 +715,15 @@ function Highlights({ items }: { items: string[] }) {
 }
 
 function IncludedCourses({ courses }: { courses: OfferingCourse[] }) {
-  if (!courses.length) return null;
+  // Single-course offerings: the hero, manifest, and curriculum already
+  // describe the one course, so a one-item "bundle" list is pure noise.
+  // Render for real multi-course bundles only.
+  if (courses.length <= 1) return null;
   return (
     <div className="space-y-4">
       <SectionEyebrow>Bundle</SectionEyebrow>
       <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
-        {courses.length === 1 ? "What's included" : `${courses.length} courses included`}
+        {courses.length} courses included
       </h2>
       <div className="space-y-3">
         {courses.map((oc) => (
@@ -1126,6 +1190,22 @@ export default function PublicOffering() {
   const isFree = Number(offering.price_inr) === 0;
   const applyUrl = (offering as any).tally_form_url || null;
 
+  const courseData = offering.offering_courses?.[0]?.courses;
+  const courseOutcomes = (courseData?.outcomes || []).filter(
+    (o) => typeof o === "string" && !!o.trim(),
+  );
+  // One concrete outcome statement for the hero; the full grid renders
+  // below the CTA.
+  const firstOutcome = courseOutcomes[0] ?? null;
+  // Future-dated application deadline, formatted for the cohort final CTA
+  // and sticky bar. Null once passed so we never show a stale close date.
+  const deadlineLabel = (() => {
+    if (!applyUrl || !offering.application_deadline) return null;
+    const d = new Date(offering.application_deadline);
+    if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) return null;
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  })();
+
   // Find the first make_free chapter to power the trailer / free
   // preview. Walking sections in declared order matches the way the
   // buyer would experience the course - usually the very first lesson
@@ -1196,6 +1276,20 @@ export default function PublicOffering() {
               offering={offering}
               onPlayPreview={freeChapter ? playPreview : null}
             />
+            {/* Hero credibility cluster: one concrete outcome statement +
+                the compact instructor line, so the two highest-trust
+                signals land before any ask. Full InstructorBio stays
+                further down the page. */}
+            {(firstOutcome || offering.instructor_name) && (
+              <div className="space-y-3">
+                {firstOutcome && (
+                  <p className="text-base sm:text-lg text-foreground/90 leading-snug max-w-[60ch]">
+                    {firstOutcome}
+                  </p>
+                )}
+                <InstructorCard offering={offering} />
+              </div>
+            )}
             {/* Coupon banner is a price-discount affordance, so it has
                 to be hidden on Android for Reader Rule compliance. */}
             {couponInfo && !isNative() && (
@@ -1222,107 +1316,148 @@ export default function PublicOffering() {
                 takes over (when eligible). The ref feeds the mobile
                 sticky bar's show-on-scroll behaviour. */}
             <div ref={heroCtaRef} className={railEligible ? "lg:hidden" : undefined}>
-              <HeroActions offering={offering} freeChapterId={freeChapter?.id ?? null} />
-              {/* Proof row sits under the hero price row, web only, and
-                  only when real numbers exist (never fake social proof). */}
-              {railEligible && (
-                <ProofRow avg={proof.avg} enrolled={proof.enrolled} className="mt-3" />
+              {/* Proof strip ahead of the price row, web only, and only
+                  when real numbers exist (never fake social proof). On
+                  cohorts the facts bar inside HeroActions carries the
+                  urgency instead. */}
+              {railEligible && !applyUrl && (
+                <ProofRow avg={proof.avg} enrolled={proof.enrolled} className="mb-3" />
               )}
+              <HeroActions offering={offering} freeChapterId={freeChapter?.id ?? null} />
             </div>
           </div>
 
-          <InstructorCard offering={offering} />
+            {/* What you'll learn: outcomes check grid directly under the
+                hero CTA, skipped when no outcomes are populated. */}
+            <OutcomesGrid outcomes={courseOutcomes} />
 
-            {/* Sample-before-buy: highest-leverage conversion lever
-                on this page. Surfaces just below the instructor row
-                so prospects can taste the production quality before
-                they're asked to commit. */}
-            <FreePreviewPlayer
-              chapter={freeChapter as any}
-              instructorName={offering.instructor_name}
-              playing={previewPlaying}
-              onPlay={playPreview}
-            />
+            {applyUrl ? (
+              /* Live-cohort flow: who it's for / what's inside, the
+                 admission journey, then the instructor; preview (when one
+                 exists) closes the pitch. No curriculum list or includes
+                 manifest, those are masterclass furniture. */
+              <>
+                {highlights.length > 0 && (
+                  <div className="space-y-4">
+                    <SectionEyebrow>What you'll get</SectionEyebrow>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+                      Program Highlights
+                    </h2>
+                    <Highlights items={highlights} />
+                  </div>
+                )}
 
-            {/* One strong voice right after the trailer; the full
-                testimonial grid still renders further down. */}
-            {(() => {
-              const first = (offering.checkout_testimonials || []).find((t) => t.quote);
-              if (!first?.quote) return null;
-              return (
-                <Reveal>
-                  <TestimonialCard
-                    quote={first.quote}
-                    name={first.name ?? null}
-                    role={first.role ?? null}
-                  />
-                </Reveal>
-              );
-            })()}
+                {offering.description && (
+                  <div className="space-y-4">
+                    <SectionEyebrow>About this program</SectionEyebrow>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+                      Inside the program
+                    </h2>
+                    <DescriptionBlocks description={offering.description} />
+                  </div>
+                )}
 
-            {highlights.length > 0 && (
-              <div className="space-y-4">
-                <SectionEyebrow>What you'll get</SectionEyebrow>
-                <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
-                  Program Highlights
-                </h2>
-                <Highlights items={highlights} />
-              </div>
+                {/* Admission journey for application-only cohorts. */}
+                <ApplicationTimeline />
+
+                <IncludedCourses courses={offering.offering_courses || []} />
+
+                <InstructorBio course={courseData} />
+
+                <FreePreviewPlayer
+                  chapter={freeChapter}
+                  instructorName={offering.instructor_name}
+                  playing={previewPlaying}
+                  onPlay={playPreview}
+                  signedIn={!!session}
+                />
+              </>
+            ) : (
+              /* Masterclass flow: sample-before-buy first (highest-leverage
+                 conversion lever on the page), then the includes manifest,
+                 story, curriculum, and instructor. */
+              <>
+                <FreePreviewPlayer
+                  chapter={freeChapter}
+                  instructorName={offering.instructor_name}
+                  playing={previewPlaying}
+                  onPlay={playPreview}
+                  signedIn={!!session}
+                />
+
+                <StatStrip offering={offering} />
+
+                {highlights.length > 0 && (
+                  <div className="space-y-4">
+                    <SectionEyebrow>What you'll get</SectionEyebrow>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+                      Program Highlights
+                    </h2>
+                    <Highlights items={highlights} />
+                  </div>
+                )}
+
+                {offering.description && (
+                  <div className="space-y-4">
+                    <SectionEyebrow>About this program</SectionEyebrow>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+                      {offering.instructor_name
+                        ? `Inside ${offering.instructor_name.split(" ")[0]}'s masterclass`
+                        : "Inside this masterclass"}
+                    </h2>
+                    <DescriptionBlocks description={offering.description} />
+                  </div>
+                )}
+
+                <IncludedCourses courses={offering.offering_courses || []} />
+
+                {/* Below-the-fold rich content sourced from the linked course.
+                    Bails to null if no sections/chapters are populated. The
+                    merged MasterClass-style list replaces the old preview rail
+                    + separate curriculum accordion; tapping the free row opens
+                    the FreePreviewPlayer above. */}
+                <LessonBrowser
+                  sections={courseData?.sections}
+                  durationMinutes={courseData?.duration_minutes}
+                  totalLessons={courseData?.total_lessons}
+                  freeChapterId={freeChapter?.id ?? null}
+                  onPreview={freeChapter ? playPreview : undefined}
+                />
+
+                <InstructorBio course={courseData} />
+              </>
             )}
 
-            {offering.description && (
-              <div className="space-y-4">
-                <SectionEyebrow>About this program</SectionEyebrow>
-                <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
-                  {offering.instructor_name
-                    ? `Inside ${offering.instructor_name.split(" ")[0]}'s masterclass`
-                    : "Inside this masterclass"}
-                </h2>
-                <DescriptionBlocks description={offering.description} />
-              </div>
-            )}
-
-            {/* Admission journey for application-only cohorts. */}
-            {applyUrl && <ApplicationTimeline />}
-
-            <IncludedCourses courses={offering.offering_courses || []} />
-
-            {/* Below-the-fold rich content sourced from the linked course.
-                Bails to null if no sections/chapters are populated. The
-                merged MasterClass-style list replaces the old preview rail
-                + separate curriculum accordion; tapping the free row opens
-                the FreePreviewPlayer above. */}
-            <LessonBrowser
-              sections={offering.offering_courses?.[0]?.courses?.sections}
-              durationMinutes={offering.offering_courses?.[0]?.courses?.duration_minutes}
-              totalLessons={offering.offering_courses?.[0]?.courses?.total_lessons}
-              freeChapterId={freeChapter?.id ?? null}
-              onPreview={freeChapter ? playPreview : undefined}
-            />
-
-            <InstructorBio course={offering.offering_courses?.[0]?.courses} />
-
-            <AggregatedReviews testimonials={offering.checkout_testimonials} />
-
+            {/* The single testimonial treatment on the page: real quotes
+                from checkout_testimonials, no fabricated ratings. */}
             <Testimonials items={offering.checkout_testimonials} />
 
-            <FAQs items={offering.offering_courses?.[0]?.courses?.faqs} />
+            <FAQs items={courseData?.faqs} />
+
+            <AndroidAppCard />
 
             {/* Final-CTA reminder. By the time the buyer's scrolled this
                 far they've consumed the page, give them an obvious way
-                back to checkout without scrolling up. Mirrors the hero
-                actions but framed as a reminder. */}
-            <div className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-6 sm:p-8 text-center space-y-4">
-              <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
-                Ready when you are
-              </p>
-              <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
-                Start {offering.instructor_name ? offering.instructor_name.split(" ")[0] + "'s" : "this"} masterclass today
-              </h2>
-              <div className="pt-2">
-                <HeroActions offering={offering} freeChapterId={freeChapter?.id ?? null} />
+                back without scrolling up. Slim (button-only) because the
+                price has already appeared twice; cohorts get the closing
+                deadline as the headline. */}
+            {offering.status !== "archived" && (
+              <div className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-6 sm:p-8 text-center space-y-4">
+                <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+                  {applyUrl ? "Applications open" : "Ready when you are"}
+                </p>
+                <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
+                  {applyUrl
+                    ? deadlineLabel
+                      ? `Applications close ${deadlineLabel}`
+                      : "Apply for the next cohort"
+                    : `Start ${offering.instructor_name ? offering.instructor_name.split(" ")[0] + "'s" : "this"} masterclass today`}
+                </h2>
+                <div className="pt-2 flex justify-center">
+                  <HeroActions offering={offering} variant="slim" />
+                </div>
               </div>
-            </div>
+            )}
         </div>
 
         {/* Desktop sticky purchase rail (lg+, web only, see railEligible). */}
@@ -1357,8 +1492,9 @@ export default function PublicOffering() {
       >
         {applyUrl ? (
           <div className="space-y-2">
+            {/* Deadline beats a generic label when we have one. */}
             <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-[hsl(var(--cream))]/70 whitespace-nowrap text-center">
-              Application-only
+              {deadlineLabel ? `Applications close ${deadlineLabel}` : "Application-only"}
             </p>
             <a
               href={applyUrl}
@@ -1371,30 +1507,41 @@ export default function PublicOffering() {
             </a>
           </div>
         ) : (
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            {isFree ? (
-              <span className="text-2xl font-bold text-[hsl(var(--accent-emerald))]">Free</span>
-            ) : (
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-foreground tracking-[-0.01em]">
-                  ₹{Number(offering.price_inr).toLocaleString("en-IN")}
-                </span>
-                {offering.mrp_inr && Number(offering.mrp_inr) > Number(offering.price_inr) && (
-                  <span className="text-sm text-muted-foreground line-through font-mono">
-                    ₹{Number(offering.mrp_inr).toLocaleString("en-IN")}
+        <div className="space-y-1.5">
+          {/* Quiet trust line, same reassurance pill wording as checkout. */}
+          {!isFree && (
+            <p className="text-[10px] text-muted-foreground text-center">
+              Secured by Razorpay ·{" "}
+              {offering.refund_policy_days
+                ? `${offering.refund_policy_days}-day refund`
+                : "7-day refund"}
+            </p>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              {isFree ? (
+                <span className="text-2xl font-bold text-[hsl(var(--accent-emerald))]">Free</span>
+              ) : (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-foreground tracking-[-0.01em]">
+                    ₹{Number(offering.price_inr).toLocaleString("en-IN")}
                   </span>
-                )}
-              </div>
-            )}
+                  {offering.mrp_inr && Number(offering.mrp_inr) > Number(offering.price_inr) && (
+                    <span className="text-sm text-muted-foreground line-through font-mono">
+                      ₹{Number(offering.mrp_inr).toLocaleString("en-IN")}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <Button
+              onClick={() => navigate(`/checkout/${offering.id}`)}
+              className="btn-champagne text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
+            >
+              {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}
+              <ArrowRight className="h-4 w-4 ml-1.5" />
+            </Button>
           </div>
-          <Button
-            onClick={() => navigate(`/checkout/${offering.id}`)}
-            className="btn-champagne text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
-          >
-            {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}
-            <ArrowRight className="h-4 w-4 ml-1.5" />
-          </Button>
         </div>
         )}
       </div>

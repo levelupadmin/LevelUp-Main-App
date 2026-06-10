@@ -611,9 +611,36 @@ const ChapterViewer = () => {
       .eq("user_id", user.id)
       .eq("course_id", courseId);
     const completedCount = (allProgress || []).filter((p) => p.completed_at).length;
-    const totalCount = siblings.length || 1;
+
+    // Authoritative chapter total for milestone/certificate maths. The
+    // `siblings` state can be empty if its fetch failed or raced a chapter
+    // switch, and the old `siblings.length || 1` fallback made completing
+    // ANY chapter look like 100% course completion. Count chapters via the
+    // sections join instead, and skip the celebration logic entirely when
+    // the count can't be established.
+    let totalCount: number | null = null;
+    const { data: secRows, error: secErr } = await supabase
+      .from("sections")
+      .select("id")
+      .eq("course_id", courseId);
+    if (!secErr && secRows) {
+      const sectionIds = secRows.map((s) => s.id);
+      if (sectionIds.length === 0) {
+        totalCount = 0;
+      } else {
+        const { count, error: countErr } = await supabase
+          .from("chapters")
+          .select("id", { count: "exact", head: true })
+          .in("section_id", sectionIds);
+        if (!countErr && typeof count === "number") totalCount = count;
+      }
+    }
+
     // completedBefore = completedCount - 1 (we just completed one)
-    const hit = checkMilestone(completedCount - 1, completedCount, totalCount);
+    const hit =
+      totalCount !== null && totalCount > 0
+        ? checkMilestone(completedCount - 1, completedCount, totalCount)
+        : null;
 
     if (hit) {
       setShowConfetti(true);
@@ -625,22 +652,26 @@ const ChapterViewer = () => {
       toast.success("Nice work! Chapter done.");
     }
 
-    // Auto-generate certificate if threshold reached
-    checkAndGenerateCertificate(
-      user.id,
-      courseId,
-      completedCount,
-      totalCount,
-      profile?.full_name ?? "Student",
-      profile?.member_number != null ? String(profile.member_number) : null
-    ).then((cert) => {
-      if (cert) {
-        toast.success("Certificate earned!", {
-          description: `Certificate ${cert.certificateNumber} has been generated.`,
-          duration: 6000,
-        });
-      }
-    });
+    // Auto-generate certificate if threshold reached. Only with a verified
+    // total: a bogus denominator here could issue certificates early (the
+    // issue_certificate RPC re-checks server-side, but don't even try).
+    if (totalCount !== null && totalCount > 0) {
+      checkAndGenerateCertificate(
+        user.id,
+        courseId,
+        completedCount,
+        totalCount,
+        profile?.full_name ?? "Student",
+        profile?.member_number != null ? String(profile.member_number) : null
+      ).then((cert) => {
+        if (cert) {
+          toast.success("Certificate earned!", {
+            description: `Certificate ${cert.certificateNumber} has been generated.`,
+            duration: 6000,
+          });
+        }
+      });
+    }
 
     // If this was the last chapter, show the course completion banner
     if (currentIndex === siblings.length - 1) {
@@ -682,7 +713,17 @@ const ChapterViewer = () => {
   // in-flight fetch instead.
   if (loading && !chapter) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
+      <div className="relative flex items-center justify-center min-h-screen bg-background">
+        {/* This page renders outside StudentLayout, so even the first-load
+            spinner needs an exit; a hung fetch must not strand the user. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate("/home")}
+          className="absolute left-4 top-[calc(1rem+env(safe-area-inset-top))]"
+        >
+          <ArrowLeft className="h-4 w-4 mr-1" /> Home
+        </Button>
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground border-t-foreground" />
       </div>
     );
@@ -753,12 +794,20 @@ const ChapterViewer = () => {
         {loading && (
           <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--cream))]/70 animate-pulse" />
         )}
+        {/* ChapterViewer renders outside StudentLayout, so this button is
+            the ONLY exit. Label where it actually goes: the course title
+            when the courseId resolved, otherwise "Home" - never a "Back to
+            course" that silently dumps the user on /home. */}
         <Button
           variant="ghost"
           size="sm"
           onClick={() => navigate(courseId ? `/courses/${courseId}` : "/home")}
+          className="shrink-0 max-w-[45vw] sm:max-w-xs"
         >
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back to course
+          <ArrowLeft className="h-4 w-4 mr-1 shrink-0" />
+          <span className="truncate">
+            {courseId ? courseTitle || "Back to course" : "Home"}
+          </span>
         </Button>
         <span className="text-sm text-muted-foreground truncate flex-1">
           {chapter.title}
