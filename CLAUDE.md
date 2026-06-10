@@ -60,6 +60,8 @@ PLAY_RELEASE_NOTES="• line one\n• line two" \
 export JAVA_HOME="/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"  # Homebrew JDK 21 on this Mac (old /Users/rahul/android-build path is defunct)
 export ANDROID_HOME="$HOME/Library/Android/sdk"                                    # build-tools 36.1.0 / 37.0.0
 export LEVELUP_KEYSTORE_PATH="/Users/rahulsrinivas/Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/keystores/upload-keystore.jks"
+# Password = the fenced 28-char token on line 15 of the keystores README (under "## The password").
+# Source it without printing:  export LEVELUP_KEYSTORE_PASSWORD="$(sed -n '15p' "<keystores dir>/README.md" | awk '{print $1}')"
 export LEVELUP_KEYSTORE_PASSWORD="<from keystore README.md or 1Password — NEVER echo/commit>"
 npm run build && npx cap sync android
 cd android && ./gradlew bundleRelease
