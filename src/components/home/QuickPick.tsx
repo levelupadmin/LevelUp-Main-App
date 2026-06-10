@@ -141,7 +141,7 @@ const QuickPick = () => {
       key: "catalog",
       icon: Sparkles,
       eyebrow: "New",
-      label: newest?.title ?? "Browse catalog",
+      label: newest?.title ?? "Browse programs",
       to: newest?.to ?? "/my-courses",
     },
   ];

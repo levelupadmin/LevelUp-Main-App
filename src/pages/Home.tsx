@@ -7,7 +7,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import Reveal from "@/components/motion/Reveal";
 import FeaturedHero from "@/components/home/FeaturedHero";
 import QuickPick from "@/components/home/QuickPick";
-import EditorialBreaker from "@/components/home/EditorialBreaker";
 import ContinueLearning from "@/components/home/ContinueLearning";
 import UpcomingSessions from "@/components/home/UpcomingSessions";
 import PopularCommunity from "@/components/home/PopularCommunity";
@@ -93,10 +92,6 @@ const Home = () => {
       <Reveal>
         <QuickPick />
       </Reveal>
-
-      {/* Editorial breaker: full-bleed typographic band marking the seam
-          between the personal "resume" half of the feed and the catalogue. */}
-      <EditorialBreaker />
 
       {/* NOT in a <Reveal>: the catalog spans several viewports, so the
           0.15 intersection threshold may never be reached (15% of a very
