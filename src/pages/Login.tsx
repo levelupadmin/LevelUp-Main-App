@@ -480,9 +480,11 @@ const Login = () => {
         </div>
       )}
 
-      {/* FORM COLUMN: a rounded bottom-sheet rising over the hero on mobile */}
-      {!showWelcome && (
-        <div className="relative z-10 flex flex-col flex-1 bg-canvas rounded-t-[28px] mt-auto px-5 pt-7 pb-6 safe-bottom animate-fade-in-up lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8 lg:animate-none">
+      {/* FORM COLUMN: a rounded bottom-sheet rising over the hero on mobile.
+          On lg+ it is ALWAYS rendered: the welcome layer above is lg:hidden
+          (a mobile-only concept), so gating this column on !showWelcome left
+          desktop with a full-bleed hero and no sign-in control at all. */}
+      <div className={`relative z-10 ${showWelcome ? "hidden lg:flex" : "flex"} flex-col flex-1 bg-canvas rounded-t-[28px] mt-auto px-5 pt-7 pb-6 safe-bottom animate-fade-in-up lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8 lg:animate-none`}>
           {/* Grabber handle (mobile only) reinforces the bottom-sheet feel */}
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border lg:hidden" />
 
@@ -497,7 +499,11 @@ const Login = () => {
                   else setFormOpen(false);
                 }}
                 aria-label="Back"
-                className="-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground active:scale-95 transition lg:-ml-3"
+                className={`-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground active:scale-95 transition lg:-ml-3 ${
+                  // The phone-step back returns to the mobile welcome sheet,
+                  // which doesn't exist on lg+ (this column always shows there).
+                  !canGoBack ? "lg:hidden" : ""
+                }`}
               >
                 <ChevronLeft className="h-6 w-6" />
               </button>
@@ -509,7 +515,6 @@ const Login = () => {
             {formBlock}
           </div>
         </div>
-      )}
     </div>
   );
 };
