@@ -51,7 +51,9 @@ Deno.serve(async (req) => {
       .eq("id", offering_id)
       .single();
     if (offErr || !offering) return jsonRes({ error: "Offering not found" }, 404);
-    if (offering.status !== "published") {
+    // Offerings use status 'active' (sellable) / 'archived' (kept for existing
+    // enrolees, never re-sold) - mirrors useCatalog's .eq("status", "active").
+    if (offering.status !== "active") {
       return jsonRes({ error: "This offering is not available" }, 400);
     }
     if (offering.payment_mode === "staged") {
