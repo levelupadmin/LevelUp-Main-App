@@ -55,7 +55,18 @@ interface Body {
   // this URL. Reject that explicitly with a hint so a stale cached
   // bundle in someone's browser doesn't silently fall through.
   otp?: string;
+  // App Review demo login (see REVIEW_PHONE below).
+  reviewCode?: string;
 }
+
+// App Store / Play reviewers cannot receive an Indian OTP, and Apple
+// requires working demo credentials. For EXACTLY this reserved number the
+// client skips the MSG91 widget and sends the 4-digit code typed in the
+// OTP boxes as `reviewCode`; we check it against the REVIEW_LOGIN_CODE
+// secret instead of MSG91. Scope: only this phone, only the account bound
+// to it (a demo student), and unsetting the secret disables the path
+// entirely. Rotation = `supabase secrets set REVIEW_LOGIN_CODE=...`.
+const REVIEW_PHONE = "+918888777666";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -64,13 +75,7 @@ Deno.serve(async (req) => {
   let body: Body;
   try { body = await req.json(); } catch { return json({ error: "invalid_json" }, 400); }
 
-  if (body.otp && !body.accessToken) {
-    return json({
-      error: "stale_client",
-      detail: "This endpoint now expects a MSG91 widget accessToken, not a raw OTP. Hard-refresh the page.",
-    }, 400);
-  }
-  if (!body.accessToken || !body.phone) {
+  if (!body.phone) {
     return json({ error: "missing_access_token_or_phone" }, 400);
   }
 
@@ -80,7 +85,32 @@ Deno.serve(async (req) => {
     ? body.phone
     : `+${body.phone.replace(/^0+/, "")}`;
 
+  // ─ 0. App Review demo login (reserved number + secret code) ─────────
+  const reviewMode = normPhone === REVIEW_PHONE && !!body.reviewCode;
+  if (reviewMode) {
+    const expected = Deno.env.get("REVIEW_LOGIN_CODE");
+    if (!expected || body.reviewCode !== expected) {
+      return json({ error: "invalid_otp" }, 401);
+    }
+    // Verified by shared secret; skip MSG91 entirely and fall through to
+    // the normal lookup, which resolves the demo account bound to
+    // REVIEW_PHONE. No other number can take this branch.
+  }
+
+  if (!reviewMode) {
+    if (body.otp && !body.accessToken) {
+      return json({
+        error: "stale_client",
+        detail: "This endpoint now expects a MSG91 widget accessToken, not a raw OTP. Hard-refresh the page.",
+      }, 400);
+    }
+    if (!body.accessToken) {
+      return json({ error: "missing_access_token_or_phone" }, 400);
+    }
+  }
+
   // ─ 1. Verify the access token with MSG91 ────────────────────────────
+  if (!reviewMode) {
   const verifyResp = await fetch("https://control.msg91.com/api/v5/widget/verifyAccessToken", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -115,7 +145,7 @@ Deno.serve(async (req) => {
   // entered == body.phone), so this can never lock users out if MSG91
   // changes its response shape; it only ever blocks the takeover case
   // where a real identifier is present and differs.
-  const binding = phoneBinding(normPhone, verifyData, body.accessToken);
+  const binding = phoneBinding(normPhone, verifyData, body.accessToken!);
   if (binding === "mismatch") {
     return json({ error: "phone_token_mismatch" }, 401);
   }
@@ -124,6 +154,7 @@ Deno.serve(async (req) => {
       "verify-msg91-otp: no verified phone recoverable from MSG91 response/JWT; proceeding without strict token↔phone binding",
       { phone: normPhone },
     );
+  }
   }
 
   // ─ 2. Look up or create the user ────────────────────────────────────

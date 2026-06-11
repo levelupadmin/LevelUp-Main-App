@@ -124,6 +124,11 @@ const Login = () => {
     (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/home";
   const redirectTarget = rawFrom.startsWith("/") && !rawFrom.includes("//") ? rawFrom : "/home";
   const isIndianPhone = phone.startsWith("+91");
+  // App Review demo login: reviewers cannot receive an Indian OTP, so for
+  // exactly this reserved number we skip the MSG91 widget and let
+  // verify-msg91-otp validate the typed 4-digit code against its
+  // REVIEW_LOGIN_CODE secret (server-side kill switch). See the edge fn.
+  const isReviewLogin = phone === "+918888777666";
 
   const sendSmsOtp = async (waMode = false): Promise<{ ok: boolean; error?: string }> => {
     try {
@@ -148,6 +153,13 @@ const Login = () => {
       goToStep("email_input");
       return;
     }
+    if (isReviewLogin) {
+      // No SMS exists for the reserved review number; go straight to the
+      // code entry, which the server validates against its secret.
+      setChannel("sms");
+      goToStep("otp");
+      return;
+    }
     setLoading(true);
     const res = await sendSmsOtp(false);
     setLoading(false);
@@ -164,12 +176,14 @@ const Login = () => {
 
   const handleVerify = async (otp: string): Promise<{ ok: boolean; error?: string }> => {
     try {
-      let token: string;
-      try {
-        const r = await widgetVerifyOtp(otp);
-        token = r.accessToken;
-      } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : "Wrong code. Try again." };
+      let token: string | null = null;
+      if (!isReviewLogin) {
+        try {
+          const r = await widgetVerifyOtp(otp);
+          token = r.accessToken;
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : "Wrong code. Try again." };
+        }
       }
 
       const resp = await fetch(VERIFY_MSG91_OTP_URL, {
@@ -178,7 +192,9 @@ const Login = () => {
           "Content-Type": "application/json",
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
-        body: JSON.stringify({ phone, accessToken: token }),
+        body: JSON.stringify(
+          isReviewLogin ? { phone, reviewCode: otp } : { phone, accessToken: token }
+        ),
       });
       const data = await resp.json();
       if (!resp.ok) {
