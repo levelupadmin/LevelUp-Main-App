@@ -1,0 +1,11 @@
+{
+  "name": "studio-worker",
+  "private": true,
+  "type": "module",
+  "description": "LevelUp Studio capture worker — Instagram/YouTube → transcript into a per-user cb_reels library. Adapted from content-brain-app, made multi-tenant against LevelUp Supabase.",
+  "engines": { "node": "20.x" },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "youtube-transcript": "^1.2.1"
+  }
+}

@@ -6,12 +6,18 @@ import VdoFramework
 
 /// Thin full-screen container around the SDK's VdoPlayerViewController so we can
 /// reliably detect dismissal (the SDK VC is vended by the framework and cannot be
-/// subclassed). When the SDK's own close control calls dismiss(), UIKit forwards
-/// the dismissal to this container, and viewDidDisappear fires with
-/// isBeingDismissed == true.
+/// subclassed) AND own the exit affordance.
+///
+/// The SDK's own close control is not reliably reachable in this fullscreen
+/// presentation (testers reported "no way to get out of fullscreen"), so we
+/// overlay our own always-visible close button pinned to the safe area, plus a
+/// swipe-down-to-dismiss gesture (the standard iOS "drop the player" motion).
+/// Either path calls dismiss(), which UIKit forwards here so viewDidDisappear
+/// fires with isBeingDismissed == true.
 final class VdoPlayerHostViewController: UIViewController {
     private let playerController: UIViewController
     var onClosed: (() -> Void)?
+    private let closeButton = UIButton(type: .system)
 
     init(playerController: UIViewController) {
         self.playerController = playerController
@@ -32,6 +38,46 @@ final class VdoPlayerHostViewController: UIViewController {
         playerController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(playerController.view)
         playerController.didMove(toParent: self)
+        setupCloseAffordances()
+    }
+
+    private func setupCloseAffordances() {
+        // Always-visible close: translucent dark disc + white X, pinned to the
+        // safe-area top-left so it never hides under the notch / Dynamic Island
+        // and always sits above the player view. This is the guaranteed exit.
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        let cfg = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        closeButton.setImage(UIImage(systemName: "xmark", withConfiguration: cfg), for: .normal)
+        closeButton.tintColor = .white
+        closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        closeButton.layer.cornerRadius = 19
+        closeButton.layer.borderWidth = 0.5
+        closeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.18).cgColor
+        closeButton.accessibilityLabel = "Close player"
+        closeButton.addTarget(self, action: #selector(didTapClose), for: .touchUpInside)
+        view.addSubview(closeButton)
+        NSLayoutConstraint.activate([
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            closeButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            closeButton.widthAnchor.constraint(equalToConstant: 38),
+            closeButton.heightAnchor.constraint(equalToConstant: 38),
+        ])
+
+        // Swipe-down-to-dismiss: the familiar iOS gesture for closing a video.
+        let swipeDown = UISwipeGestureRecognizer(target: self, action: #selector(didTapClose))
+        swipeDown.direction = .down
+        swipeDown.delegate = self
+        view.addGestureRecognizer(swipeDown)
+    }
+
+    @objc private func didTapClose() {
+        dismiss(animated: true)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Keep the close button above the SDK player view if it re-layers.
+        view.bringSubviewToFront(closeButton)
     }
 
     override var prefersStatusBarHidden: Bool { true }
@@ -46,6 +92,17 @@ final class VdoPlayerHostViewController: UIViewController {
             onClosed = nil
             callback?()
         }
+    }
+}
+
+// MARK: - UIGestureRecognizerDelegate
+
+extension VdoPlayerHostViewController: UIGestureRecognizerDelegate {
+    // Let the swipe-down coexist with the SDK player's own gestures (scrubber,
+    // tap-to-toggle-controls) instead of swallowing them.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        return true
     }
 }
 

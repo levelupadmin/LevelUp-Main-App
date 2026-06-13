@@ -1,5 +1,6 @@
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useMemo } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import PageMotion from "@/components/motion/PageMotion";
 import { useAuth } from "@/contexts/AuthContext";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
@@ -8,29 +9,31 @@ import Footer from "@/components/Footer";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
   Home, BookOpen, MessageSquare, User,
-  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2, Sparkles
+  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2, Sparkles, Brain
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
+import { useStudioEnabled } from "@/hooks/useStudio";
 import { hapticSelection } from "@/lib/haptics";
 
 // Browse merged into Home, the catalog now lives in the Home feed.
+// Simplified IA: My Courses + Sessions + Events collapse into one "Learn" tab
+// (segmented Courses/Live/Events). Profile moves to the header avatar menu.
 const NAV_ITEMS = [
   { label: "Home", icon: Home, path: "/home" },
-  { label: "My Courses", icon: BookOpen, path: "/my-courses" },
-  { label: "Sessions", icon: Video, path: "/my-sessions" },
-  { label: "Events", icon: Calendar, path: "/events" },
+  { label: "Learn", icon: BookOpen, path: "/learn" },
   { label: "Community", icon: MessageSquare, path: "/community" },
-  { label: "Profile", icon: User, path: "/profile" },
 ];
 
-// Mobile bottom bar: 4 tabs (Browse folded into Home)
+// Mobile bottom bar mirrors the sidebar (Studio inserts for cohort members).
 const MOBILE_NAV_ITEMS = [
   { label: "Home", icon: Home, path: "/home" },
-  { label: "My Courses", icon: BookOpen, path: "/my-courses" },
-  { label: "Sessions", icon: Video, path: "/my-sessions" },
-  { label: "Profile", icon: User, path: "/profile" },
+  { label: "Learn", icon: BookOpen, path: "/learn" },
+  { label: "Community", icon: MessageSquare, path: "/community" },
 ];
+
+// Studio (Content Brain) — inserted into the nav only for active cohort members.
+const STUDIO_NAV_ITEM = { label: "Studio", icon: Brain, path: "/studio" };
 
 interface Props {
   /**
@@ -86,6 +89,24 @@ const StudentLayout = ({ children }: Props) => {
   }, [sidebarOpen, dropdownOpen, notifOpen]);
   const { notifications, unreadCount, loading: notifLoading, markRead, markAllRead } = useNotifications();
   const { offeringId: activeCohortId } = useActiveCohort();
+  const { data: studioEnabled } = useStudioEnabled();
+
+  // Studio only appears for active cohort members; everyone else sees the
+  // unchanged bar (additive — never orphans a route).
+  const navItems = useMemo(() => {
+    if (!studioEnabled) return NAV_ITEMS;
+    const arr = [...NAV_ITEMS];
+    const i = arr.findIndex((x) => x.path === "/learn");
+    arr.splice(i >= 0 ? i + 1 : arr.length, 0, STUDIO_NAV_ITEM);
+    return arr;
+  }, [studioEnabled]);
+  const mobileNavItems = useMemo(() => {
+    if (!studioEnabled) return MOBILE_NAV_ITEMS;
+    const arr = [...MOBILE_NAV_ITEMS];
+    const i = arr.findIndex((x) => x.path === "/learn");
+    arr.splice(i >= 0 ? i + 1 : arr.length, 0, STUDIO_NAV_ITEM);
+    return arr;
+  }, [studioEnabled]);
 
   const firstName = profile?.full_name?.split(" ")[0] ?? "Student";
 
@@ -99,7 +120,7 @@ const StudentLayout = ({ children }: Props) => {
         </div>
 
         <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active = location.pathname === item.path || location.pathname.startsWith(item.path + "/");
             return (
               <Link
@@ -163,7 +184,7 @@ const StudentLayout = ({ children }: Props) => {
         </nav>
 
         <div className="p-3">
-          <div className="flex items-center gap-3 rounded-2xl bg-surface/60 border border-border px-3 py-2.5">
+          <Link to="/profile" className="flex items-center gap-3 rounded-2xl bg-surface/60 border border-border px-3 py-2.5 hover:border-cream/30 transition-colors">
             <InitialsAvatar name={profile?.full_name ?? "U"} photoUrl={profile?.avatar_url} size={32} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate text-foreground">{firstName}</p>
@@ -171,7 +192,7 @@ const StudentLayout = ({ children }: Props) => {
                 #{profile?.member_number ?? "-"}
               </p>
             </div>
-          </div>
+          </Link>
         </div>
       </aside>
 
@@ -190,7 +211,7 @@ const StudentLayout = ({ children }: Props) => {
               </button>
             </div>
             <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1">
-              {NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const active = location.pathname === item.path;
                 return (
                   <Link
@@ -310,6 +331,13 @@ const StudentLayout = ({ children }: Props) => {
                       </button>
                     )}
                     <button
+                      onClick={() => { setDropdownOpen(false); navigate("/profile"); }}
+                      className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors min-h-[44px]"
+                    >
+                      <User className="h-4 w-4" />
+                      Profile
+                    </button>
+                    <button
                       onClick={async () => { await signOut(); navigate("/login"); }}
                       className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors min-h-[44px]"
                     >
@@ -329,7 +357,7 @@ const StudentLayout = ({ children }: Props) => {
         <main id="main-content" className="flex-1 grain">
           <div className="max-w-[1280px] xl:max-w-[1440px] 2xl:max-w-[1680px] mx-auto px-4 md:px-8 lg:px-10 xl:px-12 py-6 md:py-10 relative z-10 page-enter">
             <Suspense fallback={<ContentSuspenseFallback />}>
-              {children ?? <Outlet />}
+              <PageMotion>{children ?? <Outlet />}</PageMotion>
             </Suspense>
           </div>
         </main>
@@ -347,7 +375,7 @@ const StudentLayout = ({ children }: Props) => {
         aria-label="Mobile navigation"
         className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas/80 backdrop-blur-xl border-t border-border flex items-stretch safe-bottom"
       >
-        {MOBILE_NAV_ITEMS.map((item) => {
+        {mobileNavItems.map((item) => {
           const active = location.pathname === item.path || location.pathname.startsWith(item.path + "/");
           return (
             <Link

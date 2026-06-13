@@ -37,6 +37,8 @@ const ChapterViewer = lazy(() => import("@/pages/ChapterViewer"));
 const CheckoutPage = lazy(() => import("@/pages/CheckoutPage"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const MyCoursesPage = lazy(() => import("@/pages/MyCoursesPage"));
+const Studio = lazy(() => import("@/pages/Studio"));
+const Learn = lazy(() => import("@/pages/Learn"));
 const MySessionsPage = lazy(() => import("@/pages/MySessionsPage"));
 const EventsPage = lazy(() => import("@/pages/EventsPage"));
 const EventDetail = lazy(() => import("@/pages/EventDetail"));
@@ -209,12 +211,14 @@ const App = () => {
               {/* ─── Student routes share a single persistent layout ─── */}
               <Route element={<RequireAuth><StudentLayout /></RequireAuth>}>
                 <Route path="/home" element={<Home />} />
+                <Route path="/learn" element={<Learn />} />
                 <Route path="/courses/:courseId" element={<CourseDetail />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/community" element={<CommunityPage />} />
-                <Route path="/my-courses" element={<MyCoursesPage />} />
-                <Route path="/my-sessions" element={<MySessionsPage />} />
-                <Route path="/events" element={<EventsPage />} />
+                <Route path="/my-courses" element={<Navigate to="/learn?seg=courses" replace />} />
+                <Route path="/studio" element={<Studio />} />
+                <Route path="/my-sessions" element={<Navigate to="/learn?seg=live" replace />} />
+                <Route path="/events" element={<Navigate to="/learn?seg=calendar" replace />} />
                 <Route path="/events/:eventId" element={<EventDetail />} />
                 <Route path="/my-application/:applicationId" element={<ApplicationStatus />} />
                 <Route path="/cohort/:offeringId" element={<CohortDashboard />} />

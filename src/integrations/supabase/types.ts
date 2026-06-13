@@ -469,6 +469,388 @@ export type Database = {
           },
         ]
       }
+      cb_api_call_log: {
+        Row: {
+          args_digest: string | null
+          created_at: string
+          id: string
+          ip: unknown
+          key_id: string | null
+          latency_ms: number | null
+          status: string | null
+          tool: string | null
+          user_id: string
+        }
+        Insert: {
+          args_digest?: string | null
+          created_at?: string
+          id?: string
+          ip?: unknown
+          key_id?: string | null
+          latency_ms?: number | null
+          status?: string | null
+          tool?: string | null
+          user_id: string
+        }
+        Update: {
+          args_digest?: string | null
+          created_at?: string
+          id?: string
+          ip?: unknown
+          key_id?: string | null
+          latency_ms?: number | null
+          status?: string | null
+          tool?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cb_api_call_log_key_id_fkey"
+            columns: ["key_id"]
+            isOneToOne: false
+            referencedRelation: "cb_keys"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_api_call_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_api_call_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_api_call_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cb_capture_tokens: {
+        Row: {
+          created_at: string
+          id: string
+          last_used_at: string | null
+          revoked_at: string | null
+          token_hash: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+          token_hash: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+          token_hash?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cb_capture_tokens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_capture_tokens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_capture_tokens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cb_folder_items: {
+        Row: {
+          added_at: string
+          folder_id: string
+          reel_id: string
+        }
+        Insert: {
+          added_at?: string
+          folder_id: string
+          reel_id: string
+        }
+        Update: {
+          added_at?: string
+          folder_id?: string
+          reel_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cb_folder_items_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "cb_folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_folder_items_reel_id_fkey"
+            columns: ["reel_id"]
+            isOneToOne: false
+            referencedRelation: "cb_reels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cb_folders: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cb_folders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_folders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_folders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cb_keys: {
+        Row: {
+          created_at: string
+          hashed_key: string
+          id: string
+          key_hint: string
+          last_used_at: string | null
+          last_used_ip: unknown
+          revoked_at: string | null
+          rotated_from: string | null
+          scope: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          hashed_key: string
+          id?: string
+          key_hint: string
+          last_used_at?: string | null
+          last_used_ip?: unknown
+          revoked_at?: string | null
+          rotated_from?: string | null
+          scope?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          hashed_key?: string
+          id?: string
+          key_hint?: string
+          last_used_at?: string | null
+          last_used_ip?: unknown
+          revoked_at?: string | null
+          rotated_from?: string | null
+          scope?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cb_keys_rotated_from_fkey"
+            columns: ["rotated_from"]
+            isOneToOne: false
+            referencedRelation: "cb_keys"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_keys_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_keys_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_keys_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cb_reels: {
+        Row: {
+          acted_at: string | null
+          bucket: string
+          caption: string | null
+          created_at: string
+          creator_name: string | null
+          creator_username: string | null
+          duration: number | null
+          error: string | null
+          fts: unknown
+          hashtags: string[] | null
+          highlights: string[]
+          id: string
+          last_revisited_at: string | null
+          like_count: number | null
+          note: string | null
+          platform: string
+          posted_at: string | null
+          processed_at: string | null
+          revisit_count: number
+          shortcode: string
+          source: string
+          status: string
+          tags: string[]
+          thumbnail_url: string | null
+          title: string | null
+          transcript: string | null
+          transcript_lang: string | null
+          updated_at: string
+          url: string
+          user_id: string
+          view_count: number | null
+        }
+        Insert: {
+          acted_at?: string | null
+          bucket?: string
+          caption?: string | null
+          created_at?: string
+          creator_name?: string | null
+          creator_username?: string | null
+          duration?: number | null
+          error?: string | null
+          fts?: unknown
+          hashtags?: string[] | null
+          highlights?: string[]
+          id?: string
+          last_revisited_at?: string | null
+          like_count?: number | null
+          note?: string | null
+          platform: string
+          posted_at?: string | null
+          processed_at?: string | null
+          revisit_count?: number
+          shortcode: string
+          source?: string
+          status?: string
+          tags?: string[]
+          thumbnail_url?: string | null
+          title?: string | null
+          transcript?: string | null
+          transcript_lang?: string | null
+          updated_at?: string
+          url: string
+          user_id: string
+          view_count?: number | null
+        }
+        Update: {
+          acted_at?: string | null
+          bucket?: string
+          caption?: string | null
+          created_at?: string
+          creator_name?: string | null
+          creator_username?: string | null
+          duration?: number | null
+          error?: string | null
+          fts?: unknown
+          hashtags?: string[] | null
+          highlights?: string[]
+          id?: string
+          last_revisited_at?: string | null
+          like_count?: number | null
+          note?: string | null
+          platform?: string
+          posted_at?: string | null
+          processed_at?: string | null
+          revisit_count?: number
+          shortcode?: string
+          source?: string
+          status?: string
+          tags?: string[]
+          thumbnail_url?: string | null
+          title?: string | null
+          transcript?: string | null
+          transcript_lang?: string | null
+          updated_at?: string
+          url?: string
+          user_id?: string
+          view_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cb_reels_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_reels_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cb_reels_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       certificate_templates: {
         Row: {
           auto_generate: boolean
@@ -1172,6 +1554,83 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "cohort_batches_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_learnings: {
+        Row: {
+          author_id: string | null
+          body_md: string
+          created_at: string
+          fts: unknown
+          id: string
+          kind: string
+          offering_id: string
+          publish_at: string | null
+          published: boolean
+          session_label: string | null
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          author_id?: string | null
+          body_md: string
+          created_at?: string
+          fts?: unknown
+          id?: string
+          kind?: string
+          offering_id: string
+          publish_at?: string | null
+          published?: boolean
+          session_label?: string | null
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string | null
+          body_md?: string
+          created_at?: string
+          fts?: unknown
+          id?: string
+          kind?: string
+          offering_id?: string
+          publish_at?: string | null
+          published?: boolean
+          session_label?: string | null
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_learnings_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_learnings_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_learnings_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_learnings_offering_id_fkey"
             columns: ["offering_id"]
             isOneToOne: false
             referencedRelation: "offerings"
@@ -5821,9 +6280,14 @@ export type Database = {
         Returns: string
       }
       has_course_access: { Args: { p_course_id: string }; Returns: boolean }
+      has_offering_learnings_access: {
+        Args: { p_offering_id: string }
+        Returns: boolean
+      }
       is_admin: { Args: never; Returns: boolean }
       is_offering_active: { Args: { p_offering_id: string }; Returns: boolean }
       is_owner: { Args: never; Returns: boolean }
+      is_studio_enabled: { Args: { p_user_id?: string }; Returns: boolean }
       issue_certificate: {
         Args: {
           p_course_id: string
@@ -5941,6 +6405,10 @@ export type Database = {
           total_order_count: number
           total_paid_inr: number
         }[]
+      }
+      set_onboarding_profile: {
+        Args: { p_email: string; p_full_name: string }
+        Returns: undefined
       }
       submit_quiz: {
         Args: { p_answers: Json; p_quiz_id: string }
