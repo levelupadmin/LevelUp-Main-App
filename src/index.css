@@ -186,8 +186,11 @@
        pinned, which reads as the "rogue vertical scroll" the user reports. */
     overscroll-behavior: none;
     /* Guard against horizontal overflow: a single too-wide child should never
-       make the whole page pannable sideways inside the WebView. */
-    overflow-x: hidden;
+       make the whole page pannable sideways inside the WebView. Use `clip`,
+       not `hidden`: `hidden` makes the element a scroll container and breaks
+       momentum/trackpad/Magic-Mouse scrolling on macOS browsers; `clip` still
+       prevents the sideways pan without the scroll-container side effect. */
+    overflow-x: clip;
   }
 
   body {
@@ -200,8 +203,10 @@
     overscroll-behavior: none;
     /* Belt-and-braces horizontal-overflow guard at the body level, and clamp
        width to the visual viewport so a stray full-bleed element can't push
-       the page wider than the screen. */
-    overflow-x: hidden;
+       the page wider than the screen. `clip` (not `hidden`) so the body never
+       becomes a scroll container — that's what breaks momentum/two-finger/
+       Magic-Mouse scrolling on macOS. */
+    overflow-x: clip;
     max-width: 100vw;
   }
 
