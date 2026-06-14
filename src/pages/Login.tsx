@@ -61,7 +61,7 @@ const VERIFY_MSG91_OTP_URL =
 //
 // 2026-05-30: Cinematic redesign. One unified responsive composition for
 // web AND native (reverses the earlier native logo-only layout): a
-// full-bleed hero with the "Make your first film." headline, then a glassy
+// full-bleed hero with the "Make your best work." headline, then a glassy
 // form card with a champagne "Send code →" CTA, a Secure & private line,
 // star social proof, and a slim legal footer. Single column on mobile +
 // native; two columns (form left / hero right) from `lg` up on web. The
