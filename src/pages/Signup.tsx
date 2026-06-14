@@ -390,7 +390,7 @@ const Signup = () => {
             </h2>
             <p className="text-base text-muted-foreground max-w-[440px] leading-relaxed">
               Join 12,000+ creators leveling up across film, writing, design,
-              content, and AI — taught by India's best working creators.
+              content, and AI, taught by India's best working creators.
             </p>
           </div>
         </div>

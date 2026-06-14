@@ -30,7 +30,7 @@ export default function ConnectAI() {
       toast.success("Copied");
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error("Couldn't copy — select the URL and copy it manually.");
+      toast.error("Couldn't copy. Select the URL and copy it manually.");
     }
   };
 
@@ -44,7 +44,7 @@ export default function ConnectAI() {
           <h3 className="text-base font-semibold">Connect your AI</h3>
           <p className="text-sm text-[hsl(var(--muted-foreground))] mt-0.5">
             Plug your own ChatGPT or Claude into Studio. It can reason over every reel you've saved
-            <span className="text-[hsl(var(--foreground))]"> and your cohort's learnings</span> — privately, only yours.
+            <span className="text-[hsl(var(--foreground))]"> and your cohort's learnings</span>. Privately, only yours.
           </p>
         </div>
       </div>
@@ -56,7 +56,7 @@ export default function ConnectAI() {
       ) : (
         <div className="mt-4 rounded-xl border border-[hsl(var(--accent-amber)/0.4)] bg-[hsl(var(--accent-amber)/0.06)] p-3">
           <p className="text-xs font-medium text-[hsl(var(--accent-amber))] flex items-center gap-1.5">
-            <ShieldCheck className="h-4 w-4" /> Copy this now — it's shown only once.
+            <ShieldCheck className="h-4 w-4" /> Copy this now. It's shown only once.
           </p>
           <div className="mt-2 flex items-center gap-2">
             <code className="flex-1 text-xs break-all rounded-lg bg-[hsl(var(--surface-2))] px-2 py-1.5">{issued.url}</code>

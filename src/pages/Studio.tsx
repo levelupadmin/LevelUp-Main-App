@@ -9,7 +9,7 @@ const STUDIO_TOOLS: StudioTool[] = [
   {
     id: "second-brain",
     name: "Second Brain",
-    tagline: "Every reel you admire — transcribed, filed, and readable by your AI.",
+    tagline: "Every reel you admire, transcribed, filed, and readable by your AI.",
     whatItDoes: [
       "Share or paste an Instagram reel or YouTube video; it's transcribed in seconds.",
       "File it into Learn / Adapt / Saved or your own folders, with a note on why.",
@@ -35,7 +35,7 @@ export default function Studio() {
         <div>
           <h1 className="heading-1">Studio</h1>
           <p className="text-sm text-[hsl(var(--muted-foreground))] -mt-0.5">
-            Your creative workspace — tools to get better every day
+            Your creative workspace, with tools to get better every day
           </p>
         </div>
       </header>

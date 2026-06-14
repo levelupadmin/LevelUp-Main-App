@@ -12,7 +12,7 @@ export default function StudioLocked() {
       </div>
       <h1 className="heading-1 mt-5">Studio is for cohort members</h1>
       <p className="text-[hsl(var(--muted-foreground))] mt-2">
-        Studio is your creative workspace — tools to keep getting better at your craft, like a private
+        Studio is your creative workspace, with tools to keep getting better at your craft, like a private
         swipe file that transcribes the reels you love and lets your own AI learn from them. It unlocks
         when you join a live cohort.
       </p>

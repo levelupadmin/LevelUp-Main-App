@@ -41,7 +41,7 @@ export default function StudioSecondBrain() {
     const v = url.trim();
     if (!looksCapturable(v)) { toast.error("Paste an Instagram reel or YouTube link."); return; }
     capture.mutate({ url: v, bucket: "saved" }, {
-      onSuccess: (r) => { setUrl(""); toast.success(r.dedup ? "Already in your Second Brain" : "Saved — transcribing now"); },
+      onSuccess: (r) => { setUrl(""); toast.success(r.dedup ? "Already in your Second Brain" : "Saved, transcribing now"); },
       onError: (e: Error) => toast.error(e.message),
     });
   };
@@ -51,7 +51,7 @@ export default function StudioSecondBrain() {
       const text = await navigator.clipboard.readText();
       if (looksCapturable(text)) setUrl(text.trim());
       else toast.error("No reel link on your clipboard.");
-    } catch { toast.error("Clipboard access is blocked here — paste manually."); }
+    } catch { toast.error("Clipboard access is blocked here. Paste manually."); }
   };
 
   const onNewFolder = () => {
@@ -94,7 +94,7 @@ export default function StudioSecondBrain() {
                 The reels you admire shouldn't vanish into Instagram's saves. Here's the loop:
               </p>
               <ul className="mt-2 space-y-1 text-sm text-[hsl(var(--muted-foreground))]">
-                <li><span className="text-[hsl(var(--foreground))] font-medium">1.</span> Paste or share a reel you love — it's transcribed in seconds.</li>
+                <li><span className="text-[hsl(var(--foreground))] font-medium">1.</span> Paste or share a reel you love, and it's transcribed in seconds.</li>
                 <li><span className="text-[hsl(var(--foreground))] font-medium">2.</span> File it into Learn / Adapt / Saved and note why you saved it.</li>
                 <li><span className="text-[hsl(var(--foreground))] font-medium">3.</span> Connect your AI below so it can build on everything you save.</li>
               </ul>
