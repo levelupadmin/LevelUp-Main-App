@@ -49,7 +49,7 @@ const MySessionsPage = () => {
           .eq("user_id", user.id)
           .eq("status", "active");
 
-        if (!enrolments?.length) { setLoading(false); return; }
+        if (!enrolments?.length) { setSessions([]); setLoading(false); return; }
 
         const offeringIds = enrolments.map((e) => e.offering_id);
 
@@ -58,7 +58,7 @@ const MySessionsPage = () => {
           .select("course_id")
           .in("offering_id", offeringIds);
 
-        if (!ocs?.length) { setLoading(false); return; }
+        if (!ocs?.length) { setSessions([]); setLoading(false); return; }
 
         const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
 
@@ -71,7 +71,7 @@ const MySessionsPage = () => {
           .in("course_id", courseIds)
           .order("scheduled_at", { ascending: true });
 
-        if (!sessionsData?.length) { setLoading(false); return; }
+        if (!sessionsData?.length) { setSessions([]); setLoading(false); return; }
 
         // Get course titles
         const sessionCourseIds = [...new Set(sessionsData.map((s) => s.course_id).filter((id): id is string => id !== null))];

@@ -207,7 +207,7 @@ const App = () => {
               {/* Browse merged into Home, keep old deep links working. */}
               <Route path="/browse" element={<Navigate to="/" replace />} />
               {/* Friendly alias for the sessions tab. */}
-              <Route path="/sessions" element={<Navigate to="/my-sessions" replace />} />
+              <Route path="/sessions" element={<Navigate to="/learn?seg=live" replace />} />
 
               {/* ─── Student routes share a single persistent layout ─── */}
               <Route element={<RequireAuth><StudentLayout /></RequireAuth>}>

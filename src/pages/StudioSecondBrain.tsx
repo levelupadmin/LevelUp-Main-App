@@ -55,8 +55,13 @@ export default function StudioSecondBrain() {
   };
 
   const onNewFolder = () => {
-    const name = window.prompt("New folder name");
-    if (name?.trim()) createFolder.mutate(name.trim(), { onError: (e: Error) => toast.error(e.message) });
+    const name = window.prompt("New folder name")?.trim();
+    if (!name) return;
+    if (name.length > 60) { toast.error("Folder name must be 60 characters or fewer."); return; }
+    createFolder.mutate(name, {
+      onSuccess: (f) => setFilter({ kind: "folder", value: f.id }),
+      onError: (e: Error) => toast.error(e.message),
+    });
   };
 
   if (enabled.isLoading) return <Skeleton className="h-48 w-full rounded-2xl max-w-5xl mx-auto" />;
@@ -147,6 +152,12 @@ export default function StudioSecondBrain() {
         {reels.isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
+          </div>
+        ) : reels.isError ? (
+          <div className="text-center py-14 text-[hsl(var(--muted-foreground))]">
+            <p className="font-medium text-[hsl(var(--foreground))]">Couldn't load your library</p>
+            <p className="text-sm mt-1">Check your connection and try again.</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => reels.refetch()}>Retry</Button>
           </div>
         ) : (reels.data?.length ?? 0) === 0 ? (
           <div className="text-center py-14 text-[hsl(var(--muted-foreground))]">

@@ -212,7 +212,7 @@ const StudentLayout = ({ children }: Props) => {
             </div>
             <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1">
               {navItems.map((item) => {
-                const active = location.pathname === item.path;
+                const active = location.pathname === item.path || location.pathname.startsWith(item.path + "/");
                 return (
                   <Link
                     key={item.path}
@@ -319,7 +319,7 @@ const StudentLayout = ({ children }: Props) => {
 
               {dropdownOpen && (
                 <>
-                  <div className="fixed inset-0" onClick={() => setDropdownOpen(false)} />
+                  <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
                   <div data-overlay-open="true" className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-lg shadow-lg py-1 z-50">
                     {(profile?.role === "admin" || profile?.role === "owner") && (
                       <button

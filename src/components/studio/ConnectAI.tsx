@@ -20,13 +20,18 @@ export default function ConnectAI() {
   const revoke = useMutation({
     mutationFn: studio.revokeMcpKey,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["studio", "keys"] }),
+    onError: (e: Error) => toast.error(e.message),
   });
 
-  const copy = (text: string) => {
-    navigator.clipboard?.writeText(text);
-    setCopied(true);
-    toast.success("Copied");
-    setTimeout(() => setCopied(false), 1500);
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      toast.success("Copied");
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Couldn't copy — select the URL and copy it manually.");
+    }
   };
 
   return (
@@ -89,8 +94,8 @@ export default function ConnectAI() {
                 <span className="text-[hsl(var(--muted-foreground))]">
                   {k.last_used_at ? `used ${new Date(k.last_used_at).toLocaleDateString()}` : "never used"}
                 </span>
-                <Button size="sm" variant="ghost" className="ml-auto h-6 px-2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--destructive))]"
-                  onClick={() => revoke.mutate(k.id)}>
+                <Button size="sm" variant="ghost" className="ml-auto h-8 px-2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--destructive))]"
+                  onClick={() => revoke.mutate(k.id)} disabled={revoke.isPending}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>

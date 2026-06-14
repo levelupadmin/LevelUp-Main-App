@@ -69,7 +69,12 @@ export async function listReels(opts: { bucket?: Bucket | "all"; folderId?: stri
       .select("cb_reels(*)")
       .eq("folder_id", opts.folderId);
     if (error) throw error;
-    const reels = (data || []).map((r) => (r as { cb_reels: Reel }).cb_reels).filter(Boolean);
+    let reels = (data || []).map((r) => (r as { cb_reels: Reel }).cb_reels).filter(Boolean);
+    if (opts.q && opts.q.trim()) {
+      const needle = opts.q.trim().toLowerCase();
+      reels = reels.filter((r) =>
+        `${r.transcript ?? ""} ${r.caption ?? ""} ${r.title ?? ""} ${r.creator_username ?? ""}`.toLowerCase().includes(needle));
+    }
     return reels.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   }
   let query = supabase.from("cb_reels").select("*").order("created_at", { ascending: false }).limit(300);

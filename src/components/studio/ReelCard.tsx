@@ -87,8 +87,8 @@ export default function ReelCard({ reel }: { reel: Reel }) {
           </Button>
         </a>
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--destructive))]"
-          onClick={() => del.mutate(reel.id)} aria-label="Delete">
-          <Trash2 className="h-3.5 w-3.5" />
+          onClick={() => { if (window.confirm("Remove this reel from your Second Brain? This can't be undone.")) del.mutate(reel.id); }} aria-label="Delete" style={{ minWidth: 36, minHeight: 36 }}>
+          <Trash2 className="h-4 w-4" />
         </Button>
       </div>
 

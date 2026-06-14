@@ -166,7 +166,7 @@ export default function CheckoutPage() {
           .maybeSingle();
         if (!appData) {
           toast.error("This application isn't available on your account.");
-          navigate("/my-courses");
+          navigate("/learn?seg=courses");
           return;
         }
         setApplication(appData);

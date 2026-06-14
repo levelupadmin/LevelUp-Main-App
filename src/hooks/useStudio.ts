@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as studio from "@/lib/studio";
 import type { Bucket, Reel } from "@/lib/studio";
+import { toast } from "@/lib/toast";
 
 export function useStudioEnabled() {
   return useQuery({
@@ -46,6 +47,7 @@ export function useUpdateReel() {
     mutationFn: ({ id, patch }: { id: string; patch: Partial<Pick<Reel, "bucket" | "note" | "tags" | "highlights">> }) =>
       studio.updateReel(id, patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["studio", "reels"] }),
+    onError: (e: Error) => toast.error(e.message),
   });
 }
 
@@ -54,6 +56,7 @@ export function useDeleteReel() {
   return useMutation({
     mutationFn: (id: string) => studio.deleteReel(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["studio", "reels"] }),
+    onError: (e: Error) => toast.error(e.message),
   });
 }
 

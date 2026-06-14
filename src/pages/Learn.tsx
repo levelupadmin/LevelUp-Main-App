@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import MyCoursesPage from "./MyCoursesPage";
 import MySessionsPage from "./MySessionsPage";
@@ -20,6 +21,7 @@ export default function Learn() {
   const raw = params.get("seg");
   const seg: Seg = (SEGMENTS.some((s) => s.key === raw) ? raw : "courses") as Seg;
   const setSeg = (k: Seg) => setParams({ seg: k }, { replace: true });
+  useEffect(() => { window.scrollTo({ top: 0 }); }, [seg]);
 
   return (
     <div>

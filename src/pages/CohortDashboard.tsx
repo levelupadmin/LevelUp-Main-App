@@ -138,7 +138,7 @@ export default function CohortDashboard() {
     return (
       <div className="container max-w-3xl py-16 text-center">
         <p className="text-muted-foreground">Cohort not found.</p>
-        <Link to="/my-courses" className="text-sm text-cream hover:underline">Back to My Courses</Link>
+        <Link to="/learn?seg=courses" className="text-sm text-cream hover:underline">Back to My Courses</Link>
       </div>
     );
   }
@@ -151,7 +151,7 @@ export default function CohortDashboard() {
         <p className="text-sm text-muted-foreground mb-4">
           Your cohort starts soon. We'll fill out the weekly schedule here as it locks in.
         </p>
-        <Link to="/my-courses" className="text-sm text-cream hover:underline">← Back to My Courses</Link>
+        <Link to="/learn?seg=courses" className="text-sm text-cream hover:underline">← Back to My Courses</Link>
       </div>
     );
   }

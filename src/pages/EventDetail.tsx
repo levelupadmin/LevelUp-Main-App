@@ -214,7 +214,7 @@ const EventDetail = () => {
       <>
         <div className="text-center py-20">
           <p className="text-muted-foreground">Event not found</p>
-          <Link to="/events" className="text-sm text-cream mt-2 inline-block">← Back to events</Link>
+          <Link to="/learn?seg=calendar" className="text-sm text-cream mt-2 inline-block">← Back to events</Link>
         </div>
       </>
     );
@@ -244,7 +244,7 @@ const EventDetail = () => {
     <>
       {/* Breadcrumb */}
       <div className="mb-6">
-        <Link to="/events" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5">
+        <Link to="/learn?seg=calendar" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5">
           <ArrowLeft className="h-3.5 w-3.5" /> Events
         </Link>
       </div>

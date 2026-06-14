@@ -96,7 +96,7 @@ const UpcomingSessions = () => {
     <section>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-lg font-semibold">Your next live session</h2>
-        <Link to="/my-sessions" className="text-sm text-cream flex items-center gap-1">
+        <Link to="/learn?seg=live" className="text-sm text-cream flex items-center gap-1">
           See all <ArrowRight className="h-3 w-3" />
         </Link>
       </div>
@@ -106,7 +106,7 @@ const UpcomingSessions = () => {
           return (
             <Link
               key={s.id}
-              to="/my-sessions"
+              to="/learn?seg=live"
               className="pressable bg-surface border border-border rounded-2xl p-4 flex items-center gap-4 hover:border-border-hover transition-colors"
             >
               {/* Date chip */}

@@ -195,7 +195,7 @@ const UpcomingEvents = () => {
           <h2 className="text-lg font-semibold">Upcoming events</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Get facetime with some of the brightest minds in film, design, and creative tech.</p>
         </div>
-        <Link to="/events" className="text-sm text-cream flex items-center gap-1 flex-shrink-0">View all events <ArrowRight className="h-3 w-3" /></Link>
+        <Link to="/learn?seg=calendar" className="text-sm text-cream flex items-center gap-1 flex-shrink-0">View all events <ArrowRight className="h-3 w-3" /></Link>
       </div>
       <div className="flex gap-4 overflow-x-auto snap-x hide-scrollbar pb-2 lg:grid lg:grid-cols-4 lg:overflow-visible">
         {events.map((ev) => {

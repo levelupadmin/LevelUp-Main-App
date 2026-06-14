@@ -740,7 +740,7 @@ const ChapterViewer = () => {
           You need to enrol in this course to access this chapter.
         </p>
         <div className="flex gap-3">
-          <Button variant="outline" onClick={() => navigate("/my-courses")}>
+          <Button variant="outline" onClick={() => navigate("/learn?seg=courses")}>
             My Courses
           </Button>
           <Button
@@ -826,7 +826,7 @@ const ChapterViewer = () => {
         <div className="flex-1 min-w-0 p-4 lg:p-8 xl:p-10 2xl:p-12 space-y-6">
           {/* Breadcrumb: hidden on mobile since top bar has back + title */}
           <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground mb-4 flex-wrap">
-            <Link to="/my-courses" className="hover:text-foreground transition-colors">My Courses</Link>
+            <Link to="/learn?seg=courses" className="hover:text-foreground transition-colors">My Courses</Link>
             <span>&rsaquo;</span>
             {courseId && courseTitle && (
               <>
