@@ -452,11 +452,11 @@ const Login = () => {
               Make. Ship. Repeat.
             </p>
             <h2 className="text-[44px] xl:text-[56px] leading-[1.02] font-semibold text-foreground mb-4 max-w-[14ch]">
-              Make your <span className="font-serif-italic text-cream">first film</span>.
+              Make your <span className="font-serif-italic text-cream">best work</span>.
             </h2>
             <p className="text-base text-muted-foreground max-w-[440px] leading-relaxed">
-              Cohorts, masterclasses, and craft programs taught by India's
-              best working filmmakers, editors, photographers, and storytellers.
+              Cohorts, masterclasses, and craft programs across film, writing,
+              design, content, and AI — taught by India's best working creators.
             </p>
           </div>
         </div>
@@ -468,10 +468,10 @@ const Login = () => {
           <LevelUpWordmark className="h-7 w-auto text-foreground" />
           <div className="flex-1 flex flex-col justify-end">
             <h1 className="text-[44px] sm:text-[52px] leading-[1.02] font-semibold text-foreground max-w-[12ch]">
-              Make your <span className="font-serif-italic text-cream">first film</span>.
+              Make your <span className="font-serif-italic text-cream">best work</span>.
             </h1>
             <p className="text-sm text-muted-foreground mt-4 max-w-[34ch]">
-              Learn the craft directly from India's best working filmmakers.
+              Learn from India's best — across film, writing, design, content, and AI.
             </p>
 
             <div className="mt-7 space-y-3">
