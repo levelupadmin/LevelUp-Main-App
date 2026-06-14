@@ -1040,7 +1040,7 @@ const ChapterViewer = () => {
                 className="text-base sm:text-sm resize-none"
               />
               <p className="text-[10px] text-muted-foreground/60">
-                Syncs to your account &mdash; you'll see these notes on any device you sign in on.
+                Syncs to your account. You'll see these notes on any device you sign in on.
               </p>
             </TabsContent>
 
