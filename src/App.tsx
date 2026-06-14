@@ -38,6 +38,7 @@ const CheckoutPage = lazy(() => import("@/pages/CheckoutPage"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const MyCoursesPage = lazy(() => import("@/pages/MyCoursesPage"));
 const Studio = lazy(() => import("@/pages/Studio"));
+const StudioSecondBrain = lazy(() => import("@/pages/StudioSecondBrain"));
 const Learn = lazy(() => import("@/pages/Learn"));
 const MySessionsPage = lazy(() => import("@/pages/MySessionsPage"));
 const EventsPage = lazy(() => import("@/pages/EventsPage"));
@@ -217,6 +218,7 @@ const App = () => {
                 <Route path="/community" element={<CommunityPage />} />
                 <Route path="/my-courses" element={<Navigate to="/learn?seg=courses" replace />} />
                 <Route path="/studio" element={<Studio />} />
+                <Route path="/studio/second-brain" element={<StudioSecondBrain />} />
                 <Route path="/my-sessions" element={<Navigate to="/learn?seg=live" replace />} />
                 <Route path="/events" element={<Navigate to="/learn?seg=calendar" replace />} />
                 <Route path="/events/:eventId" element={<EventDetail />} />

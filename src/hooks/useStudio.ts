@@ -5,7 +5,13 @@ import type { Bucket, Reel } from "@/lib/studio";
 export function useStudioEnabled() {
   return useQuery({
     queryKey: ["studio", "enabled"],
-    queryFn: studio.isStudioEnabled,
+    queryFn: async () => {
+      // Dev-only escape hatch so Studio can be built/previewed without a cohort
+      // enrolment. import.meta.env.DEV is statically false in production builds,
+      // so this branch is tree-shaken out and never ships.
+      if (import.meta.env.DEV && import.meta.env.VITE_STUDIO_DEV_UNLOCK === "true") return true;
+      return studio.isStudioEnabled();
+    },
     staleTime: 60_000,
   });
 }
