@@ -59,6 +59,12 @@ describe("gstInr", () => {
     expect(gstInr(1000, null, 18)).toBe(0);
     expect(gstInr(1000, undefined, 18)).toBe(0);
   });
+  it("rounds inclusive and exclusive independently (they differ on the same base)", () => {
+    // Inclusive extracts: round(100 - 100/1.18) = round(15.2542) = 15.
+    // Exclusive adds:     round(100 * 18/100)   = 18.
+    expect(gstInr(100, "inclusive", 18)).toBe(15);
+    expect(gstInr(100, "exclusive", 18)).toBe(18);
+  });
 });
 
 describe("totalInr", () => {
@@ -109,6 +115,24 @@ describe("couponInvalidReason", () => {
       .toBe("not_applicable");
     expect(couponInvalidReason({ applies_to_offering_id: "off-1" }, OFFERING, now))
       .toBeNull();
+  });
+
+  it("returns the FIRST failing check when several fail (date → cap → applicability)", () => {
+    // Every check fails at once; the order must stay date → cap → applicability,
+    // because each caller maps the reason to a different message/behaviour.
+    const allBad = {
+      valid_from: "2026-07-01T00:00:00Z", // not yet active
+      max_redemptions: 5,
+      used_count: 5, // over cap
+      applies_to_offering_id: "off-2", // wrong offering
+    };
+    expect(couponInvalidReason(allBad, OFFERING, now)).toBe("not_yet_active");
+    // Drop the date problem → cap wins over applicability.
+    expect(couponInvalidReason({ max_redemptions: 5, used_count: 5, applies_to_offering_id: "off-2" }, OFFERING, now))
+      .toBe("limit_reached");
+    // Expired beats cap + applicability too.
+    expect(couponInvalidReason({ valid_until: "2026-06-01T00:00:00Z", max_redemptions: 5, used_count: 5, applies_to_offering_id: "off-2" }, OFFERING, now))
+      .toBe("expired");
   });
 });
 

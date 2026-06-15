@@ -102,4 +102,13 @@ describe("phoneBinding — the account-takeover guard", () => {
   it("returns 'unknown' when the caller phone has no 10 digits", () => {
     expect(phoneBinding("123", { message: "anything" }, "")).toBe("unknown");
   });
+
+  it("matches if EITHER source carries the right number (OR-of-candidates)", () => {
+    // message wrong but JWT right → match
+    expect(phoneBinding(PHONE, { message: "919999999999 verified" }, jwtWith({ mobile: "919788385577" })))
+      .toBe("match");
+    // message right but JWT wrong → still match
+    expect(phoneBinding(PHONE, { message: "919788385577 ok" }, jwtWith({ mobile: "919999999999" })))
+      .toBe("match");
+  });
 });
