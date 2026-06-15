@@ -1,5 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeaders } from "../_shared/cors.ts";
+import {
+  couponDiscountInr,
+  couponInvalidReason,
+  gstInr as computeGstInr,
+  totalInr as computeTotalInr,
+  toPaise,
+} from "../_shared/pricing.ts";
+import { normalizePhone } from "../_shared/phone.ts";
 
 function encodeBase64(str: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
@@ -10,13 +18,6 @@ function jsonRes(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-function normalizePhone(phone: string): string | null {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
-  if (digits.length === 10) return digits;
-  return null; // Invalid phone length
 }
 
 function getClientIp(req: Request): string {
@@ -139,30 +140,16 @@ Deno.serve(async (req) => {
         .single();
 
       if (coupon) {
-        const now = new Date();
-        const validFrom = coupon.valid_from ? new Date(coupon.valid_from) : null;
-        const validUntil = coupon.valid_until ? new Date(coupon.valid_until) : null;
-        const withinDates =
-          (!validFrom || now >= validFrom) && (!validUntil || now <= validUntil);
-        const underMax =
-          !coupon.max_redemptions || coupon.used_count < coupon.max_redemptions;
-        const appliesToThis =
-          !coupon.applies_to_offering_id ||
-          coupon.applies_to_offering_id === offering_id;
-
-        if (withinDates && underMax && appliesToThis) {
+        // Guests get no add-on bumps, so the coupon applies to the base price
+        // only. An invalid coupon is silently skipped (discount stays 0) — same
+        // behaviour as before; the validity + discount math is now shared.
+        if (couponInvalidReason(coupon, offering_id, new Date()) === null) {
           couponDbId = coupon.id;
-          const subtotalBeforeDiscount = Number(offering.price_inr);
-          if (coupon.discount_type === "percent") {
-            // Clamp percent to 0–100 (guard mis-entered coupon values).
-            const pct = Math.min(100, Math.max(0, Number(coupon.discount_value)));
-            discountInr = Math.round((subtotalBeforeDiscount * pct) / 100);
-          } else {
-            discountInr = Math.min(
-              Number(coupon.discount_value),
-              subtotalBeforeDiscount
-            );
-          }
+          discountInr = couponDiscountInr(
+            coupon.discount_type,
+            Number(coupon.discount_value),
+            Number(offering.price_inr),
+          );
         }
       }
     }
@@ -170,18 +157,8 @@ Deno.serve(async (req) => {
     /* ── Totals ── */
     const subtotalInr = Number(offering.price_inr);
     const afterDiscount = Math.max(subtotalInr - discountInr, 0);
-    let gstInr = 0;
-    if (offering.gst_mode === "inclusive") {
-      gstInr = Math.round(
-        afterDiscount - afterDiscount / (1 + Number(offering.gst_rate || 18) / 100)
-      );
-    } else if (offering.gst_mode === "exclusive") {
-      gstInr = Math.round(
-        (afterDiscount * Number(offering.gst_rate || 18)) / 100
-      );
-    }
-    const totalInr =
-      offering.gst_mode === "exclusive" ? afterDiscount + gstInr : afterDiscount;
+    const gstInr = computeGstInr(afterDiscount, offering.gst_mode, Number(offering.gst_rate || 18));
+    const totalInr = computeTotalInr(afterDiscount, offering.gst_mode, gstInr);
 
     /* ── payment_orders row (guest, no user_id) ── */
     const { data: po, error: poErr } = await admin
@@ -336,7 +313,7 @@ Deno.serve(async (req) => {
     }
 
     /* ── Razorpay order (paid offerings) ── */
-    const amountPaise = Math.round(totalInr * 100);
+    const amountPaise = toPaise(totalInr);
     const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID")?.trim();
     const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET")?.trim();
     if (!razorpayKeyId || !razorpayKeySecret) {

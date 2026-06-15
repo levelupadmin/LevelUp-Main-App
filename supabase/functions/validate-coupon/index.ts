@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeaders } from "../_shared/cors.ts";
+import { couponDiscountInr, couponInvalidReason } from "../_shared/pricing.ts";
 
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -84,30 +85,20 @@ Deno.serve(async (req) => {
 
     if (!coupon) return jsonRes({ valid: false, error: "Invalid coupon" });
 
-    const now = new Date();
-    const validFrom = coupon.valid_from ? new Date(coupon.valid_from) : null;
-    const validUntil = coupon.valid_until ? new Date(coupon.valid_until) : null;
-    const withinDates =
-      (!validFrom || now >= validFrom) && (!validUntil || now <= validUntil);
-    const underMax =
-      !coupon.max_redemptions || coupon.used_count < coupon.max_redemptions;
-    const appliesToThis =
-      !coupon.applies_to_offering_id ||
-      coupon.applies_to_offering_id === offering_id;
-
-    if (!withinDates) return jsonRes({ valid: false, error: "Coupon has expired" });
-    if (!underMax) return jsonRes({ valid: false, error: "Coupon has reached its limit" });
-    if (!appliesToThis) return jsonRes({ valid: false, error: "Coupon does not apply to this offering" });
-
-    const price = Number(offering.price_inr);
-    let discountInr = 0;
-    if (coupon.discount_type === "percent") {
-      // Clamp percent to 0–100 (guard mis-entered coupon values).
-      const pct = Math.min(100, Math.max(0, Number(coupon.discount_value)));
-      discountInr = Math.round((price * pct) / 100);
-    } else {
-      discountInr = Math.min(Number(coupon.discount_value), price);
+    // Validity (dates / cap / applicability) is shared with the order paths.
+    // This preview has always shown a single "expired" message for any date
+    // failure, so not_yet_active maps there too (behaviour preserved).
+    const reason = couponInvalidReason(coupon, offering_id, new Date());
+    if (reason === "not_yet_active" || reason === "expired") {
+      return jsonRes({ valid: false, error: "Coupon has expired" });
     }
+    if (reason === "limit_reached") return jsonRes({ valid: false, error: "Coupon has reached its limit" });
+    if (reason === "not_applicable") return jsonRes({ valid: false, error: "Coupon does not apply to this offering" });
+
+    // Public preview discounts the base price only (bumps are chosen later, on
+    // the checkout page). That's an intentional difference from the order paths.
+    const price = Number(offering.price_inr);
+    const discountInr = couponDiscountInr(coupon.discount_type, Number(coupon.discount_value), price);
 
     // Only return fields the UI needs. Never expose used_count / max_redemptions.
     // id and code are safe: create-razorpay-order re-fetches and re-validates

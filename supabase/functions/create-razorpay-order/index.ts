@@ -1,5 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeaders } from "../_shared/cors.ts";
+import {
+  couponDiscountInr,
+  couponInvalidReason,
+  gstInr as computeGstInr,
+  totalInr as computeTotalInr,
+  toPaise,
+} from "../_shared/pricing.ts";
 
 function encodeBase64(str: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
@@ -192,60 +199,44 @@ Deno.serve(async (req) => {
         return jsonRes({ error: "Coupon is not valid" }, 400);
       }
 
-      const now = new Date();
-      const validFrom = coupon.valid_from ? new Date(coupon.valid_from) : null;
-      const validUntil = coupon.valid_until ? new Date(coupon.valid_until) : null;
-      if (validFrom && now < validFrom) {
+      // Validity (dates / cap / applicability) lives in _shared/pricing.ts so
+      // all three order paths agree. We still fail LOUDLY here so the frontend
+      // can show a precise error.
+      const reason = couponInvalidReason(coupon, offering_id, new Date());
+      if (reason === "not_yet_active") {
         return jsonRes({ error: "Coupon is not yet active" }, 400);
       }
-      if (validUntil && now > validUntil) {
+      if (reason === "expired") {
         return jsonRes({ error: "Coupon has expired" }, 400);
       }
-      if (coupon.max_redemptions && coupon.used_count >= coupon.max_redemptions) {
+      if (reason === "limit_reached") {
         return jsonRes({ error: "Coupon has reached its usage limit" }, 400);
       }
-      if (
-        coupon.applies_to_offering_id &&
-        coupon.applies_to_offering_id !== offering_id
-      ) {
+      if (reason === "not_applicable") {
         return jsonRes({ error: "Coupon does not apply to this offering" }, 400);
       }
 
       couponDbId = coupon.id;
+      // Logged-in checkout discounts the FULL order (price + bumps). The shared
+      // helper clamps percent to 0–100 and caps a flat discount at the base.
       const subtotalBeforeDiscount = Number(offering.price_inr) + bumpTotal;
-      if (coupon.discount_type === "percent") {
-        // Clamp percent to 0–100 so a mis-entered coupon (e.g. value 150)
-        // can't discount more than the subtotal.
-        const pct = Math.min(100, Math.max(0, Number(coupon.discount_value)));
-        discountInr = Math.round((subtotalBeforeDiscount * pct) / 100);
-      } else {
-        discountInr = Math.min(
-          Number(coupon.discount_value),
-          subtotalBeforeDiscount
-        );
-      }
+      discountInr = couponDiscountInr(
+        coupon.discount_type,
+        Number(coupon.discount_value),
+        subtotalBeforeDiscount,
+      );
     }
 
     /* ── Totals ── */
     const subtotalInr = stagedAmountInr != null ? stagedAmountInr : Number(offering.price_inr) + bumpTotal;
     const afterDiscount = stagedAmountInr != null ? stagedAmountInr : Math.max(subtotalInr - discountInr, 0);
-    let gstInr = 0;
-    if (offering.gst_mode === "inclusive") {
-      gstInr = Math.round(
-        afterDiscount - afterDiscount / (1 + Number(offering.gst_rate || 18) / 100)
-      );
-    } else if (offering.gst_mode === "exclusive") {
-      gstInr = Math.round(
-        (afterDiscount * Number(offering.gst_rate || 18)) / 100
-      );
-    }
-    const totalInr =
-      offering.gst_mode === "exclusive" ? afterDiscount + gstInr : afterDiscount;
+    const gstInr = computeGstInr(afterDiscount, offering.gst_mode, Number(offering.gst_rate || 18));
+    const totalInr = computeTotalInr(afterDiscount, offering.gst_mode, gstInr);
 
     if (totalInr <= 0)
       return jsonRes({ error: "Total must be > 0" }, 400);
 
-    const amountPaise = Math.round(totalInr * 100);
+    const amountPaise = toPaise(totalInr);
 
     /* ── Idempotency ──
        If the user already has a recent 'created' payment_order for the

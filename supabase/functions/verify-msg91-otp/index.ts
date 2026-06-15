@@ -28,6 +28,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { e164, phoneBinding, phoneVariants, syntheticEmail } from "../_shared/phone.ts";
 
 const SUPABASE_URL     = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -81,9 +82,7 @@ Deno.serve(async (req) => {
 
   // Normalise to E.164 with leading +. The widget validates digits-only,
   // so an incoming "+919884731816" or "919884731816" both reach here.
-  const normPhone = body.phone.startsWith("+")
-    ? body.phone
-    : `+${body.phone.replace(/^0+/, "")}`;
+  const normPhone = e164(body.phone);
 
   // ─ 0. App Review demo login (reserved number + secret code) ─────────
   const reviewMode = normPhone === REVIEW_PHONE && !!body.reviewCode;
@@ -224,16 +223,11 @@ Deno.serve(async (req) => {
 
   if (!signupEmail || !signupName) {
     // legacy_enrolments stores phone normalised to +91XXXXXXXXXX, but
-    // match a few historical formats defensively.
-    const phoneVariants = [
-      normPhone,                      // +919788385577
-      normPhone.replace(/^\+/, ""),   // 919788385577
-      normPhone.replace(/^\+91/, ""), // 9788385577
-    ];
+    // match a few historical formats defensively (see _shared/phone.ts).
     const { data: legacyRows } = await admin
       .from("legacy_enrolments")
       .select("email, full_name")
-      .in("phone", phoneVariants);
+      .in("phone", phoneVariants(normPhone));
     legacyMatched = !!(legacyRows && legacyRows.length > 0);
     // Prefer a row that actually has an email (we need it to mint a
     // session); fall back to any matching row for the name.
@@ -350,16 +344,6 @@ async function findUserByEmail(
   };
 }
 
-// A placeholder email we control, derived deterministically from the phone,
-// for legacy customers with no email on file. The domain carries no MX record,
-// so nothing is ever delivered; it exists purely so GoTrue's email-based
-// magiclink can mint a session for a phone-only user. The "@phone." prefix is
-// self-documenting so the app/admin can detect these and prompt for a real
-// email later.
-function syntheticEmail(normPhone: string): string {
-  return `${normPhone.replace(/\D/g, "")}@phone.leveluplearning.in`;
-}
-
 // Attach a synthetic email to an existing phone-only auth user so we can mint a
 // magiclink session for them. Marked confirmed; the address is ours and only
 // needs to exist on the record for generateLink to work. Returns the email, or
@@ -409,52 +393,3 @@ async function mintSession(
   };
 }
 
-// Last 10 digits of a phone string, the subscriber part, stable across
-// "+919788385577" / "919788385577" / "9788385577". "" if < 10 digits.
-function last10(s: string): string {
-  const d = (s || "").replace(/\D/g, "");
-  return d.length >= 10 ? d.slice(-10) : "";
-}
-
-// Does the phone MSG91 actually verified match the phone the caller
-// claims (normPhone)? We gather every phone-like value MSG91 vouched for
-// (the verify response `message`, which carries the mobile on success,
-// plus any mobile/phone/msisdn claim inside the access-token JWT) and
-// compare on the last-10 subscriber digits.
-//   "match":    a recovered identifier equals the caller's phone
-//   "mismatch": we recovered ≥1 identifier and NONE match → takeover
-//   "unknown":  nothing phone-like recoverable (caller proceeds; logged)
-// Note: we ONLY inspect phone-named JWT claims, never iat/exp/nbf, so a
-// 10-digit Unix timestamp can't masquerade as a phone and produce a
-// false mismatch that would block a legitimate login.
-function phoneBinding(
-  normPhone: string,
-  verifyData: { message?: string; type?: string },
-  accessToken: string,
-): "match" | "mismatch" | "unknown" {
-  const want = last10(normPhone);
-  if (!want) return "unknown";
-
-  const candidates: string[] = [];
-  if (verifyData?.message) candidates.push(String(verifyData.message));
-
-  // Best-effort decode of the JWT payload (middle base64url segment).
-  try {
-    const seg = (accessToken || "").split(".")[1];
-    if (seg) {
-      const b64 = seg.replace(/-/g, "+").replace(/_/g, "/")
-        .padEnd(Math.ceil(seg.length / 4) * 4, "=");
-      const claims = JSON.parse(atob(b64)) as Record<string, unknown>;
-      for (const [k, v] of Object.entries(claims)) {
-        if ((typeof v === "string" || typeof v === "number") &&
-            /mobile|phone|msisdn/i.test(k)) {
-          candidates.push(String(v));
-        }
-      }
-    }
-  } catch { /* not a decodable JWT, rely on `message` */ }
-
-  const phoneLike = candidates.map(last10).filter(Boolean);
-  if (phoneLike.length === 0) return "unknown";
-  return phoneLike.includes(want) ? "match" : "mismatch";
-}
