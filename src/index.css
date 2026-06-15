@@ -210,6 +210,18 @@
     max-width: 100vw;
   }
 
+  /* CRITICAL — touch devices must NOT use `overflow-x: clip` on the root/body.
+     Chromium (Android System WebView + Android Chrome) has a bug where `clip`
+     on the scroll root propagates to the viewport and KILLS vertical scrolling
+     entirely. `hidden` never had this problem and scrolled fine on Android/iOS
+     for 600+ builds. So: coarse-pointer (touch) devices get `hidden` back;
+     desktop fine-pointer devices keep `clip` above (the Mac momentum/Magic-Mouse
+     fix, which is a desktop-only concern). This splits the two requirements
+     cleanly — every device gets the value that scrolls. */
+  @media (pointer: coarse) {
+    html, body { overflow-x: hidden; }
+  }
+
   /* Prevent 300ms tap delay & double-tap zoom on all interactive elements */
   button, a, [role="button"], input, select, textarea, label {
     touch-action: manipulation;
