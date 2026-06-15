@@ -6,6 +6,54 @@ from this repo and has been used to push live builds.
 
 ---
 
+## Change-risk tiers & pre-ship checklist — gate every fix on BLAST RADIUS, not diff size
+
+A one-line change to a shared surface is higher-risk than a 200-line change to one
+leaf component. (This rule exists because a 1-word CSS edit — `overflow-x:
+hidden`→`clip` on html/body — broke vertical scroll for ALL Android users on
+2026-06-14 and shipped to 100% prod because it *looked* trivial. The document root
+is the scroller, and `clip` on it propagates to the viewport on Chromium/Android,
+killing vertical scroll.)
+
+### Tiers (gate on what the change can AFFECT, not how big the diff looks)
+- 🔴 **Tier 1 — high blast radius → council + cross-platform verify + staged
+  rollout.** Triggers: `src/index.css`, html/body, scroll/layout roots, routing,
+  auth & session, env/config, the Capacitor native shell, payments/Razorpay,
+  Supabase migrations & RLS, any edge function on the login path, anything in
+  shared `src/` that affects all screens.
+- 🟡 **Tier 2 — component scope → adversarial self-review + verify the surfaces it
+  touches.** Single-component logic/UI, one page, one edge function.
+- 🟢 **Tier 3 — trivial → verify it builds + ship.** Copy, one visual tweak, docs.
+
+### Tier-1 pre-ship checklist (all must pass)
+1. **Council:** `Workflow({ name: "bugfix-council", args: { fix, files, scope } })`
+   — resolve every blocking issue. Its job is to ARGUE the fix, not approve it.
+2. **Cross-platform verify EVERY surface it renders on**, not just the one you
+   optimized for. Shared `src/` = desktop web AND Android (System WebView + Chrome)
+   AND iOS WKWebView. For CSS/scroll/layout, verify on a real Android surface —
+   desktop Chrome diverges from Android Blink (that's the `clip` bug).
+3. **Reversibility:** know the undo (git revert; migrations reversible / backed up).
+4. **Staged rollout** for store releases — never 100% on the first push (below).
+5. **If it regresses anyway:** write the one-line lesson into this file + memory so
+   the class can't recur.
+
+### Staged (phased) rollout — what it is
+Release a new build to a SMALL fraction of users first, watch crash/error/complaint
+signals, then widen only if healthy. A bad build reaches a few users, not all — and
+you halt instead of firefighting a full outage.
+- **Android (Play):** a production release can ship `status:"inProgress"` +
+  `userFraction` (0.1 = 10%) instead of `status:"completed"` (=100%). Ramp by
+  raising the fraction, or **halt** to freeze it. `scripts/play-publish.mjs` ships
+  100% today — it needs a `--rollout <fraction>` flag to stage. Default Tier-1
+  releases to ~10–20%, hold a few hours, then complete to 100%.
+- **iOS (App Store):** enable **Phased Release** — Apple ramps automatic updates
+  over 7 days (1→2→5→10→20→50→100%), pausable anytime. TestFlight is the stage
+  before public.
+- **Web (Vercel):** effectively instant + 100%, so the net is fast post-deploy
+  verification on prod (already standard here) + a `git revert` rollback.
+
+---
+
 ## Release & deploy capability — YOU can publish this app yourself
 
 **You are not blocked on a human for the actual publish.** This repo carries a
