@@ -4,6 +4,12 @@ This file is auto-loaded by Claude Code. Read the **Release & deploy capability*
 section before assuming any ship step needs a human — most of it is scriptable
 from this repo and has been used to push live builds.
 
+> **How the app is built (not just shipped):** see **[ARCHITECTURE.md](ARCHITECTURE.md)**
+> — the feature→file map, the money flow, the login flow, the data-model glossary, and
+> the pure shared logic in `supabase/functions/_shared/` (`pricing.ts`, `phone.ts`,
+> `crypto.ts`). Read it before changing a feature so you don't rediscover the layout
+> each time. This CLAUDE.md is the *release* runbook; ARCHITECTURE.md is the *code* map.
+
 ---
 
 ## Change-risk tiers & pre-ship checklist — gate every fix on BLAST RADIUS, not diff size
