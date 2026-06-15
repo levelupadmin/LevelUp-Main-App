@@ -1,5 +1,8 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
+import { useCheckoutPricing } from "@/hooks/useCheckoutPricing";
+import { useCheckoutCoupon } from "@/hooks/useCheckoutCoupon";
+import { useGuestCheckout } from "@/hooks/useGuestCheckout";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -61,19 +64,13 @@ export default function CheckoutPage() {
 
   // User selections
   const [selectedBumps, setSelectedBumps] = useState<Set<string>>(new Set());
-  const [couponCode, setCouponCode] = useState("");
-  // Coupon preview returned by the validate-coupon edge function.
-  // We deliberately do NOT reuse Tables<"coupons"> here. The coupons
-  // table is locked down and we should only ever hold the discount
-  // preview fields in client state. id/code are safe because
-  // create-razorpay-order re-fetches and re-validates the full row.
-  const [appliedCoupon, setAppliedCoupon] = useState<{
-    id: string;
-    code: string;
-    discount_type: "percent" | "flat" | string;
-    discount_value: number;
-  } | null>(null);
-  const [couponLoading, setCouponLoading] = useState(false);
+  // Coupon entry + apply/remove. Validation runs through the validate-coupon
+  // edge function (the coupons table is admin-read-only). See useCheckoutCoupon.
+  const {
+    couponCode, setCouponCode,
+    appliedCoupon, couponLoading,
+    applyCoupon, removeCoupon,
+  } = useCheckoutCoupon(offeringId);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [fieldTouched, setFieldTouched] = useState<Record<string, boolean>>({});
   const [paying, setPaying] = useState(false);
@@ -81,14 +78,12 @@ export default function CheckoutPage() {
   const [application, setApplication] = useState<any>(null);
   const [totalPreviouslyPaid, setTotalPreviouslyPaid] = useState(0);
 
-  // Guest checkout fields. Only used when there's no user session.
-  // On payment success the guest-create-order + verify-razorpay-payment
-  // edge functions create a real auth.users row using these details, so
-  // the buyer becomes a logged-in user without ever seeing an OTP.
-  const [guestName, setGuestName] = useState("");
-  const [guestEmail, setGuestEmail] = useState("");
-  const [guestPhone, setGuestPhone] = useState("");
-  const [guestTouched, setGuestTouched] = useState<{ name?: boolean; email?: boolean; phone?: boolean }>({});
+  // Guest checkout fields + validation (also prefilled for logged-in users who
+  // have no profile details on file yet). See useGuestCheckout.
+  const {
+    guestName, setGuestName, guestEmail, setGuestEmail,
+    guestPhone, setGuestPhone, guestTouched, setGuestTouched, validateGuest,
+  } = useGuestCheckout(user);
 
   /* -- Load offering data -- */
   useEffect(() => {
@@ -199,124 +194,22 @@ export default function CheckoutPage() {
     load();
   }, [authLoading, user, offeringId, applicationId, paymentType, navigate]);
 
-  // Prefill guest fields from logged-in user when available - the guest
-  // form is still rendered if needed (e.g. user has no full_name on
-  // file yet) but seeded so they don't retype.
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      const { data } = await supabase
-        .from("users")
-        .select("full_name, email, phone")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (data) {
-        if (data.full_name && !guestName) setGuestName(data.full_name);
-        if (data.email && !guestEmail) setGuestEmail(data.email);
-        if (data.phone && !guestPhone) setGuestPhone(data.phone);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-
   const isStaged = paymentType !== "full" && (offering as any)?.payment_mode === "staged";
   const stagedLabel = paymentType === "app_fee" ? "Application Fee"
     : paymentType === "confirmation" ? "Confirmation Amount"
     : paymentType === "balance" ? "Balance Payment" : "";
 
-  /* -- Pricing -- */
-  const subtotal = (() => {
-    if (!offering) return 0;
-    // Staged payment: use the specific stage amount
-    if (isStaged) {
-      if (paymentType === "app_fee") return Number((offering as any).app_fee_inr ?? 0);
-      if (paymentType === "confirmation") return Number((offering as any).confirmation_amount_inr ?? 0);
-      if (paymentType === "balance") return Math.max(Number(offering.price_inr) - totalPreviouslyPaid, 0);
-    }
-    // Standard full payment
-    let total = Number(offering.price_inr);
-    for (const bId of selectedBumps) {
-      const bump = bumps.find((b) => b.bump_offering_id === bId);
-      if (bump) {
-        total += bump.bump_price_override_inr
-          ? Number(bump.bump_price_override_inr)
-          : Number(bump.offeringDetail?.price_inr ?? 0);
-      }
-    }
-    return total;
-  })();
-
-  const discount = (() => {
-    if (!appliedCoupon) return 0;
-    if (appliedCoupon.discount_type === "percent") {
-      return Math.round(
-        (subtotal * Number(appliedCoupon.discount_value)) / 100
-      );
-    }
-    return Math.min(Number(appliedCoupon.discount_value), subtotal);
-  })();
-
-  const afterDiscount = Math.max(subtotal - discount, 0);
-
-  const gstRate = offering?.gst_mode !== "none" ? Number(offering?.gst_rate ?? 18) : 0;
-  const gstAmount = (() => {
-    if (!offering || offering.gst_mode === "none") return 0;
-    if (offering.gst_mode === "inclusive")
-      return Math.round(afterDiscount - afterDiscount / (1 + gstRate / 100));
-    return Math.round((afterDiscount * gstRate) / 100);
-  })();
-
-  const total =
-    offering?.gst_mode === "exclusive" ? afterDiscount + gstAmount : afterDiscount;
-
-  // Combined "you saved" figure: MRP markdown (sticker to price) plus any
-  // coupon discount. Shared by the in-card savings chip and the mobile
-  // StickyPayBar so the two never disagree. Only meaningful on full
-  // (non-staged) purchases where an MRP exists.
-  const mrpInr = Number((offering as any)?.mrp_inr || 0);
-  const mrpSavings = !isStaged && mrpInr > subtotal ? mrpInr - subtotal : 0;
-  const totalSavings = mrpSavings + discount;
-
-  /* -- Apply coupon --
-   *
-   * The coupons table is locked down to admin reads only (see the
-   * coupons_read_lockdown migration), so this page can no longer
-   * SELECT from it directly. All validation goes through the
-   * validate-coupon edge function, which runs with service-role
-   * privileges and returns only a discount preview (never used_count
-   * / max_redemptions / other sensitive columns). create-razorpay-order
-   * will re-validate the full coupon row at order creation time, so
-   * nothing here is authoritative.
-   */
-  const applyCoupon = useCallback(async () => {
-    if (!couponCode.trim() || !offeringId) return;
-    setCouponLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("validate-coupon", {
-        body: {
-          coupon_code: couponCode.trim().toUpperCase(),
-          offering_id: offeringId,
-        },
-      });
-
-      if (error || !data?.valid) {
-        toast.error(data?.error || "Invalid coupon code");
-        return;
-      }
-
-      setAppliedCoupon({
-        id: data.id,
-        code: data.code,
-        discount_type: data.discount_type,
-        discount_value: Number(data.discount_value),
-      });
-      toast.success("Coupon applied!");
-    } catch {
-      toast.error("Error applying coupon");
-    } finally {
-      setCouponLoading(false);
-    }
-  }, [couponCode, offeringId]);
+  /* -- Pricing (one shared home: @shared/pricing, used by the order edge
+        functions too, so the preview can't drift from what's charged) -- */
+  const { subtotal, discount, gstRate, gstAmount, total, totalSavings } = useCheckoutPricing({
+    offering,
+    bumps,
+    selectedBumps,
+    appliedCoupon,
+    isStaged,
+    paymentType,
+    totalPreviouslyPaid,
+  });
 
   /* -- Load Razorpay script -- */
   useEffect(() => {
@@ -335,27 +228,10 @@ export default function CheckoutPage() {
     if (paymentInFlightRef.current) return;
     void hapticImpact("medium");
 
-    // Validate guest fields when anon. Touch all so inline errors
-    // surface immediately on the first paint of the form.
+    // Validate guest fields when anon (marks fields touched + toasts on the
+    // first failure). The edge function does the canonical phone normalisation.
     const isAnon = !user;
-    if (isAnon) {
-      setGuestTouched({ name: true, email: true, phone: true });
-      if (!guestName.trim() || !guestEmail.trim() || !guestPhone.trim()) {
-        toast.error("Please fill in name, email and phone");
-        return;
-      }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim())) {
-        toast.error("Please enter a valid email");
-        return;
-      }
-      // Accept either 10-digit or +91-prefixed 12-digit; the edge
-      // function does the canonical normalisation.
-      const digits = guestPhone.replace(/\D/g, "");
-      if (!(digits.length === 10 || (digits.length === 12 && digits.startsWith("91")))) {
-        toast.error("Please enter a valid 10-digit Indian phone number");
-        return;
-      }
-    }
+    if (isAnon && !validateGuest()) return;
 
     paymentInFlightRef.current = true;
 
@@ -851,11 +727,7 @@ export default function CheckoutPage() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setAppliedCoupon(null);
-                      setCouponCode("");
-                      toast.success("Promo code removed");
-                    }}
+                    onClick={removeCoupon}
                     aria-label="Remove promo code"
                     className="h-6 w-6 rounded-full bg-[hsl(var(--accent-emerald)/0.2)] hover:bg-[hsl(var(--accent-emerald)/0.4)] flex items-center justify-center transition-colors"
                   >

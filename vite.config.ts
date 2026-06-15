@@ -28,6 +28,10 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Pure, dependency-free logic shared with the Deno edge functions
+      // (pricing, phone). Lives under supabase/functions/_shared so it also
+      // deploys with the functions; the frontend bundles the same source.
+      "@shared": path.resolve(__dirname, "./supabase/functions/_shared"),
     },
     dedupe: ["react", "react-dom"],
   },
