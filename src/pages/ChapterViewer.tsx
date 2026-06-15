@@ -83,17 +83,12 @@ const ChapterViewer = () => {
     };
   }, []);
 
-  // Lock body scroll when completion banner is shown
-  useEffect(() => {
-    if (showCompletionBanner) {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = prev;
-      };
-    }
-  }, [showCompletionBanner]);
-
+  // NOTE: the completion flow's body-scroll lock is owned SOLELY by
+  // <CompletionTakeover> (rendered open={showCompletionBanner} below). Do NOT add
+  // a second lock here: two effects both capturing/restoring body.style.overflow
+  // race on React's child-before-parent ordering — the outer one captures the
+  // child's "hidden" and re-applies it on cleanup, wedging the whole app
+  // unscrollable after a course is finished. One owner only.
   const loadChapter = useCallback(async () => {
     if (!chapterId || !user) return;
     setLoading(true);
