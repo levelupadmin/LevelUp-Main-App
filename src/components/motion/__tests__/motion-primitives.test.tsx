@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { createRef } from "react";
 import { MotionButton } from "../MotionButton";
 import { MotionCard } from "../MotionCard";
@@ -65,6 +65,32 @@ describe("MotionButton", () => {
     render(<MotionButton>Reduced</MotionButton>);
     expect(screen.getByRole("button", { name: "Reduced" })).toBeInTheDocument();
   });
+
+  it("ships the app's focus-visible ring by default", () => {
+    render(<MotionButton>Focus</MotionButton>);
+    expect(screen.getByRole("button", { name: "Focus" })).toHaveClass("focus-ring");
+  });
+
+  it("keeps the focus ring alongside a caller's className", () => {
+    render(<MotionButton className="my-btn">Merged</MotionButton>);
+    const btn = screen.getByRole("button", { name: "Merged" });
+    expect(btn).toHaveClass("focus-ring");
+    expect(btn).toHaveClass("my-btn");
+  });
+
+  it("fires onClick for both pointer and keyboard activation (unified path)", () => {
+    const onClick = vi.fn();
+    render(<MotionButton onClick={onClick}>Activate</MotionButton>);
+    const btn = screen.getByRole("button", { name: "Activate" });
+
+    // Pointer tap → native click.
+    fireEvent.click(btn);
+    // Keyboard Enter/Space on a native <button> also dispatches a click; assert
+    // the same activation path handles a keyboard-originated click too.
+    fireEvent.click(btn);
+
+    expect(onClick).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("MotionCard", () => {
@@ -102,5 +128,128 @@ describe("MotionCard", () => {
     setReducedMotion(true);
     render(<MotionCard>Reduced card</MotionCard>);
     expect(screen.getByText("Reduced card")).toBeInTheDocument();
+  });
+
+  it("stays a plain, non-interactive div with no onClick", () => {
+    render(<MotionCard data-testid="plain">Static</MotionCard>);
+    const card = screen.getByTestId("plain");
+    // No button role, and kept OUT of the tab order — this asserts we override
+    // framer-motion's whileTap tabIndex={0} auto-injection so a decorative card
+    // is not a focusable-but-inert tab trap.
+    expect(card).not.toHaveAttribute("role");
+    expect(card).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("becomes a keyboard-operable button when given an onClick", () => {
+    const onClick = vi.fn();
+    render(
+      <MotionCard onClick={onClick} data-testid="pressable">
+        Press
+      </MotionCard>,
+    );
+    const card = screen.getByTestId("pressable");
+    expect(card).toHaveAttribute("role", "button");
+    expect(card).toHaveAttribute("tabindex", "0");
+
+    // Enter and Space both activate the click path (WCAG 2.1.1).
+    fireEvent.keyDown(card, { key: "Enter" });
+    fireEvent.keyDown(card, { key: " " });
+    expect(onClick).toHaveBeenCalledTimes(2);
+
+    // An unrelated key does not activate.
+    fireEvent.keyDown(card, { key: "a" });
+    expect(onClick).toHaveBeenCalledTimes(2);
+
+    // And a pointer click still fires directly.
+    fireEvent.click(card);
+    expect(onClick).toHaveBeenCalledTimes(3);
+  });
+
+  it("lets the caller override the interactive defaults", () => {
+    const onClick = vi.fn();
+    render(
+      <MotionCard
+        onClick={onClick}
+        role="link"
+        tabIndex={-1}
+        data-testid="override"
+      >
+        Custom
+      </MotionCard>,
+    );
+    const card = screen.getByTestId("override");
+    expect(card).toHaveAttribute("role", "link");
+    expect(card).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("runs the caller's onKeyDown and honours its preventDefault", () => {
+    const onClick = vi.fn();
+    const onKeyDown = vi.fn((e) => e.preventDefault());
+    render(
+      <MotionCard onClick={onClick} onKeyDown={onKeyDown} data-testid="stop">
+        Guarded
+      </MotionCard>,
+    );
+    const card = screen.getByTestId("stop");
+    fireEvent.keyDown(card, { key: "Enter" });
+    // The caller's handler ran, but its preventDefault suppressed the click bridge.
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("shares ONE (pointer: fine) listener across a grid of cards", () => {
+    // A single MediaQueryList instance the shared subscription attaches to; count
+    // add/remove of the "change" handler to prove N cards register 1 listener.
+    let addCount = 0;
+    let removeCount = 0;
+    const fineMql = {
+      matches: true,
+      media: "(pointer: fine)",
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: (_: string, __: EventListener) => {
+        addCount += 1;
+      },
+      removeEventListener: (_: string, __: EventListener) => {
+        removeCount += 1;
+      },
+      dispatchEvent: () => false,
+    };
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: (query: string) =>
+        query.includes("pointer: fine")
+          ? fineMql
+          : {
+              matches: false,
+              media: query,
+              onchange: null,
+              addListener: () => {},
+              removeListener: () => {},
+              addEventListener: () => {},
+              removeEventListener: () => {},
+              dispatchEvent: () => false,
+            },
+    });
+
+    const { unmount } = render(
+      <>
+        {Array.from({ length: 25 }, (_, i) => (
+          <MotionCard key={i} data-testid={`grid-card-${i}`}>
+            {`Card ${i}`}
+          </MotionCard>
+        ))}
+      </>,
+    );
+
+    // 25 cards mounted, but the module-level subscription attaches exactly one
+    // "change" listener to the shared MediaQueryList.
+    expect(addCount).toBe(1);
+    expect(removeCount).toBe(0);
+
+    // And it detaches when the last subscriber unmounts (reference-counted).
+    unmount();
+    expect(removeCount).toBe(1);
   });
 });

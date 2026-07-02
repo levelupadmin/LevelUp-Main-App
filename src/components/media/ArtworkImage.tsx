@@ -20,6 +20,13 @@ interface ArtworkImageProps
   aspect?: ArtworkAspect;
   /** Render a bottom-up scrim gradient for text legibility over the image. */
   scrim?: boolean;
+  /**
+   * Above-the-fold treatment for the LCP image (hero / first card). When true
+   * the image loads eagerly with `fetchpriority="high"` so it isn't deferred by
+   * lazy-loading — avoiding a late fade-in on the largest contentful paint.
+   * Defaults to false (lazy) for everything below the fold.
+   */
+  priority?: boolean;
   /** className applied to the outer aspect-ratio wrapper. */
   className?: string;
 }
@@ -65,6 +72,7 @@ export const ArtworkImage = ({
   alt,
   aspect = "video",
   scrim = false,
+  priority = false,
   className,
   ...imgProps
 }: ArtworkImageProps) => {
@@ -72,6 +80,13 @@ export const ArtworkImage = ({
   const [errored, setErrored] = useState(false);
 
   const showPlaceholder = !src || errored;
+
+  // Use the lowercase DOM attribute name so it passes through as a plain HTML
+  // attribute across React versions, and omit the key entirely when not a
+  // priority image (avoids emitting `fetchpriority` at all below the fold).
+  const priorityAttrs: Record<string, string> = priority
+    ? { fetchpriority: "high" }
+    : {};
 
   return (
     <div
@@ -87,10 +102,11 @@ export const ArtworkImage = ({
         <img
           src={src}
           alt={alt}
-          loading="lazy"
+          loading={priority ? "eager" : "lazy"}
+          {...priorityAttrs}
           decoding="async"
           className={cn(
-            "dark-img absolute inset-0 h-full w-full object-cover transition-opacity duration-[400ms] ease-out",
+            "dark-img absolute inset-0 h-full w-full object-cover transition-opacity duration-slow ease-out-expo",
             loaded ? "opacity-100" : "opacity-0",
           )}
           onLoad={() => setLoaded(true)}

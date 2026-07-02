@@ -46,6 +46,20 @@ describe("ArtworkImage", () => {
     expect(img).toHaveClass("opacity-100");
   });
 
+  it("lazy-loads without a fetchpriority hint by default (below the fold)", () => {
+    render(<ArtworkImage src="https://example.com/a.jpg" alt="Default" />);
+    const img = screen.getByRole("img");
+    expect(img).toHaveAttribute("loading", "lazy");
+    expect(img).not.toHaveAttribute("fetchpriority");
+  });
+
+  it("eager-loads with fetchpriority=high when priority is set (LCP image)", () => {
+    render(<ArtworkImage src="https://example.com/a.jpg" alt="Hero" priority />);
+    const img = screen.getByRole("img");
+    expect(img).toHaveAttribute("loading", "eager");
+    expect(img).toHaveAttribute("fetchpriority", "high");
+  });
+
   it("renders a scrim only when enabled and the image is present", () => {
     const { container, rerender } = render(
       <ArtworkImage src="https://example.com/a.jpg" alt="With scrim" scrim />,
@@ -97,6 +111,58 @@ describe("AmbientGlow", () => {
     expect(scaledBox).toHaveClass("w-[10%]");
     expect(scaledBox).toHaveClass("h-[10%]");
     expect(scaledBox).toHaveClass("scale-[10.5]");
+  });
+
+  it("promotes the scaled box to its own composited layer (Blink/Android rasterises at pre-scale size)", () => {
+    const { container } = render(
+      <AmbientGlow src="https://example.com/a.jpg">
+        <span>content</span>
+      </AmbientGlow>,
+    );
+    const img = container.querySelector("img") as HTMLImageElement;
+    const scaledBox = img.parentElement as HTMLElement;
+    // transform-gpu (→ translateZ(0)) + will-change force a composited layer so
+    // Blink rasterises the blur at the small pre-scale size, not the displayed
+    // scaled-up size (where it would decode the full-res source bitmap).
+    expect(scaledBox).toHaveClass("transform-gpu");
+    expect(scaledBox).toHaveClass("will-change-transform");
+    // contain walls the decorative layer off from the rest of the subtree.
+    expect(scaledBox.style.contain).toBe("layout paint");
+  });
+
+  it("prefers srcSmall over src for the glow copy (thumbnail-source contract)", () => {
+    const { container } = render(
+      <AmbientGlow
+        src="https://example.com/full-res.jpg"
+        srcSmall="https://example.com/thumb.jpg"
+        width={320}
+      >
+        <span>content</span>
+      </AmbientGlow>,
+    );
+    const img = container.querySelector("img") as HTMLImageElement;
+    expect(img).toHaveAttribute("src", "https://example.com/thumb.jpg");
+    expect(img).toHaveAttribute("width", "320");
+  });
+
+  it("falls back to src when no srcSmall is supplied", () => {
+    const { container } = render(
+      <AmbientGlow src="https://example.com/a.jpg">
+        <span>content</span>
+      </AmbientGlow>,
+    );
+    const img = container.querySelector("img") as HTMLImageElement;
+    expect(img).toHaveAttribute("src", "https://example.com/a.jpg");
+  });
+
+  it("renders the glow from srcSmall even when src is absent", () => {
+    const { container } = render(
+      <AmbientGlow srcSmall="https://example.com/thumb.jpg">
+        <span>content</span>
+      </AmbientGlow>,
+    );
+    const img = container.querySelector("img") as HTMLImageElement;
+    expect(img).toHaveAttribute("src", "https://example.com/thumb.jpg");
   });
 
   it("renders no glow layer when src is absent", () => {

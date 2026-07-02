@@ -2,6 +2,7 @@
 // Mirrors the CSS motion vars in src/index.css:163-169 so JS-driven springs and
 // CSS transitions stay in lockstep. Typed, tree-shakeable, no side effects.
 
+import * as React from "react";
 import { useReducedMotion } from "framer-motion";
 import type { TargetAndTransition, Transition } from "framer-motion";
 
@@ -68,6 +69,71 @@ const reducedSprings = {
   glide: instant,
   bounce: instant,
 } as const satisfies Record<keyof typeof springs, Transition>;
+
+// ── useFinePointer() ── shared `(pointer: fine)` subscription. A single
+// module-level matchMedia listener is fanned out to every subscriber via
+// useSyncExternalStore, so a grid of N MotionCards adds ONE listener rather than
+// N duplicates and each card re-renders off the same source on pointer-type change.
+const FINE_POINTER_QUERY = "(pointer: fine)";
+
+// Lazily-created singleton MediaQueryList — one per document, shared by all hooks.
+// Keyed to the current window.matchMedia so that if the environment swaps the
+// implementation (e.g. jsdom in tests) the singleton transparently rebuilds; in
+// production matchMedia identity is stable, so this stays a true singleton.
+let finePointerMql: MediaQueryList | null = null;
+let finePointerMqlSource: typeof window.matchMedia | null = null;
+const getFinePointerMql = (): MediaQueryList | null => {
+  const source =
+    typeof window !== "undefined" && window.matchMedia ? window.matchMedia : null;
+  if (source !== finePointerMqlSource) {
+    finePointerMqlSource = source;
+    finePointerMql = source ? source.call(window, FINE_POINTER_QUERY) : null;
+  }
+  return finePointerMql;
+};
+
+// useSyncExternalStore subscribe: attach the single listener on the first
+// subscriber and detach it when the last one unsubscribes (reference-counted).
+let finePointerListeners = 0;
+const subscribeFinePointer = (onChange: () => void): (() => void) => {
+  const mql = getFinePointerMql();
+  if (!mql) return () => {};
+  if (finePointerListeners === 0) {
+    mql.addEventListener?.("change", notifyFinePointer);
+  }
+  finePointerListeners += 1;
+  finePointerSubscribers.add(onChange);
+  return () => {
+    finePointerSubscribers.delete(onChange);
+    finePointerListeners -= 1;
+    if (finePointerListeners === 0) {
+      mql.removeEventListener?.("change", notifyFinePointer);
+    }
+  };
+};
+
+// Fan the single change event out to every React subscriber.
+const finePointerSubscribers = new Set<() => void>();
+const notifyFinePointer = () => {
+  finePointerSubscribers.forEach((cb) => cb());
+};
+
+const getFinePointerSnapshot = (): boolean => getFinePointerMql()?.matches ?? false;
+// Server render (and non-matchMedia environments): assume coarse — the hover lift
+// stays off until the client confirms a fine pointer, matching the old default.
+const getFinePointerServerSnapshot = (): boolean => false;
+
+/**
+ * True on devices with a fine (mouse/trackpad) pointer. Backed by ONE shared
+ * matchMedia listener regardless of how many components call it.
+ */
+export function useFinePointer(): boolean {
+  return React.useSyncExternalStore(
+    subscribeFinePointer,
+    getFinePointerSnapshot,
+    getFinePointerServerSnapshot,
+  );
+}
 
 // ── useMotionSafe() ── wraps framer's useReducedMotion (which does NOT honour the
 // CSS media query for JS springs) and returns presets that respect the preference.
