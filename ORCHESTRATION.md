@@ -26,6 +26,12 @@
 
 Plus the pre-existing **`bugfix-council`** — mandatory before releasing any phase whose diff touches Tier-1 surfaces (`src/index.css`, layout roots, routing, auth, native shell, payments — see CLAUDE.md).
 
+**Operational lessons from the phase-0 dry run (2026-07-02):**
+- Invoke workflows by **`scriptPath`** (absolute path into `.claude/workflows/`), NOT by name — the name registry roots at the parent workspace and serves stale/missing entries from this session layout.
+- The runtime may deliver `args` as a JSON **string**; all three scripts parse both forms — keep that guard.
+- Council scope: phases that release a build get a council over the accumulated Tier-1 touches since the last released build (phase 0 released nothing → its tailwind.config.ts touch is covered by phase 1's pre-release council).
+- QA screenshots land in `design/qa/` (gitignored). Fix-sprint commits are the director's job (`fix(design): close QA-gate round-N punch list`).
+
 ## The per-phase loop
 
 ```
@@ -60,7 +66,7 @@ Plus the pre-existing **`bugfix-council`** — mandatory before releasing any ph
 
 | Phase | Scope (see DESIGN-STRATEGY.md §5) | Branch | Status |
 |---|---|---|---|
-| 0 | Foundation: shadow/z tokens, motion lib + primitives, ArtworkImage, haptics install | `design/phase-0` | brief ready (`design/briefs/phase-0.md`) |
+| 0 | Foundation: shadow/z tokens, motion lib + primitives, ArtworkImage, haptics install | `design/phase-0` | ✅ MERGED to main 2026-07-02 (`0939b02`) — build → gate FIX-LIST(9) → sprint 7/7 → re-gate PASS. ~2.7M Opus tokens, 44 agents. 5 low adoption-time notes carried into the phase-1 brief |
 | 1 | Core loop: Home, button/card adoption, tab bar, shared-element, craft-bug sweep | `design/phase-1` | pending |
 | 2 | Screening room: ChapterViewer, exit animations, skeleton crossfade | `design/phase-2` | pending |
 | 3 | Money pages: PublicOffering/checkout choreography (+PostHog if approved) | `design/phase-3` | pending |
