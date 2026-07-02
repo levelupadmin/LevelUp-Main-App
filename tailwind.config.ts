@@ -109,6 +109,28 @@ export default {
         "tab-bar": "4.5rem", // 56px mobile tab bar + 16px breathing room
         // iOS safe-area helpers available as classes below (safe-top, safe-bottom)
       },
+      boxShadow: {
+        // Soft elevation ladder tuned for a pure-black (#000) canvas. On black, a
+        // drop shadow barely reads, so each rung pairs a low-alpha black shadow with
+        // a hairline top light-edge (inset white) to give surfaces a lifted, glassy
+        // separation without visibly darkening the page vs. Tailwind's old defaults.
+        "design-sm": "0 1px 2px 0 hsl(0 0% 0% / 0.5), inset 0 1px 0 0 hsl(0 0% 100% / 0.04)",
+        "design-md": "0 4px 12px -2px hsl(0 0% 0% / 0.55), inset 0 1px 0 0 hsl(0 0% 100% / 0.05)",
+        "design-lg": "0 12px 32px -4px hsl(0 0% 0% / 0.6), inset 0 1px 0 0 hsl(0 0% 100% / 0.06)",
+        // Champagne glows for CTAs / celebration moments, derived from the existing
+        // --champagne-to and --gold HSL vars so they track the palette.
+        "glow-cream": "0 0 24px -4px hsl(var(--champagne-to) / 0.45), 0 0 8px -2px hsl(var(--champagne-to) / 0.35)",
+        "glow-gold": "0 0 24px -4px hsl(var(--gold) / 0.5), 0 0 8px -2px hsl(var(--gold) / 0.4)",
+      },
+      zIndex: {
+        // Semantic z-index scale matching the app's existing stacking layers.
+        // Provided as tokens only this phase — no existing components are renumbered.
+        base: "1",
+        sticky: "30",
+        overlay: "40",
+        modal: "50",
+        toast: "60",
+      },
       transitionTimingFunction: {
         "out-expo": "cubic-bezier(0.2, 0.8, 0.2, 1)",
         "in-out-smooth": "cubic-bezier(0.4, 0, 0.2, 1)",
