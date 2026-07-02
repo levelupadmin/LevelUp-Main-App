@@ -14,7 +14,8 @@ export const meta = {
 // routes:    string[]      — app routes the phase touched, e.g. ["/home", "/learn"]
 // devPort:   number        — port to run the vite dev server on (default 5175)
 // notes:     string        — optional orchestrator notes (e.g. "re-gate after fix sprint #2")
-const a = (typeof args === 'object' && args) ? args : {}
+let a = (typeof args === 'object' && args) ? args : {}
+if (typeof args === 'string') { try { a = JSON.parse(args) } catch { a = {} } }
 if (!a.briefPath || !Array.isArray(a.routes) || !a.routes.length) {
   throw new Error('design-qa-gate requires args { phase, briefPath, routes[] }')
 }
@@ -22,7 +23,9 @@ const PHASE = String(a.phase ?? '?')
 const PORT = a.devPort || 5175
 const SHOTS_DIR = `design/qa/phase-${PHASE}`
 
-const BASE = `You are QA on design-revamp phase ${PHASE} of LevelUp-Main-App (Vite + React + Capacitor; ships to Android WebView, iOS WKWebView, web).
+const REPO = a.repoPath || '/Users/rahul/Claude Code/LevelUp-Main-App'
+const BASE = `Repo root: ${REPO} — cd there first; all paths/commands are relative to it.
+You are QA on design-revamp phase ${PHASE} of LevelUp-Main-App (Vite + React + Capacitor; ships to Android WebView, iOS WKWebView, web).
 Ground truth documents (read first): the phase brief at ${a.briefPath}, DESIGN-STRATEGY.md (north star + §6 acceptance criteria), CLAUDE.md (change-risk tiers).
 The diff under review: \`git diff main\` on the current branch (if empty, review the last commits: \`git log main..HEAD --oneline\` + \`git show\`).
 ${a.notes ? `ORCHESTRATOR NOTES: ${a.notes}` : ''}

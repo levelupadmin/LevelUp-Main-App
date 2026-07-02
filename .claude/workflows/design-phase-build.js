@@ -14,12 +14,15 @@ export const meta = {
 // briefPath: string         — design/briefs/phase-N.md (the single source of truth)
 // tasks:     [{ id, title, spec, files: [..], tier: 1|2|3 }]
 // branch:    string         — expected git branch, e.g. "design/phase-1"
-const a = (typeof args === 'object' && args) ? args : {}
+let a = (typeof args === 'object' && args) ? args : {}
+if (typeof args === 'string') { try { a = JSON.parse(args) } catch { a = {} } }
 if (!a.briefPath || !Array.isArray(a.tasks) || !a.tasks.length || !a.branch) {
   throw new Error('design-phase-build requires args { phase, briefPath, tasks[], branch }')
 }
 const PHASE = String(a.phase ?? '?')
-const REPO_RULES = `Repo: LevelUp-Main-App (Vite + React 18 + TS + Tailwind + shadcn + Capacitor; ships to Android WebView, iOS WKWebView, desktop web).
+const REPO = a.repoPath || '/Users/rahul/Claude Code/LevelUp-Main-App'
+const REPO_RULES = `Repo root: ${REPO} — cd there first; ALL file paths and git/npm commands are relative to it.
+Repo: LevelUp-Main-App (Vite + React 18 + TS + Tailwind + shadcn + Capacitor; ships to Android WebView, iOS WKWebView, desktop web).
 NON-NEGOTIABLE RULES for every agent:
 - Read the brief first: ${a.briefPath}. Also skim DESIGN-STRATEGY.md for the north star and CLAUDE.md change-risk tiers.
 - Motion/perf budget: animate transform/opacity ONLY; cap backdrop-blur usage (Android WebView compositing); never regress prefers-reduced-motion; never touch html/body overflow behavior (see the 2026-06-14 scroll-outage lesson in CLAUDE.md).

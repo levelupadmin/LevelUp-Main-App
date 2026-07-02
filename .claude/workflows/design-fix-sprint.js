@@ -8,12 +8,14 @@ export const meta = {
   ],
 }
 
-const a = (typeof args === 'object' && args) ? args : {}
+let a = (typeof args === 'object' && args) ? args : {}
+if (typeof args === 'string') { try { a = JSON.parse(args) } catch { a = {} } }
 if (!Array.isArray(a.items) || !a.items.length) {
   throw new Error('design-fix-sprint requires args { items: [{ issue, screen, ... }] }')
 }
 const PHASE = String(a.phase ?? '?')
-const RULES = `Repo: LevelUp-Main-App. Context docs: ${a.briefPath ? `${a.briefPath}, ` : ''}DESIGN-STRATEGY.md (north star), CLAUDE.md (risk tiers).
+const RULES = `Repo root: ${a.repoPath || '/Users/rahul/Claude Code/LevelUp-Main-App'} — cd there first; all paths/commands are relative to it.
+Repo: LevelUp-Main-App. Context docs: ${a.briefPath ? `${a.briefPath}, ` : ''}DESIGN-STRATEGY.md (north star), CLAUDE.md (risk tiers).
 RULES: animate transform/opacity only; cap backdrop-blur; never regress prefers-reduced-motion; never touch html/body overflow; use existing tokens (src/index.css, tailwind.config.ts, src/lib/motion); match surrounding style; do NOT commit or push; do NOT run "npm run build" (orchestrator integrates); verify with npx vitest run + eslint on touched files.`
 
 const FIX_SCHEMA = {
