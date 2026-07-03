@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import LazyImage from "@/components/LazyImage";
+import ArtworkImage from "@/components/media/ArtworkImage";
 import { Link } from "react-router-dom";
 import { ArrowRight, Play } from "lucide-react";
 import { Section, ErrorState, SkeletonCard } from "@/components/patterns";
@@ -243,14 +243,18 @@ const ContinueLearning = () => {
                 to={linkTo}
                 className="pressable group min-w-[78vw] sm:min-w-[320px] lg:min-w-[340px] max-w-[360px] bg-surface rounded-2xl overflow-hidden flex-shrink-0 snap-start ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 hover:-translate-y-1 transition-all duration-300 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
               >
-                <div className="aspect-video bg-surface-2 relative overflow-hidden">
-                  {c.thumbnail_url && (
-                    <LazyImage
-                      src={c.thumbnail_url}
-                      alt=""
-                      className="w-full h-full group-hover:scale-[1.04] transition-transform duration-500"
-                    />
-                  )}
+                <div className="relative overflow-hidden">
+                  {/* ArtworkImage enforces aspect-video + object-cover (no
+                      letterbox) and renders the branded placeholder when the
+                      thumbnail is missing (no black void). Scrim keeps the chip
+                      and progress bar legible over any artwork. */}
+                  <ArtworkImage
+                    src={c.thumbnail_url}
+                    alt=""
+                    aspect="video"
+                    scrim
+                    className="group-hover:scale-[1.04] transition-transform duration-500"
+                  />
 
                   {/* Resume-meta chip on the artwork, "Lesson 4 of 29". Only
                       shown once we know the lesson count; suppressed for a
