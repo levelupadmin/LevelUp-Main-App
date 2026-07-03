@@ -45,16 +45,21 @@ Plus the pre-existing **`bugfix-council`** — mandatory before releasing any ph
    punch list + screenshots (do not grind tokens on a structural problem)
    if BLOCK → director adjudicates personally (read the evidence, decide, possibly council)
 6  Director reviews keyScreenshots + git diff main --stat, then: bugfix-council if Tier-1
-7  Merge design/phase-N → main (no squash; keep the commit narrative), push
-8  RELEASE TRAIN (director, main loop — runbooks in CLAUDE.md):
-   a. bump android versionCode/versionName + iOS CURRENT_PROJECT_VERSION
-   b. npm run build && npx cap sync
+7  ⚠️ DO NOT MERGE TO MAIN YET — main auto-deploys the web app to PRODUCTION via
+   Vercel, and students use web (it's the native purchase path). Merging would break
+   the internal-channels-only decision. Phase branches ship stores directly:
+8  RELEASE TRAIN (director, main loop, FROM the design/phase-N branch — runbooks in CLAUDE.md):
+   a. bump android versionCode/versionName + iOS CURRENT_PROJECT_VERSION (on the branch)
+   b. npm run build && npx cap sync android && npx cap sync ios (commit native changes)
    c. Android: gradlew bundleRelease → play-publish.mjs <aab> --track internal
    d. iOS: xcodebuild archive/export → altool upload → TestFlight
    e. verify: play-publish --status + asc-api builds
-9  Notify Rahul: what shipped, WHAT TO TEST (per-screen checklist from the brief),
-   token cost (sum of workflow tokensSpent), known deferred items
-10 Immediately: branch design/phase-N+1, write its brief, start step 3
+9  Notify Rahul: what shipped, WHAT TO TEST (per-screen checklist from the brief + the
+   council's mustVerifyBeforeShip list), token cost, known deferred items
+10 Immediately: branch design/phase-N+1 OFF design/phase-N (stacked), write its brief, start step 3
+11 On Rahul's "promote phase N": merge the phase branch → main (web prod goes live),
+   push, then staged store rollout per CLAUDE.md (10–20% → watch → 100%). Promotion is
+   gated on his on-device checklist, per the phase council.
 11 Rahul's device feedback (any time) → director triages into items[] →
    design-fix-sprint on a fix/ branch off main → gate the touched routes → merge →
    next internal build picks it up (hotfix build only if severity demands)
