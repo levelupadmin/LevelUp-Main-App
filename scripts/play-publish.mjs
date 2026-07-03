@@ -15,6 +15,17 @@
 //   --probe   create + immediately discard an edit to verify auth + app
 //             access. Publishes NOTHING. Always run this first on a new key.
 //
+//   --rollout <fraction>   (0 < fraction < 1) set the track release to
+//             status "inProgress" with userFraction <fraction> instead of
+//             status "completed" (full rollout). Applies to both the normal
+//             AAB-upload path and --promote. Omit (or use fraction=1) for
+//             the default 100% completed rollout.
+//
+//   --promote <versionCode>   skip the AAB upload entirely and set the
+//             target track (--track) to an already-uploaded versionCode.
+//             No <aab> file argument is required in this mode. Release notes
+//             from PLAY_RELEASE_NOTES are applied if set.
+//
 // Env / args:
 //   PLAY_SERVICE_ACCOUNT_JSON  path to the SA key (or pass --sa <path>)
 //   PLAY_RELEASE_NOTES         en-US release notes (optional)
@@ -35,18 +46,28 @@ const showStatus = has("--status");
 // --notes-only --version <code>: update an existing release's notes on the track
 // WITHOUT uploading a new bundle (e.g. to fix release-note formatting).
 const notesOnly = has("--notes-only");
+// --promote <versionCode>: skip AAB upload; assign an already-uploaded versionCode.
+const promoteVersion = val("--promote");
+// --rollout <fraction>: staged rollout (0 < fraction < 1) → status "inProgress".
+// Absent or fraction >= 1 → status "completed" (full rollout, default behavior).
+const rolloutRaw = val("--rollout");
+const rolloutFraction = rolloutRaw !== undefined ? parseFloat(rolloutRaw) : undefined;
+if (rolloutFraction !== undefined && (isNaN(rolloutFraction) || rolloutFraction <= 0 || rolloutFraction >= 1)) {
+  console.error("--rollout must be a number between 0 (exclusive) and 1 (exclusive), e.g. --rollout 0.1");
+  process.exit(2);
+}
 const saPath = val("--sa") || process.env.PLAY_SERVICE_ACCOUNT_JSON;
 const pkg = val("--package") || "com.tagmango.leveluplearning";
 const track = val("--track") || "production";
 // The only positional is the AAB path; skip any value consumed by a flag.
 const flagValueIdxs = new Set(
-  ["--sa", "--package", "--track", "--version"].map((f) => argv.indexOf(f)).filter((i) => i >= 0).map((i) => i + 1),
+  ["--sa", "--package", "--track", "--version", "--promote", "--rollout"].map((f) => argv.indexOf(f)).filter((i) => i >= 0).map((i) => i + 1),
 );
 const aabPath = argv.find((a, i) => !a.startsWith("--") && !flagValueIdxs.has(i));
 
-if (!saPath || (!aabPath && !probe && !showStatus && !notesOnly)) {
+if (!saPath || (!aabPath && !probe && !showStatus && !notesOnly && !promoteVersion)) {
   console.error(
-    "Usage: PLAY_SERVICE_ACCOUNT_JSON=<sa.json> node scripts/play-publish.mjs <aab> [--package P] [--track T] [--probe|--status|--notes-only --version <code>]",
+    "Usage: PLAY_SERVICE_ACCOUNT_JSON=<sa.json> node scripts/play-publish.mjs <aab> [--package P] [--track T] [--rollout <fraction>] [--probe|--status|--notes-only --version <code>|--promote <versionCode>]",
   );
   process.exit(2);
 }
@@ -58,6 +79,18 @@ if (sa.type !== "service_account" || !sa.private_key || !sa.client_email) {
 }
 
 const b64url = (b) => Buffer.from(b).toString("base64url");
+
+// Build a tracks.update release object, honouring --rollout if set.
+// versionCode must be a string.  releaseNotes is the raw PLAY_RELEASE_NOTES env value.
+function buildRelease(versionCode, notes) {
+  const release = {
+    versionCodes: [String(versionCode)],
+    status: rolloutFraction !== undefined ? "inProgress" : "completed",
+  };
+  if (rolloutFraction !== undefined) release.userFraction = rolloutFraction;
+  if (notes) release.releaseNotes = [{ language: "en-US", text: notes }];
+  return release;
+}
 const API = "https://androidpublisher.googleapis.com/androidpublisher/v3";
 const UPLOAD = "https://androidpublisher.googleapis.com/upload/androidpublisher/v3";
 
@@ -149,6 +182,23 @@ async function api(token, method, path, body, isUpload = false) {
     return;
   }
 
+  if (promoteVersion) {
+    const notes = (process.env.PLAY_RELEASE_NOTES || "").replace(/\\n/g, "\n");
+    const release = buildRelease(promoteVersion, notes);
+    const trackRes = await api(
+      token, "PUT",
+      `/applications/${pkg}/edits/${edit.id}/tracks/${track}`,
+      { track, releases: [release] },
+    );
+    console.log(`Track '${track}' set → ${JSON.stringify(trackRes.releases)}`);
+    await api(token, "POST", `/applications/${pkg}/edits/${edit.id}:validate`);
+    console.log("Edit validated.");
+    await api(token, "POST", `/applications/${pkg}/edits/${edit.id}:commit`);
+    const rolloutDesc = rolloutFraction !== undefined ? `at ${rolloutFraction * 100}% rollout` : "at 100% (completed)";
+    console.log(`COMMITTED — versionCode ${promoteVersion} promoted to '${track}' track ${rolloutDesc}.`);
+    return;
+  }
+
   // Upload the bundle.
   const aab = readFileSync(aabPath);
   console.log(`Uploading ${(aab.length / 1048576).toFixed(1)} MB bundle…`);
@@ -159,10 +209,9 @@ async function api(token, method, path, body, isUpload = false) {
   );
   console.log(`Uploaded versionCode ${bundle.versionCode} (sha1 ${bundle.sha1})`);
 
-  // Assign to track at full rollout.
-  const release = { status: "completed", versionCodes: [String(bundle.versionCode)] };
+  // Assign to track (respects --rollout if set).
   const notes = (process.env.PLAY_RELEASE_NOTES || "").replace(/\\n/g, "\n");
-  if (notes) release.releaseNotes = [{ language: "en-US", text: notes }];
+  const release = buildRelease(bundle.versionCode, notes);
   const trackRes = await api(
     token, "PUT",
     `/applications/${pkg}/edits/${edit.id}/tracks/${track}`,
@@ -174,7 +223,8 @@ async function api(token, method, path, body, isUpload = false) {
   console.log("Edit validated.");
 
   await api(token, "POST", `/applications/${pkg}/edits/${edit.id}:commit`);
-  console.log(`COMMITTED — versionCode ${bundle.versionCode} is now on the '${track}' track.`);
+  const rolloutDesc = rolloutFraction !== undefined ? `at ${rolloutFraction * 100}% rollout` : "at 100% (completed)";
+  console.log(`COMMITTED — versionCode ${bundle.versionCode} is now on the '${track}' track ${rolloutDesc}.`);
 })().catch((e) => {
   console.error("ERROR: " + (e.message || e));
   process.exit(1);
