@@ -37,13 +37,26 @@ export interface MotionCardProps extends HTMLMotionProps<"div"> {
  *
  * The press/lift springs read as a pressable surface, so when an `onClick` is
  * supplied the card becomes a keyboard-operable button: it defaults `role`,
- * `tabIndex`, and an Enter/Space `onKeyDown` that fires the click (WCAG 2.1.1).
- * Every default is overridable via forwarded props, and a card with no `onClick`
- * stays a plain, non-focusable <div> (tabIndex -1) with no button semantics —
- * which also suppresses framer-motion's whileTap tabIndex={0} auto-injection.
+ * `tabIndex`, and Enter/Space keyboard activation that fires the click (WCAG
+ * 2.1.1), matching native-button semantics — Enter activates on keydown, Space
+ * activates on keyup (keydown Space only preventDefaults to suppress page
+ * scroll), and a held key never multi-fires. Every default is overridable via
+ * forwarded props, and a card with no `onClick` stays a plain, non-focusable
+ * <div> (tabIndex -1) with no button semantics — which also suppresses
+ * framer-motion's whileTap tabIndex={0} auto-injection.
+ *
+ * Accessible-name contract: an interactive card (one with `onClick`) exposes the
+ * `button` role, so it MUST have a discernible accessible name — supply either an
+ * `aria-label`/`aria-labelledby` or visible text content (the course title, etc.).
+ * In development a card that is interactive with no discernible name emits a
+ * one-off `console.warn` (cheap heuristic: no aria-label/aria-labelledby and no
+ * text content); the check is stripped in production builds.
  */
 const MotionCard = React.forwardRef<HTMLDivElement, MotionCardProps>(
-  ({ asChild = false, onClick, onKeyDown, role, tabIndex, ...props }, ref) => {
+  (
+    { asChild = false, onClick, onKeyDown, onKeyUp, role, tabIndex, ...props },
+    ref,
+  ) => {
     const motionSafe = useMotionSafe();
     const finePointer = useFinePointer();
     const Comp = asChild ? MotionSlot : motion.div;
@@ -58,6 +71,30 @@ const MotionCard = React.forwardRef<HTMLDivElement, MotionCardProps>(
     // by the caller): a focusable tab stop, an ARIA role, and Enter/Space → click.
     const interactive = typeof onClick === "function";
 
+    // Dev-only accessible-name guard. An interactive card carries the `button`
+    // role, so a screen reader announces "button" with no name unless the caller
+    // gives it one. Warn (once per render path, dev builds only — stripped in prod)
+    // using a cheap heuristic: no aria-label/aria-labelledby AND no text content.
+    if (import.meta.env.DEV && interactive) {
+      const hasAriaName =
+        typeof props["aria-label"] === "string" &&
+        props["aria-label"].trim() !== "";
+      const hasAriaLabelledby =
+        typeof props["aria-labelledby"] === "string" &&
+        props["aria-labelledby"].trim() !== "";
+      const hasTextContent =
+        typeof props.children === "string"
+          ? props.children.trim() !== ""
+          : props.children != null;
+      if (!hasAriaName && !hasAriaLabelledby && !hasTextContent) {
+        console.warn(
+          "MotionCard: interactive card (onClick) has no discernible accessible name. " +
+            "Provide an aria-label, aria-labelledby, or text content so screen readers " +
+            "announce more than \"button\".",
+        );
+      }
+    }
+
     // framer-motion auto-injects tabIndex={0} on ANY element with whileTap when
     // tabIndex is left undefined (render/html/use-props) — which is exactly how a
     // non-interactive card became a focusable-but-inert tab trap. Always resolve an
@@ -66,17 +103,34 @@ const MotionCard = React.forwardRef<HTMLDivElement, MotionCardProps>(
     // A caller-supplied tabIndex always wins.
     const resolvedTabIndex = tabIndex ?? (interactive ? 0 : -1);
 
-    // Bridge keyboard activation to the click path. Enter/Space on a <div> do NOT
-    // synthesize a click the way they do on a native <button>, so translate them
-    // here; the caller's own onKeyDown still runs (and can preventDefault to opt
-    // out). Guarded to interactive cards so a plain card keeps no key handling.
+    // Bridge keyboard activation to the click path with native-button semantics.
+    // Enter/Space on a <div> do NOT synthesize a click the way they do on a native
+    // <button>, so translate them here. Native buttons fire Enter on keydown and
+    // Space on keyup; on keydown Space only preventDefaults to stop the page from
+    // scrolling. The caller's own onKeyDown/onKeyUp still run (and can preventDefault
+    // to opt out). Guarded to interactive cards so a plain card keeps no key handling.
     const handleKeyDown: NonNullable<HTMLMotionProps<"div">["onKeyDown"]> = (
       event,
     ) => {
       onKeyDown?.(event);
       if (!interactive || event.defaultPrevented) return;
-      if (event.key === "Enter" || event.key === " ") {
-        // Stop Space from scrolling the page; fire the same handler as a click.
+      // event.repeat guards against key-repeat multi-fire while a key is held.
+      if (event.key === "Enter" && !event.repeat) {
+        event.preventDefault();
+        onClick?.(event as unknown as React.MouseEvent<HTMLDivElement>);
+      } else if (event.key === " ") {
+        // Suppress page scroll on Space keydown; the activation waits for keyup.
+        event.preventDefault();
+      }
+    };
+
+    const handleKeyUp: NonNullable<HTMLMotionProps<"div">["onKeyUp"]> = (
+      event,
+    ) => {
+      onKeyUp?.(event);
+      if (!interactive || event.defaultPrevented) return;
+      // Space activates on keyup, matching native-button semantics.
+      if (event.key === " ") {
         event.preventDefault();
         onClick?.(event as unknown as React.MouseEvent<HTMLDivElement>);
       }
@@ -92,6 +146,7 @@ const MotionCard = React.forwardRef<HTMLDivElement, MotionCardProps>(
         tabIndex={resolvedTabIndex}
         onClick={onClick}
         onKeyDown={interactive ? handleKeyDown : onKeyDown}
+        onKeyUp={interactive ? handleKeyUp : onKeyUp}
         {...props}
       />
     );

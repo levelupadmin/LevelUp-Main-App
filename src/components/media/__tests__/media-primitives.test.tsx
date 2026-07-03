@@ -7,18 +7,44 @@ describe("ArtworkImage", () => {
   it("renders the branded placeholder when src is missing", () => {
     render(<ArtworkImage src={undefined} alt="Course art" />);
     expect(screen.getByTestId("artwork-placeholder")).toBeInTheDocument();
+    // No real <img> element renders, but the placeholder stands in for the
+    // artwork with role="img" + aria-label so the meaning is still announced.
+    expect(
+      screen.getByRole("img", { name: "Course art" }),
+    ).toBe(screen.getByTestId("artwork-placeholder"));
+  });
+
+  it("surfaces role=img + aria-label={alt} on the placeholder when alt is non-empty", () => {
+    render(<ArtworkImage src={undefined} alt="Course art" />);
+    const placeholder = screen.getByTestId("artwork-placeholder");
+    expect(placeholder).toHaveAttribute("role", "img");
+    expect(placeholder).toHaveAttribute("aria-label", "Course art");
+    expect(placeholder).not.toHaveAttribute("aria-hidden");
+  });
+
+  it("keeps the placeholder aria-hidden for decorative (empty alt) usage", () => {
+    render(<ArtworkImage src={undefined} alt="" />);
+    const placeholder = screen.getByTestId("artwork-placeholder");
+    expect(placeholder).toHaveAttribute("aria-hidden", "true");
+    expect(placeholder).not.toHaveAttribute("role");
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 
   it("renders the branded placeholder when the image errors", () => {
     render(<ArtworkImage src="https://example.com/broken.jpg" alt="Broken" />);
-    const img = screen.getByRole("img");
-    expect(img).toBeInTheDocument();
+    // Before the error, the real <img> is present.
+    const img = screen.getByRole("img", { name: "Broken" });
+    expect(img.tagName).toBe("IMG");
 
     fireEvent.error(img);
 
-    expect(screen.getByTestId("artwork-placeholder")).toBeInTheDocument();
-    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    const placeholder = screen.getByTestId("artwork-placeholder");
+    expect(placeholder).toBeInTheDocument();
+    // The error placeholder now carries the accessible name so a screen reader
+    // still conveys the artwork even though the source failed to load.
+    expect(placeholder).toHaveAttribute("role", "img");
+    expect(placeholder).toHaveAttribute("aria-label", "Broken");
+    expect(screen.getByRole("img", { name: "Broken" })).toBe(placeholder);
   });
 
   it("enforces the requested aspect ratio and object-cover on the wrapper", () => {
@@ -121,11 +147,13 @@ describe("AmbientGlow", () => {
     );
     const img = container.querySelector("img") as HTMLImageElement;
     const scaledBox = img.parentElement as HTMLElement;
-    // transform-gpu (→ translateZ(0)) + will-change force a composited layer so
-    // Blink rasterises the blur at the small pre-scale size, not the displayed
-    // scaled-up size (where it would decode the full-res source bitmap).
+    // transform-gpu (→ translateZ(0)) forces a composited layer so Blink
+    // rasterises the blur at the small pre-scale size, not the displayed scaled-up
+    // size (where it would decode the full-res source bitmap).
     expect(scaledBox).toHaveClass("transform-gpu");
-    expect(scaledBox).toHaveClass("will-change-transform");
+    // No will-change: the glow never animates, so a permanent composited layer
+    // would only cost Android WebView memory. transform-gpu alone promotes it.
+    expect(scaledBox).not.toHaveClass("will-change-transform");
     // contain walls the decorative layer off from the rest of the subtree.
     expect(scaledBox.style.contain).toBe("layout paint");
   });

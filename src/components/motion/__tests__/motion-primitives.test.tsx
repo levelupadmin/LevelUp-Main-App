@@ -91,6 +91,25 @@ describe("MotionButton", () => {
 
     expect(onClick).toHaveBeenCalledTimes(2);
   });
+
+  it("routes real keyboard Enter/Space through the native-button activation path", () => {
+    const onClick = vi.fn();
+    render(<MotionButton onClick={onClick}>Keyed</MotionButton>);
+    const btn = screen.getByRole("button", { name: "Keyed" });
+
+    // A real keydown on a native <button> — jsdom does NOT synthesize the follow-on
+    // click that a browser would, so assert the keydown itself does not throw and
+    // the element carries native-button keyboard semantics (it IS a <button>, so no
+    // custom onKeyDown bridge is needed — the platform handles Enter/Space).
+    fireEvent.keyDown(btn, { key: "Enter" });
+    fireEvent.keyDown(btn, { key: " " });
+    expect(btn.tagName).toBe("BUTTON");
+    // The unified activation path is onClick; a browser-dispatched click from either
+    // key lands there. Simulate that follow-on click for each key press.
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(onClick).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("MotionCard", () => {
@@ -140,7 +159,7 @@ describe("MotionCard", () => {
     expect(card).toHaveAttribute("tabindex", "-1");
   });
 
-  it("becomes a keyboard-operable button when given an onClick", () => {
+  it("becomes a keyboard-operable button with native-button Enter/Space semantics", () => {
     const onClick = vi.fn();
     render(
       <MotionCard onClick={onClick} data-testid="pressable">
@@ -151,18 +170,42 @@ describe("MotionCard", () => {
     expect(card).toHaveAttribute("role", "button");
     expect(card).toHaveAttribute("tabindex", "0");
 
-    // Enter and Space both activate the click path (WCAG 2.1.1).
+    // Enter activates on keydown (native-button semantics).
     fireEvent.keyDown(card, { key: "Enter" });
+    expect(onClick).toHaveBeenCalledTimes(1);
+
+    // Space does NOT activate on keydown — it only suppresses page scroll — and
+    // activates on keyup instead, matching a native <button>.
     fireEvent.keyDown(card, { key: " " });
+    expect(onClick).toHaveBeenCalledTimes(1);
+    fireEvent.keyUp(card, { key: " " });
     expect(onClick).toHaveBeenCalledTimes(2);
 
-    // An unrelated key does not activate.
+    // An unrelated key does not activate on either keydown or keyup.
     fireEvent.keyDown(card, { key: "a" });
+    fireEvent.keyUp(card, { key: "a" });
     expect(onClick).toHaveBeenCalledTimes(2);
 
     // And a pointer click still fires directly.
     fireEvent.click(card);
     expect(onClick).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not multi-fire on held-key (auto-repeat) Enter", () => {
+    const onClick = vi.fn();
+    render(
+      <MotionCard onClick={onClick} data-testid="repeat">
+        Held
+      </MotionCard>,
+    );
+    const card = screen.getByTestId("repeat");
+
+    // First press fires; the OS then streams repeat keydowns while the key is held.
+    fireEvent.keyDown(card, { key: "Enter" });
+    fireEvent.keyDown(card, { key: "Enter", repeat: true });
+    fireEvent.keyDown(card, { key: "Enter", repeat: true });
+    // Only the initial (non-repeat) keydown activated.
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it("lets the caller override the interactive defaults", () => {
@@ -195,6 +238,31 @@ describe("MotionCard", () => {
     // The caller's handler ran, but its preventDefault suppressed the click bridge.
     expect(onKeyDown).toHaveBeenCalledTimes(1);
     expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("warns in dev when an interactive card has no discernible accessible name", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    render(<MotionCard onClick={() => {}} aria-label="" data-testid="noname" />);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toMatch(/accessible name/i);
+  });
+
+  it("does not warn when the interactive card has text content", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    render(<MotionCard onClick={() => {}}>Enrol now</MotionCard>);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("does not warn when the interactive card has an aria-label", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    render(<MotionCard onClick={() => {}} aria-label="Open course" />);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("does not warn for a non-interactive card without a name", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    render(<MotionCard data-testid="static-noname" />);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("shares ONE (pointer: fine) listener across a grid of cards", () => {

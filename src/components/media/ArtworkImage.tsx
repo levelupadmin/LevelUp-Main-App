@@ -34,14 +34,29 @@ interface ArtworkImageProps
 /**
  * Branded champagne-on-black placeholder shown when the source is missing or
  * fails to load. Pure inline SVG (LevelUp "L" monogram) — no asset dependency.
+ *
+ * When `alt` is non-empty the placeholder stands in for the image, so it exposes
+ * `role="img"` + `aria-label={alt}` — a screen reader still announces the
+ * artwork's meaning even though the source failed to load. With an empty `alt`
+ * (decorative usage) it stays `aria-hidden` so it adds no noise.
  */
-const ArtworkPlaceholder = ({ className }: { className?: string }) => (
+const ArtworkPlaceholder = ({
+  className,
+  alt,
+}: {
+  className?: string;
+  alt?: string;
+}) => {
+  const hasAccessibleName = typeof alt === "string" && alt !== "";
+  return (
   <div
     className={cn(
       "absolute inset-0 grid place-items-center bg-gradient-to-br from-black via-black to-cream/15",
       className,
     )}
-    aria-hidden="true"
+    {...(hasAccessibleName
+      ? { role: "img", "aria-label": alt }
+      : { "aria-hidden": "true" as const })}
     data-testid="artwork-placeholder"
   >
     <svg
@@ -49,6 +64,7 @@ const ArtworkPlaceholder = ({ className }: { className?: string }) => (
       className="h-1/3 w-1/3 max-h-16 max-w-16 text-cream/40"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
     >
       <path
         d="M16 12v24h16"
@@ -59,7 +75,8 @@ const ArtworkPlaceholder = ({ className }: { className?: string }) => (
       />
     </svg>
   </div>
-);
+  );
+};
 
 /**
  * App-wide image treatment. Enforces `aspect-ratio` + `object-cover` (kills
@@ -97,7 +114,7 @@ export const ArtworkImage = ({
       )}
     >
       {showPlaceholder ? (
-        <ArtworkPlaceholder />
+        <ArtworkPlaceholder alt={alt} />
       ) : (
         <img
           src={src}

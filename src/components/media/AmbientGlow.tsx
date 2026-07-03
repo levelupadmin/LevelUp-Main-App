@@ -52,12 +52,16 @@ interface AmbientGlowProps {
  * filter pass. `aria-hidden` + `pointer-events-none` keep it purely
  * decorative. Renders nothing extra when neither source is present.
  *
- * Compositing: the scaled box carries `transform-gpu` (→ `translateZ(0)`) +
- * `will-change-transform` so Blink promotes it to its own composited layer and
- * rasterises the blur at the small pre-scale size instead of the displayed
- * (scaled-up) size — the Blink/Android failure mode where a large scaled
- * filtered element decodes the full-res bitmap. `contain-[layout_paint]` walls
- * the decorative layer off from the rest of the subtree.
+ * Compositing: the scaled box carries `transform-gpu` (→ `translateZ(0)`) so
+ * Blink promotes it to its own composited layer and rasterises the blur at the
+ * small pre-scale size instead of the displayed (scaled-up) size — the
+ * Blink/Android failure mode where a large scaled filtered element decodes the
+ * full-res bitmap. `transform-gpu` alone is the cheap, always-on promotion here;
+ * `will-change-transform` is deliberately NOT used — it keeps a permanent
+ * composited layer alive on a purely decorative element, adding to the Android
+ * WebView layer/memory budget for no benefit on a static (non-animating) glow.
+ * `contain-[layout_paint]` walls the decorative layer off from the rest of the
+ * subtree.
  *
  * ⚠️ CALLERS MUST pass a thumbnail-sized `src` (or `srcSmall`), NOT a full-res
  * original — see {@link AmbientGlowProps.src}. Compositing hints reduce, but do
@@ -76,12 +80,13 @@ export const AmbientGlow = ({
     <div className={cn("relative isolate", className)}>
       {glowSrc && (
         // 10% box, centred, scaled back up so the blur only touches a small
-        // rasterised copy. `transform-gpu` + `will-change-transform` force a
-        // composited layer so Blink/Android rasterises the blur at the small
-        // pre-scale size, not the displayed scaled-up size; `contain` walls the
-        // decorative layer off from the rest of the subtree.
+        // rasterised copy. `transform-gpu` forces a composited layer so
+        // Blink/Android rasterises the blur at the small pre-scale size, not the
+        // displayed scaled-up size; `contain` walls the decorative layer off from
+        // the rest of the subtree. No `will-change` — the glow never animates, so a
+        // permanent composited layer would only cost Android WebView memory.
         <div
-          className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[10%] w-[10%] origin-center -translate-x-1/2 -translate-y-1/2 scale-[10.5] transform-gpu will-change-transform"
+          className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[10%] w-[10%] origin-center -translate-x-1/2 -translate-y-1/2 scale-[10.5] transform-gpu"
           style={{ contain: "layout paint" }}
           aria-hidden="true"
         >
