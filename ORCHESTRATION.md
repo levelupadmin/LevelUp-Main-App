@@ -45,16 +45,21 @@ Plus the pre-existing **`bugfix-council`** — mandatory before releasing any ph
    punch list + screenshots (do not grind tokens on a structural problem)
    if BLOCK → director adjudicates personally (read the evidence, decide, possibly council)
 6  Director reviews keyScreenshots + git diff main --stat, then: bugfix-council if Tier-1
-7  Merge design/phase-N → main (no squash; keep the commit narrative), push
-8  RELEASE TRAIN (director, main loop — runbooks in CLAUDE.md):
-   a. bump android versionCode/versionName + iOS CURRENT_PROJECT_VERSION
-   b. npm run build && npx cap sync
+7  ⚠️ DO NOT MERGE TO MAIN YET — main auto-deploys the web app to PRODUCTION via
+   Vercel, and students use web (it's the native purchase path). Merging would break
+   the internal-channels-only decision. Phase branches ship stores directly:
+8  RELEASE TRAIN (director, main loop, FROM the design/phase-N branch — runbooks in CLAUDE.md):
+   a. bump android versionCode/versionName + iOS CURRENT_PROJECT_VERSION (on the branch)
+   b. npm run build && npx cap sync android && npx cap sync ios (commit native changes)
    c. Android: gradlew bundleRelease → play-publish.mjs <aab> --track internal
    d. iOS: xcodebuild archive/export → altool upload → TestFlight
    e. verify: play-publish --status + asc-api builds
-9  Notify Rahul: what shipped, WHAT TO TEST (per-screen checklist from the brief),
-   token cost (sum of workflow tokensSpent), known deferred items
-10 Immediately: branch design/phase-N+1, write its brief, start step 3
+9  Notify Rahul: what shipped, WHAT TO TEST (per-screen checklist from the brief + the
+   council's mustVerifyBeforeShip list), token cost, known deferred items
+10 Immediately: branch design/phase-N+1 OFF design/phase-N (stacked), write its brief, start step 3
+11 On Rahul's "promote phase N": merge the phase branch → main (web prod goes live),
+   push, then staged store rollout per CLAUDE.md (10–20% → watch → 100%). Promotion is
+   gated on his on-device checklist, per the phase council.
 11 Rahul's device feedback (any time) → director triages into items[] →
    design-fix-sprint on a fix/ branch off main → gate the touched routes → merge →
    next internal build picks it up (hotfix build only if severity demands)
@@ -67,7 +72,7 @@ Plus the pre-existing **`bugfix-council`** — mandatory before releasing any ph
 | Phase | Scope (see DESIGN-STRATEGY.md §5) | Branch | Status |
 |---|---|---|---|
 | 0 | Foundation: shadow/z tokens, motion lib + primitives, ArtworkImage, haptics install | `design/phase-0` | ✅ MERGED to main 2026-07-02 (`0939b02`) — build → gate FIX-LIST(9) → sprint 7/7 → re-gate PASS. ~2.7M Opus tokens, 44 agents. 5 low adoption-time notes carried into the phase-1 brief |
-| 1 | Core loop: Home, button/card adoption, tab bar, shared-element, craft-bug sweep | `design/phase-1` | pending |
+| 1 | Core loop: Home, button/card adoption, tab bar, shared-element, craft-bug sweep | `design/phase-1` | ✅ SHIPPED-INTERNAL 2026-07-03: Android 613/3.5.0 on Play internal track (prod stays 612). iOS blocked — no Xcode on this Mac. 3 gates + 3 sprints + council (REVISE→resolved). ~9.5M Opus tokens, ~120 agents. NOT merged to main (web-prod gate). Carry-overs in phase-2 brief: greeting band coarse-pointer parking (index.css:227, Tier-1+council), Learn empty CTA 40px@360, CatalogSection pills a11y, UpcomingSessions focus ring, MyCoursesPage .pressable, ken-burns device perf, HeroPlayChip legacy blur |
 | 2 | Screening room: ChapterViewer, exit animations, skeleton crossfade | `design/phase-2` | pending |
 | 3 | Money pages: PublicOffering/checkout choreography (+PostHog if approved) | `design/phase-3` | pending |
 | 4 | Tactility: sheets/gestures, stats/streak (if approved), Community/Login/Profile | `design/phase-4` | pending |

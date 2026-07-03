@@ -70,6 +70,7 @@ export default {
           emerald: "hsl(var(--accent-emerald))",
           amber: "hsl(var(--accent-amber))",
           violet: "hsl(var(--accent-violet))",
+          "violet-deep": "hsl(var(--accent-violet-deep))",
         },
         popover: {
           DEFAULT: "hsl(var(--popover))",

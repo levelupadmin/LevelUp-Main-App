@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { ArrowRight, Clock } from "lucide-react";
+import { MotionCard } from "@/components/motion/MotionCard";
 
 interface SessionStripRow {
   id: string;
@@ -104,32 +105,40 @@ const UpcomingSessions = () => {
         {sessions.map((s) => {
           const dt = new Date(s.scheduled_at);
           return (
-            <Link
+            <MotionCard
               key={s.id}
-              to="/learn?seg=live"
-              className="pressable bg-surface border border-border rounded-2xl p-4 flex items-center gap-4 hover:border-border-hover transition-colors"
+              asChild
+              // tabIndex={0} preserves the anchor's native tab stop — MotionCard would
+              // otherwise force -1 on a non-interactive card (no onClick), silently
+              // removing the session card from the tab order.
+              tabIndex={0}
             >
-              {/* Date chip */}
-              <div className="flex-shrink-0 w-14 h-14 rounded-lg bg-[hsl(var(--accent-amber)/0.12)] flex flex-col items-center justify-center">
-                <span className="text-[10px] font-mono uppercase text-[hsl(var(--accent-amber))]">
-                  {format(dt, "EEE")}
+              <Link
+                to="/learn?seg=live"
+                className="bg-surface border border-border rounded-2xl p-4 flex items-center gap-4 hover:border-border-hover transition-colors"
+              >
+                {/* Date chip */}
+                <div className="flex-shrink-0 w-14 h-14 rounded-lg bg-[hsl(var(--accent-amber)/0.12)] flex flex-col items-center justify-center">
+                  <span className="text-[10px] font-mono uppercase text-[hsl(var(--accent-amber))]">
+                    {format(dt, "EEE")}
+                  </span>
+                  <span className="text-sm font-semibold text-[hsl(var(--accent-amber))]">
+                    {format(dt, "d")}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold line-clamp-1">{s.title}</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{s.course_title}</p>
+                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> {format(dt, "MMM d, h:mm a")}
+                    {s.duration_minutes ? ` · ${s.duration_minutes} min` : ""}
+                  </p>
+                </div>
+                <span className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-[hsl(var(--accent-amber))] text-background text-xs font-medium">
+                  Join
                 </span>
-                <span className="text-sm font-semibold text-[hsl(var(--accent-amber))]">
-                  {format(dt, "d")}
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-semibold line-clamp-1">{s.title}</h3>
-                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{s.course_title}</p>
-                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                  <Clock className="h-3 w-3" /> {format(dt, "MMM d, h:mm a")}
-                  {s.duration_minutes ? ` · ${s.duration_minutes} min` : ""}
-                </p>
-              </div>
-              <span className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-[hsl(var(--accent-amber))] text-background text-xs font-medium">
-                Join
-              </span>
-            </Link>
+              </Link>
+            </MotionCard>
           );
         })}
       </div>

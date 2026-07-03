@@ -288,7 +288,7 @@ const Login = () => {
             <button
               type="submit"
               disabled={loading || !phone}
-              className="btn-champagne w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
+              className="btn-champagne pressable w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Send code
@@ -344,7 +344,7 @@ const Login = () => {
             <button
               type="submit"
               disabled={loading}
-              className="btn-champagne w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
+              className="btn-champagne pressable w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Send sign-in link
@@ -478,7 +478,7 @@ const Login = () => {
               <button
                 type="button"
                 onClick={() => { hapticImpact("light"); setFormOpen(true); }}
-                className="btn-champagne w-full h-[52px] flex items-center justify-center gap-2 text-base font-semibold"
+                className="btn-champagne pressable w-full h-[52px] flex items-center justify-center gap-2 text-base font-semibold"
               >
                 Sign in
                 <ArrowRight className="h-4 w-4" />

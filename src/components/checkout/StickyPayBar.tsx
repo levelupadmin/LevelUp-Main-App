@@ -57,6 +57,10 @@ export default function StickyPayBar({
           size="lg"
           className="h-12 shrink-0 px-6"
           onClick={onPay}
+          // onPay (CheckoutPage.handlePay) fires a deliberate hapticImpact("medium")
+          // for the money moment; suppress the Button's default tapTick so the pay
+          // tap doesn't double-buzz. Mirrors the primary Pay button.
+          haptic={false}
           disabled={disabled || paying}
         >
           {paying ? (

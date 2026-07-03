@@ -184,6 +184,9 @@ const InvoiceDetailSheet = ({ order, open, onOpenChange }: InvoiceDetailSheetPro
               <Button
                 onClick={handleDownload}
                 disabled={downloading}
+                // handleDownload fires a deliberate hapticImpact("medium"); suppress
+                // the Button's default tapTick so the tap doesn't double-buzz.
+                haptic={false}
                 className="btn-champagne h-12 gap-2 text-sm font-semibold"
               >
                 <Download className="h-4 w-4" />
@@ -192,6 +195,10 @@ const InvoiceDetailSheet = ({ order, open, onOpenChange }: InvoiceDetailSheetPro
               <Button
                 onClick={handleEmail}
                 variant="outline"
+                // handleEmail fires its own hapticSelection() (the same tick the
+                // Button would emit); suppress the default tapTick to avoid an
+                // identical double-buzz.
+                haptic={false}
                 className="h-12 gap-2 border-border text-sm font-semibold"
               >
                 <Mail className="h-4 w-4" />

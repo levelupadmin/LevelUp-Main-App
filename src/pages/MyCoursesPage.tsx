@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { TierBadge } from "@/components/TierBadge";
 import { Button } from "@/components/ui/button";
-import LazyImage from "@/components/LazyImage";
+import { ArtworkImage } from "@/components/media/ArtworkImage";
 import { ArrowRight, BookOpen, Sparkles, Award, WifiOff, RefreshCw, GraduationCap, PlayCircle } from "lucide-react";
 import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
@@ -71,110 +71,108 @@ const MyCoursesPage = () => {
 
       if (enrsError) throw enrsError;
 
-      if (!enrs?.length) {
-        setCourses([]);
-        setLoading(false);
-        return;
-      }
+      // Enrolled-course processing. When the user has no active enrolments
+      // (or their offerings map to no courses), `result` stays empty and we
+      // fall straight through to the recommendations fetch below — that's the
+      // zero-enrollment path, and it must still surface the catalog so the
+      // empty state isn't a dead end.
+      const result: EnrolledCourse[] = [];
+      let completedChapterIds = new Set<string>();
 
-      // Get offering → course mappings
-      const offeringIds = enrs.map((e) => e.offering_id);
-      const { data: ocs } = await supabase
-        .from("offering_courses")
-        .select("offering_id, course_id")
-        .in("offering_id", offeringIds);
-
-      if (!ocs?.length) {
-        setCourses([]);
-        setLoading(false);
-        return;
-      }
-
-      const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
-
-      // Get course details
-      const { data: coursesData } = await supabase
-        .from("courses")
-        .select("id, title, description, instructor_display_name, thumbnail_url")
-        .in("id", courseIds);
-
-      // Get offering titles
-      const { data: offData } = await supabase
-        .from("offerings")
-        .select("id, title")
-        .in("id", offeringIds);
-
-      // Get all chapters for these courses (via sections)
-      const { data: sections } = await supabase
-        .from("sections")
-        .select("id, course_id")
-        .in("course_id", courseIds);
-
-      const sectionIds = (sections ?? []).map((s) => s.id);
-      const { data: chapters } = sectionIds.length
+      const offeringIds = (enrs ?? []).map((e) => e.offering_id);
+      const { data: ocs } = offeringIds.length
         ? await supabase
-            .from("chapters")
-            .select("id, section_id")
-            .in("section_id", sectionIds)
+            .from("offering_courses")
+            .select("offering_id, course_id")
+            .in("offering_id", offeringIds)
         : { data: [] };
 
-      // Get user progress
-      const { data: progress } = await supabase
-        .from("chapter_progress")
-        .select("chapter_id, completed_at")
-        .eq("user_id", user.id)
-        .in("course_id", courseIds);
+      if (ocs?.length) {
+        const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
 
-      // Map section → course
-      const sectionCourseMap: Record<string, string> = {};
-      (sections ?? []).forEach((s) => {
-        sectionCourseMap[s.id] = s.course_id;
-      });
+        // Get course details
+        const { data: coursesData } = await supabase
+          .from("courses")
+          .select("id, title, description, instructor_display_name, thumbnail_url")
+          .in("id", courseIds);
 
-      // Count chapters per course
-      const totalPerCourse: Record<string, number> = {};
-      const completedPerCourse: Record<string, number> = {};
-      const completedChapterIds = new Set(
-        (progress ?? []).filter((p) => p.completed_at).map((p) => p.chapter_id)
-      );
+        // Get offering titles
+        const { data: offData } = await supabase
+          .from("offerings")
+          .select("id, title")
+          .in("id", offeringIds);
 
-      (chapters ?? []).forEach((ch) => {
-        const cid = sectionCourseMap[ch.section_id];
-        if (!cid) return;
-        totalPerCourse[cid] = (totalPerCourse[cid] || 0) + 1;
-        if (completedChapterIds.has(ch.id)) {
-          completedPerCourse[cid] = (completedPerCourse[cid] || 0) + 1;
-        }
-      });
+        // Get all chapters for these courses (via sections)
+        const { data: sections } = await supabase
+          .from("sections")
+          .select("id, course_id")
+          .in("course_id", courseIds);
 
-      const courseMap = Object.fromEntries((coursesData ?? []).map((c) => [c.id, c]));
-      const offMap = Object.fromEntries((offData ?? []).map((o) => [o.id, o]));
+        const sectionIds = (sections ?? []).map((s) => s.id);
+        const { data: chapters } = sectionIds.length
+          ? await supabase
+              .from("chapters")
+              .select("id, section_id")
+              .in("section_id", sectionIds)
+          : { data: [] };
 
-      // Build enrolment → offering → course → entry mapping
-      const enrolmentMap = new Map<string, string>();
-      enrs.forEach((e) => enrolmentMap.set(e.offering_id, e.id));
+        // Get user progress
+        const { data: progress } = await supabase
+          .from("chapter_progress")
+          .select("chapter_id, completed_at")
+          .eq("user_id", user.id)
+          .in("course_id", courseIds);
 
-      const result: EnrolledCourse[] = [];
-      const seen = new Set<string>();
-
-      ocs.forEach((oc) => {
-        if (seen.has(oc.course_id)) return;
-        seen.add(oc.course_id);
-        const c = courseMap[oc.course_id];
-        if (!c) return;
-        const total = totalPerCourse[oc.course_id] || 0;
-        const completed = completedPerCourse[oc.course_id] || 0;
-        result.push({
-          enrolment_id: enrolmentMap.get(oc.offering_id) ?? "",
-          course_id: c.id,
-          title: c.title,
-          description: c.description,
-          instructor_display_name: c.instructor_display_name,
-          thumbnail_url: c.thumbnail_url,
-          offering_title: offMap[oc.offering_id]?.title ?? "",
-          progress_pct: total > 0 ? Math.round((completed / total) * 100) : 0,
+        // Map section → course
+        const sectionCourseMap: Record<string, string> = {};
+        (sections ?? []).forEach((s) => {
+          sectionCourseMap[s.id] = s.course_id;
         });
-      });
+
+        // Count chapters per course
+        const totalPerCourse: Record<string, number> = {};
+        const completedPerCourse: Record<string, number> = {};
+        completedChapterIds = new Set(
+          (progress ?? []).filter((p) => p.completed_at).map((p) => p.chapter_id)
+        );
+
+        (chapters ?? []).forEach((ch) => {
+          const cid = sectionCourseMap[ch.section_id];
+          if (!cid) return;
+          totalPerCourse[cid] = (totalPerCourse[cid] || 0) + 1;
+          if (completedChapterIds.has(ch.id)) {
+            completedPerCourse[cid] = (completedPerCourse[cid] || 0) + 1;
+          }
+        });
+
+        const courseMap = Object.fromEntries((coursesData ?? []).map((c) => [c.id, c]));
+        const offMap = Object.fromEntries((offData ?? []).map((o) => [o.id, o]));
+
+        // Build enrolment → offering → course → entry mapping
+        const enrolmentMap = new Map<string, string>();
+        (enrs ?? []).forEach((e) => enrolmentMap.set(e.offering_id, e.id));
+
+        const seen = new Set<string>();
+
+        ocs.forEach((oc) => {
+          if (seen.has(oc.course_id)) return;
+          seen.add(oc.course_id);
+          const c = courseMap[oc.course_id];
+          if (!c) return;
+          const total = totalPerCourse[oc.course_id] || 0;
+          const completed = completedPerCourse[oc.course_id] || 0;
+          result.push({
+            enrolment_id: enrolmentMap.get(oc.offering_id) ?? "",
+            course_id: c.id,
+            title: c.title,
+            description: c.description,
+            instructor_display_name: c.instructor_display_name,
+            thumbnail_url: c.thumbnail_url,
+            offering_title: offMap[oc.offering_id]?.title ?? "",
+            progress_pct: total > 0 ? Math.round((completed / total) * 100) : 0,
+          });
+        });
+      }
 
       setCourses(result);
 
@@ -197,10 +195,14 @@ const MyCoursesPage = () => {
       });
 
       // ── Recommendations: courses the user hasn't enrolled in ──
+      // Runs for EVERY user, including zero-enrollment — this is what turns the
+      // empty Courses state into a browsable catalog instead of a dead end.
       const enrolledCourseIds = new Set(result.map((c) => c.course_id));
-      const enrolledTiers = [...new Set(
-        (await supabase.from("courses").select("product_tier").in("id", [...enrolledCourseIds])).data?.map((c: any) => c.product_tier) || []
-      )];
+      const enrolledTiers = enrolledCourseIds.size
+        ? [...new Set(
+            (await supabase.from("courses").select("product_tier").in("id", [...enrolledCourseIds])).data?.map((c: any) => c.product_tier) || []
+          )]
+        : [];
 
       const { data: recCourses } = await supabase
         .from("courses")
@@ -321,13 +323,9 @@ const MyCoursesPage = () => {
               <Link
                 key={c.course_id}
                 to={`/courses/${c.course_id}`}
-                className="pressable bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
+                className="pressable bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-base"
               >
-                <div className="aspect-video bg-surface-2">
-                  {c.thumbnail_url && (
-                    <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />
-                  )}
-                </div>
+                <ArtworkImage src={c.thumbnail_url} alt="" aspect="video" />
                 <div className="p-4 space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="text-base font-semibold line-clamp-1 flex-1">{c.title}</h3>
@@ -377,12 +375,10 @@ const MyCoursesPage = () => {
                   // weird and pressures the user into a buy decision
                   // before they've seen the trailer.
                   to={c.offering_slug ? `/p/${c.offering_slug}` : `/courses/${c.id}`}
-                  className="pressable bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
+                  className="pressable bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-base"
                 >
-                  <div className="aspect-video bg-surface-2 relative">
-                    {c.thumbnail_url && (
-                      <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />
-                    )}
+                  <div className="relative">
+                    <ArtworkImage src={c.thumbnail_url} alt="" aspect="video" />
                     <div className="absolute top-2 left-2">
                       <TierBadge tier={c.product_tier} />
                     </div>
