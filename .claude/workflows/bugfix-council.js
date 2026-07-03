@@ -11,12 +11,15 @@ export const meta = {
 //   fix   — what changed and why (the author's description of the fix)
 //   files — array of touched files (or omit; the council reads the git diff)
 //   scope — optional: which platforms/surfaces this touches
-const a = (typeof args === 'object' && args) ? args : {}
+let a = (typeof args === 'object' && args) ? args : {}
+if (typeof args === 'string') { try { a = JSON.parse(args) } catch { a = {} } }
+const REPO = a.repoPath || '/Users/rahul/Claude Code/LevelUp-Main-App'
 const FIX = a.fix || a.description || 'Review the current uncommitted diff (git diff HEAD) and the last commit (git show HEAD) in this repo.'
 const FILES = Array.isArray(a.files) ? a.files.join(', ') : (a.files || '(infer from the git diff)')
 const SCOPE = a.scope || 'Infer which platforms/surfaces this touches: desktop web, Android System WebView, Android Chrome, iOS WKWebView, server/edge functions, database.'
 
-const BASE = `You are on a council reviewing a proposed BUG FIX before it ships to production. Work in this repo.
+const BASE = `Repo root: ${REPO} — cd there first; all git commands and file paths are relative to it.
+You are on a council reviewing a proposed change before it ships to production. Work in this repo.
 Inspect the ACTUAL change first: run \`git diff HEAD\`, \`git diff --staged\`, and \`git show HEAD\`, and read the touched files: ${FILES}.
 
 THE FIX (as described by the author): ${FIX}
