@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { motion, useScroll, useTransform, type MotionValue } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useCatalog } from "@/components/catalog/useCatalog";
 import { parseMasterclassTitle } from "@/components/catalog/CatalogCard";
 import { useEnrolmentCounts } from "@/hooks/useEnrolmentCounts";
+import { durations, easings, useMotionSafe } from "@/lib/motion";
 
 const ROTATE_MS = 6000;
 
@@ -15,10 +17,57 @@ interface HeroSlide {
   slug: string;
 }
 
+/**
+ * Slow transform-only drift on the artwork — the ken-burns one-off, now driven
+ * by a tokenized framer transition (durations.slow-derived timing, easings.inOut)
+ * so there are zero one-off durations/easings in the diff. Reduced motion holds
+ * it perfectly still.
+ */
+const HeroArtwork = ({
+  src,
+  eager,
+  parallaxY,
+  active,
+}: {
+  src: string;
+  eager: boolean;
+  parallaxY: MotionValue<string>;
+  active: boolean;
+}) => {
+  const { enabled } = useMotionSafe();
+  return (
+    // Vertical overscan (-inset-y-[10%] → 120% tall, centred) gives the parallax
+    // translate headroom so moving the artwork never reveals a gap at the edges.
+    <motion.div
+      className="absolute -inset-y-[10%] inset-x-0 transform-gpu"
+      style={{ y: parallaxY }}
+    >
+      <motion.img
+        src={src}
+        alt=""
+        loading={eager ? "eager" : "lazy"}
+        decoding="async"
+        className="absolute inset-0 h-full w-full object-cover"
+        // Ken-burns drift, transform-only. Runs on the active slide only so
+        // off-screen crossfaded copies don't animate. Tokenized timing/easing.
+        initial={false}
+        animate={enabled && active ? { scale: 1.04 } : { scale: 1 }}
+        transition={{
+          duration: durations.slow * 22.5, // 0.4s * 22.5 = 9s slow drift
+          ease: easings.inOut,
+          repeat: Infinity,
+          repeatType: "reverse",
+        }}
+      />
+    </motion.div>
+  );
+};
+
 // Full-bleed rotating banner of up to 3 masterclass offerings. No prices,
 // purely editorial, so no native price gating is needed here.
 const FeaturedHero = () => {
   const { data: courses } = useCatalog();
+  const { enabled, springs } = useMotionSafe();
 
   const masterclasses = useMemo(
     () =>
@@ -67,6 +116,18 @@ const FeaturedHero = () => {
   const pausedRef = useRef(false);
   const [paused, setPaused] = useState(false);
 
+  // Subtle scroll parallax: the artwork translates SLOWER than the page as the
+  // hero scrolls through the viewport (transform-only, no layout reads). Tracked
+  // against the section's own scroll progress so it eases in/out of frame.
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ["start start", "end start"],
+  });
+  // Reduced motion ⇒ the artwork stays put (range collapses to 0), so scrolling
+  // never translates it.
+  const parallaxY = useTransform(scrollYProgress, [0, 1], ["0%", enabled ? "7%" : "0%"]);
+
   // Keep index valid if the slide list shrinks (e.g. cache refresh).
   useEffect(() => {
     if (index >= slides.length && slides.length > 0) setIndex(0);
@@ -99,6 +160,7 @@ const FeaturedHero = () => {
 
   return (
     <section
+      ref={sectionRef}
       aria-label="Featured masterclasses"
       onMouseEnter={pause}
       onMouseLeave={resume}
@@ -108,20 +170,26 @@ const FeaturedHero = () => {
     >
       <div className="relative aspect-[4/5] sm:aspect-[16/8] lg:aspect-[21/8] max-h-[520px] w-full bg-surface-2">
         {slides.map((s, i) => (
-          <div
+          <motion.div
             key={s.key}
             aria-hidden={i !== index}
             className={cn(
-              "absolute inset-0 transition-opacity duration-700 ease-out",
-              i === index ? "opacity-100" : "opacity-0 pointer-events-none"
+              "absolute inset-0",
+              i === index ? "" : "pointer-events-none"
             )}
+            // Tokenized opacity crossfade (was `transition-opacity duration-700
+            // ease-out`) — now a framer transition on durations.slow / easings.out
+            // so the timing lives on the motion tokens, not a one-off class.
+            initial={false}
+            animate={{ opacity: i === index ? 1 : 0 }}
+            transition={{ duration: durations.slow, ease: easings.out }}
           >
             <div className="absolute inset-0 overflow-hidden">
-              <img
+              <HeroArtwork
                 src={s.image}
-                alt=""
-                loading={i === 0 ? "eager" : "lazy"}
-                className="kenburns absolute inset-0 w-full h-full object-cover"
+                eager={i === 0}
+                parallaxY={parallaxY}
+                active={i === index}
               />
             </div>
             {/* Dark gradients keep the overlaid copy legible on any art. */}
@@ -151,21 +219,24 @@ const FeaturedHero = () => {
                 </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         ))}
 
         {slides.length > 1 && (
           <div className="absolute bottom-4 right-5 sm:right-8 flex items-center gap-1.5 z-10">
             {slides.map((s, i) => (
-              <button
+              <motion.button
                 key={s.key}
                 aria-label={`Show featured masterclass ${i + 1}`}
                 aria-current={i === index}
                 onClick={() => setIndex(i)}
                 className={cn(
-                  "h-1.5 rounded-full transition-all duration-300",
+                  "h-1.5 rounded-full",
                   i === index ? "w-5 bg-[hsl(var(--cream))]" : "w-1.5 bg-white/40 hover:bg-white/60"
                 )}
+                // Width/colour settle on the glide spring (reduced motion ⇒ instant).
+                layout
+                transition={springs.glide}
               />
             ))}
           </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
@@ -19,6 +20,9 @@ import PurchaseRail from "@/components/offering/PurchaseRail";
 import LessonBrowser from "@/components/offering/LessonBrowser";
 import CohortInfoBlock from "@/components/offering/CohortInfoBlock";
 import HeroPlayChip from "@/components/offering/HeroPlayChip";
+import ArtworkImage from "@/components/media/ArtworkImage";
+import AmbientGlow from "@/components/media/AmbientGlow";
+import { durations, easings, useMotionSafe } from "@/lib/motion";
 import { track } from "@/lib/analytics";
 import {
   Check,
@@ -167,61 +171,121 @@ function HeroBanner({
   // The play chip only makes sense over a cinematic cover photo. Live-cohort
   // logo heroes get the chip surfaced via the CTA row instead, not the logo.
   const showPlayChip = !!onPlayPreview && !isApply && !!img;
+
+  const { enabled, springs } = useMotionSafe();
+
+  // Blur-up / scale-settle entrance: the hero glides 1.04→1 on the glide spring
+  // while the title + subtitle reveal in a short stagger, so arriving from a Home
+  // card *reads* as spatial continuity. Transform/opacity-only; reduced motion
+  // collapses every leg to its resting state instantly (springs → instant here).
+  const overlayContainer = {
+    hidden: {},
+    show: {
+      transition: {
+        delayChildren: enabled ? durations.fast : 0,
+        staggerChildren: enabled ? durations.fast / 2 : 0,
+      },
+    },
+  };
+  const overlayReveal = {
+    hidden: { opacity: 0, y: enabled ? 12 : 0 },
+    show: {
+      opacity: 1,
+      y: 0,
+      transition: enabled ? springs.glide : { duration: 0 },
+    },
+  };
+
   return (
-    <div className="relative w-full aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-3xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]">
-      {img ? (
-        isApply ? (
-          <>
-            <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--surface-2))] via-[hsl(var(--surface))] to-[hsl(var(--canvas))]" />
-            <img
+    // First AmbientGlow adoption. Per its caller contract we feed a THUMBNAIL-sized
+    // source (offering.thumbnail_url), NEVER the full-res banner_url, so the scaled
+    // + blurred glow box never decodes a large bitmap on Android WebView.
+    <AmbientGlow
+      srcSmall={offering.thumbnail_url}
+      width={320}
+      className="w-full"
+    >
+      <motion.div
+        className="relative w-full aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-3xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
+        style={{ transformOrigin: "center" }}
+        initial={{ scale: enabled ? 1.04 : 1, opacity: enabled ? 0 : 1 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={
+          enabled
+            ? { scale: springs.glide, opacity: { duration: durations.base, ease: easings.out } }
+            : springs.glide
+        }
+      >
+        {img ? (
+          isApply ? (
+            <>
+              <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--surface-2))] via-[hsl(var(--surface))] to-[hsl(var(--canvas))]" />
+              {/* Contained brand logo (not a cover photo) — ArtworkImage is a
+                  cover-fill primitive, so the logo treatment keeps its own img. */}
+              <img
+                src={img}
+                alt={offering.title}
+                className="absolute inset-x-0 top-0 h-[60%] w-full object-contain p-8 sm:p-10"
+                loading="eager"
+                decoding="async"
+                // React 18 doesn't know the camelCase fetchPriority prop and
+                // warns; the lowercase DOM attribute passes straight through.
+                {...({ fetchpriority: "high" } as any)}
+              />
+            </>
+          ) : (
+            // Cinematic cover: ArtworkImage (priority) kills letterboxing/void and
+            // fades the poster in on load without CLS. Fills the aspect box.
+            <ArtworkImage
               src={img}
               alt={offering.title}
-              className="absolute inset-x-0 top-0 h-[60%] w-full object-contain p-8 sm:p-10"
-              loading="eager"
-              decoding="async"
-              // React 18 doesn't know the camelCase fetchPriority prop and
-              // warns; the lowercase DOM attribute passes straight through.
-              {...({ fetchpriority: "high" } as any)}
+              priority
+              className="absolute inset-0 h-full w-full"
             />
-          </>
+          )
         ) : (
-          <img
-            src={img}
-            alt={offering.title}
-            className="absolute inset-0 w-full h-full object-cover kenburns"
-            loading="eager"
-            decoding="async"
-            {...({ fetchpriority: "high" } as any)}
-          />
-        )
-      ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-          <BookOpen className="h-16 w-16 opacity-30" />
-        </div>
-      )}
-      {/* Title-legibility gradient: dense at the bottom where the type sits, fades out by midpoint */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent pointer-events-none" />
-      {/* Subtle left vignette so a busy background never compromises the cream title */}
-      <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none" />
-
-      {/* Centred champagne play chip that opens the free preview lesson. */}
-      {showPlayChip && onPlayPreview && <HeroPlayChip onClick={onPlayPreview} />}
-
-      {/* Overlaid title block */}
-      <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8 lg:p-12">
-        <p className="text-[10px] sm:text-xs font-mono uppercase tracking-[0.18em] text-[hsl(var(--cream))]/80 mb-3">
-          {eyebrow}
-        </p>
-        <h1 className="text-[clamp(28px,8vw,36px)] leading-[1.05] sm:text-5xl lg:text-[64px] lg:leading-[1.02] font-bold text-foreground tracking-[-0.02em] max-w-[18ch] break-words [text-wrap:balance]">
-          {offering.title}
-        </h1>
-        {offering.subtitle && (
-          <p className="mt-3 sm:mt-4 text-base sm:text-xl lg:text-2xl text-foreground/85 font-['Instrument_Serif'] italic max-w-[42ch]">
-            {offering.subtitle}
-          </p>
+          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
+            <BookOpen className="h-16 w-16 opacity-30" />
+          </div>
         )}
-      </div>
-    </div>
+        {/* Title-legibility gradient: dense at the bottom where the type sits, fades out by midpoint */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent pointer-events-none" />
+        {/* Subtle left vignette so a busy background never compromises the cream title */}
+        <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none" />
+
+        {/* Centred champagne play chip that opens the free preview lesson. */}
+        {showPlayChip && onPlayPreview && <HeroPlayChip onClick={onPlayPreview} />}
+
+        {/* Overlaid title block — staggered reveal in step with the scale settle. */}
+        <motion.div
+          className="absolute inset-x-0 bottom-0 p-6 sm:p-8 lg:p-12"
+          variants={overlayContainer}
+          initial="hidden"
+          animate="show"
+        >
+          <motion.p
+            variants={overlayReveal}
+            className="text-[10px] sm:text-xs font-mono uppercase tracking-[0.18em] text-[hsl(var(--cream))]/80 mb-3"
+          >
+            {eyebrow}
+          </motion.p>
+          <motion.h1
+            variants={overlayReveal}
+            className="text-[clamp(28px,8vw,36px)] leading-[1.05] sm:text-5xl lg:text-[64px] lg:leading-[1.02] font-bold text-foreground tracking-[-0.02em] max-w-[18ch] break-words [text-wrap:balance]"
+          >
+            {offering.title}
+          </motion.h1>
+          {offering.subtitle && (
+            <motion.p
+              variants={overlayReveal}
+              className="mt-3 sm:mt-4 text-base sm:text-xl lg:text-2xl text-foreground/85 font-['Instrument_Serif'] italic max-w-[42ch]"
+            >
+              {offering.subtitle}
+            </motion.p>
+          )}
+        </motion.div>
+      </motion.div>
+    </AmbientGlow>
   );
 }
 
@@ -1234,8 +1298,13 @@ export default function PublicOffering() {
           title and Sign-in link slide under it. Sticky so it stays parked
           at the safe top while the long marketing page scrolls. */}
       <header className="sticky top-0 z-30 border-b border-border bg-[hsl(var(--surface))]/95 backdrop-blur-lg safe-top">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-1">
+        {/* Stable 64px bar height (min-h-16) with vertically-centred content —
+            mirrors the proven StudentLayout header. The old py-4-only bar let
+            the 44px back button + wordmark cluster crowd/overlap page content
+            at 375px; a fixed min-height + gap-3 + shrink guards keep the
+            back-button, wordmark, and Sign-in on one clean row at every width. */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 min-h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
             {/* Explicit back affordance: this public route renders OUTSIDE the
                 app shell (no bottom nav), so without this a user who taps in
                 from Browse on iOS has no way out. Falls back to /browse when
@@ -1244,18 +1313,18 @@ export default function PublicOffering() {
               type="button"
               onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/browse"))}
               aria-label="Go back"
-              className="flex items-center justify-center h-11 w-11 -ml-2 rounded-full text-foreground hover:bg-white/5 active:scale-95 transition"
+              className="flex shrink-0 items-center justify-center h-11 w-11 -ml-2 rounded-full text-foreground hover:bg-white/5 active:scale-95 transition"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <Link to="/" aria-label="LevelUp Learning home" className="flex items-center">
+            <Link to="/" aria-label="LevelUp Learning home" className="flex shrink-0 items-center">
               <LevelUpWordmark className="h-7 w-auto text-foreground" />
             </Link>
           </div>
           {!session && (
             <a
               href="/login"
-              className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center min-h-[44px] px-3 -mx-3 rounded-md"
+              className="shrink-0 text-sm text-muted-foreground hover:text-foreground inline-flex items-center min-h-[44px] px-3 -mr-3 rounded-md"
             >
               Sign in
             </a>
