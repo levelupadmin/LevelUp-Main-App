@@ -107,6 +107,17 @@ describe("YourWeek — enrolled render (AC#6)", () => {
     expect(screen.getByText("Lesson 2 of 2")).toBeInTheDocument();
   });
 
+  it("keeps the Resume card keyboard-reachable (tabIndex must not resolve to -1)", async () => {
+    deriveWeekSummary.mockReturnValue(inProgressSummary);
+    renderYourWeek();
+
+    // MotionCard without onClick resolves tabIndex=-1 and Slot merges it onto
+    // the anchor, silently dropping the highest-intent CTA from the tab order.
+    // The explicit tabIndex={0} in YourWeek.tsx is the guard; pin it here.
+    const link = await screen.findByRole("link");
+    expect(link).toHaveAttribute("tabindex", "0");
+  });
+
   it("shows the review affordance and course-level link when all complete", async () => {
     deriveWeekSummary.mockReturnValue({
       topPct: 100,

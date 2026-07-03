@@ -116,9 +116,11 @@ const YourWeek = () => {
   // springs onto the native <Link> so client-side routing + anchor semantics are
   // preserved; the className keeps only the shadow/ring transition (transform is
   // owned by the spring). See MotionCard for the reduced-motion / coarse-pointer
-  // gating that used to be absent here.
+  // gating that used to be absent here. tabIndex={0} is REQUIRED: with no
+  // onClick, MotionCard is non-interactive and resolves tabIndex=-1, which Slot
+  // would merge onto the anchor and drop this card from the keyboard tab order.
   return (
-    <MotionCard asChild>
+    <MotionCard asChild tabIndex={0}>
       <Link
         to={summary.resumeTo}
         className="group flex items-center gap-4 rounded-2xl bg-surface ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 px-4 py-3.5 sm:px-5 sm:py-4 transition-shadow duration-base shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
