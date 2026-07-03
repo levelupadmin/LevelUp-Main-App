@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { Globe, MapPin, Loader2, Calendar, Clock } from "lucide-react";
 import { eventDateTimeLabel, eventDurationLabel } from "@/lib/event-format";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
+import { EmptyState } from "@/components/EmptyState";
 import { isNative } from "@/lib/platform";
 import { format, isSameDay } from "date-fns";
 import { TimeStateBadge } from "@/components/live/TimeStateBadge";
@@ -381,7 +382,7 @@ const EventsPage = () => {
               onClick={() => setTab(t)}
               className={cn(
                 "px-4 py-1.5 rounded-full text-sm font-medium capitalize border min-h-[44px] sm:min-h-0",
-                tab === t ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground"
+                tab === t ? "bg-cream text-cream-text border-cream" : "border-border text-muted-foreground"
               )}
             >
               {t === "my" ? "My Events" : t}
@@ -396,35 +397,30 @@ const EventsPage = () => {
             ))}
           </div>
         ) : displayed.length === 0 ? (
-          <div className="text-center py-16">
-            <Calendar className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-            <p className="text-lg font-medium text-foreground mb-1">
-              {tab === "upcoming" ? "No upcoming events" : tab === "past" ? "No past events" : "You haven't registered for any events yet"}
-            </p>
-            <p className="text-muted-foreground text-sm">
-              {tab === "upcoming"
+          <EmptyState
+            icon={Calendar}
+            title={
+              tab === "upcoming"
+                ? "No upcoming events"
+                : tab === "past"
+                ? "No past events"
+                : "You haven't registered for any events yet"
+            }
+            sub={
+              tab === "upcoming"
                 ? "New events are added regularly, check back soon."
                 : tab === "past"
                 ? "Past events will appear here once they conclude."
-                : "Browse upcoming events and register to save your spot."}
-            </p>
-            {tab === "my" && upcoming.length > 0 && (
-              <button
-                onClick={() => setTab("upcoming")}
-                className="mt-4 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
-              >
-                View Upcoming Events
-              </button>
-            )}
-            {tab === "upcoming" && past.length > 0 && (
-              <button
-                onClick={() => setTab("past")}
-                className="mt-4 px-5 py-2.5 rounded-lg border border-border text-sm text-foreground hover:bg-surface transition-colors"
-              >
-                View Past Events
-              </button>
-            )}
-          </div>
+                : "Browse upcoming events and register to save your spot."
+            }
+            cta={
+              tab === "my" && upcoming.length > 0
+                ? { label: "View upcoming events", onClick: () => setTab("upcoming") }
+                : tab === "upcoming" && past.length > 0
+                ? { label: "View past events", onClick: () => setTab("past") }
+                : undefined
+            }
+          />
         ) : tab === "upcoming" ? (
           // (33) Upcoming = a date-grouped agenda with sticky day headers.
           <div className="space-y-8">

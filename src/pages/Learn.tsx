@@ -87,28 +87,40 @@ export default function Learn() {
                 onKeyDown={onTabKeyDown}
                 onClick={() => setSeg(s.key)}
                 className={cn(
-                  // Tokenized colour cross-fade (duration-base ease-out) so the
-                  // active-label colour eases in step with the pill glide rather
-                  // than snapping mid-flight (default transition-colors is a fast
-                  // synchronous swap that flickers legibility while the pill moves).
-                  "relative rounded-full px-4 py-1.5 text-sm transition-colors duration-base ease-out-expo",
+                  // The BUTTON is the tap target: min-h-11 (44px) + flex-centering
+                  // gives every tab a >=44px hit area per the brief, independent of
+                  // the compact visual pill nested inside (which keeps py-1.5). The
+                  // 44px height lives on the interactive element the a11y audit
+                  // measures — not faked with a pseudo-element that leaves the
+                  // measured rect short.
+                  "relative inline-flex min-h-11 items-center justify-center rounded-full text-sm",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas",
                   active
                     ? "text-[hsl(var(--cream-text))] font-medium"
                     : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]",
                 )}
               >
-                {/* Sliding active pill — cream family per accent discipline.
-                    Shared layoutId glides the pill between segments on the
-                    glide spring (instant under reduced motion). Sits behind the
-                    label; label colour flips to cream-text for contrast. */}
-                {active && (
-                  <motion.span
-                    layoutId="learn-segment-pill"
-                    className="absolute inset-0 rounded-full bg-[hsl(var(--cream))]"
-                    transition={motionSafe.springs.glide}
-                  />
-                )}
-                <span className="relative z-10">{s.label}</span>
+                {/* Inner wrapper holds the compact visual pill so the champagne
+                    pill keeps its original px-4/py-1.5 size and hugs the label —
+                    the taller 44px hit area extends transparently above/below it. */}
+                <span className="relative inline-flex items-center rounded-full px-4 py-1.5">
+                  {/* Sliding active pill — cream family per accent discipline.
+                      Shared layoutId glides the pill between segments on the
+                      glide spring (instant under reduced motion). Sits behind the
+                      label; label colour flips to cream-text for contrast. The
+                      colour cross-fade (duration-base ease-out) eases the active
+                      label colour in step with the pill glide rather than snapping
+                      mid-flight (default transition-colors is a fast synchronous
+                      swap that flickers legibility while the pill moves). */}
+                  {active && (
+                    <motion.span
+                      layoutId="learn-segment-pill"
+                      className="absolute inset-0 rounded-full bg-[hsl(var(--cream))]"
+                      transition={motionSafe.springs.glide}
+                    />
+                  )}
+                  <span className="relative z-10 transition-colors duration-base ease-out-expo">{s.label}</span>
+                </span>
               </button>
             );
           })}

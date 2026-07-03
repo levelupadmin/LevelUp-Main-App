@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { Search, WifiOff, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { useWishlist } from "@/hooks/useWishlist";
 import { useNotifyRequests } from "@/hooks/useNotifyRequests";
 import { useEnrolmentCounts } from "@/hooks/useEnrolmentCounts";
 import { cn } from "@/lib/utils";
+import { useMotionSafe } from "@/lib/motion";
 import CatalogCard from "./CatalogCard";
 import { useCatalog, useEnrolledOfferingIds } from "./useCatalog";
 
@@ -30,6 +32,7 @@ const CatalogSection = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
 
+  const motionSafe = useMotionSafe();
   const { wishlistedIds, toggle: toggleWishlist } = useWishlist();
   const { requestedIds: notifyRequestedIds, pending: notifyPending, requestNotify } =
     useNotifyRequests();
@@ -88,18 +91,21 @@ const CatalogSection = () => {
       {/* Single horizontally-scrollable chip rail, never wraps. */}
       <div className="flex gap-2 overflow-x-auto hide-scrollbar -mx-1 px-1">
         {TIER_FILTERS.map((f) => (
-          <button
+          <motion.button
             key={f}
             onClick={() => setActiveFilter(f)}
+            // Spring press on the snap spring (reduced motion ⇒ no scale),
+            // matching the spring-pressed sibling surfaces on /home.
+            whileTap={motionSafe.reduced ? undefined : motionSafe.pressTap}
             className={cn(
-              "pressable flex-shrink-0 whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border min-h-[44px] sm:min-h-0",
+              "flex-shrink-0 whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border min-h-[44px] sm:min-h-0",
               activeFilter === f
                 ? "bg-foreground text-background border-foreground"
                 : "bg-surface border-border text-muted-foreground hover:text-foreground hover:border-border-hover"
             )}
           >
             {f}
-          </button>
+          </motion.button>
         ))}
       </div>
 

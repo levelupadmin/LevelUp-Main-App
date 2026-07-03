@@ -96,7 +96,7 @@ const CatalogCard = ({
   return (
     <MotionCard
       aria-label={c.title}
-      className="group relative bg-surface rounded-2xl overflow-hidden ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)] focus-within:ring-[hsl(var(--cream))]/40 transition-shadow duration-300"
+      className="group relative bg-surface rounded-2xl overflow-hidden ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)] focus-within:ring-[hsl(var(--cream))]/40 transition-shadow duration-base"
     >
       {/* Stretched-link overlay: the ENTIRE card is one tap target. Sits
           beneath the explicit controls (relative z-10) so the wishlist
@@ -235,7 +235,7 @@ const CatalogCard = ({
                 </span>
                 {c.mrp_inr && Number(c.mrp_inr) > Number(c.price_inr) && (
                   <>
-                    <span className="text-sm text-muted-foreground line-through">
+                    <span className="text-sm text-muted-foreground line-through decoration-muted-foreground">
                       ₹{formatPrice(Number(c.mrp_inr))}
                     </span>
                     <span className="text-[10px] font-bold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">

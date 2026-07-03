@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, useScroll, useTransform, type MotionValue } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { MotionButton } from "@/components/motion/MotionButton";
 import { useCatalog } from "@/components/catalog/useCatalog";
 import { parseMasterclassTitle } from "@/components/catalog/CatalogCard";
 import { useEnrolmentCounts } from "@/hooks/useEnrolmentCounts";
-import { durations, easings, useMotionSafe } from "@/lib/motion";
+import { durations, easings, instant, useMotionSafe } from "@/lib/motion";
 
 const ROTATE_MS = 6000;
 
@@ -180,9 +181,13 @@ const FeaturedHero = () => {
             // Tokenized opacity crossfade (was `transition-opacity duration-700
             // ease-out`) — now a framer transition on durations.slow / easings.out
             // so the timing lives on the motion tokens, not a one-off class.
+            // Gated on motionSafe like the ken-burns/parallax above: reduced motion
+            // ⇒ `instant` (duration 0) so slides swap without a fade.
             initial={false}
             animate={{ opacity: i === index ? 1 : 0 }}
-            transition={{ duration: durations.slow, ease: easings.out }}
+            transition={
+              enabled ? { duration: durations.slow, ease: easings.out } : instant
+            }
           >
             <div className="absolute inset-0 overflow-hidden">
               <HeroArtwork
@@ -209,13 +214,19 @@ const FeaturedHero = () => {
                   </p>
                 )}
                 <div className="pt-1.5">
-                  <Link
-                    to={`/p/${s.slug}`}
-                    aria-label={`Explore ${s.headline}`}
-                    className="pressable inline-flex items-center justify-center h-11 px-6 rounded-full bg-cream text-cream-text text-sm font-semibold hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
-                  >
-                    Explore
-                  </Link>
+                  {/* Shared spring press (whileTap pressTap via MotionButton),
+                      replacing the one-off .pressable CSS so the highest-intent
+                      Home CTA matches the pagination dots below. Focus-visible
+                      ring stays on the Link. */}
+                  <MotionButton asChild>
+                    <Link
+                      to={`/p/${s.slug}`}
+                      aria-label={`Explore ${s.headline}`}
+                      className="inline-flex items-center justify-center h-11 px-6 rounded-full bg-cream text-cream-text text-sm font-semibold hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+                    >
+                      Explore
+                    </Link>
+                  </MotionButton>
                 </div>
               </div>
             </div>
@@ -236,7 +247,7 @@ const FeaturedHero = () => {
                 // Hit area ≥44px via padding; the visual dot lives on the inner
                 // span so its size is unchanged. Press feedback via motionSafe
                 // pressTap (reduced motion ⇒ no scale).
-                className="group grid place-items-center min-h-[44px] min-w-[44px] px-0.5"
+                className="group grid place-items-center min-h-[44px] min-w-[44px] px-0.5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
                 whileTap={pressTap}
               >
                 <motion.span

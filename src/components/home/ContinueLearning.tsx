@@ -246,7 +246,7 @@ const ContinueLearning = () => {
               <MotionCard key={c.id} asChild tabIndex={0}>
                 <Link
                   to={linkTo}
-                  className="group min-w-[78vw] sm:min-w-[320px] lg:min-w-[340px] max-w-[360px] bg-surface rounded-2xl overflow-hidden flex-shrink-0 snap-start ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 transition-shadow duration-300 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
+                  className="group min-w-[78vw] sm:min-w-[320px] lg:min-w-[340px] max-w-[360px] bg-surface rounded-2xl overflow-hidden flex-shrink-0 snap-start ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 transition-shadow duration-base shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
                 >
                   <div className="relative overflow-hidden">
                   {/* ArtworkImage enforces aspect-video + object-cover (no
@@ -258,7 +258,7 @@ const ContinueLearning = () => {
                     alt=""
                     aspect="video"
                     scrim
-                    className="group-hover:scale-[1.04] transition-transform duration-500"
+                    className="group-hover:scale-[1.04] transition-transform duration-slow"
                   />
 
                   {/* Resume-meta chip on the artwork, "Lesson 4 of 29". Only
@@ -282,7 +282,7 @@ const ContinueLearning = () => {
                       it reads as a full cream line. */}
                   <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
                     <div
-                      className="h-full bg-[hsl(var(--cream))] transition-[width] duration-500"
+                      className="h-full bg-[hsl(var(--cream))] transition-[width] duration-slow"
                       style={{ width: `${pct}%` }}
                     />
                   </div>

@@ -583,7 +583,7 @@ function FreePreviewPlayer({
             <img
               src={thumb}
               alt=""
-              className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-700"
+              className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-slow"
               loading="lazy"
               decoding="async"
             />
@@ -1555,7 +1555,7 @@ export default function PublicOffering() {
       {(applyUrl || !isNative()) && offering.status !== "archived" && (
       <div
         aria-hidden={heroCtaInView}
-        className={`lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] transition-transform duration-200 ${
+        className={`lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] transition-transform duration-base ${
           heroCtaInView ? "translate-y-full pointer-events-none" : "translate-y-0"
         }`}
       >
