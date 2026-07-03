@@ -24,6 +24,10 @@ export const durationsMs = {
   fast: 160, // --motion-fast
   base: 240, // --motion-base
   slow: 400, // --motion-slow
+  // Slow hero drift. Mirrors the `.kenburns` CSS class (index.css: `animation:
+  // motion-kenburns 9s …`) so the JS-driven and CSS-driven ken-burns stay in
+  // lockstep. Not a --motion-* var; it's a one-off editorial timing.
+  kenburns: 9000,
 } as const;
 
 // ── Durations (seconds) ── framer `transition.duration` is in seconds.
@@ -31,6 +35,7 @@ export const durations = {
   fast: 0.16, // --motion-fast
   base: 0.24, // --motion-base
   slow: 0.4, // --motion-slow
+  kenburns: 9, // ken-burns hero drift — mirrors the `.kenburns` CSS class (9s)
 } as const;
 
 // ── Easings ── cubic-bezier control points, mirroring the CSS --ease-* vars.

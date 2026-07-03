@@ -19,7 +19,7 @@ interface HeroSlide {
 
 /**
  * Slow transform-only drift on the artwork — the ken-burns one-off, now driven
- * by a tokenized framer transition (durations.slow-derived timing, easings.inOut)
+ * by a tokenized framer transition (durations.kenburns timing, easings.inOut)
  * so there are zero one-off durations/easings in the diff. Reduced motion holds
  * it perfectly still.
  */
@@ -53,7 +53,7 @@ const HeroArtwork = ({
         initial={false}
         animate={enabled && active ? { scale: 1.04 } : { scale: 1 }}
         transition={{
-          duration: durations.slow * 22.5, // 0.4s * 22.5 = 9s slow drift
+          duration: durations.kenburns, // 9s slow drift (mirrors the .kenburns CSS class)
           ease: easings.inOut,
           repeat: Infinity,
           repeatType: "reverse",
@@ -67,7 +67,7 @@ const HeroArtwork = ({
 // purely editorial, so no native price gating is needed here.
 const FeaturedHero = () => {
   const { data: courses } = useCatalog();
-  const { enabled, springs } = useMotionSafe();
+  const { enabled, springs, pressTap } = useMotionSafe();
 
   const masterclasses = useMemo(
     () =>
@@ -223,21 +223,33 @@ const FeaturedHero = () => {
         ))}
 
         {slides.length > 1 && (
-          <div className="absolute bottom-4 right-5 sm:right-8 flex items-center gap-1.5 z-10">
+          // -mr-2 pulls the last dot's padding flush to the frame edge so the
+          // visual dots keep their bottom-4/right-5 inset while each button is a
+          // 44px tap target.
+          <div className="absolute bottom-4 right-5 sm:right-8 -mr-2 flex items-center z-10">
             {slides.map((s, i) => (
               <motion.button
                 key={s.key}
                 aria-label={`Show featured masterclass ${i + 1}`}
                 aria-current={i === index}
                 onClick={() => setIndex(i)}
-                className={cn(
-                  "h-1.5 rounded-full",
-                  i === index ? "w-5 bg-[hsl(var(--cream))]" : "w-1.5 bg-white/40 hover:bg-white/60"
-                )}
-                // Width/colour settle on the glide spring (reduced motion ⇒ instant).
-                layout
-                transition={springs.glide}
-              />
+                // Hit area ≥44px via padding; the visual dot lives on the inner
+                // span so its size is unchanged. Press feedback via motionSafe
+                // pressTap (reduced motion ⇒ no scale).
+                className="group grid place-items-center min-h-[44px] min-w-[44px] px-0.5"
+                whileTap={pressTap}
+              >
+                <motion.span
+                  aria-hidden
+                  className={cn(
+                    "block h-1.5 rounded-full",
+                    i === index ? "w-5 bg-[hsl(var(--cream))]" : "w-1.5 bg-white/40 group-hover:bg-white/60"
+                  )}
+                  // Width/colour settle on the glide spring (reduced motion ⇒ instant).
+                  layout
+                  transition={springs.glide}
+                />
+              </motion.button>
             ))}
           </div>
         )}

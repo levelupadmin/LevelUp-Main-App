@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { TierBadge } from "@/components/TierBadge";
 import { Button } from "@/components/ui/button";
-import LazyImage from "@/components/LazyImage";
+import { ArtworkImage } from "@/components/media/ArtworkImage";
 import { ArrowRight, BookOpen, Sparkles, Award, WifiOff, RefreshCw, GraduationCap, PlayCircle } from "lucide-react";
 import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
@@ -323,11 +323,7 @@ const MyCoursesPage = () => {
                 to={`/courses/${c.course_id}`}
                 className="pressable bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
               >
-                <div className="aspect-video bg-surface-2">
-                  {c.thumbnail_url && (
-                    <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />
-                  )}
-                </div>
+                <ArtworkImage src={c.thumbnail_url} alt="" aspect="video" />
                 <div className="p-4 space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="text-base font-semibold line-clamp-1 flex-1">{c.title}</h3>
@@ -379,10 +375,8 @@ const MyCoursesPage = () => {
                   to={c.offering_slug ? `/p/${c.offering_slug}` : `/courses/${c.id}`}
                   className="pressable bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-200"
                 >
-                  <div className="aspect-video bg-surface-2 relative">
-                    {c.thumbnail_url && (
-                      <LazyImage src={c.thumbnail_url} alt="" className="w-full h-full" />
-                    )}
+                  <div className="relative">
+                    <ArtworkImage src={c.thumbnail_url} alt="" aspect="video" />
                     <div className="absolute top-2 left-2">
                       <TierBadge tier={c.product_tier} />
                     </div>

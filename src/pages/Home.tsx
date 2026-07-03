@@ -51,15 +51,21 @@ const Home = () => {
   const firstName = profile?.full_name?.split(" ")[0] ?? "there";
 
   // Condensing greeting: as the page scrolls, the large serif greeting shrinks
-  // and fades toward the sticky header. Driven entirely off the viewport
-  // scrollY MotionValue — transform/opacity only, no layout reads in the
-  // handler — and scoped to Home's own <header>; StudentLayout's sticky header
-  // and html/body/overflow are never touched (June-14 scroll lesson).
+  // and fades in place while PARKED at the top of Home's own scroll context
+  // (the <header> is position:sticky, so it stops flowing away and holds its
+  // spot). Choreography is transform/opacity only, driven entirely off the
+  // viewport scrollY MotionValue — no layout reads in the handler — and scoped
+  // to Home's own <header>; StudentLayout's sticky header and html/body/overflow
+  // are never touched (June-14 scroll lesson). transform-origin left keeps the
+  // serif name anchored as it shrinks against the parked band.
   const { reduced } = useMotionSafe();
   const { scrollY } = useScroll();
   const greetingScale = useTransform(scrollY, [0, 120], [1, 0.82]);
-  const greetingOpacity = useTransform(scrollY, [0, 100], [1, 0.55]);
-  const greetingY = useTransform(scrollY, [0, 120], [0, -8]);
+  const greetingOpacity = useTransform(scrollY, [0, 100], [1, 0.7]);
+  const greetingY = useTransform(scrollY, [0, 120], [0, -4]);
+  // The sub-line ("Pick up where you left off") fades out fully as the greeting
+  // condenses, so the parked band reads as a single tight line once collapsed.
+  const subOpacity = useTransform(scrollY, [0, 60], [1, 0]);
 
   return (
     <div className="space-y-10 anim-rise">
@@ -78,29 +84,50 @@ const Home = () => {
       )}
 
       {/* One warm line, no date, no member number, no big cream card.
-          Condenses on scroll (transform/opacity only); static under reduced
-          motion. transform-origin left keeps the serif name anchored as it
-          shrinks. */}
-      <motion.header
-        style={
-          reduced
-            ? undefined
-            : {
-                scale: greetingScale,
-                opacity: greetingOpacity,
-                y: greetingY,
-                transformOrigin: "left center",
-              }
-        }
-      >
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-[-0.01em]">
-          {greetingForHour(new Date().getHours())},{" "}
-          <span className="font-serif-italic text-cream">{firstName}</span>
-        </h1>
-        {hasEnrolments && (
-          <p className="text-sm text-muted-foreground mt-1">Pick up where you left off</p>
-        )}
-      </motion.header>
+          Condenses on scroll AND parks: the band is position:sticky at the top
+          of Home's scroll context so it holds its spot instead of scrolling off
+          (the momentum cue lands rather than vanishing). Choreography is
+          transform/opacity only; static under reduced motion. The sticky wrapper
+          carries the parked backdrop; the inner motion element carries the
+          transform so `sticky` (computed on the un-transformed box) is never
+          fought by framer's transform writes. */}
+      <div className="sticky top-0 z-30 -mx-4 md:-mx-8 lg:-mx-10 xl:-mx-12 -mt-6 md:-mt-10">
+        <motion.header
+          className="px-4 md:px-8 lg:px-10 xl:px-12 pt-6 md:pt-10 pb-3 bg-canvas/70 backdrop-blur-md"
+          style={
+            reduced
+              ? undefined
+              : {
+                  opacity: greetingOpacity,
+                }
+          }
+        >
+          <motion.div
+            style={
+              reduced
+                ? undefined
+                : {
+                    scale: greetingScale,
+                    y: greetingY,
+                    transformOrigin: "left center",
+                  }
+            }
+          >
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-[-0.01em]">
+              {greetingForHour(new Date().getHours())},{" "}
+              <span className="font-serif-italic text-cream">{firstName}</span>
+            </h1>
+            {hasEnrolments && (
+              <motion.p
+                className="text-sm text-muted-foreground mt-1"
+                style={reduced ? undefined : { opacity: subOpacity }}
+              >
+                Pick up where you left off
+              </motion.p>
+            )}
+          </motion.div>
+        </motion.header>
+      </div>
 
       {/* Your-Week glance strip — most-active course ring, lessons completed,
           next-lesson resume. Gated on hasEnrolments (mirrors ContinueLearning);

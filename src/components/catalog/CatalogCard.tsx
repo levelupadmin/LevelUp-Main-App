@@ -1,3 +1,4 @@
+import type { PointerEvent } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Heart, Bell, Check } from "lucide-react";
 import { TierBadge } from "@/components/TierBadge";
@@ -68,6 +69,30 @@ const CatalogCard = ({
   const parsed = tier === "masterclass" ? parseMasterclassTitle(c.title) : null;
   const description = c.description ? stripLeadingEmoji(c.description) : null;
 
+  // Nested controls (wishlist heart, Notify, View/Continue CTA) sit above the
+  // stretched card link and drive their own press animation. framer-motion's
+  // whileTap on the parent MotionCard is a POINTER gesture: it binds a NATIVE
+  // pointerdown listener on the card DOM node (bubble phase) and press-scales the
+  // card for ANY descendant pointerdown that bubbles up — so pressing an inner
+  // control also scales the whole card, reading as a double-press.
+  //
+  // A React onClick/onPointerDown stopPropagation CANNOT fix this: React 18
+  // delegates events at the root container (an ANCESTOR of the card), so its
+  // synthetic handler only runs AFTER the native bubble-phase listener on the
+  // card has already fired. Two mechanisms that DO preempt it:
+  //   1. framer's own claim — `propagate={{ tap: false }}` on an inner motion
+  //      element makes that element's press add the pointerdown to framer's
+  //      shared claimedPointerDownEvents WeakSet; the card's press (bubbling
+  //      later, child→parent) sees the claim and returns early before scaling.
+  //   2. a CAPTURE-phase stop for non-motion children — React's onPointerDownCapture
+  //      runs at the root in the capture phase, i.e. BEFORE the event descends to
+  //      the target and BEFORE it bubbles back to the card's native listener.
+  // The inner controls' own whileTap, onClick, navigation and haptics are
+  // untouched — only the card's whole-surface press is suppressed.
+  const stopCardPressCapture = (e: PointerEvent) => {
+    e.stopPropagation();
+  };
+
   return (
     <MotionCard
       aria-label={c.title}
@@ -126,6 +151,7 @@ const CatalogCard = ({
             <MotionButton
               type="button"
               aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
+              propagate={{ tap: false }}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -139,7 +165,7 @@ const CatalogCard = ({
               className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-colors"
             >
               <Heart
-                className={`h-4 w-4 transition-transform ${wishlisted ? "fill-red-400 text-red-400 heart-bounce" : "text-white"}`}
+                className={`h-4 w-4 transition-transform ${wishlisted ? "fill-gold text-gold heart-bounce" : "text-muted-foreground"}`}
               />
             </MotionButton>
           )}
@@ -225,6 +251,7 @@ const CatalogCard = ({
           {c.status === "upcoming" ? (
             <MotionButton
               type="button"
+              propagate={{ tap: false }}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -250,7 +277,7 @@ const CatalogCard = ({
             </MotionButton>
           ) : isEntitled ? (
             // Already enrolled → straight into the player surface.
-            <MotionButton asChild>
+            <MotionButton asChild propagate={{ tap: false }}>
               <Link
                 to={`/courses/${c.id}`}
                 aria-label={`Continue ${c.title}`}
@@ -263,17 +290,22 @@ const CatalogCard = ({
             // Path B (Google Play Reader Rule): non-entitled Android users get
             // the explicit "Continue on web" pill, opens the public offering
             // URL in the system browser.
-            <ContinueOnWebCTA
-              variant="inline"
-              className="pointer-events-auto"
-              ctaLabel="View on web"
-              webPath={c.offering_slug ? `/p/${c.offering_slug}` : "/"}
-            />
+            <span
+              className="inline-flex pointer-events-auto"
+              onPointerDownCapture={stopCardPressCapture}
+            >
+              <ContinueOnWebCTA
+                variant="inline"
+                className="pointer-events-auto"
+                ctaLabel="View on web"
+                webPath={c.offering_slug ? `/p/${c.offering_slug}` : "/"}
+              />
+            </span>
           ) : (
             // Web + iOS: an explicit "View" pill to the detail page. This is
             // marketing/detail navigation, not purchase/steering, so it's
             // allowed on iOS, it just doesn't expose price or buy UI.
-            <MotionButton asChild>
+            <MotionButton asChild propagate={{ tap: false }}>
               <Link
                 to={cardHref ?? `/courses/${c.id}`}
                 aria-label={`View ${c.title}`}

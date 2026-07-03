@@ -21,13 +21,17 @@ interface QuickTile {
   to: string;
 }
 
-// Each accent is the raw HSL var name; we build solid + tinted colours from
-// it so the icon foreground and its chip background stay in sync.
+// Accent discipline (DESIGN-STRATEGY Pillar 1): the launchpad stays inside the
+// champagne/cream/gold/violet family and spends at most one accent emphasis per
+// moment. Cream is the default for every tile; the single highest-intent jump
+// (resume/start a course) carries the one gold highlight. The old amber (LIVE)
+// and emerald (NEW) one-offs are retired — same cleanup TierBadge got — so the
+// grid no longer fights the champagne/cream system with four rival colours.
 const ACCENT_VARS: Record<string, string> = {
-  course: "--cream",
-  session: "--accent-amber",
-  community: "--accent-violet",
-  catalog: "--accent-emerald",
+  course: "--gold",
+  session: "--cream",
+  community: "--cream",
+  catalog: "--cream",
 };
 
 const QuickPick = () => {

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 // admin course lists — each renders this as a solid pill over artwork, so solid
 // fills with legible foregrounds read correctly on every surface.
 const TIER_CONFIG: Record<string, { label: string; className: string }> = {
-  live_cohort: { label: "COHORT", className: "bg-accent-violet text-white" },
+  live_cohort: { label: "COHORT", className: "bg-accent-violet-deep text-white" },
   masterclass: { label: "MASTERCLASS", className: "bg-cream text-cream-text" },
   advanced_program: { label: "PROGRAM", className: "bg-gold text-cream-text" },
   workshop: {

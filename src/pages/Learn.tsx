@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import MyCoursesPage from "./MyCoursesPage";
@@ -32,6 +32,43 @@ export default function Learn() {
 
   const motionSafe = useMotionSafe();
 
+  // Roving-tabindex focus management: only the active tab is tabbable, and
+  // Left/Right/Home/End move both selection and DOM focus between tabs per the
+  // WAI-ARIA tabs pattern (automatic activation).
+  const tabRefs = useRef<Record<Seg, HTMLButtonElement | null>>({
+    courses: null,
+    live: null,
+    calendar: null,
+  });
+  const focusSeg = (k: Seg) => {
+    setSeg(k);
+    tabRefs.current[k]?.focus();
+  };
+  const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    const i = SEGMENTS.findIndex((s) => s.key === seg);
+    let next: Seg | null = null;
+    switch (e.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        next = SEGMENTS[(i + 1) % SEGMENTS.length].key;
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        next = SEGMENTS[(i - 1 + SEGMENTS.length) % SEGMENTS.length].key;
+        break;
+      case "Home":
+        next = SEGMENTS[0].key;
+        break;
+      case "End":
+        next = SEGMENTS[SEGMENTS.length - 1].key;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    focusSeg(next);
+  };
+
   return (
     <div>
       <div role="tablist" aria-label="Learn sections" className="inline-flex items-center gap-1 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface))] p-1 mb-7">
@@ -41,11 +78,20 @@ export default function Learn() {
             return (
               <button
                 key={s.key}
+                ref={(el) => { tabRefs.current[s.key] = el; }}
+                id={`learn-tab-${s.key}`}
                 role="tab"
                 aria-selected={active}
+                aria-controls={`learn-panel-${s.key}`}
+                tabIndex={active ? 0 : -1}
+                onKeyDown={onTabKeyDown}
                 onClick={() => setSeg(s.key)}
                 className={cn(
-                  "relative rounded-full px-4 py-1.5 text-sm transition-colors",
+                  // Tokenized colour cross-fade (duration-base ease-out) so the
+                  // active-label colour eases in step with the pill glide rather
+                  // than snapping mid-flight (default transition-colors is a fast
+                  // synchronous swap that flickers legibility while the pill moves).
+                  "relative rounded-full px-4 py-1.5 text-sm transition-colors duration-base ease-out-expo",
                   active
                     ? "text-[hsl(var(--cream-text))] font-medium"
                     : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]",
@@ -74,6 +120,10 @@ export default function Learn() {
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={seg}
+          id={`learn-panel-${seg}`}
+          role="tabpanel"
+          aria-labelledby={`learn-tab-${seg}`}
+          tabIndex={0}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

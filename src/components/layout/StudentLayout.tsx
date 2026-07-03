@@ -408,19 +408,28 @@ const StudentLayout = ({ children }: Props) => {
               to={item.path}
               onClick={() => { void hapticSelection(); }}
               className={cn(
-                "relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[11px] font-medium transition-colors focus-ring",
+                // Tokenized colour cross-fade (duration-base ease-out) so the
+                // active label/icon colour eases in step with the pill glide
+                // rather than snapping mid-flight (default transition-colors is a
+                // fast synchronous swap that flickers legibility as the pill moves).
+                "relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[11px] font-medium transition-colors duration-base ease-out-expo focus-ring",
                 active ? "text-cream" : "text-muted-foreground hover:text-foreground"
               )}
             >
               {active && (
                 <motion.span
                   layoutId="mobile-tabbar-active-pill"
+                  // Soft cream tint behind the active icon+label — the brief's
+                  // "unmistakable but subtlest accent on pure black". Low-opacity
+                  // cream fill (not the solid segmented-control fill) so the cream
+                  // icon+label read on top without a contrast flip. Sits behind the
+                  // content (content gets relative z-10).
                   // No CSS transform on the layout-projected element: framer writes
                   // its projection delta to `transform` during the layoutId glide,
                   // which fights a Tailwind translate mid-flight (drifts on Android
                   // Blink). Centre via inset-x-0 + mx-auto instead (repo precedent:
                   // Learn.tsx learn-segment-pill).
-                  className="absolute top-0 inset-x-0 mx-auto h-[3px] w-9 rounded-b-full bg-cream"
+                  className="absolute inset-x-0 inset-y-1 mx-auto w-14 rounded-2xl bg-cream/[0.08]"
                   transition={motionSafe.springs.glide}
                 />
               )}
@@ -430,7 +439,7 @@ const StudentLayout = ({ children }: Props) => {
                 // redundant, inert nested tab stop inside the focusable <Link>. Pin
                 // it out of the tab order (repo precedent: MotionCard.tsx).
                 tabIndex={-1}
-                className="flex flex-col items-center gap-0.5"
+                className="relative z-10 flex flex-col items-center gap-0.5"
                 whileTap={motionSafe.reduced ? undefined : motionSafe.pressTap}
               >
                 <item.icon className={cn("h-5 w-5", active && "scale-110")} />

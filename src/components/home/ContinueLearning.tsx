@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import ArtworkImage from "@/components/media/ArtworkImage";
+import { MotionCard } from "@/components/motion/MotionCard";
 import { Link } from "react-router-dom";
 import { ArrowRight, Play } from "lucide-react";
 import { Section, ErrorState, SkeletonCard } from "@/components/patterns";
@@ -237,13 +238,17 @@ const ContinueLearning = () => {
                 ? `${lessonsLeft} ${lessonsLeft === 1 ? "lesson" : "lessons"} left · Resume`
                 : "Start watching";
 
+            // tabIndex={0} preserves the anchor's native tab stop —
+            // MotionCard would otherwise force -1 on a non-interactive card
+            // (no onClick), silently removing the resume card from the
+            // keyboard tab order. Mirrors SurfaceCard's Link path.
             return (
-              <Link
-                key={c.id}
-                to={linkTo}
-                className="pressable group min-w-[78vw] sm:min-w-[320px] lg:min-w-[340px] max-w-[360px] bg-surface rounded-2xl overflow-hidden flex-shrink-0 snap-start ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 hover:-translate-y-1 transition-all duration-300 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
-              >
-                <div className="relative overflow-hidden">
+              <MotionCard key={c.id} asChild tabIndex={0}>
+                <Link
+                  to={linkTo}
+                  className="group min-w-[78vw] sm:min-w-[320px] lg:min-w-[340px] max-w-[360px] bg-surface rounded-2xl overflow-hidden flex-shrink-0 snap-start ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 transition-shadow duration-300 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
+                >
+                  <div className="relative overflow-hidden">
                   {/* ArtworkImage enforces aspect-video + object-cover (no
                       letterbox) and renders the branded placeholder when the
                       thumbnail is missing (no black void). Scrim keeps the chip
@@ -297,7 +302,8 @@ const ContinueLearning = () => {
                     <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
                   </p>
                 </div>
-              </Link>
+                </Link>
+              </MotionCard>
             );
           })}
         </div>

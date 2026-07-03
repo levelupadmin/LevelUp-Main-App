@@ -141,6 +141,11 @@
     --accent-emerald: 160 84% 39%;
     --accent-amber: 38 92% 50%;
     --accent-violet: 258 90% 66%;
+    /* Darkened violet for solid fills under small white text — white on the base
+       258 90% 66% is 4.31:1 (< WCAG AA 4.5:1 for the 10px-bold tier badge). At
+       258 90% 60% white computes 5.62:1, clearing AA with margin while staying
+       recognizably violet. Used by TierBadge live_cohort. */
+    --accent-violet-deep: 258 90% 60%;
 
     --sidebar-background: 0 0% 0%;
     --sidebar-foreground: 240 4% 46%;
