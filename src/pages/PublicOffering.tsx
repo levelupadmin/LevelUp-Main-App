@@ -389,7 +389,7 @@ function HeroActions({
         href={applyUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="btn-champagne inline-flex items-center justify-center h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5 transition-transform"
+        className="btn-champagne pressable inline-flex items-center justify-center h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5 transition-transform"
       >
         Apply for an invite
         <ArrowRight className="h-4 w-4 ml-2" />
@@ -1569,7 +1569,7 @@ export default function PublicOffering() {
               href={applyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-champagne flex w-full items-center justify-center text-[hsl(var(--cream-text))] font-semibold h-12 text-base rounded-2xl"
+              className="btn-champagne pressable flex w-full items-center justify-center text-[hsl(var(--cream-text))] font-semibold h-12 text-base rounded-2xl"
             >
               Apply for an invite
               <ArrowRight className="h-4 w-4 ml-1.5" />

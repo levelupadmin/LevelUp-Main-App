@@ -8,7 +8,16 @@ import { tapTick } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[12px] text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  // ⚠️ CLOBBER CLASS — keep this `transition-colors`, NEVER `transition-all`.
+  // The motion path (motion.button below) owns the inline `transform` via framer's
+  // per-frame `whileTap`/`whileHover` writes. A `transition-*` that includes
+  // `transform` (i.e. `transition-all`) makes CSS retarget every one of those
+  // per-frame writes, smearing the snap-spring press into ~200ms of mush on every
+  // non-asChild Button and double-costing the compositor on mid-range Android.
+  // shadcn's own base is `transition-colors` for exactly this reason: transition
+  // only the paint props (bg/border/text on hover), never transform/opacity that
+  // framer drives. Do NOT reintroduce `transition-all` here.
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[12px] text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -39,6 +48,13 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  /**
+   * Whether this button fires its own `tapTick()` selection haptic on activation
+   * (default `true`). Set `false` when the caller's `onClick` already fires a
+   * deliberate, distinct haptic on the same gesture (e.g. a heavier confirm on a
+   * money moment), so the tap doesn't double-buzz. Mirrors MotionButton's opt-out.
+   */
+  haptic?: boolean;
 }
 
 // Tailwind's `-translate-y-*` scale in px, for the hover-lift utilities callers use
@@ -95,7 +111,7 @@ type MotionButtonProps = ButtonProps &
  *   path leaves the utility intact (framer never owns that element's transform).
  */
 const Button = React.forwardRef<HTMLButtonElement, MotionButtonProps>(
-  ({ className, variant, size, asChild = false, onClick, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, haptic = true, onClick, ...props }, ref) => {
     const motionSafe = useMotionSafe();
     const finePointer = useFinePointer();
     const classes = cn(buttonVariants({ variant, size, className }));
@@ -119,9 +135,11 @@ const Button = React.forwardRef<HTMLButtonElement, MotionButtonProps>(
     // Fire the selection tick from the click path so pointer taps and keyboard
     // activation (Enter/Space → click) both get exactly one tick. Skipped when the
     // button is disabled (pointer-events-none already blocks pointer clicks; this
-    // guards the keyboard path too).
+    // guards the keyboard path too) and when `haptic={false}` — the latter lets a
+    // caller whose own onClick fires a deliberate, distinct haptic (e.g. a heavier
+    // money-moment confirm) own the feedback without the tap double-buzzing.
     const handleClick: NonNullable<HTMLMotionProps<"button">["onClick"]> = (event) => {
-      if (!props.disabled) tapTick();
+      if (haptic && !props.disabled) tapTick();
       onClick?.(event);
     };
 

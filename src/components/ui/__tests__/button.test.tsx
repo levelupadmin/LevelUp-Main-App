@@ -108,6 +108,36 @@ describe("Button", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it("suppresses its own haptic tick when haptic={false} but still calls onClick", () => {
+    // Opt-out for callers whose onClick fires a deliberate, distinct haptic on the
+    // same gesture (e.g. the /checkout Pay button's heavier money-moment confirm):
+    // the Button must not add its own tapTick, or the tap double-buzzes.
+    const onClick = vi.fn();
+    render(
+      <Button haptic={false} onClick={onClick}>
+        Pay
+      </Button>,
+    );
+    const btn = screen.getByRole("button", { name: "Pay" });
+
+    fireEvent.click(btn);
+
+    expect(tapTick).not.toHaveBeenCalled();
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires its haptic tick by default (haptic defaults to true)", () => {
+    // Guards the default: omitting the prop keeps the app-wide selection tick.
+    const onClick = vi.fn();
+    render(<Button onClick={onClick}>Default</Button>);
+    const btn = screen.getByRole("button", { name: "Default" });
+
+    fireEvent.click(btn);
+
+    expect(tapTick).toHaveBeenCalledTimes(1);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
   it("does not fire a haptic when disabled", () => {
     const onClick = vi.fn();
     render(

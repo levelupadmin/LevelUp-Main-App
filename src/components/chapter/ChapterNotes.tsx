@@ -205,6 +205,9 @@ export default function ChapterNotes({ chapterId, getCurrentTime, onSeek }: Prop
         <Button
           size="sm"
           onClick={handleAddNote}
+          // handleAddNote fires a deliberate hapticImpact("light"); suppress the
+          // Button's default tapTick so the tap doesn't double-buzz.
+          haptic={false}
           className="btn-champagne px-3 text-[hsl(var(--cream-text))] gap-1.5"
         >
           <Clock className="h-4 w-4" />

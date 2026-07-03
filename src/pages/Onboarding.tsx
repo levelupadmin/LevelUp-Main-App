@@ -251,7 +251,7 @@ const Onboarding = () => {
                   <button
                     type="submit"
                     disabled={saving || !profileValid}
-                    className="btn-champagne w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
+                    className="btn-champagne pressable w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
                   >
                     {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                     Continue
@@ -278,7 +278,7 @@ const Onboarding = () => {
                   type="button"
                   onClick={finishOnboarding}
                   disabled={saving || crafts.length === 0}
-                  className="btn-champagne w-full h-12 mt-7 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
+                  className="btn-champagne pressable w-full h-12 mt-7 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
                 >
                   {saving ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

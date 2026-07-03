@@ -317,7 +317,14 @@
   @media (hover: hover) {
     .btn-champagne:hover { filter: brightness(1.04); box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.45), 0 12px 32px hsl(var(--champagne-to) / 0.26); }
   }
-  .btn-champagne:active { transform: scale(0.985); }
+  /* Press scale intentionally NOT defined here. Champagne CTAs get exactly ONE
+     press system per render path: a `<Button className="btn-champagne">` presses
+     via framer's inline `whileTap` (scale 0.97), and a plain `<a class="btn-champagne
+     pressable">` presses via `.pressable:active` (scale 0.97). A `.btn-champagne:active
+     { transform: scale(...) }` here would be a THIRD, competing transform owner that
+     fights framer's inline transform on the motion path — so it was folded out. Do not
+     reintroduce a `:active` transform on `.btn-champagne`; add `.pressable` if a
+     non-Button champagne element needs a press. */
 
   /* Glassy dark card - translucent surface + blur for layered hero cards. */
   .glass-card {

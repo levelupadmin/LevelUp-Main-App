@@ -22,17 +22,63 @@ const NOTIFICATION_ENUM: Record<NotificationType, "SUCCESS" | "WARNING" | "ERROR
   error: "ERROR",
 };
 
+// Minimal shape of the native Haptics plugin we call. Both the bridge proxy
+// (window.Capacitor.Plugins.Haptics) and the imported module's `Haptics` export
+// expose this surface, so either resolution path satisfies it.
+interface HapticsPlugin {
+  impact(opts: { style: string }): Promise<void>;
+  notification(opts: { type: string }): Promise<void>;
+  selectionChanged(): Promise<void>;
+}
+
+// The Capacitor global injected by the native bridge. `Plugins` holds the
+// registered native plugin proxies; absent on web/SSR.
+interface CapacitorGlobal {
+  isNativePlatform?: () => boolean;
+  Plugins?: { Haptics?: HapticsPlugin };
+}
+
+const getCapacitor = (): CapacitorGlobal | undefined =>
+  typeof window !== "undefined"
+    ? (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor
+    : undefined;
+
 const isNative = (): boolean => {
-  const cap = (typeof window !== "undefined" ? (window as any).Capacitor : undefined);
+  const cap = getCapacitor();
   return !!cap && typeof cap.isNativePlatform === "function" && cap.isNativePlatform();
 };
 
-const loadHaptics = async (): Promise<any | null> => {
+// Resolve the native Haptics plugin at runtime.
+//
+// Primary path: the registered plugin proxy on the Capacitor bridge
+// (`window.Capacitor.Plugins.Haptics`). When the native shell is running and
+// the plugin is installed in the shell, Capacitor exposes every plugin here —
+// no module import is involved, so it works inside the WebView regardless of
+// how the JS bundle resolves specifiers. This is what makes haptics fire on
+// device.
+//
+// Why NOT a bare `import('@capacitor/haptics')` as the primary path: a bare
+// specifier cannot be resolved by a browser/WebView at runtime (there is no
+// module resolver or import-map for `@capacitor/haptics`), so the import
+// rejects and every haptic silently no-ops on device. The previous
+// `new Function("return import('@capacitor/haptics')")` hid the import from
+// Vite, so the bare specifier survived into the bundle and always failed.
+//
+// Secondary path: a normal, statically-analyzable `import('@capacitor/haptics')`.
+// Vite bundles this into a resolvable chunk at build time, so if the plugin's JS
+// is present it loads correctly. This is only a fallback for the rare case where
+// the bridge proxy isn't populated but the module is; it also exports the plugin
+// with the same call surface (impact/notification/selectionChanged).
+const loadHaptics = async (): Promise<HapticsPlugin | null> => {
   if (!isNative()) return null;
+
+  // Primary: registered native plugin proxy — available whenever the bridge is up.
+  const proxy = getCapacitor()?.Plugins?.Haptics;
+  if (proxy) return proxy;
+
+  // Secondary: Vite-visible dynamic import (real chunk, resolvable at runtime).
   try {
-    // Dynamic import so web builds don't crash when the package is absent.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mod = await (new Function("return import('@capacitor/haptics')")()) as any;
+    const mod = (await import("@capacitor/haptics")) as { Haptics?: HapticsPlugin };
     return mod?.Haptics ?? null;
   } catch {
     return null;

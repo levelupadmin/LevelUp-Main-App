@@ -103,7 +103,7 @@ const Home = () => {
           wrapper carries the parked backdrop; the inner motion element carries
           the transform so `sticky` (computed on the un-transformed box) is
           never fought by framer's transform writes. */}
-      <div className="sticky top-0 z-30 -mx-4 md:-mx-8 lg:-mx-10 xl:-mx-12 -mt-6 md:-mt-10">
+      <div className="sticky top-[calc(4rem+env(safe-area-inset-top))] z-30 -mx-4 md:-mx-8 lg:-mx-10 xl:-mx-12 -mt-6 md:-mt-10">
         <motion.header
           className="px-4 md:px-8 lg:px-10 xl:px-12 pt-6 md:pt-10 pb-3 bg-canvas"
           style={

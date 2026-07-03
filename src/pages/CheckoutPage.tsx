@@ -859,6 +859,10 @@ export default function CheckoutPage() {
             size="xl"
             className="w-full"
             onClick={handlePay}
+            // handlePay fires a deliberate heavier hapticImpact("medium") for the
+            // money moment; suppress the Button's default tapTick so the pay tap
+            // doesn't double-buzz.
+            haptic={false}
             disabled={paying || (isStaged && total <= 0)}
           >
             {paying ? (

@@ -252,7 +252,7 @@ const Signup = () => {
             <button
               type="submit"
               disabled={loading || !phoneValid}
-              className="btn-champagne w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
+              className="btn-champagne pressable w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Continue
@@ -314,7 +314,7 @@ const Signup = () => {
             <button
               type="submit"
               disabled={loading || !nameValid || !emailValid}
-              className="btn-champagne w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
+              className="btn-champagne pressable w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Send sign-in link
