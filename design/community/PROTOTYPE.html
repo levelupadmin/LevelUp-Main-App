@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>LevelUp Community — "The Programme" (Direction A prototype)</title>
+<style>
+  /* ————— LevelUp brand system, approximated self-contained —————
+     canvas: pure black · text: warm cream · accent: champagne gradient
+     serif italic = Instrument Serif stand-in (Georgia italic)
+     mono = JetBrains Mono stand-in (system mono)                       */
+  :root{
+    --canvas:#000000;
+    --surface:#0e0e10;
+    --surface-2:#141416;
+    --border:rgba(247,244,236,.09);
+    --border-hover:rgba(247,244,236,.18);
+    --cream:#f3e5c8;
+    --fg:#f7f4ec;
+    --muted:#a6a6aa;
+    --muted-2:#6f6f74;
+    --champagne-from:#ead9ac;
+    --champagne-to:#c9a96e;
+    --cream-text:#1a1608;
+    --crimson:#c96e6e;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{background:var(--canvas)}
+  body{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    color:var(--fg); font-size:15px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .serif{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:400}
+  .mono{font-family:ui-monospace,'SF Mono',Menlo,monospace}
+
+  /* phone stage */
+  .stage{max-width:420px;margin:0 auto;min-height:100dvh;position:relative;overflow:hidden;background:var(--canvas)}
+  /* film grain — one hero layer, ≤4%, pointer-transparent */
+  .grain{position:fixed;inset:0;pointer-events:none;opacity:.035;z-index:50;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");}
+
+  /* screens */
+  .screen{display:none;padding:28px 20px 120px;animation:screenIn .28s cubic-bezier(.32,.72,.28,1) both}
+  .screen.active{display:block}
+  @keyframes screenIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.screen{animation:none}.pulse{animation:none}}
+
+  .eyebrow{font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--muted)}
+  .eyebrow.cream{color:var(--cream);opacity:.75}
+  h1{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.08;margin:10px 0 6px}
+  h1 .serif{color:var(--cream);font-weight:400}
+  .sub{color:var(--muted);font-size:14px;max-width:34ch}
+
+  .section{margin-top:34px}
+  .section-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+
+  /* ——— happening now ——— */
+  .now{display:flex;align-items:center;gap:12px;margin-top:24px;padding:14px 16px;
+    border:1px solid var(--border-hover);border-radius:14px;background:var(--surface);
+    cursor:pointer;transition:transform .12s ease}
+  .now:active{transform:scale(.98)}
+  .now .dot{width:8px;height:8px;border-radius:50%;flex:none;
+    background:linear-gradient(180deg,var(--champagne-from),var(--champagne-to))}
+  .pulse{animation:pulse 2.2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.8)}}
+  .now b{font-size:14px;font-weight:600;display:block}
+  .now .meta{font-size:12px;color:var(--muted)}
+  .now .go{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.14em;color:var(--cream)}
+
+  /* ——— playbill rows ——— */
+  .bill{border-top:1px solid var(--border)}
+  .bill-row{display:flex;gap:16px;padding:15px 2px;border-bottom:1px solid var(--border);
+    align-items:baseline;min-height:44px;cursor:pointer}
+  .bill-row:active{opacity:.7}
+  .bill-time{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted);
+    letter-spacing:.06em;flex:none;width:64px;padding-top:3px}
+  .bill-title{font-family:Georgia,serif;font-style:italic;font-size:17px;color:var(--fg);line-height:1.3}
+  .bill-meta{font-size:11.5px;color:var(--muted-2);margin-top:2px;font-style:normal;
+    font-family:'Inter',-apple-system,sans-serif}
+  .lock{color:var(--muted-2);font-size:11px}
+  .bill-row.locked .bill-title{color:var(--muted)}
+
+  /* ——— needs you ——— */
+  .needs{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .needs-row{display:flex;align-items:center;gap:12px;padding:14px 16px;min-height:52px;
+    border-bottom:1px solid var(--border);cursor:pointer}
+  .needs-row:last-child{border-bottom:none}
+  .needs-row:active{background:var(--surface-2)}
+  .needs-row .n-ico{flex:none;width:34px;height:34px;border-radius:50%;border:1px solid var(--border-hover);
+    display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--cream)}
+  .needs-row p{font-size:13.5px}
+  .needs-row span{display:block;font-size:11.5px;color:var(--muted)}
+
+  /* ——— doors shelf ——— */
+  .doors{display:flex;gap:12px;overflow-x:auto;padding:4px 2px 12px;scrollbar-width:none}
+  .doors::-webkit-scrollbar{display:none}
+  .door{flex:none;width:128px;height:172px;border-radius:12px;position:relative;cursor:pointer;
+    border:1px solid var(--border);background:linear-gradient(178deg,#17171a 0%,#0b0b0d 70%);
+    padding:14px 12px;display:flex;flex-direction:column;transition:transform .12s ease}
+  .door:active{transform:scale(.97)}
+  .door.open{border-color:rgba(234,217,172,.28);
+    background:linear-gradient(178deg,rgba(234,217,172,.10) 0%,#0b0b0d 55%)}
+  .door .crest{width:34px;height:34px;border-radius:50%;border:1px solid var(--border-hover);
+    display:flex;align-items:center;justify-content:center;
+    font-family:Georgia,serif;font-style:italic;font-size:13px;color:var(--cream)}
+  .door.locked .crest{border-color:rgba(201,169,110,.4);color:var(--champagne-to)}
+  .door h4{font-size:13.5px;font-weight:600;margin-top:auto;line-height:1.25}
+  .door .d-meta{font-size:10.5px;color:var(--muted);margin-top:4px}
+  .door .plate{position:absolute;top:12px;right:12px;font-family:ui-monospace,Menlo,monospace;
+    font-size:9px;letter-spacing:.14em;color:var(--muted-2)}
+  .door.locked .plate{color:var(--champagne-to);opacity:.85}
+
+  /* ——— terminus ——— */
+  .terminus{text-align:center;margin-top:44px;color:var(--muted)}
+  .terminus .serif{font-size:17px;color:var(--cream);display:block;margin-bottom:4px}
+  .terminus small{font-size:12px}
+
+  /* ——— back bar ——— */
+  .backbar{display:flex;align-items:center;gap:10px;margin-bottom:22px;min-height:44px}
+  .back{width:44px;height:44px;margin-left:-12px;border:none;background:none;color:var(--muted);
+    font-size:20px;cursor:pointer}
+  .backbar .eyebrow{margin:0}
+
+  /* ——— noticeboard drop ——— */
+  .drop{border-left:2px solid var(--champagne-to);background:var(--surface);
+    border-radius:0 14px 14px 0;padding:18px 18px 16px;margin-top:8px}
+  .drop .from{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .drop .from .crest{width:36px;height:36px;border-radius:50%;flex:none;
+    background:linear-gradient(180deg,var(--champagne-from),var(--champagne-to));
+    color:var(--cream-text);display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:13px;font-style:normal}
+  .drop .from b{font-size:13.5px;display:block}
+  .drop .from span{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.18em;color:var(--champagne-to)}
+  .drop blockquote{font-family:Georgia,serif;font-style:italic;font-size:19px;line-height:1.45;color:var(--cream)}
+  .drop .d-date{font-size:11.5px;color:var(--muted-2);margin-top:10px}
+
+  /* ——— rooms index ——— */
+  .rooms{border-top:1px solid var(--border)}
+  .room-row{display:flex;align-items:center;gap:14px;padding:16px 2px;border-bottom:1px solid var(--border);
+    min-height:56px;cursor:pointer}
+  .room-row:active{opacity:.7}
+  .room-row .r-name{font-size:15.5px;font-weight:600}
+  .room-row .r-sub{font-size:12px;color:var(--muted)}
+  .room-row .r-live{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10px;
+    letter-spacing:.1em;color:var(--cream);white-space:nowrap}
+  .room-row .r-live.quiet{color:var(--muted-2)}
+
+  /* ——— door page (tease) ——— */
+  .door-hero{margin:8px -20px 0;padding:56px 20px 36px;text-align:center;position:relative;
+    background:
+      radial-gradient(120% 90% at 50% 0%,rgba(201,169,110,.14) 0%,rgba(201,169,110,.03) 45%,transparent 70%),
+      linear-gradient(180deg,#101013 0%,#000 100%);
+    border-bottom:1px solid var(--border)}
+  .door-hero .crest-lg{width:74px;height:74px;border-radius:50%;margin:0 auto 20px;
+    border:1px solid rgba(201,169,110,.5);display:flex;align-items:center;justify-content:center;
+    font-family:Georgia,serif;font-style:italic;font-size:26px;color:var(--champagne-from)}
+  .door-hero h2{font-family:Georgia,serif;font-style:italic;font-weight:400;font-size:32px;color:var(--cream)}
+  .door-hero .d-line{font-size:12.5px;color:var(--muted);margin-top:8px}
+  .tease-copy{font-family:Georgia,serif;font-style:italic;font-size:18px;line-height:1.55;
+    color:var(--fg);text-align:center;padding:28px 8px 4px;max-width:30ch;margin:0 auto}
+  .path-in{display:block;width:100%;margin-top:28px;padding:15px;border:none;border-radius:16px;
+    background:linear-gradient(180deg,var(--champagne-from),var(--champagne-to));
+    color:var(--cream-text);font-size:15px;font-weight:600;cursor:pointer;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 10px 28px rgba(201,169,110,.16);
+    transition:transform .12s ease}
+  .path-in:active{transform:scale(.98)}
+  .path-note{text-align:center;font-size:12px;color:var(--muted-2);margin-top:14px}
+
+  /* ——— dailies thread ——— */
+  .thread-title{font-family:Georgia,serif;font-style:italic;font-size:26px;color:var(--cream);line-height:1.2;margin-top:6px}
+  .author{display:flex;align-items:center;gap:10px;margin-top:14px}
+  .avatar{width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;
+    justify-content:center;font-size:12px;font-weight:600;color:var(--cream);
+    background:var(--surface-2);border:1px solid var(--border-hover)}
+  .author b{font-size:13.5px;display:block}
+  .author span{font-size:11.5px;color:var(--muted)}
+  .frame{margin-top:18px;aspect-ratio:16/9;border-radius:14px;border:1px solid var(--border);
+    background:
+      radial-gradient(80% 120% at 30% 20%,rgba(234,217,172,.07),transparent 60%),
+      linear-gradient(160deg,#131315 0%,#050506 100%);
+    display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer}
+  .frame .play{width:54px;height:54px;border-radius:50%;border:1px solid rgba(247,244,236,.35);
+    display:flex;align-items:center;justify-content:center;color:var(--cream);font-size:16px;
+    padding-left:4px;transition:transform .12s ease}
+  .frame:active .play{transform:scale(.92)}
+  .frame .dur{position:absolute;bottom:10px;right:12px;font-family:ui-monospace,Menlo,monospace;
+    font-size:10.5px;color:var(--muted)}
+  .slate{display:flex;align-items:center;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .slate .s-label{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.2em;color:var(--muted-2)}
+  .ask{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;letter-spacing:.1em;
+    padding:6px 10px;border:1px solid var(--border-hover);border-radius:999px;color:var(--cream)}
+  .respect-row{display:flex;align-items:center;gap:18px;margin-top:16px;padding-bottom:18px;border-bottom:1px solid var(--border)}
+  .respect{display:flex;align-items:center;gap:8px;background:none;border:1px solid var(--border);
+    border-radius:999px;padding:9px 16px;min-height:44px;color:var(--muted);font-size:13px;
+    cursor:pointer;transition:transform .12s ease,border-color .2s,color .2s;font-family:inherit}
+  .respect:active{transform:scale(.94)}
+  .respect.on{color:var(--cream);border-color:rgba(234,217,172,.4)}
+  .respect .r-mark{font-family:Georgia,serif;font-style:italic;font-size:15px}
+  .status-open{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:9.5px;
+    letter-spacing:.18em;color:var(--muted-2)}
+
+  .note{padding:18px 0;border-bottom:1px solid var(--border)}
+  .note-head{display:flex;align-items:center;gap:10px}
+  .note-head .who b{font-size:13px}
+  .note-head .who span{font-size:11px;color:var(--muted)}
+  .rolemark{font-family:ui-monospace,Menlo,monospace;font-size:8.5px;letter-spacing:.18em;
+    color:var(--champagne-to);border:1px solid rgba(201,169,110,.35);border-radius:4px;
+    padding:2px 6px;margin-left:6px;vertical-align:1px}
+  .timecode{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--cream);
+    border:1px solid var(--border-hover);border-radius:6px;padding:2px 7px;margin-right:8px;cursor:pointer}
+  .note p.body{font-size:14px;color:var(--fg);margin-top:10px}
+  .note.mentor{border-left:2px solid var(--champagne-to);padding-left:16px;margin-left:-2px;
+    background:linear-gradient(90deg,rgba(201,169,110,.05),transparent 55%)}
+  .note.mentor p.body{font-family:Georgia,serif;font-style:italic;font-size:16.5px;color:var(--cream)}
+  .helped{display:inline-flex;align-items:center;gap:7px;margin-top:12px;background:none;
+    border:none;cursor:pointer;font-size:12px;color:var(--muted-2);font-family:inherit;
+    min-height:32px;transition:color .2s}
+  .helped.on{color:var(--champagne-from)}
+  .helped .tick{width:16px;height:16px;border-radius:50%;border:1px solid currentColor;
+    display:inline-flex;align-items:center;justify-content:center;font-size:9px}
+  .composer{display:flex;gap:10px;margin-top:20px}
+  .composer input{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:13px 16px;color:var(--fg);font-size:14px;font-family:inherit;min-height:48px}
+  .composer input::placeholder{color:var(--muted-2)}
+  .composer .tc-btn{width:48px;border-radius:12px;border:1px solid var(--border);background:var(--surface);
+    color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:10px;cursor:pointer}
+  .cut-cta{width:100%;margin-top:22px;padding:14px;border-radius:14px;border:1px solid rgba(234,217,172,.3);
+    background:none;color:var(--cream);font-size:14px;cursor:pointer;font-family:Georgia,serif;font-style:italic}
+
+  /* ——— prototype navigator (not part of the design — for review only) ——— */
+  .navigator{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;
+    display:flex;gap:4px;background:rgba(20,20,22,.96);border:1px solid var(--border-hover);
+    border-radius:999px;padding:5px}
+  .navigator button{border:none;background:none;color:var(--muted);font-size:10.5px;
+    font-family:ui-monospace,Menlo,monospace;letter-spacing:.06em;padding:9px 12px;border-radius:999px;
+    cursor:pointer;min-height:36px}
+  .navigator button.on{background:var(--cream);color:var(--cream-text)}
+</style>
+</head>
+<body>
+<div class="grain"></div>
+<div class="stage">
+
+  <!-- ═══════════ SCREEN 1 · THE PROGRAMME (community home) ═══════════ -->
+  <section class="screen active" id="s-programme">
+    <p class="eyebrow">The Programme · Monday, 7 July</p>
+    <h1>What's on <span class="serif">tonight</span>.</h1>
+    <p class="sub mono" style="font-size:11px;letter-spacing:.08em;color:var(--muted-2);margin-top:8px">MEMBER #4,211 · FILMMAKING · WRITING</p>
+
+    <div class="now" data-go="s-house">
+      <span class="dot pulse"></span>
+      <div><b>Crit Night — Filmmaking</b><span class="meta">Happening now · 24 inside</span></div>
+      <span class="go">JOIN →</span>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><p class="eyebrow cream">Tonight</p></div>
+      <div class="bill">
+        <div class="bill-row" data-go="s-thread">
+          <span class="bill-time">8:00 PM</span>
+          <div><div class="bill-title">Dailies: week twenty-seven</div>
+          <div class="bill-meta">Filmmaking · Dailies room · 6 works open</div></div>
+        </div>
+        <div class="bill-row locked" data-go="s-door">
+          <span class="bill-time">9:30 PM</span>
+          <div><div class="bill-title">Closed set: the Goa cut review</div>
+          <div class="bill-meta"><span class="lock">🔒</span> Private screening · Forge Goa '26</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><p class="eyebrow cream">This week</p></div>
+      <div class="bill">
+        <div class="bill-row" data-go="s-house">
+          <span class="bill-time">THU</span>
+          <div><div class="bill-title">A note from Nelson Dilipkumar</div>
+          <div class="bill-meta">Filmmaking · The Noticeboard</div></div>
+        </div>
+        <div class="bill-row">
+          <span class="bill-time">FRI</span>
+          <div><div class="bill-title">Pages: logline night</div>
+          <div class="bill-meta">Writing · Dailies room</div></div>
+        </div>
+        <div class="bill-row">
+          <span class="bill-time">SAT</span>
+          <div><div class="bill-title">Screening: the July challenge picks</div>
+          <div class="bill-meta">Filmmaking · hosted by Priya S.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><p class="eyebrow cream">Needs you</p></div>
+      <div class="needs">
+        <div class="needs-row" data-go="s-thread">
+          <span class="n-ico">✎</span>
+          <div><p>Your dailies got two new notes</p><span>"Tea stall scene — cut 2" · one from a host</span></div>
+        </div>
+        <div class="needs-row" data-go="s-house">
+          <span class="n-ico">◔</span>
+          <div><p>Three dailies still need eyes</p><span>Filmmaking · leave one note, make someone's week</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><p class="eyebrow cream">Doors</p></div>
+      <div class="doors">
+        <div class="door open" data-go="s-house">
+          <span class="crest">F</span><span class="plate">OPEN</span>
+          <h4>Filmmaking</h4><div class="d-meta">312 active members</div>
+        </div>
+        <div class="door open">
+          <span class="crest">W</span><span class="plate">OPEN</span>
+          <h4>Writing</h4><div class="d-meta">148 active members</div>
+        </div>
+        <div class="door locked" data-go="s-door">
+          <span class="crest">FG</span><span class="plate">🔒 PRIVATE</span>
+          <h4>Forge Goa '26</h4><div class="d-meta">31 filmmakers</div>
+        </div>
+        <div class="door locked">
+          <span class="crest">A4</span><span class="plate">🔒 PRIVATE</span>
+          <h4>AI Cohort 4</h4><div class="d-meta">52 members</div>
+        </div>
+        <div class="door">
+          <span class="crest">Ph</span><span class="plate">SOON</span>
+          <h4>Photography</h4><div class="d-meta">Opening August</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="terminus">
+      <span class="serif">You're all caught up.</span>
+      <small class="mono" style="letter-spacing:.1em">TONIGHT AT 8 — DAILIES</small>
+    </div>
+  </section>
+
+  <!-- ═══════════ SCREEN 2 · THE FILMMAKING HOUSE ═══════════ -->
+  <section class="screen" id="s-house">
+    <div class="backbar">
+      <button class="back" data-go="s-programme" aria-label="Back">‹</button>
+      <p class="eyebrow">The Filmmaking House</p>
+    </div>
+    <h1 style="font-size:30px">Where the frame is <span class="serif">the argument</span>.</h1>
+    <p class="sub mono" style="font-size:11px;letter-spacing:.08em;color:var(--muted-2);margin-top:8px">312 ACTIVE MEMBERS · EST. 2025</p>
+
+    <div class="section" style="margin-top:26px">
+      <div class="section-head"><p class="eyebrow cream">The Noticeboard · latest drop</p></div>
+      <div class="drop">
+        <div class="from">
+          <span class="crest">LK</span>
+          <div><b>Lokesh Kanagaraj</b><span>MENTOR</span></div>
+        </div>
+        <blockquote>"Your first ten shorts are the tuition. Stop protecting them — spend them."</blockquote>
+        <p class="d-date">Dropped 2 July · next drop Thursday</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><p class="eyebrow cream">Rooms</p></div>
+      <div class="rooms">
+        <div class="room-row">
+          <div><div class="r-name">The Noticeboard</div><div class="r-sub">Drops from the faculty · read-only</div></div>
+          <span class="r-live">THU: NELSON</span>
+        </div>
+        <div class="room-row" data-go="s-thread">
+          <div><div class="r-name">Dailies</div><div class="r-sub">Put your work on the table</div></div>
+          <span class="r-live">6 OPEN · 3 NEED EYES</span>
+        </div>
+        <div class="room-row">
+          <div><div class="r-name">The Lobby</div><div class="r-sub">Talk shop, find your crew</div></div>
+          <span class="r-live quiet">12 TODAY</span>
+        </div>
+        <div class="room-row">
+          <div><div class="r-name">Wins</div><div class="r-sub">Selections, gigs, first credits</div></div>
+          <span class="r-live quiet">2 TODAY</span>
+        </div>
+        <div class="room-row">
+          <div><div class="r-name">First Positions</div><div class="r-sub">New members, say your name</div></div>
+          <span class="r-live quiet">WELCOME 4</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><p class="eyebrow cream">This week in the house</p></div>
+      <div class="bill">
+        <div class="bill-row"><span class="bill-time">TONIGHT</span>
+          <div><div class="bill-title">Crit night — week twenty-seven</div>
+          <div class="bill-meta">Dailies room · hosted by Priya S.</div></div></div>
+        <div class="bill-row"><span class="bill-time">THU</span>
+          <div><div class="bill-title">A note from Nelson Dilipkumar</div>
+          <div class="bill-meta">The Noticeboard</div></div></div>
+        <div class="bill-row"><span class="bill-time">SAT</span>
+          <div><div class="bill-title">Screening: the July challenge picks</div>
+          <div class="bill-meta">Five cuts, one hour, no mercy</div></div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><p class="eyebrow cream">Doors in this house</p></div>
+      <div class="doors">
+        <div class="door locked" data-go="s-door">
+          <span class="crest">FG</span><span class="plate">🔒 PRIVATE</span>
+          <h4>Forge Goa '26</h4><div class="d-meta">31 filmmakers</div>
+        </div>
+        <div class="door locked">
+          <span class="crest">C3</span><span class="plate">🔒 ALUMNI</span>
+          <h4>Cohort 3</h4><div class="d-meta">Alumni room · kept forever</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ SCREEN 3 · A LOCKED DOOR (edition tease) ═══════════ -->
+  <section class="screen" id="s-door">
+    <div class="backbar">
+      <button class="back" data-go="s-programme" aria-label="Back">‹</button>
+      <p class="eyebrow">Private screening</p>
+    </div>
+    <div class="door-hero">
+      <div class="crest-lg">FG</div>
+      <h2>Forge Goa '26</h2>
+      <p class="d-line mono" style="letter-spacing:.1em">31 FILMMAKERS · AN EDITION OF THE FORGE</p>
+    </div>
+
+    <p class="tease-copy">The room where the Goa edition plans, argues, and cuts together. Every seat here was earned.</p>
+
+    <div class="section">
+      <div class="section-head"><p class="eyebrow cream">On their programme</p></div>
+      <div class="bill">
+        <div class="bill-row locked"><span class="bill-time">TONIGHT</span>
+          <div><div class="bill-title">The Goa cut review</div>
+          <div class="bill-meta"><span class="lock">🔒</span> members only</div></div></div>
+        <div class="bill-row locked"><span class="bill-time">SAT</span>
+          <div><div class="bill-title">Sunrise shoot — the debrief</div>
+          <div class="bill-meta"><span class="lock">🔒</span> members only</div></div></div>
+        <div class="bill-row locked"><span class="bill-time">AUG</span>
+          <div><div class="bill-title">Ravi Basrur on scoring the sea</div>
+          <div class="bill-meta"><span class="lock">🔒</span> members only</div></div></div>
+      </div>
+    </div>
+
+    <button class="path-in">Applications open in March → The Forge</button>
+    <p class="path-note">Alumni keep their rooms forever.</p>
+  </section>
+
+  <!-- ═══════════ SCREEN 4 · A DAILIES THREAD (the crit format) ═══════════ -->
+  <section class="screen" id="s-thread">
+    <div class="backbar">
+      <button class="back" data-go="s-house" aria-label="Back">‹</button>
+      <p class="eyebrow">Filmmaking · Dailies</p>
+    </div>
+
+    <h2 class="thread-title">Tea stall scene — cut 2</h2>
+    <div class="author">
+      <span class="avatar">AM</span>
+      <div><b>Arjun M.</b><span class="mono" style="letter-spacing:.06em">MEMBER #1,872 · 2H AGO</span></div>
+    </div>
+
+    <div class="frame"><span class="play">▶</span><span class="dur">02:47</span></div>
+
+    <div class="slate">
+      <span class="s-label">LOOKING FOR</span>
+      <span class="ask">PACING</span>
+      <span class="ask">SOUND DESIGN</span>
+    </div>
+
+    <div class="respect-row">
+      <button class="respect" id="respectBtn" onclick="toggleRespect()">
+        <span class="r-mark">R</span><span id="respectCount">12 respect</span>
+      </button>
+      <span class="status-open">OPEN FOR NOTES · 3</span>
+    </div>
+
+    <div class="note">
+      <div class="note-head">
+        <span class="avatar" style="width:30px;height:30px;font-size:11px">MK</span>
+        <div class="who"><b>Meera K.</b><span> · Member #2,946 · 1h ago</span></div>
+      </div>
+      <p class="body"><span class="timecode">00:41</span>The cut to the kettle steam is doing your pacing work for you — hold it four more frames and the next line lands twice as hard.</p>
+      <button class="helped on" onclick="toggleHelped(this)"><span class="tick">✓</span><span>Arjun marked: this helped</span></button>
+    </div>
+
+    <div class="note">
+      <div class="note-head">
+        <span class="avatar" style="width:30px;height:30px;font-size:11px">PS</span>
+        <div class="who"><b>Priya S.</b><span class="rolemark">HOST</span><span> · 44m ago</span></div>
+      </div>
+      <p class="body"><span class="timecode">01:58</span>Your ambience drops out under the dialogue — keep the stall's clatter at −18 and let the scene breathe street air.</p>
+      <button class="helped" onclick="toggleHelped(this)"><span class="tick">✓</span><span>Mark: this helped</span></button>
+    </div>
+
+    <div class="note mentor">
+      <div class="note-head">
+        <span class="avatar" style="width:30px;height:30px;font-size:11px;background:linear-gradient(180deg,var(--champagne-from),var(--champagne-to));color:var(--cream-text);border:none">RB</span>
+        <div class="who"><b>Ravi Basrur</b><span class="rolemark">MENTOR</span><span> · 20m ago</span></div>
+      </div>
+      <p class="body">Silence before the whistle, not after. You already shot the pause — trust it.</p>
+      <button class="helped" onclick="toggleHelped(this)"><span class="tick">✓</span><span>Mark: this helped</span></button>
+    </div>
+
+    <div class="composer">
+      <input type="text" placeholder="Leave a note…" aria-label="Leave a note">
+      <button class="tc-btn" title="Attach a timecode">0:00</button>
+    </div>
+
+    <button class="cut-cta">When you've cut again — post your director's cut & roll credits</button>
+  </section>
+
+</div>
+
+<!-- prototype navigator: review chrome only, not part of the design -->
+<nav class="navigator" aria-label="Prototype screens">
+  <button class="on" data-go="s-programme">PROGRAMME</button>
+  <button data-go="s-house">HOUSE</button>
+  <button data-go="s-door">DOOR</button>
+  <button data-go="s-thread">DAILIES</button>
+</nav>
+
+<script>
+  // screen switching (prototype only — the real app uses the router + springs)
+  function show(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    document.querySelectorAll('.navigator button').forEach(b=>
+      b.classList.toggle('on', b.dataset.go===id));
+    window.scrollTo({top:0});
+  }
+  document.addEventListener('click', e=>{
+    const t = e.target.closest('[data-go]');
+    if(t){ show(t.dataset.go); }
+  });
+
+  // respect: constrained single reaction, quiet
+  let respected=false, count=12;
+  function toggleRespect(){
+    respected=!respected; count+=respected?1:-1;
+    const btn=document.getElementById('respectBtn');
+    btn.classList.toggle('on',respected);
+    document.getElementById('respectCount').textContent=count+' respect';
+  }
+  // helped: author-only mark (simulated)
+  function toggleHelped(btn){
+    const on=btn.classList.toggle('on');
+    btn.querySelector('span:last-child').textContent=
+      on?'Arjun marked: this helped':'Mark: this helped';
+  }
+</script>
+</body>
+</html>

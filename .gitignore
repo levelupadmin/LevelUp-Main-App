@@ -50,3 +50,4 @@ supabase/.temp/
 deno.lock
 design/qa/
 design/vision/shots/
+design/community/shots/
