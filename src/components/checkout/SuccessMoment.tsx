@@ -91,7 +91,7 @@ export function DownloadInvoiceButton({ order }: { order: InvoiceOrder }) {
       type="button"
       onClick={handleDownload}
       disabled={busy}
-      className="inline-flex items-center gap-1.5 text-[hsl(var(--cream))] hover:underline disabled:opacity-60 disabled:no-underline transition-opacity"
+      className="inline-flex items-center gap-1.5 min-h-[44px] -my-3 text-[hsl(var(--cream))] hover:underline disabled:opacity-60 disabled:no-underline transition-opacity rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
     >
       {busy ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin" />

@@ -146,6 +146,14 @@
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
+    /* Error-message TEXT on the dark card. The base --destructive (0 72% 51%)
+       reads only 4.13:1 on the 4% card surface — under WCAG AA 4.5:1 for the
+       12px inline `role="alert"` errors (axe serious, phase-3 crit 8). Lightened
+       to 0 72% 60% ⇒ ~5.2:1, clearing AA with margin while staying the same red.
+       Same darken/lighten-for-contrast move as --accent-violet-deep below. Used
+       ONLY for small destructive text; base --destructive stays for buttons,
+       borders and the required-field asterisk (non-text / large enough). */
+    --destructive-text: 0 72% 60%;
 
     --border: 240 4% 16%;
     --border-hover: 240 4% 26%;

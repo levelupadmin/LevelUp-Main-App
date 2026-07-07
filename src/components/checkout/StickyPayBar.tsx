@@ -20,11 +20,14 @@ import { durations, easings, useMotionSafe } from "@/lib/motion";
  * The parent gates mounting on the in-card Pay button's visibility (mirrors the
  * offering page's sticky→inline handoff) so exactly ONE champagne CTA is lit at
  * any scroll offset. This component just owns the slide-up entrance / slide-down
- * exit for that handoff — a bounded decelerate tween (NOT a spring): the bar
- * carries a backdrop-blur, which Blink re-samples every frame the transform
- * moves, so a spring's sub-pixel settling tail would keep the compositor
- * re-blurring (the #1 dark-app jank source per DESIGN-STRATEGY). A tween ends
- * cleanly with no tail; it collapses to an instant cut under reduced motion.
+ * exit for that handoff — a bounded decelerate tween (NOT a spring). The fill
+ * is a solid near-black (bg-surface at ~0.97, NO backdrop-filter): on the pure-
+ * black canvas an opaque near-black surface is visually indistinguishable from a
+ * blurred one, and dropping backdrop-blur removes the per-frame re-sampling Blink
+ * does whenever a blurred layer's transform moves (the #1 dark-app jank source per
+ * DESIGN-STRATEGY). The tween is still preferred over a spring so the slide ends
+ * cleanly with no sub-pixel settling tail; it collapses to an instant cut under
+ * reduced motion.
  */
 interface StickyPayBarProps {
   /** Final amount to charge, in INR. */
@@ -55,7 +58,7 @@ export default function StickyPayBar({
       transition={
         ms.reduced ? { duration: 0 } : { duration: durations.slow, ease: easings.out }
       }
-      className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 backdrop-blur-md pb-safe"
+      className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/[0.97] pb-safe"
     >
       <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">

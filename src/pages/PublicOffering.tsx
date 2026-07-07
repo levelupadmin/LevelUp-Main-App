@@ -30,6 +30,7 @@ import HeroPlayChip from "@/components/offering/HeroPlayChip";
 import ArtworkImage from "@/components/media/ArtworkImage";
 import AmbientGlow from "@/components/media/AmbientGlow";
 import { durations, easings, useMotionSafe } from "@/lib/motion";
+import { resolveHandoff } from "./publicOfferingHandoff";
 import { track } from "@/lib/analytics";
 import {
   Check,
@@ -132,10 +133,6 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 // still fires only when a step is crossed — not per frame — so this stays
 // off-main-thread work, not a scroll handler.
 const HANDOFF_THRESHOLDS = Array.from({ length: 21 }, (_, i) => i / 20);
-// The inline CTA's visible band the handoff scrubs across: fully lit until it is
-// 25% visible, fully ceded once it is 75% visible (INTERACTION-STEALS STEAL #1).
-const HANDOFF_START = 0.25;
-const HANDOFF_END = 0.75;
 
 /**
  * Airbnb-style sticky→inline pay handoff for the mobile sticky bar
@@ -185,27 +182,16 @@ function useStickyHandoff(): {
         (entries) => {
           const entry = entries[entries.length - 1];
           const ratio = entry.isIntersecting ? entry.intersectionRatio : 0;
-          if (reduced) {
-            // Instant swap at 50%: lit while the inline CTA is minority-visible,
-            // gone the moment it is majority-visible. No scrub, no scale.
-            const show = ratio < 0.5;
-            opacity.set(show ? 1 : 0);
-            scaleX.set(1);
-            setMounted(show);
-            setCeded(!show);
-            return;
-          }
-          // Scrub opacity 1→0 (and scaleX 1→0.92) across the 25%→75%-visible band.
-          const o = Math.min(
-            1,
-            Math.max(0, (HANDOFF_END - ratio) / (HANDOFF_END - HANDOFF_START)),
+          const next = resolveHandoff(
+            ratio,
+            entry.boundingClientRect.top,
+            entry.rootBounds?.top ?? 0,
+            reduced,
           );
-          opacity.set(o);
-          scaleX.set(0.92 + 0.08 * o);
-          // Keep the bar mounted through the whole scrub, unmount once ceded so
-          // the slide-down exit tween runs on an already-faded (invisible) bar.
-          setMounted(ratio < HANDOFF_END);
-          setCeded(o < 0.5);
+          opacity.set(next.opacity);
+          scaleX.set(next.scaleX);
+          setMounted(next.mounted);
+          setCeded(next.ceded);
         },
         { threshold: reduced ? [0, 0.5, 1] : HANDOFF_THRESHOLDS },
       );
@@ -223,6 +209,95 @@ function useStickyHandoff(): {
 /* ────────────────────────────────────────────────── */
 
 /**
+ * Cohort/apply hero art. Live-cohort offerings carry a full LANDSCAPE poster
+ * (a 600×400 wordmark banner), not a square brand logo — verified across all
+ * five live cohorts; the earlier "square logo → object-contain" premise was
+ * stale. That premise produced two craft bugs on this gate route: letterbox
+ * voids around the poster (DESIGN-STRATEGY §1) and, for video-editing-academy,
+ * a baked-in transparency-checkerboard band across the top ~40% of the source
+ * PNG rendered raw.
+ *
+ * A naive object-cover (the first-pass doctrine) is worse here, not better:
+ * evaluated live at the 4/5 mobile aspect it CROPS the centered wordmarks (3 of
+ * 5 posters lose text at the edges) and still can't crop away the checkerboard
+ * band (it sits at the top, which the portrait crop keeps). So we apply the
+ * codebase's landscape-in-a-box doctrine (the P9-T2 catalog-row treatment): a
+ * blurred object-cover backdrop of the same small source fills the frame — no
+ * voids, no crop of the poster — with the SHARP full poster contained on top,
+ * and a branded champagne-monogram fallback (ArtworkImage's placeholder) on
+ * missing or broken art. One blurred static <img> per hero, thumbnail-sized
+ * source — within the Android-WebView budget the doctrine sanctions.
+ *
+ * NOTE (source-asset, not code): video-editing-academy's poster has the
+ * checkerboard band baked into opaque pixels, so no cover/contain treatment can
+ * remove it and no cheap, false-positive-free heuristic can single it out from
+ * the four good posters. That one asset needs replacing in admin storage.
+ */
+function CohortHeroArt({
+  img,
+  smallSrc,
+  alt,
+}: {
+  img: string | null;
+  smallSrc: string | null;
+  alt: string;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
+
+  // Cached-image guard (mirrors ArtworkImage): if the browser already has the
+  // poster decoded before React attaches onLoad, reconcile from `complete` so
+  // the sharp layer fades in instead of staying pinned at opacity-0.
+  const reconcileCachedImage = useCallback((node: HTMLImageElement | null) => {
+    if (!node || !node.complete) return;
+    if (node.naturalWidth > 0) setLoaded(true);
+    else setErrored(true);
+  }, []);
+
+  // Missing or broken art → branded champagne-monogram placeholder (reuses
+  // ArtworkImage: a null src renders its placeholder, filling the hero box).
+  if (!img || errored) {
+    return (
+      <ArtworkImage src={null} alt={alt} className="absolute inset-0 h-full w-full" />
+    );
+  }
+
+  return (
+    <>
+      {/* Blurred cover backdrop (same small source) fills the frame so the
+          landscape poster never floats in letterbox voids. Static filter on a
+          small img — not backdrop-filter. */}
+      <img
+        src={smallSrc || img}
+        alt=""
+        aria-hidden="true"
+        width={320}
+        loading="eager"
+        decoding="async"
+        className="absolute inset-0 h-full w-full scale-110 object-cover opacity-40 blur-xl"
+      />
+      {/* Sharp full poster, contained — the whole wordmark stays visible, never
+          cropped, at every viewport. Fades in on decode without CLS. */}
+      <img
+        ref={reconcileCachedImage}
+        src={img}
+        alt={alt}
+        loading="eager"
+        decoding="async"
+        // React 18 doesn't know the camelCase fetchPriority prop and warns; the
+        // lowercase DOM attribute passes straight through.
+        {...({ fetchpriority: "high" } as Record<string, string>)}
+        onLoad={() => setLoaded(true)}
+        onError={() => setErrored(true)}
+        className={`dark-img absolute inset-0 h-full w-full object-contain p-6 sm:p-8 lg:p-10 transition-opacity duration-slow ease-out-expo ${
+          loaded ? "opacity-100" : "opacity-0"
+        }`}
+      />
+    </>
+  );
+}
+
+/**
  * Cinematic hero: image fills the full container at a portrait aspect on
  * mobile (so the instructor's face dominates the fold) and a wider 21:9
  * on desktop. Title + subtitle sit overlaid at the bottom with a heavy
@@ -238,13 +313,13 @@ function HeroBanner({
   onPlayPreview?: (() => void) | null;
 }) {
   const img = offering.banner_url || offering.thumbnail_url;
-  // Live-cohort offerings carry a square brand LOGO (not a wide hero photo), so
-  // object-cover would crop its sides. Detect them (they set tally_form_url) and
-  // contain the logo in the top portion on a branded backdrop instead.
+  // Live-cohort offerings carry a full landscape wordmark poster (not a
+  // cinematic cover photo). Detect them (they set tally_form_url) and give them
+  // the blurred-backdrop + contained-poster treatment (see CohortHeroArt).
   const isApply = !!(offering as any).tally_form_url;
   const eyebrow = isApply ? "Live Cohort" : "Masterclass";
   // The play chip only makes sense over a cinematic cover photo. Live-cohort
-  // logo heroes get the chip surfaced via the CTA row instead, not the logo.
+  // poster heroes get the chip surfaced via the CTA row instead, not the poster.
   const showPlayChip = !!onPlayPreview && !isApply && !!img;
 
   const { enabled, springs } = useMotionSafe();
@@ -291,37 +366,25 @@ function HeroBanner({
             : springs.glide
         }
       >
-        {img ? (
-          isApply ? (
-            <>
-              <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--surface-2))] via-[hsl(var(--surface))] to-[hsl(var(--canvas))]" />
-              {/* Contained brand logo (not a cover photo) — ArtworkImage is a
-                  cover-fill primitive, so the logo treatment keeps its own img. */}
-              <img
-                src={img}
-                alt={offering.title}
-                className="absolute inset-x-0 top-0 h-[60%] w-full object-contain p-8 sm:p-10"
-                loading="eager"
-                decoding="async"
-                // React 18 doesn't know the camelCase fetchPriority prop and
-                // warns; the lowercase DOM attribute passes straight through.
-                {...({ fetchpriority: "high" } as any)}
-              />
-            </>
-          ) : (
-            // Cinematic cover: ArtworkImage (priority) kills letterboxing/void and
-            // fades the poster in on load without CLS. Fills the aspect box.
-            <ArtworkImage
-              src={img}
-              alt={offering.title}
-              priority
-              className="absolute inset-0 h-full w-full"
-            />
-          )
+        {isApply ? (
+          // Cohort/apply: landscape wordmark poster → blurred-cover backdrop +
+          // sharp contained foreground (no voids, no wordmark crop) with a
+          // branded champagne-monogram fallback. See CohortHeroArt.
+          <CohortHeroArt
+            img={img}
+            smallSrc={offering.thumbnail_url}
+            alt={offering.title}
+          />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-            <BookOpen className="h-16 w-16 opacity-30" />
-          </div>
+          // Cinematic cover: ArtworkImage (priority) kills letterboxing/void and
+          // fades the poster in on load without CLS. A missing/broken src falls
+          // back to the same branded champagne-monogram placeholder.
+          <ArtworkImage
+            src={img}
+            alt={offering.title}
+            priority
+            className="absolute inset-0 h-full w-full"
+          />
         )}
         {/* Title-legibility gradient: dense at the bottom where the type sits, fades out by midpoint */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent pointer-events-none" />
@@ -1457,7 +1520,8 @@ export default function PublicOffering() {
                     {" "}with code{" "}
                     <button
                       onClick={() => { navigator.clipboard.writeText(couponInfo.code); toast.success("Copied!"); }}
-                      className="font-mono font-bold text-[hsl(var(--accent-emerald))] hover:underline"
+                      aria-label={`Copy code ${couponInfo.code}`}
+                      className="font-mono font-bold text-[hsl(var(--accent-emerald))] hover:underline rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
                     >
                       {couponInfo.code}
                     </button>
@@ -1663,16 +1727,18 @@ export default function PublicOffering() {
           // tree and stop it taking taps so only the inline CTA is actionable.
           aria-hidden={stickyCeded || undefined}
           // Tokenized decelerate tween, NOT springs.glide, for the y slide only.
-          // This surface carries a backdrop-blur, which Blink re-samples every
-          // frame the transform moves. A spring's low-amplitude settling tail keeps
-          // the compositor re-blurring for a long, sub-pixel tail — the #1 dark-app
-          // jank source per DESIGN-STRATEGY. A bounded tween ends cleanly (no tail)
-          // while a decelerate ease keeps the slide-up "settle" choreography feel.
-          // (The scrub itself is scroll-linked: it stops the instant the user stops
-          // scrolling, so it too has no re-blurring tail.) Still collapses to an
-          // instant cut under reduced motion.
+          // This surface is a SOLID near-black fill (bg-surface at ~0.97) with NO
+          // backdrop-filter: opacity + scaleX are scroll-scrubbed onto this layer
+          // frame-by-frame, and a backdrop-blur here would force Blink to re-sample
+          // the blur every one of those frames — the #1 dark-app jank source per
+          // DESIGN-STRATEGY. On the pure-black canvas an opaque near-black surface
+          // reads identically to a blurred one, so we drop the filter entirely and
+          // the per-frame scrub composites as a plain transform/opacity write. The
+          // tween (over a spring) still keeps the slide-up ending cleanly with no
+          // sub-pixel settling tail. Still collapses to an instant cut under
+          // reduced motion.
           transition={ms.reduced ? { duration: 0 } : { duration: durations.slow, ease: easings.out }}
-          className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+          className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface)/0.97)] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
         >
         {applyUrl ? (
           <div className="space-y-2">
@@ -1684,6 +1750,12 @@ export default function PublicOffering() {
               href={applyUrl}
               target="_blank"
               rel="noopener noreferrer"
+              // While ceded the bar is aria-hidden + pointer-events:none, but a
+              // bare <a> stays in the tab order — keyboard focus could land on an
+              // invisible control (WCAG 4.1.2). Pull it out of the sequence until
+              // the bar is lit again (below lg this bar shows, so tablets/laptops
+              // driving by keyboard reach it).
+              tabIndex={stickyCeded ? -1 : undefined}
               className="btn-champagne pressable flex w-full items-center justify-center text-[hsl(var(--cream-text))] font-semibold h-12 text-base rounded-2xl"
             >
               Apply for an invite
@@ -1723,6 +1795,10 @@ export default function PublicOffering() {
                 track({ name: "pay_cta_tapped", slug: offering.slug, surface: "sticky" });
                 navigate(`/checkout/${offering.id}`);
               }}
+              // See the apply anchor above: keep this out of the tab order while the
+              // bar is ceded (aria-hidden + pointer-events:none) so keyboard focus
+              // can't land on an invisible control (WCAG 4.1.2), restored when lit.
+              tabIndex={stickyCeded ? -1 : undefined}
               className="btn-champagne text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
             >
               {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}

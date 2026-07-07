@@ -844,7 +844,7 @@ export default function ThankYou() {
                 <button
                   type="button"
                   onClick={() => setRedirectCancelled(true)}
-                  className="underline hover:text-foreground transition-colors"
+                  className="underline hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
                 >
                   stay here instead
                 </button>
@@ -855,7 +855,7 @@ export default function ThankYou() {
                 variant="ghost"
                 onClick={handleResendLink}
                 disabled={resending}
-                className="w-full text-sm text-muted-foreground hover:text-foreground"
+                className="w-full min-h-[44px] text-sm text-muted-foreground hover:text-foreground"
               >
                 {resending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
                 Resend login link
@@ -916,7 +916,7 @@ export default function ThankYou() {
                   const text = `Just enrolled in ${order.offerings?.title || "a LevelUp masterclass"}! ${shareUrl}`;
                   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
                 }}
-                className="h-9"
+                className="h-9 min-h-[44px]"
               >
                 <span aria-hidden className="mr-2 text-[hsl(var(--accent-emerald))]">●</span>
                 Share on WhatsApp
@@ -933,7 +933,7 @@ export default function ThankYou() {
                     /* no toast - silent copy */
                   }
                 }}
-                className="h-9"
+                className="h-9 min-h-[44px]"
               >
                 Share elsewhere
               </Button>

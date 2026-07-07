@@ -85,13 +85,18 @@ describe("PayButtonContent (reduced motion)", () => {
 
   it("shows the label at rest and a check on success (instant, text-only)", () => {
     setReducedMotion(true);
-    const { rerender } = render(
+    const { rerender, container } = render(
       <PayButtonContent status="idle" label="Enrol free" />,
     );
     expect(screen.getByText("Enrol free")).toBeInTheDocument();
 
     rerender(<PayButtonContent status="success" label="Enrol free" />);
-    // Success renders the check glyph, not the label text.
-    expect(screen.queryByText("Enrol free")).toBeNull();
+    // Success renders the decorative check glyph, but the label is retained as
+    // an sr-only node so the button keeps its accessible name (parity with the
+    // motion path, whose opacity-0 label layer stays in the a11y tree).
+    const srLabel = screen.getByText("Enrol free");
+    expect(srLabel).toHaveClass("sr-only");
+    // The visible glyph is the aria-hidden check, not the label.
+    expect(container.querySelector("svg[aria-hidden]")).not.toBeNull();
   });
 });

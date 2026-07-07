@@ -78,6 +78,11 @@ export default function ChampagneDust({
     }
 
     const COUNT = 22;
+    // Depth-field emission stagger. The reference's exact stagger is ~90ms;
+    // with 22 discs a strict 90ms ramp would push the last one past the
+    // one-shot window, so we move toward it (55ms, up from the old flat 35ms)
+    // — enough to read as arriving from varied depths, not a single flat puff.
+    const STAGGER = 0.055;
     const next: Particle[] = Array.from({ length: COUNT }, (_, i) => {
       // Weighted size classes: mostly small, a few soft large bokeh.
       const r = Math.random();
@@ -89,16 +94,23 @@ export default function ChampagneDust({
         size: SIZE_PX[sizeClass],
         background: discBackground(token, sizeClass),
         sway: (10 + Math.random() * 4) * (Math.random() < 0.5 ? -1 : 1),
-        // Gentle stagger so all particles launch within the first ~0.8s;
-        // rise itself is 2.2–2.8s (ease-out), keeping the whole one-shot
-        // inside the spec's calm 2.4–3.2s window before it returns to stillness.
-        delay: i * 0.035 + Math.random() * 0.05,
-        duration: 2.2 + Math.random() * 0.6,
+        // Last disc is born ~1.2s in; the trimmed calm rise (2.0–2.3s, ease-out)
+        // means even the latest starter finishes its 0→0.85→0 fade to stillness
+        // before the field unmounts — no disc is ever cut mid-rise.
+        delay: i * STAGGER + Math.random() * 0.03,
+        duration: 2.0 + Math.random() * 0.3,
       };
     });
     setParticles(next);
 
-    const timer = window.setTimeout(() => setParticles([]), duration);
+    // Unmount only AFTER the slowest disc has fully faded. The old fixed cut at
+    // `duration` (3200ms) guillotined the late/large discs while they were still
+    // at ~0.2–0.3 opacity, leaving a visible hard flicker. Derive the timeout
+    // from the actual last-particle end instead, floored at the caller's
+    // nominal window so the felt one-shot never shortens below spec.
+    const lastEndMs = Math.max(...next.map((p) => p.delay + p.duration)) * 1000;
+    const unmountAt = Math.max(duration, Math.ceil(lastEndMs) + 120);
+    const timer = window.setTimeout(() => setParticles([]), unmountAt);
     return () => window.clearTimeout(timer);
   }, [active, duration]);
 
@@ -127,7 +139,10 @@ export default function ChampagneDust({
             background: p.background,
             // Consumed by the keyframe's mid-rise waypoint for the x-sway.
             ["--sway" as string]: `${p.sway}px`,
-            willChange: "transform, opacity",
+            // No explicit `will-change`: an immediately-running transform/opacity
+            // animation is already auto-composited by the browser for its
+            // duration, so the hint bought nothing but pinned 22 permanent
+            // layers for the whole mount. Let the animation own promotion.
             animation: `champagne-rise ${p.duration}s ease-out ${p.delay}s forwards`,
           }}
         />

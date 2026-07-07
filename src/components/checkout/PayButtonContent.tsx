@@ -57,7 +57,13 @@ export default function PayButtonContent({ status, label }: PayButtonContentProp
     return (
       <span className="inline-flex items-center justify-center gap-2 whitespace-nowrap">
         {status === "success" ? (
-          <Check aria-hidden className="h-4 w-4" />
+          // The check is decorative; keep the label in the a11y tree (visually
+          // hidden) so the button retains its accessible name here, exactly as
+          // the non-reduced path does with an opacity-0 label layer.
+          <>
+            <Check aria-hidden className="h-4 w-4" />
+            <span className="sr-only">{label}</span>
+          </>
         ) : status === "processing" ? (
           "Processing…"
         ) : (

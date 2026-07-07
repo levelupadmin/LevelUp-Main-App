@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
 import { Loader2, Tag, BookOpen, ArrowLeft, CheckCircle2, Lock, X } from "lucide-react";
-import { AnimatePresence, motion, useInView } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import type { Tables } from "@/integrations/supabase/types";
 import TrustPanel from "@/components/checkout/TrustPanel";
 import StickyPayBar from "@/components/checkout/StickyPayBar";
@@ -25,6 +25,7 @@ import { PhoneInput } from "@/components/auth/PhoneInput";
 import { SkeletonLine, SkeletonBlock, RevealOnMount } from "@/components/patterns/LoadingState";
 import CountUp from "@/components/motion/CountUp";
 import { useMotionSafe } from "@/lib/motion";
+import { useInViewRef } from "@/hooks/useInViewRef";
 import { isAndroid, isNative } from "@/lib/platform";
 import { hapticImpact, hapticSelection, tapTick } from "@/lib/haptics";
 import { track } from "@/lib/analytics";
@@ -277,8 +278,17 @@ export default function CheckoutPage() {
   // as "in view" once it clears the sticky bar's footprint — no frame where the
   // lit bar overlaps the lit button. No IntersectionObserver (SSR / older
   // WebView) → stays false → bar shown, preserving the historical behaviour.
-  const inCardPayRef = useRef<HTMLButtonElement>(null);
-  const inCardPayInView = useInView(inCardPayRef, { margin: "0px 0px -96px 0px" });
+  //
+  // MUST use a callback ref (useInViewRef), NOT framer's useInView: this button
+  // renders inside <RevealOnMount> below, whose skeleton branch owns the first
+  // commit under normal motion, so the button is absent when a mount-only
+  // observer would bind. framer's useInView binds once and early-returns on a
+  // null node, so it never re-observed the button once it appeared on the next
+  // frame — the gate stayed false forever and BOTH champagne CTAs lit. A callback
+  // ref re-subscribes on the actual attach, so the gate flips correctly.
+  const [inCardPayRef, inCardPayInView] = useInViewRef<HTMLButtonElement>({
+    rootMargin: "0px 0px -96px 0px",
+  });
 
   // Motion presets (collapse to instant under reduced motion) for the coupon
   // chip enter/exit — see the applied-coupon block below. `pressTap` is the
@@ -721,7 +731,7 @@ export default function CheckoutPage() {
               else if (offeringId) navigate(`/browse`);
               else navigate(-1);
             }}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors -mb-3"
+            className="inline-flex items-center gap-1.5 min-h-[44px] -my-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             Back
@@ -868,7 +878,7 @@ export default function CheckoutPage() {
                       className={`bg-surface-2 ${showError ? "border-destructive focus-visible:ring-destructive" : "border-border"}`}
                     />
                     {showError && (
-                      <p id={`error-${field.id}`} className="text-xs text-destructive mt-1">
+                      <p id={`error-${field.id}`} className="text-xs text-[hsl(var(--destructive-text))] mt-1">
                         {field.label} is required
                       </p>
                     )}
@@ -941,7 +951,7 @@ export default function CheckoutPage() {
                 <button
                   type="button"
                   onClick={() => navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`)}
-                  className="text-xs text-[hsl(var(--cream))] hover:underline"
+                  className="inline-flex items-center min-h-[44px] -my-3 text-xs text-[hsl(var(--cream))] hover:underline"
                 >
                   Already have an account? Sign in
                 </button>
@@ -962,7 +972,7 @@ export default function CheckoutPage() {
                   autoComplete="name"
                 />
                 {guestNameError && (
-                  <p id="guest-name-error" role="alert" className="text-xs text-destructive mt-1">
+                  <p id="guest-name-error" role="alert" className="text-xs text-[hsl(var(--destructive-text))] mt-1">
                     Please enter your name
                   </p>
                 )}
@@ -985,7 +995,7 @@ export default function CheckoutPage() {
                   autoComplete="email"
                 />
                 {guestEmailError && (
-                  <p id="guest-email-error" role="alert" className="text-xs text-destructive mt-1">
+                  <p id="guest-email-error" role="alert" className="text-xs text-[hsl(var(--destructive-text))] mt-1">
                     Please enter a valid email
                   </p>
                 )}
@@ -1003,7 +1013,7 @@ export default function CheckoutPage() {
                   aria-describedby={guestPhoneError ? "guest-phone-error" : undefined}
                 />
                 {guestPhoneError && (
-                  <p id="guest-phone-error" role="alert" className="text-xs text-destructive mt-1">
+                  <p id="guest-phone-error" role="alert" className="text-xs text-[hsl(var(--destructive-text))] mt-1">
                     Please enter a valid phone number
                   </p>
                 )}

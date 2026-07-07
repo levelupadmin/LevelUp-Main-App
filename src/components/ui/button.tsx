@@ -39,10 +39,12 @@ const buttonVariants = cva(
         // own `@media (hover: hover)` gate (index.css:317). Deliberately NO
         // `:active`/whileTap transform here — framer's inline whileTap owns the press on
         // the motion path (index.css:320 doctrine); a transform in this class would be a
-        // competing owner. Disabled desaturates + dims (base already applies opacity-50)
+        // competing owner. Disabled desaturates + dims, but the champagne-specific floor
+        // (saturate-75 + opacity-70, lifted above the base disabled:opacity-50) lives in
+        // the compoundVariants block below so it emits AFTER the base and wins twMerge
         // — never gray-swaps.
         champagne:
-          "bg-[linear-gradient(180deg,hsl(var(--champagne-from)),hsl(var(--champagne-to)))] text-[hsl(var(--cream-text))] font-medium rounded-2xl shadow-[inset_0_1px_0_hsl(0_0%_100%/0.35),0_10px_28px_hsl(var(--champagne-to)/0.18)] [@media(hover:hover)]:hover:brightness-[1.04] disabled:saturate-50",
+          "bg-[linear-gradient(180deg,hsl(var(--champagne-from)),hsl(var(--champagne-to)))] text-[hsl(var(--cream-text))] font-medium rounded-2xl shadow-[inset_0_1px_0_hsl(0_0%_100%/0.35),0_10px_28px_hsl(var(--champagne-to)/0.18)] [@media(hover:hover)]:hover:brightness-[1.04]",
       },
       size: {
         default: "h-10 px-5 py-2",
@@ -60,10 +62,18 @@ const buttonVariants = cva(
     // both AFTER the size classes so the money CTA renders at the spec'd 16px radius
     // and medium weight on every size (matching `.btn-champagne`), while a caller's
     // className (emitted last) can still override intentionally.
+    //
+    // It also carries the champagne disabled floor. The base sets `disabled:opacity-50`,
+    // and stacking that with a `disabled:saturate-50` over the pure-black canvas flattened
+    // the in-flight Pay beat (`disabled={paying}`) to a warm-gray that killed the gold
+    // identity. Emitting `disabled:saturate-[.75] disabled:opacity-70` HERE (after the
+    // base) lets twMerge — last-wins per conflict group — lift both the saturation and the
+    // opacity floor for champagne ONLY, so the CTA still registers as gold while clearly
+    // disabled. No other variant is touched (base opacity-50 still applies to them).
     compoundVariants: [
       {
         variant: "champagne",
-        class: "rounded-2xl font-medium",
+        class: "rounded-2xl font-medium disabled:saturate-[.75] disabled:opacity-70",
       },
     ],
     defaultVariants: {
