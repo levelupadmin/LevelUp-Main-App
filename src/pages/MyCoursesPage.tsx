@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
-import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { TierBadge } from "@/components/TierBadge";
-import { Button } from "@/components/ui/button";
 import { ArtworkImage } from "@/components/media/ArtworkImage";
-import { ArrowRight, BookOpen, Sparkles, Award, WifiOff, RefreshCw, GraduationCap, PlayCircle } from "lucide-react";
+import { ArrowRight, BookOpen, Clock, Sparkles, Award } from "lucide-react";
 import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
 import { isNative } from "@/lib/platform";
 import { ProgressRing } from "@/components/progress/ProgressRing";
 import { WeeklyStats } from "@/components/progress/WeeklyStats";
 import { CountUp } from "@/components/motion/CountUp";
-import { EmptyState } from "@/components/EmptyState";
+import {
+  EmptyState,
+  StatCard,
+  SurfaceCard,
+  ErrorState,
+  SkeletonLine,
+} from "@/components/patterns";
 
 interface EnrolledCourse {
   enrolment_id: string;
@@ -270,28 +274,50 @@ const MyCoursesPage = () => {
           </p>
         </div>
 
-        {/* This-week watch-time card + 3-stat strip, only once the user has courses */}
-        {!loading && !error && courses.length > 0 && user && (
+        {/* This-week watch-time card + 3-stat strip. Skeleton parity while
+            loading reserves the block's footprint so the resolved stats settle
+            into place instead of popping in (kills the old `!loading &&`
+            pop-in — P4-T5 CLS budget). Hidden entirely once we KNOW the user
+            has no enrolments: the empty state owns that surface. */}
+        {user && (loading || (!error && courses.length > 0)) && (
           <div className="space-y-4">
             <WeeklyStats userId={user.id} />
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { icon: GraduationCap, value: stats.lessonsCompleted, label: "Lessons completed" },
-                { icon: PlayCircle, value: stats.coursesInProgress, label: "In progress" },
-                { icon: Award, value: stats.certificates, label: "Certificates" },
-              ].map((s) => (
-                <div
-                  key={s.label}
-                  className="rounded-xl border border-border bg-surface p-4 flex flex-col gap-1"
-                >
-                  <s.icon className="h-4 w-4 text-cream" />
-                  <span className="text-2xl font-semibold leading-none mt-1 tabular-nums">
-                    <CountUp value={s.value} />
-                  </span>
-                  <span className="text-xs text-muted-foreground leading-tight">{s.label}</span>
-                </div>
-              ))}
-            </div>
+            {loading ? (
+              <div className="grid grid-cols-3 gap-3">
+                {[0, 1, 2].map((i) => (
+                  <SurfaceCard key={i} variant="static" padding="md">
+                    <div className="flex items-start justify-between gap-3">
+                      <SkeletonLine width="60%" height="11px" className="mt-1" />
+                      <span
+                        className="skeleton-shimmer h-8 w-8 rounded-lg shrink-0"
+                        aria-hidden
+                      />
+                    </div>
+                    <SkeletonLine width="45%" height="32px" className="mt-2" />
+                    <div className="mt-1" aria-hidden />
+                  </SurfaceCard>
+                ))}
+              </div>
+            ) : (
+              // Calm STEAL-6 register: the resolved cards rise in with a gentle
+              // sequential stagger (`.anim-stagger` — transform/opacity only,
+              // reduced-motion instant). CountUp runs its in-view intro once per
+              // mount; tabular-nums keeps the digits from reflowing.
+              <div className="grid grid-cols-3 gap-3 anim-stagger">
+                {[
+                  { icon: BookOpen, value: stats.lessonsCompleted, label: "Lessons completed" },
+                  { icon: Clock, value: stats.coursesInProgress, label: "In progress" },
+                  { icon: Award, value: stats.certificates, label: "Certificates" },
+                ].map((s) => (
+                  <StatCard
+                    key={s.label}
+                    label={s.label}
+                    value={<CountUp value={s.value} />}
+                    icon={<s.icon className="h-4 w-4" />}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -302,28 +328,21 @@ const MyCoursesPage = () => {
             ))}
           </div>
         ) : error ? (
-          <div className="text-center py-16">
-            <WifiOff className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-            <p className="text-lg font-medium text-foreground mb-1">Something went wrong</p>
-            <p className="text-muted-foreground text-sm">{error}</p>
-            <Button onClick={() => fetch()} variant="outline" className="mt-4 gap-2">
-              <RefreshCw className="h-4 w-4" /> Retry
-            </Button>
-          </div>
+          <ErrorState description={error} onRetry={() => fetch()} />
         ) : courses.length === 0 ? (
           <EmptyState
-            icon={BookOpen}
+            icon={<BookOpen className="h-5 w-5" />}
             title="You haven't enrolled in any courses yet"
-            sub="Explore our catalog and find the perfect program for you."
-            cta={{ label: "Explore programs", to: "/" }}
+            description="Explore the catalog and find the program that fits your craft."
+            action={{ to: "/home", label: "Explore programs" }}
           />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {courses.map((c) => (
-              <Link
+              <SurfaceCard
                 key={c.course_id}
                 to={`/courses/${c.course_id}`}
-                className="pressable bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-base"
+                padding="none"
               >
                 <ArtworkImage src={c.thumbnail_url} alt="" aspect="video" />
                 <div className="p-4 space-y-2">
@@ -354,7 +373,7 @@ const MyCoursesPage = () => {
                     </div>
                   </div>
                 </div>
-              </Link>
+              </SurfaceCard>
             ))}
           </div>
         )}
@@ -367,7 +386,7 @@ const MyCoursesPage = () => {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {recommendations.map((c) => (
-                <Link
+                <SurfaceCard
                   key={c.id}
                   // Recommended cards on My Courses: send to the offering
                   // page so the user can evaluate, not straight to
@@ -375,7 +394,7 @@ const MyCoursesPage = () => {
                   // weird and pressures the user into a buy decision
                   // before they've seen the trailer.
                   to={c.offering_slug ? `/p/${c.offering_slug}` : `/courses/${c.id}`}
-                  className="pressable bg-surface border border-border rounded-xl overflow-hidden hover:-translate-y-1 hover:border-border-hover transition-all duration-base"
+                  padding="none"
                 >
                   <div className="relative">
                     <ArtworkImage src={c.thumbnail_url} alt="" aspect="video" />
@@ -407,7 +426,7 @@ const MyCoursesPage = () => {
                       </span>
                     </div>
                   </div>
-                </Link>
+                </SurfaceCard>
               ))}
             </div>
           </section>

@@ -107,14 +107,26 @@ export const WeeklyStats = ({ userId }: WeeklyStatsProps) => {
   const hasData = thisWeekMin > 0 || lastWeekMin > 0;
 
   if (loading) {
+    // Skeleton parity: this placeholder mirrors the RESOLVED card's dimensions
+    // slot-for-slot — header (label + value), the h-24 bar row, and the footer
+    // line — so the real card settles into the same footprint with no layout
+    // shift (the P4-T5 CLS budget). Kept identical outer shell (rounded-2xl
+    // border p-5) as the resolved return below.
     return (
       <div className="rounded-2xl border border-border bg-surface p-5">
-        <div className="skeleton-shimmer h-4 w-24 rounded mb-4" />
+        <div className="flex items-start justify-between mb-4">
+          <div className="space-y-1">
+            <div className="skeleton-shimmer h-4 w-16 rounded" />
+            <div className="skeleton-shimmer h-7 w-24 rounded" />
+          </div>
+          <div className="skeleton-shimmer h-6 w-28 rounded-full" />
+        </div>
         <div className="flex items-end gap-2 h-24">
           {Array.from({ length: 7 }).map((_, i) => (
             <div key={i} className="flex-1 skeleton-shimmer rounded-md" style={{ height: `${30 + (i % 4) * 18}%` }} />
           ))}
         </div>
+        <div className="skeleton-shimmer h-4 w-44 rounded mt-3" />
       </div>
     );
   }
