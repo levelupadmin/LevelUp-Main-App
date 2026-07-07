@@ -3,7 +3,30 @@ import { Drawer as DrawerPrimitive } from "vaul";
 
 import { cn } from "@/lib/utils";
 
-const Drawer = ({ shouldScaleBackground = true, ...props }: React.ComponentProps<typeof DrawerPrimitive.Root>) => (
+/**
+ * vaul bottom-sheet primitives (P4-T1). Thin, tokenized wrappers over vaul's
+ * Radix-Dialog-based drawer — the low-level layer that `motion/MorphSheet.tsx`
+ * builds the app's sheet grammar on.
+ *
+ * BODY-LOCK INVARIANT (phase-4): vaul manages its own scroll containment and
+ * NEVER writes `document.body.style.overflow` — its lock is a `position: fixed`
+ * technique applied on iOS Safari only, and the background-scale writers
+ * (`body.style.background`, wrapper `overflow`) are gated entirely behind
+ * `shouldScaleBackground`. We ship with `shouldScaleBackground = false`, so those
+ * paths never run and `CompletionTakeover` remains the sole `body.style.overflow`
+ * writer in `src/`. Do NOT flip the default on: background scale-down needs a
+ * `[vaul-drawer-wrapper]` on the app root, which is P4-T4's go/no-go call.
+ *
+ * REDUCED MOTION: vaul animates via CSS keyframes (slideFromBottom / fadeIn),
+ * which the global `@media (prefers-reduced-motion: reduce)` block in index.css
+ * flattens to ~instant for every element — so dismissal is instant under reduced
+ * motion with no per-component override needed.
+ */
+
+const Drawer = ({
+  shouldScaleBackground = false,
+  ...props
+}: React.ComponentProps<typeof DrawerPrimitive.Root>) => (
   <DrawerPrimitive.Root shouldScaleBackground={shouldScaleBackground} {...props} />
 );
 Drawer.displayName = "Drawer";
@@ -18,25 +41,34 @@ const DrawerOverlay = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Overlay>
 >(({ className, ...props }, ref) => (
-  <DrawerPrimitive.Overlay ref={ref} className={cn("fixed inset-0 z-50 bg-black/80", className)} {...props} />
+  <DrawerPrimitive.Overlay ref={ref} className={cn("fixed inset-0 z-50 bg-black/60", className)} {...props} />
 ));
 DrawerOverlay.displayName = DrawerPrimitive.Overlay.displayName;
 
+interface DrawerContentProps
+  extends React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content> {
+  /** Hide the drag handle (rare — most sheets want the affordance). */
+  hideHandle?: boolean;
+}
+
 const DrawerContent = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  DrawerContentProps
+>(({ className, children, hideHandle = false, ...props }, ref) => (
   <DrawerPortal>
     <DrawerOverlay />
     <DrawerPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border bg-background",
+        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-3xl border border-border bg-canvas",
         className,
       )}
       {...props}
     >
-      <div className="mx-auto mt-4 h-2 w-[100px] rounded-full bg-muted" />
+      {/* Drag handle: 36×5px rounded-full bg-border, centered, 12px top margin. */}
+      {!hideHandle && (
+        <div aria-hidden="true" className="mx-auto mt-3 h-[5px] w-9 shrink-0 rounded-full bg-border" />
+      )}
       {children}
     </DrawerPrimitive.Content>
   </DrawerPortal>
