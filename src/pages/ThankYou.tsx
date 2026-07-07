@@ -9,6 +9,11 @@ import { Separator } from "@/components/ui/separator";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import { track } from "@/lib/analytics";
 import { isNative } from "@/lib/platform";
+import { hapticNotification } from "@/lib/haptics";
+import { useMotionSafe, useFinePointer, durations } from "@/lib/motion";
+import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
+import { motion } from "framer-motion";
+import type { Variants } from "framer-motion";
 import { SuccessCheck, DownloadInvoiceButton } from "@/components/checkout/SuccessMoment";
 import type { InvoiceOrder } from "@/lib/invoice";
 import {
@@ -204,18 +209,29 @@ function UpsellCard({
   onBuy,
   purchased,
   buying,
+  onActiveChange,
 }: {
   upsell: Upsell;
   onBuy: () => void;
   purchased: boolean;
   buying: boolean;
+  // Fires while the card is hovered/pressed so the parent can pause the
+  // signed-in auto-redirect countdown (parent gates this on a fine pointer).
+  onActiveChange?: (active: boolean) => void;
 }) {
   const off = upsell.upsell_offering;
   const price = Number(off.price_inr);
   const mrp = off.mrp_inr ? Number(off.mrp_inr) : null;
 
   return (
-    <div className="rounded-xl border border-border bg-[hsl(var(--surface))] overflow-hidden flex flex-col">
+    <div
+      className="rounded-xl border border-border bg-[hsl(var(--surface))] overflow-hidden flex flex-col"
+      onMouseEnter={() => onActiveChange?.(true)}
+      onMouseLeave={() => onActiveChange?.(false)}
+      onPointerDown={() => onActiveChange?.(true)}
+      onPointerUp={() => onActiveChange?.(false)}
+      onPointerCancel={() => onActiveChange?.(false)}
+    >
       {off.thumbnail_url ? (
         <img src={off.thumbnail_url} alt={off.title} className="w-full h-36 object-cover" />
       ) : (
@@ -242,8 +258,9 @@ function UpsellCard({
             <Button
               onClick={onBuy}
               disabled={buying}
+              variant="champagne"
               size="sm"
-              className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 text-sm"
+              className="w-full text-sm"
             >
               {buying ? <Loader2 className="h-4 w-4 animate-spin" /> : (
                 <>Add for ₹{price.toLocaleString("en-IN")} <ArrowRight className="h-3 w-3 ml-1" /></>
@@ -276,8 +293,66 @@ export default function ThankYou() {
   const [loggingIn, setLoggingIn] = useState(false);
 
   const pixelsFired = useRef(false);
+  // One-shot success haptic on the produced arrival (native only; no-ops on web).
+  const successHapticFired = useRef(false);
+  // Pauses the signed-in auto-redirect while an upsell card is hovered/pressed.
+  // A ref (not state) so toggling it never restarts the countdown interval.
+  const redirectPausedRef = useRef(false);
+
+  const finePointer = useFinePointer();
+  const { reduced, springs: motionSprings } = useMotionSafe();
 
   usePageTitle("Payment Successful | LevelUp Learning");
+
+  // Staged entrance for the celebration column: one glide sequence that
+  // assembles the receipt top-to-bottom (check-orb → headline → chips →
+  // [Calendly] → grouped closing block). The trailing action-card / journey /
+  // share / receipt-strip blocks share ONE stage (a single wrapper child) so
+  // the sequence stays at ~5 stages, and the stagger is durations.fast/2 (the
+  // same token-derived cadence PublicOffering uses) — together these keep the
+  // FULL settle — last child's start (4·0.08s) plus the glide's ~0.55s spring
+  // settle — under the ≤1.2s arrival budget on both the masterclass and
+  // Calendly paths. Under reduced motion every block is visible instantly (the
+  // container skips its hidden state below).
+  // Memoized so the 1s redirect countdown's re-renders don't rebuild the
+  // variants objects (which would otherwise churn a new object identity into
+  // every motion child each second).
+  const arrivalContainer = useMemo<Variants>(
+    () => ({
+      hidden: {},
+      show: { transition: { staggerChildren: durations.fast / 2 } },
+    }),
+    [],
+  );
+  const arrivalItem = useMemo<Variants>(
+    () => ({
+      hidden: { opacity: 0, y: 12 },
+      show: { opacity: 1, y: 0, transition: motionSprings.glide },
+    }),
+    [motionSprings.glide],
+  );
+  // Opacity-only arrival for wrappers hosting an embedded document (the Calendly
+  // iframe). A translateY on the wrapper forces the embedded doc to repaint on
+  // every animation frame; fading in place stays on the compositor and never
+  // touches the iframe's layout. Still a stagger child, so it keeps its slot in
+  // the sequence — it just arrives without the vertical glide.
+  const arrivalItemFade = useMemo<Variants>(
+    () => ({
+      hidden: { opacity: 0 },
+      show: { opacity: 1, transition: motionSprings.glide },
+    }),
+    [motionSprings.glide],
+  );
+
+  // Pause the redirect only on a fine (mouse/trackpad) pointer, per spec —
+  // touch users get no hover intent and must never be stranded.
+  const handleUpsellActive = useCallback(
+    (active: boolean) => {
+      if (!finePointer) return;
+      redirectPausedRef.current = active;
+    },
+    [finePointer],
+  );
 
   const isGuest = !session && order?.guest_email !== null && order?.guest_email !== undefined;
 
@@ -359,7 +434,23 @@ export default function ThankYou() {
       value: Number(order.total_inr),
       currency: "INR",
     });
+    // Conversion-funnel terminal event (P3-T7). Fire-and-forget alongside the
+    // pixel purchase above; no PII beyond the order/value already on screen.
+    track({
+      name: "purchase_completed",
+      orderId: order.id,
+      valueInr: Number(order.total_inr),
+    });
   }, [order]);
+
+  /* ── One-shot success haptic on the produced arrival ── */
+  useEffect(() => {
+    if (!order || notFound) return;
+    if (successHapticFired.current) return;
+    successHapticFired.current = true;
+    // Native-only; hapticNotification no-ops on web (see lib/haptics).
+    void hapticNotification("success");
+  }, [order, notFound]);
 
   /* ── Countdown: respects custom thank you page settings ──
      thankyou_cta_url is admin-authored and gets shoved directly into
@@ -392,6 +483,8 @@ export default function ThankYou() {
 
     setCountdown(redirectSeconds);
     const timer = setInterval(() => {
+      // Hold the timer while an upsell card is hovered/pressed (fine pointer).
+      if (redirectPausedRef.current) return;
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
@@ -534,7 +627,7 @@ export default function ThankYou() {
           email: session ? "" : order?.guest_email || "",
           contact: session ? "" : order?.guest_phone || "",
         },
-        theme: { color: "#F5F1E8" },
+        theme: { color: RAZORPAY_THEME_COLOR },
       };
 
       const rzp = new (window as any).Razorpay(options);
@@ -631,21 +724,34 @@ export default function ThankYou() {
       </header>
 
       <main className="relative max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
-        {/* Celebration moment */}
-        <div className="text-center space-y-7 sm:space-y-8 mb-12">
-          {order.offerings?.thankyou_thumbnail_url ? (
-            <img
-              src={order.offerings.thankyou_thumbnail_url}
-              alt=""
-              className="w-full max-h-72 object-cover rounded-2xl mx-auto shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
-            />
-          ) : (
-            // One-shot confetti burst + cream radial-glow orb behind the check
-            // (replaces the old infinite animate-ping halo).
-            <SuccessCheck />
-          )}
+        {/* Celebration moment — staged as ONE glide sequence that assembles the
+            receipt top-to-bottom. Reduced motion → initial={false} renders every
+            block at its final state instantly (no hidden flash). */}
+        <motion.div
+          className="text-center space-y-7 sm:space-y-8 mb-12"
+          variants={arrivalContainer}
+          initial={reduced ? false : "hidden"}
+          animate="show"
+        >
+          <motion.div variants={arrivalItem}>
+            {order.offerings?.thankyou_thumbnail_url ? (
+              <img
+                src={order.offerings.thankyou_thumbnail_url}
+                alt=""
+                // aspect-video reserves the box height from its width before the
+                // image decodes, so the receipt below doesn't shift when the src
+                // arrives (0-height → 288px jump otherwise). max-h-72 keeps the
+                // desktop cap; object-cover crops into the reserved box.
+                className="aspect-video w-full max-h-72 object-cover rounded-2xl mx-auto shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
+              />
+            ) : (
+              // One-shot champagne-dust burst (rising golden bokeh) + cream
+              // radial-glow orb behind the check — the calm-luxury celebration.
+              <SuccessCheck />
+            )}
+          </motion.div>
 
-          <div className="space-y-3">
+          <motion.div variants={arrivalItem} className="space-y-3">
             <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--accent-emerald))]">
               Payment confirmed
             </p>
@@ -665,24 +771,24 @@ export default function ThankYou() {
                 . Your access is unlocked - start whenever you're ready.
               </p>
             )}
-          </div>
+          </motion.div>
 
           {/* Benefit chips - what they actually got */}
           {benefitChips.length > 0 && (
-            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-sm">
+            <motion.div variants={arrivalItem} className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-sm">
               {benefitChips.map((chip, i) => (
                 <span key={i} className="inline-flex items-center gap-3">
                   <span className="text-foreground/80">{chip}</span>
                   {i < benefitChips.length - 1 && <span className="text-muted-foreground/40">&middot;</span>}
                 </span>
               ))}
-            </div>
+            </motion.div>
           )}
 
           {/* Calendly embed for interview booking */}
           {order.offerings?.thankyou_show_calendly &&
             isCalendlyUrl(order.offerings?.calendly_url) && (
-            <div className="w-full max-w-2xl mx-auto">
+            <motion.div variants={arrivalItemFade} className="w-full max-w-2xl mx-auto">
               <h3 className="text-lg font-semibold text-foreground mb-3">Book Your Interview</h3>
               <div className="rounded-xl border border-border overflow-hidden bg-white">
                 <iframe
@@ -694,9 +800,16 @@ export default function ThankYou() {
                   referrerPolicy="no-referrer"
                 />
               </div>
-            </div>
+            </motion.div>
           )}
 
+          {/* Closing block — action card, journey timeline, share row and
+              receipt strip share ONE arrival stage (this wrapper is the single
+              stagger child; the four inner blocks are plain divs) so the staged
+              sequence stays ~5 stages and settles within the ≤1.2s budget. The
+              wrapper carries the same space-y rhythm the parent used, so the
+              inter-block spacing is unchanged. */}
+          <motion.div variants={arrivalItem} className="space-y-7 sm:space-y-8">
           {/* Action card - primary CTA gets full visual weight */}
           <div className="max-w-md mx-auto space-y-3">
             {isGuest && (
@@ -715,8 +828,9 @@ export default function ThankYou() {
             <Button
               onClick={handleGoToDashboard}
               disabled={loggingIn}
+              variant="champagne"
               size="lg"
-              className="w-full h-14 text-base font-semibold bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90 hover:-translate-y-0.5 transition-all shadow-[0_10px_30px_-10px_hsl(var(--cream)/0.5)]"
+              className="w-full h-14 text-base font-semibold hover:-translate-y-0.5"
             >
               {loggingIn ? (
                 <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Signing you in&hellip;</>
@@ -725,12 +839,12 @@ export default function ThankYou() {
               )}
             </Button>
             {!isGuest && session && autoRedirect && !redirectCancelled && countdown > 0 && (
-              <p className="text-center text-xs text-muted-foreground">
+              <p className="caption text-center">
                 Redirecting in {countdown}s &middot;{" "}
                 <button
                   type="button"
                   onClick={() => setRedirectCancelled(true)}
-                  className="underline hover:text-foreground transition-colors"
+                  className="underline hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
                 >
                   stay here instead
                 </button>
@@ -741,7 +855,7 @@ export default function ThankYou() {
                 variant="ghost"
                 onClick={handleResendLink}
                 disabled={resending}
-                className="w-full text-sm text-muted-foreground hover:text-foreground"
+                className="w-full min-h-[44px] text-sm text-muted-foreground hover:text-foreground"
               >
                 {resending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
                 Resend login link
@@ -802,7 +916,7 @@ export default function ThankYou() {
                   const text = `Just enrolled in ${order.offerings?.title || "a LevelUp masterclass"}! ${shareUrl}`;
                   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
                 }}
-                className="h-9"
+                className="h-9 min-h-[44px]"
               >
                 <span aria-hidden className="mr-2 text-[hsl(var(--accent-emerald))]">●</span>
                 Share on WhatsApp
@@ -819,7 +933,7 @@ export default function ThankYou() {
                     /* no toast - silent copy */
                   }
                 }}
-                className="h-9"
+                className="h-9 min-h-[44px]"
               >
                 Share elsewhere
               </Button>
@@ -849,7 +963,8 @@ export default function ThankYou() {
               <DownloadInvoiceButton order={invoiceOrder} />
             </div>
           </div>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* Post-purchase upsells: hidden on native (Path B: no in-app purchase UI) */}
         {!isNative() && upsells.length > 0 && (
@@ -857,8 +972,8 @@ export default function ThankYou() {
             <Separator className="bg-border mb-8" />
             <div className="space-y-6">
               <div className="text-center">
-                <h2 className="text-xl font-semibold text-foreground">Enhance Your Learning</h2>
-                <p className="text-sm text-muted-foreground mt-1">Special offers just for you</p>
+                <h2 className="text-xl font-semibold text-foreground">Keep the momentum</h2>
+                <p className="text-sm text-muted-foreground mt-1">Students who took this also picked these</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -869,6 +984,7 @@ export default function ThankYou() {
                     onBuy={() => handleBuyUpsell(u)}
                     purchased={purchasedUpsells.has(u.id)}
                     buying={buyingUpsell === u.id}
+                    onActiveChange={handleUpsellActive}
                   />
                 ))}
               </div>

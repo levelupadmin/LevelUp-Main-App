@@ -1,11 +1,14 @@
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { track } from "@/lib/analytics";
 import GuaranteeBadge from "./GuaranteeBadge";
 import ProofRow, { type OfferingProof } from "./ProofRow";
 
 interface PurchaseRailProps {
   offeringId: string;
+  /** Offering slug — carried on the pay_cta_tapped funnel event. */
+  slug: string;
   price: number;
   mrp?: number | null;
   highlights: string[];
@@ -27,6 +30,7 @@ interface PurchaseRailProps {
  */
 export default function PurchaseRail({
   offeringId,
+  slug,
   price,
   mrp,
   highlights,
@@ -53,17 +57,17 @@ export default function PurchaseRail({
       ) : (
         <div className="space-y-1">
           <div className="flex items-baseline gap-3">
-            <span className="text-3xl font-bold text-foreground tracking-[-0.01em]">
+            <span className="text-3xl font-bold text-foreground tracking-[-0.01em] tabular-nums">
               {isFree ? "Free" : `₹${Number(price).toLocaleString("en-IN")}`}
             </span>
             {showStrike && (
-              <span className="text-base text-muted-foreground line-through font-mono">
+              <span className="text-base text-muted-foreground line-through tabular-nums">
                 ₹{Number(mrp).toLocaleString("en-IN")}
               </span>
             )}
           </div>
           {savings > 0 && (
-            <p className="text-xs font-medium text-[hsl(var(--accent-emerald))]">
+            <p className="text-xs font-medium text-[hsl(var(--success))] tabular-nums">
               Save ₹{savings.toLocaleString("en-IN")}
               {savingsPct > 0 ? ` (${savingsPct}% off)` : ""}
             </p>
@@ -98,7 +102,10 @@ export default function PurchaseRail({
         </a>
       ) : (
         <Button
-          onClick={() => navigate(`/checkout/${offeringId}`)}
+          onClick={() => {
+            track({ name: "pay_cta_tapped", slug, surface: "rail" });
+            navigate(`/checkout/${offeringId}`);
+          }}
           className="btn-champagne pressable w-full h-12 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))]"
         >
           {isStaged ? "Apply now" : isFree ? "Start for free" : "Enrol now"}

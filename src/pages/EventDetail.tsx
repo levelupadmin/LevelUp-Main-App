@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { isAndroid, isNative } from "@/lib/platform";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
+import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 import usePageTitle from "@/hooks/usePageTitle";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import { format } from "date-fns";
@@ -115,7 +116,7 @@ const EventDetail = () => {
       const data = await res.json();
 
       if (data.registered) {
-        toast({ title: "Registered! ✓", description: "You're in, see you there." });
+        toast({ title: "Registered!", description: "You're in, see you there." });
         setIsRegistered(true);
         setRegCount((c) => c + 1);
         paymentInFlightRef.current = false;
@@ -169,7 +170,7 @@ const EventDetail = () => {
             email: profile?.email || "",
             name: profile?.full_name || "",
           },
-          theme: { color: "#F5F1E8" },
+          theme: { color: RAZORPAY_THEME_COLOR },
         };
         if (!(window as any).Razorpay) {
           // Release the in-flight lock, otherwise the guard above
@@ -316,7 +317,7 @@ const EventDetail = () => {
             )}
 
             {isRegistered ? (
-              <div className="w-full py-3 rounded-lg bg-green-500/20 text-green-400 text-center font-mono text-sm uppercase tracking-widest font-bold">
+              <div className="w-full py-3 rounded-lg bg-[hsl(var(--success))]/15 text-[hsl(var(--success))] text-center font-mono text-sm uppercase tracking-widest font-bold">
                 Registered ✓
               </div>
             ) : isSoldOut ? (

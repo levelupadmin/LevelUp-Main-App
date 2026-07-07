@@ -28,6 +28,23 @@ const buttonVariants = cva(
         ghost: "hover:bg-muted hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
         glass: "backdrop-blur-xl bg-background/60 border border-border/50 hover:bg-background/80 shadow-design-sm",
+        // The champagne pay moment — the redesign's primary money-path CTA. Mirrors
+        // the `.btn-champagne` treatment (index.css:310) as cva classes: vertical
+        // champagne gradient, warm-dark cream text, soft inner highlight + warm glow.
+        // Hover brightness is explicitly wrapped in `[@media(hover:hover)]` — Tailwind's
+        // bare `hover:` is NOT pointer-gated in this project (no `hoverOnlyWhenSupported`
+        // in tailwind.config.ts, so `hover:` compiles to a plain `&:hover`), and an
+        // ungated hover would leave brightness(1.04) stuck on the primary Pay CTA after
+        // a touch tap on both shipping mobile WebViews. This mirrors `.btn-champagne`'s
+        // own `@media (hover: hover)` gate (index.css:317). Deliberately NO
+        // `:active`/whileTap transform here — framer's inline whileTap owns the press on
+        // the motion path (index.css:320 doctrine); a transform in this class would be a
+        // competing owner. Disabled desaturates + dims, but the champagne-specific floor
+        // (saturate-75 + opacity-70, lifted above the base disabled:opacity-50) lives in
+        // the compoundVariants block below so it emits AFTER the base and wins twMerge
+        // — never gray-swaps.
+        champagne:
+          "bg-[linear-gradient(180deg,hsl(var(--champagne-from)),hsl(var(--champagne-to)))] text-[hsl(var(--cream-text))] font-medium rounded-2xl shadow-[inset_0_1px_0_hsl(0_0%_100%/0.35),0_10px_28px_hsl(var(--champagne-to)/0.18)] [@media(hover:hover)]:hover:brightness-[1.04]",
       },
       size: {
         default: "h-10 px-5 py-2",
@@ -37,6 +54,28 @@ const buttonVariants = cva(
         icon: "h-10 w-10",
       },
     },
+    // cva emits classes in this order: base → variant → size → compoundVariants →
+    // caller className. So every sized champagne CTA would otherwise take the size's
+    // radius/weight (lg/xl set `rounded-[12px|14px]`, xl sets `font-semibold`) and
+    // twMerge — keeping the LAST of each conflicting utility — would strip the
+    // champagne variant's own `rounded-2xl` + `font-medium`. This compound re-asserts
+    // both AFTER the size classes so the money CTA renders at the spec'd 16px radius
+    // and medium weight on every size (matching `.btn-champagne`), while a caller's
+    // className (emitted last) can still override intentionally.
+    //
+    // It also carries the champagne disabled floor. The base sets `disabled:opacity-50`,
+    // and stacking that with a `disabled:saturate-50` over the pure-black canvas flattened
+    // the in-flight Pay beat (`disabled={paying}`) to a warm-gray that killed the gold
+    // identity. Emitting `disabled:saturate-[.75] disabled:opacity-70` HERE (after the
+    // base) lets twMerge — last-wins per conflict group — lift both the saturation and the
+    // opacity floor for champagne ONLY, so the CTA still registers as gold while clearly
+    // disabled. No other variant is touched (base opacity-50 still applies to them).
+    compoundVariants: [
+      {
+        variant: "champagne",
+        class: "rounded-2xl font-medium disabled:saturate-[.75] disabled:opacity-70",
+      },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",

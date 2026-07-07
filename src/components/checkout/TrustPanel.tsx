@@ -104,7 +104,7 @@ const TrustPanel = ({
         <ul className="space-y-2">
           {included.map((item, i) => (
             <li key={i} className="flex items-start gap-2 text-sm">
-              <Check className="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+              <Check className="h-4 w-4 text-success flex-shrink-0 mt-0.5" />
               <span className="text-foreground">{item}</span>
             </li>
           ))}
@@ -137,7 +137,7 @@ const TrustPanel = ({
                       key={i}
                       className={
                         i < (t.rating ?? 0)
-                          ? "h-3 w-3 fill-yellow-400 text-yellow-400"
+                          ? "h-3 w-3 fill-gold text-gold"
                           : "h-3 w-3 text-muted-foreground/30"
                       }
                     />

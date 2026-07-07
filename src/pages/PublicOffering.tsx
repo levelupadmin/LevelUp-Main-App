@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion, useMotionValue, useReducedMotion } from "framer-motion";
+import type { MotionValue } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import Footer from "@/components/Footer";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import { isAndroid, isNative } from "@/lib/platform";
@@ -23,6 +30,7 @@ import HeroPlayChip from "@/components/offering/HeroPlayChip";
 import ArtworkImage from "@/components/media/ArtworkImage";
 import AmbientGlow from "@/components/media/AmbientGlow";
 import { durations, easings, useMotionSafe } from "@/lib/motion";
+import { resolveHandoff } from "./publicOfferingHandoff";
 import { track } from "@/lib/analytics";
 import {
   Check,
@@ -120,32 +128,174 @@ interface Offering {
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
+// Granular visibility steps so the IntersectionObserver reports the hero CTA's
+// intersectionRatio finely enough to scrub against (0, 0.05, … 1). The observer
+// still fires only when a step is crossed — not per frame — so this stays
+// off-main-thread work, not a scroll handler.
+const HANDOFF_THRESHOLDS = Array.from({ length: 21 }, (_, i) => i / 20);
+
 /**
- * Tiny local in-view tracker for the hero CTA block. Drives the mobile
- * sticky bar: it only slides up once the hero CTA has scrolled out of
- * view, so the same price/CTA never shows twice on screen. Callback-ref
- * based because the observed block mounts after the data loads.
+ * Airbnb-style sticky→inline pay handoff for the mobile sticky bar
+ * (INTERACTION-STEALS STEAL #1). Tracks how much of the in-flow hero CTA is
+ * visible and *scrubs* the sticky bar out as that inline CTA takes over, so
+ * exactly one champagne CTA is lit at any scroll offset — a smooth handoff
+ * rather than a binary pop.
+ *
+ * - `opacity` 1→0 and `scaleX` 1→0.92 map across the inline CTA's 25%→75%-visible
+ *   band. Both are framer MotionValues so the scrub composites on one promoted
+ *   layer and never triggers a React re-render.
+ * - `mounted` gates AnimatePresence: the bar unmounts only once the inline CTA is
+ *   majority-visible (ratio ≥ HANDOFF_END), by which point the scrub has already
+ *   faded it to 0 — so the shipped slide-up/down tween (item-7's blur-safe
+ *   entrance/exit) still plays cleanly with no frame where both CTAs are lit.
+ * - `ceded` (opacity < 0.5) drives aria-hidden + pointer-events so the fading bar
+ *   stops taking taps and leaves the a11y tree the moment it cedes primacy.
+ * - Reduced motion: binary swap at the 50% threshold — no scrub, no scale.
+ *
+ * Callback-ref based because the observed block mounts after the data loads.
  */
-function useInView<T extends HTMLElement = HTMLDivElement>(): [(node: T | null) => void, boolean] {
-  const [inView, setInView] = useState(true);
+function useStickyHandoff(): {
+  setRef: (node: HTMLDivElement | null) => void;
+  mounted: boolean;
+  ceded: boolean;
+  opacity: MotionValue<number>;
+  scaleX: MotionValue<number>;
+} {
+  const reduced = useReducedMotion() ?? false;
+  const opacity = useMotionValue(1);
+  const scaleX = useMotionValue(1);
+  const [mounted, setMounted] = useState(false);
+  const [ceded, setCeded] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
-  const setRef = useCallback((node: T | null) => {
-    observerRef.current?.disconnect();
-    observerRef.current = null;
-    if (!node || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(
-      (entries) => setInView(entries.some((e) => e.isIntersecting)),
-      { threshold: 0 },
-    );
-    observer.observe(node);
-    observerRef.current = observer;
-  }, []);
-  return [setRef, inView];
+
+  const setRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      if (!node || typeof IntersectionObserver === "undefined") {
+        // No observer available (SSR / unsupported): preserve the historical
+        // fallback of keeping the bar hidden rather than stranding it lit.
+        setMounted(false);
+        return;
+      }
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[entries.length - 1];
+          const ratio = entry.isIntersecting ? entry.intersectionRatio : 0;
+          const next = resolveHandoff(
+            ratio,
+            entry.boundingClientRect.top,
+            entry.rootBounds?.top ?? 0,
+            reduced,
+          );
+          opacity.set(next.opacity);
+          scaleX.set(next.scaleX);
+          setMounted(next.mounted);
+          setCeded(next.ceded);
+        },
+        { threshold: reduced ? [0, 0.5, 1] : HANDOFF_THRESHOLDS },
+      );
+      observer.observe(node);
+      observerRef.current = observer;
+    },
+    [reduced, opacity, scaleX],
+  );
+
+  return { setRef, mounted, ceded, opacity, scaleX };
 }
 
 /* ────────────────────────────────────────────────── */
 /*  Subcomponents                                     */
 /* ────────────────────────────────────────────────── */
+
+/**
+ * Cohort/apply hero art. Live-cohort offerings carry a full LANDSCAPE poster
+ * (a 600×400 wordmark banner), not a square brand logo — verified across all
+ * five live cohorts; the earlier "square logo → object-contain" premise was
+ * stale. That premise produced two craft bugs on this gate route: letterbox
+ * voids around the poster (DESIGN-STRATEGY §1) and, for video-editing-academy,
+ * a baked-in transparency-checkerboard band across the top ~40% of the source
+ * PNG rendered raw.
+ *
+ * A naive object-cover (the first-pass doctrine) is worse here, not better:
+ * evaluated live at the 4/5 mobile aspect it CROPS the centered wordmarks (3 of
+ * 5 posters lose text at the edges) and still can't crop away the checkerboard
+ * band (it sits at the top, which the portrait crop keeps). So we apply the
+ * codebase's landscape-in-a-box doctrine (the P9-T2 catalog-row treatment): a
+ * blurred object-cover backdrop of the same small source fills the frame — no
+ * voids, no crop of the poster — with the SHARP full poster contained on top,
+ * and a branded champagne-monogram fallback (ArtworkImage's placeholder) on
+ * missing or broken art. One blurred static <img> per hero, thumbnail-sized
+ * source — within the Android-WebView budget the doctrine sanctions.
+ *
+ * NOTE (source-asset, not code): video-editing-academy's poster has the
+ * checkerboard band baked into opaque pixels, so no cover/contain treatment can
+ * remove it and no cheap, false-positive-free heuristic can single it out from
+ * the four good posters. That one asset needs replacing in admin storage.
+ */
+function CohortHeroArt({
+  img,
+  smallSrc,
+  alt,
+}: {
+  img: string | null;
+  smallSrc: string | null;
+  alt: string;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
+
+  // Cached-image guard (mirrors ArtworkImage): if the browser already has the
+  // poster decoded before React attaches onLoad, reconcile from `complete` so
+  // the sharp layer fades in instead of staying pinned at opacity-0.
+  const reconcileCachedImage = useCallback((node: HTMLImageElement | null) => {
+    if (!node || !node.complete) return;
+    if (node.naturalWidth > 0) setLoaded(true);
+    else setErrored(true);
+  }, []);
+
+  // Missing or broken art → branded champagne-monogram placeholder (reuses
+  // ArtworkImage: a null src renders its placeholder, filling the hero box).
+  if (!img || errored) {
+    return (
+      <ArtworkImage src={null} alt={alt} className="absolute inset-0 h-full w-full" />
+    );
+  }
+
+  return (
+    <>
+      {/* Blurred cover backdrop (same small source) fills the frame so the
+          landscape poster never floats in letterbox voids. Static filter on a
+          small img — not backdrop-filter. */}
+      <img
+        src={smallSrc || img}
+        alt=""
+        aria-hidden="true"
+        width={320}
+        loading="eager"
+        decoding="async"
+        className="absolute inset-0 h-full w-full scale-110 object-cover opacity-40 blur-xl"
+      />
+      {/* Sharp full poster, contained — the whole wordmark stays visible, never
+          cropped, at every viewport. Fades in on decode without CLS. */}
+      <img
+        ref={reconcileCachedImage}
+        src={img}
+        alt={alt}
+        loading="eager"
+        decoding="async"
+        // React 18 doesn't know the camelCase fetchPriority prop and warns; the
+        // lowercase DOM attribute passes straight through.
+        {...({ fetchpriority: "high" } as Record<string, string>)}
+        onLoad={() => setLoaded(true)}
+        onError={() => setErrored(true)}
+        className={`dark-img absolute inset-0 h-full w-full object-contain p-6 sm:p-8 lg:p-10 transition-opacity duration-slow ease-out-expo ${
+          loaded ? "opacity-100" : "opacity-0"
+        }`}
+      />
+    </>
+  );
+}
 
 /**
  * Cinematic hero: image fills the full container at a portrait aspect on
@@ -163,13 +313,13 @@ function HeroBanner({
   onPlayPreview?: (() => void) | null;
 }) {
   const img = offering.banner_url || offering.thumbnail_url;
-  // Live-cohort offerings carry a square brand LOGO (not a wide hero photo), so
-  // object-cover would crop its sides. Detect them (they set tally_form_url) and
-  // contain the logo in the top portion on a branded backdrop instead.
+  // Live-cohort offerings carry a full landscape wordmark poster (not a
+  // cinematic cover photo). Detect them (they set tally_form_url) and give them
+  // the blurred-backdrop + contained-poster treatment (see CohortHeroArt).
   const isApply = !!(offering as any).tally_form_url;
   const eyebrow = isApply ? "Live Cohort" : "Masterclass";
   // The play chip only makes sense over a cinematic cover photo. Live-cohort
-  // logo heroes get the chip surfaced via the CTA row instead, not the logo.
+  // poster heroes get the chip surfaced via the CTA row instead, not the poster.
   const showPlayChip = !!onPlayPreview && !isApply && !!img;
 
   const { enabled, springs } = useMotionSafe();
@@ -216,37 +366,25 @@ function HeroBanner({
             : springs.glide
         }
       >
-        {img ? (
-          isApply ? (
-            <>
-              <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--surface-2))] via-[hsl(var(--surface))] to-[hsl(var(--canvas))]" />
-              {/* Contained brand logo (not a cover photo) — ArtworkImage is a
-                  cover-fill primitive, so the logo treatment keeps its own img. */}
-              <img
-                src={img}
-                alt={offering.title}
-                className="absolute inset-x-0 top-0 h-[60%] w-full object-contain p-8 sm:p-10"
-                loading="eager"
-                decoding="async"
-                // React 18 doesn't know the camelCase fetchPriority prop and
-                // warns; the lowercase DOM attribute passes straight through.
-                {...({ fetchpriority: "high" } as any)}
-              />
-            </>
-          ) : (
-            // Cinematic cover: ArtworkImage (priority) kills letterboxing/void and
-            // fades the poster in on load without CLS. Fills the aspect box.
-            <ArtworkImage
-              src={img}
-              alt={offering.title}
-              priority
-              className="absolute inset-0 h-full w-full"
-            />
-          )
+        {isApply ? (
+          // Cohort/apply: landscape wordmark poster → blurred-cover backdrop +
+          // sharp contained foreground (no voids, no wordmark crop) with a
+          // branded champagne-monogram fallback. See CohortHeroArt.
+          <CohortHeroArt
+            img={img}
+            smallSrc={offering.thumbnail_url}
+            alt={offering.title}
+          />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-            <BookOpen className="h-16 w-16 opacity-30" />
-          </div>
+          // Cinematic cover: ArtworkImage (priority) kills letterboxing/void and
+          // fades the poster in on load without CLS. A missing/broken src falls
+          // back to the same branded champagne-monogram placeholder.
+          <ArtworkImage
+            src={img}
+            alt={offering.title}
+            priority
+            className="absolute inset-0 h-full w-full"
+          />
         )}
         {/* Title-legibility gradient: dense at the bottom where the type sits, fades out by midpoint */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent pointer-events-none" />
@@ -317,6 +455,11 @@ function HeroActions({
   variant?: "full" | "slim";
 }) {
   const navigate = useNavigate();
+  // Hero pay CTA → checkout, tagged as the `hero` surface for the funnel.
+  const goToCheckout = () => {
+    track({ name: "pay_cta_tapped", slug: offering.slug, surface: "hero" });
+    navigate(`/checkout/${offering.id}`);
+  };
   const isStaged = (offering as any)?.payment_mode === "staged";
   const isArchived = (offering as any)?.status === "archived";
   const price = offering.price_inr ?? 0;
@@ -470,7 +613,7 @@ function HeroActions({
   if (variant === "slim") {
     return (
       <Button
-        onClick={() => navigate(`/checkout/${offering.id}`)}
+        onClick={goToCheckout}
         size="lg"
         className="btn-champagne h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5"
       >
@@ -485,17 +628,17 @@ function HeroActions({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6 py-2">
         <div className="space-y-1">
           <div className="flex items-baseline gap-3">
-            <span className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em]">
+            <span className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em] tabular-nums">
               {price > 0 ? `₹${Number(price).toLocaleString("en-IN")}` : "Free"}
             </span>
             {showStrike && (
-              <span className="text-base sm:text-lg text-muted-foreground line-through font-mono">
+              <span className="text-base sm:text-lg text-muted-foreground line-through tabular-nums">
                 ₹{Number(mrp).toLocaleString("en-IN")}
               </span>
             )}
           </div>
           {savings > 0 && (
-            <p className="text-xs sm:text-sm font-medium text-[hsl(var(--accent-emerald))]">
+            <p className="text-xs sm:text-sm font-medium text-[hsl(var(--success))] tabular-nums">
               Save ₹{savings.toLocaleString("en-IN")}
               {savingsPct > 0 ? ` (${savingsPct}% off)` : ""}
             </p>
@@ -517,7 +660,7 @@ function HeroActions({
             </Button>
           )}
           <Button
-            onClick={() => navigate(`/checkout/${offering.id}`)}
+            onClick={goToCheckout}
             size="lg"
             className="btn-champagne h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5"
           >
@@ -907,7 +1050,6 @@ function InstructorBio({
 /*  FAQs - accordion                                  */
 /* ────────────────────────────────────────────────── */
 function FAQs({ items }: { items?: Array<{ question: string; answer: string }> | null }) {
-  const [openIdx, setOpenIdx] = useState<number | null>(0);
   if (!items?.length) return null;
   return (
     <div className="space-y-3">
@@ -915,38 +1057,30 @@ function FAQs({ items }: { items?: Array<{ question: string; answer: string }> |
       <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
         Frequently asked
       </h2>
-      <div className="space-y-2">
-        {items.map((f, i) => {
-          const isOpen = openIdx === i;
-          return (
-            <div
-              key={i}
-              className="rounded-2xl border border-border bg-[hsl(var(--surface))] overflow-hidden"
-            >
-              <button
-                type="button"
-                onClick={() => setOpenIdx(isOpen ? null : i)}
-                className="w-full flex items-start justify-between gap-3 p-4 text-left hover:bg-[hsl(var(--surface-2))] transition-colors min-h-[48px]"
-                aria-expanded={isOpen}
-              >
-                <span className="text-sm font-medium text-foreground">{f.question}</span>
-                <span
-                  className={`text-muted-foreground text-xl leading-none flex-shrink-0 transition-transform ${
-                    isOpen ? "rotate-45" : ""
-                  }`}
-                >
-                  +
-                </span>
-              </button>
-              {isOpen && f.answer && (
-                <p className="text-sm text-muted-foreground leading-relaxed px-4 pb-4 -mt-1 whitespace-pre-line">
-                  {f.answer}
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {/* Tokenized Radix accordion: one item open at a time, tokenized
+          open/close (animate-accordion-down/up at 0.2s). First item open
+          by default, matching the prior hand-rolled behaviour. */}
+      <Accordion
+        type="single"
+        collapsible
+        defaultValue="faq-0"
+        className="space-y-2"
+      >
+        {items.map((f, i) => (
+          <AccordionItem
+            key={i}
+            value={`faq-${i}`}
+            className="rounded-2xl border border-border bg-[hsl(var(--surface))] overflow-hidden border-b-0"
+          >
+            <AccordionTrigger className="min-h-[44px] px-4 py-4 text-left text-sm font-medium text-foreground hover:no-underline hover:bg-[hsl(var(--surface-2))]">
+              {f.question}
+            </AccordionTrigger>
+            <AccordionContent className="px-4 pb-4 text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+              {f.answer}
+            </AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
     </div>
   );
 }
@@ -996,14 +1130,24 @@ export default function PublicOffering() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { session } = useAuth();
+  // Motion tokens for the mobile sticky pay bar's spring entrance/exit.
+  const ms = useMotionSafe();
   const [offering, setOffering] = useState<Offering | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [couponInfo, setCouponInfo] = useState<{code: string; discount_type: string; discount_value: number} | null>(null);
 
-  // Hero-CTA visibility drives the mobile sticky bar; it only slides up
-  // once the in-flow CTA has scrolled out of view.
-  const [heroCtaRef, heroCtaInView] = useInView<HTMLDivElement>();
+  // Hero-CTA visibility drives the mobile sticky bar: it slides up once the
+  // in-flow CTA scrolls out of view, then SCRUBS back out (opacity + scaleX)
+  // as that inline CTA re-enters, handing primacy across so exactly one
+  // champagne CTA is lit at a time (INTERACTION-STEALS STEAL #1).
+  const {
+    setRef: heroCtaRef,
+    mounted: stickyMounted,
+    ceded: stickyCeded,
+    opacity: stickyOpacity,
+    scaleX: stickyScaleX,
+  } = useStickyHandoff();
 
   // Free-preview playback is lifted here so three surfaces can trigger the
   // same player: the hero play chip, the in-flow FreePreviewPlayer poster,
@@ -1077,6 +1221,10 @@ export default function PublicOffering() {
             value: Number((data as any).price_inr || 0),
             currency: (data as any).currency || "INR",
           });
+          // Funnel entry: the offering landing was viewed (PostHog sink).
+          // `slug` is the route param we fetched by, already narrowed to a
+          // string by the guard above — no cast needed.
+          track({ name: "offering_viewed", slug });
         }
       } catch {
         setNotFound(true);
@@ -1372,7 +1520,8 @@ export default function PublicOffering() {
                     {" "}with code{" "}
                     <button
                       onClick={() => { navigator.clipboard.writeText(couponInfo.code); toast.success("Copied!"); }}
-                      className="font-mono font-bold text-[hsl(var(--accent-emerald))] hover:underline"
+                      aria-label={`Copy code ${couponInfo.code}`}
+                      className="font-mono font-bold text-[hsl(var(--accent-emerald))] hover:underline rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
                     >
                       {couponInfo.code}
                     </button>
@@ -1534,6 +1683,7 @@ export default function PublicOffering() {
           <aside className="hidden lg:block w-[360px] shrink-0">
             <PurchaseRail
               offeringId={offering.id}
+              slug={offering.slug}
               price={Number(offering.price_inr)}
               mrp={offering.mrp_inr}
               highlights={highlights}
@@ -1548,17 +1698,48 @@ export default function PublicOffering() {
       </main>
 
       {/* Mobile sticky CTA: hidden on Android (Path B compliance) and
-          on archived offerings (no longer for sale). Slides up only once
-          the in-flow hero CTA has scrolled out of view (useInView above)
-          so price/CTA never doubles up on screen. The Masterclass iOS
-          pattern. Navigates to the dedicated checkout route. */}
+          on archived offerings (no longer for sale). Slides up once the
+          in-flow hero CTA scrolls out of view, then scrubs back out as it
+          re-enters (useStickyHandoff above) so exactly one champagne CTA is
+          lit at a time. The Masterclass iOS pattern, Airbnb handoff on top.
+          Navigates to the dedicated checkout route. */}
       {(applyUrl || !isNative()) && offering.status !== "archived" && (
-      <div
-        aria-hidden={heroCtaInView}
-        className={`lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] transition-transform duration-base ${
-          heroCtaInView ? "translate-y-full pointer-events-none" : "translate-y-0"
-        }`}
-      >
+      <AnimatePresence>
+        {stickyMounted && (
+        <motion.div
+          key="sticky-pay-bar"
+          initial={{ y: 96 }}
+          animate={{ y: 0 }}
+          exit={{ y: 96 }}
+          // opacity + scaleX are scroll-SCRUBBED (see useStickyHandoff), not on
+          // `animate`: they hand primacy to the inline CTA frame-by-frame as it
+          // scrolls in, so keeping them out of the y-tween lets framer compose the
+          // scaleX with the animated y into one transform on one promoted layer.
+          // transform-origin center-bottom = the bar narrows toward its own base
+          // as it cedes (Airbnb width-shrink), never lifting off the safe area.
+          style={{
+            opacity: stickyOpacity,
+            scaleX: stickyScaleX,
+            transformOrigin: "center bottom",
+            pointerEvents: stickyCeded ? "none" : "auto",
+          }}
+          // Once faded past halfway it has ceded primacy: drop it from the a11y
+          // tree and stop it taking taps so only the inline CTA is actionable.
+          aria-hidden={stickyCeded || undefined}
+          // Tokenized decelerate tween, NOT springs.glide, for the y slide only.
+          // This surface is a SOLID near-black fill (bg-surface at ~0.97) with NO
+          // backdrop-filter: opacity + scaleX are scroll-scrubbed onto this layer
+          // frame-by-frame, and a backdrop-blur here would force Blink to re-sample
+          // the blur every one of those frames — the #1 dark-app jank source per
+          // DESIGN-STRATEGY. On the pure-black canvas an opaque near-black surface
+          // reads identically to a blurred one, so we drop the filter entirely and
+          // the per-frame scrub composites as a plain transform/opacity write. The
+          // tween (over a spring) still keeps the slide-up ending cleanly with no
+          // sub-pixel settling tail. Still collapses to an instant cut under
+          // reduced motion.
+          transition={ms.reduced ? { duration: 0 } : { duration: durations.slow, ease: easings.out }}
+          className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface)/0.97)] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+        >
         {applyUrl ? (
           <div className="space-y-2">
             {/* Deadline beats a generic label when we have one. */}
@@ -1569,6 +1750,12 @@ export default function PublicOffering() {
               href={applyUrl}
               target="_blank"
               rel="noopener noreferrer"
+              // While ceded the bar is aria-hidden + pointer-events:none, but a
+              // bare <a> stays in the tab order — keyboard focus could land on an
+              // invisible control (WCAG 4.1.2). Pull it out of the sequence until
+              // the bar is lit again (below lg this bar shows, so tablets/laptops
+              // driving by keyboard reach it).
+              tabIndex={stickyCeded ? -1 : undefined}
               className="btn-champagne pressable flex w-full items-center justify-center text-[hsl(var(--cream-text))] font-semibold h-12 text-base rounded-2xl"
             >
               Apply for an invite
@@ -1592,11 +1779,11 @@ export default function PublicOffering() {
                 <span className="text-2xl font-bold text-[hsl(var(--accent-emerald))]">Free</span>
               ) : (
                 <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold text-foreground tracking-[-0.01em]">
+                  <span className="text-2xl font-bold text-foreground tracking-[-0.01em] tabular-nums">
                     ₹{Number(offering.price_inr).toLocaleString("en-IN")}
                   </span>
                   {offering.mrp_inr && Number(offering.mrp_inr) > Number(offering.price_inr) && (
-                    <span className="text-sm text-muted-foreground line-through font-mono">
+                    <span className="text-sm text-muted-foreground line-through tabular-nums">
                       ₹{Number(offering.mrp_inr).toLocaleString("en-IN")}
                     </span>
                   )}
@@ -1604,7 +1791,14 @@ export default function PublicOffering() {
               )}
             </div>
             <Button
-              onClick={() => navigate(`/checkout/${offering.id}`)}
+              onClick={() => {
+                track({ name: "pay_cta_tapped", slug: offering.slug, surface: "sticky" });
+                navigate(`/checkout/${offering.id}`);
+              }}
+              // See the apply anchor above: keep this out of the tab order while the
+              // bar is ceded (aria-hidden + pointer-events:none) so keyboard focus
+              // can't land on an invisible control (WCAG 4.1.2), restored when lit.
+              tabIndex={stickyCeded ? -1 : undefined}
               className="btn-champagne text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
             >
               {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}
@@ -1613,7 +1807,9 @@ export default function PublicOffering() {
           </div>
         </div>
         )}
-      </div>
+        </motion.div>
+        )}
+      </AnimatePresence>
       )}
 
       <Footer />

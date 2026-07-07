@@ -22,13 +22,46 @@ interface Props {
   autoFocus?: boolean;
   className?: string;
   placeholder?: string;
+  // Forwarded verbatim onto the underlying <input>. react-phone-number-input
+  // spreads any prop it doesn't consume itself onto the number input, so a
+  // caller's `htmlFor` label, aria-invalid state, and error-node association
+  // all land on the real focusable element (parity with a plain <Input>).
+  id?: string;
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
+  // Restrict the selectable countries. Surfaces whose downstream validation
+  // only honors one region (guest checkout is +91-only end to end: client,
+  // useGuestCheckout, and server normalizePhone all reject non-IN) MUST pass
+  // countries={["IN"]} so the flag switcher can't offer a dead-end the flow
+  // cannot accept. Login/signup omit it and stay fully international.
+  countries?: Country[];
+  // Lands on the real focusable number input (react-phone-number-input
+  // spreads unconsumed props there) — callers must NOT wrap this component
+  // in a blurring container instead: focusout bubbles from the country
+  // select too, which marks fields "touched" while the user is still
+  // mid-entry.
+  onBlur?: React.FocusEventHandler<HTMLInputElement>;
 }
 
-export function PhoneInput({ value, onChange, disabled, autoFocus, className, placeholder }: Props) {
+export function PhoneInput({
+  value,
+  onChange,
+  disabled,
+  autoFocus,
+  className,
+  placeholder,
+  id,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedby,
+  countries,
+  onBlur,
+}: Props) {
   return (
     <PhoneInputBase
       international
       defaultCountry={DEFAULT_COUNTRY}
+      countries={countries}
+      addInternationalOption={countries ? false : undefined}
       value={value}
       onChange={(v) => onChange(v || "")}
       disabled={disabled}
@@ -37,6 +70,10 @@ export function PhoneInput({ value, onChange, disabled, autoFocus, className, pl
       inputComponent={Input as never}
       className={className}
       countryCallingCodeEditable={false}
+      id={id}
+      aria-invalid={ariaInvalid}
+      aria-describedby={ariaDescribedby}
+      onBlur={onBlur}
     />
   );
 }

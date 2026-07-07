@@ -24,8 +24,23 @@ declare global {
     twq?: (...args: unknown[]) => void;
     gtag?: (...args: unknown[]) => void;
     dataLayer?: unknown[];
+    posthog?: {
+      __loaded?: boolean;
+      init: (key: string, config?: Record<string, unknown>) => void;
+      capture: (event: string, props?: Record<string, unknown>) => void;
+      identify: (id: string, props?: Record<string, unknown>) => void;
+      [key: string]: unknown;
+    };
   }
 }
+
+// PostHog is the funnel sink for the five conversion events below. It's
+// gated purely on env (VITE_POSTHOG_KEY) - independent of the DB-driven
+// pixel settings - so it only spins up where a project key is provisioned.
+// When absent, the five events fall back to the loaded pixel layer as
+// custom events, or no-op entirely (see captureFunnel).
+const POSTHOG_KEY = (import.meta.env.VITE_POSTHOG_KEY ?? "").trim();
+const POSTHOG_HOST = (import.meta.env.VITE_POSTHOG_HOST ?? "https://us.i.posthog.com").trim();
 
 export interface AnalyticsSettings {
   clarity_project_id: string | null;
@@ -155,6 +170,89 @@ function loadTwitterPixel(pixelId: string) {
   window.twq!("config", pixelId);
 }
 
+// Guard against double-init across HMR / repeat bootAnalytics calls. The
+// snippet's own e.__SV check stops the stub being redefined, but we still
+// gate init() ourselves so a fast-refresh doesn't re-configure the client.
+let posthogBooted = false;
+
+function loadPostHog(key: string, host: string) {
+  if (posthogBooted || window.posthog?.__loaded) return;
+  posthogBooted = true;
+  // PostHog's official array-stub snippet, inlined (same treatment as the
+  // pixel snippets above). Queues calls until static/array.js loads.
+  /* eslint-disable */
+  !(function (t: any, e: any) {
+    var o, n, p, r;
+    e.__SV ||
+      ((window as any).posthog = e),
+      (e._i = []),
+      (e.init = function (i: any, s: any, a: any) {
+        function g(t: any, e: any) {
+          var o = e.split(".");
+          2 == o.length && ((t = t[o[0]]), (e = o[1])),
+            (t[e] = function () {
+              t.push([e].concat(Array.prototype.slice.call(arguments, 0)));
+            });
+        }
+        ((p = t.createElement("script")).type = "text/javascript"),
+          (p.crossOrigin = "anonymous"),
+          (p.async = !0),
+          (p.src =
+            s.api_host.replace(".i.posthog.com", "-assets.i.posthog.com") +
+            "/static/array.js"),
+          p.setAttribute("data-analytics", "posthog"),
+          (r = t.getElementsByTagName("script")[0]).parentNode.insertBefore(p, r);
+        var u = e;
+        for (
+          void 0 !== a ? (u = e[a] = []) : (a = "posthog"),
+            u.people = u.people || [],
+            u.toString = function (t: any) {
+              var e = "posthog";
+              return (
+                "posthog" !== a && (e += "." + a), t || (e += " (stub)"), e
+              );
+            },
+            u.people.toString = function () {
+              return u.toString(1) + ".people (stub)";
+            },
+            o =
+              "init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug getPageViewId".split(
+                " ",
+              ),
+            n = 0;
+          n < o.length;
+          n++
+        )
+          g(u, o[n]);
+        e._i.push([i, s, a]);
+      }),
+      (e.__SV = 1);
+  })(document, (window as any).posthog || []);
+  /* eslint-enable */
+  // Pure funnel sink: no autocapture/session-recording/auto-pageview keeps
+  // the PII surface to just the events we fire (+ the identified user id).
+  window.posthog!.init(key, {
+    api_host: host,
+    autocapture: false,
+    capture_pageview: false,
+    disable_session_recording: true,
+    persistence: "localStorage+cookie",
+  });
+}
+
+// Best-effort: link the anonymous PostHog distinct id to the session user
+// id (the only PII we attach). Fire-and-forget; failures are swallowed so a
+// missing/expired session never surfaces in the console or blocks a fire.
+async function identifySessionUser(): Promise<void> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const uid = data.session?.user?.id;
+    if (uid) window.posthog?.identify(uid);
+  } catch {
+    /* non-fatal - analytics identity is best-effort */
+  }
+}
+
 /**
  * Boot all enabled analytics platforms based on stored settings.
  * Idempotent - safe to call multiple times. Returns the loaded
@@ -174,6 +272,17 @@ export async function bootAnalytics(): Promise<AnalyticsSettings | null> {
     /^(localhost|127\.|\[?::1)/.test(window.location.hostname)
   ) {
     return null;
+  }
+
+  // PostHog boots off its own env key, independent of the DB pixel settings,
+  // so it comes up even when analytics_settings is empty/disabled.
+  if (POSTHOG_KEY) {
+    try {
+      loadPostHog(POSTHOG_KEY, POSTHOG_HOST);
+      void identifySessionUser();
+    } catch (e) {
+      devWarn("PostHog load failed", e);
+    }
   }
 
   const s = await loadSettings();
@@ -206,7 +315,13 @@ export type AnalyticsEvent =
   | { name: "initiate_checkout"; content_id: string; content_name: string; value: number; currency: string }
   | { name: "purchase"; transaction_id: string; content_id: string; content_name: string; value: number; currency: string }
   | { name: "lead"; method?: string }
-  | { name: "sign_up"; method?: string };
+  | { name: "sign_up"; method?: string }
+  // ── Phase-3 conversion-funnel events (PostHog sink) ──────────────────
+  | { name: "offering_viewed"; slug: string }
+  | { name: "pay_cta_tapped"; slug: string; surface: "hero" | "sticky" | "rail" }
+  | { name: "checkout_loaded"; offeringId: string; guest: boolean }
+  | { name: "payment_initiated"; orderId: string }
+  | { name: "purchase_completed"; orderId: string; valueInr: number };
 
 // Generate a stable, unique event ID for each track() call. Meta's
 // server-side CAPI (enabled via "Set up with Meta" in Events Manager)
@@ -230,6 +345,20 @@ function newEventId(): string {
 // purchase signal - Meta will dedupe across the two fires.
 function purchaseEventId(transactionId: string): string {
   return `purchase_${transactionId}`;
+}
+
+// Fan a conversion-funnel event out to the PostHog sink when configured,
+// else to whatever pixels are loaded as CUSTOM events - deliberately never a
+// standard e-commerce event, so the existing Purchase/ViewContent funnels are
+// left untouched. Every sink is optional-chained, so an absent/blocked/offline
+// sink is a silent no-op, never a throw.
+function captureFunnel(name: string, props: Record<string, unknown>) {
+  if (window.posthog) {
+    window.posthog.capture(name, props);
+    return;
+  }
+  window.fbq?.("trackCustom", name, props);
+  window.gtag?.("event", name, props);
 }
 
 export function track(event: AnalyticsEvent) {
@@ -289,6 +418,22 @@ export function track(event: AnalyticsEvent) {
       case "sign_up":
         window.fbq?.("track", "CompleteRegistration", { method: event.method }, { eventID });
         window.gtag?.("event", "sign_up", { method: event.method });
+        break;
+      // ── Phase-3 conversion-funnel events → PostHog (or pixel fallback) ──
+      case "offering_viewed":
+        captureFunnel("offering_viewed", { slug: event.slug });
+        break;
+      case "pay_cta_tapped":
+        captureFunnel("pay_cta_tapped", { slug: event.slug, surface: event.surface });
+        break;
+      case "checkout_loaded":
+        captureFunnel("checkout_loaded", { offering_id: event.offeringId, guest: event.guest });
+        break;
+      case "payment_initiated":
+        captureFunnel("payment_initiated", { order_id: event.orderId });
+        break;
+      case "purchase_completed":
+        captureFunnel("purchase_completed", { order_id: event.orderId, value_inr: event.valueInr });
         break;
     }
   } catch (e) {

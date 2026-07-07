@@ -13,15 +13,23 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
-import { Loader2, Tag, BookOpen, ArrowLeft, CheckCircle2, Lock } from "lucide-react";
+import { Loader2, Tag, BookOpen, ArrowLeft, CheckCircle2, Lock, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import type { Tables } from "@/integrations/supabase/types";
 import TrustPanel from "@/components/checkout/TrustPanel";
 import StickyPayBar from "@/components/checkout/StickyPayBar";
+import PayButtonContent from "@/components/checkout/PayButtonContent";
 import GuaranteeBadge from "@/components/offering/GuaranteeBadge";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
+import { PhoneInput } from "@/components/auth/PhoneInput";
+import { SkeletonLine, SkeletonBlock, RevealOnMount } from "@/components/patterns/LoadingState";
+import CountUp from "@/components/motion/CountUp";
+import { useMotionSafe } from "@/lib/motion";
+import { useInViewRef } from "@/hooks/useInViewRef";
 import { isAndroid, isNative } from "@/lib/platform";
-import { hapticImpact } from "@/lib/haptics";
+import { hapticImpact, hapticSelection, tapTick } from "@/lib/haptics";
 import { track } from "@/lib/analytics";
+import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 
 /* -- Razorpay global type -- */
 declare global {
@@ -40,6 +48,188 @@ type CustomField = Tables<"custom_field_definitions">;
 interface LinkedCourse {
   course_id: string;
   courses: { title: string; thumbnail_url: string | null } | null;
+}
+
+/**
+ * Structured checkout skeleton — mirrors the real card layout (back link,
+ * offering row with a 64px thumb block, "what you'll get" rows, the anon
+ * guest-details block, coupon field, order-summary lines, full-width pay
+ * button, reassurance pill) so the skeleton→content handoff introduces no
+ * layout shift (zero CLS). Built from the shared SkeletonLine/SkeletonBlock
+ * primitives so it breathes on the same shimmer cadence as every other loading
+ * surface.
+ *
+ * `showGuestForm` models the DEFAULT anonymous cold-load shape: an anon buyer
+ * renders the name/email/phone guest block (CheckoutPage `{!user && …}`), which
+ * is materially taller than a logged-in card. The skeleton is shown while
+ * `loading || authLoading`; during authLoading `user` is still null, so the
+ * caller passes `!user` and the skeleton renders the fuller anon shape by
+ * default — matching what a cold anonymous visitor actually gets.
+ */
+function CheckoutSkeleton({ showGuestForm = false }: { showGuestForm?: boolean }) {
+  return (
+    <div className="space-y-6" role="status" aria-live="polite" aria-busy="true">
+      <span className="sr-only">Loading secure checkout…</span>
+
+      {/* Back link */}
+      <SkeletonLine width={56} height={14} className="-mb-3" />
+
+      {/* Header: 64px thumb + title/instructor */}
+      <div className="flex items-start gap-4">
+        <SkeletonBlock className="h-16 w-16 shrink-0 rounded-xl" height={64} />
+        <div className="min-w-0 flex-1 space-y-2 pt-1">
+          <SkeletonLine width="70%" height={20} />
+          <SkeletonLine width="40%" height={14} />
+        </div>
+      </div>
+
+      <div className="h-px w-full bg-border" aria-hidden />
+
+      {/* What you'll get */}
+      <div className="space-y-2">
+        <SkeletonLine width={96} height={12} />
+        <SkeletonBlock className="rounded-lg" height={40} />
+        <SkeletonBlock className="rounded-lg" height={40} />
+      </div>
+
+      {/* Guest details (anon checkout) — mirrors the {!user} block:
+          a "Your details" / "Sign in" header row, three labelled inputs
+          (label is `.caption` = 18px, Input is h-10 = 40px, rounded-[12px]),
+          and the two-line reassurance note. Dimensions are shared with the
+          real fields so the anon handoff stays flush. */}
+      {showGuestForm && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <SkeletonLine width={72} height={12} />
+            <SkeletonLine width={148} height={12} />
+          </div>
+          {/* name / email / phone: 18px label + 40px input */}
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="space-y-1">
+              <SkeletonLine width={[64, 92, 100][i]} height={18} />
+              <SkeletonBlock className="rounded-[12px]" height={40} />
+            </div>
+          ))}
+          {/* Two-line helper note */}
+          <div className="space-y-1.5">
+            <SkeletonLine width="100%" height={12} />
+            <SkeletonLine width="75%" height={12} />
+          </div>
+        </div>
+      )}
+
+      {/* Coupon field */}
+      <div className="space-y-2">
+        <SkeletonLine width={88} height={12} />
+        <SkeletonBlock className="rounded-md" height={40} />
+      </div>
+
+      <div className="h-px w-full bg-border" aria-hidden />
+
+      {/* Order summary */}
+      <div className="space-y-2.5">
+        <SkeletonLine width={160} height={24} />
+        <div className="space-y-3 pt-1">
+          <div className="flex items-center justify-between">
+            <SkeletonLine width={72} height={14} />
+            <SkeletonLine width={64} height={14} />
+          </div>
+          <div className="flex items-center justify-between">
+            <SkeletonLine width={56} height={14} />
+            <SkeletonLine width={48} height={14} />
+          </div>
+          <div className="h-px w-full bg-border" aria-hidden />
+          <div className="flex items-center justify-between">
+            <SkeletonLine width={48} height={16} />
+            <SkeletonLine width={72} height={16} />
+          </div>
+        </div>
+      </div>
+
+      {/* Pay button */}
+      <SkeletonBlock className="rounded-2xl" height={56} />
+
+      {/* Reassurance pill */}
+      <div className="flex justify-center">
+        <SkeletonLine width={200} height={28} className="rounded-full" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Desktop trust-sidebar skeleton — the mirror of `<TrustPanel>` (same
+ * `hidden lg:block w-[420px] flex-shrink-0 space-y-6` shell). The real page
+ * renders TrustPanel as a SECOND flex column on `lg`, so a loading branch that
+ * omits it lets the single centred Card sit in the middle of the row and then
+ * jump left when the sidebar mounts — a horizontal layout shift. Reserving the
+ * same 420px column here keeps the two-column centring identical across the
+ * handoff. Reserved only when `paymentType === "full"` — the one state, knowable
+ * before the offering loads, that guarantees the loaded page renders TrustPanel
+ * (`!isStaged`). TrustPanel is hidden on staged payments, and every non-full
+ * paymentType (app_fee / confirmation / balance) is a staged flow, so reserving
+ * for those would drop the column on handoff and shift the Card.
+ */
+function CheckoutTrustPanelSkeleton() {
+  return (
+    <aside
+      className="hidden lg:block w-[420px] flex-shrink-0 space-y-6"
+      aria-hidden
+    >
+      {/* Course summary card: media block + title/meta */}
+      <div className="bg-surface border border-border rounded-xl overflow-hidden">
+        <SkeletonBlock className="rounded-none" height={236} />
+        <div className="p-4 space-y-2">
+          <SkeletonLine width="80%" height={18} />
+          <SkeletonLine width="45%" height={12} />
+        </div>
+      </div>
+
+      {/* What's included: label + 4 bullet rows */}
+      <div className="space-y-3">
+        <SkeletonLine width={96} height={10} />
+        <div className="space-y-2">
+          {[68, 60, 72, 64].map((w, i) => (
+            <SkeletonLine key={i} width={`${w}%`} height={16} />
+          ))}
+        </div>
+      </div>
+
+      {/* What happens next box */}
+      <SkeletonBlock className="rounded-xl" height={72} />
+
+      {/* Trust badge */}
+      <div className="pt-2 border-t border-border">
+        <SkeletonLine width={190} height={16} />
+      </div>
+    </aside>
+  );
+}
+
+/**
+ * Cold-load skeleton for the whole checkout screen: the card placeholder plus
+ * (optionally) the desktop trust-sidebar placeholder, in the SAME outer layout
+ * the loaded page uses. Shared by two call sites so the handoff is seamless:
+ *   1. the `loading || authLoading` early-return (what a cold visitor sees), and
+ *   2. `<RevealOnMount>`'s `skeleton` in the loaded branch, which repaints this
+ *      exact markup for one frame before crossfading to the real content.
+ * Rendering identical markup at both sites is what makes the crossfade start
+ * from a pixel-matched `from` state instead of a jump-cut.
+ */
+function CheckoutColdSkeleton({
+  showGuestForm,
+  showTrustPanel,
+}: { showGuestForm: boolean; showTrustPanel: boolean }) {
+  return (
+    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
+      <Card className="w-full max-w-[560px] border-border bg-surface">
+        <CardContent className="p-6 md:p-8">
+          <CheckoutSkeleton showGuestForm={showGuestForm} />
+        </CardContent>
+      </Card>
+      {showTrustPanel && <CheckoutTrustPanelSkeleton />}
+    </div>
+  );
 }
 
 export default function CheckoutPage() {
@@ -77,6 +267,55 @@ export default function CheckoutPage() {
   const paymentInFlightRef = useRef(false);
   const [application, setApplication] = useState<any>(null);
   const [totalPreviouslyPaid, setTotalPreviouslyPaid] = useState(0);
+
+  // Sticky-bar handoff (mirrors the offering page's sticky→inline pattern): the
+  // mobile StickyPayBar and the in-card Pay button are the same champagne CTA, so
+  // showing both at once — as happens once the buyer scrolls the in-card button
+  // into view — lights two identical pay actions in one viewport. We observe the
+  // in-card button and suppress the sticky bar the moment it's on screen, so
+  // exactly one pay action is lit at any scroll offset. The negative bottom
+  // margin must equal the sticky bar's OWN rendered footprint so the in-card
+  // button counts as "in view" (and the bar cedes) exactly as it reaches the
+  // bar's top edge — no frame where the lit in-card button peeks ABOVE the still-
+  // mounted bar. The bar's height is content + env(safe-area-inset-bottom), which
+  // varies per device; the old hardcoded -96px was a GUESS at that sum and
+  // overshot by the safe-area amount on every 0-safe-area surface (375/360,
+  // desktop, most WebViews), flipping the gate ~24px late and leaving a ~24px
+  // band where both CTAs lit at steady state. So we drive the margin off the
+  // bar's MEASURED height (`stickyBarHeight`, reported via StickyPayBar#onMeasure)
+  // — exact on every device. Seeded with the bar's content-only footprint (73px)
+  // so the very first observer never overshoots before the measure lands; the
+  // measure only ever GROWS it by the real safe-area inset. No IntersectionObserver
+  // (SSR / older WebView) → stays false → bar shown, preserving historical behaviour.
+  //
+  // MUST use a callback ref (useInViewRef), NOT framer's useInView: this button
+  // renders inside <RevealOnMount> below, whose skeleton branch owns the first
+  // commit under normal motion, so the button is absent when a mount-only
+  // observer would bind. framer's useInView binds once and early-returns on a
+  // null node, so it never re-observed the button once it appeared on the next
+  // frame — the gate stayed false forever and BOTH champagne CTAs lit. A callback
+  // ref re-subscribes on the actual attach, so the gate flips correctly.
+  const [stickyBarHeight, setStickyBarHeight] = useState(73);
+  const [inCardPayRef, inCardPayInView] = useInViewRef<HTMLButtonElement>({
+    rootMargin: `0px 0px -${stickyBarHeight}px 0px`,
+  });
+
+  // Motion presets (collapse to instant under reduced motion) for the coupon
+  // chip enter/exit — see the applied-coupon block below. `pressTap` is the
+  // canonical snap-spring whileTap (drops the scale under reduced motion),
+  // reused on the chip's remove control so it presses like every Button.
+  const { springs, pressTap } = useMotionSafe();
+
+  // Selection haptic on a *successful* coupon apply. appliedCoupon only flips
+  // from null → set inside the validate-coupon success path, so a transition to
+  // a truthy coupon id is exactly "apply succeeded" (remove goes set → null and
+  // is intentionally silent). Native-only; no-ops on web.
+  const appliedCouponIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const id = appliedCoupon?.id ?? null;
+    if (id && id !== appliedCouponIdRef.current) void hapticSelection();
+    appliedCouponIdRef.current = id;
+  }, [appliedCoupon]);
 
   // Guest checkout fields + validation (also prefilled for logged-in users who
   // have no profile details on file yet). See useGuestCheckout.
@@ -142,6 +381,14 @@ export default function CheckoutPage() {
         content_name: (offRes.data as any).title,
         value: Number((offRes.data as any).price_inr || 0),
         currency: (offRes.data as any).currency || "INR",
+      });
+
+      // Phase-3 conversion funnel: the checkout surface is now populated. Guest
+      // flag reflects whether an anon buyer is on the guest path at load time.
+      track({
+        name: "checkout_loaded",
+        offeringId: offeringId!,
+        guest: !user,
       });
 
       // Load application data for staged payments.
@@ -334,6 +581,11 @@ export default function CheckoutPage() {
         prefillContact = profile?.phone ?? "";
       }
 
+      // Phase-3 conversion funnel: a real Razorpay order exists and the modal is
+      // about to open. Keyed on our internal payment_order_id so it joins the
+      // ThankYou purchase_completed event on the same id.
+      track({ name: "payment_initiated", orderId: data.payment_order_id });
+
       const options = {
         key: data.key_id,
         amount: data.amount,
@@ -346,7 +598,7 @@ export default function CheckoutPage() {
           email: prefillEmail,
           contact: prefillContact,
         },
-        theme: { color: "#F5F1E8", backdrop_color: "rgba(0,0,0,0.8)" },
+        theme: { color: RAZORPAY_THEME_COLOR, backdrop_color: "rgba(0,0,0,0.8)" },
         handler: async (response: {
           razorpay_payment_id: string;
           razorpay_order_id: string;
@@ -394,16 +646,38 @@ export default function CheckoutPage() {
   };
 
   /* -- UI -- */
+  // Cold load: a structured skeleton that mirrors the final card (not a spinner)
+  // so there is zero layout shift when content arrives. The loaded content is
+  // reached only past the byte-identical `isNative()` / not-found early-returns
+  // below (revenue guard — those gates must NOT move or dereference a null
+  // offering), so no single mounted LoadingSwap can straddle the handoff. The
+  // crossfade instead lives in the loaded branch via `<RevealOnMount>`, which
+  // repaints THIS exact skeleton for one frame and then crossfades to the real
+  // content — a produced moment, not a jump-cut.
   if (loading || authLoading) {
+    // Model the DEFAULT anonymous cold-load shape. While authLoading, `user` is
+    // still null, so `!user` renders the fuller anon skeleton (guest fields +
+    // trust sidebar) — matching what a cold anonymous visitor actually gets and
+    // keeping the skeleton→content handoff flush.
+    //
+    // Reserve the TrustPanel column ONLY when we can prove the loaded content
+    // WILL render it, using a signal known synchronously (before the offering
+    // fetch resolves). The loaded page shows TrustPanel iff `!isStaged`, i.e.
+    // `paymentType === "full" || payment_mode !== "staged"`. `payment_mode`
+    // needs the offering (still null here), but `paymentType` is derived from
+    // searchParams up-front. `paymentType === "full"` guarantees `!isStaged`
+    // regardless of payment_mode, so the panel is certain to mount → reserve it.
+    // For a non-full paymentType we CANNOT be certain (a staged offering drops
+    // the panel), so we reserve nothing: staged flows — the real, cold-loadable
+    // use of every non-full type (app_fee / confirmation / balance links) — then
+    // hand off with no column to remove, avoiding a horizontal re-centre shift.
+    // (Gating on `!isStaged` here was WRONG: `isStaged` is false while offering
+    // is null, so it always reserved the column, then a staged load dropped it
+    // → ~226px Card shift on desktop-lg.)
+    const anonShape = !user;
+    const willShowTrustPanel = paymentType === "full";
     return (
-      <div
-        className="flex min-h-screen flex-col items-center justify-center gap-3 bg-canvas"
-        role="status"
-        aria-live="polite"
-      >
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Loading secure checkout…</p>
-      </div>
+      <CheckoutColdSkeleton showGuestForm={anonShape} showTrustPanel={willShowTrustPanel} />
     );
   }
 
@@ -434,7 +708,29 @@ export default function CheckoutPage() {
   const trustPanelCourseTitle = (linkedCourses[0]?.courses as any)?.title ?? offering.title;
   const trustPanelThumb = (linkedCourses[0]?.courses as any)?.thumbnail_url ?? null;
 
+  // Inline guest-field validity (mirrors useGuestCheckout.validateGuest, surfaced
+  // per-field with role="alert" instead of only as toasts). Only meaningful on
+  // the anon path and after a field is touched. PhoneInput emits E.164 (+91…),
+  // so the phone check counts a 10-digit national or 12-digit 91-prefixed form —
+  // identical to the edge function's normalisation.
+  const guestPhoneDigits = guestPhone.replace(/\D/g, "");
+  const guestNameError = !user && !!guestTouched.name && !guestName.trim();
+  const guestEmailError =
+    !user && !!guestTouched.email &&
+    (!guestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim()));
+  const guestPhoneError =
+    !user && !!guestTouched.phone &&
+    !(guestPhoneDigits.length === 10 ||
+      (guestPhoneDigits.length === 12 && guestPhoneDigits.startsWith("91")));
+
+  // Loaded, past the revenue guards: crossfade in from the SAME cold-load
+  // skeleton the loading branch was painting. `showTrustPanel={!isStaged}` and
+  // `showGuestForm={!user}` now use the resolved values, so the fading-out
+  // skeleton is a pixel match for the content fading in. Reduced motion ⇒ instant.
   return (
+    <RevealOnMount
+      skeleton={<CheckoutColdSkeleton showGuestForm={!user} showTrustPanel={!isStaged} />}
+    >
     <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
       <Card className="w-full max-w-[560px] border-border bg-surface">
         <CardContent className="p-6 md:p-8 space-y-6">
@@ -445,7 +741,7 @@ export default function CheckoutPage() {
               else if (offeringId) navigate(`/browse`);
               else navigate(-1);
             }}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors -mb-3"
+            className="inline-flex items-center gap-1.5 min-h-[44px] -my-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             Back
@@ -592,7 +888,7 @@ export default function CheckoutPage() {
                       className={`bg-surface-2 ${showError ? "border-destructive focus-visible:ring-destructive" : "border-border"}`}
                     />
                     {showError && (
-                      <p id={`error-${field.id}`} className="text-xs text-destructive mt-1">
+                      <p id={`error-${field.id}`} className="text-xs text-[hsl(var(--destructive-text))] mt-1">
                         {field.label} is required
                       </p>
                     )}
@@ -665,43 +961,80 @@ export default function CheckoutPage() {
                 <button
                   type="button"
                   onClick={() => navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`)}
-                  className="text-xs text-[hsl(var(--cream))] hover:underline"
+                  className="inline-flex items-center min-h-[44px] -my-3 text-xs text-[hsl(var(--cream))] hover:underline"
                 >
                   Already have an account? Sign in
                 </button>
               </div>
-              <Input
-                value={guestName}
-                onChange={(e) => setGuestName(e.target.value)}
-                onBlur={() => setGuestTouched((s) => ({ ...s, name: true }))}
-                placeholder="Full name"
-                className={guestTouched.name && !guestName.trim() ? "border-destructive" : ""}
-                autoComplete="name"
-              />
-              <Input
-                value={guestEmail}
-                onChange={(e) => setGuestEmail(e.target.value)}
-                onBlur={() => setGuestTouched((s) => ({ ...s, email: true }))}
-                placeholder="Email address"
-                type="email"
-                inputMode="email"
-                className={guestTouched.email && !guestEmail.trim() ? "border-destructive" : ""}
-                autoComplete="email"
-              />
-              <div className="flex">
-                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-border bg-surface-2 text-sm text-muted-foreground font-mono">
-                  +91
-                </span>
+              <div>
+                <label htmlFor="guest-name" className="caption mb-1 block">
+                  Full name
+                </label>
                 <Input
-                  value={guestPhone}
-                  onChange={(e) => setGuestPhone(e.target.value.replace(/[^\d+]/g, ""))}
-                  onBlur={() => setGuestTouched((s) => ({ ...s, phone: true }))}
-                  placeholder="10-digit mobile number"
-                  type="tel"
-                  inputMode="tel"
-                  className={`rounded-l-none ${guestTouched.phone && !guestPhone.trim() ? "border-destructive" : ""}`}
-                  autoComplete="tel"
+                  id="guest-name"
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  onBlur={() => setGuestTouched((s) => ({ ...s, name: true }))}
+                  placeholder="Full name"
+                  aria-invalid={guestNameError}
+                  aria-describedby={guestNameError ? "guest-name-error" : undefined}
+                  className={`h-11 ${guestNameError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                  autoComplete="name"
                 />
+                {guestNameError && (
+                  <p id="guest-name-error" role="alert" className="text-xs text-[hsl(var(--destructive-text))] mt-1">
+                    Please enter your name
+                  </p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="guest-email" className="caption mb-1 block">
+                  Email address
+                </label>
+                <Input
+                  id="guest-email"
+                  value={guestEmail}
+                  onChange={(e) => setGuestEmail(e.target.value)}
+                  onBlur={() => setGuestTouched((s) => ({ ...s, email: true }))}
+                  placeholder="Email address"
+                  type="email"
+                  inputMode="email"
+                  aria-invalid={guestEmailError}
+                  aria-describedby={guestEmailError ? "guest-email-error" : undefined}
+                  className={`h-11 ${guestEmailError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                  autoComplete="email"
+                />
+                {guestEmailError && (
+                  <p id="guest-email-error" role="alert" className="text-xs text-[hsl(var(--destructive-text))] mt-1">
+                    Please enter a valid email
+                  </p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="guest-phone" className="caption mb-1 block">
+                  Phone number
+                </label>
+                {/* countries locked to IN: the guest flow is +91-only at every
+                    validation layer (client, useGuestCheckout, server
+                    normalizePhone) — offering other flags here is a dead-end.
+                    onBlur rides the number input itself, NOT a wrapper div:
+                    focusout bubbles from the country select and marked the
+                    field touched mid-entry. */}
+                <PhoneInput
+                  id="guest-phone"
+                  value={guestPhone}
+                  onChange={setGuestPhone}
+                  placeholder="Phone number"
+                  aria-invalid={guestPhoneError}
+                  aria-describedby={guestPhoneError ? "guest-phone-error" : undefined}
+                  countries={["IN"]}
+                  onBlur={() => setGuestTouched((s) => ({ ...s, phone: true }))}
+                />
+                {guestPhoneError && (
+                  <p id="guest-phone-error" role="alert" className="text-xs text-[hsl(var(--destructive-text))] mt-1">
+                    Please enter a valid phone number
+                  </p>
+                )}
               </div>
               <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
                 We'll create your account on this phone number. No password, no OTP, just sign in with this phone later to access your masterclass.
@@ -715,60 +1048,88 @@ export default function CheckoutPage() {
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Promo code
             </p>
-            {appliedCoupon ? (
-              <div className="space-y-2">
-                {/* Applied-coupon chip with one-click remove. The
-                    chip is the visible affordance; the savings line
-                    below reinforces the win emotionally. */}
-                <div className="inline-flex items-center gap-2 pl-3 pr-1 py-1 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] border border-[hsl(var(--accent-emerald)/0.4)]">
-                  <Tag className="h-3.5 w-3.5 text-[hsl(var(--accent-emerald))]" />
-                  <span className="font-mono text-sm font-bold text-[hsl(var(--accent-emerald))]">
-                    {appliedCoupon.code}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={removeCoupon}
-                    aria-label="Remove promo code"
-                    className="h-6 w-6 rounded-full bg-[hsl(var(--accent-emerald)/0.2)] hover:bg-[hsl(var(--accent-emerald)/0.4)] flex items-center justify-center transition-colors"
-                  >
-                    <span aria-hidden className="text-[hsl(var(--accent-emerald))] text-sm leading-none">×</span>
-                  </button>
-                </div>
-                {discount > 0 && (
-                  <p className="text-sm font-semibold text-[hsl(var(--accent-emerald))]">
-                    Saved ₹{discount.toLocaleString("en-IN")} on this order
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Input
-                    value={couponCode}
-                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                    placeholder="Have a promo code?"
-                    className="bg-surface-2 border-border w-full font-mono uppercase"
-                    onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
-                  />
-                  {couponLoading && (
-                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-                  )}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={applyCoupon}
-                  disabled={couponLoading || !couponCode.trim()}
-                  className="shrink-0 h-10"
+            <AnimatePresence mode="wait" initial={false}>
+              {appliedCoupon ? (
+                <motion.div
+                  key="applied"
+                  className="space-y-2"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={springs.glide}
                 >
-                  {couponLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    "Apply"
+                  {/* Applied-coupon chip with one-click remove. The
+                      chip is the visible affordance; the savings line
+                      below reinforces the win emotionally. */}
+                  <div className="inline-flex items-center gap-1 pl-3 pr-1 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] border border-[hsl(var(--accent-emerald)/0.4)]">
+                    <Tag className="h-3.5 w-3.5 text-[hsl(var(--accent-emerald))]" />
+                    <span className="font-mono text-sm font-bold text-[hsl(var(--accent-emerald))]">
+                      {appliedCoupon.code}
+                    </span>
+                    {/* Remove control presses like every Button: framer's
+                        snap-spring `whileTap` (collapses to instant under
+                        reduced motion via pressTap) + a `tapTick()` selection
+                        haptic fired from the activation path — mirrors
+                        ui/button.tsx so a tap on the chip isn't dead. Keeps the
+                        44px hit area; `transition-colors` (not -all) stays so
+                        framer's inline transform isn't smeared (button.tsx
+                        clobber-class doctrine). */}
+                    <motion.button
+                      type="button"
+                      onClick={() => {
+                        tapTick();
+                        removeCoupon();
+                      }}
+                      whileTap={pressTap}
+                      aria-label="Remove promo code"
+                      className="min-h-[44px] min-w-[44px] rounded-full hover:bg-[hsl(var(--accent-emerald)/0.2)] flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+                    >
+                      <X className="h-6 w-6 text-[hsl(var(--accent-emerald))]" aria-hidden />
+                    </motion.button>
+                  </div>
+                  {discount > 0 && (
+                    <p className="text-sm font-semibold text-[hsl(var(--success))] tabular-nums">
+                      Saved ₹{discount.toLocaleString("en-IN")} on this order
+                    </p>
                   )}
-                </Button>
-              </div>
-            )}
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="entry"
+                  className="flex gap-2"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={springs.glide}
+                >
+                  <div className="relative flex-1">
+                    <Input
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      placeholder="Have a promo code?"
+                      className="h-11 bg-surface-2 border-border w-full font-mono uppercase"
+                      onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+                    />
+                    {couponLoading && (
+                      <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={applyCoupon}
+                    disabled={couponLoading || !couponCode.trim()}
+                    className="shrink-0 h-11"
+                  >
+                    {couponLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Apply"
+                    )}
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           )}
 
@@ -782,7 +1143,11 @@ export default function CheckoutPage() {
             <h2 className="font-['Instrument_Serif'] text-2xl italic text-foreground leading-none">
               Order summary
             </h2>
-            <div className="space-y-2 text-sm pt-1">
+            {/* anim-stagger staggers the receipt rows in on first content mount
+                (CSS keyframe, runs once per row — a later-inserted discount row
+                rises in on its own; the list never re-staggers on coupon apply).
+                Disabled entirely under prefers-reduced-motion (see index.css). */}
+            <div className="anim-stagger space-y-2 text-sm pt-1">
               <div className="flex items-baseline gap-2">
                 <span className="text-muted-foreground shrink-0">Subtotal</span>
                 <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
@@ -820,9 +1185,17 @@ export default function CheckoutPage() {
               <div className="flex items-baseline gap-2 text-base font-semibold">
                 <span className="text-foreground shrink-0">Total</span>
                 <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
-                <span className="text-foreground shrink-0 tabular-nums">
-                  ₹{total.toLocaleString("en-IN")}
-                </span>
+                {/* immediate: seed to the real total at rest (no ₹0 flash below
+                    the fold, no observer gating) and roll from the previous total
+                    on coupon apply/remove. No key remount, so the number
+                    transitions PREV → new instead of re-rolling from 0. Collapses
+                    to the final value instantly under reduced motion. */}
+                <CountUp
+                  immediate
+                  value={total}
+                  prefix="₹"
+                  className="text-foreground shrink-0 tabular-nums"
+                />
               </div>
               {gstAmount > 0 && (
                 <p className="text-[11px] text-muted-foreground text-right -mt-1">
@@ -856,6 +1229,8 @@ export default function CheckoutPage() {
               free capture, signed-in users through create-free-enrolment. Only
               staged payments require a positive amount. */}
           <Button
+            ref={inCardPayRef}
+            variant="champagne"
             size="xl"
             className="w-full"
             onClick={handlePay}
@@ -864,19 +1239,24 @@ export default function CheckoutPage() {
             // doesn't double-buzz.
             haptic={false}
             disabled={paying || (isStaged && total <= 0)}
+            // STEAL #2 processing arc: mirror `paying` to aria-busy so assistive
+            // tech hears the in-flight state (the label crossfades to a quiet dot
+            // visually). Purely additive to the existing disabled semantics.
+            aria-busy={paying}
           >
-            {paying ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Processing…
-              </>
-            ) : isStaged ? (
-              `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
-            ) : total <= 0 ? (
-              "Enrol free"
-            ) : (
-              `Pay ₹${total.toLocaleString("en-IN")}`
-            )}
+            {/* CRED-style content layer: label ⇄ processing dot inside the same
+                champagne container (never resizes / gray-swaps). Driven off the
+                existing `paying` flag — no change to handlePay. */}
+            <PayButtonContent
+              status={paying ? "processing" : "idle"}
+              label={
+                isStaged
+                  ? `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
+                  : total <= 0
+                    ? "Enrol free"
+                    : `Pay ₹${total.toLocaleString("en-IN")}`
+              }
+            />
           </Button>
 
           {/* Reassurance capsule directly under the pay button: lock icon +
@@ -907,16 +1287,27 @@ export default function CheckoutPage() {
         />
       )}
 
-      {/* Mobile sticky pay bar: always-visible total + Pay on phones. Only
-          ever reached on web (native returns the Continue-on-web card above). */}
-      <StickyPayBar
-        total={total}
-        savings={totalSavings}
-        stagedLabel={isStaged ? stagedLabel : undefined}
-        paying={paying}
-        disabled={isStaged && total <= 0}
-        onPay={handlePay}
-      />
+      {/* Mobile sticky pay bar: total + Pay pinned to the bottom on phones so the
+          decision is one thumb-reach away while the buyer is scrolled up. Only
+          ever reached on web (native returns the Continue-on-web card above).
+          Suppressed (slides out) once the in-card Pay button scrolls into view so
+          the two identical champagne CTAs are never lit in the same viewport —
+          exactly one pay action at any scroll offset. */}
+      <AnimatePresence>
+        {!inCardPayInView && (
+          <StickyPayBar
+            key="checkout-sticky-pay-bar"
+            total={total}
+            savings={totalSavings}
+            stagedLabel={isStaged ? stagedLabel : undefined}
+            paying={paying}
+            disabled={isStaged && total <= 0}
+            onPay={handlePay}
+            onMeasure={setStickyBarHeight}
+          />
+        )}
+      </AnimatePresence>
     </div>
+    </RevealOnMount>
   );
 }

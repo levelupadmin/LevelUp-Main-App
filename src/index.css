@@ -11,13 +11,40 @@
   gap: 0;
   width: 100%;
   background-color: hsl(var(--background));
-  border: 1px solid hsl(var(--input));
+  /* Border via inset shadow (not `border`) so the full 2.75rem/44px is usable
+     content height. A real 1px border would shrink the stretch box to 42px,
+     dropping the country pill below the 44px touch-target minimum. */
+  box-shadow: inset 0 0 0 1px hsl(var(--input));
   border-radius: 12px;
   height: 2.75rem;
-  transition: border-color 0.15s;
+  transition: box-shadow 0.15s;
 }
+/* Keyboard/focus indicator with parity to the sibling name/email inputs, which
+   use shadcn's `focus-visible:ring-2 ring-ring ring-offset-2`. The inner
+   `.PhoneInputInput` strips its own outline/box-shadow (!important), so the ring
+   is drawn on the wrapper: keep the 1px inset "border" (now `--foreground`), then
+   a 2px `--background` offset gap, then a 2px `--ring` ring — the layered
+   equivalent of ring-offset-2 + ring-2. */
 .PhoneInput:focus-within {
-  border-color: hsl(var(--foreground));
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground)),
+              0 0 0 2px hsl(var(--background)),
+              0 0 0 4px hsl(var(--ring));
+}
+/* Error state — parity with the name/email inputs' `border-destructive`
+   (+ `focus-visible:ring-destructive`). PhoneInput draws its "border" as an
+   inset box-shadow (see above), so the error indicator is a destructive inset
+   shadow rather than a `border` swap. Keys off the `aria-invalid` the caller
+   already forwards onto the inner input; the selector wins over the base rule
+   by source order and over :focus-within via specificity. */
+.PhoneInput:has(input[aria-invalid="true"]) {
+  box-shadow: inset 0 0 0 1px hsl(var(--destructive));
+}
+.PhoneInput:has(input[aria-invalid="true"]) .PhoneInputCountry {
+  border-right-color: hsl(var(--destructive));
+}
+.PhoneInput:has(input[aria-invalid="true"]):focus-within {
+  box-shadow: inset 0 0 0 1px hsl(var(--destructive)),
+              0 0 0 2px hsl(var(--destructive) / 0.35);
 }
 .PhoneInputCountry {
   position: relative;
@@ -119,6 +146,14 @@
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
+    /* Error-message TEXT on the dark card. The base --destructive (0 72% 51%)
+       reads only 4.13:1 on the 4% card surface — under WCAG AA 4.5:1 for the
+       12px inline `role="alert"` errors (axe serious, phase-3 crit 8). Lightened
+       to 0 72% 60% ⇒ ~5.2:1, clearing AA with margin while staying the same red.
+       Same darken/lighten-for-contrast move as --accent-violet-deep below. Used
+       ONLY for small destructive text; base --destructive stays for buttons,
+       borders and the required-field asterisk (non-text / large enough). */
+    --destructive-text: 0 72% 60%;
 
     --border: 240 4% 16%;
     --border-hover: 240 4% 26%;
@@ -310,7 +345,15 @@
   .btn-champagne {
     background-image: linear-gradient(180deg, hsl(var(--champagne-from)), hsl(var(--champagne-to)));
     color: hsl(var(--cream-text));
-    @apply font-medium rounded-2xl transition-all;
+    /* transition-colors, NEVER transition-all — mirrors the button.tsx cva base
+       doctrine (button.tsx:11-20). A `<Button className="btn-champagne">` presses
+       via framer's inline whileTap transform, and a plain `<a class="btn-champagne
+       pressable">` presses via `.pressable:active`'s scale transform. transition-all
+       would include `transform`, making CSS retarget those writes and smear the
+       snap-spring press. On the Button path the cva base's `transition-colors`
+       utility masks this by layer order, but a non-Button consumer inherits the
+       smear — so transition only paint props here. */
+    @apply font-medium rounded-2xl transition-colors;
     box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.35),
                 0 10px 28px hsl(var(--champagne-to) / 0.18);
   }
