@@ -1,6 +1,6 @@
 import { Suspense, useState, useEffect, useMemo } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { motion, LayoutGroup } from "framer-motion";
+import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import PageMotion from "@/components/motion/PageMotion";
 import { useMotionSafe } from "@/lib/motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,7 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
 import { useStudioEnabled } from "@/hooks/useStudio";
-import { hapticSelection } from "@/lib/haptics";
+import { hapticSelection, tapTick } from "@/lib/haptics";
 
 // Browse merged into Home, the catalog now lives in the Home feed.
 // Simplified IA: My Courses + Sessions + Events collapse into one "Learn" tab
@@ -114,6 +114,16 @@ const StudentLayout = ({ children }: Props) => {
   const firstName = profile?.full_name?.split(" ")[0] ?? "Student";
 
   return (
+    // vaul background-scale GO/NO-GO (P4-T4): vaul's `shouldScaleBackground`
+    // needs a `[vaul-drawer-wrapper]` on the element it scales — but that element
+    // is THIS layout root, which contains the fixed mobile tab bar and the sticky
+    // header. vaul scales the wrapper via `transform: scale(...)`, and a transform
+    // establishes a containing block for every `position: fixed`/`sticky`
+    // descendant (CSS spec — identical on Blink/WebKit, so it reproduces on the
+    // Android WebView we ship). The tab bar + header would re-anchor to the scaled
+    // wrapper and lose viewport-fixing while any sheet is open. → NO-GO: the
+    // wrapper is NOT added; sheets ship without background scale (matches P4-T1's
+    // `shouldScaleBackground` OFF). Reconciles brief acceptance #2 accordingly.
     <div className="flex min-h-screen bg-canvas">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[9999] focus:bg-surface focus:text-foreground focus:px-4 focus:py-2 focus:rounded-lg">Skip to content</a>
       {/* Desktop sidebar - visible at md+ (768px) */}
@@ -209,17 +219,45 @@ const StudentLayout = ({ children }: Props) => {
         </div>
       </aside>
 
-      {/* Mobile sidebar overlay, respects iOS safe-area */}
-      {sidebarOpen && (
-        <div data-overlay-open="true" className="fixed inset-0 z-50 md:hidden">
-          <div
-            className="absolute inset-0 bg-black/60 animate-fade-in"
-            onClick={() => setSidebarOpen(false)}
-          />
-          <aside className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex flex-col safe-top safe-bottom animate-fade-in">
+      {/* Mobile sidebar overlay, respects iOS safe-area. AnimatePresence gives it
+          a real exit: the backdrop fades and the panel slides back to x:-100% on
+          the glide spring (both transform/opacity-only). The container stays a
+          plain motion element so AnimatePresence defers unmount until the panel's
+          exit finishes — and keeps `data-overlay-open` mounted for App.tsx's
+          hardware-back Escape dispatch throughout the close. */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          // `data-overlay-open` + hit-testing are driven off `sidebarOpen`, NOT off
+          // mount: AnimatePresence keeps this subtree mounted through the exit glide,
+          // so once the user closes it the backdrop/panel must go click-through (else
+          // the fading backdrop swallows every tap on the freshly-navigated page) and
+          // must stop advertising an open overlay (else App.tsx's hardware-back keeps
+          // dispatching Escape at a listener that's already torn down). `pointerEvents`
+          // is inherited, so setting it on the container makes the backdrop + aside
+          // click-through during exit without gating each child.
+          <motion.div
+            data-overlay-open={sidebarOpen ? "true" : undefined}
+            style={{ pointerEvents: sidebarOpen ? "auto" : "none" }}
+            className="fixed inset-0 z-50 md:hidden"
+          >
+            <motion.div
+              className="absolute inset-0 bg-black/60"
+              onClick={() => setSidebarOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={motionSafe.springs.glide}
+            />
+            <motion.aside
+              className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex flex-col safe-top safe-bottom"
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={motionSafe.springs.glide}
+            >
             <div className="flex items-center justify-between p-6">
               <LevelUpWordmark className="h-8 w-auto text-foreground" />
-              <button aria-label="Close menu" onClick={() => setSidebarOpen(false)} className="-mr-1.5 h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl text-muted-foreground">
+              <button aria-label="Close menu" onClick={() => { void tapTick(); setSidebarOpen(false); }} className="-mr-1.5 h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl text-muted-foreground">
                 <X className="h-6 w-6" />
               </button>
             </div>
@@ -282,9 +320,10 @@ const StudentLayout = ({ children }: Props) => {
               )}
             </nav>
             </LayoutGroup>
-          </aside>
-        </div>
-      )}
+            </motion.aside>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -294,7 +333,7 @@ const StudentLayout = ({ children }: Props) => {
             the logo). */}
         <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/80 backdrop-blur-xl safe-top min-h-16">
           <div className="flex items-center gap-2">
-            <button aria-label="Open menu" className="md:hidden -ml-1.5 text-muted-foreground h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl" onClick={() => setSidebarOpen(true)}>
+            <button aria-label="Open menu" className="md:hidden -ml-1.5 text-muted-foreground h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl" onClick={() => { void tapTick(); setSidebarOpen(true); }}>
               <Menu className="h-6 w-6" />
             </button>
             <Link to="/home" aria-label="LevelUp home" className="md:hidden flex items-center">
@@ -306,14 +345,14 @@ const StudentLayout = ({ children }: Props) => {
             <div className="relative">
               <button
                 aria-label="Notifications"
-                onClick={() => setNotifOpen(!notifOpen)}
+                onClick={() => { void tapTick(); setNotifOpen(!notifOpen); }}
                 className="relative text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center focus-ring press-scale rounded-md"
               >
                 <Bell className="h-5 w-5" />
                 {notifLoading ? (
                   <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-muted-foreground/50" />
                 ) : unreadCount > 0 ? (
-                  <span className="absolute top-1.5 right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold leading-none text-white bg-red-500 rounded-full">
+                  <span className="absolute top-1.5 right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold leading-none text-white bg-[hsl(var(--destructive))] rounded-full">
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 ) : null}
@@ -331,7 +370,7 @@ const StudentLayout = ({ children }: Props) => {
 
             <div className="relative">
               <button
-                onClick={() => setDropdownOpen(!dropdownOpen)}
+                onClick={() => { void tapTick(); setDropdownOpen(!dropdownOpen); }}
                 aria-label="Account menu"
                 aria-haspopup="menu"
                 aria-expanded={dropdownOpen}
@@ -341,10 +380,34 @@ const StudentLayout = ({ children }: Props) => {
                 <ChevronDown className="h-3 w-3 text-muted-foreground hidden sm:block" />
               </button>
 
-              {dropdownOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
-                  <div data-overlay-open="true" className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-lg shadow-lg py-1 z-50">
+              <AnimatePresence>
+                {dropdownOpen && (
+                  // `contents` wrapper: a motion element AnimatePresence can track
+                  // for exit deferral without introducing a layout box, so the
+                  // click-catcher and menu keep their original positioning context.
+                  <motion.div className="contents">
+                  {/* Full-screen click-catcher: gated off `dropdownOpen` so it stops
+                      catching taps the instant the menu is dismissed — AnimatePresence
+                      holds it mounted through the exit, and an ungated catcher would be
+                      a full-screen input dead-zone over the page for the exit duration. */}
+                  <div className="fixed inset-0 z-40" style={{ pointerEvents: dropdownOpen ? "auto" : "none" }} onClick={() => setDropdownOpen(false)} />
+                  <motion.div
+                    // Off `dropdownOpen`, not mount: cleared on close so App.tsx's
+                    // hardware-back stops matching this overlay once the listener is
+                    // gone, letting a second back-press walk history instead of no-op.
+                    data-overlay-open={dropdownOpen ? "true" : undefined}
+                    className="absolute right-0 mt-2 w-48 origin-top-right bg-surface border border-border rounded-lg shadow-lg py-1 z-50"
+                    // Gated off `dropdownOpen`, not mount: opacity→0 does not disable
+                    // hit-testing, so without this the fading menu stays tappable through
+                    // its ~200ms snap exit and a tap fires a real navigate()/signOut().
+                    // Set on the menu (not the `contents` wrapper, which generates no box
+                    // and so ignores pointer-events) to clear its whole subtree of buttons.
+                    style={{ pointerEvents: dropdownOpen ? "auto" : "none" }}
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.96 }}
+                    transition={motionSafe.springs.snap}
+                  >
                     {(profile?.role === "admin" || profile?.role === "owner") && (
                       <button
                         onClick={() => { setDropdownOpen(false); navigate("/admin"); }}
@@ -368,9 +431,10 @@ const StudentLayout = ({ children }: Props) => {
                       <LogOut className="h-4 w-4" />
                       Sign out
                     </button>
-                  </div>
-                </>
-              )}
+                  </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         </header>
