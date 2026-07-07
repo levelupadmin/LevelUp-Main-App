@@ -143,7 +143,7 @@ export default function ChampagneDust({
             // animation is already auto-composited by the browser for its
             // duration, so the hint bought nothing but pinned 22 permanent
             // layers for the whole mount. Let the animation own promotion.
-            animation: `champagne-rise ${p.duration}s ease-out ${p.delay}s forwards`,
+            animation: `champagne-rise ${p.duration}s var(--ease-out) ${p.delay}s forwards`,
           }}
         />
       ))}

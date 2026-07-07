@@ -345,7 +345,15 @@
   .btn-champagne {
     background-image: linear-gradient(180deg, hsl(var(--champagne-from)), hsl(var(--champagne-to)));
     color: hsl(var(--cream-text));
-    @apply font-medium rounded-2xl transition-all;
+    /* transition-colors, NEVER transition-all — mirrors the button.tsx cva base
+       doctrine (button.tsx:11-20). A `<Button className="btn-champagne">` presses
+       via framer's inline whileTap transform, and a plain `<a class="btn-champagne
+       pressable">` presses via `.pressable:active`'s scale transform. transition-all
+       would include `transform`, making CSS retarget those writes and smear the
+       snap-spring press. On the Button path the cva base's `transition-colors`
+       utility masks this by layer order, but a non-Button consumer inherits the
+       smear — so transition only paint props here. */
+    @apply font-medium rounded-2xl transition-colors;
     box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.35),
                 0 10px 28px hsl(var(--champagne-to) / 0.18);
   }

@@ -274,10 +274,19 @@ export default function CheckoutPage() {
   // into view — lights two identical pay actions in one viewport. We observe the
   // in-card button and suppress the sticky bar the moment it's on screen, so
   // exactly one pay action is lit at any scroll offset. The negative bottom
-  // margin (~ the bar's own height incl. safe area) means the button only counts
-  // as "in view" once it clears the sticky bar's footprint — no frame where the
-  // lit bar overlaps the lit button. No IntersectionObserver (SSR / older
-  // WebView) → stays false → bar shown, preserving the historical behaviour.
+  // margin must equal the sticky bar's OWN rendered footprint so the in-card
+  // button counts as "in view" (and the bar cedes) exactly as it reaches the
+  // bar's top edge — no frame where the lit in-card button peeks ABOVE the still-
+  // mounted bar. The bar's height is content + env(safe-area-inset-bottom), which
+  // varies per device; the old hardcoded -96px was a GUESS at that sum and
+  // overshot by the safe-area amount on every 0-safe-area surface (375/360,
+  // desktop, most WebViews), flipping the gate ~24px late and leaving a ~24px
+  // band where both CTAs lit at steady state. So we drive the margin off the
+  // bar's MEASURED height (`stickyBarHeight`, reported via StickyPayBar#onMeasure)
+  // — exact on every device. Seeded with the bar's content-only footprint (73px)
+  // so the very first observer never overshoots before the measure lands; the
+  // measure only ever GROWS it by the real safe-area inset. No IntersectionObserver
+  // (SSR / older WebView) → stays false → bar shown, preserving historical behaviour.
   //
   // MUST use a callback ref (useInViewRef), NOT framer's useInView: this button
   // renders inside <RevealOnMount> below, whose skeleton branch owns the first
@@ -286,8 +295,9 @@ export default function CheckoutPage() {
   // null node, so it never re-observed the button once it appeared on the next
   // frame — the gate stayed false forever and BOTH champagne CTAs lit. A callback
   // ref re-subscribes on the actual attach, so the gate flips correctly.
+  const [stickyBarHeight, setStickyBarHeight] = useState(73);
   const [inCardPayRef, inCardPayInView] = useInViewRef<HTMLButtonElement>({
-    rootMargin: "0px 0px -96px 0px",
+    rootMargin: `0px 0px -${stickyBarHeight}px 0px`,
   });
 
   // Motion presets (collapse to instant under reduced motion) for the coupon
@@ -1064,7 +1074,7 @@ export default function CheckoutPage() {
                       }}
                       whileTap={pressTap}
                       aria-label="Remove promo code"
-                      className="min-h-[44px] min-w-[44px] rounded-full hover:bg-[hsl(var(--accent-emerald)/0.2)] flex items-center justify-center transition-colors"
+                      className="min-h-[44px] min-w-[44px] rounded-full hover:bg-[hsl(var(--accent-emerald)/0.2)] flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
                     >
                       <X className="h-6 w-6 text-[hsl(var(--accent-emerald))]" aria-hidden />
                     </motion.button>
@@ -1285,6 +1295,7 @@ export default function CheckoutPage() {
             paying={paying}
             disabled={isStaged && total <= 0}
             onPay={handlePay}
+            onMeasure={setStickyBarHeight}
           />
         )}
       </AnimatePresence>
