@@ -1010,10 +1010,16 @@ export default function CheckoutPage() {
                   </p>
                 )}
               </div>
-              <div onBlur={() => setGuestTouched((s) => ({ ...s, phone: true }))}>
+              <div>
                 <label htmlFor="guest-phone" className="caption mb-1 block">
                   Phone number
                 </label>
+                {/* countries locked to IN: the guest flow is +91-only at every
+                    validation layer (client, useGuestCheckout, server
+                    normalizePhone) — offering other flags here is a dead-end.
+                    onBlur rides the number input itself, NOT a wrapper div:
+                    focusout bubbles from the country select and marked the
+                    field touched mid-entry. */}
                 <PhoneInput
                   id="guest-phone"
                   value={guestPhone}
@@ -1021,6 +1027,8 @@ export default function CheckoutPage() {
                   placeholder="Phone number"
                   aria-invalid={guestPhoneError}
                   aria-describedby={guestPhoneError ? "guest-phone-error" : undefined}
+                  countries={["IN"]}
+                  onBlur={() => setGuestTouched((s) => ({ ...s, phone: true }))}
                 />
                 {guestPhoneError && (
                   <p id="guest-phone-error" role="alert" className="text-xs text-[hsl(var(--destructive-text))] mt-1">

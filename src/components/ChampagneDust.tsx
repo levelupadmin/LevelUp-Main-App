@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Champagne dust — the calm-luxury celebration particle.
@@ -116,7 +117,12 @@ export default function ChampagneDust({
 
   if (particles.length === 0) return null;
 
-  return (
+  // Portaled to <body>: this overlay is position:fixed, and any transformed
+  // ancestor (ThankYou mounts us inside a framer stagger child animating
+  // y:12→0) becomes the containing block for fixed descendants on every
+  // engine we ship to — without the portal the burst clips to the ~96px
+  // check block, then snap-relocates when the transform clears.
+  return createPortal(
     <div className="fixed inset-0 pointer-events-none z-[9998] overflow-hidden">
       <style>{`
         @keyframes champagne-rise {
@@ -147,6 +153,7 @@ export default function ChampagneDust({
           }}
         />
       ))}
-    </div>
+    </div>,
+    document.body
   );
 }
