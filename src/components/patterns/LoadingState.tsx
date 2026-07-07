@@ -1,4 +1,7 @@
+import type { ReactNode } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { durations, easings, useMotionSafe } from "@/lib/motion";
 
 /**
  * LoadingState: unified loading primitives.
@@ -9,6 +12,8 @@ import { cn } from "@/lib/utils";
  * the same cadence.
  *
  * Replaces the 10+ places that reached for raw `animate-pulse bg-surface-2`.
+ *
+ * `<LoadingSwap />` is the reusable skeleton→content handoff — see its own doc.
  */
 
 export function SkeletonLine({
@@ -83,6 +88,81 @@ export function SkeletonGrid({
       {Array.from({ length: count }).map((_, i) => (
         <SkeletonCard key={i} variant={variant} />
       ))}
+    </div>
+  );
+}
+
+/**
+ * LoadingSwap: reusable skeleton→content handoff.
+ *
+ * While `loading` is true it renders `skeleton`; the moment it flips false the
+ * skeleton fades OUT while `children` crossfade + rise IN — one produced moment
+ * instead of an instant pop. Timing comes straight from the motion tokens
+ * (`durations.base` / `easings.out`) so the handoff matches every other
+ * transition in the app; no one-off durations or easings.
+ *
+ * Zero-CLS by construction: skeleton and content are stacked in a SINGLE
+ * CSS-grid cell (both pinned to row/col 1), so they overlap during the
+ * crossfade rather than stacking — the container is sized by whichever child is
+ * mounted, and there is no flash-of-both-heights. Keep the skeleton built to the
+ * content's dimensions and the swap introduces no layout shift.
+ *
+ * Reduced motion ⇒ instant swap: framer is bypassed entirely and the surface
+ * simply renders skeleton-or-content, preserving the pre-choreography behaviour.
+ *
+ * Exported for adoption anywhere a query gates a surface — live on Home today,
+ * and wired-ready for ChapterViewer's loading path (import it directly from
+ * `@/components/patterns/LoadingState`).
+ */
+export function LoadingSwap({
+  loading,
+  skeleton,
+  children,
+  className,
+}: {
+  loading: boolean;
+  skeleton: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const { reduced } = useMotionSafe();
+
+  // Reduced motion: no AnimatePresence, no crossfade — swap in place instantly.
+  if (reduced) {
+    return <div className={className}>{loading ? skeleton : children}</div>;
+  }
+
+  const transition = { duration: durations.base, ease: easings.out };
+
+  return (
+    // grid + one cell (`[&>*]:col/row-start-1`): the skeleton and the content
+    // occupy the SAME cell so they crossfade in place. `mode="sync"` keeps both
+    // mounted through the transition; `initial={false}` stops the first paint
+    // from animating (the skeleton just appears, no fade-in flash).
+    <div className={cn("grid grid-cols-1 [&>*]:col-start-1 [&>*]:row-start-1", className)}>
+      <AnimatePresence initial={false} mode="sync">
+        {loading ? (
+          <motion.div
+            key="skeleton"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={transition}
+            aria-hidden
+          >
+            {skeleton}
+          </motion.div>
+        ) : (
+          <motion.div
+            key="content"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={transition}
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
