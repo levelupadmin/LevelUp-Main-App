@@ -108,18 +108,21 @@ export default function UpNextList({ siblings, currentIndex, currentChapterId, c
 
   return (
     <>
-      {/* Momentum header: "Lesson N of M · Module X" context line + a
-          course-level progress bar. The fill is a transform-only scaleX
-          (per the motion/perf budget — no width animation) that glides to its
-          new fraction on the glide spring whenever a lesson completes;
-          collapses to an instant set under reduced motion. */}
+      {/* Momentum header: a course-level COMPLETION readout (label + a
+          "done / total" count + the progress bar below). This is the completion
+          half of the counter family — the position counter ("Lesson N of M")
+          lives once, in the main-column header, and is deliberately NOT repeated
+          here. The label carries the module name only when it's real context;
+          it falls back to "Course progress" for single-section / placeholder
+          courses (suppressed upstream, so moduleTitle is already null there).
+          The bar fill is a transform-only scaleX (per the motion/perf budget —
+          no width animation) that glides to its new fraction on the glide spring
+          whenever a lesson completes; collapses to an instant set under reduced
+          motion. */}
       <div className="mb-3 space-y-2">
         <div className="flex items-baseline justify-between gap-2">
           <p className="min-w-0 truncate text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-            Lesson {currentIndex + 1} of {siblings.length}
-            {moduleTitle && (
-              <span className="text-[hsl(var(--cream))]/70"> · {moduleTitle}</span>
-            )}
+            {moduleTitle || "Course progress"}
           </p>
           <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
             {completedCount}/{siblings.length}
@@ -258,7 +261,7 @@ export default function UpNextList({ siblings, currentIndex, currentChapterId, c
       {courseId && siblings.length > 6 && (
         <Link
           to={`/courses/${courseId}`}
-          className="block w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-2 mt-1"
+          className="flex w-full min-h-[44px] items-center justify-center text-center text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
         >
           View all {siblings.length} lessons
         </Link>

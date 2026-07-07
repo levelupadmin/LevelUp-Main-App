@@ -15,7 +15,7 @@ interface EmptyStateProps {
 }
 
 const ctaClasses =
-  "focus-ring pressable mt-6 inline-flex items-center justify-center h-10 px-5 rounded-full bg-cream text-cream-text font-medium text-sm hover:bg-cream/90 transition-colors";
+  "focus-ring pressable mt-6 inline-flex items-center justify-center h-11 px-5 rounded-full bg-cream text-cream-text font-medium text-sm hover:bg-cream/90 transition-colors";
 
 /**
  * The standardized empty state: a cream-ringed icon, a serif-italic headline,

@@ -73,36 +73,57 @@ const greetingForHour = (hour: number) =>
 // MEASURE the real behaviour on the actual device and only fall back where sticky
 // provably fails to park.
 //
-// Measurement: drop a hidden `position: sticky` probe at the top of the document,
-// nudge the real scroller a few px, read whether the probe held its viewport line,
-// then restore the scroll position — all synchronously in one tick, so the browser
-// never paints the intermediate state (imperceptible; changes NO CSS/overflow, so
-// it is categorically NOT the June-14 class of persistent-overflow edits).
+// Measurement: drop two hidden 1px probes in normal flow at the top of the
+// document — one `position: sticky`, one static reference — nudge the real
+// scroller a few px, then read BOTH rects in a single layout pass to see
+// whether the sticky probe held its viewport line while its static sibling
+// rode the scroll, then restore the scroll position — all synchronously in one
+// tick, so the browser never paints the intermediate state (imperceptible;
+// changes NO CSS/overflow, so it is categorically NOT the June-14 class of
+// persistent-overflow edits).
+//
+// Read/write discipline (this runs on mount and on every re-measure): all the
+// scroller reads that gate the probe happen BEFORE any mutation, so the common
+// short-page / skeleton case (nothing to scroll ⇒ parking is moot) bails with
+// zero DOM writes and zero scroll writes — it never inserts a probe and never
+// wakes useScroll's subscribers. On the measuring path the two rect reads are
+// batched after the single nudge (no read→write→read interleave), so the probe
+// costs one forced layout, not the previous double-reflow thrash.
 const detectStickyParkingBroken = (): boolean => {
   if (typeof document === "undefined") return false;
   const scroller = document.scrollingElement as HTMLElement | null;
   if (!scroller) return false;
-  const probe = document.createElement("div");
-  probe.style.cssText =
-    "position:sticky;top:0;height:1px;width:1px;visibility:hidden;pointer-events:none;";
-  document.body.insertBefore(probe, document.body.firstChild);
+
+  // ── Reads first, mutations second ──
   const start = scroller.scrollTop;
+  const room = scroller.scrollHeight - scroller.clientHeight;
+  if (room < 1) return false; // nothing to scroll ⇒ parking is moot ⇒ sticky is fine
+
+  const stickyProbe = document.createElement("div");
+  stickyProbe.style.cssText =
+    "position:sticky;top:0;height:1px;width:1px;visibility:hidden;pointer-events:none;";
+  const flowProbe = document.createElement("div");
+  flowProbe.style.cssText =
+    "height:1px;width:1px;visibility:hidden;pointer-events:none;";
+  document.body.insertBefore(flowProbe, document.body.firstChild);
+  document.body.insertBefore(stickyProbe, flowProbe);
   try {
-    const room = scroller.scrollHeight - scroller.clientHeight;
-    if (room < 1) return false; // nothing to scroll ⇒ parking is moot ⇒ sticky is fine
-    const before = probe.getBoundingClientRect().top;
-    // Nudge in whichever direction the scroller can actually move.
+    // Nudge in whichever direction the scroller can actually move (one write).
     const delta = start + 6 <= room ? 6 : -6;
     scroller.scrollTop = start + delta;
     const moved = scroller.scrollTop - start;
     if (Math.abs(moved) < 1) return false;
-    const after = probe.getBoundingClientRect().top;
-    // A working sticky holds its line (after ≈ before); a broken one rides the
-    // scroll (after drifts by ~ -moved).
-    return Math.abs(after - before) >= Math.abs(moved) / 2;
+    // Both reads land in the same forced layout — batched, no interleaved write.
+    const stickyTop = stickyProbe.getBoundingClientRect().top;
+    const flowTop = flowProbe.getBoundingClientRect().top;
+    // A working sticky holds its viewport line while the static sibling rides
+    // the scroll, so their gap ≈ the scroll delta; a broken sticky rides too,
+    // collapsing the gap to ≈ 0.
+    return Math.abs(stickyTop - flowTop) < Math.abs(moved) / 2;
   } finally {
     scroller.scrollTop = start; // restore same-tick, before paint
-    probe.remove();
+    stickyProbe.remove();
+    flowProbe.remove();
   }
 };
 
@@ -178,14 +199,60 @@ const Home = () => {
   // condenses, so the parked band reads as a single tight line once collapsed.
   const subOpacity = useTransform(scrollY, [0, 60], [1, 0]);
 
-  // Measured once on mount (and re-measured if the primary pointer flips, which
-  // changes whether the coarse overflow rule applies). Defaults to `false` so the
-  // first paint uses native sticky — identical to the fallback at scrollY 0, so the
-  // one-time flip on a broken engine is seamless.
+  // Measured, then RE-measured whenever the result could change. Defaults to
+  // `false` so the first paint uses native sticky — identical to the fallback at
+  // scrollY 0, so the one-time flip on a broken engine is seamless.
+  //
+  // The probe early-returns `false` when the scroller has no room to move
+  // (`scrollHeight - clientHeight < 1`) — parking is moot when nothing scrolls,
+  // but that state also occurs on the SHORT first paint (while HomeFeedSkeleton is
+  // mounted) and on short/tablet viewports, where it does NOT mean sticky works.
+  // A single mount-time measurement would latch that `false` and leave the JS
+  // fallback disarmed forever on a coarse engine whose native sticky is genuinely
+  // broken — the band would ride the scroll once the tall real feed lands. So we
+  // re-measure on the inputs that can flip room-to-scroll or sticky behaviour:
+  //   • `finePointer` — flips whether the coarse overflow rule applies at all.
+  //   • `isFeedLoading` — the skeleton→real-feed handoff is when the page grows
+  //     from short to tall; effects run after commit, so `scrollHeight` already
+  //     reflects the real feed by the time this re-runs.
+  //   • resize / orientationchange — a rotate or split-view resize can cross the
+  //     room<1 boundary in either direction (rAF-throttled so a rapid resize
+  //     stream doesn't thrash the synchronous scroll-nudge probe).
   const [stickyParkingBroken, setStickyParkingBroken] = useState(false);
+
+  // NOTE — no offscreen gate for the JS fallback (and none is possible). The
+  // fallback PINS the band: `y: scrollY` translates it back down by exactly the
+  // scroll amount so it holds its viewport line for the life of Home's scroll
+  // context — the same pin native `position: sticky` gives on the working path.
+  // A pinned element is, by construction, always at the top of the viewport, so
+  // it can never self-report "offscreen": an IntersectionObserver reads the
+  // transformed box and always sees it in-view (an earlier revision gated on
+  // `useInView` here — that gate could never disengage and, worse, could latch
+  // the band offscreen if Home mounted at non-zero scroll on a broken engine).
+  // FeaturedHero can gate its ken-burns on inView because its section actually
+  // scrolls away; a pinned band cannot. So the scroll-linked update genuinely
+  // has to run every frame while the band is pinned — the mitigation is not to
+  // skip the work but to keep it OFF the main thread: the fallback branch below
+  // promotes the band to its own compositor layer (`transform-gpu
+  // will-change-transform`), so framer's per-frame `y` write composites on the
+  // GPU instead of stacking main-thread raster on the inner-header condense
+  // transforms — which is the actual source of the mid-range Android jank.
   useEffect(() => {
-    setStickyParkingBroken(detectStickyParkingBroken());
-  }, [finePointer]);
+    const measure = () => setStickyParkingBroken(detectStickyParkingBroken());
+    let raf = 0;
+    const scheduleMeasure = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(measure);
+    };
+    measure();
+    window.addEventListener("resize", scheduleMeasure);
+    window.addEventListener("orientationchange", scheduleMeasure);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", scheduleMeasure);
+      window.removeEventListener("orientationchange", scheduleMeasure);
+    };
+  }, [finePointer, isFeedLoading]);
 
   return (
     <>
@@ -235,21 +302,21 @@ const Home = () => {
       <motion.div
         className={
           stickyParkingBroken
-            ? "relative z-30 -mx-4 md:-mx-8 lg:-mx-10 xl:-mx-12 -mt-6 md:-mt-10"
+            ? // `transform-gpu will-change-transform` promotes the parked band to
+              // its own compositor layer so the scroll-linked translate composites
+              // off the main thread instead of stacking main-thread raster work on
+              // top of the inner-header condense transforms every scroll frame.
+              "relative z-30 -mx-4 md:-mx-8 lg:-mx-10 xl:-mx-12 -mt-6 md:-mt-10 transform-gpu will-change-transform"
             : "sticky top-[calc(4rem+env(safe-area-inset-top))] z-30 -mx-4 md:-mx-8 lg:-mx-10 xl:-mx-12 -mt-6 md:-mt-10"
         }
         style={stickyParkingBroken ? { y: scrollY } : undefined}
       >
-        <motion.header
-          className="px-4 md:px-8 lg:px-10 xl:px-12 pt-6 md:pt-10 pb-3 bg-canvas"
-          style={
-            reduced
-              ? undefined
-              : {
-                  opacity: greetingOpacity,
-                }
-          }
-        >
+        {/* The header carries the SOLID bg-canvas fill and must stay fully
+            opaque so the parked band actually occludes the hero image + catalog
+            title/pills scrolling beneath it — hence NO opacity here. The
+            condense-fade lives on the inner text wrapper below, so only the
+            greeting text recedes while the backdrop keeps blocking. */}
+        <motion.header className="px-4 md:px-8 lg:px-10 xl:px-12 pt-6 md:pt-10 pb-3 bg-canvas">
           <motion.div
             style={
               reduced
@@ -257,6 +324,7 @@ const Home = () => {
                 : {
                     scale: greetingScale,
                     y: greetingY,
+                    opacity: greetingOpacity,
                     transformOrigin: "left center",
                   }
             }

@@ -633,4 +633,32 @@
     opacity: 1;
     transform: translateY(0);
   }
+
+  /* ── Sonner toast — tokenized enter/exit ──
+     Sonner ships hard-coded 400/500/200ms lifecycle transitions. Re-point them
+     at the --motion and --ease tokens so the Sonner toaster (mounted in App.tsx
+     via src/components/ui/sonner.tsx) moves on the same clock as the Radix
+     toaster (src/components/ui/toast.tsx: open=base, closed=fast). The
+     `.lu-sonner-toast` hook class is attached through <Toaster toastOptions>, so
+     nothing patches Sonner's internals. Sonner injects its own styles UNLAYERED,
+     so this block must stay outside @layer (it already is) for the class
+     selector to win over Sonner's zero-specificity :where() base rules. Sitting
+     under prefers-reduced-motion:no-preference means reduced-motion users never
+     get these transitions — Sonner's exit collapses to an instant cut. */
+  [data-sonner-toast].lu-sonner-toast {
+    transition:
+      transform var(--motion-base) var(--ease-out),
+      opacity var(--motion-base) var(--ease-out),
+      height var(--motion-base) var(--ease-out),
+      box-shadow var(--motion-fast) var(--ease-out);
+  }
+  /* Exit — snappy fade-out on the fast token, mirroring the Radix toast's
+     data-[state=closed]:duration-fast. Covers both the front toast and stacked
+     toasts (Sonner sets data-removed="true" on every dismissing toast). */
+  [data-sonner-toast].lu-sonner-toast[data-removed="true"] {
+    transition:
+      transform var(--motion-base) var(--ease-out),
+      opacity var(--motion-fast) var(--ease-out),
+      height var(--motion-base) var(--ease-out);
+  }
 }

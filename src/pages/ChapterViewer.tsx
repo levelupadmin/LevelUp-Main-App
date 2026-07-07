@@ -42,7 +42,44 @@ import ChapterQna from "@/components/chapter/ChapterQna";
 // The staged completion arc: the course ring animates in place, THEN the
 // takeover enters, THEN (once the takeover has fully exited) the recap follows
 // — one overlay on screen at a time. `idle` is the resting state.
-type ArcPhase = "idle" | "takeover" | "recapWait" | "recap";
+// `recapOut` is the recap's mirror of `recapWait`: dismissing the recap flips
+// it to `recapOut` (which closes the recap so AnimatePresence can play the
+// glide-out exit) and navigation is deferred to the recap's `onExited`, once
+// that exit has fully played. Navigating straight from the dismiss handler
+// would unmount the portal synchronously and the exit would never run.
+type ArcPhase = "idle" | "takeover" | "recapWait" | "recap" | "recapOut";
+
+// Generic section titles that carry no real "module" context — the auto-created
+// single-bucket names a course gets when it has no authored modules. When the
+// current section resolves to one of these (or the course has a single section),
+// the module label is suppressed rather than shown as junk context.
+const PLACEHOLDER_MODULE_TITLES = new Set([
+  "course episodes",
+  "episodes",
+  "lessons",
+  "all lessons",
+  "content",
+  "untitled",
+  "untitled section",
+  "default section",
+  "section 1",
+]);
+
+/**
+ * The module label to show in the Up Next momentum line, or null to suppress it.
+ * Suppressed when the course has a single section (no true modules) or when that
+ * section's title is a generic placeholder — either way there's no meaningful
+ * module to name.
+ */
+const moduleLabelFor = (
+  sectionCount: number,
+  sectionTitle: string | null | undefined,
+): string | null => {
+  const title = sectionTitle?.trim();
+  if (!title || sectionCount <= 1) return null;
+  if (PLACEHOLDER_MODULE_TITLES.has(title.toLowerCase())) return null;
+  return title;
+};
 
 // The chapter sidebar tab strip. Radix Tabs (via the shadcn wrapper) already
 // implements the full WAI-ARIA tabs contract — role=tablist/tab/tabpanel,
@@ -416,8 +453,13 @@ const ChapterViewer = () => {
       if (allSections && allSections.length > 0) {
         // Module context for the Up Next momentum line: the title of the
         // section this chapter lives in. Uses the rows we already fetched.
+        // Suppressed for single-section courses / placeholder bucket titles so
+        // the line never surfaces junk context like "COURSE EPISODES".
         setCurrentModuleTitle(
-          allSections.find((s) => s.id === ch.section_id)?.title ?? null,
+          moduleLabelFor(
+            allSections.length,
+            allSections.find((s) => s.id === ch.section_id)?.title,
+          ),
         );
         const sectionIds = allSections.map((s) => s.id);
         const { data: allChapters } = await supabase
@@ -1050,7 +1092,11 @@ const ChapterViewer = () => {
       />
       <CompletionRecap
         open={arcPhase === "recap"}
-        onClose={() => {
+        onClose={() => setArcPhase("recapOut")}
+        onExited={() => {
+          // Reached only after the glide-out has fully played (the recap exits
+          // solely on the recap→recapOut dismissal), so it's safe to settle the
+          // arc and navigate home here — deferred until the animation is done.
           setArcPhase("idle");
           navigate("/");
         }}
@@ -1123,7 +1169,7 @@ const ChapterViewer = () => {
           variant="ghost"
           size="sm"
           onClick={() => navigate(courseId ? `/courses/${courseId}` : "/home")}
-          className="shrink-0 max-w-[45vw] sm:max-w-xs"
+          className="shrink-0 min-h-[44px] max-w-[45vw] sm:max-w-xs"
         >
           <ArrowLeft className="h-4 w-4 mr-1 shrink-0" />
           <span className="truncate">
@@ -1170,7 +1216,13 @@ const ChapterViewer = () => {
           <AmbientGlow
             src={chapter.thumbnail_url ?? chapter.vdocipher_thumbnail_url}
             width={320}
-            intensity={0.22}
+            // The player sits on the near-black chapter surface, so the muted
+            // 0.22 / saturate-0.6 default collapsed into the black and the halo
+            // never read. Lift the opacity and restore most of the colour so the
+            // bloom actually blooms on a dark poster at phone widths. Still a
+            // single blurred small <img> — no backdrop-filter, blur uncapped.
+            intensity={0.42}
+            saturate={0.95}
           >
             <ChapterMediaPlayer chapter={chapter} updateProgress={updateProgress} lastPosition={lastPosition} />
           </AmbientGlow>
@@ -1192,12 +1244,22 @@ const ChapterViewer = () => {
                       pct={coursePct}
                       size={34}
                       emphasis
-                      label
                       className="shrink-0"
                     />
                   )}
+                  {/* One counter family: the position ("Lesson N of M") and the
+                      course-completion percent read as two clearly-labelled
+                      metrics, never conflated. The ring is the graphical echo of
+                      the completion percent — not a second number crowding the
+                      position. */}
                   <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
                     Lesson {currentIndex + 1} of {siblings.length}
+                    {courseTotal > 0 && (
+                      <span className="text-[hsl(var(--cream))]/45">
+                        {" · "}
+                        {coursePct}% complete
+                      </span>
+                    )}
                   </p>
                 </div>
                 <h1 className="text-2xl sm:text-4xl font-bold tracking-[-0.01em] leading-[1.1]">
@@ -1312,9 +1374,6 @@ const ChapterViewer = () => {
                 </p>
                 <p className="text-sm font-semibold truncate">{courseTitle}</p>
               </div>
-              <span className="text-xs text-muted-foreground font-mono shrink-0">
-                {currentIndex + 1}/{siblings.length}
-              </span>
             </div>
           )}
           <Tabs
@@ -1351,7 +1410,7 @@ const ChapterViewer = () => {
                     <TabsTrigger
                       key={t.key}
                       value={t.key}
-                      className="relative h-full min-h-11 gap-1 px-1 text-xs data-[state=active]:bg-transparent data-[state=active]:text-[hsl(var(--cream-text))] data-[state=active]:shadow-none focus-visible:ring-[hsl(var(--cream))]"
+                      className="relative h-full min-h-11 gap-1 px-1 text-xs transition-colors duration-base ease-out-expo data-[state=active]:bg-transparent data-[state=active]:text-[hsl(var(--cream-text))] data-[state=active]:shadow-none focus-visible:ring-[hsl(var(--cream))]"
                     >
                       {active && (
                         <motion.span

@@ -4,6 +4,7 @@ import { Share2, ArrowRight, X, Check } from "lucide-react";
 import Confetti from "@/components/Confetti";
 import { hapticImpact, hapticNotification } from "@/lib/haptics";
 import { useMotionSafe } from "@/lib/motion";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 interface Props {
   open: boolean;
@@ -50,6 +51,12 @@ export default function CompletionTakeover({
   onExited,
 }: Props) {
   const motionSafe = useMotionSafe();
+
+  // Move focus into the dialog on open, trap Tab within it, and restore focus
+  // to the trigger (the covered "Mark complete" button) on close. Keyed on
+  // `open`, so restore fires the instant it dismisses — before AnimatePresence
+  // unmounts the exiting node.
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
 
   // Celebratory haptic on open, and lock body scroll while the takeover is up.
   //
@@ -101,6 +108,11 @@ export default function CompletionTakeover({
           transition={motionSafe.springs.glide}
           onClick={() => (onClose ?? onContinue)()}
         >
+          {/* Focus-trap scope. `display:contents` so it adds no box and the
+              flex layout above is unchanged; the ref lives here rather than on
+              the AnimatePresence child to avoid framer-motion's PopChild ref
+              warning while still wrapping every focusable in the dialog. */}
+          <div ref={dialogRef} className="contents">
           <Confetti active={open} duration={3500} />
 
       {onClose && (
@@ -201,6 +213,7 @@ export default function CompletionTakeover({
             <ArrowRight className="h-4 w-4" />
           </button>
         </div>
+          </div>
           </div>
         </motion.div>
       )}

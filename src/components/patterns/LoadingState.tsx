@@ -96,10 +96,18 @@ export function SkeletonGrid({
  * LoadingSwap: reusable skeleton→content handoff.
  *
  * While `loading` is true it renders `skeleton`; the moment it flips false the
- * skeleton fades OUT while `children` crossfade + rise IN — one produced moment
- * instead of an instant pop. Timing comes straight from the motion tokens
+ * skeleton fades OUT while `children` fade IN — one produced moment instead of an
+ * instant pop. Timing comes straight from the motion tokens
  * (`durations.base` / `easings.out`) so the handoff matches every other
  * transition in the app; no one-off durations or easings.
+ *
+ * ONLY the OPACITY crossfade is owned here — deliberately NO translateY. The
+ * entrance RISE belongs to the content itself (Home's feed rises via its own
+ * `.anim-rise` keyframe). If LoadingSwap ALSO translated the content, that rise
+ * would compose with the child's — two translateYs stacking on different
+ * curves/durations (framer glide vs CSS keyframe) for a doubled, rough glide.
+ * So LoadingSwap crossfades; the content owns its own rise (or simply fades in
+ * cleanly when it brings none).
  *
  * Zero-CLS by construction: skeleton and content are stacked in a SINGLE
  * CSS-grid cell (both pinned to row/col 1), so they overlap during the
@@ -142,21 +150,26 @@ export function LoadingSwap({
     <div className={cn("grid grid-cols-1 [&>*]:col-start-1 [&>*]:row-start-1", className)}>
       <AnimatePresence initial={false} mode="sync">
         {loading ? (
+          // No `aria-hidden` here: the skeleton branch carries the loading live
+          // region (`aria-busy`/`aria-live`), and hiding this wrapper would bury
+          // that region in an aria-hidden subtree so it never announces under
+          // normal motion — while the reduced-motion branch above (which has no
+          // wrapper) would announce. Leaving it exposed keeps the announcement
+          // consistent across both motion paths.
           <motion.div
             key="skeleton"
             initial={{ opacity: 1 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={transition}
-            aria-hidden
           >
             {skeleton}
           </motion.div>
         ) : (
           <motion.div
             key="content"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={transition}
           >
             {children}

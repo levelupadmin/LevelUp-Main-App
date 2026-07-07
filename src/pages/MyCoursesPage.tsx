@@ -13,6 +13,7 @@ import { isNative } from "@/lib/platform";
 import { ProgressRing } from "@/components/progress/ProgressRing";
 import { WeeklyStats } from "@/components/progress/WeeklyStats";
 import { CountUp } from "@/components/motion/CountUp";
+import { EmptyState } from "@/components/EmptyState";
 
 interface EnrolledCourse {
   enrolment_id: string;
@@ -310,28 +311,12 @@ const MyCoursesPage = () => {
             </Button>
           </div>
         ) : courses.length === 0 ? (
-          // Inline empty state (matches the shared <EmptyState> visual language)
-          // so the CTA can be a 44px-tall (h-11) touch target at 360px — the
-          // shared component's CTA is h-10 (40px), which fails the min touch
-          // target on this Learn landing. `.pressable` gives it the same press
-          // feedback as the other CTAs on the page.
-          <div className="anim-rise flex flex-col items-center justify-center text-center px-6 py-12">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full border border-cream/20 bg-surface/60 text-cream mb-5">
-              <BookOpen size={22} strokeWidth={1.5} />
-            </div>
-            <h3 className="font-serif-italic text-xl text-cream">
-              You haven't enrolled in any courses yet
-            </h3>
-            <p className="text-muted-foreground text-sm mt-2 max-w-[300px] leading-relaxed">
-              Explore our catalog and find the perfect program for you.
-            </p>
-            <Link
-              to="/"
-              className="focus-ring pressable mt-6 inline-flex items-center justify-center h-11 px-5 rounded-full bg-cream text-cream-text font-medium text-sm hover:bg-cream/90 transition-colors"
-            >
-              Explore programs
-            </Link>
-          </div>
+          <EmptyState
+            icon={BookOpen}
+            title="You haven't enrolled in any courses yet"
+            sub="Explore our catalog and find the perfect program for you."
+            cta={{ label: "Explore programs", to: "/" }}
+          />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {courses.map((c) => (

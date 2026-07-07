@@ -6,10 +6,20 @@ import { CountUp } from "@/components/motion/CountUp";
 import Confetti from "@/components/Confetti";
 import { hapticImpact, hapticSelection } from "@/lib/haptics";
 import { useMotionSafe } from "@/lib/motion";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 interface CompletionRecapProps {
   open: boolean;
   onClose: () => void;
+  /**
+   * Fired once the glide-out exit animation has fully played and the recap has
+   * unmounted. The completion arc uses this to defer navigation until AFTER the
+   * exit finishes — `onClose` merely flips `open` false so the exit can play,
+   * and the actual route change happens here (mirrors CompletionTakeover's
+   * `onExited`). Without this split, navigating inside `onClose` unmounts the
+   * portal synchronously and AnimatePresence never plays the exit.
+   */
+  onExited?: () => void;
   courseTitle: string;
   instructorName?: string | null;
   /** Total chapters/lessons finished in this course. */
@@ -49,6 +59,7 @@ const accentForIndex = (i: number) => {
 export const CompletionRecap = ({
   open,
   onClose,
+  onExited,
   courseTitle,
   instructorName,
   lessonsCompleted,
@@ -58,6 +69,10 @@ export const CompletionRecap = ({
   const [index, setIndex] = useState(0);
   const [confetti, setConfetti] = useState(false);
   const motionSafe = useMotionSafe();
+
+  // Full dialog focus management: move focus into the story on open, trap Tab,
+  // and restore it to the trigger on close.
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
 
   const hours = Math.floor(minutesWatched / 60);
   const mins = minutesWatched % 60;
@@ -162,7 +177,8 @@ export const CompletionRecap = ({
     }
   }, [open, isLast]);
 
-  // Esc closes. NOTE: this component deliberately does NOT touch
+  // Keyboard: Esc closes; Arrow keys drive the story so advancing isn't
+  // pointer-only. NOTE: this component deliberately does NOT touch
   // document.body.style.overflow — CompletionTakeover is the app's SOLE
   // body-scroll-lock owner (the completion-arc invariant; a second writer here
   // caused the wedged-scroll race the arc was built to fix). The recap is a
@@ -171,13 +187,21 @@ export const CompletionRecap = ({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        advance();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setIndex((i) => Math.max(i - 1, 0));
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, onClose]);
+  }, [open, onClose, advance]);
 
   if (typeof document === "undefined") return null;
 
@@ -185,16 +209,24 @@ export const CompletionRecap = ({
   const Icon = slide.icon;
 
   return createPortal(
-    <AnimatePresence>
+    <AnimatePresence onExitComplete={onExited}>
       {open && (
         <motion.div
           key="completion-recap"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Course recap: ${courseTitle}`}
           className="fixed inset-0 z-[9998] bg-canvas text-foreground safe-top pb-safe overflow-hidden"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={motionSafe.springs.glide}
         >
+          {/* Focus-trap scope. `display:contents` adds no box (layout is
+              unchanged); the ref lives here rather than on the AnimatePresence
+              child to avoid framer-motion's PopChild ref warning while still
+              wrapping every focusable in the dialog. */}
+          <div ref={dialogRef} className="contents">
           <Confetti active={confetti} />
 
       {/* Dimmed course art backdrop */}
@@ -274,6 +306,7 @@ export const CompletionRecap = ({
           Tap anywhere to continue
         </p>
       </div>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>,

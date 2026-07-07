@@ -409,12 +409,16 @@ const CourseDetail = () => {
           {course.hero_image_url && (
             <img
               src={course.hero_image_url}
-              alt={course.title}
-              className="w-full h-56 object-cover opacity-40"
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover opacity-40"
             />
           )}
-          <div className={`${course.hero_image_url ? "absolute inset-0" : ""} p-8 flex flex-col justify-end gap-3`}>
-            <div className="flex items-center gap-2">
+          {/* Content drives the card height (via min-h) rather than being pinned
+              inside the fixed image box — so at phone widths wrapped meta/CTA rows
+              grow the hero instead of being clipped by overflow-hidden. */}
+          <div className="relative p-6 sm:p-8 flex flex-col justify-end gap-3 min-h-[14rem]">
+            <div className="flex flex-wrap items-center gap-2">
               {categoryName && (
                 <Badge variant="secondary" className="font-mono text-xs uppercase tracking-wider">
                   {categoryName}
@@ -426,11 +430,11 @@ const CourseDetail = () => {
                 </Badge>
               )}
             </div>
-            <h1 className="text-3xl font-bold text-foreground">{course.title}</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">{course.title}</h1>
             {course.subtitle && (
               <p className="text-muted-foreground text-base max-w-2xl">{course.subtitle}</p>
             )}
-            <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mt-1">
               {course.instructor_display_name && (
                 <span>by {course.instructor_display_name}</span>
               )}
@@ -451,7 +455,7 @@ const CourseDetail = () => {
                 {totalChapters} lessons
               </span>
             </div>
-            <div className="flex items-center gap-3 mt-2">
+            <div className="flex flex-wrap items-center gap-3 mt-2">
               {hasAccess && totalChapters === 0 ? (
                 // Enrolled but the course has no chapters yet. Don't show a
                 // "Continue Learning" button that does nothing; be honest.
