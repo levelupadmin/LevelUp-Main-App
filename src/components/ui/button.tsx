@@ -28,6 +28,21 @@ const buttonVariants = cva(
         ghost: "hover:bg-muted hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
         glass: "backdrop-blur-xl bg-background/60 border border-border/50 hover:bg-background/80 shadow-design-sm",
+        // The champagne pay moment — the redesign's primary money-path CTA. Mirrors
+        // the `.btn-champagne` treatment (index.css:310) as cva classes: vertical
+        // champagne gradient, warm-dark cream text, soft inner highlight + warm glow.
+        // Hover brightness is explicitly wrapped in `[@media(hover:hover)]` — Tailwind's
+        // bare `hover:` is NOT pointer-gated in this project (no `hoverOnlyWhenSupported`
+        // in tailwind.config.ts, so `hover:` compiles to a plain `&:hover`), and an
+        // ungated hover would leave brightness(1.04) stuck on the primary Pay CTA after
+        // a touch tap on both shipping mobile WebViews. This mirrors `.btn-champagne`'s
+        // own `@media (hover: hover)` gate (index.css:317). Deliberately NO
+        // `:active`/whileTap transform here — framer's inline whileTap owns the press on
+        // the motion path (index.css:320 doctrine); a transform in this class would be a
+        // competing owner. Disabled desaturates + dims (base already applies opacity-50)
+        // — never gray-swaps.
+        champagne:
+          "bg-[linear-gradient(180deg,hsl(var(--champagne-from)),hsl(var(--champagne-to)))] text-[hsl(var(--cream-text))] font-medium rounded-2xl shadow-[inset_0_1px_0_hsl(0_0%_100%/0.35),0_10px_28px_hsl(var(--champagne-to)/0.18)] [@media(hover:hover)]:hover:brightness-[1.04] disabled:saturate-50",
       },
       size: {
         default: "h-10 px-5 py-2",
@@ -37,6 +52,20 @@ const buttonVariants = cva(
         icon: "h-10 w-10",
       },
     },
+    // cva emits classes in this order: base → variant → size → compoundVariants →
+    // caller className. So every sized champagne CTA would otherwise take the size's
+    // radius/weight (lg/xl set `rounded-[12px|14px]`, xl sets `font-semibold`) and
+    // twMerge — keeping the LAST of each conflicting utility — would strip the
+    // champagne variant's own `rounded-2xl` + `font-medium`. This compound re-asserts
+    // both AFTER the size classes so the money CTA renders at the spec'd 16px radius
+    // and medium weight on every size (matching `.btn-champagne`), while a caller's
+    // className (emitted last) can still override intentionally.
+    compoundVariants: [
+      {
+        variant: "champagne",
+        class: "rounded-2xl font-medium",
+      },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",

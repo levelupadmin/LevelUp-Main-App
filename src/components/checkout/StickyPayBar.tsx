@@ -54,6 +54,7 @@ export default function StickyPayBar({
           </p>
         </div>
         <Button
+          variant="champagne"
           size="lg"
           className="h-12 shrink-0 px-6"
           onClick={onPay}
