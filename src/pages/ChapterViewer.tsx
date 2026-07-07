@@ -893,7 +893,7 @@ const ChapterViewer = () => {
       .select("chapter_id, completed_at")
       .eq("user_id", user.id)
       .eq("course_id", courseId);
-    const completedCount = (allProgress || []).filter((p) => p.completed_at).length;
+    const completedRows = (allProgress || []).filter((p) => p.completed_at);
 
     // Authoritative chapter total for milestone/certificate maths. The
     // `siblings` state can be empty if its fetch failed or raced a chapter
@@ -902,6 +902,7 @@ const ChapterViewer = () => {
     // sections join instead, and skip the celebration logic entirely when
     // the count can't be established.
     let totalCount: number | null = null;
+    let liveChapterIds: Set<string> | null = null;
     const { data: secRows, error: secErr } = await supabase
       .from("sections")
       .select("id")
@@ -910,14 +911,25 @@ const ChapterViewer = () => {
       const sectionIds = secRows.map((s) => s.id);
       if (sectionIds.length === 0) {
         totalCount = 0;
+        liveChapterIds = new Set();
       } else {
-        const { count, error: countErr } = await supabase
+        const { data: chapRows, error: countErr } = await supabase
           .from("chapters")
-          .select("id", { count: "exact", head: true })
+          .select("id")
           .in("section_id", sectionIds);
-        if (!countErr && typeof count === "number") totalCount = count;
+        if (!countErr && chapRows) {
+          liveChapterIds = new Set(chapRows.map((c) => c.id));
+          totalCount = chapRows.length;
+        }
       }
     }
+
+    // Stale chapter_progress rows (chapters edited/deleted after a learner
+    // enrolled) must not count toward completion, or the arc fires early —
+    // only progress rows pointing at a chapter that still exists count.
+    const completedCount = liveChapterIds
+      ? completedRows.filter((p) => liveChapterIds.has(p.chapter_id)).length
+      : completedRows.length;
 
     // Is the whole course finished now? Completion-based (authoritative count),
     // not positional — a student who finishes lessons out of order still gets

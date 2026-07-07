@@ -262,9 +262,22 @@ const Home = () => {
   useEffect(() => {
     const measure = () => setStickyParkingBroken(detectStickyParkingBroken());
     let raf = 0;
-    const scheduleMeasure = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(measure);
+    let idleTimer = 0;
+    let lastScrollTs = 0;
+    const onScroll = () => {
+      lastScrollTs = performance.now();
+    };
+    // The probe writes scrollTop, and a programmatic scrollTop write cancels
+    // an in-flight Blink fling — Android Chrome fires `resize` on URL-bar
+    // collapse DURING scrolling, so probing straight off resize can dead-stop
+    // the user's fling. Wait for ~200ms of scroll silence before probing.
+    const measureWhenScrollIdle = () => {
+      window.clearTimeout(idleTimer);
+      if (performance.now() - lastScrollTs < 200) {
+        idleTimer = window.setTimeout(measureWhenScrollIdle, 200);
+      } else {
+        measure();
+      }
     };
     // Defer the (re)measure a frame instead of probing synchronously in the
     // effect body. This effect re-runs on the `isFeedLoading` skeleton→content
@@ -274,11 +287,18 @@ const Home = () => {
     // same rAF gate the resize/orientation path already uses. The
     // reads-before-writes batching inside detectStickyParkingBroken is
     // unchanged.
+    const scheduleMeasure = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(measureWhenScrollIdle);
+    };
     scheduleMeasure();
+    window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", scheduleMeasure);
     window.addEventListener("orientationchange", scheduleMeasure);
     return () => {
       cancelAnimationFrame(raf);
+      window.clearTimeout(idleTimer);
+      window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", scheduleMeasure);
       window.removeEventListener("orientationchange", scheduleMeasure);
     };
