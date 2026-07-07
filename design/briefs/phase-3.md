@@ -34,13 +34,6 @@
 
 **P3-T7 decision status:** Rahul approved executing the full vision phase-3 scope; the recommendation was YES. Implementation rule: build the five events behind one `track()` in `src/lib/analytics.ts`, reusing the existing transport in that file. Enable a PostHog sink ONLY if `VITE_POSTHOG_KEY` exists in env; otherwise events flow to the existing pixel layer (or no-op) — never block, never error offline, no PII beyond the session user id.
 
-## 60fps reference addendum (added 2026-07-07 — builders MUST read their entries)
-`design/vision/60FPS-IDEAS.md` maps curated interaction references onto this phase. Where an idea ENRICHES your task, adopt its choreography (the entries carry motion-breakdown links + cost models); where it conflicts with this brief, the brief wins and you note the conflict:
-- **P3-T4 (ThankYou):** Idea #1 "Champagne dust" — celebration as rising golden bokeh light on black, NOT confetti; and Idea #8 "The receipt that assembles itself" — the entrance sequence choreography.
-- **P3-T6 (Offering):** Idea #2 "The hero that breathes" — elastic overscroll stretch + spring-settle on the offering poster (transform-only; respect the existing ArtworkImage wrapper).
-- **P3-T2/T3 (prices, totals):** Idea #7 "Rolling digits" — odometer-style rolls where ONLY the changing digits move (applies to the CountUp usage on coupon totals; if the existing CountUp can't do per-digit rolls, note it as a follow-up rather than rebuilding it in this phase).
-- **All tasks:** the §5 anti-catalog lists rejected patterns — do not reintroduce them.
-
 ## Acceptance criteria (the gate checks these; per-task criteria in the backlog also apply)
 1. Suite green: `npm run build`, `npx vitest run`, `npm run lint` (no NEW errors vs main baseline).
 2. Pay button + mobile sticky bar render the champagne gradient at 375 AND 360; disabled = opacity/saturate, never gray; no other Button variant visually changed (spot-check ghost/outline/destructive on admin + profile).
