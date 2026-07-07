@@ -305,17 +305,44 @@ export default function ThankYou() {
   usePageTitle("Payment Successful | LevelUp Learning");
 
   // Staged entrance for the celebration column: one glide sequence that
-  // assembles the receipt top-to-bottom (check-orb → headline → program name →
-  // chips → …→ receipt strip). Under reduced motion every block is visible
-  // instantly (the container skips its hidden state below).
-  const arrivalContainer: Variants = {
-    hidden: {},
-    show: { transition: { staggerChildren: durations.fast } },
-  };
-  const arrivalItem: Variants = {
-    hidden: { opacity: 0, y: 12 },
-    show: { opacity: 1, y: 0, transition: motionSprings.glide },
-  };
+  // assembles the receipt top-to-bottom (check-orb → headline → chips →
+  // [Calendly] → grouped closing block). The trailing action-card / journey /
+  // share / receipt-strip blocks share ONE stage (a single wrapper child) so
+  // the sequence stays at ~5 stages, and the stagger is durations.fast/2 (the
+  // same token-derived cadence PublicOffering uses) — together these keep the
+  // FULL settle — last child's start (4·0.08s) plus the glide's ~0.55s spring
+  // settle — under the ≤1.2s arrival budget on both the masterclass and
+  // Calendly paths. Under reduced motion every block is visible instantly (the
+  // container skips its hidden state below).
+  // Memoized so the 1s redirect countdown's re-renders don't rebuild the
+  // variants objects (which would otherwise churn a new object identity into
+  // every motion child each second).
+  const arrivalContainer = useMemo<Variants>(
+    () => ({
+      hidden: {},
+      show: { transition: { staggerChildren: durations.fast / 2 } },
+    }),
+    [],
+  );
+  const arrivalItem = useMemo<Variants>(
+    () => ({
+      hidden: { opacity: 0, y: 12 },
+      show: { opacity: 1, y: 0, transition: motionSprings.glide },
+    }),
+    [motionSprings.glide],
+  );
+  // Opacity-only arrival for wrappers hosting an embedded document (the Calendly
+  // iframe). A translateY on the wrapper forces the embedded doc to repaint on
+  // every animation frame; fading in place stays on the compositor and never
+  // touches the iframe's layout. Still a stagger child, so it keeps its slot in
+  // the sequence — it just arrives without the vertical glide.
+  const arrivalItemFade = useMemo<Variants>(
+    () => ({
+      hidden: { opacity: 0 },
+      show: { opacity: 1, transition: motionSprings.glide },
+    }),
+    [motionSprings.glide],
+  );
 
   // Pause the redirect only on a fine (mouse/trackpad) pointer, per spec —
   // touch users get no hover intent and must never be stranded.
@@ -711,11 +738,15 @@ export default function ThankYou() {
               <img
                 src={order.offerings.thankyou_thumbnail_url}
                 alt=""
-                className="w-full max-h-72 object-cover rounded-2xl mx-auto shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
+                // aspect-video reserves the box height from its width before the
+                // image decodes, so the receipt below doesn't shift when the src
+                // arrives (0-height → 288px jump otherwise). max-h-72 keeps the
+                // desktop cap; object-cover crops into the reserved box.
+                className="aspect-video w-full max-h-72 object-cover rounded-2xl mx-auto shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
               />
             ) : (
-              // One-shot confetti burst + cream radial-glow orb behind the check
-              // (replaces the old infinite animate-ping halo).
+              // One-shot champagne-dust burst (rising golden bokeh) + cream
+              // radial-glow orb behind the check — the calm-luxury celebration.
               <SuccessCheck />
             )}
           </motion.div>
@@ -757,7 +788,7 @@ export default function ThankYou() {
           {/* Calendly embed for interview booking */}
           {order.offerings?.thankyou_show_calendly &&
             isCalendlyUrl(order.offerings?.calendly_url) && (
-            <motion.div variants={arrivalItem} className="w-full max-w-2xl mx-auto">
+            <motion.div variants={arrivalItemFade} className="w-full max-w-2xl mx-auto">
               <h3 className="text-lg font-semibold text-foreground mb-3">Book Your Interview</h3>
               <div className="rounded-xl border border-border overflow-hidden bg-white">
                 <iframe
@@ -772,8 +803,15 @@ export default function ThankYou() {
             </motion.div>
           )}
 
+          {/* Closing block — action card, journey timeline, share row and
+              receipt strip share ONE arrival stage (this wrapper is the single
+              stagger child; the four inner blocks are plain divs) so the staged
+              sequence stays ~5 stages and settles within the ≤1.2s budget. The
+              wrapper carries the same space-y rhythm the parent used, so the
+              inter-block spacing is unchanged. */}
+          <motion.div variants={arrivalItem} className="space-y-7 sm:space-y-8">
           {/* Action card - primary CTA gets full visual weight */}
-          <motion.div variants={arrivalItem} className="max-w-md mx-auto space-y-3">
+          <div className="max-w-md mx-auto space-y-3">
             {isGuest && (
               <div className="rounded-xl border border-border bg-[hsl(var(--surface))]/60 backdrop-blur-sm p-4 text-left space-y-1">
                 <div className="flex items-center gap-2.5">
@@ -823,13 +861,13 @@ export default function ThankYou() {
                 Resend login link
               </Button>
             )}
-          </motion.div>
+          </div>
 
           {/* Journey timeline - reinforces that this is the start of
               something, not just a transaction. Each step is grounded
               in real platform behaviour (payment landed, account/access
               ready, lesson 1 waiting, certificate at the end). */}
-          <motion.div variants={arrivalItem} className="max-w-lg mx-auto pt-2">
+          <div className="max-w-lg mx-auto pt-2">
             <ol className="grid grid-cols-4 gap-1 sm:gap-2">
               {[
                 { label: "Payment", done: true },
@@ -862,11 +900,11 @@ export default function ThankYou() {
                 </li>
               ))}
             </ol>
-          </motion.div>
+          </div>
 
           {/* Share + Receipt + meta - secondary actions that didn't fit
               into the primary celebration block above. */}
-          <motion.div variants={arrivalItem} className="pt-4 max-w-md mx-auto space-y-4">
+          <div className="pt-4 max-w-md mx-auto space-y-4">
             <div className="flex items-center justify-center gap-2 flex-wrap">
               <Button
                 variant="outline"
@@ -910,13 +948,13 @@ export default function ThankYou() {
                 <span className="text-foreground font-medium">{order.guest_email || session?.user?.email}</span>
               </p>
             )}
-          </motion.div>
+          </div>
 
           {/* Discreet receipt strip - the meta you want one tap away but
               never crowding the celebration moment. Now carries a
               Download-invoice affordance (renders our branded GST PDF and
               hands it to the OS share sheet / browser download). */}
-          <motion.div variants={arrivalItem} className="pt-4 border-t border-border/50 max-w-md mx-auto text-xs text-muted-foreground/80 font-mono space-y-1">
+          <div className="pt-4 border-t border-border/50 max-w-md mx-auto text-xs text-muted-foreground/80 font-mono space-y-1">
             <p>Order {order.id.slice(0, 8).toUpperCase()} &middot; {confirmedAt}</p>
             {order.razorpay_payment_id && (
               <p className="text-muted-foreground/60">Payment {order.razorpay_payment_id}</p>
@@ -924,6 +962,7 @@ export default function ThankYou() {
             <div className="pt-1 font-sans">
               <DownloadInvoiceButton order={invoiceOrder} />
             </div>
+          </div>
           </motion.div>
         </motion.div>
 

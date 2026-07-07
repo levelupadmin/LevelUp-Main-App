@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Download, Loader2 } from "lucide-react";
-import Confetti from "@/components/Confetti";
+import ChampagneDust from "@/components/ChampagneDust";
 import { downloadInvoice, type InvoiceOrder } from "@/lib/invoice";
 import { hapticNotification } from "@/lib/haptics";
 import { toast } from "@/lib/toast";
@@ -10,14 +10,15 @@ import { toast } from "@/lib/toast";
  *
  * Two pieces, deliberately scoped so ThankYou can drop them in without
  * reinventing motion:
- *  1. A ONE-SHOT confetti burst (fires once on mount, then never again, the
- *     old page used an infinite `animate-ping` halo that kept pulsing) plus a
- *     static cream radial-glow orb sitting behind the check mark.
+ *  1. A ONE-SHOT champagne-dust burst (rising golden bokeh; fires once on
+ *     mount, then stillness) plus a static cream radial-glow orb sitting behind
+ *     the check mark. This is the brand's calm-luxury answer to confetti —
+ *     celebration as light, not litter (design/vision/60FPS-IDEAS.md Idea #1).
  *  2. A "Download invoice" affordance for the receipt strip, wired to the
  *     shared `downloadInvoice` helper (OS share sheet on native, file download
  *     on web).
  *
- * Both honour prefers-reduced-motion: the confetti is suppressed and the orb
+ * Both honour prefers-reduced-motion: the dust is suppressed and the orb
  * renders without animation.
  */
 
@@ -26,21 +27,22 @@ const prefersReducedMotion = () =>
   typeof window.matchMedia === "function" &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/* ── Check mark + one-shot confetti + cream glow orb ── */
+/* ── Check mark + one-shot champagne dust + cream glow orb ── */
 export function SuccessCheck() {
   const [burst, setBurst] = useState(false);
 
   useEffect(() => {
     if (prefersReducedMotion()) return;
-    // Defer one frame so the confetti animation starts after first paint.
+    // Defer one frame so the dust animation starts after first paint.
     const t = window.setTimeout(() => setBurst(true), 80);
     return () => window.clearTimeout(t);
   }, []);
 
   return (
     <div className="relative inline-flex items-center justify-center h-24 w-24 mx-auto">
-      {/* One-shot confetti: fixed full-screen overlay, fires a single burst. */}
-      <Confetti active={burst} duration={2600} />
+      {/* One-shot champagne dust: fixed full-screen overlay of rising golden
+          bokeh, fires a single burst then unmounts. */}
+      <ChampagneDust active={burst} duration={3200} />
 
       {/* Cream radial-glow orb behind the check (replaces the infinite ping).
           Static, soft, on-brand, reads as a warm spotlight, not a pulse. */}

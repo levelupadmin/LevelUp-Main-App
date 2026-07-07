@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { durations, easings, useMotionSafe } from "@/lib/motion";
@@ -177,6 +177,52 @@ export function LoadingSwap({
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+/**
+ * RevealOnMount: crossfade a resolved surface in from its skeleton on MOUNT.
+ *
+ * Use when the skeleton and the loaded content live in SEPARATE render branches —
+ * e.g. a page whose loaded content sits PAST early-return guards (a `!data` /
+ * platform revenue-guard that must not move), so a single `<LoadingSwap>` can't
+ * stay mounted across the handoff and flipping its `loading` prop is impossible
+ * without hoisting those guards. Render `<RevealOnMount>` ONLY in the loaded
+ * branch (data already resolved, guards passed): it shows `skeleton` for the
+ * first frame — seamlessly continuing whatever skeleton the loading branch was
+ * already painting — then, on the next animation frame, crossfades to `children`.
+ *
+ * It owns no animation of its own: it just drives one mounted `<LoadingSwap>`
+ * whose `loading` flips true→false, so the opacity handoff, timing tokens and
+ * zero-CLS grid overlap are byte-identical to every other LoadingSwap handoff.
+ *
+ * Reduced motion ⇒ instant: `revealed` starts true, so content shows immediately
+ * with no skeleton re-flash and no crossfade.
+ */
+export function RevealOnMount({
+  skeleton,
+  children,
+  className,
+}: {
+  skeleton: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const { reduced } = useMotionSafe();
+  // reduced ⇒ start revealed (instant, no re-flash); otherwise paint the
+  // skeleton once, then flip on the next frame so the crossfade has a `from`.
+  const [revealed, setRevealed] = useState(reduced);
+
+  useEffect(() => {
+    if (revealed) return;
+    const id = requestAnimationFrame(() => setRevealed(true));
+    return () => cancelAnimationFrame(id);
+  }, [revealed]);
+
+  return (
+    <LoadingSwap loading={!revealed} skeleton={skeleton} className={className}>
+      {children}
+    </LoadingSwap>
   );
 }
 

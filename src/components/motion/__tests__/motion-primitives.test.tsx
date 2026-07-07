@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { createRef } from "react";
 import { MotionButton } from "../MotionButton";
 import { MotionCard } from "../MotionCard";
+import { CountUp } from "../CountUp";
 
 // framer-motion's useReducedMotion reads the (prefers-reduced-motion: reduce)
 // media query. Point matchMedia at a matcher so a test can flip reduced motion
@@ -25,6 +26,7 @@ const setReducedMotion = (reduced: boolean) => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   setReducedMotion(false);
 });
 
@@ -319,5 +321,51 @@ describe("MotionCard", () => {
     // And it detaches when the last subscriber unmounts (reference-counted).
     unmount();
     expect(removeCount).toBe(1);
+  });
+});
+
+describe("CountUp — immediate mode (order-summary Total)", () => {
+  it("renders the real value at rest, not 0 (no observer gating)", () => {
+    // The checkout Total sits below the fold: the IntersectionObserver never
+    // fired, so the default path showed ₹0. immediate seeds to the target so
+    // the very first paint is correct.
+    render(<CountUp immediate value={1499} prefix="₹" />);
+    expect(screen.getByText("₹1,499")).toBeInTheDocument();
+    expect(screen.queryByText("₹0")).not.toBeInTheDocument();
+  });
+
+  it("rolls from the PREVIOUS value on change, never re-rolling from 0", () => {
+    // Drive RAF by hand so we can inspect the very first animation frame.
+    let rafCb: FrameRequestCallback | null = null;
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      rafCb = cb;
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    vi.spyOn(performance, "now").mockReturnValue(1000);
+
+    const { rerender } = render(<CountUp immediate value={1499} prefix="₹" />);
+    expect(screen.getByText("₹1,499")).toBeInTheDocument();
+
+    // Apply a coupon: total drops 1,499 → 1,299.
+    rerender(<CountUp immediate value={1299} prefix="₹" />);
+
+    // First animation frame (t=0) must start from the PREVIOUS total, not 0 —
+    // this is the key={total} remount regression.
+    act(() => rafCb?.(1000));
+    expect(screen.getByText("₹1,499")).toBeInTheDocument();
+    expect(screen.queryByText("₹0")).not.toBeInTheDocument();
+
+    // Final frame (t=1) settles on the new total.
+    act(() => rafCb?.(1600));
+    expect(screen.getByText("₹1,299")).toBeInTheDocument();
+  });
+
+  it("jumps straight to the value under reduced motion (no roll)", () => {
+    setReducedMotion(true);
+    const { rerender } = render(<CountUp immediate value={1499} prefix="₹" />);
+    expect(screen.getByText("₹1,499")).toBeInTheDocument();
+    rerender(<CountUp immediate value={1299} prefix="₹" />);
+    expect(screen.getByText("₹1,299")).toBeInTheDocument();
   });
 });

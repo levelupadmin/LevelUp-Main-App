@@ -14,18 +14,19 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
 import { Loader2, Tag, BookOpen, ArrowLeft, CheckCircle2, Lock, X } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useInView } from "framer-motion";
 import type { Tables } from "@/integrations/supabase/types";
 import TrustPanel from "@/components/checkout/TrustPanel";
 import StickyPayBar from "@/components/checkout/StickyPayBar";
+import PayButtonContent from "@/components/checkout/PayButtonContent";
 import GuaranteeBadge from "@/components/offering/GuaranteeBadge";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import { PhoneInput } from "@/components/auth/PhoneInput";
-import { SkeletonLine, SkeletonBlock, LoadingSwap } from "@/components/patterns/LoadingState";
+import { SkeletonLine, SkeletonBlock, RevealOnMount } from "@/components/patterns/LoadingState";
 import CountUp from "@/components/motion/CountUp";
 import { useMotionSafe } from "@/lib/motion";
 import { isAndroid, isNative } from "@/lib/platform";
-import { hapticImpact, hapticSelection } from "@/lib/haptics";
+import { hapticImpact, hapticSelection, tapTick } from "@/lib/haptics";
 import { track } from "@/lib/analytics";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 
@@ -50,13 +51,21 @@ interface LinkedCourse {
 
 /**
  * Structured checkout skeleton — mirrors the real card layout (back link,
- * offering row with a 64px thumb block, "what you'll get" rows, coupon field,
- * order-summary lines, full-width pay button, reassurance pill) so the
- * skeleton→content handoff introduces no layout shift (zero CLS). Built from the
- * shared SkeletonLine/SkeletonBlock primitives so it breathes on the same
- * shimmer cadence as every other loading surface.
+ * offering row with a 64px thumb block, "what you'll get" rows, the anon
+ * guest-details block, coupon field, order-summary lines, full-width pay
+ * button, reassurance pill) so the skeleton→content handoff introduces no
+ * layout shift (zero CLS). Built from the shared SkeletonLine/SkeletonBlock
+ * primitives so it breathes on the same shimmer cadence as every other loading
+ * surface.
+ *
+ * `showGuestForm` models the DEFAULT anonymous cold-load shape: an anon buyer
+ * renders the name/email/phone guest block (CheckoutPage `{!user && …}`), which
+ * is materially taller than a logged-in card. The skeleton is shown while
+ * `loading || authLoading`; during authLoading `user` is still null, so the
+ * caller passes `!user` and the skeleton renders the fuller anon shape by
+ * default — matching what a cold anonymous visitor actually gets.
  */
-function CheckoutSkeleton() {
+function CheckoutSkeleton({ showGuestForm = false }: { showGuestForm?: boolean }) {
   return (
     <div className="space-y-6" role="status" aria-live="polite" aria-busy="true">
       <span className="sr-only">Loading secure checkout…</span>
@@ -81,6 +90,32 @@ function CheckoutSkeleton() {
         <SkeletonBlock className="rounded-lg" height={40} />
         <SkeletonBlock className="rounded-lg" height={40} />
       </div>
+
+      {/* Guest details (anon checkout) — mirrors the {!user} block:
+          a "Your details" / "Sign in" header row, three labelled inputs
+          (label is `.caption` = 18px, Input is h-10 = 40px, rounded-[12px]),
+          and the two-line reassurance note. Dimensions are shared with the
+          real fields so the anon handoff stays flush. */}
+      {showGuestForm && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <SkeletonLine width={72} height={12} />
+            <SkeletonLine width={148} height={12} />
+          </div>
+          {/* name / email / phone: 18px label + 40px input */}
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="space-y-1">
+              <SkeletonLine width={[64, 92, 100][i]} height={18} />
+              <SkeletonBlock className="rounded-[12px]" height={40} />
+            </div>
+          ))}
+          {/* Two-line helper note */}
+          <div className="space-y-1.5">
+            <SkeletonLine width="100%" height={12} />
+            <SkeletonLine width="75%" height={12} />
+          </div>
+        </div>
+      )}
 
       {/* Coupon field */}
       <div className="space-y-2">
@@ -121,6 +156,81 @@ function CheckoutSkeleton() {
   );
 }
 
+/**
+ * Desktop trust-sidebar skeleton — the mirror of `<TrustPanel>` (same
+ * `hidden lg:block w-[420px] flex-shrink-0 space-y-6` shell). The real page
+ * renders TrustPanel as a SECOND flex column on `lg`, so a loading branch that
+ * omits it lets the single centred Card sit in the middle of the row and then
+ * jump left when the sidebar mounts — a horizontal layout shift. Reserving the
+ * same 420px column here keeps the two-column centring identical across the
+ * handoff. Reserved only when `paymentType === "full"` — the one state, knowable
+ * before the offering loads, that guarantees the loaded page renders TrustPanel
+ * (`!isStaged`). TrustPanel is hidden on staged payments, and every non-full
+ * paymentType (app_fee / confirmation / balance) is a staged flow, so reserving
+ * for those would drop the column on handoff and shift the Card.
+ */
+function CheckoutTrustPanelSkeleton() {
+  return (
+    <aside
+      className="hidden lg:block w-[420px] flex-shrink-0 space-y-6"
+      aria-hidden
+    >
+      {/* Course summary card: media block + title/meta */}
+      <div className="bg-surface border border-border rounded-xl overflow-hidden">
+        <SkeletonBlock className="rounded-none" height={236} />
+        <div className="p-4 space-y-2">
+          <SkeletonLine width="80%" height={18} />
+          <SkeletonLine width="45%" height={12} />
+        </div>
+      </div>
+
+      {/* What's included: label + 4 bullet rows */}
+      <div className="space-y-3">
+        <SkeletonLine width={96} height={10} />
+        <div className="space-y-2">
+          {[68, 60, 72, 64].map((w, i) => (
+            <SkeletonLine key={i} width={`${w}%`} height={16} />
+          ))}
+        </div>
+      </div>
+
+      {/* What happens next box */}
+      <SkeletonBlock className="rounded-xl" height={72} />
+
+      {/* Trust badge */}
+      <div className="pt-2 border-t border-border">
+        <SkeletonLine width={190} height={16} />
+      </div>
+    </aside>
+  );
+}
+
+/**
+ * Cold-load skeleton for the whole checkout screen: the card placeholder plus
+ * (optionally) the desktop trust-sidebar placeholder, in the SAME outer layout
+ * the loaded page uses. Shared by two call sites so the handoff is seamless:
+ *   1. the `loading || authLoading` early-return (what a cold visitor sees), and
+ *   2. `<RevealOnMount>`'s `skeleton` in the loaded branch, which repaints this
+ *      exact markup for one frame before crossfading to the real content.
+ * Rendering identical markup at both sites is what makes the crossfade start
+ * from a pixel-matched `from` state instead of a jump-cut.
+ */
+function CheckoutColdSkeleton({
+  showGuestForm,
+  showTrustPanel,
+}: { showGuestForm: boolean; showTrustPanel: boolean }) {
+  return (
+    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
+      <Card className="w-full max-w-[560px] border-border bg-surface">
+        <CardContent className="p-6 md:p-8">
+          <CheckoutSkeleton showGuestForm={showGuestForm} />
+        </CardContent>
+      </Card>
+      {showTrustPanel && <CheckoutTrustPanelSkeleton />}
+    </div>
+  );
+}
+
 export default function CheckoutPage() {
   const { offeringId } = useParams<{ offeringId: string }>();
   const navigate = useNavigate();
@@ -157,9 +267,24 @@ export default function CheckoutPage() {
   const [application, setApplication] = useState<any>(null);
   const [totalPreviouslyPaid, setTotalPreviouslyPaid] = useState(0);
 
+  // Sticky-bar handoff (mirrors the offering page's sticky→inline pattern): the
+  // mobile StickyPayBar and the in-card Pay button are the same champagne CTA, so
+  // showing both at once — as happens once the buyer scrolls the in-card button
+  // into view — lights two identical pay actions in one viewport. We observe the
+  // in-card button and suppress the sticky bar the moment it's on screen, so
+  // exactly one pay action is lit at any scroll offset. The negative bottom
+  // margin (~ the bar's own height incl. safe area) means the button only counts
+  // as "in view" once it clears the sticky bar's footprint — no frame where the
+  // lit bar overlaps the lit button. No IntersectionObserver (SSR / older
+  // WebView) → stays false → bar shown, preserving the historical behaviour.
+  const inCardPayRef = useRef<HTMLButtonElement>(null);
+  const inCardPayInView = useInView(inCardPayRef, { margin: "0px 0px -96px 0px" });
+
   // Motion presets (collapse to instant under reduced motion) for the coupon
-  // chip enter/exit — see the applied-coupon block below.
-  const { springs } = useMotionSafe();
+  // chip enter/exit — see the applied-coupon block below. `pressTap` is the
+  // canonical snap-spring whileTap (drops the scale under reduced motion),
+  // reused on the chip's remove control so it presses like every Button.
+  const { springs, pressTap } = useMotionSafe();
 
   // Selection haptic on a *successful* coupon apply. appliedCoupon only flips
   // from null → set inside the validate-coupon success path, so a transition to
@@ -502,23 +627,37 @@ export default function CheckoutPage() {
 
   /* -- UI -- */
   // Cold load: a structured skeleton that mirrors the final card (not a spinner)
-  // so there is zero layout shift when content arrives. Wrapped in LoadingSwap
-  // for the shimmer-consistent crossfade. NOTE (drift from the backlog's single
-  // in-place LoadingSwap): the loaded content is reached only past the
-  // byte-identical `isNative()` / not-found early-returns below (revenue guard —
-  // those gates must not move or dereference a null offering), so the skeleton
-  // lives in its own branch and hands off to the mounted content there.
+  // so there is zero layout shift when content arrives. The loaded content is
+  // reached only past the byte-identical `isNative()` / not-found early-returns
+  // below (revenue guard — those gates must NOT move or dereference a null
+  // offering), so no single mounted LoadingSwap can straddle the handoff. The
+  // crossfade instead lives in the loaded branch via `<RevealOnMount>`, which
+  // repaints THIS exact skeleton for one frame and then crossfades to the real
+  // content — a produced moment, not a jump-cut.
   if (loading || authLoading) {
+    // Model the DEFAULT anonymous cold-load shape. While authLoading, `user` is
+    // still null, so `!user` renders the fuller anon skeleton (guest fields +
+    // trust sidebar) — matching what a cold anonymous visitor actually gets and
+    // keeping the skeleton→content handoff flush.
+    //
+    // Reserve the TrustPanel column ONLY when we can prove the loaded content
+    // WILL render it, using a signal known synchronously (before the offering
+    // fetch resolves). The loaded page shows TrustPanel iff `!isStaged`, i.e.
+    // `paymentType === "full" || payment_mode !== "staged"`. `payment_mode`
+    // needs the offering (still null here), but `paymentType` is derived from
+    // searchParams up-front. `paymentType === "full"` guarantees `!isStaged`
+    // regardless of payment_mode, so the panel is certain to mount → reserve it.
+    // For a non-full paymentType we CANNOT be certain (a staged offering drops
+    // the panel), so we reserve nothing: staged flows — the real, cold-loadable
+    // use of every non-full type (app_fee / confirmation / balance links) — then
+    // hand off with no column to remove, avoiding a horizontal re-centre shift.
+    // (Gating on `!isStaged` here was WRONG: `isStaged` is false while offering
+    // is null, so it always reserved the column, then a staged load dropped it
+    // → ~226px Card shift on desktop-lg.)
+    const anonShape = !user;
+    const willShowTrustPanel = paymentType === "full";
     return (
-      <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
-        <Card className="w-full max-w-[560px] border-border bg-surface">
-          <CardContent className="p-6 md:p-8">
-            <LoadingSwap loading skeleton={<CheckoutSkeleton />}>
-              {null}
-            </LoadingSwap>
-          </CardContent>
-        </Card>
-      </div>
+      <CheckoutColdSkeleton showGuestForm={anonShape} showTrustPanel={willShowTrustPanel} />
     );
   }
 
@@ -564,7 +703,14 @@ export default function CheckoutPage() {
     !(guestPhoneDigits.length === 10 ||
       (guestPhoneDigits.length === 12 && guestPhoneDigits.startsWith("91")));
 
+  // Loaded, past the revenue guards: crossfade in from the SAME cold-load
+  // skeleton the loading branch was painting. `showTrustPanel={!isStaged}` and
+  // `showGuestForm={!user}` now use the resolved values, so the fading-out
+  // skeleton is a pixel match for the content fading in. Reduced motion ⇒ instant.
   return (
+    <RevealOnMount
+      skeleton={<CheckoutColdSkeleton showGuestForm={!user} showTrustPanel={!isStaged} />}
+    >
     <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
       <Card className="w-full max-w-[560px] border-border bg-surface">
         <CardContent className="p-6 md:p-8 space-y-6">
@@ -812,7 +958,7 @@ export default function CheckoutPage() {
                   placeholder="Full name"
                   aria-invalid={guestNameError}
                   aria-describedby={guestNameError ? "guest-name-error" : undefined}
-                  className={guestNameError ? "border-destructive focus-visible:ring-destructive" : ""}
+                  className={`h-11 ${guestNameError ? "border-destructive focus-visible:ring-destructive" : ""}`}
                   autoComplete="name"
                 />
                 {guestNameError && (
@@ -835,7 +981,7 @@ export default function CheckoutPage() {
                   inputMode="email"
                   aria-invalid={guestEmailError}
                   aria-describedby={guestEmailError ? "guest-email-error" : undefined}
-                  className={guestEmailError ? "border-destructive focus-visible:ring-destructive" : ""}
+                  className={`h-11 ${guestEmailError ? "border-destructive focus-visible:ring-destructive" : ""}`}
                   autoComplete="email"
                 />
                 {guestEmailError && (
@@ -892,14 +1038,26 @@ export default function CheckoutPage() {
                     <span className="font-mono text-sm font-bold text-[hsl(var(--accent-emerald))]">
                       {appliedCoupon.code}
                     </span>
-                    <button
+                    {/* Remove control presses like every Button: framer's
+                        snap-spring `whileTap` (collapses to instant under
+                        reduced motion via pressTap) + a `tapTick()` selection
+                        haptic fired from the activation path — mirrors
+                        ui/button.tsx so a tap on the chip isn't dead. Keeps the
+                        44px hit area; `transition-colors` (not -all) stays so
+                        framer's inline transform isn't smeared (button.tsx
+                        clobber-class doctrine). */}
+                    <motion.button
                       type="button"
-                      onClick={removeCoupon}
+                      onClick={() => {
+                        tapTick();
+                        removeCoupon();
+                      }}
+                      whileTap={pressTap}
                       aria-label="Remove promo code"
                       className="min-h-[44px] min-w-[44px] rounded-full hover:bg-[hsl(var(--accent-emerald)/0.2)] flex items-center justify-center transition-colors"
                     >
                       <X className="h-6 w-6 text-[hsl(var(--accent-emerald))]" aria-hidden />
-                    </button>
+                    </motion.button>
                   </div>
                   {discount > 0 && (
                     <p className="text-sm font-semibold text-[hsl(var(--success))] tabular-nums">
@@ -921,7 +1079,7 @@ export default function CheckoutPage() {
                       value={couponCode}
                       onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
                       placeholder="Have a promo code?"
-                      className="bg-surface-2 border-border w-full font-mono uppercase"
+                      className="h-11 bg-surface-2 border-border w-full font-mono uppercase"
                       onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
                     />
                     {couponLoading && (
@@ -933,7 +1091,7 @@ export default function CheckoutPage() {
                     size="sm"
                     onClick={applyCoupon}
                     disabled={couponLoading || !couponCode.trim()}
-                    className="shrink-0 h-10"
+                    className="shrink-0 h-11"
                   >
                     {couponLoading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -999,11 +1157,13 @@ export default function CheckoutPage() {
               <div className="flex items-baseline gap-2 text-base font-semibold">
                 <span className="text-foreground shrink-0">Total</span>
                 <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
-                {/* Keyed on the total so the number rolls to its new value on
-                    coupon apply/remove (CountUp collapses to the final value
-                    instantly under reduced motion). */}
+                {/* immediate: seed to the real total at rest (no ₹0 flash below
+                    the fold, no observer gating) and roll from the previous total
+                    on coupon apply/remove. No key remount, so the number
+                    transitions PREV → new instead of re-rolling from 0. Collapses
+                    to the final value instantly under reduced motion. */}
                 <CountUp
-                  key={total}
+                  immediate
                   value={total}
                   prefix="₹"
                   className="text-foreground shrink-0 tabular-nums"
@@ -1041,6 +1201,7 @@ export default function CheckoutPage() {
               free capture, signed-in users through create-free-enrolment. Only
               staged payments require a positive amount. */}
           <Button
+            ref={inCardPayRef}
             variant="champagne"
             size="xl"
             className="w-full"
@@ -1050,19 +1211,24 @@ export default function CheckoutPage() {
             // doesn't double-buzz.
             haptic={false}
             disabled={paying || (isStaged && total <= 0)}
+            // STEAL #2 processing arc: mirror `paying` to aria-busy so assistive
+            // tech hears the in-flight state (the label crossfades to a quiet dot
+            // visually). Purely additive to the existing disabled semantics.
+            aria-busy={paying}
           >
-            {paying ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Processing…
-              </>
-            ) : isStaged ? (
-              `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
-            ) : total <= 0 ? (
-              "Enrol free"
-            ) : (
-              `Pay ₹${total.toLocaleString("en-IN")}`
-            )}
+            {/* CRED-style content layer: label ⇄ processing dot inside the same
+                champagne container (never resizes / gray-swaps). Driven off the
+                existing `paying` flag — no change to handlePay. */}
+            <PayButtonContent
+              status={paying ? "processing" : "idle"}
+              label={
+                isStaged
+                  ? `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
+                  : total <= 0
+                    ? "Enrol free"
+                    : `Pay ₹${total.toLocaleString("en-IN")}`
+              }
+            />
           </Button>
 
           {/* Reassurance capsule directly under the pay button: lock icon +
@@ -1093,16 +1259,26 @@ export default function CheckoutPage() {
         />
       )}
 
-      {/* Mobile sticky pay bar: always-visible total + Pay on phones. Only
-          ever reached on web (native returns the Continue-on-web card above). */}
-      <StickyPayBar
-        total={total}
-        savings={totalSavings}
-        stagedLabel={isStaged ? stagedLabel : undefined}
-        paying={paying}
-        disabled={isStaged && total <= 0}
-        onPay={handlePay}
-      />
+      {/* Mobile sticky pay bar: total + Pay pinned to the bottom on phones so the
+          decision is one thumb-reach away while the buyer is scrolled up. Only
+          ever reached on web (native returns the Continue-on-web card above).
+          Suppressed (slides out) once the in-card Pay button scrolls into view so
+          the two identical champagne CTAs are never lit in the same viewport —
+          exactly one pay action at any scroll offset. */}
+      <AnimatePresence>
+        {!inCardPayInView && (
+          <StickyPayBar
+            key="checkout-sticky-pay-bar"
+            total={total}
+            savings={totalSavings}
+            stagedLabel={isStaged ? stagedLabel : undefined}
+            paying={paying}
+            disabled={isStaged && total <= 0}
+            onPay={handlePay}
+          />
+        )}
+      </AnimatePresence>
     </div>
+    </RevealOnMount>
   );
 }

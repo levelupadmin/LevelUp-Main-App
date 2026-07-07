@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useMotionValue, useReducedMotion } from "framer-motion";
+import type { MotionValue } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
@@ -126,27 +127,95 @@ interface Offering {
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
+// Granular visibility steps so the IntersectionObserver reports the hero CTA's
+// intersectionRatio finely enough to scrub against (0, 0.05, … 1). The observer
+// still fires only when a step is crossed — not per frame — so this stays
+// off-main-thread work, not a scroll handler.
+const HANDOFF_THRESHOLDS = Array.from({ length: 21 }, (_, i) => i / 20);
+// The inline CTA's visible band the handoff scrubs across: fully lit until it is
+// 25% visible, fully ceded once it is 75% visible (INTERACTION-STEALS STEAL #1).
+const HANDOFF_START = 0.25;
+const HANDOFF_END = 0.75;
+
 /**
- * Tiny local in-view tracker for the hero CTA block. Drives the mobile
- * sticky bar: it only slides up once the hero CTA has scrolled out of
- * view, so the same price/CTA never shows twice on screen. Callback-ref
- * based because the observed block mounts after the data loads.
+ * Airbnb-style sticky→inline pay handoff for the mobile sticky bar
+ * (INTERACTION-STEALS STEAL #1). Tracks how much of the in-flow hero CTA is
+ * visible and *scrubs* the sticky bar out as that inline CTA takes over, so
+ * exactly one champagne CTA is lit at any scroll offset — a smooth handoff
+ * rather than a binary pop.
+ *
+ * - `opacity` 1→0 and `scaleX` 1→0.92 map across the inline CTA's 25%→75%-visible
+ *   band. Both are framer MotionValues so the scrub composites on one promoted
+ *   layer and never triggers a React re-render.
+ * - `mounted` gates AnimatePresence: the bar unmounts only once the inline CTA is
+ *   majority-visible (ratio ≥ HANDOFF_END), by which point the scrub has already
+ *   faded it to 0 — so the shipped slide-up/down tween (item-7's blur-safe
+ *   entrance/exit) still plays cleanly with no frame where both CTAs are lit.
+ * - `ceded` (opacity < 0.5) drives aria-hidden + pointer-events so the fading bar
+ *   stops taking taps and leaves the a11y tree the moment it cedes primacy.
+ * - Reduced motion: binary swap at the 50% threshold — no scrub, no scale.
+ *
+ * Callback-ref based because the observed block mounts after the data loads.
  */
-function useInView<T extends HTMLElement = HTMLDivElement>(): [(node: T | null) => void, boolean] {
-  const [inView, setInView] = useState(true);
+function useStickyHandoff(): {
+  setRef: (node: HTMLDivElement | null) => void;
+  mounted: boolean;
+  ceded: boolean;
+  opacity: MotionValue<number>;
+  scaleX: MotionValue<number>;
+} {
+  const reduced = useReducedMotion() ?? false;
+  const opacity = useMotionValue(1);
+  const scaleX = useMotionValue(1);
+  const [mounted, setMounted] = useState(false);
+  const [ceded, setCeded] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
-  const setRef = useCallback((node: T | null) => {
-    observerRef.current?.disconnect();
-    observerRef.current = null;
-    if (!node || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(
-      (entries) => setInView(entries.some((e) => e.isIntersecting)),
-      { threshold: 0 },
-    );
-    observer.observe(node);
-    observerRef.current = observer;
-  }, []);
-  return [setRef, inView];
+
+  const setRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      if (!node || typeof IntersectionObserver === "undefined") {
+        // No observer available (SSR / unsupported): preserve the historical
+        // fallback of keeping the bar hidden rather than stranding it lit.
+        setMounted(false);
+        return;
+      }
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[entries.length - 1];
+          const ratio = entry.isIntersecting ? entry.intersectionRatio : 0;
+          if (reduced) {
+            // Instant swap at 50%: lit while the inline CTA is minority-visible,
+            // gone the moment it is majority-visible. No scrub, no scale.
+            const show = ratio < 0.5;
+            opacity.set(show ? 1 : 0);
+            scaleX.set(1);
+            setMounted(show);
+            setCeded(!show);
+            return;
+          }
+          // Scrub opacity 1→0 (and scaleX 1→0.92) across the 25%→75%-visible band.
+          const o = Math.min(
+            1,
+            Math.max(0, (HANDOFF_END - ratio) / (HANDOFF_END - HANDOFF_START)),
+          );
+          opacity.set(o);
+          scaleX.set(0.92 + 0.08 * o);
+          // Keep the bar mounted through the whole scrub, unmount once ceded so
+          // the slide-down exit tween runs on an already-faded (invisible) bar.
+          setMounted(ratio < HANDOFF_END);
+          setCeded(o < 0.5);
+        },
+        { threshold: reduced ? [0, 0.5, 1] : HANDOFF_THRESHOLDS },
+      );
+      observer.observe(node);
+      observerRef.current = observer;
+    },
+    [reduced, opacity, scaleX],
+  );
+
+  return { setRef, mounted, ceded, opacity, scaleX };
 }
 
 /* ────────────────────────────────────────────────── */
@@ -1005,9 +1074,17 @@ export default function PublicOffering() {
   const [notFound, setNotFound] = useState(false);
   const [couponInfo, setCouponInfo] = useState<{code: string; discount_type: string; discount_value: number} | null>(null);
 
-  // Hero-CTA visibility drives the mobile sticky bar; it only slides up
-  // once the in-flow CTA has scrolled out of view.
-  const [heroCtaRef, heroCtaInView] = useInView<HTMLDivElement>();
+  // Hero-CTA visibility drives the mobile sticky bar: it slides up once the
+  // in-flow CTA scrolls out of view, then SCRUBS back out (opacity + scaleX)
+  // as that inline CTA re-enters, handing primacy across so exactly one
+  // champagne CTA is lit at a time (INTERACTION-STEALS STEAL #1).
+  const {
+    setRef: heroCtaRef,
+    mounted: stickyMounted,
+    ceded: stickyCeded,
+    opacity: stickyOpacity,
+    scaleX: stickyScaleX,
+  } = useStickyHandoff();
 
   // Free-preview playback is lifted here so three surfaces can trigger the
   // same player: the hero play chip, the in-flow FreePreviewPlayer poster,
@@ -1557,20 +1634,44 @@ export default function PublicOffering() {
       </main>
 
       {/* Mobile sticky CTA: hidden on Android (Path B compliance) and
-          on archived offerings (no longer for sale). Slides up only once
-          the in-flow hero CTA has scrolled out of view (useInView above)
-          so price/CTA never doubles up on screen. The Masterclass iOS
-          pattern. Navigates to the dedicated checkout route. */}
+          on archived offerings (no longer for sale). Slides up once the
+          in-flow hero CTA scrolls out of view, then scrubs back out as it
+          re-enters (useStickyHandoff above) so exactly one champagne CTA is
+          lit at a time. The Masterclass iOS pattern, Airbnb handoff on top.
+          Navigates to the dedicated checkout route. */}
       {(applyUrl || !isNative()) && offering.status !== "archived" && (
       <AnimatePresence>
-        {!heroCtaInView && (
+        {stickyMounted && (
         <motion.div
           key="sticky-pay-bar"
-          aria-hidden={heroCtaInView}
-          initial={{ y: 96, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 96, opacity: 0 }}
-          transition={ms.springs.glide}
+          initial={{ y: 96 }}
+          animate={{ y: 0 }}
+          exit={{ y: 96 }}
+          // opacity + scaleX are scroll-SCRUBBED (see useStickyHandoff), not on
+          // `animate`: they hand primacy to the inline CTA frame-by-frame as it
+          // scrolls in, so keeping them out of the y-tween lets framer compose the
+          // scaleX with the animated y into one transform on one promoted layer.
+          // transform-origin center-bottom = the bar narrows toward its own base
+          // as it cedes (Airbnb width-shrink), never lifting off the safe area.
+          style={{
+            opacity: stickyOpacity,
+            scaleX: stickyScaleX,
+            transformOrigin: "center bottom",
+            pointerEvents: stickyCeded ? "none" : "auto",
+          }}
+          // Once faded past halfway it has ceded primacy: drop it from the a11y
+          // tree and stop it taking taps so only the inline CTA is actionable.
+          aria-hidden={stickyCeded || undefined}
+          // Tokenized decelerate tween, NOT springs.glide, for the y slide only.
+          // This surface carries a backdrop-blur, which Blink re-samples every
+          // frame the transform moves. A spring's low-amplitude settling tail keeps
+          // the compositor re-blurring for a long, sub-pixel tail — the #1 dark-app
+          // jank source per DESIGN-STRATEGY. A bounded tween ends cleanly (no tail)
+          // while a decelerate ease keeps the slide-up "settle" choreography feel.
+          // (The scrub itself is scroll-linked: it stops the instant the user stops
+          // scrolling, so it too has no re-blurring tail.) Still collapses to an
+          // instant cut under reduced motion.
+          transition={ms.reduced ? { duration: 0 } : { duration: durations.slow, ease: easings.out }}
           className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
         >
         {applyUrl ? (

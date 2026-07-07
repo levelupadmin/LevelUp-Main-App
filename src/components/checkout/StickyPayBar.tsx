@@ -1,5 +1,7 @@
-import { Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import PayButtonContent from "@/components/checkout/PayButtonContent";
+import { durations, easings, useMotionSafe } from "@/lib/motion";
 
 /**
  * Mobile-only sticky pay bar for the checkout page.
@@ -14,6 +16,15 @@ import { Button } from "@/components/ui/button";
  * rendered on native: the parent CheckoutPage already swaps the whole pay UI
  * for a Continue-on-web card on Capacitor (Apple/Play reader-rule gating), so
  * this component is only ever mounted on web.
+ *
+ * The parent gates mounting on the in-card Pay button's visibility (mirrors the
+ * offering page's sticky→inline handoff) so exactly ONE champagne CTA is lit at
+ * any scroll offset. This component just owns the slide-up entrance / slide-down
+ * exit for that handoff — a bounded decelerate tween (NOT a spring): the bar
+ * carries a backdrop-blur, which Blink re-samples every frame the transform
+ * moves, so a spring's sub-pixel settling tail would keep the compositor
+ * re-blurring (the #1 dark-app jank source per DESIGN-STRATEGY). A tween ends
+ * cleanly with no tail; it collapses to an instant cut under reduced motion.
  */
 interface StickyPayBarProps {
   /** Final amount to charge, in INR. */
@@ -35,8 +46,17 @@ export default function StickyPayBar({
   disabled,
   onPay,
 }: StickyPayBarProps) {
+  const ms = useMotionSafe();
   return (
-    <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 backdrop-blur-md pb-safe">
+    <motion.div
+      initial={{ y: 96 }}
+      animate={{ y: 0 }}
+      exit={{ y: 96 }}
+      transition={
+        ms.reduced ? { duration: 0 } : { duration: durations.slow, ease: easings.out }
+      }
+      className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 backdrop-blur-md pb-safe"
+    >
       <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
@@ -63,19 +83,19 @@ export default function StickyPayBar({
           // tap doesn't double-buzz. Mirrors the primary Pay button.
           haptic={false}
           disabled={disabled || paying}
+          // STEAL #2 processing arc: mirror `paying` to aria-busy (the label
+          // crossfades to a quiet dot visually). Additive to disabled semantics.
+          aria-busy={paying}
         >
-          {paying ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Processing…
-            </>
-          ) : total <= 0 ? (
-            "Enrol free"
-          ) : (
-            `Pay ₹${total.toLocaleString("en-IN")}`
-          )}
+          {/* Same CRED-style content layer as the in-card Pay button, so the two
+              mirrored champagne CTAs read identically in flight. Driven off the
+              existing `paying` flag — no change to handlePay. */}
+          <PayButtonContent
+            status={paying ? "processing" : "idle"}
+            label={total <= 0 ? "Enrol free" : `Pay ₹${total.toLocaleString("en-IN")}`}
+          />
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
