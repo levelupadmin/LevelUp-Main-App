@@ -22,9 +22,26 @@ interface Props {
   autoFocus?: boolean;
   className?: string;
   placeholder?: string;
+  // Forwarded verbatim onto the underlying <input>. react-phone-number-input
+  // spreads any prop it doesn't consume itself onto the number input, so a
+  // caller's `htmlFor` label, aria-invalid state, and error-node association
+  // all land on the real focusable element (parity with a plain <Input>).
+  id?: string;
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
 }
 
-export function PhoneInput({ value, onChange, disabled, autoFocus, className, placeholder }: Props) {
+export function PhoneInput({
+  value,
+  onChange,
+  disabled,
+  autoFocus,
+  className,
+  placeholder,
+  id,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedby,
+}: Props) {
   return (
     <PhoneInputBase
       international
@@ -37,6 +54,9 @@ export function PhoneInput({ value, onChange, disabled, autoFocus, className, pl
       inputComponent={Input as never}
       className={className}
       countryCallingCodeEditable={false}
+      id={id}
+      aria-invalid={ariaInvalid}
+      aria-describedby={ariaDescribedby}
     />
   );
 }

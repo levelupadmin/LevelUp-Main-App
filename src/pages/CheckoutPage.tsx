@@ -13,15 +13,21 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
-import { Loader2, Tag, BookOpen, ArrowLeft, CheckCircle2, Lock } from "lucide-react";
+import { Loader2, Tag, BookOpen, ArrowLeft, CheckCircle2, Lock, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import type { Tables } from "@/integrations/supabase/types";
 import TrustPanel from "@/components/checkout/TrustPanel";
 import StickyPayBar from "@/components/checkout/StickyPayBar";
 import GuaranteeBadge from "@/components/offering/GuaranteeBadge";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
+import { PhoneInput } from "@/components/auth/PhoneInput";
+import { SkeletonLine, SkeletonBlock, LoadingSwap } from "@/components/patterns/LoadingState";
+import CountUp from "@/components/motion/CountUp";
+import { useMotionSafe } from "@/lib/motion";
 import { isAndroid, isNative } from "@/lib/platform";
-import { hapticImpact } from "@/lib/haptics";
+import { hapticImpact, hapticSelection } from "@/lib/haptics";
 import { track } from "@/lib/analytics";
+import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 
 /* -- Razorpay global type -- */
 declare global {
@@ -40,6 +46,79 @@ type CustomField = Tables<"custom_field_definitions">;
 interface LinkedCourse {
   course_id: string;
   courses: { title: string; thumbnail_url: string | null } | null;
+}
+
+/**
+ * Structured checkout skeleton — mirrors the real card layout (back link,
+ * offering row with a 64px thumb block, "what you'll get" rows, coupon field,
+ * order-summary lines, full-width pay button, reassurance pill) so the
+ * skeleton→content handoff introduces no layout shift (zero CLS). Built from the
+ * shared SkeletonLine/SkeletonBlock primitives so it breathes on the same
+ * shimmer cadence as every other loading surface.
+ */
+function CheckoutSkeleton() {
+  return (
+    <div className="space-y-6" role="status" aria-live="polite" aria-busy="true">
+      <span className="sr-only">Loading secure checkout…</span>
+
+      {/* Back link */}
+      <SkeletonLine width={56} height={14} className="-mb-3" />
+
+      {/* Header: 64px thumb + title/instructor */}
+      <div className="flex items-start gap-4">
+        <SkeletonBlock className="h-16 w-16 shrink-0 rounded-xl" height={64} />
+        <div className="min-w-0 flex-1 space-y-2 pt-1">
+          <SkeletonLine width="70%" height={20} />
+          <SkeletonLine width="40%" height={14} />
+        </div>
+      </div>
+
+      <div className="h-px w-full bg-border" aria-hidden />
+
+      {/* What you'll get */}
+      <div className="space-y-2">
+        <SkeletonLine width={96} height={12} />
+        <SkeletonBlock className="rounded-lg" height={40} />
+        <SkeletonBlock className="rounded-lg" height={40} />
+      </div>
+
+      {/* Coupon field */}
+      <div className="space-y-2">
+        <SkeletonLine width={88} height={12} />
+        <SkeletonBlock className="rounded-md" height={40} />
+      </div>
+
+      <div className="h-px w-full bg-border" aria-hidden />
+
+      {/* Order summary */}
+      <div className="space-y-2.5">
+        <SkeletonLine width={160} height={24} />
+        <div className="space-y-3 pt-1">
+          <div className="flex items-center justify-between">
+            <SkeletonLine width={72} height={14} />
+            <SkeletonLine width={64} height={14} />
+          </div>
+          <div className="flex items-center justify-between">
+            <SkeletonLine width={56} height={14} />
+            <SkeletonLine width={48} height={14} />
+          </div>
+          <div className="h-px w-full bg-border" aria-hidden />
+          <div className="flex items-center justify-between">
+            <SkeletonLine width={48} height={16} />
+            <SkeletonLine width={72} height={16} />
+          </div>
+        </div>
+      </div>
+
+      {/* Pay button */}
+      <SkeletonBlock className="rounded-2xl" height={56} />
+
+      {/* Reassurance pill */}
+      <div className="flex justify-center">
+        <SkeletonLine width={200} height={28} className="rounded-full" />
+      </div>
+    </div>
+  );
 }
 
 export default function CheckoutPage() {
@@ -77,6 +156,21 @@ export default function CheckoutPage() {
   const paymentInFlightRef = useRef(false);
   const [application, setApplication] = useState<any>(null);
   const [totalPreviouslyPaid, setTotalPreviouslyPaid] = useState(0);
+
+  // Motion presets (collapse to instant under reduced motion) for the coupon
+  // chip enter/exit — see the applied-coupon block below.
+  const { springs } = useMotionSafe();
+
+  // Selection haptic on a *successful* coupon apply. appliedCoupon only flips
+  // from null → set inside the validate-coupon success path, so a transition to
+  // a truthy coupon id is exactly "apply succeeded" (remove goes set → null and
+  // is intentionally silent). Native-only; no-ops on web.
+  const appliedCouponIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const id = appliedCoupon?.id ?? null;
+    if (id && id !== appliedCouponIdRef.current) void hapticSelection();
+    appliedCouponIdRef.current = id;
+  }, [appliedCoupon]);
 
   // Guest checkout fields + validation (also prefilled for logged-in users who
   // have no profile details on file yet). See useGuestCheckout.
@@ -142,6 +236,14 @@ export default function CheckoutPage() {
         content_name: (offRes.data as any).title,
         value: Number((offRes.data as any).price_inr || 0),
         currency: (offRes.data as any).currency || "INR",
+      });
+
+      // Phase-3 conversion funnel: the checkout surface is now populated. Guest
+      // flag reflects whether an anon buyer is on the guest path at load time.
+      track({
+        name: "checkout_loaded",
+        offeringId: offeringId!,
+        guest: !user,
       });
 
       // Load application data for staged payments.
@@ -334,6 +436,11 @@ export default function CheckoutPage() {
         prefillContact = profile?.phone ?? "";
       }
 
+      // Phase-3 conversion funnel: a real Razorpay order exists and the modal is
+      // about to open. Keyed on our internal payment_order_id so it joins the
+      // ThankYou purchase_completed event on the same id.
+      track({ name: "payment_initiated", orderId: data.payment_order_id });
+
       const options = {
         key: data.key_id,
         amount: data.amount,
@@ -346,7 +453,7 @@ export default function CheckoutPage() {
           email: prefillEmail,
           contact: prefillContact,
         },
-        theme: { color: "#F5F1E8", backdrop_color: "rgba(0,0,0,0.8)" },
+        theme: { color: RAZORPAY_THEME_COLOR, backdrop_color: "rgba(0,0,0,0.8)" },
         handler: async (response: {
           razorpay_payment_id: string;
           razorpay_order_id: string;
@@ -394,15 +501,23 @@ export default function CheckoutPage() {
   };
 
   /* -- UI -- */
+  // Cold load: a structured skeleton that mirrors the final card (not a spinner)
+  // so there is zero layout shift when content arrives. Wrapped in LoadingSwap
+  // for the shimmer-consistent crossfade. NOTE (drift from the backlog's single
+  // in-place LoadingSwap): the loaded content is reached only past the
+  // byte-identical `isNative()` / not-found early-returns below (revenue guard —
+  // those gates must not move or dereference a null offering), so the skeleton
+  // lives in its own branch and hands off to the mounted content there.
   if (loading || authLoading) {
     return (
-      <div
-        className="flex min-h-screen flex-col items-center justify-center gap-3 bg-canvas"
-        role="status"
-        aria-live="polite"
-      >
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Loading secure checkout…</p>
+      <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
+        <Card className="w-full max-w-[560px] border-border bg-surface">
+          <CardContent className="p-6 md:p-8">
+            <LoadingSwap loading skeleton={<CheckoutSkeleton />}>
+              {null}
+            </LoadingSwap>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -433,6 +548,21 @@ export default function CheckoutPage() {
   const primaryCourseId = linkedCourses[0]?.course_id ?? null;
   const trustPanelCourseTitle = (linkedCourses[0]?.courses as any)?.title ?? offering.title;
   const trustPanelThumb = (linkedCourses[0]?.courses as any)?.thumbnail_url ?? null;
+
+  // Inline guest-field validity (mirrors useGuestCheckout.validateGuest, surfaced
+  // per-field with role="alert" instead of only as toasts). Only meaningful on
+  // the anon path and after a field is touched. PhoneInput emits E.164 (+91…),
+  // so the phone check counts a 10-digit national or 12-digit 91-prefixed form —
+  // identical to the edge function's normalisation.
+  const guestPhoneDigits = guestPhone.replace(/\D/g, "");
+  const guestNameError = !user && !!guestTouched.name && !guestName.trim();
+  const guestEmailError =
+    !user && !!guestTouched.email &&
+    (!guestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim()));
+  const guestPhoneError =
+    !user && !!guestTouched.phone &&
+    !(guestPhoneDigits.length === 10 ||
+      (guestPhoneDigits.length === 12 && guestPhoneDigits.startsWith("91")));
 
   return (
     <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
@@ -670,38 +800,67 @@ export default function CheckoutPage() {
                   Already have an account? Sign in
                 </button>
               </div>
-              <Input
-                value={guestName}
-                onChange={(e) => setGuestName(e.target.value)}
-                onBlur={() => setGuestTouched((s) => ({ ...s, name: true }))}
-                placeholder="Full name"
-                className={guestTouched.name && !guestName.trim() ? "border-destructive" : ""}
-                autoComplete="name"
-              />
-              <Input
-                value={guestEmail}
-                onChange={(e) => setGuestEmail(e.target.value)}
-                onBlur={() => setGuestTouched((s) => ({ ...s, email: true }))}
-                placeholder="Email address"
-                type="email"
-                inputMode="email"
-                className={guestTouched.email && !guestEmail.trim() ? "border-destructive" : ""}
-                autoComplete="email"
-              />
-              <div className="flex">
-                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-border bg-surface-2 text-sm text-muted-foreground font-mono">
-                  +91
-                </span>
+              <div>
+                <label htmlFor="guest-name" className="caption mb-1 block">
+                  Full name
+                </label>
                 <Input
-                  value={guestPhone}
-                  onChange={(e) => setGuestPhone(e.target.value.replace(/[^\d+]/g, ""))}
-                  onBlur={() => setGuestTouched((s) => ({ ...s, phone: true }))}
-                  placeholder="10-digit mobile number"
-                  type="tel"
-                  inputMode="tel"
-                  className={`rounded-l-none ${guestTouched.phone && !guestPhone.trim() ? "border-destructive" : ""}`}
-                  autoComplete="tel"
+                  id="guest-name"
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  onBlur={() => setGuestTouched((s) => ({ ...s, name: true }))}
+                  placeholder="Full name"
+                  aria-invalid={guestNameError}
+                  aria-describedby={guestNameError ? "guest-name-error" : undefined}
+                  className={guestNameError ? "border-destructive focus-visible:ring-destructive" : ""}
+                  autoComplete="name"
                 />
+                {guestNameError && (
+                  <p id="guest-name-error" role="alert" className="text-xs text-destructive mt-1">
+                    Please enter your name
+                  </p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="guest-email" className="caption mb-1 block">
+                  Email address
+                </label>
+                <Input
+                  id="guest-email"
+                  value={guestEmail}
+                  onChange={(e) => setGuestEmail(e.target.value)}
+                  onBlur={() => setGuestTouched((s) => ({ ...s, email: true }))}
+                  placeholder="Email address"
+                  type="email"
+                  inputMode="email"
+                  aria-invalid={guestEmailError}
+                  aria-describedby={guestEmailError ? "guest-email-error" : undefined}
+                  className={guestEmailError ? "border-destructive focus-visible:ring-destructive" : ""}
+                  autoComplete="email"
+                />
+                {guestEmailError && (
+                  <p id="guest-email-error" role="alert" className="text-xs text-destructive mt-1">
+                    Please enter a valid email
+                  </p>
+                )}
+              </div>
+              <div onBlur={() => setGuestTouched((s) => ({ ...s, phone: true }))}>
+                <label htmlFor="guest-phone" className="caption mb-1 block">
+                  Phone number
+                </label>
+                <PhoneInput
+                  id="guest-phone"
+                  value={guestPhone}
+                  onChange={setGuestPhone}
+                  placeholder="Phone number"
+                  aria-invalid={guestPhoneError}
+                  aria-describedby={guestPhoneError ? "guest-phone-error" : undefined}
+                />
+                {guestPhoneError && (
+                  <p id="guest-phone-error" role="alert" className="text-xs text-destructive mt-1">
+                    Please enter a valid phone number
+                  </p>
+                )}
               </div>
               <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
                 We'll create your account on this phone number. No password, no OTP, just sign in with this phone later to access your masterclass.
@@ -715,60 +874,76 @@ export default function CheckoutPage() {
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Promo code
             </p>
-            {appliedCoupon ? (
-              <div className="space-y-2">
-                {/* Applied-coupon chip with one-click remove. The
-                    chip is the visible affordance; the savings line
-                    below reinforces the win emotionally. */}
-                <div className="inline-flex items-center gap-2 pl-3 pr-1 py-1 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] border border-[hsl(var(--accent-emerald)/0.4)]">
-                  <Tag className="h-3.5 w-3.5 text-[hsl(var(--accent-emerald))]" />
-                  <span className="font-mono text-sm font-bold text-[hsl(var(--accent-emerald))]">
-                    {appliedCoupon.code}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={removeCoupon}
-                    aria-label="Remove promo code"
-                    className="h-6 w-6 rounded-full bg-[hsl(var(--accent-emerald)/0.2)] hover:bg-[hsl(var(--accent-emerald)/0.4)] flex items-center justify-center transition-colors"
-                  >
-                    <span aria-hidden className="text-[hsl(var(--accent-emerald))] text-sm leading-none">×</span>
-                  </button>
-                </div>
-                {discount > 0 && (
-                  <p className="text-sm font-semibold text-[hsl(var(--accent-emerald))]">
-                    Saved ₹{discount.toLocaleString("en-IN")} on this order
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Input
-                    value={couponCode}
-                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                    placeholder="Have a promo code?"
-                    className="bg-surface-2 border-border w-full font-mono uppercase"
-                    onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
-                  />
-                  {couponLoading && (
-                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-                  )}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={applyCoupon}
-                  disabled={couponLoading || !couponCode.trim()}
-                  className="shrink-0 h-10"
+            <AnimatePresence mode="wait" initial={false}>
+              {appliedCoupon ? (
+                <motion.div
+                  key="applied"
+                  className="space-y-2"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={springs.glide}
                 >
-                  {couponLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    "Apply"
+                  {/* Applied-coupon chip with one-click remove. The
+                      chip is the visible affordance; the savings line
+                      below reinforces the win emotionally. */}
+                  <div className="inline-flex items-center gap-1 pl-3 pr-1 rounded-full bg-[hsl(var(--accent-emerald)/0.15)] border border-[hsl(var(--accent-emerald)/0.4)]">
+                    <Tag className="h-3.5 w-3.5 text-[hsl(var(--accent-emerald))]" />
+                    <span className="font-mono text-sm font-bold text-[hsl(var(--accent-emerald))]">
+                      {appliedCoupon.code}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={removeCoupon}
+                      aria-label="Remove promo code"
+                      className="min-h-[44px] min-w-[44px] rounded-full hover:bg-[hsl(var(--accent-emerald)/0.2)] flex items-center justify-center transition-colors"
+                    >
+                      <X className="h-6 w-6 text-[hsl(var(--accent-emerald))]" aria-hidden />
+                    </button>
+                  </div>
+                  {discount > 0 && (
+                    <p className="text-sm font-semibold text-[hsl(var(--success))] tabular-nums">
+                      Saved ₹{discount.toLocaleString("en-IN")} on this order
+                    </p>
                   )}
-                </Button>
-              </div>
-            )}
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="entry"
+                  className="flex gap-2"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={springs.glide}
+                >
+                  <div className="relative flex-1">
+                    <Input
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      placeholder="Have a promo code?"
+                      className="bg-surface-2 border-border w-full font-mono uppercase"
+                      onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+                    />
+                    {couponLoading && (
+                      <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={applyCoupon}
+                    disabled={couponLoading || !couponCode.trim()}
+                    className="shrink-0 h-10"
+                  >
+                    {couponLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Apply"
+                    )}
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           )}
 
@@ -782,7 +957,11 @@ export default function CheckoutPage() {
             <h2 className="font-['Instrument_Serif'] text-2xl italic text-foreground leading-none">
               Order summary
             </h2>
-            <div className="space-y-2 text-sm pt-1">
+            {/* anim-stagger staggers the receipt rows in on first content mount
+                (CSS keyframe, runs once per row — a later-inserted discount row
+                rises in on its own; the list never re-staggers on coupon apply).
+                Disabled entirely under prefers-reduced-motion (see index.css). */}
+            <div className="anim-stagger space-y-2 text-sm pt-1">
               <div className="flex items-baseline gap-2">
                 <span className="text-muted-foreground shrink-0">Subtotal</span>
                 <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
@@ -820,9 +999,15 @@ export default function CheckoutPage() {
               <div className="flex items-baseline gap-2 text-base font-semibold">
                 <span className="text-foreground shrink-0">Total</span>
                 <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
-                <span className="text-foreground shrink-0 tabular-nums">
-                  ₹{total.toLocaleString("en-IN")}
-                </span>
+                {/* Keyed on the total so the number rolls to its new value on
+                    coupon apply/remove (CountUp collapses to the final value
+                    instantly under reduced motion). */}
+                <CountUp
+                  key={total}
+                  value={total}
+                  prefix="₹"
+                  className="text-foreground shrink-0 tabular-nums"
+                />
               </div>
               {gstAmount > 0 && (
                 <p className="text-[11px] text-muted-foreground text-right -mt-1">
@@ -856,6 +1041,7 @@ export default function CheckoutPage() {
               free capture, signed-in users through create-free-enrolment. Only
               staged payments require a positive amount. */}
           <Button
+            variant="champagne"
             size="xl"
             className="w-full"
             onClick={handlePay}
