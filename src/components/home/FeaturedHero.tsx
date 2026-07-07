@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { motion, useScroll, useTransform, type MotionValue } from "framer-motion";
+import { motion, useInView, useScroll, useTransform, type MotionValue } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { MotionButton } from "@/components/motion/MotionButton";
 import { useCatalog } from "@/components/catalog/useCatalog";
@@ -129,6 +129,13 @@ const FeaturedHero = () => {
   // never translates it.
   const parallaxY = useTransform(scrollYProgress, [0, 1], ["0%", enabled ? "7%" : "0%"]);
 
+  // Both the ken-burns scale drift and the auto-rotation only run while the hero
+  // is actually on screen. A long-running transform on a large image (and the
+  // crossfades each rotation triggers) is a WebView battery/jank tax when the
+  // banner is scrolled away — useInView flips false once it leaves the viewport,
+  // parking the scale at 1 and halting the timer until it returns.
+  const inView = useInView(sectionRef, { amount: 0.2 });
+
   // Keep index valid if the slide list shrinks (e.g. cache refresh).
   useEffect(() => {
     if (index >= slides.length && slides.length > 0) setIndex(0);
@@ -142,11 +149,12 @@ const FeaturedHero = () => {
     )
       return;
     if (paused) return;
+    if (!inView) return;
     const t = setInterval(() => {
       if (!pausedRef.current) setIndex((i) => (i + 1) % slides.length);
     }, ROTATE_MS);
     return () => clearInterval(t);
-  }, [slides.length, paused]);
+  }, [slides.length, paused, inView]);
 
   if (!slides.length) return null;
 
@@ -194,7 +202,7 @@ const FeaturedHero = () => {
                 src={s.image}
                 eager={i === 0}
                 parallaxY={parallaxY}
-                active={i === index}
+                active={i === index && inView}
               />
             </div>
             {/* Dark gradients keep the overlaid copy legible on any art. */}
