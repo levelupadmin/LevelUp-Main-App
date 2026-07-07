@@ -38,7 +38,7 @@ const RatingDistribution = ({ stats }: RatingDistributionProps) => {
             </span>
             <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
               <div
-                className="h-full bg-yellow-400 rounded-full transition-all"
+                className="h-full bg-gold rounded-full transition-all"
                 style={{ width: total_reviews > 0 ? `${(bar.count / maxCount) * 100}%` : "0%" }}
               />
             </div>

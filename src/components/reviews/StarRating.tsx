@@ -48,7 +48,7 @@ const StarRating = ({
               <Star
                 className={cn(
                   sizeMap[size],
-                  "absolute inset-0 fill-yellow-400 text-yellow-400"
+                  "absolute inset-0 fill-gold text-gold"
                 )}
                 strokeWidth={1.5}
                 style={fill === 0.5 ? { clipPath: "inset(0 50% 0 0)" } : undefined}

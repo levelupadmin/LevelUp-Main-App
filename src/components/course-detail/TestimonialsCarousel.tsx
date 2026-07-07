@@ -58,7 +58,7 @@ const TestimonialsCarousel = ({ courseId }: Props) => {
                     key={i}
                     className={
                       i < (t.rating ?? 0)
-                        ? "h-3.5 w-3.5 fill-yellow-400 text-yellow-400"
+                        ? "h-3.5 w-3.5 fill-gold text-gold"
                         : "h-3.5 w-3.5 text-muted-foreground/30"
                     }
                   />

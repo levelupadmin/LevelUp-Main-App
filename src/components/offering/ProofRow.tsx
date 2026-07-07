@@ -79,7 +79,7 @@ export default function ProofRow({ avg, enrolled, className }: ProofRowProps) {
     <div className={cn("flex flex-wrap items-center gap-2 text-sm text-muted-foreground", className)}>
       {avg != null && (
         <span className="inline-flex items-center gap-1">
-          <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+          <Star className="h-4 w-4 fill-gold text-gold" />
           <span className="font-medium text-foreground">{avg.toFixed(1)}</span>
         </span>
       )}
