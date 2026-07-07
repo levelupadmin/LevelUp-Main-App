@@ -6,7 +6,22 @@ import { supabase } from "@/integrations/supabase/client";
 import { ProgressRing } from "@/components/progress/ProgressRing";
 import { CountUp } from "@/components/motion/CountUp";
 import { MotionCard } from "@/components/motion/MotionCard";
+import { celebrate } from "@/lib/haptics";
+import { cn } from "@/lib/utils";
 import { deriveWeekSummary, type WeekSummary } from "./yourWeekDerive";
+
+// Weekly-consistency line is a Rahul-decision, NOT yet granted (phase-4 brief
+// product-call rule): it stays behind a DEFAULT-OFF flag so it never renders in
+// any default build. Only an explicit `VITE_FEATURE_WEEKLY_CONSISTENCY=true`
+// build surfaces it. Read at render time (not module scope) so it stays a pure
+// function of the current env — no build-time freeze that tests can't override.
+const weeklyConsistencyEnabled = () =>
+  import.meta.env.VITE_FEATURE_WEEKLY_CONSISTENCY === "true";
+
+// localStorage key holding the highest consecutive-week count already shown, so
+// the calm "n weeks of showing up" line only celebrates (anim-rise + haptic) on
+// a genuine increment, never on every visit.
+const WEEKS_SEEN_KEY = "lu_weeks_seen";
 
 // ── Your Week ──
 // A compact glance-strip directly under the greeting: the progress ring for the
@@ -19,6 +34,9 @@ import { deriveWeekSummary, type WeekSummary } from "./yourWeekDerive";
 const YourWeek = () => {
   const { user } = useAuth();
   const [summary, setSummary] = useState<WeekSummary | null>(null);
+  // Whether THIS mount should play the entrance on the consistency line (only
+  // when the streak has grown since the last visit — see the effect below).
+  const [celebrateWeeks, setCelebrateWeeks] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,9 +116,36 @@ const YourWeek = () => {
     };
   }, [user]);
 
+  // Weekly-consistency celebration bookkeeping. Only fires under the (default-off)
+  // flag; compares the derived streak against the highest value already shown
+  // (localStorage) and, on a genuine increment, arms the entrance animation +
+  // a single celebrate() haptic. Never runs for n<2 (no zero/guilt state), and
+  // reduced-motion users still get the static line — anim-rise self-disables via
+  // its `prefers-reduced-motion: no-preference` guard, and the haptic is a touch
+  // cue, not visual motion. Wrapped in try/catch so a locked-down WebView storage
+  // (private mode / disabled cookies) degrades to "no celebration", never a throw.
+  const weeks = summary?.consecutiveActiveWeeks ?? 0;
+  useEffect(() => {
+    if (!weeklyConsistencyEnabled() || weeks < 2) return;
+    try {
+      const prevSeen = Number(localStorage.getItem(WEEKS_SEEN_KEY)) || 0;
+      if (weeks > prevSeen) {
+        setCelebrateWeeks(true);
+        void celebrate();
+      }
+      localStorage.setItem(WEEKS_SEEN_KEY, String(weeks));
+    } catch {
+      /* storage unavailable → skip the one-time celebration, still render the line */
+    }
+  }, [weeks]);
+
   // Zero-enrolment (or not-yet-loaded) users get nothing — Home already handles
   // discovery below, so an empty strip would just be a dead block.
   if (!summary) return null;
+
+  // Weekly-consistency line: shown ONLY when the flag is on AND the streak is
+  // ≥2 weeks. Calm register — a single serif-italic, no counter/fire/warning.
+  const showWeeks = weeklyConsistencyEnabled() && summary.consecutiveActiveWeeks >= 2;
 
   // Completed course → a review prompt, not "Lesson N of N" (mirrors
   // ContinueLearning's "Review" CTA for the all-done state).
@@ -135,6 +180,16 @@ const YourWeek = () => {
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 truncate">
             {nextLabel}
           </p>
+          {showWeeks && (
+            <p
+              className={cn(
+                "font-serif-italic text-sm sm:text-base text-[hsl(var(--cream))] mt-1 truncate",
+                celebrateWeeks && "anim-rise"
+              )}
+            >
+              {summary.consecutiveActiveWeeks} weeks of showing up
+            </p>
+          )}
         </div>
 
         <span className="shrink-0 flex items-center gap-1 text-sm font-medium text-[hsl(var(--cream))]">

@@ -12,6 +12,11 @@ import {
  * rows in the exact `.select(...)` shape YourWeek queries.
  */
 
+// A fixed "now" injected into deriveWeekSummary so the consecutiveActiveWeeks
+// field (added for P4-T7) is deterministic: every fixture's completions predate
+// this by months, so the streak is a stable 0 regardless of the wall clock.
+const FIXED_NOW = new Date("2027-01-15T00:00:00Z");
+
 // Two enrolled courses. course-a has 3 chapters across 2 sections (out of order
 // so the sort is actually tested); course-b has 2 chapters in 1 section.
 const baseRows = (): Pick<DeriveInput, "offeringCourses" | "sections" | "chapters"> => ({
@@ -71,6 +76,8 @@ describe("deriveWeekSummary — freshly enrolled, never opened", () => {
       allComplete: false,
       // next uncompleted is the first chapter in sort order → ch-a1
       resumeTo: "/chapters/ch-a1",
+      // no completions at all → no active-week streak
+      consecutiveActiveWeeks: 0,
     });
   });
 });
@@ -95,7 +102,7 @@ describe("deriveWeekSummary — in-progress", () => {
           updated_at: "2026-06-01T00:00:00Z",
         },
       ],
-    });
+    }, FIXED_NOW);
     expect(summary).toEqual({
       topPct: 50, // 1 of 2 in course-b
       lessonsDone: 2, // ch-a1 + ch-b1 across both courses
@@ -103,6 +110,8 @@ describe("deriveWeekSummary — in-progress", () => {
       topTotal: 2,
       allComplete: false,
       resumeTo: "/chapters/ch-b2",
+      // completions are months before FIXED_NOW → stale, no live streak
+      consecutiveActiveWeeks: 0,
     });
   });
 
@@ -143,7 +152,7 @@ describe("deriveWeekSummary — all-complete", () => {
       ...baseRows(),
       // course-a is the most-active (latest updated_at) AND fully complete.
       progress: allCourseAProgress,
-    });
+    }, FIXED_NOW);
     expect(summary).toEqual({
       topPct: 100,
       lessonsDone: 3,
@@ -151,6 +160,8 @@ describe("deriveWeekSummary — all-complete", () => {
       topTotal: 3,
       allComplete: true,
       resumeTo: "/courses/course-a", // review affordance, not a chapter deep-link
+      // completions are months before FIXED_NOW → stale, no live streak
+      consecutiveActiveWeeks: 0,
     });
   });
 });
