@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Mail, RotateCw } from "lucide-react";
+import { Check, Loader2, Mail, RotateCw } from "lucide-react";
+import { motion } from "framer-motion";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
-import { hapticSelection, hapticNotification } from "@/lib/haptics";
+import { hapticNotification, tapTick } from "@/lib/haptics";
+import { durations, easings, instant, useMotionSafe } from "@/lib/motion";
 
 interface Props {
   phone: string;
@@ -59,6 +61,11 @@ export function OtpEntryStep({
   const [error, setError] = useState<string | null>(null);
   const [resendCount, setResendCount] = useState(0);
   const [resendTimer, setResendTimer] = useState(RESEND_SECONDS);
+  // STEAL-8: once verify succeeds we swap the inputs for the digits-merge-to-check
+  // success choreography. Purely presentational — the auth flow (onVerify) is
+  // unchanged; the parent bounds how long this stays on screen before routing.
+  const [verified, setVerified] = useState(false);
+  const ms = useMotionSafe();
 
   useEffect(() => {
     if (resendTimer === 0) return;
@@ -90,6 +97,7 @@ export function OtpEntryStep({
           setOtp("");
         } else {
           hapticNotification("success");
+          setVerified(true);
         }
       } catch (e) {
         // onVerify should always return a result object, but if it
@@ -112,7 +120,7 @@ export function OtpEntryStep({
   }, [otp, otpLength]);
 
   const handleResendSms = async () => {
-    hapticSelection();
+    tapTick();
     setResending(true);
     setError(null);
     setOtp("");
@@ -127,6 +135,52 @@ export function OtpEntryStep({
   };
 
   const counting = resendTimer > 0;
+
+  // ── STEAL-8: OTP verified, cinematically ──────────────────────────────
+  // Subtraction-as-celebration: the input boxes give way to the entered digits
+  // condensing to center, morphing into a champagne check that springs in, with
+  // a serif-italic "Welcome back" fading in below. ≤7 transform/opacity layers,
+  // fired once. Reduced motion → the check + line appear instantly (no merge).
+  if (verified) {
+    return (
+      <div
+        role="status"
+        className="flex min-h-[260px] flex-col items-center justify-center gap-5 py-6 text-center"
+      >
+        <div className="relative flex h-20 w-20 items-center justify-center">
+          {ms.enabled && (
+            <motion.div
+              aria-hidden
+              className="absolute inset-0 flex items-center justify-center gap-1 font-mono text-2xl font-semibold text-cream"
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: [0.9, 1.12, 1.12], opacity: [0, 1, 0] }}
+              transition={{ duration: 0.5, times: [0, 0.5, 1], ease: easings.out }}
+            >
+              {otp.split("").map((d, i) => (
+                <span key={i}>{d}</span>
+              ))}
+            </motion.div>
+          )}
+          <motion.div
+            className="flex h-16 w-16 items-center justify-center rounded-full bg-[hsl(var(--cream))]"
+            initial={ms.enabled ? { scale: 0, opacity: 0 } : false}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={ms.enabled ? { ...ms.springs.bounce, delay: 0.38 } : instant}
+          >
+            <Check className="h-8 w-8 text-[hsl(var(--cream-text))]" strokeWidth={3} />
+          </motion.div>
+        </div>
+        <motion.p
+          className="font-serif-italic text-2xl text-cream"
+          initial={ms.enabled ? { opacity: 0, y: 6 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={ms.enabled ? { duration: durations.base, delay: 0.5, ease: easings.out } : instant}
+        >
+          Welcome back
+        </motion.p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -147,7 +201,8 @@ export function OtpEntryStep({
         <InputOTP
           value={otp}
           onChange={(v) => {
-            if (v.length > otp.length) hapticSelection();
+            // Per-digit selection tick — only on length increase, never on delete.
+            if (v.length > otp.length) tapTick();
             setOtp(v);
           }}
           maxLength={otpLength}
@@ -187,7 +242,7 @@ export function OtpEntryStep({
         <div className="flex justify-center">
           {counting ? (
             <span
-              className="inline-flex items-center gap-1.5 h-9 px-4 rounded-full bg-surface-2 text-xs font-mono text-muted-foreground select-none"
+              className="inline-flex items-center gap-1.5 min-h-[44px] px-4 rounded-full bg-surface-2 text-xs font-mono text-muted-foreground select-none"
               aria-live="polite"
             >
               Resend in {fmtCountdown(resendTimer)}
@@ -197,7 +252,7 @@ export function OtpEntryStep({
               type="button"
               disabled={resending || verifying}
               onClick={handleResendSms}
-              className="pressable inline-flex items-center gap-1.5 h-9 px-4 rounded-full border border-border text-xs text-cream hover:border-border-hover disabled:opacity-50 transition-colors"
+              className="pressable inline-flex items-center gap-1.5 min-h-[44px] px-4 rounded-full border border-border text-xs text-cream hover:border-border-hover disabled:opacity-50 transition-colors"
             >
               {resending ? (
                 <>
@@ -216,7 +271,7 @@ export function OtpEntryStep({
           <button
             type="button"
             onClick={onSwitchToEmail}
-            className="w-full h-9 text-sm text-cream hover:underline inline-flex items-center justify-center gap-1.5"
+            className="w-full min-h-[44px] text-sm text-cream hover:underline inline-flex items-center justify-center gap-1.5"
           >
             <Mail className="h-3.5 w-3.5" /> Not getting the SMS? Use email instead
           </button>
@@ -225,7 +280,7 @@ export function OtpEntryStep({
         <button
           type="button"
           onClick={onBack}
-          className="w-full h-9 text-xs text-muted-foreground hover:text-foreground"
+          className="w-full min-h-[44px] inline-flex items-center justify-center text-xs text-muted-foreground hover:text-foreground"
         >
           ← Use a different number
         </button>

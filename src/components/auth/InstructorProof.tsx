@@ -127,7 +127,7 @@ export function InstructorProof({ className, max = 5 }: Props) {
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
             Learn from
           </p>
-          <p className="text-xs text-foreground leading-snug truncate">
+          <p className="text-[13px] text-foreground leading-snug line-clamp-1">
             {namesLine}
           </p>
         </div>

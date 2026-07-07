@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,8 @@ import { InstructorProof } from "@/components/auth/InstructorProof";
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
 import { isNative } from "@/lib/platform";
 import { hapticImpact } from "@/lib/haptics";
+import { MotionButton } from "@/components/motion/MotionButton";
+import { springs, instant, useMotionSafe } from "@/lib/motion";
 import heroCinematic from "@/assets/login/hero-cinematic.jpg";
 
 // After a session is minted, brand-new phone-first accounts haven't told us
@@ -51,6 +54,16 @@ const EMAIL_ONLY_AUTH = false;
 const VERIFY_MSG91_OTP_URL =
   "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
 
+// STEAL-8 (P4-T9): bounded window the OTP success choreography plays before the
+// client route paints. The session is already minted when this delay runs, so
+// auth is byte-identical — only the on-screen route transition waits, and never
+// for longer than this cap. Reduced motion collapses it to an instant route.
+const SUCCESS_ANIM_MS = 850;
+const prefersReducedMotion = (): boolean =>
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 // 2026-05-26: Login refactor (Mobbin synthesis).
 // - Killed the 5-slide carousel; replaced with one static cinematic still
 //   (generated via gpt-image-2). Carousels split attention and tank the
@@ -71,6 +84,46 @@ const Login = () => {
   const location = useLocation();
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
+  const ms = useMotionSafe();
+
+  // True while the OTP success choreography is playing, so the reactive
+  // user → /home effect below defers its route paint by the same bounded window
+  // as handleVerify (keeping the resulting destination unchanged, just delayed).
+  // A ref, not state — read synchronously inside the effect, no extra render.
+  const celebratingRef = useRef(false);
+
+  // Holds the STEAL-8 post-success navigate timer so it can be cleared if the
+  // component unmounts first (e.g. a route change beats the celebration window),
+  // avoiding a navigate() call from an unmounted component.
+  const navTimerRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (navTimerRef.current !== null) window.clearTimeout(navTimerRef.current);
+    },
+    [],
+  );
+
+  // Drives the mobile bottom-sheet rise (framer springs.glide). Desktop keeps
+  // its static two-column layout — the rise is a mobile-only gesture.
+  // Initialise synchronously from matchMedia so the FIRST paint already knows it
+  // is desktop: a post-paint useState(false)→effect flip would make lg+ compute
+  // sheetRise=true for one frame and framer would spring the (inline transform,
+  // NOT breakpoint-gated) form column up on every desktop login — the exact
+  // regression the old `lg:animate-none` guard prevented.
+  const [isDesktop, setIsDesktop] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(min-width: 1024px)").matches,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setIsDesktop(mql.matches);
+    sync();
+    mql.addEventListener?.("change", sync);
+    return () => mql.removeEventListener?.("change", sync);
+  }, []);
 
   const [step, setStep] = useState<Step>(EMAIL_ONLY_AUTH ? "email_input" : "phone");
   const [phone, setPhone] = useState("");
@@ -100,7 +153,17 @@ const Login = () => {
   usePageTitle("Sign In");
 
   useEffect(() => {
-    if (!authLoading && user) navigate("/home", { replace: true });
+    if (authLoading || !user) return;
+    // Normal (already-authed) visits route immediately. During the OTP success
+    // celebration, handleVerify already owns the bounded, destination-aware
+    // navigation (it scheduled its timer AFTER resolving the real destination),
+    // so this reactive path must stand down. Running its own timer here raced
+    // handleVerify's — starting earlier (at user-propagation, before the
+    // destination resolves) and firing '/home' first, cutting the digits-merge
+    // choreography short under latency. Standing down lets the choreography play
+    // its full window and keeps the final destination handleVerify computed.
+    if (celebratingRef.current) return;
+    navigate("/home", { replace: true });
   }, [user, authLoading, navigate]);
 
   // Best-effort widget init on mount. If it fails (script blocked, env
@@ -118,7 +181,16 @@ const Login = () => {
       </div>
     );
   }
-  if (user) return null;
+  // Normally an authed `user` means "already signed in" → render nothing and let
+  // the reactive effect above redirect. But during the OTP success choreography,
+  // setSession flips `user` truthy MID-handleVerify (inside the awaited
+  // resolvePostAuthDestination round-trip) — before OtpEntryStep can set
+  // `verified`. Returning null there would unmount the child and kill the
+  // digits-merge-to-check celebration, leaving a blank hold until the navTimer
+  // fires. celebratingRef (set synchronously in onVerify, below) latches that
+  // window so we stay mounted and let the choreography play to completion; the
+  // navTimer owns the actual route paint.
+  if (user && !celebratingRef.current) return null;
 
   const rawFrom =
     (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/home";
@@ -214,7 +286,13 @@ const Login = () => {
       const dest = uid
         ? await resolvePostAuthDestination(uid, redirectTarget)
         : redirectTarget;
-      navigate(dest, { replace: true });
+      // STEAL-8: hold the route paint for the success choreography. Session is
+      // already set above (auth unchanged); only this client transition waits.
+      // Tracked in a ref so an early unmount can cancel it (see cleanup effect).
+      navTimerRef.current = window.setTimeout(
+        () => navigate(dest, { replace: true }),
+        prefersReducedMotion() ? 0 : SUCCESS_ANIM_MS,
+      );
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Invalid OTP" };
@@ -308,7 +386,15 @@ const Login = () => {
           phone={phone}
           channel={channel}
           otpLength={4}
-          onVerify={handleVerify}
+          onVerify={async (otp) => {
+            // Open the success-celebration window BEFORE verifying: setSession
+            // flips `user` and would otherwise fire the reactive /home nav before
+            // the choreography can play. A failed verify restores instant nav.
+            celebratingRef.current = true;
+            const res = await handleVerify(otp);
+            if (!res.ok) celebratingRef.current = false;
+            return res;
+          }}
           onResendSms={() => sendSmsOtp(false)}
           onSwitchToWhatsApp={handleSwitchToWA}
           onSwitchToEmail={handleSwitchToEmail}
@@ -391,7 +477,7 @@ const Login = () => {
     </div>
   ) : null;
 
-  const socialProof = <InstructorProof className="mt-6" />;
+  const socialProof = <InstructorProof className="mt-6 pb-safe" />;
 
   const formBlock = (
     <div className="w-full max-w-[400px] mx-auto">
@@ -422,6 +508,9 @@ const Login = () => {
   const showWelcome = step === "phone" && !formOpen && !EMAIL_ONLY_AUTH;
   // Heavier scrim once the form sheet is up so card text never fights the photo.
   const sheetUp = !showWelcome;
+  // The bottom-sheet rise is a mobile-only gesture; desktop stays static, and
+  // reduced motion drops the rise so the form just appears.
+  const sheetRise = !isDesktop && ms.enabled;
 
   return (
     <div className="relative min-h-[100dvh] bg-canvas flex flex-col lg:flex-row lg:overflow-hidden">
@@ -491,7 +580,7 @@ const Login = () => {
               </Link>
             </div>
 
-            <InstructorProof className="mt-7" />
+            <InstructorProof className="mt-7 pb-safe" />
           </div>
         </div>
       )}
@@ -500,7 +589,18 @@ const Login = () => {
           On lg+ it is ALWAYS rendered: the welcome layer above is lg:hidden
           (a mobile-only concept), so gating this column on !showWelcome left
           desktop with a full-bleed hero and no sign-in control at all. */}
-      <div className={`relative z-10 ${showWelcome ? "hidden lg:flex" : "flex"} flex-col flex-1 bg-canvas rounded-t-[28px] mt-auto px-5 pt-7 pb-6 safe-bottom animate-fade-in-up lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8 lg:animate-none`}>
+      <motion.div
+        initial={false}
+        animate={
+          sheetRise
+            ? sheetUp
+              ? { y: 0, opacity: 1 }
+              : { y: 24, opacity: 0 }
+            : { y: 0, opacity: 1 }
+        }
+        transition={ms.reduced ? instant : springs.glide}
+        className={`relative z-10 ${showWelcome ? "hidden lg:flex" : "flex"} flex-col flex-1 bg-canvas rounded-t-[28px] mt-auto px-5 pt-7 pb-6 safe-bottom lg:bg-transparent lg:rounded-none lg:mt-0 lg:w-[480px] lg:min-w-[480px] lg:flex-none lg:border-r lg:border-border lg:px-10 lg:py-8`}
+      >
           {/* Grabber handle (mobile only) reinforces the bottom-sheet feel */}
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border lg:hidden" />
 
@@ -508,21 +608,21 @@ const Login = () => {
               wordmark. Reserves a stable 44px row so nothing shifts per step. */}
           <div className="flex items-center gap-2 min-h-[44px] mb-4 lg:mb-8">
             {(canGoBack || step === "phone") && (
-              <button
+              <MotionButton
                 type="button"
                 onClick={() => {
                   if (canGoBack) handleBack();
                   else setFormOpen(false);
                 }}
                 aria-label="Back"
-                className={`-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground active:scale-95 transition lg:-ml-3 ${
+                className={`-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground lg:-ml-3 ${
                   // The phone-step back returns to the mobile welcome sheet,
                   // which doesn't exist on lg+ (this column always shows there).
                   !canGoBack ? "lg:hidden" : ""
                 }`}
               >
                 <ChevronLeft className="h-6 w-6" />
-              </button>
+              </MotionButton>
             )}
             <LevelUpWordmark className="hidden lg:block text-xl" />
           </div>
@@ -530,7 +630,7 @@ const Login = () => {
           <div className="flex-1 flex flex-col justify-start pt-2 lg:justify-center lg:pt-0">
             {formBlock}
           </div>
-        </div>
+        </motion.div>
     </div>
   );
 };
