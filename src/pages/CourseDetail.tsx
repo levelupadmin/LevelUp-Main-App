@@ -464,11 +464,21 @@ const CourseDetail = () => {
                 </Button>
               ) : hasAccess && completedCount >= totalChapters && totalChapters > 0 ? (
                 // Fully completed: give the user something meaningful to do.
-                <Button size="lg" onClick={handleEnrollOrContinue}>
+                // Champagne fill = the redesign's primary-action treatment
+                // (matches Home's "Explore" CTA); one accent per screen moment.
+                <Button
+                  size="lg"
+                  onClick={handleEnrollOrContinue}
+                  className="btn-champagne font-semibold text-[hsl(var(--cream-text))]"
+                >
                   Review Course →
                 </Button>
               ) : (
-                <Button size="lg" onClick={handleEnrollOrContinue}>
+                <Button
+                  size="lg"
+                  onClick={handleEnrollOrContinue}
+                  className="btn-champagne font-semibold text-[hsl(var(--cream-text))]"
+                >
                   {hasAccess
                     ? "Continue Learning →"
                     : isNative()

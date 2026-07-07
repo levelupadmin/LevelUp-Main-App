@@ -61,7 +61,7 @@ const ReviewForm = ({ courseId, existingReview, onSubmitted, onSubmit }: ReviewF
       <Button
         onClick={handleSubmit}
         disabled={rating === 0 || saving}
-        className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
+        className="h-11 bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
       >
         {saving ? "Saving..." : existingReview ? "Update Review" : "Submit Review"}
       </Button>

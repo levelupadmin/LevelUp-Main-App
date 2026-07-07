@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/lib/toast";
+import { cn } from "@/lib/utils";
 import DOMPurify from "dompurify";
 import {
   CheckCircle2,
@@ -188,7 +189,15 @@ const ChapterViewer = () => {
   const DISMISS_THRESHOLD = 130; // px pulled down past which release dismisses.
   const dismissY = useMotionValue(0);
   const dismissScale = useTransform(dismissY, [0, 400], [1, 0.94], { clamp: true });
-  const dismissOpacity = useTransform(dismissY, [0, 400], [1, 0.82], { clamp: true });
+  // Dim feedback rides a single flat scrim layer, NOT the subtree's own opacity.
+  // An ancestor `opacity < 1` forces the browser to flatten the whole surface —
+  // the live player iframe, the backdrop-blurred header and the AmbientGlow blur
+  // — into a group-opacity offscreen buffer and re-composite it EVERY frame,
+  // which is the mid-range Android WebView jank source. A flat-colour scrim whose
+  // opacity animates is the canonical cheap case (composited, no re-raster). The
+  // 0→0.18 range darkens the surface to roughly the old 0.82 perceived level at
+  // the far end of the pull, so the feel is preserved.
+  const dismissScrim = useTransform(dismissY, [0, 400], [0, 0.18], { clamp: true });
   const [dragActive, setDragActive] = useState(false);
   // Live gesture bookkeeping. `candidate` is set on pointer-down and only
   // promotes to `dragging` once a clear downward intent is seen, so a tap on
@@ -1061,7 +1070,7 @@ const ChapterViewer = () => {
             <p className="text-lg font-semibold">{milestone.title}</p>
             <p className="text-sm text-muted-foreground mt-1">{milestone.subtitle}</p>
             <div className="mt-2 h-1.5 bg-surface-2 rounded-full overflow-hidden">
-              <div className="h-full bg-[hsl(var(--cream))] rounded-full transition-all duration-700" style={{ width: `${milestone.pct}%` }} />
+              <div className="h-full bg-[hsl(var(--cream))] rounded-full motion-safe:transition-all motion-safe:duration-sweep" style={{ width: `${milestone.pct}%` }} />
             </div>
           </div>
         </div>
@@ -1119,11 +1128,23 @@ const ChapterViewer = () => {
       <motion.div
         style={
           dragActive
-            ? { y: dismissY, scale: dismissScale, opacity: dismissOpacity }
+            ? { y: dismissY, scale: dismissScale }
             : undefined
         }
-        className={dragActive ? "origin-top will-change-transform" : undefined}
+        className={dragActive ? "relative origin-top will-change-transform" : undefined}
       >
+        {/* Dim scrim — the dismiss "fade" without an ancestor opacity. A single
+            flat-colour layer whose opacity animates composites cheaply, unlike
+            subtree opacity which would flatten the whole surface (player iframe +
+            blurred header + glow) into a re-composited group buffer per frame.
+            Sits above the z-30 header so the darkening reads uniformly. */}
+        {dragActive && (
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-40 bg-background"
+            style={{ opacity: dismissScrim }}
+          />
+        )}
         {/* Top bar — also the swipe-down-dismiss grab region (T3). Handlers live
             here and nowhere else, so page scroll outside this bar is untouched. */}
         <div
@@ -1141,7 +1162,16 @@ const ChapterViewer = () => {
           // reduced motion, where the drag is disabled and the header must keep
           // native touch behaviour. Page scroll outside this bar is untouched.
           style={motionSafe.reduced ? undefined : { touchAction: "none" }}
-          className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 flex items-center gap-3 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]"
+          className={cn(
+            "sticky top-0 z-30 border-b border-border px-4 flex items-center gap-3 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]",
+            // During a live dismiss drag, degrade the backdrop-blur to a solid
+            // fill. A `backdrop-blur-xl` sticky header re-samples and re-blurs its
+            // backdrop every frame as the ancestor scales/translates — one of the
+            // heaviest per-frame costs on mid-range Android WebView. A solid
+            // `bg-card` is visually near-identical over the near-black surface and
+            // costs nothing to re-composite. Restored the instant the drag ends.
+            dragActive ? "bg-card" : "bg-card/80 backdrop-blur-xl",
+          )}
         >
           {/* Grab handle: the affordance that this surface pulls down to
               dismiss. Decorative + non-interactive; hidden under reduced
@@ -1214,7 +1244,11 @@ const ChapterViewer = () => {
               cheap on Android WebView compositing. The thumbnail is the same
               small source the Up Next rail already uses. */}
           <AmbientGlow
-            src={chapter.thumbnail_url ?? chapter.vdocipher_thumbnail_url}
+            // Suspend the blurred halo while a dismiss drag is live: the scaling
+            // ancestor invalidates its blur raster every frame. It's purely
+            // decorative, so nulling the source renders nothing extra until the
+            // gesture settles, then the bloom returns.
+            src={dragActive ? null : (chapter.thumbnail_url ?? chapter.vdocipher_thumbnail_url)}
             width={320}
             // The player sits on the near-black chapter surface, so the muted
             // 0.22 / saturate-0.6 default collapsed into the black and the halo
@@ -1224,7 +1258,36 @@ const ChapterViewer = () => {
             intensity={0.42}
             saturate={0.95}
           >
-            <ChapterMediaPlayer chapter={chapter} updateProgress={updateProgress} lastPosition={lastPosition} />
+            <div className="relative">
+              <ChapterMediaPlayer chapter={chapter} updateProgress={updateProgress} lastPosition={lastPosition} />
+              {/* Poster-hide the live media surface during a dismiss drag. The
+                  cross-origin player (VdoCipher / Vimeo / YouTube iframe, the PDF
+                  iframe, or the app-owned <video>) is the priciest layer to
+                  re-composite under a scaling+translating ancestor. Occluding it
+                  with a static poster lets Blink cull the live surface for the
+                  duration of the gesture; it's removed the instant the drag
+                  settles, so playback/scroll position is untouched. Only the
+                  iframe/video content types need this — image/article surfaces
+                  are cheap and are left visible. */}
+              {dragActive &&
+                (chapter.content_type === "video" ||
+                  chapter.content_type === "pdf" ||
+                  chapter.content_type === "embedded") && (
+                  <div
+                    aria-hidden
+                    className="absolute inset-0 z-10 overflow-hidden rounded-2xl bg-black"
+                  >
+                    {(chapter.thumbnail_url || chapter.vdocipher_thumbnail_url) && (
+                      <img
+                        src={chapter.thumbnail_url || chapter.vdocipher_thumbnail_url}
+                        alt=""
+                        aria-hidden
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                  </div>
+                )}
+            </div>
           </AmbientGlow>
 
           {/* Chapter info - the Masterclass pattern: big title on the
@@ -1255,7 +1318,7 @@ const ChapterViewer = () => {
                   <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
                     Lesson {currentIndex + 1} of {siblings.length}
                     {courseTotal > 0 && (
-                      <span className="text-[hsl(var(--cream))]/45">
+                      <span className="text-[hsl(var(--cream))]/60">
                         {" · "}
                         {coursePct}% complete
                       </span>
@@ -1271,6 +1334,7 @@ const ChapterViewer = () => {
                   variant="outline"
                   size="sm"
                   onClick={handleShare}
+                  aria-label="Share"
                   className="h-11 min-w-[44px]"
                 >
                   <Share2 className="h-4 w-4 sm:mr-2" />
@@ -1410,6 +1474,7 @@ const ChapterViewer = () => {
                     <TabsTrigger
                       key={t.key}
                       value={t.key}
+                      aria-label={t.label}
                       className="relative h-full min-h-11 gap-1 px-1 text-xs transition-colors duration-base ease-out-expo data-[state=active]:bg-transparent data-[state=active]:text-[hsl(var(--cream-text))] data-[state=active]:shadow-none focus-visible:ring-[hsl(var(--cream))]"
                     >
                       {active && (

@@ -1,4 +1,4 @@
-import { useState, type ImgHTMLAttributes } from "react";
+import { useCallback, useState, type ImgHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 /** Aspect presets mapped to Tailwind aspect-ratio utilities. */
@@ -98,6 +98,26 @@ export const ArtworkImage = ({
 
   const showPlaceholder = !src || errored;
 
+  // Cached-image guard. The fade-in is gated on `loaded`, which is only ever
+  // flipped by the `load` event. But when the browser already has the image in
+  // its HTTP cache it can finish decoding and set `img.complete` BEFORE React
+  // attaches the onLoad listener during commit — so the `load` event is missed,
+  // `loaded` stays false, and the <img> is pinned at opacity-0 over the black
+  // wrapper. That reads as a missing-art black void even though the artwork is
+  // present and valid (repro: any card whose thumbnail is already cached, e.g.
+  // the Creator Academy cohort tile on Learn's Recommended rail — it renders
+  // fine on a cold load, black on a warm/revisited one). A ref callback runs on
+  // mount, after the DOM node's src is set, and reconciles from `complete`:
+  // a decoded image (naturalWidth > 0) is marked loaded so it fades in; a
+  // cached-but-broken one (naturalWidth === 0, i.e. an errored response served
+  // from cache) falls back to the branded placeholder. onLoad/onError still fire
+  // for the normal cold-load path; setting the same state twice is harmless.
+  const reconcileCachedImage = useCallback((node: HTMLImageElement | null) => {
+    if (!node || !node.complete) return;
+    if (node.naturalWidth > 0) setLoaded(true);
+    else setErrored(true);
+  }, []);
+
   // Use the lowercase DOM attribute name so it passes through as a plain HTML
   // attribute across React versions, and omit the key entirely when not a
   // priority image (avoids emitting `fetchpriority` at all below the fold).
@@ -117,6 +137,7 @@ export const ArtworkImage = ({
         <ArtworkPlaceholder alt={alt} />
       ) : (
         <img
+          ref={reconcileCachedImage}
           src={src}
           alt={alt}
           loading={priority ? "eager" : "lazy"}

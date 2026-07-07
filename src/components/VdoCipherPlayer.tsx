@@ -7,6 +7,7 @@ import { AlertCircle, Lock, Clock, Loader2, Play, RotateCcw } from "lucide-react
 import { VdoPlayerNative, isNativeDrmAvailable } from "@/lib/vdoNative";
 import { toast } from "@/lib/toast";
 import { hapticImpact } from "@/lib/haptics";
+import { captureException } from "@/lib/sentry";
 
 interface Props {
   chapterId: string;
@@ -131,6 +132,19 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
       } else {
         setErrorType(result.errorType);
         setError(result.message);
+        // The raw failure reason is for us, not the student. A network fail
+        // carries a technical string (e.g. supabase-js's "Failed to send a
+        // request to the Edge Function") that must never reach the screening
+        // room — the UI shows warm microcopy instead, so route the real reason
+        // to Sentry + console for diagnosis. Access/rate messages are human,
+        // actionable copy and stay on screen.
+        if (result.errorType === "network") {
+          console.error("[VdoCipherPlayer] OTP mint failed (network):", result.message);
+          captureException(new Error(`VdoCipher OTP mint failed: ${result.message}`), {
+            chapterId,
+            errorType: result.errorType,
+          });
+        }
       }
       setLoading(false);
     };
@@ -279,11 +293,24 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
 
   if (error) {
     const Icon = errorType === "access" ? Lock : errorType === "rate" ? Clock : AlertCircle;
+    // Craft-register copy (Pillar 5): a serif-italic headline + one calm
+    // sentence, one voice with EmptyState / SystemState. On the network path we
+    // never echo the raw `error` — it's a technical string ("Failed to send a
+    // request to the Edge Function") already routed to Sentry above; the
+    // student sees warm microcopy. Access/rate errors carry human, actionable
+    // server copy, so their sentence stays the real message.
+    const isNetwork = errorType === "network";
+    const heading =
+      errorType === "access" ? "Locked for now" : errorType === "rate" ? "One moment" : "Lost the signal";
+    const body = isNetwork
+      ? "We couldn't load this lesson just now. Check your connection and try again."
+      : error;
     return (
       <div className="aspect-video w-full max-w-full bg-card rounded-[16px] border border-border flex items-center justify-center">
         <div className="text-center max-w-md px-6 space-y-3">
           <Icon className="h-10 w-10 mx-auto text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">{error}</p>
+          <h3 className="font-serif-italic text-xl text-cream">{heading}</h3>
+          <p className="text-sm text-muted-foreground">{body}</p>
           {/* Dead-end recovery: each error class gets a next step instead
               of a bare message. Anon access errors route to sign-in (and
               back here via Login's location.state.from); signed-in access

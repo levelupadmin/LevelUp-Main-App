@@ -71,3 +71,32 @@ describe("CompletionRecap — glide-out exit is reachable on dismissal (deferred
     await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
   });
 });
+
+describe("CompletionRecap — touch containment stops scroll-bleed to the covered page", () => {
+  it("contains touch gestures on the overlay itself (touch-none + overscroll-contain)", () => {
+    // The recap is a full-screen fixed portal, but its two entry paths both
+    // leave the document root scrollable: standalone CourseDetail usage never
+    // mounts a takeover, and the arc's recap phase runs AFTER the takeover
+    // released its sole body-scroll lock. Without containment, an iOS WKWebView
+    // touch drag over the overlay scroll-chains through to the covered page and
+    // drifts its position after dismiss.
+    //
+    // The fix must NOT re-add a body.style.overflow writer (CompletionTakeover
+    // is the app's sole owner of that). Instead the overlay contains the gesture
+    // on itself via `touch-action: none` + `overscroll-behavior: contain`. This
+    // pins those utilities so the containment can't silently regress.
+    render(
+      <CompletionRecap
+        open
+        onClose={() => {}}
+        courseTitle="Test Course"
+        lessonsCompleted={3}
+        minutesWatched={42}
+      />,
+    );
+
+    const overlay = screen.getByRole("dialog", { name: /course recap/i });
+    expect(overlay.className).toContain("touch-none");
+    expect(overlay.className).toContain("overscroll-contain");
+  });
+});

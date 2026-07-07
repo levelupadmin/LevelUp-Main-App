@@ -184,7 +184,7 @@ export default function UpNextList({ siblings, currentIndex, currentChapterId, c
             key={s.id}
             onClick={() => !isCurrent && navigate(`/chapters/${s.id}`)}
             disabled={isCurrent}
-            className={`w-full flex gap-3 p-2.5 rounded-lg text-left transition-colors min-h-[68px] ${
+            className={`w-full flex gap-3 p-2.5 rounded-lg text-left transition-colors min-h-[68px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
               isCurrent
                 ? "bg-[hsl(var(--cream))]/10 ring-1 ring-[hsl(var(--cream))]/40 cursor-default"
                 : "hover:bg-surface/60 active:bg-surface"

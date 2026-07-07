@@ -123,7 +123,7 @@ export default function CompletionTakeover({
             e.stopPropagation();
             onClose();
           }}
-          className="absolute top-4 right-4 safe-top z-10 flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-muted-foreground hover:text-foreground"
+          className="absolute top-4 right-4 safe-top z-10 flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
         >
           <X className="h-5 w-5" />
         </button>
@@ -196,7 +196,7 @@ export default function CompletionTakeover({
               void hapticImpact("light");
               onShare();
             }}
-            className="pressable inline-flex items-center justify-center gap-2 rounded-full border border-[hsl(var(--cream))]/30 bg-black/30 px-5 py-3 text-sm font-medium text-foreground hover:bg-black/50 min-h-[48px] flex-1"
+            className="pressable inline-flex items-center justify-center gap-2 rounded-full border border-[hsl(var(--cream))]/30 bg-black/30 px-5 py-3 text-sm font-medium text-foreground hover:bg-black/50 min-h-[48px] flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           >
             <Share2 className="h-4 w-4" />
             Share
@@ -207,7 +207,7 @@ export default function CompletionTakeover({
               void hapticImpact("medium");
               onContinue();
             }}
-            className="btn-champagne pressable inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-[hsl(var(--cream-text))] min-h-[48px] flex-1"
+            className="btn-champagne pressable inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-[hsl(var(--cream-text))] min-h-[48px] flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           >
             {ctaLabel}
             <ArrowRight className="h-4 w-4" />

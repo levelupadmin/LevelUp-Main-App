@@ -30,20 +30,42 @@ import {
   ENROLLED_OFFERINGS_QUERY_KEY,
 } from "@/components/catalog/useCatalog";
 
-// Feed-shaped placeholder for the first paint: a resume-rail row plus the
-// catalog header + card grid. Built from the shared skeleton primitives and
+// Feed-shaped placeholder for the first paint: the above-the-fold block plus
+// the catalog header + card grid. Built from the shared skeleton primitives and
 // sized to mirror the real feed's above-the-fold block so the LoadingSwap
 // crossfade lands with no layout shift (see LoadingSwap's zero-CLS contract).
-const HomeFeedSkeleton = () => (
+//
+// The above-the-fold block is BRANCHED on the same enrolment signal the feed
+// itself gates on, so the placeholder matches the shape that is about to paint:
+//   • Enrolled users lead with the resume rail (YourWeek / ContinueLearning) →
+//     a 3-card media row.
+//   • Zero-enrolment users have NO resume rail; their feed leads with
+//     FeaturedHero → a full-bleed banner block mirroring the hero's bleed +
+//     aspect ratios.
+// `hasEnrolments` is guaranteed accurate at the crossfade: LoadingSwap only
+// swaps once `isFeedLoading` is false, which requires `enrolmentsLoading` false,
+// so the skeleton's final frame always matches the real feed (no
+// flash-of-wrong-shape at the handoff).
+const HomeFeedSkeleton = ({ hasEnrolments }: { hasEnrolments: boolean }) => (
   <div className="space-y-10" aria-busy="true" aria-live="polite">
-    <div className="space-y-3">
-      <SkeletonLine width="42%" height="20px" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {[0, 1, 2].map((i) => (
-          <SkeletonCard key={i} variant="media" />
-        ))}
+    {hasEnrolments ? (
+      <div className="space-y-3">
+        <SkeletonLine width="42%" height="20px" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[0, 1, 2].map((i) => (
+            <SkeletonCard key={i} variant="media" />
+          ))}
+        </div>
       </div>
-    </div>
+    ) : (
+      // Mirrors FeaturedHero's outer frame: same `-mx-4 md:mx-0` full-bleed and
+      // `rounded-none md:rounded-3xl`, and the same responsive aspect ratios +
+      // `max-h-[520px]` so the banner placeholder occupies the hero's exact box.
+      <div
+        aria-hidden
+        className="skeleton-shimmer -mx-4 md:mx-0 rounded-none md:rounded-3xl aspect-[4/5] sm:aspect-[16/8] lg:aspect-[21/8] max-h-[520px] w-full"
+      />
+    )}
     <div className="space-y-6">
       <div className="space-y-2">
         <SkeletonLine width="18%" height="12px" />
@@ -244,7 +266,15 @@ const Home = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(measure);
     };
-    measure();
+    // Defer the (re)measure a frame instead of probing synchronously in the
+    // effect body. This effect re-runs on the `isFeedLoading` skeleton→content
+    // handoff; a synchronous probe here forces a reflow (scrollHeight read +
+    // scrollTop nudge) inside that commit, stalling the crossfade paint. rAF
+    // lets the handoff commit paint first, then lands the probe next frame —
+    // same rAF gate the resize/orientation path already uses. The
+    // reads-before-writes batching inside detectStickyParkingBroken is
+    // unchanged.
+    scheduleMeasure();
     window.addEventListener("resize", scheduleMeasure);
     window.addEventListener("orientationchange", scheduleMeasure);
     return () => {
@@ -311,6 +341,28 @@ const Home = () => {
         }
         style={stickyParkingBroken ? { y: scrollY } : undefined}
       >
+        {/* Header-strip occlusion — fallback path ONLY. The JS fallback pins the
+            band at its flow slot `calc(4rem + safe-area)`, the line directly BELOW
+            StudentLayout's app header. On the native-sticky path the header pins
+            there and holds that 0→(4rem+safe) strip. But the fallback is armed by
+            the SAME probe (`position:sticky;top:0`) the header relies on, so
+            whenever we're here the header's own sticky is ALSO defeated by the
+            coarse `overflow-x:hidden` root rule — it scrolls away and un-occludes
+            the strip, letting hero/catalog content bleed through ABOVE the parked
+            band. So the band must occlude that strip itself: an opaque bg-canvas
+            panel anchored to the band's top (`bottom-full`) extending up by the
+            header's exact height. Pinned with the band (child of the translated
+            wrapper) so it holds the strip for the whole scroll. z-30 (< header's
+            z-40): at scrollY 0 the real header renders ON TOP of it — no double
+            paint, no jump, seamless with the native path — and as the header
+            scrolls off, this keeps the strip covered. transform/opacity untouched;
+            static under reduced motion. */}
+        {stickyParkingBroken && (
+          <div
+            aria-hidden
+            className="absolute inset-x-0 bottom-full h-[calc(4rem+env(safe-area-inset-top))] bg-canvas"
+          />
+        )}
         {/* The header carries the SOLID bg-canvas fill and must stay fully
             opaque so the parked band actually occludes the hero image + catalog
             title/pills scrolling beneath it — hence NO opacity here. The
@@ -355,7 +407,7 @@ const Home = () => {
       <LoadingSwap
         className="mt-10"
         loading={isFeedLoading}
-        skeleton={<HomeFeedSkeleton />}
+        skeleton={<HomeFeedSkeleton hasEnrolments={hasEnrolments} />}
       >
       <div className="space-y-10 anim-rise">
       {/* Your-Week glance strip — most-active course ring, lessons completed,

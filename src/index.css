@@ -649,7 +649,6 @@
     transition:
       transform var(--motion-base) var(--ease-out),
       opacity var(--motion-base) var(--ease-out),
-      height var(--motion-base) var(--ease-out),
       box-shadow var(--motion-fast) var(--ease-out);
   }
   /* Exit — snappy fade-out on the fast token, mirroring the Radix toast's
@@ -658,7 +657,6 @@
   [data-sonner-toast].lu-sonner-toast[data-removed="true"] {
     transition:
       transform var(--motion-base) var(--ease-out),
-      opacity var(--motion-fast) var(--ease-out),
-      height var(--motion-base) var(--ease-out);
+      opacity var(--motion-fast) var(--ease-out);
   }
 }

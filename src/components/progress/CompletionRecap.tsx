@@ -183,7 +183,15 @@ export const CompletionRecap = ({
   // body-scroll-lock owner (the completion-arc invariant; a second writer here
   // caused the wedged-scroll race the arc was built to fix). The recap is a
   // full-screen `fixed inset-0` portal with `overflow-hidden`, so the covered
-  // page is not visible or interactive behind it regardless.
+  // page is not visible behind it. But visual cover is NOT scroll cover: the
+  // document root stays scrollable in both entry paths (standalone CourseDetail
+  // usage — no takeover ever mounts — and the arc's recap phase — the takeover
+  // released its lock before the recap mounted), so on iOS WKWebView a touch
+  // drag over this overlay chains through to scroll the covered page and drifts
+  // its position after dismiss. The root carries `touch-none overscroll-contain`
+  // (see the motion.div below) to contain touch gestures on the overlay itself —
+  // the same mechanism ChapterViewer uses on its scrub grab-region — which stops
+  // the scroll-bleed WITHOUT a second body-overflow writer.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -216,7 +224,7 @@ export const CompletionRecap = ({
           role="dialog"
           aria-modal="true"
           aria-label={`Course recap: ${courseTitle}`}
-          className="fixed inset-0 z-[9998] bg-canvas text-foreground safe-top pb-safe overflow-hidden"
+          className="fixed inset-0 z-[9998] bg-canvas text-foreground safe-top pb-safe overflow-hidden touch-none overscroll-contain"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -239,7 +247,7 @@ export const CompletionRecap = ({
       )}
       {/* Per-slide radial glow */}
       <div
-        className="absolute inset-0 transition-[background] duration-700"
+        className="absolute inset-0 motion-safe:transition-[background] motion-safe:duration-sweep"
         style={{
           background: `radial-gradient(120% 80% at 50% 18%, ${accentForIndex(index)}, transparent 62%)`,
         }}
@@ -251,7 +259,7 @@ export const CompletionRecap = ({
         {slides.map((s, i) => (
           <div key={s.key} className="flex-1 h-1 rounded-full bg-cream/15 overflow-hidden">
             <div
-              className="h-full bg-cream transition-all duration-300"
+              className="h-full bg-cream motion-safe:transition-all motion-safe:duration-base"
               style={{ width: i < index ? "100%" : i === index ? "100%" : "0%" }}
             />
           </div>
@@ -264,7 +272,7 @@ export const CompletionRecap = ({
           type="button"
           onClick={onClose}
           aria-label="Close recap"
-          className="pressable flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+          className="pressable flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
         >
           <X className="h-5 w-5" />
         </button>
@@ -274,7 +282,7 @@ export const CompletionRecap = ({
       <button
         type="button"
         onClick={advance}
-        className="relative z-10 flex flex-1 h-[calc(100%-7rem)] w-full flex-col items-center justify-center px-8 text-center"
+        className="relative z-10 flex flex-1 h-[calc(100%-7rem)] w-full flex-col items-center justify-center px-8 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[hsl(var(--cream))]"
       >
         <div key={slide.key} className="anim-rise flex flex-col items-center max-w-md">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-cream/10 text-cream mb-7">
@@ -297,7 +305,7 @@ export const CompletionRecap = ({
         <button
           type="button"
           onClick={advance}
-          className="btn-champagne pressable flex h-12 w-full items-center justify-center gap-1.5 rounded-full font-semibold text-base"
+          className="btn-champagne pressable flex h-12 w-full items-center justify-center gap-1.5 rounded-full font-semibold text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
         >
           {isLast ? "Done" : "Next"}
           {!isLast && <ChevronRight className="h-4 w-4" />}
