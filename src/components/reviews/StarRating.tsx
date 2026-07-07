@@ -27,23 +27,16 @@ const StarRating = ({
     <div
       className={cn("flex items-center gap-0.5", className)}
       onMouseLeave={() => interactive && setHoverRating(0)}
+      // Non-interactive stars are purely a visual rating readout: expose a single
+      // label on the group instead of five unlabeled buttons.
+      role={interactive ? undefined : "img"}
+      aria-label={interactive ? undefined : `Rated ${rating} out of 5 stars`}
     >
       {[1, 2, 3, 4, 5].map((star) => {
         const fill = displayRating >= star ? 1 : displayRating >= star - 0.5 ? 0.5 : 0;
 
-        return (
-          <button
-            key={star}
-            type="button"
-            disabled={!interactive}
-            className={cn(
-              "relative p-0 border-0 bg-transparent",
-              interactive && "cursor-pointer hover:scale-110 transition-transform",
-              !interactive && "cursor-default"
-            )}
-            onClick={() => interactive && onRate?.(star)}
-            onMouseEnter={() => interactive && setHoverRating(star)}
-          >
+        const icons = (
+          <span className="relative inline-flex" aria-hidden={interactive ? true : undefined}>
             {/* Empty star (background) */}
             <Star
               className={cn(sizeMap[size], "text-muted-foreground/40")}
@@ -58,13 +51,34 @@ const StarRating = ({
                   "absolute inset-0 fill-yellow-400 text-yellow-400"
                 )}
                 strokeWidth={1.5}
-                style={
-                  fill === 0.5
-                    ? { clipPath: "inset(0 50% 0 0)" }
-                    : undefined
-                }
+                style={fill === 0.5 ? { clipPath: "inset(0 50% 0 0)" } : undefined}
               />
             )}
+          </span>
+        );
+
+        // Display mode: render a non-interactive element (no sub-44px control,
+        // no empty aria-label). The group above carries the label.
+        if (!interactive) {
+          return (
+            <span key={star} className="inline-flex">
+              {icons}
+            </span>
+          );
+        }
+
+        // Interactive mode: a real ≥44px tap target (min-h/w-11) centered on the
+        // star. The icon keeps its visual size; only the hit area expands.
+        return (
+          <button
+            key={star}
+            type="button"
+            aria-label={`Rate ${star} star${star === 1 ? "" : "s"}`}
+            className="relative flex min-h-[44px] min-w-[44px] items-center justify-center border-0 bg-transparent p-0 cursor-pointer transition-transform hover:scale-110"
+            onClick={() => onRate?.(star)}
+            onMouseEnter={() => setHoverRating(star)}
+          >
+            {icons}
           </button>
         );
       })}

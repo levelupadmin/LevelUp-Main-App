@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 interface AmbientGlowProps {
@@ -36,6 +36,15 @@ interface AmbientGlowProps {
   className?: string;
   /** Opacity of the glow layer (default 0.25). */
   intensity?: number;
+  /**
+   * Saturation of the blurred glow copy (CSS `saturate()` amount, default 0.6 —
+   * a muted, cinematic wash). Raise it toward 1 (or beyond) when the halo sits
+   * over a very dark poster on a near-black surface, where a heavily desaturated
+   * bloom collapses into the black and stops reading. Only the desaturation is
+   * tuned here — blur stays capped at `blur-md` on the single small copy, so the
+   * Android WebView compositing budget is unchanged.
+   */
+  saturate?: number;
 }
 
 /**
@@ -74,6 +83,7 @@ export const AmbientGlow = ({
   children,
   className,
   intensity = 0.25,
+  saturate = 0.6,
 }: AmbientGlowProps) => {
   const glowSrc = srcSmall ?? src;
   return (
@@ -96,8 +106,17 @@ export const AmbientGlow = ({
             aria-hidden="true"
             role="presentation"
             width={width}
-            className="pointer-events-none h-full w-full object-cover blur-md saturate-[0.6]"
-            style={{ opacity: intensity }}
+            // Saturation is driven off the `saturate` prop via Tailwind's own
+            // `--tw-saturate` custom property so the `blur-md` filter chain still
+            // composes it (identical to a static `saturate-[…]` class, but
+            // tunable per caller). Blur stays capped at `blur-md`.
+            className="pointer-events-none h-full w-full object-cover blur-md"
+            style={
+              {
+                opacity: intensity,
+                "--tw-saturate": `saturate(${saturate})`,
+              } as CSSProperties
+            }
             loading="lazy"
             decoding="async"
           />

@@ -141,6 +141,10 @@ export default {
         "fast": "160ms",
         "base": "240ms",
         "slow": "400ms",
+        // Editorial "sweep" timing — mirrors durations.sweep (0.7s) in
+        // src/lib/motion.ts. Longer than --motion-slow so a progress fill reads
+        // as a deliberate sweep rather than a UI transition.
+        "sweep": "700ms",
       },
       keyframes: {
         "accordion-down": {

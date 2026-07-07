@@ -1,13 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { X, ChevronRight, Trophy, Clock, BookOpen, User, Sparkles } from "lucide-react";
 import { CountUp } from "@/components/motion/CountUp";
 import Confetti from "@/components/Confetti";
 import { hapticImpact, hapticSelection } from "@/lib/haptics";
+import { useMotionSafe } from "@/lib/motion";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 interface CompletionRecapProps {
   open: boolean;
   onClose: () => void;
+  /**
+   * Fired once the glide-out exit animation has fully played and the recap has
+   * unmounted. The completion arc uses this to defer navigation until AFTER the
+   * exit finishes — `onClose` merely flips `open` false so the exit can play,
+   * and the actual route change happens here (mirrors CompletionTakeover's
+   * `onExited`). Without this split, navigating inside `onClose` unmounts the
+   * portal synchronously and AnimatePresence never plays the exit.
+   */
+  onExited?: () => void;
   courseTitle: string;
   instructorName?: string | null;
   /** Total chapters/lessons finished in this course. */
@@ -47,6 +59,7 @@ const accentForIndex = (i: number) => {
 export const CompletionRecap = ({
   open,
   onClose,
+  onExited,
   courseTitle,
   instructorName,
   lessonsCompleted,
@@ -55,6 +68,11 @@ export const CompletionRecap = ({
 }: CompletionRecapProps) => {
   const [index, setIndex] = useState(0);
   const [confetti, setConfetti] = useState(false);
+  const motionSafe = useMotionSafe();
+
+  // Full dialog focus management: move focus into the story on open, trap Tab,
+  // and restore it to the trigger on close.
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
 
   const hours = Math.floor(minutesWatched / 60);
   const mins = minutesWatched % 60;
@@ -159,29 +177,65 @@ export const CompletionRecap = ({
     }
   }, [open, isLast]);
 
-  // Esc closes; lock body scroll while open.
+  // Keyboard: Esc closes; Arrow keys drive the story so advancing isn't
+  // pointer-only. NOTE: this component deliberately does NOT touch
+  // document.body.style.overflow — CompletionTakeover is the app's SOLE
+  // body-scroll-lock owner (the completion-arc invariant; a second writer here
+  // caused the wedged-scroll race the arc was built to fix). The recap is a
+  // full-screen `fixed inset-0` portal with `overflow-hidden`, so the covered
+  // page is not visible behind it. But visual cover is NOT scroll cover: the
+  // document root stays scrollable in both entry paths (standalone CourseDetail
+  // usage — no takeover ever mounts — and the arc's recap phase — the takeover
+  // released its lock before the recap mounted), so on iOS WKWebView a touch
+  // drag over this overlay chains through to scroll the covered page and drifts
+  // its position after dismiss. The root carries `touch-none overscroll-contain`
+  // (see the motion.div below) to contain touch gestures on the overlay itself —
+  // the same mechanism ChapterViewer uses on its scrub grab-region — which stops
+  // the scroll-bleed WITHOUT a second body-overflow writer.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        advance();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setIndex((i) => Math.max(i - 1, 0));
+      }
     };
     window.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
     };
-  }, [open, onClose]);
+  }, [open, onClose, advance]);
 
-  if (!open || typeof document === "undefined") return null;
+  if (typeof document === "undefined") return null;
 
   const slide = slides[index];
   const Icon = slide.icon;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9998] bg-canvas text-foreground safe-top pb-safe overflow-hidden">
-      <Confetti active={confetti} />
+    <AnimatePresence onExitComplete={onExited}>
+      {open && (
+        <motion.div
+          key="completion-recap"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Course recap: ${courseTitle}`}
+          className="fixed inset-0 z-[9998] bg-canvas text-foreground safe-top pb-safe overflow-hidden touch-none overscroll-contain"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={motionSafe.springs.glide}
+        >
+          {/* Focus-trap scope. `display:contents` adds no box (layout is
+              unchanged); the ref lives here rather than on the AnimatePresence
+              child to avoid framer-motion's PopChild ref warning while still
+              wrapping every focusable in the dialog. */}
+          <div ref={dialogRef} className="contents">
+          <Confetti active={confetti} />
 
       {/* Dimmed course art backdrop */}
       {imageUrl && (
@@ -193,7 +247,7 @@ export const CompletionRecap = ({
       )}
       {/* Per-slide radial glow */}
       <div
-        className="absolute inset-0 transition-[background] duration-700"
+        className="absolute inset-0 motion-safe:transition-[background] motion-safe:duration-sweep"
         style={{
           background: `radial-gradient(120% 80% at 50% 18%, ${accentForIndex(index)}, transparent 62%)`,
         }}
@@ -205,7 +259,7 @@ export const CompletionRecap = ({
         {slides.map((s, i) => (
           <div key={s.key} className="flex-1 h-1 rounded-full bg-cream/15 overflow-hidden">
             <div
-              className="h-full bg-cream transition-all duration-300"
+              className="h-full bg-cream motion-safe:transition-all motion-safe:duration-base"
               style={{ width: i < index ? "100%" : i === index ? "100%" : "0%" }}
             />
           </div>
@@ -218,7 +272,7 @@ export const CompletionRecap = ({
           type="button"
           onClick={onClose}
           aria-label="Close recap"
-          className="pressable flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+          className="pressable flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
         >
           <X className="h-5 w-5" />
         </button>
@@ -228,7 +282,7 @@ export const CompletionRecap = ({
       <button
         type="button"
         onClick={advance}
-        className="relative z-10 flex flex-1 h-[calc(100%-7rem)] w-full flex-col items-center justify-center px-8 text-center"
+        className="relative z-10 flex flex-1 h-[calc(100%-7rem)] w-full flex-col items-center justify-center px-8 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[hsl(var(--cream))]"
       >
         <div key={slide.key} className="anim-rise flex flex-col items-center max-w-md">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-cream/10 text-cream mb-7">
@@ -251,7 +305,7 @@ export const CompletionRecap = ({
         <button
           type="button"
           onClick={advance}
-          className="btn-champagne pressable flex h-12 w-full items-center justify-center gap-1.5 rounded-full font-semibold text-base"
+          className="btn-champagne pressable flex h-12 w-full items-center justify-center gap-1.5 rounded-full font-semibold text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
         >
           {isLast ? "Done" : "Next"}
           {!isLast && <ChevronRight className="h-4 w-4" />}
@@ -260,7 +314,10 @@ export const CompletionRecap = ({
           Tap anywhere to continue
         </p>
       </div>
-    </div>,
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
     document.body
   );
 };

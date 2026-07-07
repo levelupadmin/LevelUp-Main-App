@@ -49,3 +49,5 @@ supabase/.temp/
 # (supabase deploy bundles server-side and does not consume it).
 deno.lock
 design/qa/
+design/vision/shots/
+design/community/shots/

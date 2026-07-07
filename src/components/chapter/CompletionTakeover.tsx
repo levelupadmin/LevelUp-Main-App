@@ -1,7 +1,10 @@
 import { useEffect } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Share2, ArrowRight, X, Check } from "lucide-react";
 import Confetti from "@/components/Confetti";
 import { hapticImpact, hapticNotification } from "@/lib/haptics";
+import { useMotionSafe } from "@/lib/motion";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 interface Props {
   open: boolean;
@@ -19,6 +22,12 @@ interface Props {
   onShare: () => void;
   /** Dismiss (backdrop/close). Falls back to onContinue when omitted. */
   onClose?: () => void;
+  /**
+   * Fired once the exit animation has fully played out and the takeover has
+   * unmounted. The completion arc uses this to enter the recap ONLY after the
+   * takeover is gone, so the two overlays never coexist on screen.
+   */
+  onExited?: () => void;
 }
 
 /**
@@ -39,8 +48,23 @@ export default function CompletionTakeover({
   onContinue,
   onShare,
   onClose,
+  onExited,
 }: Props) {
+  const motionSafe = useMotionSafe();
+
+  // Move focus into the dialog on open, trap Tab within it, and restore focus
+  // to the trigger (the covered "Mark complete" button) on close. Keyed on
+  // `open`, so restore fires the instant it dismisses — before AnimatePresence
+  // unmounts the exiting node.
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
+
   // Celebratory haptic on open, and lock body scroll while the takeover is up.
+  //
+  // ⚠️ INVARIANT: this is the SOLE writer of document.body.style.overflow in
+  // the app (the completion-arc gate greps for it). The effect keys on `open`,
+  // so the lock releases the instant `open` flips false — even while
+  // AnimatePresence keeps the node mounted to play the exit — and again on
+  // unmount (route change / Android back). CompletionRecap must NOT re-lock.
   useEffect(() => {
     if (!open) return;
     void hapticNotification("success");
@@ -61,25 +85,35 @@ export default function CompletionTakeover({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose, onContinue]);
 
-  if (!open) return null;
-
   const isCourse = variant === "course";
   const kicker = isCourse ? "Course complete" : "Lesson complete";
   const ctaLabel = continueLabel ?? (isCourse ? "Back to course" : "Next lesson");
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${kicker}: ${title}`}
-      className="fixed inset-0 z-[1000] flex flex-col items-center justify-center px-6 text-center safe-top safe-bottom"
-      style={{
-        background:
-          "radial-gradient(120% 90% at 50% 35%, hsl(var(--surface)) 0%, hsl(var(--canvas)) 55%, #000 100%)",
-      }}
-      onClick={() => (onClose ?? onContinue)()}
-    >
-      <Confetti active={open} duration={3500} />
+    <AnimatePresence onExitComplete={onExited}>
+      {open && (
+        <motion.div
+          key="completion-takeover"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${kicker}: ${title}`}
+          className="fixed inset-0 z-[1000] flex flex-col items-center justify-center px-6 text-center safe-top safe-bottom"
+          style={{
+            background:
+              "radial-gradient(120% 90% at 50% 35%, hsl(var(--surface)) 0%, hsl(var(--canvas)) 55%, #000 100%)",
+          }}
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.98 }}
+          transition={motionSafe.springs.glide}
+          onClick={() => (onClose ?? onContinue)()}
+        >
+          {/* Focus-trap scope. `display:contents` so it adds no box and the
+              flex layout above is unchanged; the ref lives here rather than on
+              the AnimatePresence child to avoid framer-motion's PopChild ref
+              warning while still wrapping every focusable in the dialog. */}
+          <div ref={dialogRef} className="contents">
+          <Confetti active={open} duration={3500} />
 
       {onClose && (
         <button
@@ -89,7 +123,7 @@ export default function CompletionTakeover({
             e.stopPropagation();
             onClose();
           }}
-          className="absolute top-4 right-4 safe-top z-10 flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-muted-foreground hover:text-foreground"
+          className="absolute top-4 right-4 safe-top z-10 flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
         >
           <X className="h-5 w-5" />
         </button>
@@ -162,7 +196,7 @@ export default function CompletionTakeover({
               void hapticImpact("light");
               onShare();
             }}
-            className="pressable inline-flex items-center justify-center gap-2 rounded-full border border-[hsl(var(--cream))]/30 bg-black/30 px-5 py-3 text-sm font-medium text-foreground hover:bg-black/50 min-h-[48px] flex-1"
+            className="pressable inline-flex items-center justify-center gap-2 rounded-full border border-[hsl(var(--cream))]/30 bg-black/30 px-5 py-3 text-sm font-medium text-foreground hover:bg-black/50 min-h-[48px] flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           >
             <Share2 className="h-4 w-4" />
             Share
@@ -173,13 +207,16 @@ export default function CompletionTakeover({
               void hapticImpact("medium");
               onContinue();
             }}
-            className="btn-champagne pressable inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-[hsl(var(--cream-text))] min-h-[48px] flex-1"
+            className="btn-champagne pressable inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-[hsl(var(--cream-text))] min-h-[48px] flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           >
             {ctaLabel}
             <ArrowRight className="h-4 w-4" />
           </button>
         </div>
-      </div>
-    </div>
+          </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

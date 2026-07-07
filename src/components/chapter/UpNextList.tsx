@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { Play, Check } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { useMotionSafe } from "@/lib/motion";
 import type { ChapterSibling } from "@/components/chapter/types";
 
 interface Props {
@@ -10,6 +12,20 @@ interface Props {
   currentIndex: number;
   currentChapterId: string;
   courseId: string | null;
+  /**
+   * Live completion state of the CURRENT chapter, lifted from ChapterViewer.
+   * The per-sibling `progress` map is fetched once, so without this the
+   * momentum bar wouldn't move the instant the learner marks the lesson done.
+   * Merging it in flips the current lesson to "complete" immediately, and the
+   * glide-spring bar animates to its new fraction on that state change.
+   */
+  currentCompleted?: boolean;
+  /**
+   * Section/module title of the current chapter, for the "Lesson N of M ·
+   * Module X" context line. Derived from data ChapterViewer already loads
+   * (the sections rows) — no extra query here.
+   */
+  moduleTitle?: string | null;
 }
 
 /** Per-chapter watch state derived from chapter_progress. */
@@ -38,9 +54,10 @@ function clock(totalSeconds: number): string {
  * of every thumb. Progress is fetched once per sibling set for the signed-in
  * user; failures degrade silently to the plain (duration-only) view.
  */
-export default function UpNextList({ siblings, currentIndex, currentChapterId, courseId }: Props) {
+export default function UpNextList({ siblings, currentIndex, currentChapterId, courseId, currentCompleted = false, moduleTitle = null }: Props) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const motionSafe = useMotionSafe();
   const [progress, setProgress] = useState<Record<string, ProgressInfo>>({});
 
   useEffect(() => {
@@ -78,8 +95,56 @@ export default function UpNextList({ siblings, currentIndex, currentChapterId, c
   const start = currentIndex;
   const visible = siblings.slice(start, start + 6);
 
+  // Course-level momentum. Completed = the fetched per-sibling state, OR the
+  // live current-lesson state lifted from ChapterViewer (so the bar moves the
+  // moment the learner marks the current lesson done, before any refetch).
+  const completedCount = siblings.reduce((n, s) => {
+    const done =
+      (progress[s.id]?.completed ?? false) ||
+      (s.id === currentChapterId && currentCompleted);
+    return n + (done ? 1 : 0);
+  }, 0);
+  const courseFraction = siblings.length > 0 ? completedCount / siblings.length : 0;
+
   return (
     <>
+      {/* Momentum header: a course-level COMPLETION readout (label + a
+          "done / total" count + the progress bar below). This is the completion
+          half of the counter family — the position counter ("Lesson N of M")
+          lives once, in the main-column header, and is deliberately NOT repeated
+          here. The label carries the module name only when it's real context;
+          it falls back to "Course progress" for single-section / placeholder
+          courses (suppressed upstream, so moduleTitle is already null there).
+          The bar fill is a transform-only scaleX (per the motion/perf budget —
+          no width animation) that glides to its new fraction on the glide spring
+          whenever a lesson completes; collapses to an instant set under reduced
+          motion. */}
+      <div className="mb-3 space-y-2">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="min-w-0 truncate text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+            {moduleTitle || "Course progress"}
+          </p>
+          <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+            {completedCount}/{siblings.length}
+          </span>
+        </div>
+        <div
+          className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2"
+          role="progressbar"
+          aria-label="Course progress"
+          aria-valuemin={0}
+          aria-valuemax={siblings.length}
+          aria-valuenow={completedCount}
+        >
+          <motion.div
+            className="h-full w-full rounded-full bg-[hsl(var(--cream))]"
+            style={{ transformOrigin: "left" }}
+            initial={false}
+            animate={{ scaleX: courseFraction }}
+            transition={motionSafe.springs.glide}
+          />
+        </div>
+      </div>
       {visible.map((s, idx) => {
         const absIndex = start + idx;
         const isCurrent = s.id === currentChapterId;
@@ -87,7 +152,7 @@ export default function UpNextList({ siblings, currentIndex, currentChapterId, c
 
         const duration = s.duration_seconds ?? 0;
         const info = progress[s.id];
-        const completed = info?.completed ?? false;
+        const completed = (info?.completed ?? false) || (isCurrent && currentCompleted);
         const pos = info?.lastPositionSeconds ?? 0;
 
         // Fraction watched (0–1) for the thumbnail progress bar. Completed
@@ -119,7 +184,7 @@ export default function UpNextList({ siblings, currentIndex, currentChapterId, c
             key={s.id}
             onClick={() => !isCurrent && navigate(`/chapters/${s.id}`)}
             disabled={isCurrent}
-            className={`w-full flex gap-3 p-2.5 rounded-lg text-left transition-colors min-h-[68px] ${
+            className={`w-full flex gap-3 p-2.5 rounded-lg text-left transition-colors min-h-[68px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
               isCurrent
                 ? "bg-[hsl(var(--cream))]/10 ring-1 ring-[hsl(var(--cream))]/40 cursor-default"
                 : "hover:bg-surface/60 active:bg-surface"
@@ -196,7 +261,7 @@ export default function UpNextList({ siblings, currentIndex, currentChapterId, c
       {courseId && siblings.length > 6 && (
         <Link
           to={`/courses/${courseId}`}
-          className="block w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-2 mt-1"
+          className="flex w-full min-h-[44px] items-center justify-center text-center text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
         >
           View all {siblings.length} lessons
         </Link>

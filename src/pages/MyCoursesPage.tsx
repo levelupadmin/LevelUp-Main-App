@@ -9,11 +9,11 @@ import { ArtworkImage } from "@/components/media/ArtworkImage";
 import { ArrowRight, BookOpen, Sparkles, Award, WifiOff, RefreshCw, GraduationCap, PlayCircle } from "lucide-react";
 import CourseCardSkeleton from "@/components/skeletons/CourseCardSkeleton";
 import CourseRatingBadge from "@/components/reviews/CourseRatingBadge";
-import { EmptyState } from "@/components/EmptyState";
 import { isNative } from "@/lib/platform";
 import { ProgressRing } from "@/components/progress/ProgressRing";
 import { WeeklyStats } from "@/components/progress/WeeklyStats";
 import { CountUp } from "@/components/motion/CountUp";
+import { EmptyState } from "@/components/EmptyState";
 
 interface EnrolledCourse {
   enrolment_id: string;

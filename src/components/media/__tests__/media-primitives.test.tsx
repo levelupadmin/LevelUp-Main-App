@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ArtworkImage } from "../ArtworkImage";
 import { AmbientGlow } from "../AmbientGlow";
@@ -70,6 +70,49 @@ describe("ArtworkImage", () => {
     expect(img).toHaveClass("opacity-0");
     fireEvent.load(img);
     expect(img).toHaveClass("opacity-100");
+  });
+
+  it("fades in a cached image whose load event fired before onLoad bound", () => {
+    // A cached image can reach `complete` before React attaches onLoad, so the
+    // `load` event never reaches the handler. The ref callback must reconcile
+    // from `img.complete` on mount, otherwise the <img> stays at opacity-0 over
+    // the black wrapper and reads as a missing-art void.
+    const proto = window.HTMLImageElement.prototype;
+    const completeSpy = vi
+      .spyOn(proto, "complete", "get")
+      .mockReturnValue(true);
+    const naturalWidthSpy = vi
+      .spyOn(proto, "naturalWidth", "get")
+      .mockReturnValue(1280);
+    try {
+      render(<ArtworkImage src="https://example.com/cached.jpg" alt="Cached" />);
+      const img = screen.getByRole("img", { name: "Cached" });
+      // No load event is dispatched — the fix must engage purely from `complete`.
+      expect(img).toHaveClass("opacity-100");
+      expect(img).not.toHaveClass("opacity-0");
+    } finally {
+      completeSpy.mockRestore();
+      naturalWidthSpy.mockRestore();
+    }
+  });
+
+  it("falls back to the placeholder for a cached-but-broken image (complete, naturalWidth 0)", () => {
+    const proto = window.HTMLImageElement.prototype;
+    const completeSpy = vi
+      .spyOn(proto, "complete", "get")
+      .mockReturnValue(true);
+    const naturalWidthSpy = vi
+      .spyOn(proto, "naturalWidth", "get")
+      .mockReturnValue(0);
+    try {
+      render(<ArtworkImage src="https://example.com/broken-cached.jpg" alt="Broken cached" />);
+      const placeholder = screen.getByTestId("artwork-placeholder");
+      expect(placeholder).toBeInTheDocument();
+      expect(screen.getByRole("img", { name: "Broken cached" })).toBe(placeholder);
+    } finally {
+      completeSpy.mockRestore();
+      naturalWidthSpy.mockRestore();
+    }
   });
 
   it("lazy-loads without a fetchpriority hint by default (below the fold)", () => {

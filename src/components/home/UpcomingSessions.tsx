@@ -115,7 +115,7 @@ const UpcomingSessions = () => {
             >
               <Link
                 to="/learn?seg=live"
-                className="bg-surface border border-border rounded-2xl p-4 flex items-center gap-4 hover:border-border-hover transition-colors"
+                className="focus-ring bg-surface border border-border rounded-2xl p-4 flex items-center gap-4 hover:border-border-hover transition-colors"
               >
                 {/* Date chip */}
                 <div className="flex-shrink-0 w-14 h-14 rounded-lg bg-[hsl(var(--accent-amber)/0.12)] flex flex-col items-center justify-center">

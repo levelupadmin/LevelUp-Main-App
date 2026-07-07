@@ -24,6 +24,10 @@ export const durationsMs = {
   fast: 160, // --motion-fast
   base: 240, // --motion-base
   slow: 400, // --motion-slow
+  // Progress-ring arc sweep. Longer than --motion-slow so the needle's travel
+  // reads as a deliberate fill rather than a UI transition. Not a --motion-*
+  // var; it's a one-off editorial timing shared by every <ProgressRing>.
+  sweep: 700,
   // Slow hero drift. Mirrors the `.kenburns` CSS class (index.css: `animation:
   // motion-kenburns 9s …`) so the JS-driven and CSS-driven ken-burns stay in
   // lockstep. Not a --motion-* var; it's a one-off editorial timing.
@@ -35,6 +39,7 @@ export const durations = {
   fast: 0.16, // --motion-fast
   base: 0.24, // --motion-base
   slow: 0.4, // --motion-slow
+  sweep: 0.7, // progress-ring arc sweep — mirrors durationsMs.sweep (700ms)
   kenburns: 9, // ken-burns hero drift — mirrors the `.kenburns` CSS class (9s)
 } as const;
 

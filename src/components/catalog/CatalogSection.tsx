@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { motion } from "framer-motion";
 import { Search, WifiOff, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,41 @@ const CatalogSection = () => {
   const debouncedSearch = useDebounce(searchQuery, 300);
 
   const motionSafe = useMotionSafe();
+
+  // Roving-tabindex radiogroup for the single-select tier filter — mirrors
+  // Learn's keyboard pattern (Arrow/Home/End move selection + focus). Radio
+  // semantics (not tabs) are the correct role here: the pills pick ONE filter
+  // for the grid below, they don't switch between separate tabpanels.
+  const filterRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const focusFilter = (f: string) => {
+    setActiveFilter(f);
+    filterRefs.current[f]?.focus();
+  };
+  const onFilterKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    const i = TIER_FILTERS.findIndex((f) => f === activeFilter);
+    let next: string | null = null;
+    switch (e.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        next = TIER_FILTERS[(i + 1) % TIER_FILTERS.length];
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        next = TIER_FILTERS[(i - 1 + TIER_FILTERS.length) % TIER_FILTERS.length];
+        break;
+      case "Home":
+        next = TIER_FILTERS[0];
+        break;
+      case "End":
+        next = TIER_FILTERS[TIER_FILTERS.length - 1];
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    focusFilter(next);
+  };
+
   const { wishlistedIds, toggle: toggleWishlist } = useWishlist();
   const { requestedIds: notifyRequestedIds, pending: notifyPending, requestNotify } =
     useNotifyRequests();
@@ -88,25 +123,40 @@ const CatalogSection = () => {
         />
       </div>
 
-      {/* Single horizontally-scrollable chip rail, never wraps. */}
-      <div className="flex gap-2 overflow-x-auto hide-scrollbar -mx-1 px-1">
-        {TIER_FILTERS.map((f) => (
-          <motion.button
-            key={f}
-            onClick={() => setActiveFilter(f)}
-            // Spring press on the snap spring (reduced motion ⇒ no scale),
-            // matching the spring-pressed sibling surfaces on /home.
-            whileTap={motionSafe.reduced ? undefined : motionSafe.pressTap}
-            className={cn(
-              "flex-shrink-0 whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border min-h-[44px] sm:min-h-0",
-              activeFilter === f
-                ? "bg-foreground text-background border-foreground"
-                : "bg-surface border-border text-muted-foreground hover:text-foreground hover:border-border-hover"
-            )}
-          >
-            {f}
-          </motion.button>
-        ))}
+      {/* Single horizontally-scrollable chip rail, never wraps. Radiogroup +
+          roving tabindex so the single-select filter is fully keyboard- and
+          screen-reader-operable (focus-visible ring reused from Learn). */}
+      <div
+        role="radiogroup"
+        aria-label="Filter programs by type"
+        className="flex gap-2 overflow-x-auto hide-scrollbar -mx-1 px-1"
+      >
+        {TIER_FILTERS.map((f) => {
+          const active = activeFilter === f;
+          return (
+            <motion.button
+              key={f}
+              ref={(el) => { filterRefs.current[f] = el; }}
+              role="radio"
+              aria-checked={active}
+              tabIndex={active ? 0 : -1}
+              onKeyDown={onFilterKeyDown}
+              onClick={() => setActiveFilter(f)}
+              // Spring press on the snap spring (reduced motion ⇒ no scale),
+              // matching the spring-pressed sibling surfaces on /home.
+              whileTap={motionSafe.reduced ? undefined : motionSafe.pressTap}
+              className={cn(
+                "flex-shrink-0 whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border min-h-[44px] sm:min-h-0",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas",
+                active
+                  ? "bg-foreground text-background border-foreground"
+                  : "bg-surface border-border text-muted-foreground hover:text-foreground hover:border-border-hover"
+              )}
+            >
+              {f}
+            </motion.button>
+          );
+        })}
       </div>
 
       {isLoading ? (
