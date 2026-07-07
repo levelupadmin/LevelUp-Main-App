@@ -1,12 +1,17 @@
 import { cn } from "@/lib/utils";
 
+// Constrained to the four brand token pairs (no red/rose). The hash picks one
+// deterministically, so an avatar renders identically wherever it appears
+// (header, community, admin). Each pair carries its own foreground so the
+// initials stay legible: the cream→gold pair is a LIGHT surface and needs the
+// dark `--cream-text` token (white-on-cream is ~1.2:1 and invisible); the other
+// three are dark enough for white. Keep every class a literal utility string so
+// Tailwind's JIT scanner keeps them in the build.
 const GRADIENTS = [
-  "from-red-600 to-rose-400",
-  "from-indigo-600 to-blue-400",
-  "from-emerald-600 to-teal-400",
-  "from-amber-500 to-orange-400",
-  "from-violet-600 to-fuchsia-400",
-  "from-slate-500 to-zinc-400",
+  { bg: "from-cream to-gold", fg: "text-[hsl(var(--cream-text))]" },
+  { bg: "from-accent-indigo to-accent-violet-deep", fg: "text-white" },
+  { bg: "from-accent-emerald to-success", fg: "text-white" },
+  { bg: "from-surface-2 to-border", fg: "text-white" },
 ];
 
 function hashName(name: string): number {
@@ -79,8 +84,9 @@ const InitialsAvatar = ({ name, photoUrl, size = 40, className }: InitialsAvatar
   return (
     <div
       className={cn(
-        "rounded-full bg-gradient-to-br flex items-center justify-center border border-white/[0.08] font-display font-semibold text-white select-none",
-        gradient,
+        "rounded-full bg-gradient-to-br flex items-center justify-center border border-white/[0.08] font-display font-semibold select-none",
+        gradient.bg,
+        gradient.fg,
         sizeClasses[size],
         fontSizes[size],
         className

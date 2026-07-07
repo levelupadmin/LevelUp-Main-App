@@ -17,7 +17,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, ChevronRight, X, Award, FileText, Heart } from "lucide-react";
+import { LayoutGroup, motion } from "framer-motion";
+import { ArrowRight, ChevronRight, X, Award, FileText, Heart, Download } from "lucide-react";
 import { toast } from "@/lib/toast";
 import CertificateGallery from "@/components/certificates/CertificateGallery";
 import NotificationPreferences from "@/components/notifications/NotificationPreferences";
@@ -26,8 +27,29 @@ import { useWishlist } from "@/hooks/useWishlist";
 import { isNative } from "@/lib/platform";
 import { Reveal } from "@/components/motion/Reveal";
 import { hapticSelection } from "@/lib/haptics";
+import { useMotionSafe } from "@/lib/motion";
 import AccountHub from "@/components/profile/AccountHub";
 import InvoiceDetailSheet, { type InvoiceSheetData } from "@/components/profile/InvoiceDetailSheet";
+import { SurfaceCard } from "@/components/patterns/SurfaceCard";
+import { ArtworkImage } from "@/components/media/ArtworkImage";
+
+/** Synthetic email domain minted for OTP-only (phone) accounts. */
+const SYNTHETIC_EMAIL_DOMAIN = "@phone.leveluplearning.in";
+
+/** True only for accounts with a real email identity (not the OTP-only synthetic). */
+const hasRealEmailIdentity = (email: string | null | undefined): boolean =>
+  !!email && !email.endsWith(SYNTHETIC_EMAIL_DOMAIN);
+
+/**
+ * Single source of truth for the "Paid" pill. Mirrors the accent-emerald token
+ * treatment used in InvoiceDetailSheet's status pill so there is one Paid style
+ * app-wide (no more one-off Tailwind palette greens).
+ */
+const PaidBadge = () => (
+  <span className="inline-flex items-center gap-1 rounded-full border border-[hsl(var(--accent-emerald))]/30 bg-[hsl(var(--accent-emerald))]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[hsl(var(--accent-emerald))]">
+    Paid
+  </span>
+);
 
 interface Enrolment {
   id: string;
@@ -477,7 +499,11 @@ const ProfilePage = () => {
         certificateCount={certCount}
         invoiceCount={invoiceCount}
         onMyCertificates={() => scrollTo(certificatesRef)}
-        onInvoices={() => scrollTo(invoicesRef)}
+        onInvoices={() => {
+          // The Invoices section unmounts itself when the user has no captured
+          // orders, so guard the scroll — don't jump to an empty anchor.
+          if (invoiceCount > 0) scrollTo(invoicesRef);
+        }}
         onEditProfile={openEdit}
         onNotifications={() => scrollTo(notificationsRef)}
         onDeleteAccount={() => setDeleteOpen(true)}
@@ -575,15 +601,18 @@ const ProfilePage = () => {
         ) : (
           <div className="space-y-3">
             {enrolments.map((e) => (
-              <div
+              <SurfaceCard
                 key={e.id}
-                className="flex items-center gap-4 bg-surface border border-border rounded-lg p-4"
+                to={courseMap[e.offering_id] ? `/courses/${courseMap[e.offering_id]}` : "/my-courses"}
+                padding="sm"
+                className="flex items-center gap-4"
               >
-                <div className="w-16 h-10 rounded bg-surface-2 overflow-hidden flex-shrink-0">
-                  {e.thumbnail_url && (
-                    <img src={e.thumbnail_url} alt="" className="w-full h-full object-cover" />
-                  )}
-                </div>
+                <ArtworkImage
+                  src={e.thumbnail_url}
+                  alt=""
+                  aspect="video"
+                  className="w-24 shrink-0 rounded-lg"
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{e.title}</p>
                   <p className="font-mono text-xs text-muted-foreground">
@@ -596,29 +625,36 @@ const ProfilePage = () => {
                 >
                   {e.status}
                 </Badge>
-                <Link
-                  to={courseMap[e.offering_id] ? `/courses/${courseMap[e.offering_id]}` : "/my-courses"}
-                  className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 flex-shrink-0"
-                >
-                  Go to course <ArrowRight className="h-3 w-3" />
-                </Link>
-              </div>
+                {/* The 96px thumb + status Badge already claim most of a 360px
+                    row; drop the "Go to course" label on narrow screens (the
+                    arrow keeps the affordance) so the title keeps real width. */}
+                <span className="text-sm text-muted-foreground flex items-center gap-1 flex-shrink-0">
+                  <span className="hidden sm:inline">Go to course</span>
+                  <ArrowRight className="h-3 w-3" />
+                </span>
+              </SurfaceCard>
             ))}
           </div>
         )}
       </section>
 
-      {/* Divider */}
-      <div className="border-t border-border" />
+      {/* Change Password — only for real-email identities. OTP-only accounts
+          (synthetic @phone.leveluplearning.in email) have no password to change,
+          so the whole section (and its leading divider) is hidden for them. */}
+      {hasRealEmailIdentity(displayProfile?.email ?? user?.email) && (
+        <>
+          {/* Divider */}
+          <div className="border-t border-border" />
 
-      {/* Change Password */}
-      <section>
-        <h3 className="text-lg font-semibold mb-2">Change password</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Update your account password.
-        </p>
-        <ChangePasswordSection email={displayProfile?.email ?? user?.email ?? ""} />
-      </section>
+          <section>
+            <h3 className="text-lg font-semibold mb-2">Change password</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Update your account password.
+            </p>
+            <ChangePasswordSection email={displayProfile?.email ?? user?.email ?? ""} />
+          </section>
+        </>
+      )}
 
       {/* Divider */}
       <div className="border-t border-border" />
@@ -758,6 +794,7 @@ interface OrderRow {
 
 const InvoicesSection = () => {
   const { user } = useAuth();
+  const motionSafe = useMotionSafe();
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [buyer, setBuyer] = useState<{ name: string; email: string; phone: string }>({ name: "", email: "", phone: "" });
@@ -818,38 +855,66 @@ const InvoicesSection = () => {
           A GST invoice for every purchase. Tap to view, download or email.
         </p>
       </div>
-      <div className="grid gap-3">
-        {orders.map((o) => (
-          <button
-            key={o.id}
-            type="button"
-            onClick={() => openSheet(o)}
-            className="pressable flex w-full items-center gap-4 rounded-2xl border border-border bg-card/40 p-4 text-left transition-colors hover:border-border-hover sm:p-5"
-          >
-            <div className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--cream))]/10 text-[hsl(var(--cream))]">
-              <FileText className="h-5 w-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold truncate">{o.offering_title}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                <span className="font-mono">{invoiceNumber(o.id)}</span>
-                {(o.captured_at || o.created_at) && (
-                  <> · {new Date(o.captured_at || o.created_at!).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</>
+      {/* STEAL-10: the invoice-row Download chip FLIP-morphs into the sheet's
+          Download CTA. Both twin and CTA carry the same `invoice-cta-<id>`
+          layoutId; a single LayoutGroup scopes the id across the on-page grid and
+          the (portaled) sheet so framer animates the champagne chip growing into
+          the full CTA on open, and back on close. */}
+      <LayoutGroup>
+        <div className="grid gap-3">
+          {orders.map((o) => {
+            const twinId = `invoice-cta-${o.id}`;
+            // The CTA lives in the sheet while this row's sheet is open, so the
+            // on-page twin steps aside — exactly one element carries the shared
+            // layoutId at a time (the FLIP invariant). A same-size spacer holds
+            // the row's width so nothing reflows during the morph.
+            const twinInSheet = sheetOpen && selected?.id === o.id;
+            return (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => openSheet(o)}
+                className="pressable flex w-full items-center gap-4 rounded-2xl border border-border bg-card/40 p-4 text-left transition-colors hover:border-border-hover sm:p-5"
+              >
+                <div className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--cream))]/10 text-[hsl(var(--cream))]">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{o.offering_title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    <span className="font-mono">{invoiceNumber(o.id)}</span>
+                    {(o.captured_at || o.created_at) && (
+                      <> · {new Date(o.captured_at || o.created_at!).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</>
+                    )}
+                  </p>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="text-sm font-bold">₹{o.total_inr.toLocaleString("en-IN")}</span>
+                    <PaidBadge />
+                  </div>
+                </div>
+                {twinInSheet ? (
+                  <span className="h-9 w-9 shrink-0" aria-hidden="true" />
+                ) : (
+                  <motion.span
+                    layoutId={motionSafe.reduced ? undefined : twinId}
+                    aria-hidden="true"
+                    className="btn-champagne flex h-9 w-9 shrink-0 items-center justify-center [&_svg]:size-4"
+                  >
+                    <Download className="h-4 w-4" />
+                  </motion.span>
                 )}
-              </p>
-              <div className="mt-1.5 flex items-center gap-2">
-                <span className="text-sm font-bold">₹{o.total_inr.toLocaleString("en-IN")}</span>
-                <Badge variant="secondary" className="border-0 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/15 text-[10px] font-bold uppercase tracking-wider">
-                  Paid
-                </Badge>
-              </div>
-            </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-          </button>
-        ))}
-      </div>
+              </button>
+            );
+          })}
+        </div>
 
-      <InvoiceDetailSheet order={selected} open={sheetOpen} onOpenChange={setSheetOpen} />
+        <InvoiceDetailSheet
+          order={selected}
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          ctaLayoutId={selected ? `invoice-cta-${selected.id}` : undefined}
+        />
+      </LayoutGroup>
     </section>
   );
 };
