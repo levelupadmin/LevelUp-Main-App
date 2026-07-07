@@ -11,6 +11,7 @@ import { eventDateTimeLabel, eventDurationLabel } from "@/lib/event-format";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { isNative } from "@/lib/platform";
+import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 import { format, isSameDay } from "date-fns";
 import { TimeStateBadge } from "@/components/live/TimeStateBadge";
 
@@ -119,7 +120,7 @@ const EventsPage = () => {
     if (error) {
       toast({ title: "Registration failed", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Registered! ✓" });
+      toast({ title: "Registered!" });
       setMyRegs((prev) => new Set(prev).add(eventId));
     }
     setRegistering(null);
@@ -149,7 +150,7 @@ const EventsPage = () => {
       const data = await res.json();
 
       if (data.registered) {
-        toast({ title: "Registered! ✓", description: "You're in, see you there." });
+        toast({ title: "Registered!", description: "You're in, see you there." });
         setMyRegs((prev) => new Set(prev).add(eventId));
         paymentInFlightRef.current = false;
         fetchEvents();
@@ -201,7 +202,7 @@ const EventsPage = () => {
             email: profile?.email || "",
             name: profile?.full_name || "",
           },
-          theme: { color: "#F5F1E8" },
+          theme: { color: RAZORPAY_THEME_COLOR },
         };
         if (!(window as any).Razorpay) {
           // Release the in-flight lock, otherwise the guard above
@@ -279,7 +280,7 @@ const EventsPage = () => {
             </div>
           )}
           {isRegistered && tab === "my" && (
-            <div className="absolute top-3 left-3 bg-green-500/20 text-green-400 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
+            <div className="absolute top-3 left-3 bg-[hsl(var(--success))]/15 text-[hsl(var(--success))] text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded font-mono">
               Registered ✓
             </div>
           )}

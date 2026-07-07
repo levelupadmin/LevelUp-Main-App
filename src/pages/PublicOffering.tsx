@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import Footer from "@/components/Footer";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import { isAndroid, isNative } from "@/lib/platform";
@@ -317,6 +323,11 @@ function HeroActions({
   variant?: "full" | "slim";
 }) {
   const navigate = useNavigate();
+  // Hero pay CTA → checkout, tagged as the `hero` surface for the funnel.
+  const goToCheckout = () => {
+    track({ name: "pay_cta_tapped", slug: offering.slug, surface: "hero" });
+    navigate(`/checkout/${offering.id}`);
+  };
   const isStaged = (offering as any)?.payment_mode === "staged";
   const isArchived = (offering as any)?.status === "archived";
   const price = offering.price_inr ?? 0;
@@ -470,7 +481,7 @@ function HeroActions({
   if (variant === "slim") {
     return (
       <Button
-        onClick={() => navigate(`/checkout/${offering.id}`)}
+        onClick={goToCheckout}
         size="lg"
         className="btn-champagne h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5"
       >
@@ -485,17 +496,17 @@ function HeroActions({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6 py-2">
         <div className="space-y-1">
           <div className="flex items-baseline gap-3">
-            <span className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em]">
+            <span className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em] tabular-nums">
               {price > 0 ? `₹${Number(price).toLocaleString("en-IN")}` : "Free"}
             </span>
             {showStrike && (
-              <span className="text-base sm:text-lg text-muted-foreground line-through font-mono">
+              <span className="text-base sm:text-lg text-muted-foreground line-through tabular-nums">
                 ₹{Number(mrp).toLocaleString("en-IN")}
               </span>
             )}
           </div>
           {savings > 0 && (
-            <p className="text-xs sm:text-sm font-medium text-[hsl(var(--accent-emerald))]">
+            <p className="text-xs sm:text-sm font-medium text-[hsl(var(--success))] tabular-nums">
               Save ₹{savings.toLocaleString("en-IN")}
               {savingsPct > 0 ? ` (${savingsPct}% off)` : ""}
             </p>
@@ -517,7 +528,7 @@ function HeroActions({
             </Button>
           )}
           <Button
-            onClick={() => navigate(`/checkout/${offering.id}`)}
+            onClick={goToCheckout}
             size="lg"
             className="btn-champagne h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5"
           >
@@ -907,7 +918,6 @@ function InstructorBio({
 /*  FAQs - accordion                                  */
 /* ────────────────────────────────────────────────── */
 function FAQs({ items }: { items?: Array<{ question: string; answer: string }> | null }) {
-  const [openIdx, setOpenIdx] = useState<number | null>(0);
   if (!items?.length) return null;
   return (
     <div className="space-y-3">
@@ -915,38 +925,30 @@ function FAQs({ items }: { items?: Array<{ question: string; answer: string }> |
       <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-[-0.01em]">
         Frequently asked
       </h2>
-      <div className="space-y-2">
-        {items.map((f, i) => {
-          const isOpen = openIdx === i;
-          return (
-            <div
-              key={i}
-              className="rounded-2xl border border-border bg-[hsl(var(--surface))] overflow-hidden"
-            >
-              <button
-                type="button"
-                onClick={() => setOpenIdx(isOpen ? null : i)}
-                className="w-full flex items-start justify-between gap-3 p-4 text-left hover:bg-[hsl(var(--surface-2))] transition-colors min-h-[48px]"
-                aria-expanded={isOpen}
-              >
-                <span className="text-sm font-medium text-foreground">{f.question}</span>
-                <span
-                  className={`text-muted-foreground text-xl leading-none flex-shrink-0 transition-transform ${
-                    isOpen ? "rotate-45" : ""
-                  }`}
-                >
-                  +
-                </span>
-              </button>
-              {isOpen && f.answer && (
-                <p className="text-sm text-muted-foreground leading-relaxed px-4 pb-4 -mt-1 whitespace-pre-line">
-                  {f.answer}
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {/* Tokenized Radix accordion: one item open at a time, tokenized
+          open/close (animate-accordion-down/up at 0.2s). First item open
+          by default, matching the prior hand-rolled behaviour. */}
+      <Accordion
+        type="single"
+        collapsible
+        defaultValue="faq-0"
+        className="space-y-2"
+      >
+        {items.map((f, i) => (
+          <AccordionItem
+            key={i}
+            value={`faq-${i}`}
+            className="rounded-2xl border border-border bg-[hsl(var(--surface))] overflow-hidden border-b-0"
+          >
+            <AccordionTrigger className="min-h-[44px] px-4 py-4 text-left text-sm font-medium text-foreground hover:no-underline hover:bg-[hsl(var(--surface-2))]">
+              {f.question}
+            </AccordionTrigger>
+            <AccordionContent className="px-4 pb-4 text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+              {f.answer}
+            </AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
     </div>
   );
 }
@@ -996,6 +998,8 @@ export default function PublicOffering() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { session } = useAuth();
+  // Motion tokens for the mobile sticky pay bar's spring entrance/exit.
+  const ms = useMotionSafe();
   const [offering, setOffering] = useState<Offering | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -1077,6 +1081,10 @@ export default function PublicOffering() {
             value: Number((data as any).price_inr || 0),
             currency: (data as any).currency || "INR",
           });
+          // Funnel entry: the offering landing was viewed (PostHog sink).
+          // `slug` is the route param we fetched by, already narrowed to a
+          // string by the guard above — no cast needed.
+          track({ name: "offering_viewed", slug });
         }
       } catch {
         setNotFound(true);
@@ -1534,6 +1542,7 @@ export default function PublicOffering() {
           <aside className="hidden lg:block w-[360px] shrink-0">
             <PurchaseRail
               offeringId={offering.id}
+              slug={offering.slug}
               price={Number(offering.price_inr)}
               mrp={offering.mrp_inr}
               highlights={highlights}
@@ -1553,12 +1562,17 @@ export default function PublicOffering() {
           so price/CTA never doubles up on screen. The Masterclass iOS
           pattern. Navigates to the dedicated checkout route. */}
       {(applyUrl || !isNative()) && offering.status !== "archived" && (
-      <div
-        aria-hidden={heroCtaInView}
-        className={`lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] transition-transform duration-base ${
-          heroCtaInView ? "translate-y-full pointer-events-none" : "translate-y-0"
-        }`}
-      >
+      <AnimatePresence>
+        {!heroCtaInView && (
+        <motion.div
+          key="sticky-pay-bar"
+          aria-hidden={heroCtaInView}
+          initial={{ y: 96, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 96, opacity: 0 }}
+          transition={ms.springs.glide}
+          className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))]/95 backdrop-blur p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+        >
         {applyUrl ? (
           <div className="space-y-2">
             {/* Deadline beats a generic label when we have one. */}
@@ -1592,11 +1606,11 @@ export default function PublicOffering() {
                 <span className="text-2xl font-bold text-[hsl(var(--accent-emerald))]">Free</span>
               ) : (
                 <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold text-foreground tracking-[-0.01em]">
+                  <span className="text-2xl font-bold text-foreground tracking-[-0.01em] tabular-nums">
                     ₹{Number(offering.price_inr).toLocaleString("en-IN")}
                   </span>
                   {offering.mrp_inr && Number(offering.mrp_inr) > Number(offering.price_inr) && (
-                    <span className="text-sm text-muted-foreground line-through font-mono">
+                    <span className="text-sm text-muted-foreground line-through tabular-nums">
                       ₹{Number(offering.mrp_inr).toLocaleString("en-IN")}
                     </span>
                   )}
@@ -1604,7 +1618,10 @@ export default function PublicOffering() {
               )}
             </div>
             <Button
-              onClick={() => navigate(`/checkout/${offering.id}`)}
+              onClick={() => {
+                track({ name: "pay_cta_tapped", slug: offering.slug, surface: "sticky" });
+                navigate(`/checkout/${offering.id}`);
+              }}
               className="btn-champagne text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
             >
               {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}
@@ -1613,7 +1630,9 @@ export default function PublicOffering() {
           </div>
         </div>
         )}
-      </div>
+        </motion.div>
+        )}
+      </AnimatePresence>
       )}
 
       <Footer />

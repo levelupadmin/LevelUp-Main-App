@@ -7,6 +7,7 @@ import { ArrowRight, Calendar, Globe, MapPin, Loader2, Clock } from "lucide-reac
 import { eventDateTimeLabel, eventDurationLabel } from "@/lib/event-format";
 import { useToast } from "@/hooks/use-toast";
 import { isNative } from "@/lib/platform";
+import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 
 // ── Upcoming Events (from events table) ──
 const UpcomingEvents = () => {
@@ -158,7 +159,7 @@ const UpcomingEvents = () => {
             email: profile?.email || "",
             name: profile?.full_name || "",
           },
-          theme: { color: "#F5F1E8" },
+          theme: { color: RAZORPAY_THEME_COLOR },
         };
         if (!(window as any).Razorpay) {
           toast({ title: "Payment unavailable", description: "Payment system is loading. Please try again in a moment.", variant: "destructive" });
