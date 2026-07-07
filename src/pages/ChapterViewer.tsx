@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
+import { LayoutGroup, motion, useMotionValue, useTransform, animate } from "framer-motion";
+import type { AnimationPlaybackControls } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -25,22 +27,62 @@ import Confetti from "@/components/Confetti";
 import { checkMilestone } from "@/hooks/useMilestone";
 import { useVideoProgress } from "@/hooks/useVideoProgress";
 import { checkAndGenerateCertificate } from "@/hooks/useCertificateAutoGenerate";
-import { hapticImpact, hapticNotification } from "@/lib/haptics";
+import { hapticImpact, hapticNotification, tapTick, celebrate } from "@/lib/haptics";
+import { useMotionSafe } from "@/lib/motion";
 import type { Chapter, Resource, QnaItem, QnaReply } from "@/components/chapter/types";
 import QuizBlock from "@/components/chapter/QuizBlock";
 import ChapterMediaPlayer from "@/components/chapter/ChapterMediaPlayer";
+import AmbientGlow from "@/components/media/AmbientGlow";
 import UpNextList from "@/components/chapter/UpNextList";
 import CompletionTakeover from "@/components/chapter/CompletionTakeover";
+import { CompletionRecap } from "@/components/progress/CompletionRecap";
+import { ProgressRing } from "@/components/progress/ProgressRing";
 import ChapterQna from "@/components/chapter/ChapterQna";
+
+// The staged completion arc: the course ring animates in place, THEN the
+// takeover enters, THEN (once the takeover has fully exited) the recap follows
+// — one overlay on screen at a time. `idle` is the resting state.
+type ArcPhase = "idle" | "takeover" | "recapWait" | "recap";
+
+// The chapter sidebar tab strip. Radix Tabs (via the shadcn wrapper) already
+// implements the full WAI-ARIA tabs contract — role=tablist/tab/tabpanel,
+// aria-selected, roving tabindex and arrow/Home/End keyboard nav — so we drive
+// it CONTROLLED and layer a sliding cream pill (framer `layoutId`, glide spring)
+// over the active trigger, mirroring Learn's phase-1 segmented-control pattern.
+const CHAPTER_TABS = [
+  { key: "upnext", label: "Up Next" },
+  { key: "notes", label: "Notes" },
+  { key: "overview", label: "Overview" },
+  { key: "resources", label: "Files" },
+  { key: "qna", label: "Q&A" },
+] as const;
+type ChapterTab = (typeof CHAPTER_TABS)[number]["key"];
+
+const TAB_ICONS: Record<ChapterTab, typeof Play> = {
+  upnext: Play,
+  notes: PenLine,
+  overview: Info,
+  resources: FileText,
+  qna: HelpCircle,
+};
 
 const ChapterViewer = () => {
   const { chapterId } = useParams<{ chapterId: string }>();
   const navigate = useNavigate();
   const { user, profile } = useAuth();
 
+  const motionSafe = useMotionSafe();
+
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseTitle, setCourseTitle] = useState<string | null>(null);
+  // Section/module title of the current chapter, for the Up Next momentum
+  // context line ("Lesson N of M · Module X"). Derived from the sections rows
+  // loadChapter already fetches — no extra query.
+  const [currentModuleTitle, setCurrentModuleTitle] = useState<string | null>(null);
+  // Controlled tab value so the sliding pill knows the active segment and so a
+  // Q&A refresh (or any re-render) never snaps the strip back to a default tab.
+  const [activeTab, setActiveTab] = useState<ChapterTab>("upnext");
   // The public offering slug for this chapter's course. Share links use
   // this so recipients land on the marketing/buy page (not on a paywalled
   // chapter URL that would bounce them straight to login).
@@ -67,28 +109,192 @@ const ChapterViewer = () => {
   const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
   const [milestone, setMilestone] = useState<{ pct: number; title: string; subtitle: string } | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [showCompletionBanner, setShowCompletionBanner] = useState(false);
+  // Completion-arc phase. Replaces the old single `showCompletionBanner` bool
+  // so the takeover and recap can be sequenced (never stacked).
+  const [arcPhase, setArcPhase] = useState<ArcPhase>("idle");
+  // Course-level momentum for the in-place ring: the needle sits at the
+  // current course % and springs to its new value the moment a lesson
+  // completes, BEFORE the takeover enters. Also feeds the recap's stats.
+  const [courseCompleted, setCourseCompleted] = useState(0);
+  const [courseTotal, setCourseTotal] = useState(0);
+  const [courseWatchMinutes, setCourseWatchMinutes] = useState(0);
+  const [courseInstructor, setCourseInstructor] = useState<string | null>(null);
+  const [courseHeroImage, setCourseHeroImage] = useState<string | null>(null);
   const [quizzes, setQuizzes] = useState<any[]>([]);
 
   const confettiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The beat between the ring settling and the takeover entering.
+  const arcTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const coursePct =
+    courseTotal > 0 ? Math.round((courseCompleted / courseTotal) * 100) : 0;
 
   const { updateProgress, lastPosition } = useVideoProgress(chapterId, courseId, user?.id);
 
-  // Clean up confetti and auto-advance timers on unmount
+  // ── Swipe-down-to-dismiss (T3) ──────────────────────────────────────────
+  // A Netflix-style drag on the APP-OWNED chrome (the sticky header / grab
+  // handle — never over the cross-origin player iframe) glides the whole
+  // screening-room surface off the bottom and returns to the course. The
+  // pointer handlers live ONLY on the thin sticky top bar, so page scroll over
+  // the rest of the screening room — the player, notes, up-next, everything
+  // below the bar — is untouched. The bar itself carries `touch-action: none`
+  // (see the render site), which makes the JS drag the sole owner of a vertical
+  // pull that BEGINS on it: this is a deliberate grab-handle tradeoff — a pull
+  // starting on the bar drives the dismiss rather than native scroll (an upward
+  // pull on the bar does NOT scroll the page), exactly as a drag handle is
+  // expected to behave. The transform is applied ONLY while the gesture is live
+  // (`dragActive`), so the page carries no permanent composited layer — matching
+  // the Android WebView compositing budget. Reduced motion disables the drag
+  // entirely (and drops `touch-action: none`, restoring native touch on the
+  // bar); the back button remains the intact close affordance.
+  const DISMISS_THRESHOLD = 130; // px pulled down past which release dismisses.
+  const dismissY = useMotionValue(0);
+  const dismissScale = useTransform(dismissY, [0, 400], [1, 0.94], { clamp: true });
+  const dismissOpacity = useTransform(dismissY, [0, 400], [1, 0.82], { clamp: true });
+  const [dragActive, setDragActive] = useState(false);
+  // Live gesture bookkeeping. `candidate` is set on pointer-down and only
+  // promotes to `dragging` once a clear downward intent is seen, so a tap on
+  // the back button is never swallowed.
+  const dragStateRef = useRef<{
+    startX: number;
+    startY: number;
+    pointerId: number;
+    dragging: boolean;
+    candidate: boolean;
+  } | null>(null);
+  // Set right after a real drag so the trailing click (which would otherwise
+  // fire the header's back button) is swallowed in the capture phase.
+  const didDragRef = useRef(false);
+  // The in-flight settle/dismiss spring (framer `animate()` controls). Held so a
+  // re-grab can `.stop()` it: `motionValue.set()` does NOT cancel a running
+  // animation driver, so without this a fresh drag during the spring-back fights
+  // the still-running spring frame-by-frame, and the settle's onComplete would
+  // flip `dragActive` off mid-gesture (unbinding the transform). Making the
+  // gesture interruptible is an explicit T3 requirement.
+  const dragAnimRef = useRef<AnimationPlaybackControls | null>(null);
+
+  const dismissTarget = courseId ? `/courses/${courseId}` : "/home";
+
+  const onHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (motionSafe.reduced) return; // no drag theatrics under reduced motion
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    dragStateRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      pointerId: e.pointerId,
+      dragging: false,
+      candidate: true,
+    };
+  };
+
+  const onHeaderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = dragStateRef.current;
+    if (!s || !s.candidate) return;
+    const dx = e.clientX - s.startX;
+    const dy = e.clientY - s.startY;
+    if (!s.dragging) {
+      // Promote to a drag only on a decisively downward pull; a horizontal or
+      // upward move bails so native scroll / horizontal gestures win.
+      if (dy > 8 && dy > Math.abs(dx)) {
+        // Pointer capture is REQUIRED here, not a nicety. As the finger travels
+        // down it crosses over the cross-origin player iframe (VdoCipher /
+        // Vimeo / YouTube), and pointer events neither bubble nor dispatch
+        // across that origin boundary — capture is the ONLY thing that keeps
+        // every pointermove/up on this header so `endHeaderDrag` can fire and
+        // clear `dragActive`/`dismissY`. So attempt capture FIRST: if it's
+        // unavailable (rare/old WebView), we must NOT start a drag we can't
+        // finish — continuing would wedge the surface mid-dismiss with
+        // `dragActive` stuck true and no path to reset. In that case we bail
+        // cleanly and leave the back button as the working close affordance.
+        let captured = false;
+        try {
+          e.currentTarget.setPointerCapture(s.pointerId);
+          captured = true;
+        } catch {
+          captured = false;
+        }
+        if (!captured) {
+          s.candidate = false; // abort — degrade to the back-button close path
+          return;
+        }
+        s.dragging = true;
+        // Interrupt any in-flight settle/dismiss spring so the finger takes
+        // over cleanly instead of racing it (and so its onComplete — which
+        // would drop `dragActive` — never fires against this live gesture).
+        dragAnimRef.current?.stop();
+        dragAnimRef.current = null;
+        setDragActive(true);
+      } else if (Math.abs(dx) > 8 && Math.abs(dx) > dy) {
+        s.candidate = false;
+      }
+      return;
+    }
+    dismissY.set(Math.max(0, dy));
+  };
+
+  const endHeaderDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = dragStateRef.current;
+    dragStateRef.current = null;
+    if (!s || !s.dragging) return; // a tap → let the click through untouched
+    didDragRef.current = true;
+    try {
+      e.currentTarget.releasePointerCapture(s.pointerId);
+    } catch {
+      /* nothing captured */
+    }
+    if (dismissY.get() > DISMISS_THRESHOLD) {
+      // Past threshold: glide off the bottom, then navigate back to the course.
+      const h = typeof window !== "undefined" ? window.innerHeight : 800;
+      dragAnimRef.current = animate(dismissY, h, {
+        ...motionSafe.springs.glide,
+        onComplete: () => {
+          dragAnimRef.current = null;
+          navigate(dismissTarget);
+        },
+      });
+    } else {
+      // Released short: spring back, then drop the transform layer — but only
+      // if no fresh drag has re-grabbed the surface in the meantime (a re-grab
+      // stops this animation, so onComplete normally won't fire; the guard
+      // covers the natural-completion race just before a promote).
+      dragAnimRef.current = animate(dismissY, 0, {
+        ...motionSafe.springs.glide,
+        onComplete: () => {
+          dragAnimRef.current = null;
+          if (!dragStateRef.current?.dragging) setDragActive(false);
+        },
+      });
+    }
+  };
+
+  const onHeaderClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (didDragRef.current) {
+      e.stopPropagation();
+      e.preventDefault();
+      didDragRef.current = false;
+    }
+  };
+
+  // Clean up confetti, auto-advance and arc timers on unmount. A route change
+  // mid-arc therefore drops the pending takeover instead of firing it against
+  // an unmounted tree; the takeover's own effect cleanup restores body scroll.
   useEffect(() => {
     return () => {
       if (confettiTimerRef.current) clearTimeout(confettiTimerRef.current);
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
+      if (arcTimerRef.current) clearTimeout(arcTimerRef.current);
     };
   }, []);
 
   // NOTE: the completion flow's body-scroll lock is owned SOLELY by
-  // <CompletionTakeover> (rendered open={showCompletionBanner} below). Do NOT add
-  // a second lock here: two effects both capturing/restoring body.style.overflow
-  // race on React's child-before-parent ordering — the outer one captures the
-  // child's "hidden" and re-applies it on cleanup, wedging the whole app
-  // unscrollable after a course is finished. One owner only.
+  // <CompletionTakeover> (rendered open={arcPhase === "takeover"} below). Do NOT
+  // add a second lock here or in <CompletionRecap>: two effects both
+  // capturing/restoring body.style.overflow race on React's child-before-parent
+  // ordering — the outer one captures the child's "hidden" and re-applies it on
+  // cleanup, wedging the whole app unscrollable after a course is finished. One
+  // owner only. The recap sequences AFTER the takeover exits, so it never needs
+  // its own lock (it's a full-screen `fixed inset-0` portal regardless).
   const loadChapter = useCallback(async () => {
     if (!chapterId || !user) return;
     setLoading(true);
@@ -96,6 +302,9 @@ const ChapterViewer = () => {
     // switch from a locked lesson to an accessible one doesn't flash the
     // "Enrolment required" screen while the new fetch is in flight.
     setAccessDenied(false);
+    // Reset the module context line so a chapter switch never shows the
+    // previous lesson's module while the new sections load.
+    setCurrentModuleTitle(null);
 
     // Fetch chapter
     const { data: ch, error } = await supabase
@@ -128,10 +337,13 @@ const ChapterViewer = () => {
     if (cid) {
       const { data: courseData } = await supabase
         .from("courses")
-        .select("title, primary_offering_id")
+        .select("title, primary_offering_id, instructor_display_name, hero_image_url")
         .eq("id", cid)
         .maybeSingle();
       setCourseTitle(courseData?.title || null);
+      // Instructor + hero feed the completion recap that closes out the arc.
+      setCourseInstructor(courseData?.instructor_display_name ?? null);
+      setCourseHeroImage(courseData?.hero_image_url ?? null);
 
       // Prefer the course's primary offering. If that's unset, fall
       // through to any offering that lists this course - we just need
@@ -197,11 +409,16 @@ const ChapterViewer = () => {
     if (cid) {
       const { data: allSections } = await supabase
         .from("sections")
-        .select("id, sort_order")
+        .select("id, sort_order, title")
         .eq("course_id", cid)
         .order("sort_order");
 
       if (allSections && allSections.length > 0) {
+        // Module context for the Up Next momentum line: the title of the
+        // section this chapter lives in. Uses the rows we already fetched.
+        setCurrentModuleTitle(
+          allSections.find((s) => s.id === ch.section_id)?.title ?? null,
+        );
         const sectionIds = allSections.map((s) => s.id);
         const { data: allChapters } = await supabase
           .from("chapters")
@@ -227,6 +444,8 @@ const ChapterViewer = () => {
             description: c.description,
           })));
           setCurrentIndex(sorted.findIndex((c) => c.id === chapterId));
+          // Total lessons in the course — the ring's denominator.
+          setCourseTotal(sorted.length);
         }
       }
     }
@@ -252,6 +471,24 @@ const ChapterViewer = () => {
     ]);
 
     setIsCompleted(!!progressRes.data?.completed_at);
+
+    // Course-wide progress for the in-place ring's starting position and the
+    // recap's stats (lessons finished + watch minutes). Separate from the
+    // per-chapter fetch above so its typed rows stay clean.
+    if (cid) {
+      const { data: courseProg } = await supabase
+        .from("chapter_progress")
+        .select("completed_at, last_position_seconds")
+        .eq("course_id", cid)
+        .eq("user_id", user.id);
+      const rows = courseProg || [];
+      setCourseCompleted(rows.filter((p) => p.completed_at).length);
+      setCourseWatchMinutes(
+        Math.round(
+          rows.reduce((sum, p) => sum + (p.last_position_seconds || 0), 0) / 60,
+        ),
+      );
+    }
     setResources((resourcesRes.data || []) as Resource[]);
 
     // Batch-fetch all QnA replies (fixes N+1 sequential query issue)
@@ -631,9 +868,17 @@ const ChapterViewer = () => {
       }
     }
 
-    // completedBefore = completedCount - 1 (we just completed one)
+    // Is the whole course finished now? Completion-based (authoritative count),
+    // not positional — a student who finishes lessons out of order still gets
+    // the arc on the lesson that actually takes them to 100%.
+    const isCourseDone =
+      totalCount !== null && totalCount > 0 && completedCount >= totalCount;
+
+    // Mid-course milestones celebrate with the banner + confetti. The
+    // course-done moment is owned by the arc (ring → takeover → recap) instead,
+    // so we suppress the banner there to keep a single celebration on screen.
     const hit =
-      totalCount !== null && totalCount > 0
+      !isCourseDone && totalCount !== null && totalCount > 0
         ? checkMilestone(completedCount - 1, completedCount, totalCount)
         : null;
 
@@ -643,7 +888,7 @@ const ChapterViewer = () => {
       hapticNotification("success");
       toast.success(hit.title, { description: hit.subtitle, duration: 4000 });
       confettiTimerRef.current = setTimeout(() => { setShowConfetti(false); setMilestone(null); }, 4000);
-    } else {
+    } else if (!isCourseDone) {
       toast.success("Nice work! Chapter done.");
     }
 
@@ -668,14 +913,28 @@ const ChapterViewer = () => {
       });
     }
 
-    // If this was the last chapter, show the course completion banner
-    if (currentIndex === siblings.length - 1) {
-      setShowCompletionBanner(true);
+    // ── The completion arc, beat 1: the ring animates IN PLACE. Push the new
+    // course totals so the needle springs from its current % to the new one
+    // (bounce/emphasis on the ProgressRing), with a celebratory haptic. This
+    // happens for every completion, before any overlay.
+    setCourseCompleted(completedCount);
+    if (typeof totalCount === "number") setCourseTotal(totalCount);
+    void celebrate();
+
+    // Beat 2 (course finished only): once the ring has settled, the takeover
+    // enters; the recap then follows the takeover's exit (see render + the
+    // arc handlers). Reduced motion collapses the beat to an instant cut but
+    // preserves the ring → takeover → recap ORDER.
+    if (isCourseDone) {
+      if (arcTimerRef.current) clearTimeout(arcTimerRef.current);
+      const beat = motionSafe.reduced ? 0 : 900;
+      arcTimerRef.current = setTimeout(() => setArcPhase("takeover"), beat);
       return;
     }
 
-    // Auto-advance to next (with safety check); delay longer if milestone shown
-    const advanceDelay = hit ? 2500 : 800;
+    // Mid-course: auto-advance to next after the ring beat (with safety check);
+    // delay longer if a milestone banner is showing.
+    const advanceDelay = hit ? 2500 : 900;
     if (siblings && currentIndex >= 0 && currentIndex < siblings.length - 1 && siblings[currentIndex + 1]?.id) {
       autoAdvanceTimerRef.current = setTimeout(() => {
         hapticImpact("light");
@@ -765,21 +1024,88 @@ const ChapterViewer = () => {
           </div>
         </div>
       )}
-      {/* Course completion: cinematic takeover (replaces the old emoji card) */}
+      {/* The completion arc. Beat 1 (the in-place ring) fires in
+          handleMarkComplete; here are beats 2 and 3. The takeover enters once
+          the ring has settled; EVERY dismissal path (CTA, backdrop, close,
+          Escape) moves the arc to `recapWait`, which flips the takeover shut so
+          its exit animation plays. Only when that exit completes (`onExited`)
+          does the recap enter — so the two overlays never share the screen.
+          A route change / Android back mid-arc unmounts both; the takeover's
+          own effect cleanup (the app's sole body-lock owner) restores scroll. */}
       <CompletionTakeover
-        open={showCompletionBanner}
+        open={arcPhase === "takeover"}
         variant="course"
         title={courseTitle || "this course"}
         subtitle="You've finished every lesson. Onwards."
-        artUrl={siblings.map((s) => s.thumbnail_url || s.vdocipher_thumbnail_url).find(Boolean) || null}
-        continueLabel="Browse more courses"
-        onContinue={() => navigate("/")}
+        artUrl={
+          siblings.map((s) => s.thumbnail_url || s.vdocipher_thumbnail_url).find(Boolean) ||
+          courseHeroImage ||
+          null
+        }
+        continueLabel="See your recap"
+        onContinue={() => setArcPhase("recapWait")}
         onShare={handleShare}
-        onClose={() => setShowCompletionBanner(false)}
+        onClose={() => setArcPhase("recapWait")}
+        onExited={() => setArcPhase((p) => (p === "recapWait" ? "recap" : p))}
+      />
+      <CompletionRecap
+        open={arcPhase === "recap"}
+        onClose={() => {
+          setArcPhase("idle");
+          navigate("/");
+        }}
+        courseTitle={courseTitle || "this course"}
+        instructorName={courseInstructor}
+        lessonsCompleted={courseCompleted}
+        minutesWatched={courseWatchMinutes}
+        imageUrl={
+          courseHeroImage ||
+          siblings.map((s) => s.thumbnail_url || s.vdocipher_thumbnail_url).find(Boolean) ||
+          null
+        }
       />
 
-      {/* Top bar */}
-      <div className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 flex items-center gap-3 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]">
+      {/* The dismissible screening-room surface. The completion overlays,
+          milestone banner and confetti stay OUTSIDE this wrapper — they're
+          `fixed`, and a transformed ancestor would re-root their positioning.
+          The transform is bound only while a drag is live so the page never
+          holds a permanent composited layer. */}
+      <motion.div
+        style={
+          dragActive
+            ? { y: dismissY, scale: dismissScale, opacity: dismissOpacity }
+            : undefined
+        }
+        className={dragActive ? "origin-top will-change-transform" : undefined}
+      >
+        {/* Top bar — also the swipe-down-dismiss grab region (T3). Handlers live
+            here and nowhere else, so page scroll outside this bar is untouched. */}
+        <div
+          onPointerDown={onHeaderPointerDown}
+          onPointerMove={onHeaderPointerMove}
+          onPointerUp={endHeaderDrag}
+          onPointerCancel={endHeaderDrag}
+          onClickCapture={onHeaderClickCapture}
+          // `touch-action: none` ONLY on this grab region (never the page) makes
+          // the JS drag the sole owner of a vertical pull that starts here: it
+          // stops the iOS WKWebView rubber-band overscroll and the Android
+          // native-scroll hand-off from firing alongside the transform, so the
+          // gesture behaves identically on both platforms instead of
+          // double-moving on iOS / failing to promote on Android. Left off under
+          // reduced motion, where the drag is disabled and the header must keep
+          // native touch behaviour. Page scroll outside this bar is untouched.
+          style={motionSafe.reduced ? undefined : { touchAction: "none" }}
+          className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 flex items-center gap-3 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]"
+        >
+          {/* Grab handle: the affordance that this surface pulls down to
+              dismiss. Decorative + non-interactive; hidden under reduced
+              motion where the gesture is disabled. */}
+          {!motionSafe.reduced && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute left-1/2 top-[calc(env(safe-area-inset-top)+3px)] h-1 w-9 -translate-x-1/2 rounded-full bg-foreground/25"
+            />
+          )}
         {/* In-flight episode-switch indicator: a thin pulsing bar pinned to
             the BOTTOM edge of the sticky header (below the Dynamic Island /
             safe-area inset so it's always visible) while the next lesson's
@@ -836,7 +1162,18 @@ const ChapterViewer = () => {
               shell - dropping the visible border in favour of a soft shadow
               reads as more premium and matches the offering page's
               cinematic feel. */}
-          <ChapterMediaPlayer chapter={chapter} updateProgress={updateProgress} lastPosition={lastPosition} />
+          {/* Screening-room glow: a soft halo bloomed from the chapter's own
+              thumbnail behind the player. AmbientGlow uses a tiny scaled <img>
+              (never backdrop-filter, never the full-res frame) so the halo is
+              cheap on Android WebView compositing. The thumbnail is the same
+              small source the Up Next rail already uses. */}
+          <AmbientGlow
+            src={chapter.thumbnail_url ?? chapter.vdocipher_thumbnail_url}
+            width={320}
+            intensity={0.22}
+          >
+            <ChapterMediaPlayer chapter={chapter} updateProgress={updateProgress} lastPosition={lastPosition} />
+          </AmbientGlow>
 
           {/* Chapter info - the Masterclass pattern: big title on the
               left with primary actions docked on the right. The title
@@ -845,9 +1182,24 @@ const ChapterViewer = () => {
           <div className="space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 sm:gap-6">
               <div className="space-y-2 flex-1 min-w-0">
-                <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
-                  Lesson {currentIndex + 1} of {siblings.length}
-                </p>
+                <div className="flex items-center gap-2.5">
+                  {/* Course momentum ring. It animates IN PLACE on the bounce
+                      register the moment a lesson completes — the first beat of
+                      the completion arc — so the student watches the needle
+                      move before the takeover enters. */}
+                  {courseTotal > 0 && (
+                    <ProgressRing
+                      pct={coursePct}
+                      size={34}
+                      emphasis
+                      label
+                      className="shrink-0"
+                    />
+                  )}
+                  <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+                    Lesson {currentIndex + 1} of {siblings.length}
+                  </p>
+                </div>
                 <h1 className="text-2xl sm:text-4xl font-bold tracking-[-0.01em] leading-[1.1]">
                   {chapter.title}
                 </h1>
@@ -965,32 +1317,59 @@ const ChapterViewer = () => {
               </span>
             </div>
           )}
-          <Tabs defaultValue="upnext" className="w-full">
-            <TabsList className="w-full grid grid-cols-5 h-11">
-              <TabsTrigger value="upnext" className="text-xs gap-1 px-1">
-                <Play className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">Up Next</span>
-              </TabsTrigger>
-              <TabsTrigger value="notes" className="text-xs gap-1 px-1">
-                <PenLine className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">Notes</span>
-              </TabsTrigger>
-              <TabsTrigger value="overview" className="text-xs gap-1 px-1">
-                <Info className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">Overview</span>
-              </TabsTrigger>
-              <TabsTrigger value="resources" className="text-xs gap-1 px-1">
-                <FileText className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">Files</span>
-              </TabsTrigger>
-              <TabsTrigger value="qna" className="text-xs gap-1 px-1 relative">
-                <HelpCircle className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">Q&amp;A</span>
-                {qna.some((q) => q.replies.some((r) => r.is_instructor_reply) && q.user_id === user?.id && !q.is_resolved) && (
-                  <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-[hsl(var(--accent-emerald))] animate-pulse" />
-                )}
-              </TabsTrigger>
-            </TabsList>
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => {
+              if (v === activeTab) return;
+              void tapTick();
+              setActiveTab(v as ChapterTab);
+            }}
+            className="w-full"
+          >
+            {/* Sliding cream pill glides between triggers via a shared
+                framer `layoutId` on the glide spring (instant under reduced
+                motion). Radix supplies the ARIA roles + keyboard nav; we
+                suppress its default active background so the pill is the only
+                active-state affordance and flip the active label to cream-text
+                for contrast. The grid + h-11 keeps every trigger a >=44px
+                target. */}
+            <LayoutGroup id="chapter-tabs">
+              <TabsList className="grid h-11 w-full grid-cols-5 gap-0.5">
+                {CHAPTER_TABS.map((t) => {
+                  const active = activeTab === t.key;
+                  const Icon = TAB_ICONS[t.key];
+                  const isQna = t.key === "qna";
+                  const showQnaDot =
+                    isQna &&
+                    qna.some(
+                      (q) =>
+                        q.replies.some((r) => r.is_instructor_reply) &&
+                        q.user_id === user?.id &&
+                        !q.is_resolved,
+                    );
+                  return (
+                    <TabsTrigger
+                      key={t.key}
+                      value={t.key}
+                      className="relative h-full min-h-11 gap-1 px-1 text-xs data-[state=active]:bg-transparent data-[state=active]:text-[hsl(var(--cream-text))] data-[state=active]:shadow-none focus-visible:ring-[hsl(var(--cream))]"
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="chapter-tab-pill"
+                          className="absolute inset-0.5 rounded-sm bg-[hsl(var(--cream))]"
+                          transition={motionSafe.springs.glide}
+                        />
+                      )}
+                      <Icon className="relative z-10 h-3.5 w-3.5" />
+                      <span className="relative z-10 hidden md:inline">{t.label}</span>
+                      {showQnaDot && (
+                        <span className="absolute right-1.5 top-1.5 z-10 h-1.5 w-1.5 rounded-full bg-[hsl(var(--accent-emerald))] animate-pulse" />
+                      )}
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+            </LayoutGroup>
 
             {/* Up Next - chapter navigator. Each tile shows lesson
                 number badge, 16:9 thumbnail (or a numbered fallback when
@@ -1005,6 +1384,8 @@ const ChapterViewer = () => {
                 currentIndex={currentIndex}
                 currentChapterId={chapter.id}
                 courseId={courseId}
+                currentCompleted={isCompleted}
+                moduleTitle={currentModuleTitle}
               />
             </TabsContent>
 
@@ -1116,6 +1497,7 @@ const ChapterViewer = () => {
           </Tabs>
         </div>
       </div>
+      </motion.div>
     </div>
   );
 };

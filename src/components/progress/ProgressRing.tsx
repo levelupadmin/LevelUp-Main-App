@@ -12,6 +12,13 @@ interface ProgressRingProps {
    * verbatim. When `false`/omitted, the ring renders with no center text.
    */
   label?: boolean | string;
+  /**
+   * Celebratory register. When true the in-place sweep uses an overshoot
+   * ("bounce") easing instead of the default ease-out cubic — the needle
+   * springs to its new value. Used by the completion arc (ChapterViewer);
+   * shared consumers (Your Week, My Courses) leave it off for a calm fill.
+   */
+  emphasis?: boolean;
   className?: string;
 }
 
@@ -26,6 +33,7 @@ export const ProgressRing = ({
   size = 44,
   strokeWidth,
   label,
+  emphasis = false,
   className,
 }: ProgressRingProps) => {
   const target = Math.max(0, Math.min(100, Math.round(pct)));
@@ -36,6 +44,13 @@ export const ProgressRing = ({
 
   const rafRef = useRef(0);
   const [display, setDisplay] = useState(0);
+  // Latest settled display value, read at the START of each animation so the
+  // sweep runs IN PLACE from wherever the needle currently sits — not always
+  // from 0. On first paint this is 0 (unchanged 0→pct intro for every
+  // consumer); on a later `pct` bump (e.g. a lesson completes) it animates the
+  // delta so the user sees the needle move.
+  const displayRef = useRef(0);
+  displayRef.current = display;
 
   useEffect(() => {
     if (
@@ -46,22 +61,33 @@ export const ProgressRing = ({
       return;
     }
 
+    const from = displayRef.current;
+    if (from === target) return;
     const t0 = performance.now();
-    const from = 0;
     const durationMs = 700;
+    // Overshoot ("back") easing for the celebratory register, ease-out cubic
+    // otherwise. Both settle exactly on 1 at t=1; emphasis briefly overshoots.
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    const ease = (t: number) =>
+      emphasis
+        ? 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2)
+        : 1 - Math.pow(1 - t, 3);
     const tick = (now: number) => {
       const t = Math.min((now - t0) / durationMs, 1);
-      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
-      setDisplay(from + (target - from) * eased);
+      setDisplay(from + (target - from) * ease(t));
       if (t < 1) rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [target]);
+  }, [target, emphasis]);
 
-  const dashOffset = circumference * (1 - display / 100);
+  // Overshoot can push `display` a hair past the ends; clamp what we render so
+  // the arc + label stay within 0–100.
+  const shown = Math.max(0, Math.min(100, display));
+  const dashOffset = circumference * (1 - shown / 100);
   const labelText =
-    label === true ? `${Math.round(display)}%` : typeof label === "string" ? label : null;
+    label === true ? `${Math.round(shown)}%` : typeof label === "string" ? label : null;
 
   return (
     <div

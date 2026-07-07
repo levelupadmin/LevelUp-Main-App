@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { X, ChevronRight, Trophy, Clock, BookOpen, User, Sparkles } from "lucide-react";
 import { CountUp } from "@/components/motion/CountUp";
 import Confetti from "@/components/Confetti";
 import { hapticImpact, hapticSelection } from "@/lib/haptics";
+import { useMotionSafe } from "@/lib/motion";
 
 interface CompletionRecapProps {
   open: boolean;
@@ -55,6 +57,7 @@ export const CompletionRecap = ({
 }: CompletionRecapProps) => {
   const [index, setIndex] = useState(0);
   const [confetti, setConfetti] = useState(false);
+  const motionSafe = useMotionSafe();
 
   const hours = Math.floor(minutesWatched / 60);
   const mins = minutesWatched % 60;
@@ -159,29 +162,40 @@ export const CompletionRecap = ({
     }
   }, [open, isLast]);
 
-  // Esc closes; lock body scroll while open.
+  // Esc closes. NOTE: this component deliberately does NOT touch
+  // document.body.style.overflow — CompletionTakeover is the app's SOLE
+  // body-scroll-lock owner (the completion-arc invariant; a second writer here
+  // caused the wedged-scroll race the arc was built to fix). The recap is a
+  // full-screen `fixed inset-0` portal with `overflow-hidden`, so the covered
+  // page is not visible or interactive behind it regardless.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
     };
   }, [open, onClose]);
 
-  if (!open || typeof document === "undefined") return null;
+  if (typeof document === "undefined") return null;
 
   const slide = slides[index];
   const Icon = slide.icon;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9998] bg-canvas text-foreground safe-top pb-safe overflow-hidden">
-      <Confetti active={confetti} />
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="completion-recap"
+          className="fixed inset-0 z-[9998] bg-canvas text-foreground safe-top pb-safe overflow-hidden"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={motionSafe.springs.glide}
+        >
+          <Confetti active={confetti} />
 
       {/* Dimmed course art backdrop */}
       {imageUrl && (
@@ -260,7 +274,9 @@ export const CompletionRecap = ({
           Tap anywhere to continue
         </p>
       </div>
-    </div>,
+        </motion.div>
+      )}
+    </AnimatePresence>,
     document.body
   );
 };
