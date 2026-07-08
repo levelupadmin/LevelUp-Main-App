@@ -31,6 +31,10 @@ const BASE = process.env.BASE || "http://127.0.0.1:8188";
 // Real prod fixtures so /p and /checkout reach their loaded (not skeleton) shape.
 const OFFERING_ID = "190a09ee-3f34-4242-ad9f-70ddedcc8eae"; // Nelson Dilipkumar (single/non-staged)
 const PUBLIC_SLUG = "lokesh-kanagaraj-teaches-film-making";
+// Course + chapter fixtures (Lokesh masterclass) so /courses/:id and
+// /chapters/:id reach their loaded shape. Admin bypass grants chapter access.
+const COURSE_ID = "5f23fec7-b5a6-42c9-b0e1-1c039cfb7c8d"; // Lokesh Kanagaraj (published)
+const CHAPTER_ID = "595ae1e7-30f2-4949-b032-296701785bc3"; // a Lokesh course chapter
 
 // Gate routes from the P5-T8 acceptance line. `waitFor` proves the loaded branch
 // is painted (not a spinner / redirect) before axe runs.
@@ -39,6 +43,11 @@ const ROUTES = [
   { id: "learn", url: "/learn", waitFor: "main#main-content" },
   { id: "community", url: "/community", waitFor: "main#main-content" },
   { id: "profile", url: "/profile", waitFor: "main#main-content" },
+  { id: "course-detail", url: `/courses/${COURSE_ID}`, waitFor: "main#main-content h1" },
+  // ChapterViewer renders full-bleed (no StudentLayout / main#main-content); the
+  // loaded branch is the only one that paints an h1 (spinner has none, the
+  // enrolment-gate branch uses h2), so it proves the content shape is painted.
+  { id: "chapter-viewer", url: `/chapters/${CHAPTER_ID}`, waitFor: "h1" },
   { id: "studio-second-brain", url: "/studio/second-brain", waitFor: "main#main-content" },
   { id: "public-offering", url: `/p/${PUBLIC_SLUG}`, waitFor: "main, [data-offering], h1" },
   { id: "checkout", url: `/checkout/${OFFERING_ID}`, waitFor: "main, h1, form" },

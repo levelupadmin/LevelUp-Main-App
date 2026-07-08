@@ -151,7 +151,7 @@ const Footer = ({ variant = "marketing" }: FooterProps) => {
               target="_blank"
               rel="noopener noreferrer"
               aria-label={social.label}
-              className="flex items-center justify-center w-11 h-11 md:w-10 md:h-10 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all duration-300"
+              className="flex items-center justify-center w-11 h-11 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all duration-300"
             >
               <social.icon size={18} strokeWidth={1.5} />
             </a>

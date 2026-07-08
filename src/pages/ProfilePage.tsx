@@ -490,7 +490,16 @@ const ProfilePage = () => {
   };
 
   return (
-    <div className="space-y-8 max-w-2xl">
+    // Scroll-end clearance for the fixed FloatingSupport FAB. On mobile the FAB
+    // renders here (no sticky CTA to hide behind) at bottom-[4.5rem]+safe, and
+    // its ~44px pill reaches ~7rem up from the safe-area bottom. On native the
+    // <Footer variant="app"/> below <main> is null, so only the tab-bar padding
+    // (~5rem) sits under this content — less than the FAB's reach, which left the
+    // last interactive rows (Delete account / Sign out / invoices) tucked under
+    // the pill's right edge at 360/375. Extra bottom padding pushes those rows
+    // clear at scroll-end. Desktop is unaffected: the pill sits far right of the
+    // narrow max-w-2xl column, so no clearance is needed (md:pb-0).
+    <div className="space-y-8 max-w-2xl pb-24 md:pb-0">
       {/* ── Revolut-style account hub: identity, quick tiles, grouped menu ── */}
       <AccountHub
         name={displayProfile?.full_name ?? ""}

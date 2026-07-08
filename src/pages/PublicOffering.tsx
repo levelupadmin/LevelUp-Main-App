@@ -356,7 +356,7 @@ function HeroBanner({
       className="w-full"
     >
       <motion.div
-        className="relative w-full aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-3xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
+        className="relative flex w-full flex-col sm:block aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-3xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
         style={{ transformOrigin: "center" }}
         initial={{ scale: enabled ? 1.04 : 1, opacity: enabled ? 0 : 1 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -391,12 +391,24 @@ function HeroBanner({
         {/* Subtle left vignette so a busy background never compromises the cream title */}
         <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none" />
 
-        {/* Centred champagne play chip that opens the free preview lesson. */}
-        {showPlayChip && onPlayPreview && <HeroPlayChip onClick={onPlayPreview} />}
+        {/* Play-chip host. On the tall mobile aspect (4/5) it's a flow spacer
+            that fills the hero ABOVE the bottom title block, so the centred
+            chip can never dip into the eyebrow/title band no matter how tall
+            the title wraps (long titles + multi-line subtitles push it up).
+            Always rendered — even with no chip — so flex-1 keeps the title
+            bottom-anchored. At sm+ the hero is short & wide (16/10, 21/9) and
+            the title block can exceed the hero height, so we revert to the
+            original full-bleed absolute layout: the host covers the hero and
+            the chip centres over the whole poster (the eyebrow rides the top
+            edge there, well clear of a centred chip). pointer-events-none so
+            the cover never eats taps meant for the title block. */}
+        <div className="relative flex-1 sm:absolute sm:inset-0 pointer-events-none">
+          {showPlayChip && onPlayPreview && <HeroPlayChip onClick={onPlayPreview} />}
+        </div>
 
-        {/* Overlaid title block — staggered reveal in step with the scale settle. */}
+        {/* Bottom-anchored title block — staggered reveal in step with the scale settle. */}
         <motion.div
-          className="absolute inset-x-0 bottom-0 p-6 sm:p-8 lg:p-12"
+          className="relative sm:absolute sm:inset-x-0 sm:bottom-0 p-6 sm:p-8 lg:p-12"
           variants={overlayContainer}
           initial="hidden"
           animate="show"

@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, AlertCircle } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 
 // The single toast entry point. Every toast in the app renders through Sonner
@@ -14,13 +14,26 @@ const ERROR_DURATION_MS = 8000;
 
 type ToastArgs = Parameters<typeof sonnerToast.error>;
 
-// Success toasts render a check glyph tinted with the design-system --success
-// token. The toast surface itself stays neutral (bg-surface-2 per the visual
-// spec set in ui/sonner.tsx), so the icon colour is what signals success.
+// The toast surface itself stays neutral (bg-surface-2 per the visual spec set
+// in ui/sonner.tsx), so — for the semantic variants — the icon colour is what
+// signals success vs. error. Success renders a check tinted with --success;
+// error renders an alert glyph tinted with --destructive (both base tokens: an
+// 18px glyph is a non-text graphical object, so the token's large/non-text
+// value applies). Without an explicit error icon Sonner falls back to its
+// built-in error glyph rendered in `currentColor` — i.e. the near-white
+// foreground — leaving error toasts with no danger tint and visually
+// indistinguishable from a neutral toast.
 const successIcon = () =>
   createElement(CheckCircle2, {
     size: 18,
     style: { color: "hsl(var(--success))" },
+    "aria-hidden": true,
+  });
+
+const errorIcon = () =>
+  createElement(AlertCircle, {
+    size: 18,
+    style: { color: "hsl(var(--destructive))" },
     "aria-hidden": true,
   });
 
@@ -36,6 +49,6 @@ export const toast = Object.assign(
     promise: sonnerToast.promise,
     dismiss: sonnerToast.dismiss,
     error: (message: ToastArgs[0], data?: ToastArgs[1]) =>
-      sonnerToast.error(message, { duration: ERROR_DURATION_MS, ...(data ?? {}) }),
+      sonnerToast.error(message, { duration: ERROR_DURATION_MS, icon: errorIcon(), ...(data ?? {}) }),
   }
 );

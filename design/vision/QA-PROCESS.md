@@ -56,8 +56,10 @@ grep -rnE "#[0-9a-fA-F]{6}" src --include='*.tsx' | grep -v admin | grep -v cert
 # one-off motion values (target: 0 always)
 grep -rnE "duration-\[|cubic-bezier\(" src --include='*.tsx' | grep -v admin
 # blur budget: no xl outside admin; total not above recorded baseline
-grep -rn "backdrop-blur-xl" src | grep -v admin | wc -l   # must be 0 after P5-T2
-grep -rn "backdrop-" src --include='*.tsx' | wc -l          # ≤ baselines.json value
+# (baseline: design/qa/baselines.json .metrics.backdrop; live surfaces enumerated in
+#  design/qa/phase-5/blur-ledger.md — 28 live filters; the raw grep also counts ~15 comment lines)
+grep -rn "backdrop-blur-xl" src | grep -v admin | wc -l   # must be 0 (.backdrop.backdrop_blur_xl_non_admin_max)
+grep -rn "backdrop-" src --include='*.tsx' | wc -l          # ≤ .backdrop.raw_tsx_max (43)
 # legacy press system (target: 0 on student surfaces by end of Phase 4)
 grep -rn "pressable\|card-hover\|press-scale" src/pages src/components --include='*.tsx' | grep -v admin | grep -v index.css
 ```

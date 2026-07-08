@@ -620,11 +620,11 @@ const CourseDetail = () => {
                                   Free
                                 </Badge>
                               )}
-                              {chapter.duration_seconds && (
+                              {chapter.duration_seconds ? (
                                 <span className="text-xs text-muted-foreground font-mono shrink-0 mt-0.5">
                                   {formatDuration(chapter.duration_seconds)}
                                 </span>
-                              )}
+                              ) : null}
                             </button>
                             {showProgressBar && (
                               <div className="h-0.5 bg-surface-2 rounded-full overflow-hidden mx-4 mt-0.5">
