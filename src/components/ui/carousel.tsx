@@ -121,6 +121,10 @@ const Carousel = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEl
           className={cn("relative", className)}
           role="region"
           aria-roledescription="carousel"
+          // A region with aria-roledescription needs an accessible name (ARIA
+          // carousel pattern). Default it here; any caller-supplied aria-label /
+          // aria-labelledby in {...props} overrides this.
+          aria-label="Carousel"
           {...props}
         >
           {children}

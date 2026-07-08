@@ -434,6 +434,7 @@ const CommunityPage = () => {
           >
             <Textarea
               ref={composerRef}
+              aria-label={scope === "my_cohort" ? "Share with your cohort" : "Share something with the community"}
               placeholder={scope === "my_cohort" ? "Share with your cohort…" : "Share something with the community..."}
               value={newPost}
               onChange={(e) => setNewPost(e.target.value)}
@@ -562,6 +563,7 @@ const CommunityPage = () => {
                       ))}
                       <div className="flex gap-2">
                         <Textarea
+                          aria-label="Write a comment"
                           placeholder="Write a comment..."
                           value={commentDrafts[post.id] || ""}
                           onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [post.id]: e.target.value }))}
