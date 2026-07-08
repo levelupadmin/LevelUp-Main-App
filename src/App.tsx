@@ -4,7 +4,6 @@ import { bootAnalytics } from "@/lib/analytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { toast as sonnerToast } from "sonner";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
-import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/contexts/AuthContext";
 import RequireAuth from "@/components/guards/RequireAuth";
 import RequireRole from "@/components/guards/RequireRole";
@@ -133,7 +132,7 @@ const App = () => {
           //    for the same key (see StudentLayout). We only swallow the back
           //    press when something is actually open.
           const overlay = document.querySelector(
-            '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [data-radix-popper-content-wrapper], [role="menu"][data-state="open"], [role="listbox"][data-state="open"], [vaul-drawer][data-state="open"], [data-overlay-open="true"]'
+            '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [data-radix-popper-content-wrapper], [role="menu"][data-state="open"], [role="listbox"][data-state="open"], [data-vaul-drawer][data-state="open"], [data-overlay-open="true"]'
           );
           if (overlay) {
             document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -286,8 +285,10 @@ const App = () => {
           <FloatingSupport />
         </BrowserRouter>
       </ErrorBoundary>
-      <SonnerToaster position="bottom-right" theme="dark" />
-      <Toaster />
+      {/* Sonner is the app's single toast renderer. Position/duration/surface
+          styling live in ui/sonner.tsx; only the forced dark theme is set here
+          (this app has no next-themes provider). */}
+      <SonnerToaster theme="dark" />
       <OfflineBanner />
     </AuthProvider>
   </QueryClientProvider>
