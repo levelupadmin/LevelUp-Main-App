@@ -9,6 +9,14 @@ interface Props {
   children: React.ReactNode;
 }
 
+// Role gate (P6-T4 contract): on a cold start this may briefly evaluate the
+// role from AuthContext's cached profile row. That is safe because the decision
+// is re-run on every render: when the background revalidation lands a fresh row
+// (e.g. a role DOWNGRADE from admin → student), AuthContext calls setProfile,
+// this component re-renders, and the checks below re-evaluate against the new
+// role — so a downgraded user is redirected / shown Forbidden even if the stale
+// cached role allowed them through for a frame. Covered by the role-downgrade
+// case in AuthContext.authgate.test.ts.
 const RequireRole = ({ role, children }: Props) => {
   const { profile, loading } = useAuth();
   const location = useLocation();

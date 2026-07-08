@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 import { toast } from "@/lib/toast";
+import { purgePersistedQueryCache } from "@/lib/queryClient";
 
 interface UserProfile {
   id: string;
@@ -37,6 +38,68 @@ const clearPerUserLocalState = () => {
     }
   } catch {
     /* storage unavailable (private mode / locked-down WebView) → nothing to clear */
+  }
+};
+
+// ────────────────────────────────────────────────────────────────────
+// Profile-row cache (P6-T4) — auth gate off the critical path
+// ────────────────────────────────────────────────────────────────────
+// A returning user's `users` profile row is cached in localStorage so a cold
+// start can paint their Home with ZERO auth-blocking round-trips: `getSession()`
+// resolves the session locally, and if a cached profile matches that session's
+// user we drop `loading` immediately and revalidate in the background.
+//
+// Hard rules this cache lives under:
+//   • It stores ONLY the `users` profile row — never a session token (supabase-js
+//     owns those). A cached profile is NEVER an access grant on its own: it is
+//     only ever hydrated when supabase-js has already resolved a real session for
+//     the SAME user id, so it can't manufacture a logged-in state.
+//   • It is scoped to a single user id and never read for a different user (a
+//     second account on a shared device falls through to the blocking fetch),
+//     and it is cleared on sign-out / expiry / soft-delete so it can't leak
+//     across sessions — same class as the `lu_weeks_seen` lesson.
+const PROFILE_CACHE_KEY = "lu_profile_v1";
+
+interface CachedProfileEnvelope {
+  userId: string;
+  profile: UserProfile;
+}
+
+// Returns the cached profile ONLY when it belongs to `userId` (envelope id AND
+// the row's own id must match). Any parse/shape/mismatch → null → blocking fetch.
+const readCachedProfile = (userId: string): UserProfile | null => {
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedProfileEnvelope | null;
+    if (!parsed || parsed.userId !== userId) return null;
+    const cached = parsed.profile;
+    if (!cached || cached.id !== userId) return null;
+    return cached;
+  } catch {
+    /* absent/corrupt storage → treat as no cache (cold start) */
+    return null;
+  }
+};
+
+const writeCachedProfile = (userId: string, profile: UserProfile | null): void => {
+  try {
+    if (!profile) {
+      localStorage.removeItem(PROFILE_CACHE_KEY);
+      return;
+    }
+    const envelope: CachedProfileEnvelope = { userId, profile };
+    localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(envelope));
+  } catch {
+    /* quota / private mode → skip; correctness never depends on the cache */
+  }
+};
+
+const clearCachedProfile = (): void => {
+  try {
+    localStorage.removeItem(PROFILE_CACHE_KEY);
+  } catch {
+    /* storage unavailable → nothing to clear */
   }
 };
 
@@ -179,13 +242,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let hadSession = false;
     let initialLoadDone = false;
 
+    const attachSentryUser = (nextSession: Session) =>
+      // Attach the current user identity to Sentry so error reports can be
+      // filtered + searched by who hit them. Dynamic import so unauthenticated
+      // pages don't pull Sentry into their bundle.
+      void import("@/lib/sentry").then((m) =>
+        m.setSentryUser({ id: nextSession.user.id, email: nextSession.user.email ?? null })
+      );
+
     const syncAuthState = async (nextSession: Session | null) => {
       if (!isMounted) return;
 
-      // Only show the loading spinner on initial page load.
-      // Subsequent auth events (token refresh on tab switch) update
-      // session/profile silently so form state is never lost.
-      if (!initialLoadDone) {
+      // Whether this is the very first resolution (cold start). The cached-
+      // profile fast path only applies here; later user-changes (account
+      // switch) always take the blocking fetch so we never render one account's
+      // chrome for another.
+      const isInitial = !initialLoadDone;
+
+      // Only show the loading state on initial page load. Subsequent auth
+      // events (token refresh on tab switch) update session/profile silently so
+      // form state is never lost.
+      if (isInitial) {
         setLoading(true);
       }
 
@@ -197,6 +274,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
         currentUserIdRef.current = null;
         setProfile(null);
+        // A logged-out state must never leave a previous user's profile cached
+        // on a shared device.
+        clearCachedProfile();
         // Clear Sentry user attribution so post-signout errors aren't
         // attributed to the previous user.
         void import("@/lib/sentry").then((m) => m.setSentryUser(null));
@@ -214,6 +294,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       currentUserIdRef.current = nextSession.user.id;
 
+      // ── Fast path (P6-T4): cold start with a cached profile for THIS session
+      // user. Hydrate from cache and drop `loading` immediately so Home paints
+      // with zero auth-blocking round-trips, then fall through to revalidate the
+      // row in the background. Skipped when there's nothing cached (first login /
+      // new device) — correctness over speed there (block on the fetch).
+      const cached = isInitial ? readCachedProfile(nextSession.user.id) : null;
+      if (cached) {
+        setProfile(cached);
+        attachSentryUser(nextSession);
+        setLoading(false);
+        initialLoadDone = true;
+      }
+
       const result = await fetchProfile(nextSession.user.id);
 
       if (!isMounted) return;
@@ -225,10 +318,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // surface breaks). Sign out instead. Resetting hadSession first
         // keeps the SIGNED_OUT event below from also firing the generic
         // "session expired" toast, and because sign-out clears the
-        // session this branch cannot re-enter in a loop.
+        // session this branch cannot re-enter in a loop. Also drops the
+        // cached row so the deleted account can't be re-hydrated next boot.
         hadSession = false;
         currentUserIdRef.current = null;
         setProfile(null);
+        clearCachedProfile();
         setLoading(false);
         initialLoadDone = true;
         toast.error("This account is scheduled for deletion. Contact support to recover it.");
@@ -236,13 +331,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      setProfile(result.ok ? result.profile : null);
-      // Attach the current user identity to Sentry so error reports
-      // can be filtered + searched by who hit them. Dynamic import so
-      // unauthenticated pages don't pull Sentry into their bundle.
-      void import("@/lib/sentry").then((m) =>
-        m.setSentryUser({ id: nextSession.user.id, email: nextSession.user.email ?? null })
-      );
+      if (result.ok) {
+        // Fresh row wins: update state AND refresh the cache. Critically for the
+        // role-downgrade path, this re-render re-evaluates RequireRole with the
+        // revalidated role, so a downgraded user loses access even if the stale
+        // cached role briefly allowed it.
+        setProfile(result.profile);
+        writeCachedProfile(nextSession.user.id, result.profile);
+      } else {
+        // Transient fetch failure: clear the in-memory profile so the ACCESS
+        // DECISION stays byte-identical to the pre-cache path — `setProfile(null)`
+        // → RequireRole falls back to RouteFallback, never a stale cached role.
+        // This MUST run even when a cached profile was hydrated on the fast path
+        // above: otherwise a role-downgrade that coincides with a failed
+        // revalidation would leave the stale elevated role in force (the exact
+        // divergence the "byte-identical access decisions" bar forbids). The
+        // session is untouched (real, this user), so RequireAuth still renders;
+        // the localStorage cache is left intact for a future cold start, which
+        // revalidates again, and a later successful revalidation restores the row.
+        setProfile(null);
+      }
+
+      // The cached fast path already attached the Sentry user; only attach here
+      // when we didn't take it (non-cached cold start / account switch), so a
+      // cached cold start doesn't dispatch setSentryUser twice.
+      if (!cached) {
+        attachSentryUser(nextSession);
+      }
       setLoading(false);
       initialLoadDone = true;
     };
@@ -270,6 +385,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Wipe per-user localStorage watermarks (e.g. the weekly-consistency
     // "weeks seen" counter) so the next account on a shared device starts clean.
     clearPerUserLocalState();
+    // Drop the cached profile row (P6-T4) so the next account on this device
+    // can't cold-start into the previous user's identity.
+    clearCachedProfile();
+    // Purge the persisted react-query cache (P6-T3): remove the dehydrated
+    // localStorage copy AND clear the in-memory cache so a second user on the
+    // same device never sees the first user's Home/courses/profile data. Query
+    // keys are already user-scoped, but this guarantees a clean slate even for
+    // the non-user-scoped whitelisted key (`catalog`). Awaited but self-guarded,
+    // so a locked-down storage layer can't break sign-out.
+    await purgePersistedQueryCache();
   };
 
   return (
