@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import InitialsAvatar from "@/components/InitialsAvatar";
@@ -10,60 +11,78 @@ import { toast as appToast } from "@/lib/toast";
 import { isNative } from "@/lib/platform";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 
+interface EventsData {
+  events: any[];
+  speakerMap: Record<string, any[]>;
+  registeredIds: string[];
+}
+
 // ── Upcoming Events (from events table) ──
+// The initial READ (events + speakers + the user's existing registrations) moved
+// to react-query (P6-T1) so a Home revisit within staleTime fires zero refetches
+// and pull-to-refresh invalidates `["upcoming-events", uid]`. The registration /
+// payment flow below is untouched (REVENUE guard): optimistic "just registered"
+// ids are layered on top of the fetched set via local state, so a successful
+// register still flips the card to "Registered" without a refetch.
 const UpcomingEvents = () => {
   const { user, session, profile } = useAuth();
   const { toast } = useToast();
-  const [events, setEvents] = useState<any[]>([]);
-  const [myRegs, setMyRegs] = useState<Set<string>>(new Set());
   const [registering, setRegistering] = useState<string | null>(null);
-  const [speakerMap, setSpeakerMap] = useState<Record<string, any[]>>({});
+  // Optimistic additions since the last fetch (free + paid registration
+  // handlers push here); merged over the fetched set below.
+  const [extraRegs, setExtraRegs] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        // A live event has already started, so a flat starts_at >= now
-        // filter would drop it from the rail mid-session. Keep "live"
-        // rows regardless of starts_at; "upcoming" still needs a future
-        // start time.
-        const { data } = await supabase
-          .from("events_safe")
-          .select("*")
-          .eq("is_active", true)
-          .or(`status.eq.live,and(status.eq.upcoming,starts_at.gte.${new Date().toISOString()})`)
-          .order("starts_at", { ascending: true })
-          .limit(4);
-        setEvents(data ?? []);
+  const { data } = useQuery({
+    queryKey: ["upcoming-events", user?.id ?? "anon"],
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    queryFn: async (): Promise<EventsData> => {
+      // A live event has already started, so a flat starts_at >= now
+      // filter would drop it from the rail mid-session. Keep "live"
+      // rows regardless of starts_at; "upcoming" still needs a future
+      // start time.
+      const { data: eventsData } = await supabase
+        .from("events_safe")
+        .select("*")
+        .eq("is_active", true)
+        .or(`status.eq.live,and(status.eq.upcoming,starts_at.gte.${new Date().toISOString()})`)
+        .order("starts_at", { ascending: true })
+        .limit(4);
 
-        // Load speakers
-        const eventIds = (data ?? []).map((e: any) => e.id);
-        if (eventIds.length) {
-          const { data: allSpeakers } = await supabase
-            .from("event_speakers")
-            .select("event_id, name, title, avatar_url")
-            .in("event_id", eventIds)
-            .order("sort_order");
-          const map: Record<string, any[]> = {};
-          (allSpeakers ?? []).forEach((s: any) => {
-            if (!map[s.event_id]) map[s.event_id] = [];
-            map[s.event_id].push(s);
-          });
-          setSpeakerMap(map);
-        }
-
-        if (user) {
-          const { data: regs } = await supabase
-            .from("event_registrations")
-            .select("event_id")
-            .eq("user_id", user.id);
-          setMyRegs(new Set((regs ?? []).map((r: any) => r.event_id)));
-        }
-      } catch (err) {
-        if (import.meta.env.DEV) console.error("Failed to load events:", err);
+      // Load speakers
+      const speakerMap: Record<string, any[]> = {};
+      const eventIds = (eventsData ?? []).map((e: any) => e.id);
+      if (eventIds.length) {
+        const { data: allSpeakers } = await supabase
+          .from("event_speakers")
+          .select("event_id, name, title, avatar_url")
+          .in("event_id", eventIds)
+          .order("sort_order");
+        (allSpeakers ?? []).forEach((s: any) => {
+          if (!speakerMap[s.event_id]) speakerMap[s.event_id] = [];
+          speakerMap[s.event_id].push(s);
+        });
       }
-    };
-    load();
-  }, [user]);
+
+      let registeredIds: string[] = [];
+      if (user) {
+        const { data: regs } = await supabase
+          .from("event_registrations")
+          .select("event_id")
+          .eq("user_id", user.id);
+        registeredIds = (regs ?? []).map((r: any) => r.event_id);
+      }
+
+      return { events: eventsData ?? [], speakerMap, registeredIds };
+    },
+  });
+
+  const events = data?.events ?? [];
+  const speakerMap = data?.speakerMap ?? {};
+  const myRegs = useMemo(
+    () => new Set<string>([...(data?.registeredIds ?? []), ...extraRegs]),
+    [data, extraRegs]
+  );
 
   const handleRegisterFree = async (eventId: string) => {
     if (!user) return;
@@ -78,7 +97,7 @@ const UpcomingEvents = () => {
       toast({ title: "Registration failed", description: error.message, variant: "destructive" });
     } else {
       appToast.success("Registered");
-      setMyRegs((prev) => new Set(prev).add(eventId));
+      setExtraRegs((prev) => new Set(prev).add(eventId));
     }
     setRegistering(null);
   };
@@ -115,7 +134,7 @@ const UpcomingEvents = () => {
 
       if (data.registered) {
         appToast.success("Registered", { description: "You're in. See you there." });
-        setMyRegs((prev) => new Set(prev).add(eventId));
+        setExtraRegs((prev) => new Set(prev).add(eventId));
       } else if (data.razorpay_order_id) {
         const options = {
           key: data.key_id,
@@ -148,7 +167,7 @@ const UpcomingEvents = () => {
               const verifyData = await verifyRes.json();
               if (verifyData.registered) {
                 toast({ title: "Payment successful!", description: "You're registered for the event." });
-                setMyRegs((prev) => new Set(prev).add(eventId));
+                setExtraRegs((prev) => new Set(prev).add(eventId));
               } else {
                 toast({ title: "Verification failed", description: verifyData.error || "Contact support.", variant: "destructive" });
               }

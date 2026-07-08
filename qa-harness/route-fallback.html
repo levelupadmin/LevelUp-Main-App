@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QA — RouteFallback Reduced-Motion Harness</title>
+    <style>
+      /* Match the app's default theme: index.css defines the dark canvas on
+         :root (this app has no next-themes provider), so we add NO theme class
+         and just paint the same --canvas the real layout shells use, avoiding a
+         white flash before the component's own bg-canvas takes over. */
+      html, body { margin: 0; background: hsl(0 0% 0%); }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./route-fallback.tsx"></script>
+  </body>
+</html>

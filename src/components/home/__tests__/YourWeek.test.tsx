@@ -30,22 +30,26 @@ vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({ user: { id: "user-1" } }),
 }));
 
-// Chainable Supabase stub. Every builder method returns `this`; the object is
-// awaitable (thenable) and resolves to one non-empty row so none of the
-// `if (!data?.length) return` guards short-circuit before deriveWeekSummary runs.
-vi.mock("@/integrations/supabase/client", () => {
-  const makeQuery = () => {
-    const query: Record<string, unknown> = {};
-    for (const method of ["select", "eq", "in", "order"]) {
-      query[method] = vi.fn(() => query);
-    }
-    // Thenable: `await supabase.from(...).select(...)....` resolves here.
-    query.then = (resolve: (value: { data: unknown[] }) => unknown) =>
-      resolve({ data: [{ id: "row-1", offering_id: "off-1", course_id: "course-1" }] });
-    return query;
-  };
-  return { supabase: { from: vi.fn(() => makeQuery()) } };
-});
+// After the P6-T1 migration YourWeek reads the shared enrolment tree via
+// `useEnrolledProgress` (react-query) instead of hitting Supabase directly. Stub
+// the hook to hand back a NON-NULL tree so `summary = tree ? deriveWeekSummary()`
+// runs and reaches the (separately stubbed) derivation. The tree's row contents
+// don't matter here — deriveWeekSummary is mocked — only that it's truthy and
+// not loading.
+vi.mock("@/hooks/useEnrolledProgress", () => ({
+  useEnrolledProgress: () => ({
+    data: {
+      hasEnrolments: true,
+      courseIds: ["course-1"],
+      offeringCourses: [{ offering_id: "off-1", course_id: "course-1" }],
+      courses: [],
+      sections: [],
+      chapters: [],
+      progress: [],
+    },
+    isLoading: false,
+  }),
+}));
 
 // Imported AFTER the mocks are registered.
 import YourWeek from "../YourWeek";

@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LayoutGroup, motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -45,15 +46,73 @@ const SCOPES: { key: FeedScope; label: string; Icon: typeof Globe }[] = [
   { key: "peer_review", label: "Peer Reviews", Icon: MessageSquare },
 ];
 
+const COMMUNITY_LOAD_ERROR = "We couldn't load this. Check your connection and try again.";
+
+// The community feed read as one function (P6-T2). Query shape is unchanged from
+// the old `loadPosts`: posts (scope-filtered) → author names via the
+// public_user_profiles view → like/comment counts + my-likes in parallel.
+// Throws on the posts error (surfaced as the retryable ErrorState below).
+const fetchCommunityPosts = async (
+  scope: FeedScope,
+  myBatchId: string | null,
+  userId: string | undefined
+): Promise<Post[]> => {
+  let query = supabase
+    .from("community_posts")
+    .select("id, content_text, user_id, is_pinned, is_admin_post, created_at, cohort_batch_id, post_type")
+    .order("is_pinned", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (scope === "my_cohort" && myBatchId) {
+    query = query.eq("cohort_batch_id", myBatchId);
+  }
+  const { data: postsData, error: postsError } = await query;
+
+  if (postsError) throw postsError;
+  if (!postsData) return [];
+
+  // Get user names. Uses the public_user_profiles view (not the users table
+  // directly) because the users RLS policy restricts non-admins to reading
+  // their OWN row, so authenticated peers need the view to see each other's
+  // names. The view exposes only id/full_name/avatar_url/member_number/
+  // occupation; email, phone, bio and city are never returned through this path.
+  const userIds = [...new Set(postsData.map((p) => p.user_id))];
+  const { data: users } = await supabase
+    .from("public_user_profiles" as any)
+    .select("id, full_name")
+    .in("id", userIds);
+  const userMap = Object.fromEntries(((users as any[]) || []).map((u: any) => [u.id, u.full_name || "Anonymous"]));
+
+  // Get like & comment counts
+  const postIds = postsData.map((p) => p.id);
+  const [likesRes, commentsRes, myLikesRes] = await Promise.all([
+    supabase.from("community_post_likes").select("post_id").in("post_id", postIds),
+    supabase.from("community_post_comments").select("post_id").in("post_id", postIds),
+    userId ? supabase.from("community_post_likes").select("post_id").in("post_id", postIds).eq("user_id", userId) : Promise.resolve({ data: [] }),
+  ]);
+
+  const likeCounts: Record<string, number> = {};
+  (likesRes.data || []).forEach((l) => { likeCounts[l.post_id] = (likeCounts[l.post_id] || 0) + 1; });
+  const commentCounts: Record<string, number> = {};
+  (commentsRes.data || []).forEach((c) => { commentCounts[c.post_id] = (commentCounts[c.post_id] || 0) + 1; });
+  const myLikes = new Set((myLikesRes.data || []).map((l) => l.post_id));
+
+  return postsData.map((p) => ({
+    ...p,
+    user_name: userMap[p.user_id] || "Anonymous",
+    like_count: likeCounts[p.id] || 0,
+    comment_count: commentCounts[p.id] || 0,
+    liked_by_me: myLikes.has(p.id),
+  }));
+};
+
 const CommunityPage = () => {
   usePageTitle("Community");
   const { user, profile } = useAuth();
   const { toast: showToast } = useToast();
   const motionSafe = useMotionSafe();
+  const queryClient = useQueryClient();
 
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [newPost, setNewPost] = useState("");
   const [posting, setPosting] = useState(false);
   const [scope, setScope] = useState<FeedScope>("everyone");
@@ -144,69 +203,30 @@ const CommunityPage = () => {
 
   const isThreadMuted = (postId: string) => mutedThreads.has(postId);
 
-  const loadPosts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      let query = supabase
-        .from("community_posts")
-        .select("id, content_text, user_id, is_pinned, is_admin_post, created_at, cohort_batch_id, post_type")
-        .order("is_pinned", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (scope === "my_cohort" && myBatchId) {
-        query = query.eq("cohort_batch_id", myBatchId);
-      }
-      const { data: postsData, error: postsError } = await query;
+  // The feed moves to react-query (P6-T2): keyed by scope (+ the cohort batch
+  // and user it filters on) so switching scope back within staleTime is a cache
+  // hit, and pull-to-refresh invalidates. staleTime is 60s per spec (community
+  // is fast-moving). Optimistic like/comment updates below write straight to the
+  // cache via `queryClient.setQueryData(communityKey, …)`.
+  const communityKey = useMemo(
+    () => ["community", scope, myBatchId, user?.id ?? "anon"] as const,
+    [scope, myBatchId, user?.id]
+  );
+  const {
+    data: posts = [],
+    isPending,
+    isError,
+    refetch,
+  } = useQuery({
+    queryKey: communityKey,
+    queryFn: () => fetchCommunityPosts(scope, myBatchId, user?.id),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const loading = isPending;
+  const error = isError ? COMMUNITY_LOAD_ERROR : null;
 
-      if (postsError) throw postsError;
-      if (!postsData) { setPosts([]); setLoading(false); return; }
-
-      // Get user names. Uses the public_user_profiles view (not the
-      // users table directly) because the users RLS policy restricts
-      // non-admins to reading their OWN row, so authenticated peers need
-      // the view to see each other's names. The view exposes only
-      // id/full_name/avatar_url/member_number/occupation; email, phone,
-      // bio and city are never returned through this path.
-      const userIds = [...new Set(postsData.map((p) => p.user_id))];
-      const { data: users } = await supabase
-        .from("public_user_profiles" as any)
-        .select("id, full_name")
-        .in("id", userIds);
-      const userMap = Object.fromEntries(((users as any[]) || []).map((u: any) => [u.id, u.full_name || "Anonymous"]));
-
-      // Get like & comment counts
-      const postIds = postsData.map((p) => p.id);
-      const [likesRes, commentsRes, myLikesRes] = await Promise.all([
-        supabase.from("community_post_likes").select("post_id").in("post_id", postIds),
-        supabase.from("community_post_comments").select("post_id").in("post_id", postIds),
-        user ? supabase.from("community_post_likes").select("post_id").in("post_id", postIds).eq("user_id", user.id) : Promise.resolve({ data: [] }),
-      ]);
-
-      const likeCounts: Record<string, number> = {};
-      (likesRes.data || []).forEach((l) => { likeCounts[l.post_id] = (likeCounts[l.post_id] || 0) + 1; });
-      const commentCounts: Record<string, number> = {};
-      (commentsRes.data || []).forEach((c) => { commentCounts[c.post_id] = (commentCounts[c.post_id] || 0) + 1; });
-      const myLikes = new Set((myLikesRes.data || []).map((l) => l.post_id));
-
-      setPosts(postsData.map((p) => ({
-        ...p,
-        user_name: userMap[p.user_id] || "Anonymous",
-        like_count: likeCounts[p.id] || 0,
-        comment_count: commentCounts[p.id] || 0,
-        liked_by_me: myLikes.has(p.id),
-      })));
-      setLoading(false);
-    } catch (err) {
-      if (import.meta.env.DEV) console.error("Failed to load community posts:", err);
-      setError("We couldn't load this. Check your connection and try again.");
-      setLoading(false);
-    }
-  }, [user, scope, myBatchId]);
-
-  const handleRefresh = useCallback(async () => { await loadPosts(); }, [loadPosts]);
-
-  useEffect(() => { loadPosts(); }, [loadPosts]);
+  const handleRefresh = useCallback(async () => { await refetch(); }, [refetch]);
 
   const handlePost = async () => {
     if (!newPost.trim() || !user) return;
@@ -222,7 +242,7 @@ const CommunityPage = () => {
       showToast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
       setNewPost("");
-      loadPosts();
+      void refetch();
       void confirm(true);
       toast.success("Post shared");
     }
@@ -231,8 +251,9 @@ const CommunityPage = () => {
 
   const toggleLike = async (postId: string, liked: boolean) => {
     if (!user) return;
-    // Optimistic update
-    setPosts((prev) => prev.map((p) =>
+    // Optimistic update — write straight to the react-query cache for the
+    // currently-displayed feed.
+    queryClient.setQueryData<Post[]>(communityKey, (prev = []) => prev.map((p) =>
       p.id === postId
         ? { ...p, liked_by_me: !liked, like_count: p.like_count + (liked ? -1 : 1) }
         : p
@@ -242,7 +263,7 @@ const CommunityPage = () => {
       : await supabase.from("community_post_likes").insert({ post_id: postId, user_id: user.id });
     if (error) {
       // Revert optimistic update
-      setPosts((prev) => prev.map((p) =>
+      queryClient.setQueryData<Post[]>(communityKey, (prev = []) => prev.map((p) =>
         p.id === postId
           ? { ...p, liked_by_me: liked, like_count: p.like_count + (liked ? 1 : -1) }
           : p
@@ -297,7 +318,7 @@ const CommunityPage = () => {
       // user's notification is rejected by RLS for non-admins).
       setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
       await fetchComments(postId);
-      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comment_count: p.comment_count + 1 } : p));
+      queryClient.setQueryData<Post[]>(communityKey, (prev = []) => prev.map((p) => p.id === postId ? { ...p, comment_count: p.comment_count + 1 } : p));
       toast.success("Comment added");
     }
     setCommentLoading(false);
@@ -467,7 +488,7 @@ const CommunityPage = () => {
               ))}
             </div>
           ) : error ? (
-            <ErrorState onRetry={() => loadPosts()} description={error} />
+            <ErrorState onRetry={() => refetch()} description={error} />
           ) : posts.length === 0 ? (
             <EmptyState
               icon={<MessageCircle size={22} strokeWidth={1.5} />}

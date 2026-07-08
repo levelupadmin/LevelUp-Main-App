@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -325,17 +326,102 @@ const DangerZoneSection = ({
   );
 };
 
+interface ProfileSectionsData {
+  enrolments: Enrolment[];
+  courseMap: Record<string, string>;
+  certCount: number;
+  invoiceCount: number;
+}
+
+// The profile "sections" data as one function (P6-T2): the enrolment list (+ its
+// offering titles / first-course links) and the hub quick-tile counts
+// (certificates + captured invoices). Consolidates the two old useEffects into a
+// single `["profile-sections", uid]` query — same query shapes, same
+// derivation — so a revisit within staleTime is a cache hit.
+const fetchProfileSections = async (
+  userId: string
+): Promise<ProfileSectionsData> => {
+  const { data: enrs } = await supabase
+    .from("enrolments")
+    .select("id, status, created_at, offering_id")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  let enrolments: Enrolment[] = [];
+  const courseMap: Record<string, string> = {};
+
+  if (enrs?.length) {
+    const { data: offs } = await supabase
+      .from("offerings")
+      .select("id, title, thumbnail_url, type")
+      .in("id", enrs.map((e) => e.offering_id));
+
+    const offMap = Object.fromEntries((offs ?? []).map((o) => [o.id, o]));
+
+    // Get the first course for each offering to build direct links
+    const offeringIds = enrs.map((e) => e.offering_id).filter(Boolean);
+    const { data: offeringCourses } = await supabase
+      .from("offering_courses")
+      .select("offering_id, course_id")
+      .in("offering_id", offeringIds);
+
+    if (offeringCourses) {
+      for (const oc of offeringCourses) {
+        if (!courseMap[oc.offering_id]) {
+          courseMap[oc.offering_id] = oc.course_id;
+        }
+      }
+    }
+
+    enrolments = enrs.map((e) => ({
+      ...e,
+      title: offMap[e.offering_id]?.title ?? "Unknown",
+      thumbnail_url: offMap[e.offering_id]?.thumbnail_url ?? null,
+      type: offMap[e.offering_id]?.type ?? "",
+    }));
+  }
+
+  // Counts for the hub quick-tiles (cheap head-count queries).
+  const [certs, orders] = await Promise.all([
+    (supabase as any)
+      .from("certificates")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId),
+    supabase
+      .from("payment_orders")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "captured"),
+  ]);
+
+  return {
+    enrolments,
+    courseMap,
+    certCount: certs.count ?? 0,
+    invoiceCount: orders.count ?? 0,
+  };
+};
+
 const ProfilePage = () => {
   usePageTitle("Profile");
   const { profile, user, signOut } = useAuth();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [enrolments, setEnrolments] = useState<Enrolment[]>([]);
-  const [courseMap, setCourseMap] = useState<Record<string, string>>({});
-  const [certCount, setCertCount] = useState(0);
-  const [invoiceCount, setInvoiceCount] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Profile sections (enrolments + hub-tile counts) via react-query (P6-T2).
+  const { data: sections } = useQuery({
+    queryKey: ["profile-sections", user?.id ?? "anon"],
+    queryFn: () => fetchProfileSections(user!.id),
+    enabled: !!user,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const enrolments = sections?.enrolments ?? [];
+  const courseMap = sections?.courseMap ?? {};
+  const certCount = sections?.certCount ?? 0;
+  const invoiceCount = sections?.invoiceCount ?? 0;
 
   // Section anchors so the hub tiles/menu items can scroll to the matching block.
   const editRef = useRef<HTMLDivElement>(null);
@@ -378,76 +464,6 @@ const ProfilePage = () => {
       });
     }
   }, [profile, localProfile]);
-
-  useEffect(() => {
-    if (!user) return;
-    const fetchEnrolments = async () => {
-      const { data: enrs } = await supabase
-        .from("enrolments")
-        .select("id, status, created_at, offering_id")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (!enrs?.length) return;
-
-      const { data: offs } = await supabase
-        .from("offerings")
-        .select("id, title, thumbnail_url, type")
-        .in("id", enrs.map((e) => e.offering_id));
-
-      const offMap = Object.fromEntries((offs ?? []).map((o) => [o.id, o]));
-
-      // Get the first course for each offering to build direct links
-      const offeringIds = enrs.map(e => e.offering_id).filter(Boolean);
-      const { data: offeringCourses } = await supabase
-        .from("offering_courses")
-        .select("offering_id, course_id")
-        .in("offering_id", offeringIds);
-
-      const cMap: Record<string, string> = {};
-      if (offeringCourses) {
-        for (const oc of offeringCourses) {
-          if (!cMap[oc.offering_id]) {
-            cMap[oc.offering_id] = oc.course_id;
-          }
-        }
-      }
-      setCourseMap(cMap);
-
-      setEnrolments(
-        enrs.map((e) => ({
-          ...e,
-          title: offMap[e.offering_id]?.title ?? "Unknown",
-          thumbnail_url: offMap[e.offering_id]?.thumbnail_url ?? null,
-          type: offMap[e.offering_id]?.type ?? "",
-        }))
-      );
-    };
-    fetchEnrolments();
-  }, [user]);
-
-  // Counts for the hub quick-tiles (cheap head-count queries).
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    (async () => {
-      const [certs, orders] = await Promise.all([
-        (supabase as any)
-          .from("certificates")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", user.id),
-        supabase
-          .from("payment_orders")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", user.id)
-          .eq("status", "captured"),
-      ]);
-      if (cancelled) return;
-      setCertCount(certs.count ?? 0);
-      setInvoiceCount(orders.count ?? 0);
-    })();
-    return () => { cancelled = true; };
-  }, [user]);
 
   const handleSave = async () => {
     if (!user) return;

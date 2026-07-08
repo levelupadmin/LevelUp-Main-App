@@ -55,8 +55,32 @@ const config: CapacitorConfig = {
     ],
   },
   plugins: {
+    // The native splash is hidden by the WEB layer, not the OS: `main.tsx`
+    // calls `SplashScreen.hide({ fadeOutDuration: durationsMs.base })` (240ms,
+    // the --motion-base token from src/lib/motion.ts) inside a double-rAF
+    // (a painted React frame is guaranteed to exist first), so the splash
+    // lifts straight onto rendered content with no black gap and no
+    // double-flash. `launchAutoHide: false` is what hands that control to JS
+    // — with it true the OS would auto-hide after `launchShowDuration`,
+    // racing the first paint and reintroducing the gap. A 4s failsafe in
+    // main.tsx force-hides if JS ever errors before mounting, so users are
+    // never trapped on the splash. `backgroundColor` matches the branded dark
+    // canvas (#0a0a0a — same as the manifest/theme/StatusBar) so any frame
+    // the OS paints for the splash window blends into the app, not black.
+    // `launchFadeOutDuration` is load-bearing on the Android 12+ Splash Screen
+    // API: there the OS ignores the fadeOutDuration passed to SplashScreen.hide()
+    // and uses THIS value for the fade instead (see @capacitor/splash-screen
+    // HideOptions.fadeOutDuration docs), so keep it in sync with the 240ms JS
+    // fade — deleting it silently regresses the Android 12+ fade to the 200ms
+    // default.
     SplashScreen: {
-      launchAutoHide: true,
+      launchAutoHide: false,
+      // Pinned to durationsMs.base (--motion-base, 240ms) in src/lib/motion.ts —
+      // this config is evaluated by the Capacitor CLI at build time and can't
+      // import that runtime ESM token, so the literal is duplicated by hand and
+      // kept in lockstep with the SplashScreen.hide() fade in src/main.tsx.
+      launchFadeOutDuration: 240,
+      backgroundColor: "#0a0a0a",
       androidSplashResourceName: "splash",
       iosSplashStoryboard: "LaunchScreen",
     },

@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  useEnrolledProgress,
+  type EnrolledCourseRow,
+  type EnrolledProgressTree,
+} from "@/hooks/useEnrolledProgress";
 import ArtworkImage from "@/components/media/ArtworkImage";
 import { MotionCard } from "@/components/motion/MotionCard";
 import { Link } from "react-router-dom";
@@ -19,167 +23,109 @@ interface ResumeMeta {
   nextChapterId: string | null;
 }
 
+// Ordered courses + per-course resume metadata, derived from the shared
+// enrolment tree. This is the EXACT math the component ran inline before the
+// react-query migration (P6-T1) — pulled into a pure derive so the query owns
+// only I/O. Ordering (last-touched desc), completion counts and next-chapter
+// resolution are unchanged; the tree's rows are the same `.select(...)`
+// projections the component used to fetch for itself.
+interface Derived {
+  courses: EnrolledCourseRow[];
+  metaMap: Record<string, ResumeMeta>;
+}
+
+const deriveContinue = (tree: EnrolledProgressTree): Derived => {
+  const { courseIds, courses: coursesData, sections, chapters, progress } = tree;
+
+  if (!coursesData.length) return { courses: [], metaMap: {} };
+
+  const sectionCourseMap: Record<string, string> = {};
+  const sectionSortMap: Record<string, number> = {};
+  sections.forEach((s) => {
+    sectionCourseMap[s.id] = s.course_id;
+    sectionSortMap[s.id] = s.sort_order;
+  });
+
+  const completedSet = new Set(
+    progress.filter((p) => p.completed_at).map((p) => p.chapter_id)
+  );
+
+  // Last-touched timestamp per course → ordering key. Most recent wins.
+  const lastTouchedMap: Record<string, number> = {};
+  for (const p of progress) {
+    if (!p.course_id || !p.updated_at) continue;
+    const t = new Date(p.updated_at).getTime();
+    if (!lastTouchedMap[p.course_id] || t > lastTouchedMap[p.course_id]) {
+      lastTouchedMap[p.course_id] = t;
+    }
+  }
+
+  const metaMap: Record<string, ResumeMeta> = {};
+
+  for (const cId of courseIds) {
+    const courseChapters = chapters
+      .filter((ch) => sectionCourseMap[ch.section_id] === cId)
+      .sort((a, b) => {
+        const sa = sectionSortMap[a.section_id] ?? 0;
+        const sb = sectionSortMap[b.section_id] ?? 0;
+        return sa !== sb ? sa - sb : a.sort_order - b.sort_order;
+      });
+
+    const total = courseChapters.length;
+    const done = courseChapters.filter((ch) => completedSet.has(ch.id)).length;
+
+    // Next uncompleted chapter (and its 1-based position). If everything is
+    // done, resume points at the last lesson for a re-watch.
+    const nextIdx = courseChapters.findIndex((ch) => !completedSet.has(ch.id));
+    const resolvedIdx = nextIdx === -1 ? Math.max(total - 1, 0) : nextIdx;
+    const nextChapter = courseChapters[resolvedIdx];
+
+    metaMap[cId] = {
+      total,
+      done,
+      lessonNumber: total > 0 ? resolvedIdx + 1 : 0,
+      nextChapterId: nextIdx === -1 ? null : nextChapter?.id ?? null,
+    };
+  }
+
+  // Order courses by last-touched desc. Courses with no progress row yet
+  // (freshly enrolled, never opened) sort to the end but still show.
+  const courses = [...coursesData].sort((a, b) => {
+    const ta = lastTouchedMap[a.id] ?? 0;
+    const tb = lastTouchedMap[b.id] ?? 0;
+    return tb - ta;
+  });
+
+  return { courses, metaMap };
+};
+
 // ── Continue Learning ──
 // Ordered by LAST TOUCHED (most-recent chapter_progress.updated_at per
 // course), not catalogue sort_order, so the course you watched five
 // minutes ago sits first. Each card carries a "Lesson N of M" chip on the
 // artwork and an always-visible thin cream progress bar.
+//
+// Data comes from the shared `useEnrolledProgress` query (P6-T1): the enrolment
+// chain is fetched once for the whole feed and cached, so revisiting Home within
+// 5min fires zero refetches and YourWeek/UpcomingSessions share the same rows.
 const ContinueLearning = () => {
   const { user, profile } = useAuth();
-  const [courses, setCourses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [metaMap, setMetaMap] = useState<Record<string, ResumeMeta>>({});
+  const {
+    data: tree,
+    isLoading,
+    isError,
+    refetch,
+  } = useEnrolledProgress(user?.id);
 
   const firstName = profile?.full_name?.split(" ")[0] ?? "you";
   const heading = `Continue watching for ${firstName}`;
 
-  const fetchEnrolled = async () => {
-    setError(false);
-    setLoading(true);
-    try {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
+  const { courses, metaMap } = useMemo(
+    () => (tree ? deriveContinue(tree) : { courses: [], metaMap: {} }),
+    [tree]
+  );
 
-      // chapter_progress drives BOTH the per-course completion math AND the
-      // last-touched ordering. Pull updated_at alongside chapter_id/course_id
-      // and fire it in parallel with the enrolment chain.
-      const progressPromise = supabase
-        .from("chapter_progress")
-        .select("chapter_id, course_id, completed_at, updated_at")
-        .eq("user_id", user.id);
-
-      const { data: enrolments } = await supabase
-        .from("enrolments")
-        .select("id, offering_id, created_at")
-        .eq("user_id", user.id)
-        .eq("status", "active");
-
-      if (!enrolments?.length) return;
-
-      const offeringIds = enrolments.map((e) => e.offering_id);
-      const { data: ocs } = await supabase
-        .from("offering_courses")
-        .select("offering_id, course_id")
-        .in("offering_id", offeringIds);
-
-      if (!ocs?.length) return;
-
-      const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
-
-      // Fire courses + sections in parallel, both only need courseIds.
-      const [coursesRes, sectionsRes] = await Promise.all([
-        supabase
-          .from("courses")
-          .select("id, slug, title, description, instructor_display_name, thumbnail_url")
-          .in("id", courseIds),
-        supabase
-          .from("sections")
-          .select("id, course_id, sort_order")
-          .in("course_id", courseIds)
-          .order("sort_order"),
-      ]);
-
-      const coursesData = coursesRes.data;
-      const sectionsData = sectionsRes.data;
-
-      if (!coursesData?.length) {
-        setCourses([]);
-        return;
-      }
-
-      const sectionCourseMap: Record<string, string> = {};
-      const sectionSortMap: Record<string, number> = {};
-      (sectionsData ?? []).forEach((s: any) => {
-        sectionCourseMap[s.id] = s.course_id;
-        sectionSortMap[s.id] = s.sort_order;
-      });
-
-      const sectionIds = (sectionsData ?? []).map((s: any) => s.id);
-
-      // chapters wait for sectionIds; chapter_progress fired at the top,
-      // await whichever lands last.
-      const [chaptersRes, progressRes] = await Promise.all([
-        sectionIds.length
-          ? supabase
-              .from("chapters")
-              .select("id, section_id, sort_order")
-              .in("section_id", sectionIds)
-              .order("sort_order")
-          : Promise.resolve({ data: [] as any[] }),
-        progressPromise,
-      ]);
-
-      const allChapters = chaptersRes.data ?? [];
-      const progressData = progressRes.data ?? [];
-
-      const completedSet = new Set(
-        progressData.filter((p: any) => p.completed_at).map((p: any) => p.chapter_id)
-      );
-
-      // Last-touched timestamp per course → ordering key. Most recent wins.
-      const lastTouchedMap: Record<string, number> = {};
-      for (const p of progressData as any[]) {
-        if (!p.course_id || !p.updated_at) continue;
-        const t = new Date(p.updated_at).getTime();
-        if (!lastTouchedMap[p.course_id] || t > lastTouchedMap[p.course_id]) {
-          lastTouchedMap[p.course_id] = t;
-        }
-      }
-
-      const mMap: Record<string, ResumeMeta> = {};
-
-      for (const cId of courseIds) {
-        const courseChapters = allChapters
-          .filter((ch: any) => sectionCourseMap[ch.section_id] === cId)
-          .sort((a: any, b: any) => {
-            const sa = sectionSortMap[a.section_id] ?? 0;
-            const sb = sectionSortMap[b.section_id] ?? 0;
-            return sa !== sb ? sa - sb : a.sort_order - b.sort_order;
-          });
-
-        const total = courseChapters.length;
-        const done = courseChapters.filter((ch: any) => completedSet.has(ch.id)).length;
-
-        // Next uncompleted chapter (and its 1-based position). If everything
-        // is done, resume points at the last lesson for a re-watch.
-        const nextIdx = courseChapters.findIndex((ch: any) => !completedSet.has(ch.id));
-        const resolvedIdx = nextIdx === -1 ? Math.max(total - 1, 0) : nextIdx;
-        const nextChapter = courseChapters[resolvedIdx];
-
-        mMap[cId] = {
-          total,
-          done,
-          lessonNumber: total > 0 ? resolvedIdx + 1 : 0,
-          nextChapterId: nextIdx === -1 ? null : nextChapter?.id ?? null,
-        };
-      }
-
-      // Order courses by last-touched desc. Courses with no progress row yet
-      // (freshly enrolled, never opened) sort to the end but still show.
-      const ordered = [...coursesData].sort((a: any, b: any) => {
-        const ta = lastTouchedMap[a.id] ?? 0;
-        const tb = lastTouchedMap[b.id] ?? 0;
-        return tb - ta;
-      });
-
-      setMetaMap(mMap);
-      setCourses(ordered);
-    } catch (err) {
-      if (import.meta.env.DEV) console.error("Failed to load enrolled courses:", err);
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchEnrolled();
-  }, [user]);
-
-  if (loading)
+  if (isLoading)
     return (
       <Section title={heading} density="compact">
         {/* Skeleton row mirrors the real card widths (78vw on mobile, fixed on
@@ -196,14 +142,14 @@ const ContinueLearning = () => {
       </Section>
     );
 
-  if (error)
+  if (isError)
     return (
       <Section title={heading} density="compact">
         <ErrorState
           variant="inline"
           title="Couldn't load your courses"
           description="Check your connection and try again."
-          onRetry={fetchEnrolled}
+          onRetry={() => refetch()}
         />
       </Section>
     );
