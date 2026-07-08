@@ -8,9 +8,15 @@ import { cn } from "@/lib/utils";
  * Radix-Dialog-based drawer — the low-level layer that `motion/MorphSheet.tsx`
  * builds the app's sheet grammar on.
  *
- * BODY-LOCK INVARIANT (phase-4): vaul manages its own scroll containment and
- * NEVER writes `document.body.style.overflow` — its lock is a `position: fixed`
- * technique applied on iOS Safari only, and the background-scale writers
+ * BODY-LOCK INVARIANT (phase-4, wording corrected by council): vaul never
+ * writes `document.body.style.overflow` INLINE. Its effective lock is Radix
+ * react-remove-scroll's counter-managed injected stylesheet —
+ * `body[data-scroll-locked]{overflow:hidden !important}` — on ALL platforms
+ * (the same mechanism every shadcn Dialog on main already uses), plus an
+ * additional `position: fixed` technique on iOS Safari. It is transient and
+ * refcounted, so it cannot clobber CompletionTakeover's inline writer; a
+ * June-14-class audit must check `body[data-scroll-locked]` residue, not
+ * inline styles. The background-scale writers
  * (`body.style.background`, wrapper `overflow`) are gated entirely behind
  * `shouldScaleBackground`. We ship with `shouldScaleBackground = false`, so those
  * paths never run and `CompletionTakeover` remains the sole `body.style.overflow`

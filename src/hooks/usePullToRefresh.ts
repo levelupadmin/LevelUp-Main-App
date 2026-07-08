@@ -95,6 +95,18 @@ export function usePullToRefresh({
   const handleTouchStart = useCallback((e: TouchEvent) => {
     if (refreshing.current) return;
     if (window.scrollY > 0) return; // June-14 guard: only engage at scrollTop 0
+    // Overlay guard (phase-4 council): while a vaul sheet / Radix dialog is
+    // open, react-remove-scroll locks the body (data-scroll-locked) and — on
+    // iOS — zeroes scrollY, so the guard above stops protecting us. A sheet
+    // dismiss-drag must never double as a pull-to-refresh behind the scrim.
+    if (document.body.hasAttribute("data-scroll-locked")) return;
+    // e.target can be the document itself (jsdom/synthetic events) — only
+    // Elements have .closest.
+    if (
+      e.target instanceof Element &&
+      e.target.closest('[data-vaul-drawer], [role="dialog"]')
+    )
+      return;
     settleAnim.current?.stop(); // take over any in-flight retract for 1:1 follow
     startY.current = e.touches[0].clientY;
     pulling.current = true;

@@ -63,6 +63,45 @@ describe("usePullToRefresh", () => {
     expect(latest!.pullDistance.get()).toBe(0);
   });
 
+  it("does NOT engage while a sheet/dialog has the body scroll-locked (council overlay guard)", () => {
+    const onRefresh = vi.fn();
+    render(<Host onRefresh={onRefresh} />);
+
+    // react-remove-scroll marks the body while any vaul sheet / Radix dialog
+    // is open — a dismiss-drag over the sheet must never become a pull.
+    document.body.setAttribute("data-scroll-locked", "1");
+    try {
+      touch("touchstart", 0);
+      touch("touchmove", 250);
+      touch("touchend");
+      expect(onRefresh).not.toHaveBeenCalled();
+      expect(latest!.pullDistance.get()).toBe(0);
+    } finally {
+      document.body.removeAttribute("data-scroll-locked");
+    }
+  });
+
+  it("does NOT engage when the touch starts inside a dialog subtree", () => {
+    const onRefresh = vi.fn();
+    render(<Host onRefresh={onRefresh} />);
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    document.body.appendChild(dialog);
+    try {
+      const ev = new Event("touchstart", { bubbles: true }) as Event & {
+        touches: Array<{ clientY: number }>;
+      };
+      ev.touches = [{ clientY: 0 }];
+      dialog.dispatchEvent(ev);
+      touch("touchmove", 250);
+      touch("touchend");
+      expect(onRefresh).not.toHaveBeenCalled();
+      expect(latest!.pullDistance.get()).toBe(0);
+    } finally {
+      dialog.remove();
+    }
+  });
+
   it("runs onRefresh and flips isRefreshing when released past the threshold", async () => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
     render(<Host onRefresh={onRefresh} />);
