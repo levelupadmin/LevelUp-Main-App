@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { bootAnalytics } from "@/lib/analytics";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { queryClient, persistOptions } from "@/lib/queryClient";
 import { toast as sonnerToast } from "sonner";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -94,14 +95,8 @@ const AdminCohortAttendance = lazy(() => import("@/pages/admin/AdminCohortAttend
 const AdminNotifyRequests = lazy(() => import("@/pages/admin/AdminNotifyRequests"));
 const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,   // prevent data refetches on tab switch
-      staleTime: 5 * 60 * 1000,     // treat data as fresh for 5 minutes
-    },
-  },
-});
+// The QueryClient + its localStorage persister live in @/lib/queryClient so the
+// sign-out path can purge the persisted cache without importing this app root.
 
 const App = () => {
   // Fire-and-forget analytics boot. Reads analytics_settings from the
@@ -163,7 +158,7 @@ const App = () => {
   }, []);
 
   return (
-  <QueryClientProvider client={queryClient}>
+  <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
     <AuthProvider>
       <ErrorBoundary>
         <BrowserRouter>
@@ -291,7 +286,7 @@ const App = () => {
       <SonnerToaster theme="dark" />
       <OfflineBanner />
     </AuthProvider>
-  </QueryClientProvider>
+  </PersistQueryClientProvider>
   );
 };
 

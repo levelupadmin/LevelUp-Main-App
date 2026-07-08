@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -47,55 +48,93 @@ interface OfferingMini {
   attendance_threshold_pct: number | null;
 }
 
+interface CohortDashData {
+  offering: OfferingMini | null;
+  rows: ProgressRow[];
+  attendancePct: number;
+  /** week to select on first load: first active/upcoming, else the first row */
+  initialActiveWeekId: string | null;
+  /** get_cohort_progress errored — drives the same toast the old load fired */
+  progError: boolean;
+}
+
+// The cohort dashboard read as one function (P6-T2). Behaviour preserved from
+// the old load effect, with the spec's parallelization: the offering fetch
+// first, then get_cohort_progress + get_attendance_pct together via Promise.all
+// (they're independent). A progress-RPC error keeps the old graceful path —
+// empty rows + a toast (fired from the component via `progError`) — not a hard
+// error screen.
+const fetchCohortDash = async (
+  userId: string,
+  offeringId: string
+): Promise<CohortDashData> => {
+  const { data: off } = await supabase
+    .from("offerings")
+    .select("id, title, slug, attendance_threshold_pct")
+    .eq("id", offeringId)
+    .single();
+
+  const [progressRes, pctRes] = await Promise.all([
+    supabase.rpc("get_cohort_progress", { p_user_id: userId, p_offering_id: offeringId }),
+    supabase.rpc("get_attendance_pct", { p_user_id: userId, p_offering_id: offeringId }),
+  ]);
+
+  const rows = (progressRes.data as ProgressRow[]) || [];
+  // Pick the "current" week: first non-completed, or the latest
+  const current = rows.find((r) => ["active", "upcoming"].includes(r.week_status));
+
+  return {
+    offering: (off as OfferingMini | null) ?? null,
+    rows,
+    attendancePct: Number(pctRes.data) || 0,
+    initialActiveWeekId: current?.week_id ?? rows[0]?.week_id ?? null,
+    progError: !!progressRes.error,
+  };
+};
+
+const cohortDashKey = (offeringId: string | undefined, userId: string | undefined) =>
+  ["cohort-dash", offeringId, userId ?? "anon"] as const;
+
 export default function CohortDashboard() {
   const { offeringId } = useParams<{ offeringId: string }>();
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   usePageTitle("My Cohort");
 
-  const [offering, setOffering] = useState<OfferingMini | null>(null);
-  const [rows, setRows] = useState<ProgressRow[]>([]);
-  const [attendancePct, setAttendancePct] = useState<number>(0);
-  const [loading, setLoading] = useState(true);
+  const { data, isPending } = useQuery({
+    queryKey: cohortDashKey(offeringId, user?.id),
+    queryFn: () => fetchCohortDash(user!.id, offeringId!),
+    enabled: !!offeringId && !!user?.id,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const offering = data?.offering ?? null;
+  const rows = useMemo(() => data?.rows ?? [], [data]);
+  const attendancePct = data?.attendancePct ?? 0;
+  const loading = isPending;
+
+  // The selected week is user-interactive (week tiles set it). Seed it from the
+  // query's computed initial the first time data lands; never clobber a user
+  // selection afterwards.
   const [activeWeekId, setActiveWeekId] = useState<string | null>(null);
   const [tab, setTab] = useState<"weeks" | "peer_reviews">("weeks");
 
   useEffect(() => {
-    if (!offeringId || !user?.id) return;
-    (async () => {
-      setLoading(true);
-      const { data: off } = await supabase
-        .from("offerings")
-        .select("id, title, slug, attendance_threshold_pct")
-        .eq("id", offeringId)
-        .single();
-      setOffering(off);
+    if (activeWeekId === null && data?.initialActiveWeekId) {
+      setActiveWeekId(data.initialActiveWeekId);
+    }
+  }, [data, activeWeekId]);
 
-      const { data: progress, error: progErr } = await supabase.rpc("get_cohort_progress", {
-        p_user_id: user.id,
-        p_offering_id: offeringId,
-      });
-      if (progErr) {
-        toast({ title: "Couldn't load cohort", description: "We couldn't load your cohort progress. Please refresh and try again.", variant: "destructive" });
-      }
-      setRows((progress as ProgressRow[]) || []);
-
-      const { data: pct } = await supabase.rpc("get_attendance_pct", {
-        p_user_id: user.id,
-        p_offering_id: offeringId,
-      });
-      setAttendancePct(Number(pct) || 0);
-
-      // Pick the "current" week: first non-completed, or the latest
-      const current = (progress as ProgressRow[] | null)?.find((r) =>
-        ["active", "upcoming"].includes(r.week_status)
-      );
-      setActiveWeekId(current?.week_id ?? (progress as ProgressRow[] | null)?.[0]?.week_id ?? null);
-
-      setLoading(false);
-    })();
-  }, [offeringId, user?.id, toast]);
+  // Preserve the old load's progress-RPC error toast (fires once per data change
+  // when the RPC came back in error).
+  useEffect(() => {
+    if (data?.progError) {
+      toast({ title: "Couldn't load cohort", description: "We couldn't load your cohort progress. Please refresh and try again.", variant: "destructive" });
+    }
+  }, [data?.progError, toast]);
 
   const currentWeek = useMemo(
     () => rows.find((r) => r.week_id === activeWeekId) || rows[0],
@@ -223,8 +262,14 @@ export default function CohortDashboard() {
       {/* This Week card */}
       {currentWeek && tab === "weeks" && (
         <ThisWeekCard week={currentWeek} userId={user!.id} onChange={async () => {
-          const { data } = await supabase.rpc("get_cohort_progress", { p_user_id: user!.id, p_offering_id: offeringId! });
-          setRows((data as ProgressRow[]) || []);
+          const { data: fresh } = await supabase.rpc("get_cohort_progress", { p_user_id: user!.id, p_offering_id: offeringId! });
+          // Write the refreshed rows straight into the cached dashboard data so
+          // the timeline updates without re-running the attendance RPC (matches
+          // the old setRows-only behaviour).
+          queryClient.setQueryData<CohortDashData>(
+            cohortDashKey(offeringId, user?.id),
+            (prev) => prev ? { ...prev, rows: (fresh as ProgressRow[]) || [] } : prev
+          );
         }} />
       )}
 

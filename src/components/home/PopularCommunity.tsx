@@ -1,25 +1,31 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowUp, MessageSquare } from "lucide-react";
 
 // ── Popular in Community ──
+// Read moved to react-query (P6-T1) — cached under `["popular-community"]` so a
+// Home revisit within staleTime fires zero refetches; pull-to-refresh invalidates
+// the key. The query shape is unchanged.
 const PopularCommunity = () => {
-  const [posts, setPosts] = useState<any[]>([]);
-
-  useEffect(() => {
-    supabase
-      .from("qna_posts")
-      .select("id, title, body, upvote_count, reply_count, created_at, user_id")
-      .order("upvote_count", { ascending: false })
-      .limit(8)
-      .then(({ data, error }) => {
-        if (error) {
-          if (import.meta.env.DEV) console.error("Failed to load community posts:", error);
-          return;
-        }
-        setPosts(data ?? []);
-      });
-  }, []);
+  const { data: posts = [] } = useQuery({
+    queryKey: ["popular-community"],
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("qna_posts")
+        .select("id, title, body, upvote_count, reply_count, created_at, user_id")
+        .order("upvote_count", { ascending: false })
+        .limit(8);
+      if (error) {
+        if (import.meta.env.DEV) console.error("Failed to load community posts:", error);
+        // Preserve the old behaviour: an error yields no posts (section hides),
+        // never a thrown error that would bubble to an ErrorState.
+        return [];
+      }
+      return data ?? [];
+    },
+  });
 
   // No posts → no section. Placeholder copy reads as a dead feature.
   if (!posts.length) return null;

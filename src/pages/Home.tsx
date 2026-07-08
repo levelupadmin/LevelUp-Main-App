@@ -1,5 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { ENROLLED_PROGRESS_QUERY_KEY } from "@/hooks/useEnrolledProgress";
 import { motion, useScroll, useTransform } from "framer-motion";
 import usePageTitle from "@/hooks/usePageTitle";
 import PullIndicator from "@/components/patterns/PullIndicator";
@@ -100,15 +101,21 @@ const Home = () => {
   const { isLoading: catalogLoading } = useCatalog();
   const isFeedLoading = catalogLoading || enrolmentsLoading;
 
-  const [refreshKey, setRefreshKey] = useState(0);
   const handleRefresh = useCallback(async () => {
-    // Catalog + entitlements live in react-query; legacy sections refetch
-    // on remount via the refreshKey.
+    // Every Home section now reads through react-query (P6-T1), so a refresh is
+    // pure cache invalidation — no `refreshKey` remount. Invalidating a key
+    // prefix (e.g. ["enrolled-progress"]) matches all its user-scoped variants,
+    // so the shared enrolment chain + each section key refetch together.
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: CATALOG_QUERY_KEY }),
       queryClient.invalidateQueries({ queryKey: [ENROLLED_OFFERINGS_QUERY_KEY] }),
+      queryClient.invalidateQueries({ queryKey: [ENROLLED_PROGRESS_QUERY_KEY] }),
+      queryClient.invalidateQueries({ queryKey: ["upcoming-sessions"] }),
+      queryClient.invalidateQueries({ queryKey: ["quickpick"] }),
+      queryClient.invalidateQueries({ queryKey: ["popular-community"] }),
+      queryClient.invalidateQueries({ queryKey: ["upcoming-events"] }),
+      queryClient.invalidateQueries({ queryKey: ["new-members"] }),
     ]);
-    setRefreshKey((k) => k + 1);
   }, [queryClient]);
 
   const firstName = profile?.full_name?.split(" ")[0] ?? "there";
@@ -218,16 +225,16 @@ const Home = () => {
       {/* Your-Week glance strip — most-active course ring, lessons completed,
           next-lesson resume. Gated on hasEnrolments (mirrors ContinueLearning);
           renders nothing for zero-enrolment users. */}
-      {hasEnrolments && <YourWeek key={`yw-${refreshKey}`} />}
+      {hasEnrolments && <YourWeek />}
 
       {hasEnrolments && (
         <Reveal className="empty:hidden">
-          <ContinueLearning key={`cl-${refreshKey}`} />
+          <ContinueLearning />
         </Reveal>
       )}
 
       <Reveal className="empty:hidden">
-        <UpcomingSessions key={`us-${refreshKey}`} />
+        <UpcomingSessions />
       </Reveal>
 
       <Reveal className="empty:hidden">
@@ -246,15 +253,15 @@ const Home = () => {
       <CatalogSection />
 
       <Reveal className="empty:hidden">
-        <PopularCommunity key={`pc-${refreshKey}`} />
+        <PopularCommunity />
       </Reveal>
 
       <Reveal className="empty:hidden">
-        <UpcomingEvents key={`ue-${refreshKey}`} />
+        <UpcomingEvents />
       </Reveal>
 
       <Reveal className="empty:hidden">
-        <NewMembers key={`nm-${refreshKey}`} />
+        <NewMembers />
       </Reveal>
       </div>
       </LoadingSwap>

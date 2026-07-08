@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { useEnrolledProgress } from "@/hooks/useEnrolledProgress";
 import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
@@ -16,81 +18,58 @@ interface SessionStripRow {
 
 // ── "Your next live session" strip ──
 // Next 1-2 upcoming sessions for the user's enrolled offerings. Renders
-// nothing while loading or when there's nothing scheduled, no dead section.
+// nothing while loading or when there's nothing scheduled — no dead section.
+//
+// The enrolled course ids AND their titles come from the shared
+// `useEnrolledProgress` query (P6-T1), so this strip no longer re-runs the
+// enrolment→offering_courses→courses waterfall (three requests it used to
+// duplicate). Only the live-sessions read remains its own query, keyed and
+// cached so a revisit within staleTime fires zero refetches.
 const UpcomingSessions = () => {
   const { user } = useAuth();
-  const [sessions, setSessions] = useState<SessionStripRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: tree } = useEnrolledProgress(user?.id);
 
-  useEffect(() => {
-    const load = async () => {
-      if (!user) { setLoading(false); return; }
-      try {
-        const { data: enrolments } = await supabase
-          .from("enrolments")
-          .select("offering_id")
-          .eq("user_id", user.id)
-          .eq("status", "active");
+  const courseIds = tree?.courseIds ?? [];
+  // id → title from the shared tree; sessions are filtered to enrolled courses,
+  // so every session's course_id resolves here (no separate courses fetch).
+  const courseTitleMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    (tree?.courses ?? []).forEach((c) => {
+      m[c.id] = c.title;
+    });
+    return m;
+  }, [tree]);
 
-        if (!enrolments?.length) { setLoading(false); return; }
+  const { data: sessions = [] } = useQuery({
+    queryKey: ["upcoming-sessions", user?.id ?? "anon"],
+    enabled: courseIds.length > 0,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    queryFn: async (): Promise<SessionStripRow[]> => {
+      // zoom_link-free view; the actual link is gated behind an RPC on
+      // /my-sessions and only unlocks near the session start.
+      const { data: sessionsData } = await supabase
+        .from("live_sessions_safe")
+        .select("id, course_id, title, scheduled_at, duration_minutes, status")
+        .in("course_id", courseIds)
+        .eq("status", "scheduled")
+        .gte("scheduled_at", new Date().toISOString())
+        .order("scheduled_at", { ascending: true })
+        .limit(2);
 
-        const offeringIds = enrolments.map((e) => e.offering_id);
+      return (sessionsData ?? [])
+        .filter((s): s is typeof s & { id: string; scheduled_at: string } =>
+          !!s.id && !!s.scheduled_at)
+        .map((s) => ({
+          id: s.id,
+          title: s.title ?? "Live session",
+          scheduled_at: s.scheduled_at,
+          duration_minutes: s.duration_minutes,
+          course_title: courseTitleMap[s.course_id ?? ""] || "Course",
+        }));
+    },
+  });
 
-        const { data: ocs } = await supabase
-          .from("offering_courses")
-          .select("course_id")
-          .in("offering_id", offeringIds);
-
-        if (!ocs?.length) { setLoading(false); return; }
-
-        const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
-
-        // zoom_link-free view; the actual link is gated behind an RPC on
-        // /my-sessions and only unlocks near the session start.
-        const { data: sessionsData } = await supabase
-          .from("live_sessions_safe")
-          .select("id, course_id, title, scheduled_at, duration_minutes, status")
-          .in("course_id", courseIds)
-          .eq("status", "scheduled")
-          .gte("scheduled_at", new Date().toISOString())
-          .order("scheduled_at", { ascending: true })
-          .limit(2);
-
-        if (!sessionsData?.length) { setLoading(false); return; }
-
-        const sessionCourseIds = [
-          ...new Set(sessionsData.map((s) => s.course_id).filter((id): id is string => id !== null)),
-        ];
-        const { data: coursesData } = await supabase
-          .from("courses")
-          .select("id, title")
-          .in("id", sessionCourseIds);
-
-        const courseMap: Record<string, string> = {};
-        (coursesData ?? []).forEach((c) => { courseMap[c.id] = c.title; });
-
-        setSessions(
-          sessionsData
-            .filter((s): s is typeof s & { id: string; scheduled_at: string } =>
-              !!s.id && !!s.scheduled_at)
-            .map((s) => ({
-              id: s.id,
-              title: s.title ?? "Live session",
-              scheduled_at: s.scheduled_at,
-              duration_minutes: s.duration_minutes,
-              course_title: courseMap[s.course_id ?? ""] || "Course",
-            }))
-        );
-      } catch (err) {
-        if (import.meta.env.DEV) console.error("Failed to load upcoming sessions:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [user]);
-
-  if (loading) return null;
   if (!sessions.length) return null;
 
   return (

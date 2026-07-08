@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -48,221 +48,236 @@ interface LearningStats {
   certificates: number;
 }
 
-const MyCoursesPage = () => {
-  usePageTitle("My courses");
-  const { user } = useAuth();
-  const [courses, setCourses] = useState<EnrolledCourse[]>([]);
-  const [recommendations, setRecommendations] = useState<RecommendedCourse[]>([]);
-  const [stats, setStats] = useState<LearningStats>({
-    lessonsCompleted: 0,
-    coursesInProgress: 0,
-    certificates: 0,
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+interface MyCoursesData {
+  courses: EnrolledCourse[];
+  recommendations: RecommendedCourse[];
+  stats: LearningStats;
+}
 
-  const fetch = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    setError(null);
-    try {
-      // Get active enrolments
-      const { data: enrs, error: enrsError } = await supabase
-        .from("enrolments")
-        .select("id, offering_id")
-        .eq("user_id", user.id)
-        .eq("status", "active");
+const EMPTY_STATS: LearningStats = {
+  lessonsCompleted: 0,
+  coursesInProgress: 0,
+  certificates: 0,
+};
 
-      if (enrsError) throw enrsError;
+const LOAD_ERROR = "We couldn't load this. Check your connection and try again.";
+
+// The whole My-Courses read as one function (P6-T2): enrolments →
+// offering_courses → courses/offerings/sections/chapters/progress → stats →
+// recommendations. Query shapes and derivation are UNCHANGED from the old
+// `fetch` useCallback — only the state plumbing moves to react-query so a
+// revisit within staleTime is a cache hit (zero refetches). It throws on the
+// enrolments error exactly like the old `try/catch`, which surfaces as the same
+// ErrorState below.
+const fetchMyCourses = async (userId: string): Promise<MyCoursesData> => {
+  // Get active enrolments
+  const { data: enrs, error: enrsError } = await supabase
+    .from("enrolments")
+    .select("id, offering_id")
+    .eq("user_id", userId)
+    .eq("status", "active");
+
+  if (enrsError) throw enrsError;
 
       // Enrolled-course processing. When the user has no active enrolments
       // (or their offerings map to no courses), `result` stays empty and we
       // fall straight through to the recommendations fetch below — that's the
       // zero-enrollment path, and it must still surface the catalog so the
       // empty state isn't a dead end.
-      const result: EnrolledCourse[] = [];
-      let completedChapterIds = new Set<string>();
+  const result: EnrolledCourse[] = [];
+  let completedChapterIds = new Set<string>();
 
-      const offeringIds = (enrs ?? []).map((e) => e.offering_id);
-      const { data: ocs } = offeringIds.length
-        ? await supabase
-            .from("offering_courses")
-            .select("offering_id, course_id")
-            .in("offering_id", offeringIds)
-        : { data: [] };
+  const offeringIds = (enrs ?? []).map((e) => e.offering_id);
+  const { data: ocs } = offeringIds.length
+    ? await supabase
+        .from("offering_courses")
+        .select("offering_id, course_id")
+        .in("offering_id", offeringIds)
+    : { data: [] };
 
-      if (ocs?.length) {
-        const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
+  if (ocs?.length) {
+    const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
 
-        // Get course details
-        const { data: coursesData } = await supabase
-          .from("courses")
-          .select("id, title, description, instructor_display_name, thumbnail_url")
-          .in("id", courseIds);
+    // Get course details
+    const { data: coursesData } = await supabase
+      .from("courses")
+      .select("id, title, description, instructor_display_name, thumbnail_url")
+      .in("id", courseIds);
 
-        // Get offering titles
-        const { data: offData } = await supabase
-          .from("offerings")
-          .select("id, title")
-          .in("id", offeringIds);
+    // Get offering titles
+    const { data: offData } = await supabase
+      .from("offerings")
+      .select("id, title")
+      .in("id", offeringIds);
 
-        // Get all chapters for these courses (via sections)
-        const { data: sections } = await supabase
-          .from("sections")
-          .select("id, course_id")
-          .in("course_id", courseIds);
+    // Get all chapters for these courses (via sections)
+    const { data: sections } = await supabase
+      .from("sections")
+      .select("id, course_id")
+      .in("course_id", courseIds);
 
-        const sectionIds = (sections ?? []).map((s) => s.id);
-        const { data: chapters } = sectionIds.length
-          ? await supabase
-              .from("chapters")
-              .select("id, section_id")
-              .in("section_id", sectionIds)
-          : { data: [] };
+    const sectionIds = (sections ?? []).map((s) => s.id);
+    const { data: chapters } = sectionIds.length
+      ? await supabase
+          .from("chapters")
+          .select("id, section_id")
+          .in("section_id", sectionIds)
+      : { data: [] };
 
-        // Get user progress
-        const { data: progress } = await supabase
-          .from("chapter_progress")
-          .select("chapter_id, completed_at")
-          .eq("user_id", user.id)
-          .in("course_id", courseIds);
+    // Get user progress
+    const { data: progress } = await supabase
+      .from("chapter_progress")
+      .select("chapter_id, completed_at")
+      .eq("user_id", userId)
+      .in("course_id", courseIds);
 
-        // Map section → course
-        const sectionCourseMap: Record<string, string> = {};
-        (sections ?? []).forEach((s) => {
-          sectionCourseMap[s.id] = s.course_id;
-        });
+    // Map section → course
+    const sectionCourseMap: Record<string, string> = {};
+    (sections ?? []).forEach((s) => {
+      sectionCourseMap[s.id] = s.course_id;
+    });
 
-        // Count chapters per course
-        const totalPerCourse: Record<string, number> = {};
-        const completedPerCourse: Record<string, number> = {};
-        completedChapterIds = new Set(
-          (progress ?? []).filter((p) => p.completed_at).map((p) => p.chapter_id)
-        );
+    // Count chapters per course
+    const totalPerCourse: Record<string, number> = {};
+    const completedPerCourse: Record<string, number> = {};
+    completedChapterIds = new Set(
+      (progress ?? []).filter((p) => p.completed_at).map((p) => p.chapter_id)
+    );
 
-        (chapters ?? []).forEach((ch) => {
-          const cid = sectionCourseMap[ch.section_id];
-          if (!cid) return;
-          totalPerCourse[cid] = (totalPerCourse[cid] || 0) + 1;
-          if (completedChapterIds.has(ch.id)) {
-            completedPerCourse[cid] = (completedPerCourse[cid] || 0) + 1;
-          }
-        });
-
-        const courseMap = Object.fromEntries((coursesData ?? []).map((c) => [c.id, c]));
-        const offMap = Object.fromEntries((offData ?? []).map((o) => [o.id, o]));
-
-        // Build enrolment → offering → course → entry mapping
-        const enrolmentMap = new Map<string, string>();
-        (enrs ?? []).forEach((e) => enrolmentMap.set(e.offering_id, e.id));
-
-        const seen = new Set<string>();
-
-        ocs.forEach((oc) => {
-          if (seen.has(oc.course_id)) return;
-          seen.add(oc.course_id);
-          const c = courseMap[oc.course_id];
-          if (!c) return;
-          const total = totalPerCourse[oc.course_id] || 0;
-          const completed = completedPerCourse[oc.course_id] || 0;
-          result.push({
-            enrolment_id: enrolmentMap.get(oc.offering_id) ?? "",
-            course_id: c.id,
-            title: c.title,
-            description: c.description,
-            instructor_display_name: c.instructor_display_name,
-            thumbnail_url: c.thumbnail_url,
-            offering_title: offMap[oc.offering_id]?.title ?? "",
-            progress_pct: total > 0 ? Math.round((completed / total) * 100) : 0,
-          });
-        });
+    (chapters ?? []).forEach((ch) => {
+      const cid = sectionCourseMap[ch.section_id];
+      if (!cid) return;
+      totalPerCourse[cid] = (totalPerCourse[cid] || 0) + 1;
+      if (completedChapterIds.has(ch.id)) {
+        completedPerCourse[cid] = (completedPerCourse[cid] || 0) + 1;
       }
+    });
 
-      setCourses(result);
+    const courseMap = Object.fromEntries((coursesData ?? []).map((c) => [c.id, c]));
+    const offMap = Object.fromEntries((offData ?? []).map((o) => [o.id, o]));
 
-      // ── Aggregate learning stats for the 3-stat strip ──
-      // lessonsCompleted: every completed chapter across enrolled courses.
-      // coursesInProgress: enrolled courses started but not yet 100%.
-      // certificates: count of issued certificates for this user.
-      const lessonsCompleted = completedChapterIds.size;
-      const coursesInProgress = result.filter(
-        (c) => c.progress_pct > 0 && c.progress_pct < 100
-      ).length;
-      const { count: certCount } = await (supabase as any)
-        .from("certificates")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id);
-      setStats({
-        lessonsCompleted,
-        coursesInProgress,
-        certificates: certCount ?? 0,
+    // Build enrolment → offering → course → entry mapping
+    const enrolmentMap = new Map<string, string>();
+    (enrs ?? []).forEach((e) => enrolmentMap.set(e.offering_id, e.id));
+
+    const seen = new Set<string>();
+
+    ocs.forEach((oc) => {
+      if (seen.has(oc.course_id)) return;
+      seen.add(oc.course_id);
+      const c = courseMap[oc.course_id];
+      if (!c) return;
+      const total = totalPerCourse[oc.course_id] || 0;
+      const completed = completedPerCourse[oc.course_id] || 0;
+      result.push({
+        enrolment_id: enrolmentMap.get(oc.offering_id) ?? "",
+        course_id: c.id,
+        title: c.title,
+        description: c.description,
+        instructor_display_name: c.instructor_display_name,
+        thumbnail_url: c.thumbnail_url,
+        offering_title: offMap[oc.offering_id]?.title ?? "",
+        progress_pct: total > 0 ? Math.round((completed / total) * 100) : 0,
       });
+    });
+  }
 
-      // ── Recommendations: courses the user hasn't enrolled in ──
-      // Runs for EVERY user, including zero-enrollment — this is what turns the
-      // empty Courses state into a browsable catalog instead of a dead end.
-      const enrolledCourseIds = new Set(result.map((c) => c.course_id));
-      const enrolledTiers = enrolledCourseIds.size
-        ? [...new Set(
-            (await supabase.from("courses").select("product_tier").in("id", [...enrolledCourseIds])).data?.map((c: any) => c.product_tier) || []
-          )]
-        : [];
+  // ── Aggregate learning stats for the 3-stat strip ──
+  // lessonsCompleted: every completed chapter across enrolled courses.
+  // coursesInProgress: enrolled courses started but not yet 100%.
+  // certificates: count of issued certificates for this user.
+  const lessonsCompleted = completedChapterIds.size;
+  const coursesInProgress = result.filter(
+    (c) => c.progress_pct > 0 && c.progress_pct < 100
+  ).length;
+  const { count: certCount } = await (supabase as any)
+    .from("certificates")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  const stats: LearningStats = {
+    lessonsCompleted,
+    coursesInProgress,
+    certificates: certCount ?? 0,
+  };
 
-      const { data: recCourses } = await supabase
-        .from("courses")
-        .select("id, title, description, thumbnail_url, product_tier, instructor_display_name, primary_offering_id")
-        .eq("status", "published")
-        .neq("show_on_browse", false)
-        .order("sort_order", { ascending: true });
+  // ── Recommendations: courses the user hasn't enrolled in ──
+  // Runs for EVERY user, including zero-enrollment — this is what turns the
+  // empty Courses state into a browsable catalog instead of a dead end.
+  const enrolledCourseIds = new Set(result.map((c) => c.course_id));
+  const enrolledTiers = enrolledCourseIds.size
+    ? [...new Set(
+        (await supabase.from("courses").select("product_tier").in("id", [...enrolledCourseIds])).data?.map((c: any) => c.product_tier) || []
+      )]
+    : [];
 
-      const candidates = (recCourses || [])
-        .filter((c: any) => !enrolledCourseIds.has(c.id))
-        // Prioritize same tier, then others
-        .sort((a: any, b: any) => {
-          const aMatch = enrolledTiers.includes(a.product_tier) ? 0 : 1;
-          const bMatch = enrolledTiers.includes(b.product_tier) ? 0 : 1;
-          return aMatch - bMatch;
-        })
-        .slice(0, 6);
+  const { data: recCourses } = await supabase
+    .from("courses")
+    .select("id, title, description, thumbnail_url, product_tier, instructor_display_name, primary_offering_id")
+    .eq("status", "published")
+    .neq("show_on_browse", false)
+    .order("sort_order", { ascending: true });
 
-      // Fetch slug + price for primary offerings. We need the slug to
-      // route card clicks to the offering page (/p/&lt;slug&gt;) rather
-      // than checkout - so the buyer can evaluate before being asked
-      // to pay.
-      const recOfferingIds = candidates.map((c: any) => c.primary_offering_id).filter(Boolean);
-      let recOfferingMap: Record<string, { slug: string | null; price_inr: number | null }> = {};
-      if (recOfferingIds.length) {
-        const { data: recOffs } = await supabase
-          .from("offerings")
-          .select("id, slug, price_inr")
-          .in("id", recOfferingIds)
-          .eq("status", "active");
-        (recOffs || []).forEach((o: any) => { recOfferingMap[o.id] = { slug: o.slug, price_inr: o.price_inr }; });
-      }
+  const candidates = (recCourses || [])
+    .filter((c: any) => !enrolledCourseIds.has(c.id))
+    // Prioritize same tier, then others
+    .sort((a: any, b: any) => {
+      const aMatch = enrolledTiers.includes(a.product_tier) ? 0 : 1;
+      const bMatch = enrolledTiers.includes(b.product_tier) ? 0 : 1;
+      return aMatch - bMatch;
+    })
+    .slice(0, 6);
 
-      setRecommendations(
-        candidates.map((c: any) => ({
-          id: c.id,
-          title: c.title,
-          description: c.description,
-          thumbnail_url: c.thumbnail_url,
-          product_tier: c.product_tier,
-          instructor_display_name: c.instructor_display_name,
-          offering_id: c.primary_offering_id || null,
-          offering_slug: c.primary_offering_id ? (recOfferingMap[c.primary_offering_id]?.slug ?? null) : null,
-          price_inr: c.primary_offering_id ? (recOfferingMap[c.primary_offering_id]?.price_inr ?? null) : null,
-        }))
-      );
+  // Fetch slug + price for primary offerings. We need the slug to
+  // route card clicks to the offering page (/p/&lt;slug&gt;) rather
+  // than checkout - so the buyer can evaluate before being asked
+  // to pay.
+  const recOfferingIds = candidates.map((c: any) => c.primary_offering_id).filter(Boolean);
+  const recOfferingMap: Record<string, { slug: string | null; price_inr: number | null }> = {};
+  if (recOfferingIds.length) {
+    const { data: recOffs } = await supabase
+      .from("offerings")
+      .select("id, slug, price_inr")
+      .in("id", recOfferingIds)
+      .eq("status", "active");
+    (recOffs || []).forEach((o: any) => { recOfferingMap[o.id] = { slug: o.slug, price_inr: o.price_inr }; });
+  }
 
-      setLoading(false);
-    } catch (err) {
-      if (import.meta.env.DEV) console.error("Failed to load my courses:", err);
-      setError("We couldn't load this. Check your connection and try again.");
-      setLoading(false);
-    }
-  }, [user]);
+  const recommendations: RecommendedCourse[] = candidates.map((c: any) => ({
+    id: c.id,
+    title: c.title,
+    description: c.description,
+    thumbnail_url: c.thumbnail_url,
+    product_tier: c.product_tier,
+    instructor_display_name: c.instructor_display_name,
+    offering_id: c.primary_offering_id || null,
+    offering_slug: c.primary_offering_id ? (recOfferingMap[c.primary_offering_id]?.slug ?? null) : null,
+    price_inr: c.primary_offering_id ? (recOfferingMap[c.primary_offering_id]?.price_inr ?? null) : null,
+  }));
 
-  useEffect(() => { fetch(); }, [fetch]);
+  return { courses: result, recommendations, stats };
+};
+
+const MyCoursesPage = () => {
+  usePageTitle("My courses");
+  const { user } = useAuth();
+
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ["my-courses", user?.id ?? "anon"],
+    queryFn: () => fetchMyCourses(user!.id),
+    enabled: !!user,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const courses = data?.courses ?? [];
+  const recommendations = data?.recommendations ?? [];
+  const stats = data?.stats ?? EMPTY_STATS;
+  // `enabled: !!user` means the query is 'pending' until it runs; this page is
+  // auth-gated so `user` is always present and the query fires immediately. On a
+  // warm revisit within staleTime the data is served from cache and `isPending`
+  // is false, so the skeleton is skipped.
+  const loading = isPending;
+  const error = isError ? LOAD_ERROR : null;
 
   return (
     <>
@@ -328,7 +343,7 @@ const MyCoursesPage = () => {
             ))}
           </div>
         ) : error ? (
-          <ErrorState description={error} onRetry={() => fetch()} />
+          <ErrorState description={error} onRetry={() => refetch()} />
         ) : courses.length === 0 ? (
           <EmptyState
             icon={<BookOpen className="h-5 w-5" />}

@@ -1,27 +1,31 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import InitialsAvatar from "@/components/InitialsAvatar";
 
 // ── New Members (admin-only) ──
+// Read moved to react-query (P6-T1) — cached under `["new-members"]`, gated to
+// admins via `enabled` so a non-admin never fetches (RLS restricts the users
+// table anyway). Query shape unchanged; pull-to-refresh invalidates the key.
 const NewMembers = () => {
   const { profile } = useAuth();
   const isAdmin = profile?.role === "admin";
-  const [members, setMembers] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    supabase
-      .from("users")
-      .select("id, full_name, bio, member_number, avatar_url")
-      .eq("role", "student")
-      .order("created_at", { ascending: false })
-      .limit(10)
-      .then(({ data, error }) => {
-        if (error) if (import.meta.env.DEV) console.error("Failed to load new members:", error);
-        setMembers(data ?? []);
-      });
-  }, [isAdmin]);
+  const { data: members = [] } = useQuery({
+    queryKey: ["new-members"],
+    enabled: isAdmin,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, full_name, bio, member_number, avatar_url")
+        .eq("role", "student")
+        .order("created_at", { ascending: false })
+        .limit(10);
+      if (error) if (import.meta.env.DEV) console.error("Failed to load new members:", error);
+      return data ?? [];
+    },
+  });
 
   // Only show for admins; RLS restricts users table reads to own row
   if (!isAdmin) return null;

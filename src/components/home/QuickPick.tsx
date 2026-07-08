@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, GraduationCap, CalendarClock, Users, Sparkles } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -35,89 +35,101 @@ const ACCENT_VARS: Record<string, string> = {
   catalog: "--cream",
 };
 
+interface QuickPickData {
+  lastCourseId: string | null;
+  newest: { title: string; to: string } | null;
+}
+
+// The two tiles that need data — resume target + newest catalog item — moved to
+// react-query (P6-T1) so revisiting Home within staleTime fires zero refetches.
+// The query shapes are UNCHANGED from the old inline load, deliberately: the
+// last-touched course is read from the user's FULL chapter_progress (not the
+// enrolment-scoped shared tree), so the "Jump back in" link resolves to the exact
+// same course id as before. Folding it into the shared tree would scope it to
+// enrolled courses and could change that link target — behavior preservation wins
+// over sharing this one read.
+const fetchQuickPick = async (
+  userId: string | undefined
+): Promise<QuickPickData> => {
+  // 1) Last course the user touched, newest chapter_progress row.
+  const lastCoursePromise = userId
+    ? supabase
+        .from("chapter_progress")
+        .select("course_id, updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : Promise.resolve({ data: null });
+
+  // 2) Newest catalog item → its offering landing page (mirrors the catalog
+  //    join: primary_offering_id, else first offering_courses row). Public
+  //    /p/:slug when we have a slug, else the course page.
+  const newestCoursePromise = supabase
+    .from("courses")
+    .select("id, title, primary_offering_id")
+    .in("status", ["published", "upcoming"])
+    .eq("show_on_browse", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const [lastCourseRes, newestCourseRes] = await Promise.all([
+    lastCoursePromise,
+    newestCoursePromise,
+  ]);
+
+  const lastCourseId = lastCourseRes.data?.course_id ?? null;
+
+  let newest: QuickPickData["newest"] = null;
+  const nc = newestCourseRes.data;
+  if (nc) {
+    // Resolve the offering slug for a public landing link.
+    let offeringId = nc.primary_offering_id as string | null;
+    if (!offeringId) {
+      const { data: oc } = await supabase
+        .from("offering_courses")
+        .select("offering_id")
+        .eq("course_id", nc.id)
+        .limit(1)
+        .maybeSingle();
+      offeringId = oc?.offering_id ?? null;
+    }
+
+    let to = `/courses/${nc.id}`;
+    if (offeringId) {
+      const { data: off } = await supabase
+        .from("offerings")
+        .select("slug")
+        .eq("id", offeringId)
+        .maybeSingle();
+      if (off?.slug) to = `/p/${off.slug}`;
+    }
+
+    newest = { title: nc.title, to };
+  }
+
+  return { lastCourseId, newest };
+};
+
 const QuickPick = () => {
   const { user } = useAuth();
   // Resume target (last-touched course) and newest catalog item are the two
   // tiles that need a query; the other two are static routes.
-  const [lastCourseId, setLastCourseId] = useState<string | null>(null);
-  const [newest, setNewest] = useState<{ title: string; to: string } | null>(null);
-  const [ready, setReady] = useState(false);
+  const { data, isPending } = useQuery({
+    queryKey: ["quickpick", user?.id ?? "anon"],
+    queryFn: () => fetchQuickPick(user?.id),
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        // 1) Last course the user touched, newest chapter_progress row.
-        const lastCoursePromise = user
-          ? supabase
-              .from("chapter_progress")
-              .select("course_id, updated_at")
-              .eq("user_id", user.id)
-              .order("updated_at", { ascending: false })
-              .limit(1)
-              .maybeSingle()
-          : Promise.resolve({ data: null });
-
-        // 2) Newest catalog item → its offering landing page (mirrors the
-        //    catalog join: primary_offering_id, else first offering_courses
-        //    row). Public /p/:slug when we have a slug, else the course page.
-        const newestCoursePromise = supabase
-          .from("courses")
-          .select("id, title, primary_offering_id")
-          .in("status", ["published", "upcoming"])
-          .eq("show_on_browse", true)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const [lastCourseRes, newestCourseRes] = await Promise.all([
-          lastCoursePromise,
-          newestCoursePromise,
-        ]);
-
-        if (cancelled) return;
-
-        setLastCourseId(lastCourseRes.data?.course_id ?? null);
-
-        const nc = newestCourseRes.data;
-        if (nc) {
-          // Resolve the offering slug for a public landing link.
-          let offeringId = nc.primary_offering_id as string | null;
-          if (!offeringId) {
-            const { data: oc } = await supabase
-              .from("offering_courses")
-              .select("offering_id")
-              .eq("course_id", nc.id)
-              .limit(1)
-              .maybeSingle();
-            offeringId = oc?.offering_id ?? null;
-          }
-
-          let to = `/courses/${nc.id}`;
-          if (offeringId) {
-            const { data: off } = await supabase
-              .from("offerings")
-              .select("slug")
-              .eq("id", offeringId)
-              .maybeSingle();
-            if (off?.slug) to = `/p/${off.slug}`;
-          }
-
-          if (!cancelled) setNewest({ title: nc.title, to });
-        }
-      } catch (err) {
-        if (import.meta.env.DEV) console.error("QuickPick load failed:", err);
-      } finally {
-        if (!cancelled) setReady(true);
-      }
-    };
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+  const lastCourseId = data?.lastCourseId ?? null;
+  const newest = data?.newest ?? null;
+  // Hold the skeleton only while the first fetch is in flight. On error the
+  // query settles (isPending false) with no data, so the tiles fall back to
+  // their always-valid routes — same end state as the old `finally`-driven
+  // ready flag.
+  const ready = !isPending;
 
   const tiles: QuickTile[] = [
     {

@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { useEnrolledProgress } from "@/hooks/useEnrolledProgress";
 import { ProgressRing } from "@/components/progress/ProgressRing";
 import { CountUp } from "@/components/motion/CountUp";
 import { MotionCard } from "@/components/motion/MotionCard";
+import { SkeletonBlock } from "@/components/patterns/LoadingState";
 import { celebrate } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
-import { deriveWeekSummary, type WeekSummary } from "./yourWeekDerive";
+import { deriveWeekSummary } from "./yourWeekDerive";
 
 // Weekly-consistency line is a Rahul-decision, NOT yet granted (phase-4 brief
 // product-call rule): it stays behind a DEFAULT-OFF flag so it never renders in
@@ -38,88 +39,31 @@ const weeksSeenKey = (userId: string) => `${WEEKS_SEEN_KEY_PREFIX}:${userId}`;
 // behind hasEnrolments, mirroring ContinueLearning).
 const YourWeek = () => {
   const { user } = useAuth();
-  const [summary, setSummary] = useState<WeekSummary | null>(null);
+  // Shared enrolment tree (P6-T1): the same query that feeds ContinueLearning /
+  // UpcomingSessions, fetched once for the whole feed and cached. This component
+  // no longer runs its own enrolment→...→chapter_progress waterfall; it only
+  // derives its compact summary from the shared rows via the pure
+  // `deriveWeekSummary` (unit-tested without a live DB). The row projections
+  // supplied here — offeringCourses / sections / chapters / progress — are the
+  // exact ones the inline load used to fetch, and progress is scoped to enrolled
+  // courses in the hook, so `lessonsDone` is unchanged.
+  const { data: tree, isLoading } = useEnrolledProgress(user?.id);
   // Whether THIS mount should play the entrance on the consistency line (only
   // when the streak has grown since the last visit — see the effect below).
   const [celebrateWeeks, setCelebrateWeeks] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        if (!user) return;
-
-        const { data: enrolments } = await supabase
-          .from("enrolments")
-          .select("id, offering_id")
-          .eq("user_id", user.id)
-          .eq("status", "active");
-
-        if (!enrolments?.length) return;
-
-        const offeringIds = enrolments.map((e) => e.offering_id);
-        const { data: ocs } = await supabase
-          .from("offering_courses")
-          .select("offering_id, course_id")
-          .in("offering_id", offeringIds);
-
-        if (!ocs?.length) return;
-
-        const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];
-
-        // chapter_progress drives BOTH the per-course completion math AND the
-        // last-touched ordering (most-active course), mirroring ContinueLearning.
-        // Scoped to enrolled courses (`.in("course_id", courseIds)`) so the
-        // lessons-completed count matches MyCoursesPage exactly — orphaned or
-        // un-enrolled-course progress rows don't inflate it.
-        const progressPromise = supabase
-          .from("chapter_progress")
-          .select("chapter_id, course_id, completed_at, updated_at")
-          .eq("user_id", user.id)
-          .in("course_id", courseIds);
-
-        const { data: sectionsData } = await supabase
-          .from("sections")
-          .select("id, course_id, sort_order")
-          .in("course_id", courseIds)
-          .order("sort_order");
-
-        const sectionIds = (sectionsData ?? []).map((s) => s.id);
-
-        const emptyChapters: { id: string; section_id: string; sort_order: number }[] = [];
-        const [chaptersRes, progressRes] = await Promise.all([
-          sectionIds.length
-            ? supabase
-                .from("chapters")
-                .select("id, section_id, sort_order")
-                .in("section_id", sectionIds)
-                .order("sort_order")
-            : Promise.resolve({ data: emptyChapters }),
-          progressPromise,
-        ]);
-
-        // All the enrolled-user math lives in the pure `deriveWeekSummary` so it
-        // can be unit-tested without a live database (this component only does I/O).
-        const derived = deriveWeekSummary({
-          offeringCourses: ocs,
-          sections: sectionsData,
-          chapters: chaptersRes.data,
-          progress: progressRes.data,
-        });
-
-        if (cancelled || !derived) return;
-        setSummary(derived);
-      } catch (err) {
-        if (import.meta.env.DEV) console.error("Failed to load Your Week:", err);
-      }
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+  const summary = useMemo(
+    () =>
+      tree
+        ? deriveWeekSummary({
+            offeringCourses: tree.offeringCourses,
+            sections: tree.sections,
+            chapters: tree.chapters,
+            progress: tree.progress,
+          })
+        : null,
+    [tree]
+  );
 
   // Weekly-consistency celebration bookkeeping. Only fires under the (default-off)
   // flag; compares the derived streak against the highest value already shown
@@ -145,7 +89,17 @@ const YourWeek = () => {
     }
   }, [weeks, user]);
 
-  // Zero-enrolment (or not-yet-loaded) users get nothing — Home already handles
+  // First paint, cache empty: a strip-shaped skeleton of the final dimensions so
+  // the ring/counter swap in with no layout shift (P6-T1 §3). Home only mounts
+  // YourWeek once `hasEnrolments` is known true, so this placeholder never shows
+  // for a zero-enrolment user. On a warm revisit the shared query resolves from
+  // cache and `isLoading` is false, so the skeleton is skipped entirely.
+  if (isLoading && !summary)
+    return (
+      <SkeletonBlock height={80} className="rounded-2xl" />
+    );
+
+  // Zero-enrolment (or resolved-empty) users get nothing — Home already handles
   // discovery below, so an empty strip would just be a dead block.
   if (!summary) return null;
 

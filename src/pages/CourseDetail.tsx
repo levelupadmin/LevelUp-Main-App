@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { ErrorState, SkeletonBlock, SkeletonLine } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -79,45 +81,234 @@ interface ChapterProgress {
   last_position_seconds: number;
 }
 
-const isNotFoundError = (code?: string | null) => code === "PGRST116";
+// The full course-detail read as one function (P6-T2): course + sections + drip
+// in parallel, then category / chapters / entitlement / progress. Behaviour is
+// preserved from the old `loadCourse`:
+//   • throws on `courseRes.error` (network/DB failure) → react-query `isError`
+//     drives the ErrorState-with-retry below, NOT the not-found screen;
+//   • returns `{ notFound: true }` when the course genuinely doesn't exist
+//     (no error, no row) → the not-found screen renders;
+//   • `entitled` is the RAW entitlement (RPC, else the course-scoped enrolment
+//     fallback). The admin override is applied at RENDER (`entitled || isAdmin`)
+//     off the live profile, exactly as the old `setHasAccess(... || isAdmin)`.
+// react-query supersedes stale fetches on a courseId switch, so the manual
+// cancellation guard is no longer needed.
+interface CourseData {
+  notFound: boolean;
+  course: Course | null;
+  sections: Section[];
+  chapters: Chapter[];
+  progress: ChapterProgress[];
+  /** raw entitlement, pre-admin-override (applied at render) */
+  entitled: boolean;
+  dripMode: string;
+  categoryName: string | null;
+}
+
+const NOT_FOUND: CourseData = {
+  notFound: true,
+  course: null,
+  sections: [],
+  chapters: [],
+  progress: [],
+  entitled: false,
+  dripMode: "no_drip",
+  categoryName: null,
+};
+
+const fetchCourseDetail = async (
+  courseId: string,
+  userId: string
+): Promise<CourseData> => {
+  const [courseRes, sectionsRes, dripRes] = await Promise.all([
+    supabase.from("courses").select("*").eq("id", courseId).maybeSingle(),
+    supabase.from("sections").select("*").eq("course_id", courseId).order("sort_order"),
+    supabase.from("course_drip_config").select("drip_mode").eq("course_id", courseId).maybeSingle(),
+  ]);
+
+  if (courseRes.error) {
+    if (import.meta.env.DEV) console.error("[CourseDetail] course fetch error:", courseRes.error);
+    // A real fetch failure — surface the retryable ErrorState, not "not found".
+    throw courseRes.error;
+  }
+
+  if (!courseRes.data) return NOT_FOUND;
+
+  const courseData = courseRes.data as Course;
+  const sections = (sectionsRes.data || []) as Section[];
+  const dripMode = dripRes.data?.drip_mode || "no_drip";
+
+  // Category name
+  let categoryName: string | null = null;
+  if (courseData.category_id) {
+    const { data: cat } = await supabase
+      .from("course_categories")
+      .select("name")
+      .eq("id", courseData.category_id)
+      .maybeSingle();
+    categoryName = cat?.name || null;
+  }
+
+  // Chapters for all sections
+  const sectionIds = sections.map((s) => s.id);
+  let chapters: Chapter[] = [];
+  if (sectionIds.length > 0) {
+    const { data: chapData } = await supabase
+      .from("chapters")
+      .select("id, title, section_id, sort_order, content_type, duration_seconds, make_free")
+      .in("section_id", sectionIds)
+      .order("sort_order");
+    chapters = (chapData || []) as Chapter[];
+  }
+
+  // Entitlement — RPC first, course-scoped enrolment fallback on RPC error.
+  // The admin override is deliberately NOT folded in here; it's applied at
+  // render from the live profile so a role change reflects without a refetch.
+  let entitled = false;
+  const { data: accessData, error: accessErr } = await supabase.rpc("has_course_access", {
+    p_course_id: courseId,
+  });
+  if (accessErr) {
+    toast.error("Couldn't verify your access, retrying...");
+    // Fallback: check enrolments for offerings that actually include THIS
+    // course. A global "does this user have any active enrolment" check
+    // would grant course B to anyone who paid for course A on transient
+    // RPC failures; the old fallback was far too permissive.
+    const { data: offeringLinks } = await supabase
+      .from("offering_courses")
+      .select("offering_id")
+      .eq("course_id", courseId);
+    const offeringIds = (offeringLinks || []).map((o) => o.offering_id).filter(Boolean);
+    if (offeringIds.length > 0) {
+      const { data: enrolmentCheck } = await supabase
+        .from("enrolments")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .in("offering_id", offeringIds)
+        .limit(1);
+      entitled = !!enrolmentCheck?.length;
+    }
+  } else {
+    entitled = !!accessData;
+  }
+
+  // Progress
+  const { data: prog } = await supabase
+    .from("chapter_progress")
+    .select("chapter_id, completed_at, last_position_seconds")
+    .eq("user_id", userId)
+    .eq("course_id", courseId);
+
+  return {
+    notFound: false,
+    course: courseData,
+    sections,
+    chapters,
+    progress: (prog || []) as ChapterProgress[],
+    entitled,
+    dripMode,
+    categoryName,
+  };
+};
+
+interface OfferingData {
+  offeringSlug: string | null;
+  offeringUrgency: OfferingUrgency | null;
+}
+
+// The course's primary offering (urgency + cohort schedule + public slug). Kept
+// as its OWN query (P6-T2) so it stays non-blocking — mirroring the old
+// un-awaited IIFE — and the main course render never waits on it. Safe if the
+// Phase-4 migration hasn't run: missing columns come back undefined and the
+// downstream strips hide themselves.
+const fetchCourseOffering = async (courseId: string): Promise<OfferingData> => {
+  const { data: ocs } = await supabase
+    .from("offering_courses")
+    .select("offering_id")
+    .eq("course_id", courseId)
+    .limit(1);
+  const offId = ocs?.[0]?.offering_id;
+  if (!offId) return { offeringSlug: null, offeringUrgency: null };
+  const { data: off } = await (supabase as any)
+    .from("offerings")
+    .select("id, slug, seats_total, starts_at, cohort_sessions")
+    .eq("id", offId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!off) return { offeringSlug: null, offeringUrgency: null };
+  let seatsLeft: number | null = null;
+  if (off.seats_total) {
+    const { count } = await supabase
+      .from("enrolments")
+      .select("id", { count: "exact", head: true })
+      .eq("offering_id", offId)
+      .eq("status", "active");
+    seatsLeft = Math.max(0, off.seats_total - (count ?? 0));
+  }
+  return {
+    offeringSlug: off.slug ?? null,
+    offeringUrgency: {
+      seats_total: off.seats_total ?? null,
+      seats_left: seatsLeft,
+      batch_starts_at: off.starts_at ?? null,
+      cohort_sessions: off.cohort_sessions ?? null,
+    },
+  };
+};
 
 const CourseDetail = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
   const { user, profile, loading: authLoading } = useAuth();
 
-  const [course, setCourse] = useState<Course | null>(null);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [progress, setProgress] = useState<ChapterProgress[]>([]);
-  const [hasAccess, setHasAccess] = useState(false);
-  const [dripMode, setDripMode] = useState("no_drip");
-  const [loading, setLoading] = useState(true);
-  const [categoryName, setCategoryName] = useState<string | null>(null);
-  const [offeringUrgency, setOfferingUrgency] = useState<OfferingUrgency | null>(null);
-  // Public slug of the course's primary offering. Locked-chapter taps and
-  // the non-entitled hero CTA route to /p/<slug> so there's always a path
-  // to enrol instead of a dead-end toast.
-  const [offeringSlug, setOfferingSlug] = useState<string | null>(null);
+  const {
+    data,
+    isPending,
+    isError,
+    refetch,
+  } = useQuery({
+    queryKey: ["course", courseId, user?.id ?? "anon"],
+    queryFn: () => fetchCourseDetail(courseId!, user!.id),
+    enabled: !!courseId && !!user && !authLoading,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  // Primary-offering urgency/slug — independent, non-blocking query.
+  const { data: offeringData } = useQuery({
+    queryKey: ["course-offering", courseId],
+    queryFn: () => fetchCourseOffering(courseId!),
+    enabled: !!courseId && !!user && !authLoading,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const course = data?.course ?? null;
+  const sections = data?.sections ?? [];
+  // chapters/progress feed the completion-recap effect's deps — memoize so the
+  // `?? []` fallback doesn't hand it a fresh array reference every render.
+  const chapters = useMemo(() => data?.chapters ?? [], [data]);
+  const progress = useMemo(() => data?.progress ?? [], [data]);
+  const dripMode = data?.dripMode ?? "no_drip";
+  const categoryName = data?.categoryName ?? null;
+  const offeringSlug = offeringData?.offeringSlug ?? null;
+  const offeringUrgency = offeringData?.offeringUrgency ?? null;
+
+  // Access decision, byte-identical to the old `setHasAccess(entitled || isAdmin)`:
+  // the raw entitlement from the query OR'd with the live admin role.
+  const isAdmin = profile?.role === "admin";
+  const hasAccess = (data?.entitled ?? false) || isAdmin;
+
+  // Still fetching (or auth not yet resolved, so the query is disabled and
+  // stays 'pending') → the structured skeleton below. On a warm revisit within
+  // staleTime the data comes from cache and this is false, so the page paints
+  // instantly.
+  const loading = isPending;
+
   const [recapOpen, setRecapOpen] = useState(false);
 
   usePageTitle(course?.title ?? "Course");
-
-  useEffect(() => {
-    if (!courseId || authLoading) return;
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-    // Cancellation guard: loadCourse awaits several fetches, and a course
-    // switch (or unmount) mid-flight would otherwise let a stale load
-    // overwrite the newer course's state. Checked after every await.
-    let cancelled = false;
-    loadCourse(() => cancelled);
-    return () => {
-      cancelled = true;
-    };
-  }, [courseId, user, authLoading, profile]);
 
   // Auto-open the completion recap the first time the user views this course at
   // 100%. Gated per course+user via sessionStorage so it celebrates once per
@@ -137,153 +328,6 @@ const CourseDetail = () => {
       /* storage may be unavailable (private mode); recap simply re-shows */
     }
   }, [loading, courseId, user, chapters, progress]);
-
-  const loadCourse = async (isCancelled: () => boolean = () => false) => {
-    if (!courseId || !user) return;
-
-    setLoading(true);
-    // Reset per-course offering state so a course switch can't leak the
-    // previous course's slug/urgency if the new course has no offering
-    // (the IIFE below returns early in that case and would never clear it).
-    setOfferingUrgency(null);
-    setOfferingSlug(null);
-    const [courseRes, sectionsRes, dripRes] = await Promise.all([
-      supabase.from("courses").select("*").eq("id", courseId!).maybeSingle(),
-      supabase.from("sections").select("*").eq("course_id", courseId!).order("sort_order"),
-      supabase.from("course_drip_config").select("drip_mode").eq("course_id", courseId!).maybeSingle(),
-    ]);
-    if (isCancelled()) return;
-
-    if (courseRes.error) {
-      if (import.meta.env.DEV) console.error("[CourseDetail] course fetch error:", courseRes.error);
-      toast.error("Could not load this course right now");
-      setLoading(false);
-      return;
-    }
-
-    if (!courseRes.data) {
-      toast.error("Course not found");
-      setLoading(false);
-      return;
-    }
-
-    setCourse(courseRes.data as Course);
-    setSections((sectionsRes.data || []) as Section[]);
-    setDripMode(dripRes.data?.drip_mode || "no_drip");
-
-    // Load the primary offering for urgency + cohort schedule (Phase 4.1)
-    // and its public slug (locked-chapter / hero CTA routing). Safe if the
-    // migration hasn't run: missing columns come back undefined and
-    // downstream components hide themselves via graceful-empty rendering.
-    // Deliberately un-awaited so the page doesn't block on it, but covered
-    // by the same isCancelled guard as the rest of the load.
-    (async () => {
-      const { data: ocs } = await supabase
-        .from("offering_courses")
-        .select("offering_id")
-        .eq("course_id", courseId!)
-        .limit(1);
-      if (isCancelled()) return;
-      const offId = ocs?.[0]?.offering_id;
-      if (!offId) return;
-      const { data: off } = await (supabase as any)
-        .from("offerings")
-        .select("id, slug, seats_total, starts_at, cohort_sessions")
-        .eq("id", offId)
-        .eq("status", "active")
-        .maybeSingle();
-      if (isCancelled()) return;
-      if (!off) return;
-      setOfferingSlug(off.slug ?? null);
-      let seatsLeft: number | null = null;
-      if (off.seats_total) {
-        const { count } = await supabase
-          .from("enrolments")
-          .select("id", { count: "exact", head: true })
-          .eq("offering_id", offId)
-          .eq("status", "active");
-        if (isCancelled()) return;
-        seatsLeft = Math.max(0, off.seats_total - (count ?? 0));
-      }
-      setOfferingUrgency({
-        seats_total: off.seats_total ?? null,
-        seats_left: seatsLeft,
-        batch_starts_at: off.starts_at ?? null,
-        cohort_sessions: off.cohort_sessions ?? null,
-      });
-    })();
-
-    // Load category name
-    if (courseRes.data.category_id) {
-      const { data: cat } = await supabase
-        .from("course_categories")
-        .select("name")
-        .eq("id", courseRes.data.category_id)
-        .maybeSingle();
-      if (isCancelled()) return;
-      setCategoryName(cat?.name || null);
-    }
-
-    // Load chapters for all sections
-    const sectionIds = (sectionsRes.data || []).map((s: any) => s.id);
-    if (sectionIds.length > 0) {
-      const { data: chapData } = await supabase
-        .from("chapters")
-        .select("id, title, section_id, sort_order, content_type, duration_seconds, make_free")
-        .in("section_id", sectionIds)
-        .order("sort_order");
-      if (isCancelled()) return;
-      setChapters((chapData || []) as Chapter[]);
-    }
-
-    // Check access
-    if (user) {
-      const { data: accessData, error: accessErr } = await supabase.rpc("has_course_access", {
-        p_course_id: courseId!,
-      });
-      if (isCancelled()) return;
-      const isAdmin = profile?.role === "admin";
-      if (accessErr) {
-        toast.error("Couldn't verify your access, retrying...");
-        // Fallback: check enrolments for offerings that actually include THIS
-        // course. A global "does this user have any active enrolment" check
-        // would grant course B to anyone who paid for course A on transient
-        // RPC failures; the old fallback was far too permissive.
-        const { data: offeringLinks } = await supabase
-          .from("offering_courses")
-          .select("offering_id")
-          .eq("course_id", courseId!);
-        if (isCancelled()) return;
-        const offeringIds = (offeringLinks || []).map((o) => o.offering_id).filter(Boolean);
-        let fallbackAccess = false;
-        if (offeringIds.length > 0) {
-          const { data: enrolmentCheck } = await supabase
-            .from("enrolments")
-            .select("id")
-            .eq("user_id", user.id)
-            .eq("status", "active")
-            .in("offering_id", offeringIds)
-            .limit(1);
-          if (isCancelled()) return;
-          fallbackAccess = !!enrolmentCheck?.length;
-        }
-        setHasAccess(fallbackAccess || isAdmin);
-      } else {
-        setHasAccess(!!accessData || isAdmin);
-      }
-
-      // Load progress
-      const { data: prog } = await supabase
-        .from("chapter_progress")
-        .select("chapter_id, completed_at, last_position_seconds")
-        .eq("user_id", user.id)
-        .eq("course_id", courseId!);
-      if (isCancelled()) return;
-      setProgress((prog || []) as ChapterProgress[]);
-    }
-
-    setLoading(false);
-  };
 
   const isChapterCompleted = (chapterId: string) =>
     progress.some((p) => p.chapter_id === chapterId && p.completed_at);
@@ -368,12 +412,39 @@ const CourseDetail = () => {
   };
 
   if (loading) {
+    // Structured skeleton (P6-T2) — hero block + a content card with 6
+    // chapter-row lines, at the real dimensions (hero `min-h-[14rem]` = 224px,
+    // rows `min-h-[44px]`) so the resolved page swaps in with no layout shift,
+    // replacing the old centered spinner.
     return (
-      <>
-        <div className="flex items-center justify-center py-20">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground border-t-foreground" />
+      <div className="max-w-4xl mx-auto space-y-8" aria-busy="true" aria-live="polite">
+        <SkeletonBlock height={224} className="rounded-[20px]" />
+        <div className="bg-card border border-border rounded-[16px] overflow-hidden">
+          <div className="px-6 py-4 border-b border-border">
+            <SkeletonLine width="40%" height="20px" />
+          </div>
+          <div className="p-4 space-y-1">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex items-center gap-3 min-h-[44px] px-2">
+                <span className="skeleton-shimmer h-5 w-5 rounded-full shrink-0" aria-hidden />
+                <SkeletonLine width={`${68 - i * 6}%`} height="14px" />
+              </div>
+            ))}
+          </div>
         </div>
-      </>
+      </div>
+    );
+  }
+
+  if (isError) {
+    // A real fetch failure (thrown from the query) — a retryable ErrorState,
+    // NOT the "Course not found" screen (P6-T2). `refetch` re-runs the load.
+    return (
+      <ErrorState
+        title="Couldn't load this course"
+        description="Check your connection and try again."
+        onRetry={() => refetch()}
+      />
     );
   }
 
