@@ -44,6 +44,14 @@ interface InitialsAvatarProps {
   photoUrl?: string | null;
   size?: 24 | 28 | 32 | 36 | 40 | 48 | 64 | 80 | 96;
   className?: string;
+  /**
+   * When the avatar is itself the whole tap target (e.g. the account trigger),
+   * pass `interactive` to centre the disc inside a ≥44×44 hit-area wrapper so
+   * the small sizes (24–40px) still clear the touch floor without inflating the
+   * glyph. Default off — decorative avatars in lists/cards render the bare disc
+   * unchanged, so this never reserves extra space where it isn't wanted.
+   */
+  interactive?: boolean;
 }
 
 const sizeClasses: Record<number, string> = {
@@ -70,9 +78,20 @@ const fontSizes: Record<number, string> = {
   96: "text-2xl",
 };
 
-const InitialsAvatar = ({ name, photoUrl, size = 40, className }: InitialsAvatarProps) => {
+const InitialsAvatar = ({ name, photoUrl, size = 40, className, interactive }: InitialsAvatarProps) => {
+  // Optional 44×44 hit-area wrapper (see prop docs). Wraps rather than resizes
+  // the disc so the visual size is untouched.
+  const wrap = (node: JSX.Element) =>
+    interactive ? (
+      <span className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center">
+        {node}
+      </span>
+    ) : (
+      node
+    );
+
   if (photoUrl) {
-    return (
+    return wrap(
       <img
         src={photoUrl}
         alt={name}
@@ -84,7 +103,7 @@ const InitialsAvatar = ({ name, photoUrl, size = 40, className }: InitialsAvatar
   const gradient = GRADIENTS[hashName(name) % GRADIENTS.length];
   const initials = getInitials(name);
 
-  return (
+  return wrap(
     <div
       className={cn(
         "rounded-full bg-gradient-to-br flex items-center justify-center border border-white/[0.08] font-display font-semibold select-none",

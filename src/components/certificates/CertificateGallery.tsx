@@ -185,7 +185,7 @@ const CertificateGallery = ({ userId }: CertificateGalleryProps) => {
                   <a
                     href={hero.image_url}
                     download={`certificate-${hero.certificate_number}.png`}
-                    className="btn-champagne pressable inline-flex h-9 items-center justify-center rounded-full px-4 text-sm font-medium"
+                    className="btn-champagne pressable inline-flex min-h-[44px] items-center justify-center rounded-full px-4 text-sm font-medium"
                   >
                     Download
                   </a>

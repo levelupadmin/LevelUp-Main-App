@@ -230,7 +230,7 @@ export default function ChapterNotes({ chapterId, getCurrentTime, onSeek }: Prop
               <button
                 type="button"
                 onClick={() => n.seconds != null && handleSeek(n.seconds)}
-                className="pressable shrink-0 rounded bg-[hsl(var(--cream))]/15 px-2 py-1 font-mono text-[11px] font-semibold text-[hsl(var(--cream))] hover:bg-[hsl(var(--cream))]/25 min-h-[28px]"
+                className="pressable relative shrink-0 rounded bg-[hsl(var(--cream))]/15 px-2 py-1 font-mono text-[11px] font-semibold text-[hsl(var(--cream))] hover:bg-[hsl(var(--cream))]/25 min-h-[28px] after:absolute after:left-1/2 after:top-1/2 after:h-11 after:w-11 after:-translate-x-1/2 after:-translate-y-1/2 after:content-['']"
               >
                 {n.seconds != null ? clock(n.seconds) : ""}
               </button>
@@ -241,7 +241,7 @@ export default function ChapterNotes({ chapterId, getCurrentTime, onSeek }: Prop
                 type="button"
                 onClick={() => handleDelete(n.index)}
                 aria-label="Delete note"
-                className="shrink-0 rounded p-1 text-muted-foreground/50 hover:text-foreground hover:bg-surface-2 min-h-[28px] min-w-[28px] flex items-center justify-center"
+                className="relative shrink-0 rounded p-1 text-muted-foreground/50 hover:text-foreground hover:bg-surface-2 min-h-[28px] min-w-[28px] flex items-center justify-center after:absolute after:left-1/2 after:top-1/2 after:h-11 after:w-11 after:-translate-x-1/2 after:-translate-y-1/2 after:content-['']"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

@@ -151,7 +151,7 @@ export function AutoAdvanceCountdown({
             void hapticImpact("light");
             onGo();
           }}
-          className="pressable inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--cream))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--cream-text))] min-h-[36px]"
+          className="pressable inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--cream))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--cream-text))] min-h-[44px]"
         >
           <Play className="h-3.5 w-3.5 fill-current" />
           Play now
@@ -162,7 +162,7 @@ export function AutoAdvanceCountdown({
             void hapticSelection();
             onCancel();
           }}
-          className="pressable inline-flex items-center justify-center gap-1.5 rounded-full border border-border bg-surface/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground min-h-[36px]"
+          className="pressable inline-flex items-center justify-center gap-1.5 rounded-full border border-border bg-surface/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground min-h-[44px]"
         >
           <X className="h-3.5 w-3.5" />
           Cancel
