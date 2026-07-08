@@ -204,6 +204,7 @@ const NotificationPreferences = () => {
                   onCheckedChange={(val) =>
                     toggleGroup(group.id, group.keys, val)
                   }
+                  className="relative before:absolute before:-inset-y-[10px] before:inset-x-0 before:content-['']"
                 />
               </div>
 

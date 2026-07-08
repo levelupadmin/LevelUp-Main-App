@@ -110,7 +110,7 @@ const CatalogCard = ({
         />
       )}
       <div className="relative pointer-events-none">
-        {tier === "live_cohort" && c.thumbnail_url ? (
+        {tier === "live_cohort" && c.thumbnail_url?.trim() ? (
           // Live-cohort thumbnails are square brand LOGOS, so object-cover
           // crops them. Contain on a branded backdrop instead — kept out of
           // ArtworkImage (which enforces object-cover) so logos never crop.

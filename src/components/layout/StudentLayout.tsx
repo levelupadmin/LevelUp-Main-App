@@ -336,7 +336,7 @@ const StudentLayout = ({ children }: Props) => {
             <button aria-label="Open menu" className="md:hidden -ml-1.5 text-muted-foreground h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl" onClick={() => { void tapTick(); setSidebarOpen(true); }}>
               <Menu className="h-6 w-6" />
             </button>
-            <Link to="/home" aria-label="LevelUp home" className="md:hidden flex items-center">
+            <Link to="/home" aria-label="LevelUp home" className="md:hidden flex items-center min-h-[44px] min-w-[44px]">
               <LevelUpWordmark className="h-8 w-auto text-foreground" />
             </Link>
           </div>
@@ -374,7 +374,7 @@ const StudentLayout = ({ children }: Props) => {
                 aria-label="Account menu"
                 aria-haspopup="menu"
                 aria-expanded={dropdownOpen}
-                className="flex items-center gap-2 min-h-[44px] focus-ring press-scale rounded-md px-1"
+                className="flex items-center justify-center gap-2 min-h-[44px] min-w-[44px] focus-ring press-scale rounded-md px-1"
               >
                 <InitialsAvatar name={profile?.full_name ?? "U"} photoUrl={profile?.avatar_url} size={32} />
                 <ChevronDown className="h-3 w-3 text-muted-foreground hidden sm:block" />

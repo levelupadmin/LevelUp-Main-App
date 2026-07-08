@@ -13,7 +13,6 @@ import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell, Users, Globe, 
 import { useActiveCohort } from "@/hooks/useActiveCohort";
 import { useToast } from "@/hooks/use-toast";
 import { toast } from "@/lib/toast";
-import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import PullIndicator from "@/components/patterns/PullIndicator";
 import PostSkeleton from "@/components/skeletons/PostSkeleton";
 import PeerReviewBoard from "@/components/cohort/PeerReviewBoard";
@@ -204,9 +203,7 @@ const CommunityPage = () => {
     }
   }, [user, scope, myBatchId]);
 
-  const { isRefreshing, pullProgress, pullDistance, isPulling } = usePullToRefresh({
-    onRefresh: async () => { await loadPosts(); },
-  });
+  const handleRefresh = useCallback(async () => { await loadPosts(); }, [loadPosts]);
 
   useEffect(() => { loadPosts(); }, [loadPosts]);
 
@@ -333,12 +330,7 @@ const CommunityPage = () => {
     <>
       {/* Pull-to-refresh: branded node-mark indicator (overlays the top of the
           content, never reflows it). Always mounted so the release spring plays. */}
-      <PullIndicator
-        pullProgress={pullProgress}
-        pullDistance={pullDistance}
-        isRefreshing={isRefreshing}
-        isPulling={isPulling}
-      />
+      <PullIndicator onRefresh={handleRefresh} />
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Editorial hero matching Home + Browse + Events cinematic voice. */}
         <div className="space-y-3">
@@ -448,7 +440,7 @@ const CommunityPage = () => {
               onFocus={() => setComposerFocused(true)}
               onBlur={() => setComposerFocused(false)}
               rows={3}
-              className="bg-surface-2 border-border resize-none"
+              className="bg-surface-2 border-border resize-none focus-visible:ring-cream/60 focus-visible:ring-offset-canvas"
             />
             <div className="flex justify-end">
               <Button
@@ -456,6 +448,7 @@ const CommunityPage = () => {
                 disabled={posting || !canPost}
                 size="sm"
                 variant={canPost ? "champagne" : "secondary"}
+                className="min-h-[44px]"
               >
                 {posting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
                 Post

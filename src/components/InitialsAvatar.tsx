@@ -1,17 +1,20 @@
 import { cn } from "@/lib/utils";
 
-// Constrained to the four brand token pairs (no red/rose). The hash picks one
+// Constrained to four brand token pairs (no red/rose). The hash picks one
 // deterministically, so an avatar renders identically wherever it appears
 // (header, community, admin). Each pair carries its own foreground so the
-// initials stay legible: the cream→gold pair is a LIGHT surface and needs the
-// dark `--cream-text` token (white-on-cream is ~1.2:1 and invisible); the other
-// three are dark enough for white. Keep every class a literal utility string so
-// Tailwind's JIT scanner keeps them in the build.
+// initials stay legible: the two LIGHT warm pairs (cream→gold and amber→gold)
+// take the dark `--cream-text` token (white-on-cream is ~1.2:1 and white-on-amber
+// ~2.1:1, both invisible); the two saturated blue/green pairs are dark enough for
+// white. Each pair is two tokens of one hue family so the disc reads as a single
+// colour, and every one is well separated from the near-black canvas — the old
+// surface-2→border pair (both near-black) rendered an invisible disc. Keep every
+// class a literal utility string so Tailwind's JIT scanner keeps them in the build.
 const GRADIENTS = [
   { bg: "from-cream to-gold", fg: "text-[hsl(var(--cream-text))]" },
   { bg: "from-accent-indigo to-accent-violet-deep", fg: "text-white" },
   { bg: "from-accent-emerald to-success", fg: "text-white" },
-  { bg: "from-surface-2 to-border", fg: "text-white" },
+  { bg: "from-accent-amber to-gold", fg: "text-[hsl(var(--cream-text))]" },
 ];
 
 function hashName(name: string): number {

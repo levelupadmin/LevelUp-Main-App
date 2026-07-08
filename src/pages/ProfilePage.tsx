@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -149,7 +149,7 @@ const ChangePasswordSection = ({ email }: { email: string }) => {
 
   if (!open) {
     return (
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button size="sm" variant="outline" className="min-h-[44px]" onClick={() => setOpen(true)}>
         Change password
       </Button>
     );
@@ -748,7 +748,7 @@ const SavedSection = () => {
             <Link
               key={o.id}
               to={`/p/${o.slug}`}
-              className="pressable flex items-center gap-4 bg-surface border border-border rounded-lg p-3 hover:border-border-hover"
+              className="pressable flex items-center gap-4 bg-surface border border-border rounded-lg p-3 [@media(hover:hover)]:hover:border-border-hover"
             >
               <div className="w-14 h-14 rounded-lg bg-surface-2 overflow-hidden flex-shrink-0">
                 {o.thumbnail_url && (
@@ -800,6 +800,46 @@ const InvoicesSection = () => {
   const [buyer, setBuyer] = useState<{ name: string; email: string; phone: string }>({ name: "", email: "", phone: "" });
   const [selected, setSelected] = useState<InvoiceSheetData | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // STEAL-10 morph gate. The sheet's DrawerContent slides up from off-screen via
+  // vaul's own CSS transform (`translate3d(0,100%,0)`→`0`, 0.5s) — a transform
+  // framer's layout projection can't see. If the shared `invoice-cta-*` layoutId
+  // is live on the CTA while that slide is mid-flight, framer snapshots the CTA
+  // off-viewport and the champagne chip morphs toward a stale rect and distorts.
+  //
+  // So the morph is GATED on the slide actually settling: until then the champagne
+  // element stays the on-page twin chip and the CTA cell is a same-size spacer;
+  // once the slide reaches identity, the CTA mounts fresh WITH the layoutId and
+  // framer runs the chip→CTA morph from the twin's (now stationary, correctly
+  // measured) box. `morphReady` drives BOTH sides so the twin↔CTA handoff stays
+  // atomic, and it flips off on close so the CTA hands the id back and the twin
+  // morphs home. The trigger is vaul's real slide-end event — its
+  // `slideFromBottom` keyframe `animationend` (plus `transitionend` for drag/snap
+  // configs), reported by the sheet via `onSlideSettle` — NOT a hardcoded
+  // duration. A fixed timer has near-zero headroom over vaul's 0.5s and breaks if
+  // the slide is delayed (slow WebView) or vaul's DURATION changes. A generous
+  // fallback covers a missed event so the morph can never get stuck hidden.
+  const [morphReady, setMorphReady] = useState(false);
+
+  const handleSlideSettle = useCallback(() => setMorphReady(true), []);
+
+  useEffect(() => {
+    if (!sheetOpen) {
+      setMorphReady(false);
+      return;
+    }
+    // Reduced motion: vaul is flattened to instant and the layoutId is dropped on
+    // both sides anyway (no morph), so resolve the gate synchronously — the
+    // twin↔CTA swap stays an instant cut.
+    if (motionSafe.reduced) {
+      setMorphReady(true);
+      return;
+    }
+    // Fallback only: `onSlideSettle` (vaul's real slide-end event) is the primary
+    // trigger. If it's ever missed, reveal the morph after a duration comfortably
+    // past vaul's 0.5s slide so the CTA is never left as a spacer.
+    const fallback = window.setTimeout(() => setMorphReady(true), 900);
+    return () => window.clearTimeout(fallback);
+  }, [sheetOpen, motionSafe.reduced]);
 
   useEffect(() => {
     if (!user) return;
@@ -864,17 +904,21 @@ const InvoicesSection = () => {
         <div className="grid gap-3">
           {orders.map((o) => {
             const twinId = `invoice-cta-${o.id}`;
-            // The CTA lives in the sheet while this row's sheet is open, so the
-            // on-page twin steps aside — exactly one element carries the shared
-            // layoutId at a time (the FLIP invariant). A same-size spacer holds
-            // the row's width so nothing reflows during the morph.
-            const twinInSheet = sheetOpen && selected?.id === o.id;
+            // The on-page twin holds the shared layoutId — and stays visible —
+            // through vaul's slide; once the slide settles (morphReady) it steps
+            // aside and the sheet's CTA mounts fresh with the id, so framer runs
+            // the chip→CTA morph from the twin's box. On close morphReady flips
+            // back off: the CTA drops the id, the twin re-mounts with it and
+            // morphs home from the CTA's last box. Exactly one element carries
+            // the id at a time (the FLIP invariant); a same-size spacer holds the
+            // row's width so nothing reflows during the open window.
+            const twinInSheet = morphReady && selected?.id === o.id;
             return (
               <button
                 key={o.id}
                 type="button"
                 onClick={() => openSheet(o)}
-                className="pressable flex w-full items-center gap-4 rounded-2xl border border-border bg-card/40 p-4 text-left transition-colors hover:border-border-hover sm:p-5"
+                className="pressable flex w-full items-center gap-4 rounded-2xl border border-border bg-card/40 p-4 text-left transition-colors [@media(hover:hover)]:hover:border-border-hover sm:p-5"
               >
                 <div className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--cream))]/10 text-[hsl(var(--cream))]">
                   <FileText className="h-5 w-5" />
@@ -897,6 +941,11 @@ const InvoicesSection = () => {
                 ) : (
                   <motion.span
                     layoutId={motionSafe.reduced ? undefined : twinId}
+                    // Share the sheet CTA's physics: the MorphButton half of this
+                    // morph settles on springs.glide, so the twin must too — else
+                    // the two ends of one FLIP run on different springs (twin on
+                    // framer's default) and the chip↔CTA morph reads as two motions.
+                    transition={motionSafe.springs.glide}
                     aria-hidden="true"
                     className="btn-champagne flex h-9 w-9 shrink-0 items-center justify-center [&_svg]:size-4"
                   >
@@ -913,6 +962,8 @@ const InvoicesSection = () => {
           open={sheetOpen}
           onOpenChange={setSheetOpen}
           ctaLayoutId={selected ? `invoice-cta-${selected.id}` : undefined}
+          morphReady={morphReady}
+          onSlideSettle={handleSlideSettle}
         />
       </LayoutGroup>
     </section>

@@ -1,5 +1,7 @@
+import { motion, useTransform } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useMotionSafe } from "@/lib/motion";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 
 // LevelUp node-mark — the four "node" rings + three connectors lifted verbatim
 // from the wordmark's decorative cluster (LevelUpWordmark.tsx, the group commented
@@ -21,14 +23,10 @@ const NODE_MARK_PATHS = [
 ];
 
 interface PullIndicatorProps {
-  /** 0→1 pull completion, from usePullToRefresh. Drives the stroke draw + fade-in. */
-  pullProgress: number;
-  /** Resisted pull distance in px. Drives the translateY (finger-follow + hold). */
-  pullDistance: number;
-  /** Refresh in flight — mark holds fully drawn and spins. */
-  isRefreshing: boolean;
-  /** Finger actively dragging — disables the release transition for 1:1 follow. */
-  isPulling: boolean;
+  /** Refresh handler run when the pull crosses the threshold. */
+  onRefresh: () => Promise<void> | void;
+  /** Pull distance (px, resisted) at which a release triggers a refresh. */
+  threshold?: number;
 }
 
 /**
@@ -45,77 +43,88 @@ interface PullIndicatorProps {
  * that band for nearly the whole pull, diverging from Community which has no such
  * band). It stays confined to the wrapper's own `z-10` stacking context, so this
  * can never escape above StudentLayout's `z-40` app header — both pages now show
- * the mark identically. Motion is
- * transform/opacity only; the release retracts on the glide spring (`--ease-spring`
- * + `--motion-base`) instead of snapping. Reduced motion → static mark, no draw,
- * instant retract. Decorative, so `aria-hidden` + `pointer-events-none`.
+ * the mark identically.
+ *
+ * PERF: this component OWNS the pull gesture (via `usePullToRefresh`) and binds its
+ * `MotionValue`s directly to `motion.*` styles, so a drag writes transform/stroke
+ * straight to the compositor and NEVER reconciles the host feed (Home/Community) —
+ * or even this leaf — per frame. The host just passes `onRefresh`.
+ *
+ * Motion is transform/opacity only; the finger-follow is 1:1 and the release
+ * retracts on the glide curve (`--ease-spring` / `--motion-base`, driven by framer
+ * `animate()` inside the hook) instead of snapping. Reduced motion → static mark,
+ * no draw, instant retract.
+ *
+ * A11y: the moving mark is decorative (`aria-hidden` + `pointer-events-none`), so
+ * the refresh is announced instead by a sibling `role="status"` live region — on
+ * BOTH the animated and reduced paths. Because reduced motion gates OFF the spin
+ * (the only in-progress cue), the reduced path also renders a STATIC "Refreshing…"
+ * label so sighted reduced-motion users still see the refresh is in flight.
  */
-export default function PullIndicator({
-  pullProgress,
-  pullDistance,
-  isRefreshing,
-  isPulling,
-}: PullIndicatorProps) {
+export default function PullIndicator({ onRefresh, threshold }: PullIndicatorProps) {
   const { reduced } = useMotionSafe();
+  const { isRefreshing, pullDistance, pullProgress } = usePullToRefresh({
+    onRefresh,
+    threshold,
+  });
 
-  // Stroke draw: full ring while refreshing or under reduced motion, otherwise
-  // mapped to pull progress. pathLength={1} normalises every subpath to one unit,
-  // so a single dashoffset draws the whole cluster in unison.
-  const dashoffset = reduced || isRefreshing ? 0 : 1 - pullProgress;
+  // Stroke draw: full ring under reduced motion (static mark, no draw); otherwise
+  // mapped to pull progress — which is animated to 1 while refreshing, so the mark
+  // holds fully drawn during the spin. pathLength={1} normalises every subpath to
+  // one unit, so a single dashoffset draws the whole cluster in unison.
+  const dashoffset = useTransform(pullProgress, (p) => (reduced ? 0 : Math.max(0, 1 - p)));
 
   return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-center"
-      style={{
-        transform: `translate3d(0, ${pullDistance}px, 0)`,
-        opacity: isRefreshing ? 1 : pullProgress,
-        // While the finger drives the pull we follow 1:1 (no transition); on
-        // release we retract on the glide spring rather than snapping to 0.
-        // Reduced motion → instant retract, no easing.
-        transition:
-          isPulling || reduced
-            ? "none"
-            : "transform var(--motion-base) var(--ease-spring), opacity var(--motion-base) var(--ease-out)",
-      }}
-    >
-      <div className="mt-3 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface-2 shadow-sm">
-        <svg
-          viewBox="68 -1 48 21"
-          className={cn(
-            "h-7 w-7 text-[hsl(var(--cream))]",
-            isRefreshing && !reduced && "animate-spin",
-          )}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.6}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          {NODE_MARK_PATHS.map((d) => (
-            <path
-              key={d}
-              d={d}
-              pathLength={1}
-              strokeDasharray={1}
-              style={{
-                strokeDashoffset: dashoffset,
-                // Draw follows the finger 1:1 while pulling (no transition); on
-                // release the stroke un-draws on the same base duration as the
-                // opacity fade instead of blanking in a single frame (dashoffset
-                // isn't on the wrapper's transform/opacity transition, so without
-                // this it would jump 0→1). Reduced motion → instant, matching the
-                // wrapper's instant retract.
-                transition:
-                  isPulling || reduced
-                    ? "none"
-                    : "stroke-dashoffset var(--motion-base) var(--ease-out)",
-              }}
-            />
-          ))}
-        </svg>
-      </div>
-    </div>
+    <>
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 z-40 flex flex-col items-center"
+        style={{ y: pullDistance, opacity: pullProgress }}
+      >
+        <div className="mt-3 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface-2 shadow-sm">
+          <svg
+            viewBox="68 -1 48 21"
+            className={cn(
+              "h-7 w-7 text-[hsl(var(--cream))]",
+              isRefreshing && !reduced && "animate-spin",
+            )}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            {NODE_MARK_PATHS.map((d) => (
+              <motion.path
+                key={d}
+                d={d}
+                pathLength={1}
+                strokeDasharray={1}
+                // Draw follows the pull 1:1 (finger-follow) and un-draws on release as
+                // the hook animates pullDistance→0; dashoffset is derived from the same
+                // MotionValue, so no CSS transition is needed and nothing reconciles.
+                style={{ strokeDashoffset: dashoffset }}
+              />
+            ))}
+          </svg>
+        </div>
+        {/* Reduced-motion in-progress affordance: the spin is gated OFF above, so the
+            static mark alone can't distinguish a held pull from an in-flight refresh.
+            A static caption fills that gap. Decorative (this branch inherits the
+            wrapper's aria-hidden) — the live region below owns the announcement. */}
+        {reduced && isRefreshing && (
+          <span className="mt-1.5 text-[11px] font-medium text-muted-foreground">
+            Refreshing…
+          </span>
+        )}
+      </motion.div>
+      {/* The mark above is aria-hidden, so pull-to-refresh was otherwise silent to
+          screen readers. This polite live region announces the in-flight refresh on
+          both the animated and reduced paths (empty string ⇒ nothing to announce). */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {isRefreshing ? "Refreshing…" : ""}
+      </span>
+    </>
   );
 }

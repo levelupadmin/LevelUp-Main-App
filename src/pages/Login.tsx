@@ -16,7 +16,7 @@ import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retr
 import { isNative } from "@/lib/platform";
 import { hapticImpact } from "@/lib/haptics";
 import { MotionButton } from "@/components/motion/MotionButton";
-import { springs, instant, useMotionSafe } from "@/lib/motion";
+import { springs, instant, otpSuccess, useMotionSafe } from "@/lib/motion";
 import heroCinematic from "@/assets/login/hero-cinematic.jpg";
 
 // After a session is minted, brand-new phone-first accounts haven't told us
@@ -54,11 +54,12 @@ const EMAIL_ONLY_AUTH = false;
 const VERIFY_MSG91_OTP_URL =
   "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
 
-// STEAL-8 (P4-T9): bounded window the OTP success choreography plays before the
-// client route paints. The session is already minted when this delay runs, so
-// auth is byte-identical — only the on-screen route transition waits, and never
-// for longer than this cap. Reduced motion collapses it to an instant route.
-const SUCCESS_ANIM_MS = 850;
+// STEAL-8 (P4-T9): the bounded window the OTP success choreography plays before
+// the client route paints lives in the shared motion token `otpSuccess.windowMs`
+// (src/lib/motion.ts), synced with the framer timings OtpEntryStep drives. The
+// session is already minted when this delay runs, so auth is byte-identical —
+// only the on-screen route transition waits, and never longer than this cap.
+// Reduced motion collapses it to an instant route.
 const prefersReducedMotion = (): boolean =>
   typeof window !== "undefined" &&
   typeof window.matchMedia === "function" &&
@@ -291,7 +292,7 @@ const Login = () => {
       // Tracked in a ref so an early unmount can cancel it (see cleanup effect).
       navTimerRef.current = window.setTimeout(
         () => navigate(dest, { replace: true }),
-        prefersReducedMotion() ? 0 : SUCCESS_ANIM_MS,
+        prefersReducedMotion() ? 0 : otpSuccess.windowMs,
       );
       return { ok: true };
     } catch (e) {
@@ -386,6 +387,9 @@ const Login = () => {
           phone={phone}
           channel={channel}
           otpLength={4}
+          // Login's stepDivider above the card already renders "Step 2 of 2";
+          // suppress the component's own badge so it isn't shown twice.
+          showStepBadge={false}
           onVerify={async (otp) => {
             // Open the success-celebration window BEFORE verifying: setSession
             // flips `user` and would otherwise fire the reactive /home nav before
@@ -574,7 +578,7 @@ const Login = () => {
               </button>
               <Link
                 to="/signup"
-                className="pressable w-full h-[52px] rounded-full border border-border bg-canvas/40 backdrop-blur-sm flex items-center justify-center text-base font-semibold text-foreground hover:border-border-hover"
+                className="pressable w-full h-[52px] rounded-full border border-border bg-canvas/40 backdrop-blur-sm flex items-center justify-center text-base font-semibold text-foreground [@media(hover:hover)]:hover:border-border-hover"
               >
                 Create account
               </Link>
@@ -615,7 +619,7 @@ const Login = () => {
                   else setFormOpen(false);
                 }}
                 aria-label="Back"
-                className={`-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground lg:-ml-3 ${
+                className={`-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground [@media(hover:hover)]:hover:text-foreground lg:-ml-3 ${
                   // The phone-step back returns to the mobile welcome sheet,
                   // which doesn't exist on lg+ (this column always shows there).
                   !canGoBack ? "lg:hidden" : ""

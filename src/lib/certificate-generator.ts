@@ -351,23 +351,55 @@ export async function generateShareCard(values: ShareCardValues): Promise<Blob> 
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
 
+  // Measure the title first (the wrap depends on the title font being active) so
+  // the whole content group — eyebrow · title · divider · name — can be centred
+  // as one block in the space above the pinned wordmark. Anchoring each element
+  // to a fixed Y (as an earlier pass did) left the card top-heavy: a single-line
+  // title parked everything in the upper third with a ~460px dead band above the
+  // footer. Centring the group keeps the composition balanced for 1- or 2-line
+  // titles and with or without a student name.
+  ctx.font = "italic 64px 'Instrument Serif', serif";
+  const titleLines = wrapLines(ctx, values.courseName || "Your masterclass", W - 220, 2);
+  const name = values.studentName?.trim();
+
+  // Vertical rhythm — baseline-to-baseline gaps, all relative to the eyebrow.
+  const LINE_H = 80;
+  const EYEBROW_TO_TITLE = 168; // eyebrow baseline → first title baseline
+  const TITLE_TO_DIVIDER = 62; // last title baseline → divider
+  const DIVIDER_TO_NAME = 100; // divider → name baseline
+  const n = titleLines.length;
+
+  const titleTopRel = EYEBROW_TO_TITLE;
+  const dividerRel = titleTopRel + (n - 1) * LINE_H + TITLE_TO_DIVIDER;
+  const nameRel = dividerRel + DIVIDER_TO_NAME;
+
+  // Group's visual extent: from the eyebrow cap-height down to the descender of
+  // the lowest drawn element (name if present, else the divider).
+  const groupTopRel = -22;
+  const groupBottomRel = name ? nameRel + 14 : dividerRel + 2;
+
+  // Centre the group between a top inset and the band reserved for the wordmark,
+  // giving symmetric whitespace above and below.
+  const TOP_INSET = 96;
+  const footerTop = H - 200;
+  const groupCenter = (TOP_INSET + footerTop) / 2;
+  const eyebrowBaseline = Math.round(groupCenter - (groupTopRel + groupBottomRel) / 2);
+
   // Eyebrow — JetBrains Mono 28px, tracking-widest, muted.
   ctx.font = "500 28px 'JetBrains Mono', monospace";
   ctx.fillStyle = "#A6A6AA";
   withLetterSpacing(ctx, "0.28em", () => {
-    ctx.fillText("CERTIFICATE OF COMPLETION", W / 2, 372);
+    ctx.fillText("CERTIFICATE OF COMPLETION", W / 2, eyebrowBaseline);
   });
 
   // Course title — Instrument Serif italic 64px, cream, ≤2 lines.
   ctx.font = "italic 64px 'Instrument Serif', serif";
   ctx.fillStyle = "#F3E5C8";
-  const titleLines = wrapLines(ctx, values.courseName || "Your masterclass", W - 220, 2);
-  const lineHeight = 80;
-  const titleTop = 540;
-  titleLines.forEach((line, i) => ctx.fillText(line, W / 2, titleTop + i * lineHeight));
+  const titleTop = eyebrowBaseline + titleTopRel;
+  titleLines.forEach((line, i) => ctx.fillText(line, W / 2, titleTop + i * LINE_H));
 
   // Champagne hairline divider.
-  const dividerY = titleTop + (titleLines.length - 1) * lineHeight + 62;
+  const dividerY = eyebrowBaseline + dividerRel;
   ctx.strokeStyle = "rgba(242, 224, 191, 0.28)";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -376,11 +408,10 @@ export async function generateShareCard(values: ShareCardValues): Promise<Blob> 
   ctx.stroke();
 
   // Student name — Inter 600 44px, warm white.
-  const name = values.studentName?.trim();
   if (name) {
     ctx.font = "600 44px 'Inter', sans-serif";
     ctx.fillStyle = "#F7F4EC";
-    ctx.fillText(name, W / 2, dividerY + 100);
+    ctx.fillText(name, W / 2, eyebrowBaseline + nameRel);
   }
 
   // Wordmark — bottom-centre.

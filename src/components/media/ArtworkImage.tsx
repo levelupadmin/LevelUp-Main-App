@@ -96,7 +96,19 @@ export const ArtworkImage = ({
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
 
-  const showPlaceholder = !src || errored;
+  // Normalise the source before deciding whether to render the placeholder.
+  // `!src` only catches null/undefined/"" — but a DB `thumbnail_url` can be a
+  // blank/whitespace-only string (never backfilled, since the thumbnail
+  // backfill only fills strictly-NULL rows, and set to " " by a failed upload).
+  // A " " string is truthy, so it slipped through as a real <img src=" ">,
+  // which resolves to the document URL, decodes as a non-image, and reads as a
+  // black void until onError eventually swaps in the placeholder. Trimming to
+  // empty here treats that missing-art case as missing immediately, so the
+  // branded champagne monogram renders instead of the void. (A genuinely valid
+  // URL that points at black/near-empty image CONTENT can't be detected here —
+  // that's a data artifact to fix at the source, not in this component.)
+  const usableSrc = typeof src === "string" ? src.trim() : src;
+  const showPlaceholder = !usableSrc || errored;
 
   // Cached-image guard. The fade-in is gated on `loaded`, which is only ever
   // flipped by the `load` event. But when the browser already has the image in
@@ -138,7 +150,7 @@ export const ArtworkImage = ({
       ) : (
         <img
           ref={reconcileCachedImage}
-          src={src}
+          src={usableSrc as string}
           alt={alt}
           loading={priority ? "eager" : "lazy"}
           {...priorityAttrs}

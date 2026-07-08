@@ -43,6 +43,26 @@ export const durations = {
   kenburns: 9, // ken-burns hero drift — mirrors the `.kenburns` CSS class (9s)
 } as const;
 
+// ── OTP success choreography (STEAL-8) ── the "entered digits condense into a
+// champagne check" celebration on the Login OTP screen. These are ONE synced
+// timeline split across two files: OtpEntryStep drives the framer keyframes
+// (seconds) while Login bounds how long the whole beat holds before the route
+// paints (ms). Hoisted here so the two halves can never drift out of sync by
+// hand (they previously carried duplicated literals: 0.5 / 0.38 / 0.5 / 850).
+export const otpSuccess = {
+  // Entered digits sliding together + fading out (framer transition.duration, s).
+  mergeDuration: 0.5,
+  // Delay before the champagne check springs in — lands as the digits vanish (s).
+  checkDelay: 0.38,
+  // Delay before the "Welcome back" caption fades in beneath the check (s).
+  captionDelay: 0.5,
+  // Total window the choreography holds on screen before Login routes away (ms).
+  // Sits just past captionDelay (0.5s) + the caption's `base` settle so the last
+  // beat is seen before the paint. Reduced motion collapses this to an instant
+  // route (0) at the call site.
+  windowMs: 850,
+} as const;
+
 // ── Easings ── cubic-bezier control points, mirroring the CSS --ease-* vars.
 export const easings = {
   out: [0.2, 0.8, 0.2, 1], // --ease-out

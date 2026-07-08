@@ -25,10 +25,12 @@
 
 import * as React from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
+import { X } from "lucide-react";
 
 import {
   Drawer,
   DrawerContent,
+  DrawerClose,
   DrawerTitle,
   DrawerDescription,
 } from "@/components/ui/drawer";
@@ -89,6 +91,26 @@ const MorphSheet = ({
       {description ? (
         <DrawerDescription className="sr-only">{description}</DrawerDescription>
       ) : null}
+      {/*
+        Visible + keyboard close affordance. The drag handle is aria-hidden and
+        swipe/scrim/Escape are the only other exits — none discoverable on a
+        pointer/desktop surface or by keyboard. A DrawerClose (Radix Close) gives
+        every consumer a 44px focus-visible target that fires onOpenChange. Gated
+        on `dismissible`: a non-dismissible sheet blocks all other exits, so it
+        must not offer one here either. Sits in a sticky, zero-height (-mb-11
+        cancels its own h-11) row so it stays pinned top-right when the sheet
+        scrolls; pointer-events-none on the row keeps the empty gutter click-through.
+      */}
+      {dismissible && (
+        <div className="pointer-events-none sticky top-0 z-20 -mb-11 flex h-11 justify-end">
+          <DrawerClose
+            aria-label="Close"
+            className="focus-ring pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface hover:text-foreground active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100"
+          >
+            <X className="h-5 w-5" />
+          </DrawerClose>
+        </div>
+      )}
       {children}
     </DrawerContent>
   </Drawer>

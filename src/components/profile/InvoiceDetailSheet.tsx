@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MorphSheet, MorphButton } from "@/components/motion/MorphSheet";
 import { Button } from "@/components/ui/button";
+import { useMotionSafe } from "@/lib/motion";
 import {
   Download,
   Mail,
@@ -51,6 +52,27 @@ interface InvoiceDetailSheetProps {
    * Button, byte-identical to before.
    */
   ctaLayoutId?: string;
+  /**
+   * STEAL-10 morph gate. The CTA lives inside a vaul DrawerContent that
+   * CSS-slides up from off-screen (`translate3d(0,100%,0)`→`0`, ~0.5s) on open —
+   * a transform framer's layout projection can't observe. So the morph is held
+   * until the slide settles: while `false` the CTA cell renders a same-size
+   * spacer (the champagne element is the on-page twin chip) and while `true` the
+   * CTA mounts fresh carrying the shared `layoutId`, so framer runs the chip→CTA
+   * morph from the twin's now-stationary, correctly measured box. Mounting the
+   * element WITH the id (rather than granting the id to an already-measured
+   * element, which framer treats as a no-op) is what makes the morph actually
+   * play. Defaults to `true` (no gating) for consumers that don't animate a twin.
+   */
+  morphReady?: boolean;
+  /**
+   * STEAL-10 settle signal. Fired once vaul's slide-up reaches identity — its real
+   * slide-end event (`slideFromBottom` keyframe `animationend`, or `transitionend`
+   * for drag/snap configs) — so the parent can flip `morphReady` on the actual end
+   * of the slide instead of a hardcoded duration. Only wired alongside
+   * `ctaLayoutId`; ignored under reduced motion (the parent resolves synchronously).
+   */
+  onSlideSettle?: () => void;
 }
 
 const fmtFullDate = (iso?: string | null): string => {
@@ -90,8 +112,65 @@ const InfoRow = ({
   </div>
 );
 
-const InvoiceDetailSheet = ({ order, open, onOpenChange, ctaLayoutId }: InvoiceDetailSheetProps) => {
+const InvoiceDetailSheet = ({
+  order,
+  open,
+  onOpenChange,
+  ctaLayoutId,
+  morphReady = true,
+  onSlideSettle,
+}: InvoiceDetailSheetProps) => {
   const [downloading, setDownloading] = useState(false);
+  const motionSafe = useMotionSafe();
+  // Anchors us inside the portaled DrawerContent so we can listen for vaul's real
+  // slide-settle event (see below) without threading a ref through MorphSheet.
+  const settleRef = useRef<HTMLDivElement>(null);
+
+  // STEAL-10: report when vaul's slide-up actually finishes so the parent flips
+  // `morphReady` on the real end of the slide, not a hardcoded duration.
+  //
+  // vaul (no snap points) drives the open slide with a CSS KEYFRAME animation
+  // (`slideFromBottom`, verified against vaul 0.9.9's style.css), which fires
+  // `animationend` — NOT `transitionend`. The `transition: transform` rule only
+  // runs for drag/snap. So we listen for BOTH on the `[data-vaul-drawer]` node
+  // (animationend is what actually fires here; transitionend covers any future
+  // config) and settle on whichever lands. Two subtleties the live run exposed:
+  //   • vaul portals the content a frame AFTER `open` flips, so a one-shot
+  //     `closest()` misses the node — we retry on rAF until it mounts.
+  //   • only the node's OWN slide counts, so we gate on `event.target === node`
+  //     (the overlay's fade is a different element).
+  // The parent keeps a generous fallback timer so a missed event can never leave
+  // the CTA stuck as a spacer.
+  useEffect(() => {
+    if (!open || !ctaLayoutId || morphReady || motionSafe.reduced || !onSlideSettle) return;
+    let raf = 0;
+    let node: Element | null = null;
+    const onAnimEnd = (event: Event) => {
+      if (event.target === node) onSlideSettle();
+    };
+    const onTransEnd = (event: Event) => {
+      if (event.target === node && (event as TransitionEvent).propertyName === "transform") {
+        onSlideSettle();
+      }
+    };
+    const attach = () => {
+      node = settleRef.current?.closest("[data-vaul-drawer]") ?? null;
+      if (node) {
+        node.addEventListener("animationend", onAnimEnd);
+        node.addEventListener("transitionend", onTransEnd);
+      } else {
+        raf = requestAnimationFrame(attach);
+      }
+    };
+    attach();
+    return () => {
+      cancelAnimationFrame(raf);
+      if (node) {
+        node.removeEventListener("animationend", onAnimEnd);
+        node.removeEventListener("transitionend", onTransEnd);
+      }
+    };
+  }, [open, ctaLayoutId, morphReady, motionSafe.reduced, onSlideSettle]);
 
   const handleDownload = async () => {
     if (!order) return;
@@ -139,7 +218,7 @@ const InvoiceDetailSheet = ({ order, open, onOpenChange, ctaLayoutId }: InvoiceD
       }
     >
       {order && (
-        <div className="mx-auto w-full max-w-md">
+        <div ref={settleRef} className="mx-auto w-full max-w-md">
           {/* Big ₹ header */}
           <div className="pt-2 text-center">
             <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
@@ -198,17 +277,29 @@ const InvoiceDetailSheet = ({ order, open, onOpenChange, ctaLayoutId }: InvoiceD
                 render the champagne CTA as a MorphButton so it FLIP-morphs to/from
                 its twin (STEAL-10); without it, keep the exact champagne Button so
                 the shipped path is byte-identical. Both suppress the default tapTick
-                because handleDownload fires a deliberate hapticImpact("medium"). */}
+                because handleDownload fires a deliberate hapticImpact("medium").
+
+                While the slide is in flight (`!morphReady`, motion on) the CTA cell
+                is a same-size spacer — the champagne element is the on-page twin
+                chip — so nothing here can be snapshotted mid-slide. The MorphButton
+                MOUNTS (fresh) with the layoutId only at/after settle, which is what
+                makes framer run the chip→CTA morph. Under reduced motion morphReady
+                is resolved synchronously, so the button renders immediately with the
+                layoutId dropped inside MorphButton (instant, no morph). */}
             {ctaLayoutId ? (
-              <MorphButton
-                layoutId={ctaLayoutId}
-                onClick={handleDownload}
-                disabled={downloading}
-                haptic={false}
-                className="btn-champagne inline-flex h-12 items-center justify-center gap-2 rounded-2xl text-sm font-semibold [&_svg]:size-4 [&_svg]:shrink-0"
-              >
-                {downloadInner}
-              </MorphButton>
+              morphReady || motionSafe.reduced ? (
+                <MorphButton
+                  layoutId={ctaLayoutId}
+                  onClick={handleDownload}
+                  disabled={downloading}
+                  haptic={false}
+                  className="btn-champagne inline-flex h-12 items-center justify-center gap-2 rounded-2xl text-sm font-semibold [&_svg]:size-4 [&_svg]:shrink-0"
+                >
+                  {downloadInner}
+                </MorphButton>
+              ) : (
+                <div aria-hidden="true" className="h-12" />
+              )
             ) : (
               <Button
                 onClick={handleDownload}

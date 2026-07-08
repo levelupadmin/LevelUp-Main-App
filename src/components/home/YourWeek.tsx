@@ -168,7 +168,7 @@ const YourWeek = () => {
     <MotionCard asChild tabIndex={0}>
       <Link
         to={summary.resumeTo}
-        className="group flex items-center gap-4 rounded-2xl bg-surface ring-1 ring-white/5 hover:ring-[hsl(var(--cream))]/30 px-4 py-3.5 sm:px-5 sm:py-4 transition-shadow duration-base shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
+        className="group flex items-center gap-4 rounded-2xl bg-surface ring-1 ring-white/5 [@media(hover:hover)]:hover:ring-[hsl(var(--cream))]/30 px-4 py-3.5 sm:px-5 sm:py-4 transition-shadow duration-base shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] [@media(hover:hover)]:hover:shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)]"
       >
         <ProgressRing pct={summary.topPct} size={52} label className="shrink-0" />
 

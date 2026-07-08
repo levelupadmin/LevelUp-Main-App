@@ -14,6 +14,21 @@ describe("ArtworkImage", () => {
     ).toBe(screen.getByTestId("artwork-placeholder"));
   });
 
+  it("renders the branded placeholder for a blank/whitespace-only src (no black void)", () => {
+    // A DB thumbnail_url can be a whitespace-only string ("  ") — not strictly
+    // NULL, so the thumbnail backfill skips it and `!src` doesn't catch it. It
+    // must be treated as missing art and never rendered as a real <img>, which
+    // would resolve to the document URL and read as a black void.
+    render(<ArtworkImage src="   " alt="Blank art" />);
+    expect(screen.getByTestId("artwork-placeholder")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Blank art" })?.tagName).not.toBe(
+      "IMG",
+    );
+    expect(screen.getByRole("img", { name: "Blank art" })).toBe(
+      screen.getByTestId("artwork-placeholder"),
+    );
+  });
+
   it("surfaces role=img + aria-label={alt} on the placeholder when alt is non-empty", () => {
     render(<ArtworkImage src={undefined} alt="Course art" />);
     const placeholder = screen.getByTestId("artwork-placeholder");
