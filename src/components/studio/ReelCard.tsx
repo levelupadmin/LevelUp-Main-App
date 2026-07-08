@@ -21,6 +21,11 @@ export default function ReelCard({ reel }: { reel: Reel }) {
   const transcribing = reel.status === "pending" || reel.status === "processing";
   const failed = reel.status === "failed";
 
+  // Trim-or-null the thumbnail so a whitespace-only value (`"  "`, an empty
+  // string that slipped through the studio upload writer) reads as absent and we
+  // fall back to the platform placeholder instead of rendering a broken <img>.
+  const thumb = reel.thumbnail_url?.trim() || null;
+
   const setBucket = (bucket: Bucket) => update.mutate({ id: reel.id, patch: { bucket } });
   const saveNote = () =>
     update.mutate({ id: reel.id, patch: { note } }, { onSuccess: () => toast.success("Note saved") });
@@ -29,9 +34,8 @@ export default function ReelCard({ reel }: { reel: Reel }) {
     <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] overflow-hidden flex flex-col">
       <div className="flex gap-3 p-3">
         <div className="h-20 w-14 shrink-0 rounded-lg bg-[hsl(var(--surface-2))] overflow-hidden grid place-items-center">
-          {reel.thumbnail_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={reel.thumbnail_url} alt="" className="h-full w-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
+          {thumb ? (
+            <img src={thumb} alt="" className="h-full w-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
           ) : (
             <span className="text-[10px] uppercase tracking-wide text-[hsl(var(--muted-foreground))]">{reel.platform}</span>
           )}

@@ -20,8 +20,13 @@ const weeklyConsistencyEnabled = () =>
 
 // localStorage key holding the highest consecutive-week count already shown, so
 // the calm "n weeks of showing up" line only celebrates (anim-rise + haptic) on
-// a genuine increment, never on every visit.
-const WEEKS_SEEN_KEY = "lu_weeks_seen";
+// a genuine increment, never on every visit. SCOPED PER USER: a shared device
+// (family/lab machine) must not leak one member's streak-seen watermark to the
+// next — a global key would suppress the celebration for a different account, or
+// worse celebrate a stranger's streak. AuthContext clears every `lu_weeks_seen*`
+// entry on sign-out so the watermark never survives a session change.
+export const WEEKS_SEEN_KEY_PREFIX = "lu_weeks_seen";
+const weeksSeenKey = (userId: string) => `${WEEKS_SEEN_KEY_PREFIX}:${userId}`;
 
 // ── Your Week ──
 // A compact glance-strip directly under the greeting: the progress ring for the
@@ -126,18 +131,19 @@ const YourWeek = () => {
   // (private mode / disabled cookies) degrades to "no celebration", never a throw.
   const weeks = summary?.consecutiveActiveWeeks ?? 0;
   useEffect(() => {
-    if (!weeklyConsistencyEnabled() || weeks < 2) return;
+    if (!weeklyConsistencyEnabled() || weeks < 2 || !user) return;
     try {
-      const prevSeen = Number(localStorage.getItem(WEEKS_SEEN_KEY)) || 0;
+      const key = weeksSeenKey(user.id);
+      const prevSeen = Number(localStorage.getItem(key)) || 0;
       if (weeks > prevSeen) {
         setCelebrateWeeks(true);
         void celebrate();
       }
-      localStorage.setItem(WEEKS_SEEN_KEY, String(weeks));
+      localStorage.setItem(key, String(weeks));
     } catch {
       /* storage unavailable → skip the one-time celebration, still render the line */
     }
-  }, [weeks]);
+  }, [weeks, user]);
 
   // Zero-enrolment (or not-yet-loaded) users get nothing — Home already handles
   // discovery below, so an empty strip would just be a dead block.

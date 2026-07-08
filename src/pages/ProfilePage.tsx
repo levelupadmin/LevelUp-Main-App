@@ -726,7 +726,15 @@ const SavedSection = () => {
         .eq("status", "active");
       if (cancelled) return;
       // Rows without a slug have no public page to link to, so skip them.
-      setOfferings(((data ?? []) as SavedOffering[]).filter((o) => o.slug));
+      // Normalize the thumbnail to trim-or-null so a whitespace-only value
+      // (`"  "`, an accidental empty-string upload) reads as absent — otherwise
+      // it's truthy and the render below paints a broken <img> instead of the
+      // placeholder tile.
+      setOfferings(
+        ((data ?? []) as SavedOffering[])
+          .filter((o) => o.slug)
+          .map((o) => ({ ...o, thumbnail_url: o.thumbnail_url?.trim() || null })),
+      );
     })();
     return () => {
       cancelled = true;

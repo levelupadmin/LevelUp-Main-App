@@ -178,20 +178,18 @@ export const CompletionRecap = ({
   }, [open, isLast]);
 
   // Keyboard: Esc closes; Arrow keys drive the story so advancing isn't
-  // pointer-only. NOTE: this component deliberately does NOT touch
-  // document.body.style.overflow — CompletionTakeover is the app's SOLE
-  // body-scroll-lock owner (the completion-arc invariant; a second writer here
-  // caused the wedged-scroll race the arc was built to fix). The recap is a
-  // full-screen `fixed inset-0` portal with `overflow-hidden`, so the covered
-  // page is not visible behind it. But visual cover is NOT scroll cover: the
-  // document root stays scrollable in both entry paths (standalone CourseDetail
-  // usage — no takeover ever mounts — and the arc's recap phase — the takeover
-  // released its lock before the recap mounted), so on iOS WKWebView a touch
-  // drag over this overlay chains through to scroll the covered page and drifts
-  // its position after dismiss. The root carries `touch-none overscroll-contain`
-  // (see the motion.div below) to contain touch gestures on the overlay itself —
-  // the same mechanism ChapterViewer uses on its scrub grab-region — which stops
-  // the scroll-bleed WITHOUT a second body-overflow writer.
+  // pointer-only. NOTE: this component deliberately does NOT lock body scroll
+  // via the shared `useBodyScrollLock` module. In the arc it sequences AFTER the
+  // takeover has released the module lock, and in standalone CourseDetail usage
+  // no takeover ever mounts — in both paths the document root stays scrollable
+  // behind this full-screen `fixed inset-0` portal. Adding a lock here is
+  // needless (the overlay already covers the page) and would keep the body
+  // locked across the arc's takeover→recap handoff. Instead the overlay contains
+  // its OWN gestures: `touch-none overscroll-contain` (on the motion.div below)
+  // stops touch scroll-bleed on iOS WKWebView, and the non-passive `wheel`
+  // handler below contains desktop mouse-wheel/trackpad scroll so a wheel over
+  // the overlay can't chain through to the covered page — both without a second
+  // body-overflow writer.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -205,9 +203,20 @@ export const CompletionRecap = ({
         setIndex((i) => Math.max(i - 1, 0));
       }
     };
+    // Desktop-wheel containment: the recap has no internal scroll, so a wheel
+    // gesture anywhere over this full-screen overlay must be swallowed rather
+    // than chaining to scroll the covered document. Registered non-passive so
+    // preventDefault actually cancels the scroll (React's synthetic onWheel is
+    // passive and can't). Touch devices don't fire wheel, so this is naturally
+    // desktop-only and never interferes with the touch-containment above.
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+    };
     window.addEventListener("keydown", onKey);
+    window.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("wheel", onWheel);
     };
   }, [open, onClose, advance]);
 
