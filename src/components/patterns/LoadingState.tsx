@@ -84,7 +84,10 @@ export function SkeletonGrid({
   className?: string;
 }) {
   return (
-    <div className={cn("grid grid-cols-1 gap-4", cols, className)} aria-busy="true" aria-live="polite">
+    <div className={cn("grid grid-cols-1 gap-4", cols, className)} role="status" aria-busy="true" aria-live="polite">
+      {/* Every SkeletonCard child is aria-hidden, so the live region needs its
+          own perceivable text or AT announces nothing (RouteFallback parity). */}
+      <span className="sr-only">Loading…</span>
       {Array.from({ length: count }).map((_, i) => (
         <SkeletonCard key={i} variant={variant} />
       ))}

@@ -1,11 +1,14 @@
-import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { dehydrate, type Query } from "@tanstack/react-query";
 import {
   queryClient,
+  persister,
   persistOptions,
   purgePersistedQueryCache,
   PERSIST_STORAGE_KEY,
+  PERSIST_THROTTLE_MS,
   PERSISTED_QUERY_ROOTS,
+  __resetPersistWriteFailureWarning,
 } from "../queryClient";
 
 /**
@@ -102,6 +105,148 @@ describe("persisted cache — dehydration whitelist", () => {
     expect(roots.has("my-courses")).toBe(true);
     expect(roots.has("enrolled-offering-ids")).toBe(false);
     expect(roots.has("community")).toBe(false);
+  });
+});
+
+describe("persisted cache — write is deferred off the settle path", () => {
+  // The persist subscribe path fires persistClient synchronously on every cache
+  // event during a warm open. These pin that the actual serialize+setItem is
+  // throttled onto a later macrotask, so it can never block the settle handler
+  // (and therefore never blocks first paint) — the core of this fix.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("does NOT write synchronously — the serialize+setItem lands on a later timer", () => {
+    vi.useFakeTimers();
+    expect(localStorage.getItem(PERSIST_STORAGE_KEY)).toBeNull();
+
+    // Simulate one settle in the burst: persistClient is invoked synchronously…
+    persister.persistClient({
+      buster: "",
+      timestamp: Date.now(),
+      clientState: dehydrate(queryClient),
+    });
+
+    // …and NOTHING has been written yet when control returns (paint would run here).
+    expect(localStorage.getItem(PERSIST_STORAGE_KEY)).toBeNull();
+
+    // The write only lands after the throttle window elapses, on a macrotask.
+    vi.advanceTimersByTime(PERSIST_THROTTLE_MS);
+    expect(localStorage.getItem(PERSIST_STORAGE_KEY)).not.toBeNull();
+  });
+
+  it("coalesces a burst of settles into a single deferred write", () => {
+    vi.useFakeTimers();
+    const setItemSpy = vi.spyOn(localStorage, "setItem");
+
+    // catalog + enrolled-progress + my-courses + profile-sections all settle.
+    for (let i = 0; i < 4; i++) {
+      persister.persistClient({
+        buster: "",
+        timestamp: Date.now(),
+        clientState: dehydrate(queryClient),
+      });
+    }
+    // No synchronous writes despite four settles…
+    expect(setItemSpy).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(PERSIST_THROTTLE_MS);
+    // …and the whole burst collapses to ONE write to disk.
+    expect(setItemSpy).toHaveBeenCalledTimes(1);
+    setItemSpy.mockRestore();
+  });
+});
+
+describe("persisted cache — oversized/quota write telemetry", () => {
+  // The warn latch is a module-level, once-per-session flag (see queryClient.ts).
+  // Reset it around each case so the "exactly once" assertions can't be tripped
+  // by — or leak into — a sibling test, regardless of file order.
+  beforeEach(() => {
+    __resetPersistWriteFailureWarning();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    __resetPersistWriteFailureWarning();
+  });
+
+  it("warns exactly once when a write fails (quota/oversize) and never throws", () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const setItem = vi
+      .spyOn(localStorage, "setItem")
+      .mockImplementation(() => {
+        const err = new Error("quota");
+        err.name = "QuotaExceededError";
+        throw err;
+      });
+
+    // Two separate throttled writes both hit the failing setItem…
+    for (let i = 0; i < 2; i++) {
+      expect(() =>
+        persister.persistClient({
+          buster: "",
+          timestamp: Date.now(),
+          clientState: dehydrate(queryClient),
+        })
+      ).not.toThrow();
+      vi.advanceTimersByTime(PERSIST_THROTTLE_MS);
+    }
+
+    expect(setItem).toHaveBeenCalled();
+    // …but the app only logs the degradation once (no per-write spam).
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain("persisted cache write failed");
+  });
+
+  it("an oversized whitelisted payload trips the warn path (not silent degradation), and entitlements stay off disk", () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // A storage that accepts small writes but rejects an over-budget one — the
+    // real quota shape, not an unconditional throw. The dehydrated catalog below
+    // is what pushes the write past this cap.
+    const QUOTA_BYTES = 4 * 1024;
+    const throwOnOversize = vi
+      .spyOn(localStorage, "setItem")
+      .mockImplementation((_key: string, value: string) => {
+        if (value.length > QUOTA_BYTES) {
+          const err = new Error("quota");
+          err.name = "QuotaExceededError";
+          throw err;
+        }
+      });
+
+    // A genuinely large *whitelisted* payload (catalog is on the whitelist), so
+    // the serialized cache the persister writes clears the cap above.
+    const bigCatalog = Array.from({ length: 400 }, (_, i) => ({
+      id: `course-${i}`,
+      blurb: "x".repeat(64),
+    }));
+    queryClient.setQueryData(["catalog"], bigCatalog);
+    // An entitlement entry sits in the SAME cache; it must never be dehydrated,
+    // so it can neither reach disk nor inflate the payload that overflows quota.
+    queryClient.setQueryData(["enrolled-offering-ids", "user-1"], ["off-1"]);
+
+    // What the persister would actually serialize to disk — assert the
+    // entitlement gate is excluded even under the failing-write path.
+    const dehydrated = dehydrate(queryClient, persistOptions.dehydrateOptions);
+    const roots = new Set(dehydrated.queries.map((q) => q.queryKey[0] as string));
+    expect(roots.has("catalog")).toBe(true);
+    expect(roots.has("enrolled-offering-ids")).toBe(false);
+
+    // The throttled write flushes onto a macrotask and overflows quota…
+    expect(() =>
+      persister.persistClient({ buster: "", timestamp: Date.now(), clientState: dehydrated })
+    ).not.toThrow();
+    vi.advanceTimersByTime(PERSIST_THROTTLE_MS);
+
+    // …and the failure surfaces as a warn (visible degradation), not a swallowed
+    // silent fallback to cold start.
+    expect(throwOnOversize).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain("persisted cache write failed");
   });
 });
 

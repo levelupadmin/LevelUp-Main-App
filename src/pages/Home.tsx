@@ -1,6 +1,9 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ENROLLED_PROGRESS_QUERY_KEY } from "@/hooks/useEnrolledProgress";
+import {
+  ENROLLED_PROGRESS_QUERY_KEY,
+  useEnrolledProgress,
+} from "@/hooks/useEnrolledProgress";
 import { motion, useScroll, useTransform } from "framer-motion";
 import usePageTitle from "@/hooks/usePageTitle";
 import PullIndicator from "@/components/patterns/PullIndicator";
@@ -43,9 +46,9 @@ import {
 //     FeaturedHero → a full-bleed banner block mirroring the hero's bleed +
 //     aspect ratios.
 // `hasEnrolments` is guaranteed accurate at the crossfade: LoadingSwap only
-// swaps once `isFeedLoading` is false, which requires `enrolmentsLoading` false,
-// so the skeleton's final frame always matches the real feed (no
-// flash-of-wrong-shape at the handoff).
+// swaps once `isFeedLoading` is false, which requires the persisted
+// `enrolled-progress` query resolved, so the skeleton's final frame always
+// matches the real feed (no flash-of-wrong-shape at the handoff).
 const HomeFeedSkeleton = ({ hasEnrolments }: { hasEnrolments: boolean }) => (
   <div className="space-y-10" aria-busy="true" aria-live="polite">
     {hasEnrolments ? (
@@ -85,21 +88,31 @@ const greetingForHour = (hour: number) =>
 // itself when it has nothing to show, so the feed never renders dead blocks.
 const Home = () => {
   usePageTitle("Home");
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const queryClient = useQueryClient();
-  const { data: enrolledOfferingIds, isLoading: enrolmentsLoading } =
-    useEnrolledOfferingIds();
-  const hasEnrolments = !!enrolledOfferingIds && enrolledOfferingIds.size > 0;
 
-  // First-paint gate for the feed's skeleton→content handoff. Subscribes to the
-  // same react-query keys the feed already reads (no extra fetch — dedup'd), so
-  // the crossfade fires once both the catalogue and the user's entitlements have
-  // landed and the feed can paint complete. `isLoading` is only true with an
-  // empty cache, so revisits skip the skeleton and render instantly; a
-  // pull-to-refresh refetch keeps `isLoading` false (data stays cached) and
-  // never re-triggers the skeleton.
+  // First-paint gate for the feed's skeleton→content handoff (P6-T3 warm open).
+  // Gate ONLY on the two PERSISTED queries the feed's above-the-fold reads —
+  // `enrolled-progress` (whitelisted, staleTime 5min) and `catalog`. Both are
+  // restored from localStorage by PersistQueryClientProvider BEFORE any query
+  // runs, so on a warm open `isLoading` is already false and the resume rail +
+  // catalogue paint from last-known cache with ZERO network in the critical
+  // path (stale-while-revalidate refreshes them in the background).
+  //
+  // Crucially this must NOT gate on `enrolled-offering-ids`: that query is
+  // deliberately UNPERSISTED (it's the authoritative entitlement gate, staleTime
+  // 0), so on a warm open it has no cache and its `isLoading` stays true until a
+  // live round-trip returns — gating the feed on it forced the whole
+  // personalized feed to wait for the network on every warm open, silently
+  // defeating the persisted cache this lane built. We still subscribe to it (one
+  // dedup'd call) so it revalidates from Home mount and keeps catalogue card
+  // CTAs fresh, but it no longer blocks the crossfade.
+  const { data: enrolledProgress, isLoading: progressLoading } =
+    useEnrolledProgress(user?.id);
   const { isLoading: catalogLoading } = useCatalog();
-  const isFeedLoading = catalogLoading || enrolmentsLoading;
+  useEnrolledOfferingIds();
+  const hasEnrolments = !!enrolledProgress?.hasEnrolments;
+  const isFeedLoading = catalogLoading || progressLoading;
 
   const handleRefresh = useCallback(async () => {
     // Every Home section now reads through react-query (P6-T1), so a refresh is

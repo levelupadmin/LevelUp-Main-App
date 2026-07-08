@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
+import { nonBlockingCss } from "./build/non-blocking-css";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -12,7 +13,14 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
   },
-  plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
+  plugins: [
+    react(),
+    mode === "development" && componentTagger(),
+    // Make the app stylesheet non-render-blocking so the inline brand splash
+    // paints on the first HTML round-trip (Slow-3G brand-paint ≤2.5s gate).
+    // Build-only; see build/non-blocking-css.ts for the safety rationale.
+    nonBlockingCss(),
+  ].filter(Boolean),
   build: {
     rollupOptions: {
       output: {

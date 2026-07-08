@@ -3,6 +3,7 @@ import { Capacitor } from "@capacitor/core";
 import App from "./App.tsx";
 import "./index.css";
 import { initSentry } from "./lib/sentry";
+import { durationsMs } from "./lib/motion";
 
 // Kick off error reporting. This is cheap and non-blocking: it schedules the
 // @sentry/react load for first idle (so Sentry stays off the entry chunk and
@@ -22,12 +23,16 @@ if (Capacitor.isNativePlatform()) {
   const hide = () => {
     if (hidden) return;
     hidden = true;
-    // fadeOutDuration mirrors launchFadeOutDuration in capacitor.config.ts.
+    // fadeOutDuration is --motion-base (durationsMs.base, 240ms) and mirrors
+    // launchFadeOutDuration in capacitor.config.ts — that config can't import
+    // this runtime token, so it pins the literal with a comment instead.
     // Import inside hide (not once up top) and swallow any rejection so a
     // failed dynamic import can never surface as an unhandled rejection that
     // leaves the splash up — the module cache makes the repeat import cheap.
     void import("@capacitor/splash-screen")
-      .then(({ SplashScreen }) => SplashScreen.hide({ fadeOutDuration: 240 }))
+      .then(({ SplashScreen }) =>
+        SplashScreen.hide({ fadeOutDuration: durationsMs.base }),
+      )
       .catch(() => {});
   };
 

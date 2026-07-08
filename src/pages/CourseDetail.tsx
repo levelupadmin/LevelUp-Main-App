@@ -417,7 +417,11 @@ const CourseDetail = () => {
     // rows `min-h-[44px]`) so the resolved page swaps in with no layout shift,
     // replacing the old centered spinner.
     return (
-      <div className="max-w-4xl mx-auto space-y-8" aria-busy="true" aria-live="polite">
+      <div className="max-w-4xl mx-auto space-y-8" role="status" aria-busy="true" aria-live="polite">
+        {/* All skeleton children are aria-hidden, so the live region has no
+            text to announce — AT would hear nothing. Matches RouteFallback's
+            sr-only status text. */}
+        <span className="sr-only">Loading…</span>
         <SkeletonBlock height={224} className="rounded-[20px]" />
         <div className="bg-card border border-border rounded-[16px] overflow-hidden">
           <div className="px-6 py-4 border-b border-border">
