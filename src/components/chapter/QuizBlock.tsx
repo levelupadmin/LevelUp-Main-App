@@ -105,9 +105,9 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
 
   if (loadingAttempt) {
     return (
-      <div className="bg-card border border-border rounded-2xl p-6 animate-pulse">
-        <div className="h-4 bg-surface-2 rounded w-1/3 mb-2" />
-        <div className="h-3 bg-surface-2 rounded w-1/2" />
+      <div className="bg-card border border-border rounded-2xl p-6">
+        <div className="h-4 skeleton-shimmer rounded w-1/3 mb-2" />
+        <div className="h-3 skeleton-shimmer rounded w-1/2" />
       </div>
     );
   }
@@ -125,8 +125,8 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
           <span
             className={`text-xs font-mono px-2.5 py-1 rounded-full ${
               result.passed
-                ? "bg-emerald-500/15 text-emerald-400"
-                : "bg-rose-500/15 text-rose-400"
+                ? "bg-[hsl(var(--success)/0.15)] text-[hsl(var(--success))]"
+                : "bg-[hsl(var(--destructive)/0.15)] text-[hsl(var(--destructive-text))]"
             }`}
           >
             {result.passed ? "PASSED" : "FAILED"} - {result.score}/{result.total}
@@ -153,8 +153,8 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
                   let optClass = "bg-surface hover:bg-surface-2";
                   if (submitted) {
                     if (correctOptionId) {
-                      if (o.id === correctOptionId) optClass = "bg-emerald-500/10 border-emerald-500/30";
-                      else if (isSelected) optClass = "bg-rose-500/10 border-rose-500/30";
+                      if (o.id === correctOptionId) optClass = "bg-[hsl(var(--success)/0.1)] border-[hsl(var(--success)/0.3)]";
+                      else if (isSelected) optClass = "bg-[hsl(var(--destructive)/0.1)] border-[hsl(var(--destructive)/0.3)]";
                       else optClass = "bg-surface opacity-60";
                     } else {
                       // No answer key (older RPC or pre-filled past attempt):
@@ -175,11 +175,11 @@ const QuizBlock = ({ quiz, userId }: { quiz: any; userId?: string }) => {
                         checked={isSelected}
                         disabled={submitted}
                         onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: o.id }))}
-                        className="accent-emerald-500"
+                        className="accent-[hsl(var(--success))]"
                       />
                       <span className="text-sm">{o.option_text}</span>
                       {submitted && correctOptionId === o.id && (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 ml-auto" />
+                        <CheckCircle2 className="h-3.5 w-3.5 text-[hsl(var(--success))] ml-auto" />
                       )}
                     </label>
                   );

@@ -1,12 +1,20 @@
-import { Link } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { EmptyState as CanonicalEmptyState } from "@/components/patterns/EmptyState";
 
+/**
+ * @deprecated Import the canonical EmptyState from `@/components/patterns/EmptyState`.
+ *
+ * This module is a backward-compatible shim kept only so existing call sites keep
+ * compiling. It maps the old serif API (`icon` as a lucide component, `sub`, `cta`)
+ * onto the single canonical `patterns/EmptyState` (`icon` as a ReactNode,
+ * `description`, `action`). New code should use the canonical component directly and
+ * pass the icon as an element, e.g. `icon={<BookOpen size={22} strokeWidth={1.5} />}`.
+ */
 type EmptyStateCta =
   | { label: string; to: string }
   | { label: string; onClick: () => void };
 
-interface EmptyStateProps {
+interface LegacyEmptyStateProps {
   icon: LucideIcon;
   title: string;
   sub?: string;
@@ -14,41 +22,14 @@ interface EmptyStateProps {
   className?: string;
 }
 
-const ctaClasses =
-  "focus-ring pressable mt-6 inline-flex items-center justify-center h-11 px-5 rounded-full bg-cream text-cream-text font-medium text-sm hover:bg-cream/90 transition-colors";
-
-/**
- * The standardized empty state: a cream-ringed icon, a serif-italic headline,
- * a muted sub line, and an optional cream pill CTA (Link or button).
- *
- * Shares its voice with <SystemState> so every dead-end (an empty list or a
- * lost page) feels like the same room: calm, warm, plain-spoken.
- */
-export const EmptyState = ({ icon: Icon, title, sub, cta, className }: EmptyStateProps) => (
-  <div
-    className={cn(
-      "anim-rise flex flex-col items-center justify-center text-center px-6 py-12",
-      className
-    )}
-  >
-    <div className="flex h-14 w-14 items-center justify-center rounded-full border border-cream/20 bg-surface/60 text-cream mb-5">
-      <Icon size={22} strokeWidth={1.5} />
-    </div>
-    <h3 className="font-serif-italic text-xl text-cream">{title}</h3>
-    {sub && (
-      <p className="text-muted-foreground text-sm mt-2 max-w-[300px] leading-relaxed">{sub}</p>
-    )}
-    {cta &&
-      ("to" in cta ? (
-        <Link to={cta.to} className={ctaClasses}>
-          {cta.label}
-        </Link>
-      ) : (
-        <button type="button" onClick={cta.onClick} className={ctaClasses}>
-          {cta.label}
-        </button>
-      ))}
-  </div>
+export const EmptyState = ({ icon: Icon, title, sub, cta, className }: LegacyEmptyStateProps) => (
+  <CanonicalEmptyState
+    icon={<Icon size={22} strokeWidth={1.5} />}
+    title={title}
+    description={sub}
+    action={cta}
+    className={className}
+  />
 );
 
 export default EmptyState;
