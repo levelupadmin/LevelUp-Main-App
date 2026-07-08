@@ -105,7 +105,7 @@ const MorphSheet = ({
         <div className="pointer-events-none sticky top-0 z-20 -mb-11 flex h-11 justify-end">
           <DrawerClose
             aria-label="Close"
-            className="focus-ring pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface hover:text-foreground active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100"
+            className="focus-ring pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors [@media(hover:hover)]:hover:bg-surface [@media(hover:hover)]:hover:text-foreground active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100"
           >
             <X className="h-5 w-5" />
           </DrawerClose>

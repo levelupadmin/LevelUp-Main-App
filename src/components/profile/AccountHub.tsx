@@ -72,7 +72,7 @@ const QuickTile = ({
       className={`flex h-full w-full flex-col items-start gap-3 rounded-2xl border border-border bg-surface p-4 text-left transition-colors ${
         disabled
           ? "cursor-default opacity-60"
-          : "pressable hover:border-border-hover"
+          : "pressable [@media(hover:hover)]:hover:border-border-hover"
       }`}
     >
       <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[hsl(var(--cream))]/10 text-[hsl(var(--cream))]">

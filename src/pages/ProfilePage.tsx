@@ -671,7 +671,7 @@ const ProfilePage = () => {
           </div>
           <Button
             variant="outline"
-            className="border-destructive text-destructive hover:bg-destructive/10"
+            className="min-h-[44px] border-destructive text-destructive [@media(hover:hover)]:hover:bg-destructive/10"
             onClick={handleSignOut}
           >
             Sign out

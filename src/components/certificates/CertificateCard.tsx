@@ -160,7 +160,7 @@ const CertificateCard = ({ certificate }: CertificateCardProps) => {
             e.stopPropagation();
             toggle();
           }}
-          className="absolute right-2 top-2 z-10 inline-flex h-11 min-w-[44px] items-center justify-center gap-1.5 rounded-full border border-cream/20 bg-black/55 px-3 text-cream transition-colors [@media(hover:hover)]:hover:bg-black/70"
+          className="absolute right-2 top-2 z-10 inline-flex h-11 min-w-[44px] items-center justify-center gap-1.5 rounded-full border border-cream/20 bg-black/55 px-3 text-cream transition-colors [@media(hover:hover)]:hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-black"
         >
           <Sparkles className="h-4 w-4" />
         </button>

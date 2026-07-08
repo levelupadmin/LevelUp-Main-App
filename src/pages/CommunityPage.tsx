@@ -426,7 +426,7 @@ const CommunityPage = () => {
             animate={{ scale: composerFocused ? 1.01 : 1 }}
             transition={motionSafe.springs.glide}
             className={cn(
-              "rounded-xl border p-4 space-y-3 transition-colors",
+              "rounded-xl border p-4 space-y-3 transition-[color,background-color,border-color,box-shadow] duration-base ease-out motion-reduce:transition-none",
               composerFocused
                 ? "bg-surface border-[hsl(var(--border-hover))] shadow-design-md"
                 : "bg-surface border-border",
