@@ -33,8 +33,14 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Self-hosted fonts (P6-T6): the Google-Fonts preconnects are gone — fonts
+         now ship from /public/fonts (see the @font-face block in src/index.css),
+         so there is no cross-origin font handshake to warm up. Preload ONLY the
+         two first-paint faces (Inter 400 body text + Instrument Serif italic
+         accents) so they start downloading in parallel with the CSS instead of
+         waiting for it to parse. The other six weights load on demand via swap. -->
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/Inter-400.woff2" crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/InstrumentSerif-Italic.woff2" crossorigin />
     <!-- Preconnect to Supabase Storage so course thumbnails + instructor
          avatars resolve faster on first paint. -->
     <link rel="preconnect" href="https://ivkvluezuiojovpotlyb.supabase.co" crossorigin />
