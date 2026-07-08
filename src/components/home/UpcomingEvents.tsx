@@ -167,14 +167,14 @@ const UpcomingEvents = () => {
         }
         const rzp = new (window as any).Razorpay(options);
         rzp.on("payment.failed", () => {
-          toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
+          toast({ title: "Payment didn't complete", description: "Nothing was charged. Try again when you're ready.", variant: "destructive" });
         });
         rzp.open();
       } else if (data.error) {
         toast({ title: "Registration failed", description: data.error, variant: "destructive" });
       }
     } catch {
-      toast({ title: "Error", description: "Something went wrong. Please try again.", variant: "destructive" });
+      toast({ title: "That didn't go through", description: "Try once more?", variant: "destructive" });
     } finally {
       setRegistering(null);
     }

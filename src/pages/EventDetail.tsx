@@ -40,7 +40,7 @@ const EventDetail = () => {
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
-    script.onerror = () => toast({ title: "Failed to load payment gateway", description: "Please refresh the page.", variant: "destructive" });
+    script.onerror = () => toast({ title: "The payment screen didn't load", description: "Pull to refresh and try again.", variant: "destructive" });
     document.body.appendChild(script);
   }, []);
 
@@ -182,7 +182,7 @@ const EventDetail = () => {
         const rzp = new (window as any).Razorpay(options);
         rzp.on("payment.failed", () => {
           paymentInFlightRef.current = false;
-          toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
+          toast({ title: "Payment didn't complete", description: "Nothing was charged. Try again when you're ready.", variant: "destructive" });
         });
         rzp.on("modal.ondismiss", () => {
           paymentInFlightRef.current = false;
@@ -193,7 +193,7 @@ const EventDetail = () => {
         paymentInFlightRef.current = false;
       }
     } catch {
-      toast({ title: "Error", description: "Something went wrong.", variant: "destructive" });
+      toast({ title: "That didn't go through", description: "Try once more?", variant: "destructive" });
       paymentInFlightRef.current = false;
     } finally {
       setRegistering(false);

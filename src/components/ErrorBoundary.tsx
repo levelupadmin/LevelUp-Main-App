@@ -39,10 +39,10 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State
         <div className="min-h-screen bg-canvas flex items-center justify-center p-8">
           <div className="text-center max-w-md">
             <h1 className="text-2xl font-bold text-cream font-serif-italic mb-4">
-              Something went wrong
+              This screen ran into trouble
             </h1>
             <p className="text-muted-foreground mb-2">
-              We're working on fixing this. Please try refreshing the page.
+              We're on it. Refresh the page to pick up where you left off.
             </p>
             <p className="text-xs text-muted-foreground font-mono mb-1">
               Error code: {errorCode}

@@ -360,7 +360,7 @@ const ChapterViewer = () => {
       .maybeSingle();
 
     if (error || !ch) {
-      toast.error("Chapter not found");
+      toast.error("We couldn't find that lesson.");
       navigate("/home");
       return;
     }
@@ -853,7 +853,7 @@ const ChapterViewer = () => {
       await navigator.clipboard.writeText(url);
       toast.success("Link copied");
     } catch {
-      toast.error("Could not copy link");
+      toast.error("Couldn't copy the link. Try again.");
     }
   };
 
@@ -1014,7 +1014,7 @@ const ChapterViewer = () => {
       user_id: user.id,
       question_text: questionText.trim(),
     });
-    if (error) toast.error("Failed to post question");
+    if (error) toast.error("Your question didn't send. Try again.");
     else {
       toast.success("Question sent. Your instructor will see it.");
       setQuestionText("");
@@ -1222,7 +1222,7 @@ const ChapterViewer = () => {
           {chapter.title}
         </span>
         {isCompleted && (
-          <span className="flex items-center gap-1 text-xs text-emerald-500">
+          <span className="flex items-center gap-1 text-xs text-[hsl(var(--accent-emerald))]">
             <CheckCircle2 className="h-3.5 w-3.5" /> Completed
           </span>
         )}

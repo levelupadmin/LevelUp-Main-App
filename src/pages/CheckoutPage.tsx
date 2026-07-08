@@ -465,7 +465,7 @@ export default function CheckoutPage() {
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
-    script.onerror = () => toast.error("Failed to load payment gateway. Please refresh the page.");
+    script.onerror = () => toast.error("The payment screen didn't load. Pull to refresh and try again.");
     document.body.appendChild(script);
   }, []);
 
@@ -493,7 +493,7 @@ export default function CheckoutPage() {
     }
     setFieldTouched((prev) => ({ ...prev, ...touchAll }));
     if (hasFieldError) {
-      toast.error("Please fill in all required fields");
+      toast.error("A couple of fields still need you.");
       paymentInFlightRef.current = false;
       return;
     }
@@ -635,12 +635,12 @@ export default function CheckoutPage() {
 
       const rzp = new window.Razorpay(options);
       rzp.on("payment.failed", () => {
-        toast.error("Payment failed, please try again");
+        toast.error("The payment didn't complete. Nothing was charged. Try again when you're ready.");
         setPaying(false); paymentInFlightRef.current = false;
       });
       rzp.open();
     } catch {
-      toast.error("Something went wrong, please try again");
+      toast.error("That didn't go through. Try once more?");
       setPaying(false); paymentInFlightRef.current = false;
     }
   };

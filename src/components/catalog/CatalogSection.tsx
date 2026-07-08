@@ -168,7 +168,7 @@ const CatalogSection = () => {
       ) : isError ? (
         <div className="text-center py-16">
           <WifiOff className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-          <p className="text-lg font-medium text-foreground mb-1">Something went wrong</p>
+          <p className="text-lg font-medium text-foreground mb-1">That didn't load</p>
           <p className="text-muted-foreground text-sm">
             We couldn't load this. Check your connection and try again.
           </p>

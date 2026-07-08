@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, Lock, Clock, Loader2, Play, RotateCcw } from "lucide-react";
+import { Clapperboard, Lock, Clock, Loader2, Play, RotateCcw } from "lucide-react";
 import { VdoPlayerNative, isNativeDrmAvailable } from "@/lib/vdoNative";
 import { toast } from "@/lib/toast";
 import { hapticImpact } from "@/lib/haptics";
@@ -292,25 +292,29 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
   }
 
   if (error) {
-    const Icon = errorType === "access" ? Lock : errorType === "rate" ? Clock : AlertCircle;
-    // Craft-register copy (Pillar 5): a serif-italic headline + one calm
-    // sentence, one voice with EmptyState / SystemState. On the network path we
-    // never echo the raw `error` — it's a technical string ("Failed to send a
-    // request to the Edge Function") already routed to Sentry above; the
-    // student sees warm microcopy. Access/rate errors carry human, actionable
-    // server copy, so their sentence stays the real message.
+    // Branded failure state rendered INSIDE the player frame (Pillar 5): a
+    // film-slate in a cream-ringed circle, serif-italic headline, one calm
+    // sentence, matching EmptyState / SystemState's voice. The network path
+    // is the canonical load failure — film slate + "The reel didn't load".
+    // Access/rate keep their own glyph + heading because they carry human,
+    // actionable server copy (sign-in / enrol / rate-limit guidance).
     const isNetwork = errorType === "network";
+    const Icon = errorType === "access" ? Lock : errorType === "rate" ? Clock : Clapperboard;
     const heading =
-      errorType === "access" ? "Locked for now" : errorType === "rate" ? "One moment" : "Lost the signal";
-    const body = isNetwork
-      ? "We couldn't load this lesson just now. Check your connection and try again."
-      : error;
+      errorType === "access" ? "Locked for now" : errorType === "rate" ? "One moment" : "The reel didn't load";
+    // On the network path we NEVER echo the raw `error` — it's a technical
+    // string ("Failed to send a request to the Edge Function") already routed
+    // to Sentry above; the student sees warm microcopy. Access/rate errors are
+    // human server copy, so their sentence stays the real message.
+    const body = isNetwork ? "Check your connection and try again." : error;
     return (
-      <div className="aspect-video w-full max-w-full bg-card rounded-[16px] border border-border flex items-center justify-center">
-        <div className="text-center max-w-md px-6 space-y-3">
-          <Icon className="h-10 w-10 mx-auto text-muted-foreground" />
+      <div className="grain relative w-full max-w-full min-h-[220px] sm:aspect-video sm:min-h-0 bg-surface rounded-[16px] border border-border overflow-hidden flex items-center justify-center">
+        <div className="relative z-10 text-center max-w-md px-6 space-y-3">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-cream/20 bg-surface-2 text-cream">
+            <Icon className="h-6 w-6" aria-hidden="true" />
+          </span>
           <h3 className="font-serif-italic text-xl text-cream">{heading}</h3>
-          <p className="text-sm text-muted-foreground">{body}</p>
+          <p className="body-muted">{body}</p>
           {/* Dead-end recovery: each error class gets a next step instead
               of a bare message. Anon access errors route to sign-in (and
               back here via Login's location.state.from); signed-in access
@@ -320,7 +324,7 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
               <Link
                 to={`/login?next=${encodeURIComponent(window.location.pathname)}`}
                 state={{ from: { pathname: window.location.pathname } }}
-                className="inline-flex items-center justify-center h-10 px-5 rounded-md bg-cream text-cream-text text-sm font-semibold hover:opacity-90 transition-opacity"
+                className="inline-flex items-center justify-center h-11 px-5 rounded-md bg-cream text-cream-text text-sm font-semibold hover:opacity-90 transition-opacity"
               >
                 Sign in
               </Link>
@@ -333,7 +337,7 @@ const VdoCipherPlayer = ({ chapterId, onProgress, startPosition, title, posterUr
             <button
               type="button"
               onClick={() => setRetryKey((k) => k + 1)}
-              className="inline-flex items-center justify-center gap-1.5 h-10 px-5 rounded-md border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+              className="inline-flex items-center justify-center gap-1.5 h-11 px-5 rounded-md border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
             >
               <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
               Retry
