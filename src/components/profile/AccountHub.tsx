@@ -50,21 +50,30 @@ const QuickTile = ({
   sub,
   onClick,
   delayMs,
+  disabled = false,
 }: {
   icon: LucideIcon;
   label: string;
   sub: string;
   onClick: () => void;
   delayMs: number;
+  /** When true the tile is inert: no haptic, no tap, dimmed non-interactive affordance. */
+  disabled?: boolean;
 }) => (
   <Reveal delayMs={delayMs}>
     <button
       type="button"
+      disabled={disabled}
+      aria-disabled={disabled}
       onClick={() => {
         void hapticSelection();
         onClick();
       }}
-      className="pressable flex h-full w-full flex-col items-start gap-3 rounded-2xl border border-border bg-surface p-4 text-left transition-colors hover:border-border-hover"
+      className={`flex h-full w-full flex-col items-start gap-3 rounded-2xl border border-border bg-surface p-4 text-left transition-colors ${
+        disabled
+          ? "cursor-default opacity-60"
+          : "pressable [@media(hover:hover)]:hover:border-border-hover"
+      }`}
     >
       <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[hsl(var(--cream))]/10 text-[hsl(var(--cream))]">
         <Icon className="h-5 w-5" />
@@ -178,9 +187,13 @@ const AccountHub = ({
         <QuickTile
           icon={FileText}
           label="Invoices"
-          sub={invoiceCount > 0 ? `${invoiceCount} on file` : "Receipts & GST"}
+          sub={invoiceCount > 0 ? `${invoiceCount} on file` : "No invoices yet"}
           onClick={onInvoices}
           delayMs={120}
+          // The Invoices section unmounts itself with no captured orders, so a tap
+          // would have nowhere to scroll. Present the tile as inert instead of a
+          // dead-tap "Receipts & GST" button when there are none on file.
+          disabled={invoiceCount === 0}
         />
       </div>
 

@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { Loader2 } from "lucide-react";
 import usePageTitle from "@/hooks/usePageTitle";
-import { usePullToRefresh } from "@/hooks/usePullToRefresh";
+import PullIndicator from "@/components/patterns/PullIndicator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMotionSafe, useFinePointer } from "@/lib/motion";
 import Reveal from "@/components/motion/Reveal";
@@ -171,17 +170,15 @@ const Home = () => {
   const isFeedLoading = catalogLoading || enrolmentsLoading;
 
   const [refreshKey, setRefreshKey] = useState(0);
-  const { isRefreshing, pullProgress, pullDistance } = usePullToRefresh({
-    onRefresh: async () => {
-      // Catalog + entitlements live in react-query; legacy sections refetch
-      // on remount via the refreshKey.
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: CATALOG_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: [ENROLLED_OFFERINGS_QUERY_KEY] }),
-      ]);
-      setRefreshKey((k) => k + 1);
-    },
-  });
+  const handleRefresh = useCallback(async () => {
+    // Catalog + entitlements live in react-query; legacy sections refetch
+    // on remount via the refreshKey.
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: CATALOG_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: [ENROLLED_OFFERINGS_QUERY_KEY] }),
+    ]);
+    setRefreshKey((k) => k + 1);
+  }, [queryClient]);
 
   const firstName = profile?.full_name?.split(" ")[0] ?? "there";
 
@@ -306,19 +303,9 @@ const Home = () => {
 
   return (
     <>
-      {/* Pull-to-refresh indicator */}
-      {(pullDistance > 0 || isRefreshing) && (
-        <div className="flex justify-center" style={{ height: pullDistance > 0 ? pullDistance : 40 }}>
-          <Loader2
-            className="h-5 w-5 text-muted-foreground"
-            style={{
-              opacity: isRefreshing ? 1 : pullProgress,
-              transform: `rotate(${pullProgress * 360}deg)`,
-              animation: isRefreshing ? "spin 1s linear infinite" : "none",
-            }}
-          />
-        </div>
-      )}
+      {/* Pull-to-refresh: branded node-mark indicator (overlays the top of the
+          content, never reflows it). Always mounted so the release spring plays. */}
+      <PullIndicator onRefresh={handleRefresh} />
 
       {/* One warm line, no date, no member number, no big cream card.
           Condenses on scroll AND parks: the band is position:sticky at the top

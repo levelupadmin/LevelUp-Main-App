@@ -1,17 +1,24 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { LayoutGroup, motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { MotionButton } from "@/components/motion/MotionButton";
+import { SurfaceCard } from "@/components/patterns/SurfaceCard";
+import ErrorState from "@/components/patterns/ErrorState";
 import InitialsAvatar from "@/components/InitialsAvatar";
-import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell, Users, Globe, MessageSquare, WifiOff, RefreshCw } from "lucide-react";
+import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell, Users, Globe, MessageSquare } from "lucide-react";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
 import { useToast } from "@/hooks/use-toast";
 import { toast } from "@/lib/toast";
-import { usePullToRefresh } from "@/hooks/usePullToRefresh";
+import PullIndicator from "@/components/patterns/PullIndicator";
 import PostSkeleton from "@/components/skeletons/PostSkeleton";
 import PeerReviewBoard from "@/components/cohort/PeerReviewBoard";
+import { useMotionSafe } from "@/lib/motion";
+import { tapTick, confirm } from "@/lib/haptics";
+import { cn } from "@/lib/utils";
 
 interface Post {
   id: string;
@@ -30,10 +37,18 @@ interface Post {
 
 type FeedScope = "everyone" | "my_cohort" | "peer_review";
 
+// Segmented feed-scope tabs — rebuilt on Learn's LayoutGroup pill pattern.
+const SCOPES: { key: FeedScope; label: string; Icon: typeof Globe }[] = [
+  { key: "everyone", label: "Everyone", Icon: Globe },
+  { key: "my_cohort", label: "My Cohort", Icon: Users },
+  { key: "peer_review", label: "Peer Reviews", Icon: MessageSquare },
+];
+
 const CommunityPage = () => {
   usePageTitle("Community");
   const { user, profile } = useAuth();
   const { toast: showToast } = useToast();
+  const motionSafe = useMotionSafe();
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +74,54 @@ const CommunityPage = () => {
   const [comments, setComments] = useState<Record<string, { id: string; comment_text: string; user_name: string; created_at: string }[]>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [commentLoading, setCommentLoading] = useState(false);
+
+  // Composer: ref for prompt-chip focus/prefill (no DOM lookups), and a
+  // focus flag driving the lift choreography (scale + border + shadow).
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [composerFocused, setComposerFocused] = useState(false);
+  const canPost = newPost.trim().length > 0;
+
+  // Roving-tabindex focus management for the scope tabs, mirroring Learn's
+  // segmented control: only the active tab is tabbable, arrows/Home/End move
+  // both selection and DOM focus per the WAI-ARIA tabs pattern.
+  const scopeTabRefs = useRef<Record<FeedScope, HTMLButtonElement | null>>({
+    everyone: null,
+    my_cohort: null,
+    peer_review: null,
+  });
+  const changeScope = (k: FeedScope) => {
+    if (k === scope) return;
+    void tapTick();
+    setScope(k);
+  };
+  const focusScope = (k: FeedScope) => {
+    changeScope(k);
+    scopeTabRefs.current[k]?.focus();
+  };
+  const onScopeKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    const i = SCOPES.findIndex((s) => s.key === scope);
+    let next: FeedScope | null = null;
+    switch (e.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        next = SCOPES[(i + 1) % SCOPES.length].key;
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        next = SCOPES[(i - 1 + SCOPES.length) % SCOPES.length].key;
+        break;
+      case "Home":
+        next = SCOPES[0].key;
+        break;
+      case "End":
+        next = SCOPES[SCOPES.length - 1].key;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    focusScope(next);
+  };
 
   // Muted threads, stored in localStorage so muted state persists
   const [mutedThreads, setMutedThreads] = useState<Set<string>>(() => {
@@ -140,14 +203,13 @@ const CommunityPage = () => {
     }
   }, [user, scope, myBatchId]);
 
-  const { isRefreshing, pullProgress, pullDistance } = usePullToRefresh({
-    onRefresh: async () => { await loadPosts(); },
-  });
+  const handleRefresh = useCallback(async () => { await loadPosts(); }, [loadPosts]);
 
   useEffect(() => { loadPosts(); }, [loadPosts]);
 
   const handlePost = async () => {
     if (!newPost.trim() || !user) return;
+    void tapTick();
     setPosting(true);
     const { error } = await supabase.from("community_posts").insert({
       content_text: newPost.trim(),
@@ -160,6 +222,7 @@ const CommunityPage = () => {
     } else {
       setNewPost("");
       loadPosts();
+      void confirm(true);
       toast.success("Post shared");
     }
     setPosting(false);
@@ -249,22 +312,26 @@ const CommunityPage = () => {
     return `${days}d ago`;
   };
 
+  // Prompt-chip tap: prefill the composer state and focus it via ref (replaces
+  // the old textarea DOM-lookup hack).
+  const fillComposerPrompt = (prompt: string) => {
+    setNewPost(prompt + ": ");
+    const el = composerRef.current;
+    if (el) {
+      el.focus();
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      requestAnimationFrame(() => {
+        el.setSelectionRange(el.value.length, el.value.length);
+      });
+    }
+  };
+
   return (
     <>
+      {/* Pull-to-refresh: branded node-mark indicator (overlays the top of the
+          content, never reflows it). Always mounted so the release spring plays. */}
+      <PullIndicator onRefresh={handleRefresh} />
       <div className="max-w-2xl mx-auto space-y-6">
-        {/* Pull-to-refresh indicator */}
-        {(pullDistance > 0 || isRefreshing) && (
-          <div className="flex justify-center" style={{ height: pullDistance > 0 ? pullDistance : 40 }}>
-            <Loader2
-              className="h-5 w-5 text-muted-foreground"
-              style={{
-                opacity: isRefreshing ? 1 : pullProgress,
-                transform: `rotate(${pullProgress * 360}deg)`,
-                animation: isRefreshing ? "spin 1s linear infinite" : "none",
-              }}
-            />
-          </div>
-        )}
         {/* Editorial hero matching Home + Browse + Events cinematic voice. */}
         <div className="space-y-3">
           <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
@@ -278,224 +345,248 @@ const CommunityPage = () => {
           </p>
         </div>
 
-        {/* Scope toggle, only when user has an active cohort */}
+        {/* Scope toggle, only when user has an active cohort. Segmented tabs with
+            a cream layoutId pill that glides between segments (Learn's pattern). */}
         {myBatchId && (
-          <div className="flex items-center gap-1.5 p-1 bg-surface border border-border rounded-lg w-fit flex-wrap">
-            <button
-              onClick={() => setScope("everyone")}
-              className={`px-3 h-8 text-xs font-medium rounded-md inline-flex items-center gap-1.5 transition-colors ${
-                scope === "everyone"
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Globe className="h-3 w-3" /> Everyone
-            </button>
-            <button
-              onClick={() => setScope("my_cohort")}
-              className={`px-3 h-8 text-xs font-medium rounded-md inline-flex items-center gap-1.5 transition-colors ${
-                scope === "my_cohort"
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Users className="h-3 w-3" /> My Cohort
-            </button>
-            <button
-              onClick={() => setScope("peer_review")}
-              className={`px-3 h-8 text-xs font-medium rounded-md inline-flex items-center gap-1.5 transition-colors ${
-                scope === "peer_review"
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <MessageSquare className="h-3 w-3" /> Peer Reviews
-            </button>
+          <div
+            role="tablist"
+            aria-label="Community feed scope"
+            className="inline-flex items-center gap-1 rounded-full border border-border bg-surface p-1 w-fit"
+          >
+            <LayoutGroup id="community-scope">
+              {SCOPES.map((s) => {
+                const active = scope === s.key;
+                return (
+                  <button
+                    key={s.key}
+                    ref={(el) => { scopeTabRefs.current[s.key] = el; }}
+                    id={`community-tab-${s.key}`}
+                    role="tab"
+                    aria-selected={active}
+                    aria-controls="community-tabpanel"
+                    tabIndex={active ? 0 : -1}
+                    onKeyDown={onScopeKeyDown}
+                    onClick={() => changeScope(s.key)}
+                    className={cn(
+                      // The BUTTON is the tap target: min-h-11 (44px) hit area,
+                      // independent of the compact visual pill nested inside.
+                      "relative inline-flex min-h-11 items-center justify-center rounded-full text-xs font-medium",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas",
+                      active
+                        ? "text-[hsl(var(--cream-text))]"
+                        : "text-muted-foreground [@media(hover:hover)]:hover:text-foreground",
+                    )}
+                  >
+                    <span className="relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5">
+                      {/* Sliding active pill — cream family per accent discipline.
+                          Shared layoutId glides it between segments on the glide
+                          spring (instant under reduced motion). */}
+                      {active && (
+                        <motion.span
+                          layoutId="community-scope-pill"
+                          className="absolute inset-0 rounded-full bg-[hsl(var(--cream))]"
+                          transition={motionSafe.springs.glide}
+                        />
+                      )}
+                      <s.Icon className="relative z-10 h-3 w-3" />
+                      <span className="relative z-10">{s.label}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </LayoutGroup>
           </div>
         )}
 
-        {/* Peer review board (replaces post composer + feed when active) */}
-        {scope === "peer_review" && myBatchId && user?.id ? (
-          <div className="bg-surface border border-border rounded-xl p-4">
-            <div className="flex items-start gap-3 mb-4 pb-3 border-b border-border">
-              <MessageSquare className="h-5 w-5 text-cream mt-0.5 shrink-0" />
-              <div>
-                <p className="text-sm font-medium">Peer review board</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Cohort-mates' assignments where they've opted in to peer feedback. Click any
-                  card to open the critique drawer. Your review is private to them.
-                </p>
+        <div
+          id="community-tabpanel"
+          role={myBatchId ? "tabpanel" : undefined}
+          aria-labelledby={myBatchId ? `community-tab-${scope}` : undefined}
+          className="space-y-6"
+        >
+          {/* Peer review board (replaces post composer + feed when active) */}
+          {scope === "peer_review" && myBatchId && user?.id ? (
+            <div className="bg-surface border border-border rounded-xl p-4">
+              <div className="flex items-start gap-3 mb-4 pb-3 border-b border-border">
+                <MessageSquare className="h-5 w-5 text-cream mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium">Peer review board</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Cohort-mates' assignments where they've opted in to peer feedback. Click any
+                    card to open the critique drawer. Your review is private to them.
+                  </p>
+                </div>
               </div>
+              <PeerReviewBoard cohortBatchId={myBatchId} currentUserId={user.id} />
             </div>
-            <PeerReviewBoard cohortBatchId={myBatchId} currentUserId={user.id} />
-          </div>
-        ) : (
-        <>
-        {/* New post */}
-        <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
-          <Textarea
-            placeholder={scope === "my_cohort" ? "Share with your cohort…" : "Share something with the community..."}
-            value={newPost}
-            onChange={(e) => setNewPost(e.target.value)}
-            rows={3}
-            className="bg-surface-2 border-border resize-none"
-          />
-          <div className="flex justify-end">
-            <Button
-              onClick={handlePost}
-              disabled={posting || !newPost.trim()}
-              size="sm"
-              className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
-            >
-              {posting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
-              Post
-            </Button>
-          </div>
-        </div>
+          ) : (
+          <>
+          {/* New post — composer lifts on focus (scale + border-hover + shadow). */}
+          <motion.div
+            animate={{ scale: composerFocused ? 1.01 : 1 }}
+            transition={motionSafe.springs.glide}
+            className={cn(
+              "rounded-xl border p-4 space-y-3 transition-[color,background-color,border-color,box-shadow] duration-base ease-out motion-reduce:transition-none",
+              composerFocused
+                ? "bg-surface border-[hsl(var(--border-hover))] shadow-design-md"
+                : "bg-surface border-border",
+            )}
+          >
+            <Textarea
+              ref={composerRef}
+              placeholder={scope === "my_cohort" ? "Share with your cohort…" : "Share something with the community..."}
+              value={newPost}
+              onChange={(e) => setNewPost(e.target.value)}
+              onFocus={() => setComposerFocused(true)}
+              onBlur={() => setComposerFocused(false)}
+              rows={3}
+              className="bg-surface-2 border-border resize-none focus-visible:ring-cream/60 focus-visible:ring-offset-canvas"
+            />
+            <div className="flex justify-end">
+              <Button
+                onClick={handlePost}
+                disabled={posting || !canPost}
+                size="sm"
+                variant={canPost ? "champagne" : "secondary"}
+                className="min-h-[44px]"
+              >
+                {posting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+                Post
+              </Button>
+            </div>
+          </motion.div>
 
-        {/* Posts */}
-        {loading ? (
-          <div className="space-y-4">
-            {[1, 2, 3, 4].map((i) => (
-              <PostSkeleton key={i} />
-            ))}
-          </div>
-        ) : error ? (
-          <div className="text-center py-12">
-            <WifiOff className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-            <p className="text-lg font-medium text-foreground mb-1">Something went wrong</p>
-            <p className="text-muted-foreground text-sm">{error}</p>
-            <Button onClick={() => loadPosts()} variant="outline" className="mt-4 gap-2">
-              <RefreshCw className="h-4 w-4" /> Retry
-            </Button>
-          </div>
-        ) : posts.length === 0 ? (
-          <div className="text-center py-12">
-            <MessageCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-            <p className="text-lg font-medium text-foreground mb-1">No posts yet, be the first!</p>
-            <p className="text-muted-foreground text-sm mb-5">Not sure where to start? Pick a prompt:</p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {[
-                "Share your latest work",
-                "Ask for feedback",
-                "Introduce yourself",
-              ].map((prompt) => (
-                <button
-                  key={prompt}
-                  onClick={() => {
-                    setNewPost(prompt + ": ");
-                    const textarea = document.querySelector<HTMLTextAreaElement>('textarea[placeholder="Share something with the community..."]');
-                    if (textarea) {
-                      textarea.focus();
-                      textarea.scrollIntoView({ behavior: "smooth", block: "center" });
-                      requestAnimationFrame(() => {
-                        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-                      });
-                    }
-                  }}
-                  className="px-4 py-2 rounded-full border border-border bg-surface text-sm text-foreground hover:border-cream hover:bg-surface-2 transition-colors min-h-[44px]"
-                >
-                  {prompt}
-                </button>
+          {/* Posts */}
+          {loading ? (
+            <div className="space-y-4">
+              {[1, 2, 3, 4].map((i) => (
+                <PostSkeleton key={i} />
               ))}
             </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {posts.map((post) => (
-              <div key={post.id} className="bg-surface border border-border rounded-xl p-4 space-y-3">
-                {/* Header */}
-                <div className="flex items-center gap-3">
-                  <InitialsAvatar name={post.user_name} size={36} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm truncate">{post.user_name}</span>
-                      {post.is_admin_post && (
-                        <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-[hsl(var(--accent-amber)/0.15)] text-[hsl(var(--accent-amber))]">
-                          Admin
-                        </span>
-                      )}
-                      {post.is_pinned && <Pin className="h-3 w-3 text-[hsl(var(--cream))]" />}
-                    </div>
-                    <span className="text-xs text-muted-foreground">{timeAgo(post.created_at)}</span>
-                  </div>
-                </div>
-
-                {/* Content */}
-                <p className="text-sm text-foreground whitespace-pre-line">{post.content_text}</p>
-
-                {/* Actions */}
-                <div className="flex items-center gap-4 pt-1">
+          ) : error ? (
+            <ErrorState onRetry={() => loadPosts()} description={error} />
+          ) : posts.length === 0 ? (
+            <div className="text-center py-12">
+              <MessageCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+              <p className="text-lg font-medium text-foreground mb-1">No posts yet, be the first!</p>
+              <p className="text-muted-foreground text-sm mb-5">Not sure where to start? Pick a prompt:</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {[
+                  "Share your latest work",
+                  "Ask for feedback",
+                  "Introduce yourself",
+                ].map((prompt) => (
                   <button
-                    aria-label="Like post"
-                    onClick={() => toggleLike(post.id, post.liked_by_me)}
-                    className={`flex items-center gap-1.5 text-xs transition-colors ${
-                      post.liked_by_me ? "text-red-400" : "text-muted-foreground hover:text-foreground"
-                    }`}
+                    key={prompt}
+                    onClick={() => fillComposerPrompt(prompt)}
+                    className="px-4 py-2 rounded-full border border-border bg-surface text-sm text-foreground [@media(hover:hover)]:hover:border-cream [@media(hover:hover)]:hover:bg-surface-2 transition-colors min-h-[44px]"
                   >
-                    <Heart className={`h-4 w-4 ${post.liked_by_me ? "fill-current heart-bounce" : ""}`} />
-                    {post.like_count > 0 && post.like_count}
+                    {prompt}
                   </button>
-                  <button
-                    onClick={() => toggleComments(post.id)}
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    {post.comment_count > 0 && post.comment_count}
-                  </button>
-                  {user && post.user_id === user.id && (
-                    <button
-                      onClick={() => toggleMute(post.id)}
-                      className={`flex items-center gap-1.5 text-xs transition-colors ${
-                        isThreadMuted(post.id) ? "text-amber-400" : "text-muted-foreground hover:text-foreground"
-                      }`}
-                      title={isThreadMuted(post.id) ? "Unmute this thread" : "Mute this thread"}
-                    >
-                      {isThreadMuted(post.id) ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
-                      {isThreadMuted(post.id) ? "Muted" : "Mute"}
-                    </button>
-                  )}
-                </div>
-
-                {/* Comments */}
-                {expandedPost === post.id && (
-                  <div className="pt-2 border-t border-border space-y-3">
-                    {(comments[post.id] || []).map((c) => (
-                      <div key={c.id} className="flex gap-2">
-                        <InitialsAvatar name={c.user_name} size={24} />
-                        <div>
-                          <span className="text-xs font-medium">{c.user_name}</span>
-                          <span className="text-xs text-muted-foreground ml-2">{timeAgo(c.created_at)}</span>
-                          <p className="text-sm text-muted-foreground">{c.comment_text}</p>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="flex gap-2">
-                      <Textarea
-                        placeholder="Write a comment..."
-                        value={commentDrafts[post.id] || ""}
-                        onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [post.id]: e.target.value }))}
-                        rows={1}
-                        className="text-sm bg-surface-2 border-border resize-none flex-1"
-                      />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-label="Send comment"
-                        onClick={() => handleComment(post.id)}
-                        disabled={commentLoading || !(commentDrafts[post.id] || "").trim()}
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-        </>
-        )}
+            </div>
+          ) : (
+            // First-page entrance: posts rise in with an incremental stagger.
+            // Keyed elements only animate on mount, so refresh/like never re-runs it.
+            <div className="space-y-4 anim-stagger">
+              {posts.map((post) => (
+                <SurfaceCard key={post.id} variant="static" padding="md" className="space-y-3">
+                  {/* Header */}
+                  <div className="flex items-center gap-3">
+                    <InitialsAvatar name={post.user_name} size={36} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm truncate">{post.user_name}</span>
+                        {post.is_admin_post && (
+                          <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-[hsl(var(--accent-amber)/0.15)] text-[hsl(var(--accent-amber))]">
+                            Admin
+                          </span>
+                        )}
+                        {post.is_pinned && <Pin className="h-3 w-3 text-[hsl(var(--cream))]" />}
+                      </div>
+                      <span className="text-xs text-muted-foreground">{timeAgo(post.created_at)}</span>
+                    </div>
+                  </div>
+
+                  {/* Content */}
+                  <p className="text-sm text-foreground whitespace-pre-line">{post.content_text}</p>
+
+                  {/* Actions — ≥44px press targets with the snap-press spring. */}
+                  <div className="flex items-center gap-4 pt-1">
+                    <MotionButton
+                      aria-label="Like post"
+                      onClick={() => toggleLike(post.id, post.liked_by_me)}
+                      className={cn(
+                        "flex items-center gap-1.5 text-xs min-h-[44px] transition-colors",
+                        post.liked_by_me
+                          ? "text-[hsl(var(--accent-crimson))]"
+                          : "text-muted-foreground [@media(hover:hover)]:hover:text-foreground",
+                      )}
+                    >
+                      <Heart className={cn("h-4 w-4", post.liked_by_me && "fill-current heart-bounce")} />
+                      {post.like_count > 0 && post.like_count}
+                    </MotionButton>
+                    <MotionButton
+                      aria-label="Toggle comments"
+                      onClick={() => toggleComments(post.id)}
+                      className="flex items-center gap-1.5 text-xs min-h-[44px] text-muted-foreground [@media(hover:hover)]:hover:text-foreground transition-colors"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      {post.comment_count > 0 && post.comment_count}
+                    </MotionButton>
+                    {user && post.user_id === user.id && (
+                      <MotionButton
+                        onClick={() => toggleMute(post.id)}
+                        className="flex items-center gap-1.5 text-xs min-h-[44px] text-muted-foreground [@media(hover:hover)]:hover:text-foreground transition-colors"
+                        title={isThreadMuted(post.id) ? "Unmute this thread" : "Mute this thread"}
+                      >
+                        {isThreadMuted(post.id) ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+                        {isThreadMuted(post.id) ? "Muted" : "Mute"}
+                      </MotionButton>
+                    )}
+                  </div>
+
+                  {/* Comments */}
+                  {expandedPost === post.id && (
+                    <div className="pt-2 border-t border-border space-y-3">
+                      {(comments[post.id] || []).map((c) => (
+                        <div key={c.id} className="flex gap-2">
+                          <InitialsAvatar name={c.user_name} size={24} />
+                          <div>
+                            <span className="text-xs font-medium">{c.user_name}</span>
+                            <span className="text-xs text-muted-foreground ml-2">{timeAgo(c.created_at)}</span>
+                            <p className="text-sm text-muted-foreground">{c.comment_text}</p>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="flex gap-2">
+                        <Textarea
+                          placeholder="Write a comment..."
+                          value={commentDrafts[post.id] || ""}
+                          onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [post.id]: e.target.value }))}
+                          rows={1}
+                          className="text-sm bg-surface-2 border-border resize-none flex-1"
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label="Send comment"
+                          onClick={() => handleComment(post.id)}
+                          disabled={commentLoading || !(commentDrafts[post.id] || "").trim()}
+                        >
+                          <Send className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </SurfaceCard>
+              ))}
+            </div>
+          )}
+          </>
+          )}
+        </div>
       </div>
     </>
   );
