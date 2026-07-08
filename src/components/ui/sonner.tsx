@@ -31,6 +31,9 @@ const Toaster = ({ toastOptions, position, ...props }: ToasterProps) => {
     <Sonner
       className="toaster group"
       position={position ?? (isDesktop ? "bottom-right" : "bottom-center")}
+      // Phone toasts sit above the fixed bottom tab bar (~64px + safe area),
+      // not on top of it — checkout errors must never cover Pay/nav (council).
+      mobileOffset={{ bottom: 88 }}
       duration={4000}
       visibleToasts={3}
       toastOptions={{

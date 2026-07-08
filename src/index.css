@@ -272,6 +272,9 @@
      rule now serves every pointer type: no coarse/fine split is needed, because
      nothing clips the scroll root anymore. `clip` (not `hidden`) so #root never
      becomes a scroll container. Restores native `position: sticky` app-wide. */
+  /* #root must NEVER gain a height/max-height rule: with overflow-x set, a
+     height would mint a #root scroll container on engines taking the
+     @supports hidden fallback (iOS 15) — document scroll must stay on body. */
   #root { overflow-x: clip; }
 
   /* iOS-15 floor fallback. `overflow: clip` is Safari-16+/iOS-16+ only; the app
@@ -640,6 +643,15 @@
     );
     transform: translateX(-100%);
     animation: shimmer 2s linear infinite;
+  }
+  /* The keyframes MUST live here: a tailwind.config theme keyframe is only
+     emitted when some class uses the paired animate-* utility — nothing does,
+     so without this block the sweep above references a nonexistent animation
+     and every skeleton ships as a static flat block (phase-5 council catch). */
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
   }
 
   /* Milestone toast banner */

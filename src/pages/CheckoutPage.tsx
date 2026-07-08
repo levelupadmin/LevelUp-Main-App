@@ -465,7 +465,7 @@ export default function CheckoutPage() {
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
-    script.onerror = () => toast.error("The payment screen didn't load. Pull to refresh and try again.");
+    script.onerror = () => toast.error("The payment screen didn't load. Give it a moment, then try again.");
     document.body.appendChild(script);
   }, []);
 
@@ -635,7 +635,7 @@ export default function CheckoutPage() {
 
       const rzp = new window.Razorpay(options);
       rzp.on("payment.failed", () => {
-        toast.error("The payment didn't complete. Nothing was charged. Try again when you're ready.");
+        toast.error("The payment didn't complete. If any amount was debited, it comes back to you automatically. Try again when you're ready.");
         setPaying(false); paymentInFlightRef.current = false;
       });
       rzp.open();
