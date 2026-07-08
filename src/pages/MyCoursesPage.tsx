@@ -88,12 +88,15 @@ const fetchMyCourses = async (userId: string): Promise<MyCoursesData> => {
   let completedChapterIds = new Set<string>();
 
   const offeringIds = (enrs ?? []).map((e) => e.offering_id);
-  const { data: ocs } = offeringIds.length
+  const { data: ocs, error: ocsErr } = offeringIds.length
     ? await supabase
         .from("offering_courses")
         .select("offering_id, course_id")
         .in("offering_id", offeringIds)
-    : { data: [] };
+    : { data: [], error: null };
+  // Council (phase-6): never let a network flake read as an empty library —
+  // throw so react-query shows a retryable error instead of caching "no courses".
+  if (ocsErr) throw ocsErr;
 
   if (ocs?.length) {
     const courseIds = [...new Set(ocs.map((oc) => oc.course_id))];

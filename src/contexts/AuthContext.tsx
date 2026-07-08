@@ -277,6 +277,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // A logged-out state must never leave a previous user's profile cached
         // on a shared device.
         clearCachedProfile();
+        // Council (phase-6): involuntary sign-outs (expiry, revocation) must
+        // purge EVERYTHING the manual signOut purges — the persisted query
+        // cache held the previous user's courses/progress on shared devices.
+        clearPerUserLocalState();
+        void purgePersistedQueryCache();
         // Clear Sentry user attribution so post-signout errors aren't
         // attributed to the previous user.
         void import("@/lib/sentry").then((m) => m.setSentryUser(null));
@@ -324,6 +329,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         currentUserIdRef.current = null;
         setProfile(null);
         clearCachedProfile();
+        // Council (phase-6): the soft-delete auto sign-out is an involuntary
+        // sign-out too — same full purge as the manual path.
+        clearPerUserLocalState();
+        void purgePersistedQueryCache();
         setLoading(false);
         initialLoadDone = true;
         toast.error("This account is scheduled for deletion. Contact support to recover it.");

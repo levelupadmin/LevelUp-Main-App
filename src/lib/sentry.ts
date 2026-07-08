@@ -137,11 +137,32 @@ async function loadAndInit(dsn: string): Promise<void> {
  * actual SDK load for first idle so it never blocks paint, and no-ops entirely
  * when no DSN is configured (local dev / preview / localhost).
  */
+// Pre-init global handlers (council, phase-6): the SDK's own window handlers
+// only exist after the deferred idle load — i.e. the staged rollout's halt
+// signal was blind during the exact cold-start window this release rewires.
+// These two lightweight listeners queue uncaught errors into pendingErrors
+// (bounded) from the very first frame; loadAndInit's flush reports them and
+// the SDK's own handlers take over from then on (queueing simply stops).
+function installPreInitHandlers() {
+  if (typeof window === "undefined") return;
+  window.addEventListener("error", (e) => {
+    if (!sentry && pendingErrors.length < MAX_PENDING_ERRORS) {
+      pendingErrors.push({ error: e.error ?? e.message, context: { preInit: true, source: "window.onerror" } });
+    }
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    if (!sentry && pendingErrors.length < MAX_PENDING_ERRORS) {
+      pendingErrors.push({ error: e.reason, context: { preInit: true, source: "unhandledrejection" } });
+    }
+  });
+}
+
 export function initSentry() {
   if (initStarted) return;
   const config = resolveSentryConfig();
   if (!config) return;
   initStarted = true;
+  installPreInitHandlers();
 
   const run = () => {
     void loadAndInit(config.dsn);

@@ -77,11 +77,17 @@ export const enrolledProgressKey = (userId: string | null | undefined) =>
 const fetchEnrolledProgress = async (
   userId: string
 ): Promise<EnrolledProgressTree> => {
-  const { data: enrolments } = await supabase
+  const { data: enrolments, error: enrolErr } = await supabase
     .from("enrolments")
     .select("id, offering_id, created_at")
     .eq("user_id", userId)
     .eq("status", "active");
+
+  // Council (phase-6): a swallowed error here read as "you have no courses"
+  // across ALL of Home — and the persisted cache then remembered that lie for
+  // warm opens. Throw so react-query surfaces a retryable error state and
+  // never dehydrates an empty tree born from a network flake.
+  if (enrolErr) throw enrolErr;
 
   if (!enrolments?.length) return EMPTY_TREE;
 
