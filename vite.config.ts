@@ -21,6 +21,10 @@ export default defineConfig(({ mode }) => ({
           'supabase': ['@supabase/supabase-js'],
           'ui': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-tabs', '@radix-ui/react-tooltip', '@radix-ui/react-select', '@radix-ui/react-popover', 'lucide-react'],
           'query': ['@tanstack/react-query'],
+          // Animation runtime split out so it caches independently of app code
+          // across releases. It stays on the critical path (StudentLayout needs
+          // it) but becomes a stable, long-cache chunk.
+          'framer': ['framer-motion'],
         },
       },
     },
