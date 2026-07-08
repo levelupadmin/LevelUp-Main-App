@@ -185,7 +185,11 @@
   border-radius: 0 12px 12px 0 !important;
   height: 100% !important;
   padding: 0 0.875rem !important;
-  font-size: 0.9375rem;
+  /* 16px minimum, NEVER lower: this is unlayered CSS, so it BEATS the
+     @layer base 16px anti-zoom floor — at 15px it was the trigger for the
+     iOS focus auto-zoom bug (zoom sticks after keyboard, horizontal pan
+     everywhere). Sub-16px on a text-entry control is a bug, not a style. */
+  font-size: 1rem;
   color: hsl(var(--foreground));
   outline: none !important;
   box-shadow: none !important;
@@ -193,6 +197,21 @@
 .PhoneInputInput:focus {
   outline: none !important;
   box-shadow: none !important;
+}
+
+/* iOS focus auto-zoom safety net (unlayered on purpose — beats utility
+   classes): any text-ENTRY control carrying a sub-16px text utility gets
+   floored to 16px on touch devices. WKWebView zooms the whole page when a
+   focused input/textarea/select computes below 16px, and the zoom sticks
+   after the keyboard closes (the OTP-flow bug). Buttons/labels are exempt —
+   only controls that summon a keyboard trigger the zoom. Desktop (fine
+   pointer) keeps its denser type untouched. */
+@media (pointer: coarse) {
+  input[class*="text-sm"], input[class*="text-xs"],
+  textarea[class*="text-sm"], textarea[class*="text-xs"],
+  select[class*="text-sm"], select[class*="text-xs"] {
+    font-size: 16px;
+  }
 }
 
 @tailwind components;
