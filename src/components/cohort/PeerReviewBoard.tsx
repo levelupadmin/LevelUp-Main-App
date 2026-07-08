@@ -176,9 +176,9 @@ export default function PeerReviewBoard({ cohortBatchId, currentUserId }: PeerRe
                 </div>
                 <div className="flex-shrink-0 flex flex-col items-end gap-1">
                   {s.my_review_status === "submitted" ? (
-                    <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-green-500/20 text-green-300">Done</span>
+                    <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-[hsl(var(--success)/0.2)] text-[hsl(var(--success))]">Done</span>
                   ) : s.my_review_status === "in_progress" ? (
-                    <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">Draft</span>
+                    <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-[hsl(var(--accent-amber)/0.2)] text-[hsl(var(--accent-amber))]">Draft</span>
                   ) : (
                     <span className="text-xs text-cream font-medium inline-flex items-center gap-0.5">
                       Review <ChevronRight className="h-3 w-3" />

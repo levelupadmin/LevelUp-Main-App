@@ -540,7 +540,7 @@ const CourseDetail = () => {
         {/* Ratings & Reviews */}
         <div className="bg-card border border-border rounded-[16px] p-6 space-y-6">
           <div className="flex items-center gap-2">
-            <Star className="h-5 w-5 text-yellow-400 fill-yellow-400" />
+            <Star className="h-5 w-5 text-gold fill-gold" />
             <h2 className="text-lg font-semibold">Ratings & Reviews</h2>
           </div>
           <ReviewList courseId={courseId!} isEnrolled={hasAccess} />
@@ -594,11 +594,11 @@ const CourseDetail = () => {
                           <div key={chapter.id}>
                             <button
                               onClick={() => handleChapterClick(chapter, sectionChapters)}
-                              className="pressable w-full flex items-start gap-3 min-h-[40px] py-2 px-4 rounded-lg text-left text-sm hover:bg-accent/50 group"
+                              className="pressable w-full flex items-start gap-3 min-h-[44px] py-2 px-4 rounded-lg text-left text-sm hover:bg-accent/50 group"
                             >
                               <span className="w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">
                                 {completed ? (
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                  <CheckCircle2 className="h-4 w-4 text-[hsl(var(--accent-emerald))]" />
                                 ) : locked ? (
                                   <Lock className="h-3.5 w-3.5 text-muted-foreground" />
                                 ) : (

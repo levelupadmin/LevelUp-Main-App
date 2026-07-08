@@ -238,7 +238,7 @@ const CatalogCard = ({
                     <span className="text-sm text-muted-foreground line-through decoration-muted-foreground">
                       ₹{formatPrice(Number(c.mrp_inr))}
                     </span>
-                    <span className="text-[10px] font-bold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
+                    <span className="text-[10px] font-bold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--success)/0.15)] text-[hsl(var(--success))]">
                       Save {Math.round((1 - Number(c.price_inr) / Number(c.mrp_inr)) * 100)}%
                     </span>
                   </>

@@ -97,12 +97,12 @@ export const TimeStateBadge = ({ date, durationMin, className }: TimeStateBadgeP
   if (state.kind === "live") {
     return (
       <span
-        className={cn(base, "bg-red-500/15 text-red-400 font-semibold", className)}
+        className={cn(base, "bg-[hsl(var(--accent-crimson)/0.15)] text-[hsl(var(--accent-crimson-text))] font-semibold", className)}
         aria-label="Live now"
       >
         <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 motion-safe:animate-ping" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+          <span className="absolute inline-flex h-full w-full rounded-full bg-[hsl(var(--accent-crimson))] opacity-75 motion-safe:animate-ping" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-[hsl(var(--accent-crimson))]" />
         </span>
         Live
       </span>
