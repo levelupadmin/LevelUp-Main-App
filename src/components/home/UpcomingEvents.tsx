@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Calendar, Globe, MapPin, Loader2, Clock } from "lucide-react";
 import { eventDateTimeLabel, eventDurationLabel } from "@/lib/event-format";
 import { useToast } from "@/hooks/use-toast";
+import { toast as appToast } from "@/lib/toast";
 import { isNative } from "@/lib/platform";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 
@@ -76,7 +77,7 @@ const UpcomingEvents = () => {
     if (error) {
       toast({ title: "Registration failed", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Registered! ✓" });
+      appToast.success("Registered");
       setMyRegs((prev) => new Set(prev).add(eventId));
     }
     setRegistering(null);
@@ -113,7 +114,7 @@ const UpcomingEvents = () => {
       const data = await res.json();
 
       if (data.registered) {
-        toast({ title: "Registered! ✓", description: "You're in. See you there." });
+        appToast.success("Registered", { description: "You're in. See you there." });
         setMyRegs((prev) => new Set(prev).add(eventId));
       } else if (data.razorpay_order_id) {
         const options = {
@@ -167,14 +168,14 @@ const UpcomingEvents = () => {
         }
         const rzp = new (window as any).Razorpay(options);
         rzp.on("payment.failed", () => {
-          toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
+          toast({ title: "Payment didn't complete", description: "Nothing was charged. Try again when you're ready.", variant: "destructive" });
         });
         rzp.open();
       } else if (data.error) {
         toast({ title: "Registration failed", description: data.error, variant: "destructive" });
       }
     } catch {
-      toast({ title: "Error", description: "Something went wrong. Please try again.", variant: "destructive" });
+      toast({ title: "That didn't go through", description: "Try once more?", variant: "destructive" });
     } finally {
       setRegistering(null);
     }
@@ -261,7 +262,7 @@ const UpcomingEvents = () => {
                 <div className="px-4 pb-4 pt-0">
                   <div className="pt-3 border-t border-border">
                     {isRegistered ? (
-                      <span className="text-sm text-muted-foreground font-medium">Registered ✓</span>
+                      <span className="text-sm text-muted-foreground font-medium">Registered</span>
                     ) : ev.pricing_type === "free" ? (
                       <button
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRegisterFree(ev.id); }}

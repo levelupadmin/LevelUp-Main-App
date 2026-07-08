@@ -73,7 +73,7 @@ export default function StudioSecondBrain() {
   return (
     <div className="max-w-5xl mx-auto">
       <header className="flex items-center gap-2.5">
-        <Link to="/studio" aria-label="Back to Studio" className="h-9 w-9 rounded-xl grid place-items-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--surface))] transition-colors">
+        <Link to="/studio" aria-label="Back to Studio" className="h-9 w-9 rounded-xl grid place-items-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--surface))] transition-colors focus-ring">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div className="h-9 w-9 rounded-xl grid place-items-center bg-[hsl(var(--accent-amber)/0.12)] text-[hsl(var(--accent-amber))]">
@@ -99,7 +99,7 @@ export default function StudioSecondBrain() {
                 <li><span className="text-[hsl(var(--foreground))] font-medium">3.</span> Connect your AI below so it can build on everything you save.</li>
               </ul>
             </div>
-            <button onClick={dismissOnboard} aria-label="Dismiss" className="shrink-0 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]">
+            <button onClick={dismissOnboard} aria-label="Dismiss" className="shrink-0 rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] focus-ring">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -113,6 +113,7 @@ export default function StudioSecondBrain() {
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && onCapture()}
+          aria-label="Paste an Instagram reel or YouTube link"
           placeholder="Paste an Instagram reel or YouTube link…"
           className="flex-1"
           inputMode="url"
@@ -136,7 +137,7 @@ export default function StudioSecondBrain() {
         {(folders.data ?? []).map((f) => (
           <Chip key={f.id} active={isFolder(f.id)} onClick={() => setFilter({ kind: "folder", value: f.id })}>{f.name}</Chip>
         ))}
-        <button onClick={onNewFolder} className="shrink-0 inline-flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] px-2 py-1">
+        <button onClick={onNewFolder} className="shrink-0 inline-flex items-center gap-1 rounded-md text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] px-2 py-1 focus-ring">
           <Plus className="h-3.5 w-3.5" /> Folder
         </button>
       </div>
@@ -144,7 +145,7 @@ export default function StudioSecondBrain() {
       {/* search */}
       <div className="mt-3 relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(var(--muted-foreground))]" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search transcripts…" className="pl-9" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search transcripts" placeholder="Search transcripts…" className="pl-9" />
       </div>
 
       {/* library */}
@@ -184,7 +185,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
     <button
       onClick={onClick}
       className={cn(
-        "shrink-0 rounded-full px-3 py-1.5 text-sm border transition-colors",
+        "shrink-0 rounded-full px-3 py-1.5 text-sm border transition-colors focus-ring",
         active
           ? "bg-[hsl(var(--accent-amber)/0.14)] border-[hsl(var(--accent-amber)/0.5)] text-[hsl(var(--accent-amber))]"
           : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]",

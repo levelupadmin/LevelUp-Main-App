@@ -360,7 +360,7 @@ const ChapterViewer = () => {
       .maybeSingle();
 
     if (error || !ch) {
-      toast.error("Chapter not found");
+      toast.error("We couldn't find that lesson.");
       navigate("/home");
       return;
     }
@@ -853,7 +853,7 @@ const ChapterViewer = () => {
       await navigator.clipboard.writeText(url);
       toast.success("Link copied");
     } catch {
-      toast.error("Could not copy link");
+      toast.error("Couldn't copy the link. Try again.");
     }
   };
 
@@ -1014,7 +1014,7 @@ const ChapterViewer = () => {
       user_id: user.id,
       question_text: questionText.trim(),
     });
-    if (error) toast.error("Failed to post question");
+    if (error) toast.error("Your question didn't send. Try again.");
     else {
       toast.success("Question sent. Your instructor will see it.");
       setQuestionText("");
@@ -1176,13 +1176,19 @@ const ChapterViewer = () => {
           style={motionSafe.reduced ? undefined : { touchAction: "none" }}
           className={cn(
             "sticky top-0 z-30 border-b border-border px-4 flex items-center gap-3 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]",
-            // During a live dismiss drag, degrade the backdrop-blur to a solid
-            // fill. A `backdrop-blur-xl` sticky header re-samples and re-blurs its
-            // backdrop every frame as the ancestor scales/translates — one of the
-            // heaviest per-frame costs on mid-range Android WebView. A solid
-            // `bg-card` is visually near-identical over the near-black surface and
-            // costs nothing to re-composite. Restored the instant the drag ends.
-            dragActive ? "bg-card" : "bg-card/80 backdrop-blur-xl",
+            // Sticky-header blur budget: this bar follows the app-wide header
+            // doctrine — `backdrop-blur-md` with a raised fill opacity
+            // (`bg-card/90`) that compensates for the weaker blur, matching
+            // StudentLayout / Terms / Privacy headers. No `xl` blur on
+            // always-mounted chrome (phase-5 criterion 4 / blur budget gate).
+            // During a live dismiss drag we degrade even the `md` blur to a
+            // solid fill: a blurred sticky header re-samples and re-blurs its
+            // backdrop every frame as the ancestor scales/translates — one of
+            // the heaviest per-frame costs on mid-range Android WebView. A solid
+            // `bg-card` is visually near-identical over the near-black surface
+            // and costs nothing to re-composite. Restored the instant the drag
+            // ends.
+            dragActive ? "bg-card" : "bg-card/90 backdrop-blur-md",
           )}
         >
           {/* Grab handle: the affordance that this surface pulls down to
@@ -1222,7 +1228,7 @@ const ChapterViewer = () => {
           {chapter.title}
         </span>
         {isCompleted && (
-          <span className="flex items-center gap-1 text-xs text-emerald-500">
+          <span className="flex items-center gap-1 text-xs text-[hsl(var(--accent-emerald))]">
             <CheckCircle2 className="h-3.5 w-3.5" /> Completed
           </span>
         )}

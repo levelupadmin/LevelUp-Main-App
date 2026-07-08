@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { Play, Check } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { useMotionSafe } from "@/lib/motion";
+import { useMotionSafe, progressFill, instant } from "@/lib/motion";
 import type { ChapterSibling } from "@/components/chapter/types";
 
 interface Props {
@@ -184,17 +184,33 @@ export default function UpNextList({ siblings, currentIndex, currentChapterId, c
             key={s.id}
             onClick={() => !isCurrent && navigate(`/chapters/${s.id}`)}
             disabled={isCurrent}
-            className={`w-full flex gap-3 p-2.5 rounded-lg text-left transition-colors min-h-[68px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
+            className={`relative overflow-hidden w-full flex gap-3 p-2.5 rounded-lg text-left transition-colors min-h-[68px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
               isCurrent
                 ? "bg-[hsl(var(--cream))]/10 ring-1 ring-[hsl(var(--cream))]/40 cursor-default"
                 : "hover:bg-surface/60 active:bg-surface"
             }`}
           >
+            {/* STEAL-4 row fill — the currently-playing row's background fills
+                left→right with its watched fraction (transform-only scaleX on a
+                cream layer behind the content). `initial={false}` means no mount
+                glide: the fill snaps straight to the resume position when the row
+                first paints, then tweens linearly (playback-driven, no spring) to
+                each new fraction as the lesson advances — up to full on completion.
+                Reduced motion sets every change instantly. */}
+            {isCurrent && watchedFraction > 0 && (
+              <motion.span
+                aria-hidden
+                className="absolute inset-y-0 left-0 z-0 w-full origin-left bg-[hsl(var(--cream))]/[0.08]"
+                initial={false}
+                animate={{ scaleX: watchedFraction }}
+                transition={motionSafe.reduced ? instant : progressFill}
+              />
+            )}
             {/* Thumbnail: cover image (or numbered fallback) + lesson-number
                 chip, optional current-row play badge, a black duration chip
                 bottom-right, and a 2px cream watched-progress bar pinned to
                 the bottom edge. */}
-            <div className="relative w-[88px] sm:w-[104px] aspect-video rounded-md overflow-hidden shrink-0 bg-surface-2">
+            <div className="relative z-10 w-[88px] sm:w-[104px] aspect-video rounded-md overflow-hidden shrink-0 bg-surface-2">
               {thumb && (
                 <img
                   src={thumb}
@@ -233,7 +249,7 @@ export default function UpNextList({ siblings, currentIndex, currentChapterId, c
                 </span>
               )}
             </div>
-            <div className="flex-1 min-w-0 flex flex-col justify-center">
+            <div className="relative z-10 flex-1 min-w-0 flex flex-col justify-center">
               <p className={`text-sm leading-tight line-clamp-2 ${isCurrent ? "font-semibold" : ""}`}>
                 {s.title}
               </p>

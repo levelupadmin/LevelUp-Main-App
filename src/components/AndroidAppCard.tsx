@@ -39,7 +39,7 @@ export default function AndroidAppCard({ className = "" }: { className?: string 
             <>
               {" "}&middot;{" "}
               <span className="inline-flex items-center gap-0.5 align-middle">
-                <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                <Star className="h-3 w-3 fill-[hsl(var(--gold))] text-[hsl(var(--gold))]" />
                 {RATING.toFixed(1)}
               </span>
             </>

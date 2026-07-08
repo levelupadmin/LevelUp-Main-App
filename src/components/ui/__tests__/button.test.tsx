@@ -77,7 +77,6 @@ describe("Button", () => {
     ["secondary", "bg-secondary"],
     ["ghost", "hover:bg-muted"],
     ["link", "underline-offset-4"],
-    ["glass", "backdrop-blur-xl"],
   ] as const)("renders the %s variant classes", (variant, marker) => {
     render(<Button variant={variant}>{variant}</Button>);
     const btn = screen.getByRole("button", { name: variant });

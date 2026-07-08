@@ -57,6 +57,7 @@ export default {
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
+          text: "hsl(var(--destructive-text))",
         },
         muted: {
           DEFAULT: "hsl(var(--muted))",
@@ -66,7 +67,9 @@ export default {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
           crimson: "hsl(var(--accent-crimson))",
+          "crimson-text": "hsl(var(--accent-crimson-text))",
           indigo: "hsl(var(--accent-indigo))",
+          "indigo-text": "hsl(var(--accent-indigo-text))",
           emerald: "hsl(var(--accent-emerald))",
           amber: "hsl(var(--accent-amber))",
           violet: "hsl(var(--accent-violet))",
@@ -186,8 +189,8 @@ export default {
           "100%": { opacity: "0", transform: "translateY(-10px) scale(0.95)" },
         },
         "shimmer": {
-          "0%": { backgroundPosition: "-200% 0" },
-          "100%": { backgroundPosition: "200% 0" },
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(100%)" },
         },
         "slide-left-in": {
           from: { opacity: "0", transform: "translateX(24px)" },

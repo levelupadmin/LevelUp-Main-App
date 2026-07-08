@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { RotateCcw, RotateCw } from "lucide-react";
+import { RotateCcw, RotateCw, FileText, BookOpen } from "lucide-react";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
-import { useMotionSafe } from "@/lib/motion";
-import { tapTick } from "@/lib/haptics";
+import { supabase } from "@/integrations/supabase/client";
+import { useMotionSafe, durations, easings, instant } from "@/lib/motion";
+import { tapTick, hapticSelection } from "@/lib/haptics";
 import type { Chapter } from "@/components/chapter/types";
 
 interface Props {
@@ -20,6 +21,38 @@ const DOUBLE_TAP_MS = 300; // two taps inside this window = a double-tap.
 // Bottom strip (px) left untouched so a double-tap never lands on the native
 // scrubber / play button; the side zones exclude the outer control chrome too.
 const CONTROLS_STRIP = 56;
+// How long the scrub caption lingers after the seek settles before it fades —
+// long enough to read the landing moment, short enough to get out of the way.
+const CAPTION_LINGER_MS = 900;
+
+/** A chapter marker: an instructor-authored jump point (label + timestamp). */
+interface Moment {
+  id: string;
+  label: string;
+  seconds: number;
+}
+
+/** Format whole seconds as an M:SS / H:MM:SS clock for the scrub caption. */
+function clock(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, "0")}:${r.toString().padStart(2, "0")}`;
+  }
+  return `${m}:${r.toString().padStart(2, "0")}`;
+}
+
+/** The moment the playhead sits in: the last marker at or before `seconds`. */
+function momentAt(moments: Moment[], seconds: number): Moment | null {
+  let active: Moment | null = null;
+  for (const m of moments) {
+    if (m.seconds <= seconds) active = m;
+    else break;
+  }
+  return active;
+}
 
 /**
  * The ONE app-owned video surface: an HLS (`.m3u8` / WebinarKit) stream played
@@ -35,14 +68,45 @@ const CONTROLS_STRIP = 56;
  * stay pass-through so single taps still toggle the native controls. Reduced
  * motion drops the ripple's scale theatrics to a plain fade — the seek itself
  * always fires.
+ *
+ * STEAL-4 (Quartr) scrub caption: because we own the timeline, scrubbing the
+ * native scrubber surfaces a live "M:SS · Moment title" pill above the control
+ * strip. The timestamp updates continuously (tabular-nums, no reflow); the
+ * moment title crossfades (opacity + ±8px slide) only as the playhead crosses a
+ * marker boundary, so fast scrubbing stays readable. A `hapticSelection()` ticks
+ * on each boundary crossing (native only). Chapters without markers fall back to
+ * a timestamp-only pill. Reduced motion swaps the title instantly.
  */
-function AppOwnedVideo({ url, title }: { url: string; title: string }) {
+function AppOwnedVideo({ url, title, chapterId }: { url: string; title: string; chapterId: string }) {
   const motionSafe = useMotionSafe();
   const videoRef = useRef<HTMLVideoElement>(null);
   // Last tap's timestamp + side, for double-tap detection. A second tap on the
   // same side within DOUBLE_TAP_MS commits the seek; anything else re-arms.
   const lastTapRef = useRef<{ t: number; side: SeekSide } | null>(null);
   const [ripple, setRipple] = useState<{ side: SeekSide; id: number } | null>(null);
+
+  // ── Scrub caption state ──
+  const [moments, setMoments] = useState<Moment[]>([]);
+  // The live playhead time shown in the caption while scrubbing.
+  const [scrubTime, setScrubTime] = useState(0);
+  // Caption visibility: true through the drag and its short linger afterwards.
+  const [captionShown, setCaptionShown] = useState(false);
+  // Mirrors captionShown synchronously (without waiting for React to commit) so a
+  // burst of `seeking` events can distinguish the leading edge of a scrub — where
+  // we reveal the caption at once — from the events that follow, which we coalesce.
+  const captionShownRef = useRef(false);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // rAF-coalescing for the live timestamp. `seeking` fires many times per frame
+  // during a fast drag, and under React 18 automatic batching each setScrubTime is
+  // its own render (scrubTime is rendered and feeds momentAt). After the caption's
+  // leading-edge reveal we stop calling setScrubTime per event — we stash the
+  // latest time and let a single rAF flush it, bounding the caption to ≤1 render
+  // per frame no matter how many seeking events land in that frame.
+  const scrubRafRef = useRef<number | null>(null);
+  const pendingScrubTimeRef = useRef(0);
+  // Last moment id the caption showed, so the boundary haptic fires exactly once
+  // per crossing rather than on every seeking event inside the same segment.
+  const lastMomentIdRef = useRef<string | null>(null);
 
   // Auto-clear the ripple so AnimatePresence can play its exit; keyed on the
   // ripple id so a rapid second seek restarts the timer cleanly.
@@ -51,6 +115,111 @@ function AppOwnedVideo({ url, title }: { url: string; title: string }) {
     const t = setTimeout(() => setRipple(null), 500);
     return () => clearTimeout(t);
   }, [ripple]);
+
+  // Chapter markers for the scrub caption — same source as MomentsList, read
+  // independently here so the app-owned <video> is self-contained. Failures
+  // degrade silently to a timestamp-only caption.
+  useEffect(() => {
+    let cancelled = false;
+    void supabase
+      .from("chapter_moments")
+      .select("id, label, seconds")
+      .eq("chapter_id", chapterId)
+      .order("sort_order", { ascending: true })
+      .order("seconds", { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        // The query orders by sort_order primary (its other consumer, the
+        // MomentsList, wants author order). But momentAt() walks the list
+        // assuming seconds-ascending and early-breaks, so it picks the wrong
+        // marker whenever author order and chronology disagree. Sort by seconds
+        // here — the caption/haptic then track the true playhead segment while
+        // the query stays as-is for consumers that want sort_order.
+        const rows = error || !data ? [] : (data as Moment[]);
+        setMoments([...rows].sort((a, b) => a.seconds - b.seconds));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chapterId]);
+
+  // Tidy the linger timer and any pending scrub frame on unmount.
+  useEffect(() => () => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    if (scrubRafRef.current != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(scrubRafRef.current);
+    }
+  }, []);
+
+  const activeMoment = captionShown ? momentAt(moments, scrubTime) : null;
+  const activeMomentId = activeMoment?.id ?? null;
+
+  // Boundary tick: one selection haptic each time the caption enters a new
+  // moment during a scrub (the wrapper already no-ops off-device).
+  useEffect(() => {
+    if (!captionShown) {
+      lastMomentIdRef.current = activeMomentId;
+      return;
+    }
+    if (activeMomentId && activeMomentId !== lastMomentIdRef.current) {
+      void hapticSelection();
+    }
+    lastMomentIdRef.current = activeMomentId;
+  }, [activeMomentId, captionShown]);
+
+  // Commit the most recently stashed scrub time. At most one of these runs per
+  // animation frame, collapsing a frame's worth of `seeking` events into a single
+  // render.
+  const flushScrubTime = () => {
+    scrubRafRef.current = null;
+    setScrubTime(pendingScrubTimeRef.current);
+  };
+
+  // Show the caption for the duration of a scrub. `seeking` fires repeatedly as
+  // the user drags; `seeked` schedules the fade-out after a readable linger.
+  const onSeeking = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const t = e.currentTarget.currentTime;
+    pendingScrubTimeRef.current = t;
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    // Leading edge of a scrub: reveal the caption AND show the first timestamp
+    // synchronously, so the pill appears on the same frame the drag starts.
+    if (!captionShownRef.current) {
+      captionShownRef.current = true;
+      setCaptionShown(true);
+      setScrubTime(t);
+      return;
+    }
+    // Mid-scrub: `seeking` can fire many times per frame. Don't setState per
+    // event — coalesce onto a single rAF so the live timestamp re-renders at most
+    // once per frame during a fast drag. If a frame is already queued, this event
+    // just updates pendingScrubTimeRef (above) and returns without a render. Fall
+    // back to a synchronous set only where rAF is unavailable (non-DOM test env).
+    if (scrubRafRef.current == null) {
+      if (typeof requestAnimationFrame === "function") {
+        scrubRafRef.current = requestAnimationFrame(flushScrubTime);
+      } else {
+        setScrubTime(t);
+      }
+    }
+  };
+
+  const onSeeked = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    // The drag settled: cancel any coalesced frame and commit the final time now,
+    // so the resting caption is exact rather than up to a frame stale.
+    if (scrubRafRef.current != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(scrubRafRef.current);
+    }
+    scrubRafRef.current = null;
+    setScrubTime(e.currentTarget.currentTime);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => {
+      captionShownRef.current = false;
+      setCaptionShown(false);
+    }, CAPTION_LINGER_MS);
+  };
 
   const seek = (v: HTMLVideoElement, side: SeekSide) => {
     if (side === "back") {
@@ -144,6 +313,8 @@ function AppOwnedVideo({ url, title }: { url: string; title: string }) {
         style={{ touchAction: "manipulation" }}
         title={title}
         onLoadedMetadata={onLoadedMetadata}
+        onSeeking={onSeeking}
+        onSeeked={onSeeked}
         onClick={(e) => handleTap(e.clientX, e.clientY)}
         // Desktop Chrome toggles native fullscreen on a <video> double-click.
         // Since we've repurposed the double-tap for ±10s seek, suppress that
@@ -173,6 +344,48 @@ function AppOwnedVideo({ url, title }: { url: string; title: string }) {
               <span className="font-mono text-xs font-semibold tabular-nums">
                 {SEEK_STEP}s
               </span>
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* STEAL-4 scrub caption — decorative, sits ABOVE the control strip so it
+          never covers the native scrubber, and is pointer-events-none so it
+          never intercepts a drag. */}
+      <AnimatePresence>
+        {captionShown && (
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 flex justify-center px-4"
+            style={{ bottom: CONTROLS_STRIP }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={motionSafe.reduced ? instant : { duration: durations.fast, ease: easings.out }}
+          >
+            <span className="flex max-w-full items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-[hsl(var(--cream))]">
+              <span className="font-mono text-xs font-semibold tabular-nums">{clock(scrubTime)}</span>
+              {activeMoment && (
+                <>
+                  <span className="text-[hsl(var(--cream))]/40">·</span>
+                  {/* Single-cell grid so the incoming and outgoing titles
+                      overlap (no vertical stack) while the box keeps its
+                      intrinsic width — the crossfade never shifts layout. */}
+                  <span className="grid h-4 max-w-[46vw] items-center overflow-hidden text-xs">
+                    <AnimatePresence initial={false}>
+                      <motion.span
+                        key={activeMomentId}
+                        className="col-start-1 row-start-1 truncate"
+                        initial={motionSafe.reduced ? { opacity: 0 } : { opacity: 0, x: 8 }}
+                        animate={motionSafe.reduced ? { opacity: 1 } : { opacity: 1, x: 0 }}
+                        exit={motionSafe.reduced ? { opacity: 0 } : { opacity: 0, x: -8 }}
+                        transition={motionSafe.reduced ? instant : { duration: durations.fast, ease: easings.out }}
+                      >
+                        {activeMoment.label}
+                      </motion.span>
+                    </AnimatePresence>
+                  </span>
+                </>
+              )}
             </span>
           </motion.div>
         )}
@@ -221,7 +434,7 @@ export default function ChapterMediaPlayer({ chapter, updateProgress, lastPositi
         // playback surface, so it's the only one that gets gestures.
         const isHls = /\.m3u8(\?|$)/i.test(url) || provider === "webinarkit";
         if (isHls) {
-          return <AppOwnedVideo url={url} title={chapter.title} />;
+          return <AppOwnedVideo url={url} title={chapter.title} chapterId={chapter.id} />;
         }
 
         // Vimeo / YouTube / generic iframe.
@@ -265,7 +478,9 @@ export default function ChapterMediaPlayer({ chapter, updateProgress, lastPositi
     </div>
   ) : chapter.content_type === "article" || chapter.content_type === "text" ? (
     <div className="bg-card rounded-2xl border border-border p-8 flex items-center gap-4">
-      <div className="text-3xl">📄</div>
+      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-surface-2 text-cream">
+        <FileText className="h-8 w-8" aria-hidden="true" />
+      </span>
       <div>
         <p className="font-medium">{chapter.title}</p>
         <p className="text-muted-foreground text-sm mt-1">Scroll down to read the article content</p>
@@ -274,7 +489,9 @@ export default function ChapterMediaPlayer({ chapter, updateProgress, lastPositi
   ) : (
     <div className="aspect-video bg-card rounded-2xl border border-border flex items-center justify-center">
       <div className="text-center">
-        <div className="text-4xl mb-2">📚</div>
+        <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-surface-2 text-cream">
+          <BookOpen className="h-8 w-8" aria-hidden="true" />
+        </span>
         <p className="text-muted-foreground text-sm">{chapter.title}</p>
         <p className="text-muted-foreground/60 text-xs mt-1">Content not available</p>
       </div>

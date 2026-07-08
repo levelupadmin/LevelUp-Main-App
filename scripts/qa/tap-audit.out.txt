@@ -1,0 +1,20 @@
+tap-audit — ≥44px touch-target floor (student surfaces)
+========================================================
+PASS  src/components/layout/StudentLayout.tsx  (19 controls)
+PASS  src/components/FloatingSupport.tsx  (3 controls)
+PASS  src/components/NotificationDropdown.tsx  (2 controls)
+PASS  src/pages/CourseDetail.tsx  (2 controls)
+PASS  src/components/chapter/ChapterNotes.tsx  (2 controls)
+PASS  src/components/chapter/ResumePill.tsx  (3 controls)
+PASS  src/components/certificates/CertificateGallery.tsx  (1 controls)
+PASS  src/pages/ChapterViewer.tsx  (3 controls)
+PASS  src/components/InitialsAvatar.tsx  (0 controls)
+PASS  src/components/Footer.tsx  (9 controls)
+PASS  src/pages/PublicOffering.tsx  (10 controls)
+========================================================
+
+Governed exceptions (out of floor by design, not violations):
+  - shadcn Switch  [h-6 (24px) tall × w-11 (44px) wide]  src/components/ui/switch.tsx
+      Radix toggle; the 24px track is the shadcn/design-system standard height. The 44px-wide control plus its always-present, tap-through label row carry the touch affordance — the glyph stays 24px by design, matching the governed <Button>.
+========================================================
+OK — every hand-rolled control clears the 44px floor across 11 files.

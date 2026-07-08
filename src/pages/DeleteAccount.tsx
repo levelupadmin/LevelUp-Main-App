@@ -36,7 +36,7 @@ const DeleteAccount = () => {
 
     const trimmedEmail = email.trim().toLowerCase();
     if (!EMAIL_RE.test(trimmedEmail)) {
-      setEmailError("Please enter a valid email address.");
+      setEmailError("That email doesn't look right.");
       return;
     }
 

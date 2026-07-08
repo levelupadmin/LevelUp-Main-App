@@ -465,7 +465,7 @@ export default function CheckoutPage() {
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
-    script.onerror = () => toast.error("Failed to load payment gateway. Please refresh the page.");
+    script.onerror = () => toast.error("The payment screen didn't load. Give it a moment, then try again.");
     document.body.appendChild(script);
   }, []);
 
@@ -493,7 +493,7 @@ export default function CheckoutPage() {
     }
     setFieldTouched((prev) => ({ ...prev, ...touchAll }));
     if (hasFieldError) {
-      toast.error("Please fill in all required fields");
+      toast.error("A couple of fields still need you.");
       paymentInFlightRef.current = false;
       return;
     }
@@ -553,7 +553,7 @@ export default function CheckoutPage() {
           });
 
       if (error || (!data?.razorpay_order_id && !(isAnon && data?.success))) {
-        toast.error(data?.error ?? "Failed to create order");
+        toast.error(data?.error ?? "Couldn't create your order. Please try again.");
         setPaying(false); paymentInFlightRef.current = false;
         return;
       }
@@ -635,12 +635,12 @@ export default function CheckoutPage() {
 
       const rzp = new window.Razorpay(options);
       rzp.on("payment.failed", () => {
-        toast.error("Payment failed, please try again");
+        toast.error("The payment didn't complete. If any amount was debited, it comes back to you automatically. Try again when you're ready.");
         setPaying(false); paymentInFlightRef.current = false;
       });
       rzp.open();
     } catch {
-      toast.error("Something went wrong, please try again");
+      toast.error("That didn't go through. Try once more?");
       setPaying(false); paymentInFlightRef.current = false;
     }
   };
@@ -794,7 +794,7 @@ export default function CheckoutPage() {
           {linkedCourses.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                What you'll get
+                Included courses
               </p>
               {linkedCourses.map((lc) => (
                 <div

@@ -38,7 +38,7 @@ const SearchableSelect = ({
   onValueChange,
   placeholder = "Select…",
   searchPlaceholder = "Search…",
-  emptyText = "No results found.",
+  emptyText = "Nothing matches. Try another word.",
   className,
   triggerClassName,
 }: SearchableSelectProps) => {

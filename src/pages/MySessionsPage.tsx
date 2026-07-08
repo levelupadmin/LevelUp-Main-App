@@ -98,7 +98,7 @@ const MySessionsPage = () => {
         );
       } catch (err) {
         if (import.meta.env.DEV) console.error("Failed to load sessions:", err);
-        setError("We couldn't load this. Check your connection and try again.");
+        setError("Check your connection and try again.");
       } finally {
         setLoading(false);
       }
@@ -130,10 +130,10 @@ const MySessionsPage = () => {
   );
 
   const statusBadge = (s: SessionRow) => {
-    if (s.status === "cancelled") return { label: "Cancelled", cls: "bg-destructive/15 text-destructive" };
-    if (s.status === "completed") return { label: "Completed", cls: "bg-emerald-500/15 text-emerald-400" };
+    if (s.status === "cancelled") return { label: "Cancelled", cls: "bg-destructive/15 text-destructive-text" };
+    if (s.status === "completed") return { label: "Completed", cls: "bg-success/15 text-success" };
     if (isPast(new Date(s.scheduled_at))) return { label: "Past", cls: "bg-muted text-muted-foreground" };
-    return { label: "Upcoming", cls: "bg-blue-500/15 text-blue-400" };
+    return { label: "Upcoming", cls: "bg-accent-indigo/15 text-accent-indigo-text" };
   };
 
   return (
@@ -157,25 +157,25 @@ const MySessionsPage = () => {
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-surface border border-border rounded-xl p-4 flex items-start gap-4 animate-pulse">
-                <div className="flex-shrink-0 w-14 h-14 rounded-lg bg-surface-2" />
+              <div key={i} className="bg-surface border border-border rounded-xl p-4 flex items-start gap-4">
+                <div className="flex-shrink-0 w-14 h-14 rounded-lg skeleton-shimmer" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-4 bg-surface-2 rounded w-1/2" />
-                  <div className="h-3 bg-surface-2 rounded w-1/3" />
+                  <div className="h-4 skeleton-shimmer rounded w-1/2" />
+                  <div className="h-3 skeleton-shimmer rounded w-1/3" />
                   <div className="flex items-center gap-3 mt-2">
-                    <div className="h-3 bg-surface-2 rounded w-20" />
-                    <div className="h-3 bg-surface-2 rounded w-16" />
-                    <div className="h-3 bg-surface-2 rounded w-12" />
+                    <div className="h-3 skeleton-shimmer rounded w-20" />
+                    <div className="h-3 skeleton-shimmer rounded w-16" />
+                    <div className="h-3 skeleton-shimmer rounded w-12" />
                   </div>
                 </div>
-                <div className="h-8 bg-surface-2 rounded-lg w-16 flex-shrink-0 self-center" />
+                <div className="h-8 skeleton-shimmer rounded-lg w-16 flex-shrink-0 self-center" />
               </div>
             ))}
           </div>
         ) : error ? (
           <div className="text-center py-16">
             <WifiOff className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-            <p className="text-lg font-medium text-foreground mb-1">Something went wrong</p>
+            <p className="text-lg font-medium text-foreground mb-1">That didn't load</p>
             <p className="text-sm text-muted-foreground">{error}</p>
             <Button onClick={() => load()} variant="outline" className="mt-4 gap-2">
               <RefreshCw className="h-4 w-4" /> Retry
@@ -184,7 +184,7 @@ const MySessionsPage = () => {
         ) : !sessions.length ? (
           <EmptyState
             icon={Video}
-            title="No sessions scheduled"
+            title="Nothing on the calendar yet"
             sub="Enrol in a program to join live sessions with instructors."
             cta={{ label: "Explore programs", to: "/" }}
           />
@@ -194,7 +194,7 @@ const MySessionsPage = () => {
             {upcoming.length > 0 && (
               <section>
                 <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-blue-400" />
+                  <span className="w-2 h-2 rounded-full bg-accent-indigo" />
                   Upcoming ({upcoming.length})
                 </h2>
                 <div className="space-y-3">

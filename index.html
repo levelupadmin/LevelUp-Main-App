@@ -2,11 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- App-like WebView viewport. maximum-scale=1 + user-scalable=no kill
-         iOS focus auto-zoom (OTP / notes fields) and pinch-zoom; viewport-fit=cover
-         lets content extend under the Dynamic Island / home indicator so the
-         env(safe-area-inset-*) helpers in index.css can reclaim that space. -->
-    <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <!-- App-like WebView viewport. We deliberately DO NOT set maximum-scale /
+         user-scalable=no: blocking pinch-zoom fails WCAG 1.4.4 (axe meta-viewport,
+         critical) and is a real low-vision barrier. The two things those flags
+         used to guard are already handled without them:
+           • iOS focus auto-zoom (OTP / notes fields) — killed by the 16px base
+             font-size on all form controls in index.css.
+           • 300ms double-tap zoom on controls — killed by `touch-action:
+             manipulation` on button/a/input/etc. in index.css.
+         viewport-fit=cover lets content extend under the Dynamic Island / home
+         indicator so the env(safe-area-inset-*) helpers in index.css can reclaim
+         that space. -->
+    <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="LevelUp" />

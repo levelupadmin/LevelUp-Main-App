@@ -174,8 +174,8 @@ export default function AssignmentSubmissionForm({
               <FileText className="h-3 w-3 text-muted-foreground" />
               <span className="max-w-[160px] truncate">{f.file.name}</span>
               {f.uploading && <Loader2 className="h-3 w-3 animate-spin text-cream" />}
-              {f.uploaded && <span className="text-green-400 text-[10px] font-mono">UP</span>}
-              {f.error && <span className="text-destructive text-[10px] font-mono">ERR</span>}
+              {f.uploaded && <span className="text-success text-[10px] font-mono">UP</span>}
+              {f.error && <span className="text-destructive-text text-[10px] font-mono">ERR</span>}
               <button onClick={() => handleRemove(i)} className="text-muted-foreground hover:text-destructive">
                 <X className="h-3 w-3" />
               </button>

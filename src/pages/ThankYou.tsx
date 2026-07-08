@@ -222,6 +222,9 @@ function UpsellCard({
   const off = upsell.upsell_offering;
   const price = Number(off.price_inr);
   const mrp = off.mrp_inr ? Number(off.mrp_inr) : null;
+  // Trim-or-null so a whitespace-only thumbnail reads as absent (placeholder
+  // tile) instead of a broken <img>.
+  const thumb = off.thumbnail_url?.trim() || null;
 
   return (
     <div
@@ -232,8 +235,8 @@ function UpsellCard({
       onPointerUp={() => onActiveChange?.(false)}
       onPointerCancel={() => onActiveChange?.(false)}
     >
-      {off.thumbnail_url ? (
-        <img src={off.thumbnail_url} alt={off.title} className="w-full h-36 object-cover" />
+      {thumb ? (
+        <img src={thumb} alt={off.title} className="w-full h-36 object-cover" />
       ) : (
         <div className="w-full h-36 bg-[hsl(var(--surface-2))] flex items-center justify-center">
           <ShoppingBag className="h-8 w-8 text-muted-foreground opacity-40" />
@@ -362,7 +365,7 @@ export default function ThankYou() {
     const s = document.createElement("script");
     s.src = "https://checkout.razorpay.com/v1/checkout.js";
     s.async = true;
-    s.onerror = () => toast.error("Failed to load payment gateway. Please refresh the page.");
+    s.onerror = () => toast.error("The payment screen didn't load. Give it a moment, then try again.");
     document.body.appendChild(s);
   }, []);
 
@@ -708,6 +711,11 @@ export default function ThankYou() {
   benefitChips.push("Subtitles");
   benefitChips.push("Lifetime access");
 
+  // Trim-or-null the admin-authored hero thumbnail so a whitespace-only value
+  // reads as absent and we fall back to the SuccessCheck celebration instead of
+  // rendering a broken <img>.
+  const thankYouThumb = order.offerings?.thankyou_thumbnail_url?.trim() || null;
+
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       {/* Cream celebration glow - pure CSS, no JS, no layout shift */}
@@ -734,9 +742,9 @@ export default function ThankYou() {
           animate="show"
         >
           <motion.div variants={arrivalItem}>
-            {order.offerings?.thankyou_thumbnail_url ? (
+            {thankYouThumb ? (
               <img
-                src={order.offerings.thankyou_thumbnail_url}
+                src={thankYouThumb}
                 alt=""
                 // aspect-video reserves the box height from its width before the
                 // image decodes, so the receipt below doesn't shift when the src

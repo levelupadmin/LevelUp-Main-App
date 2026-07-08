@@ -45,10 +45,26 @@ const ReviewList = ({ courseId, isEnrolled = false }: ReviewListProps) => {
     <div className="space-y-6">
       {/* Rating summary.
           Note: the parent section (CourseDetail) renders a "Ratings & Reviews"
-          heading with the star icon, so we intentionally don't repeat it here. */}
-      <div>
-        <RatingDistribution stats={stats} />
-      </div>
+          heading with the star icon, so we intentionally don't repeat it here.
+          With zero reviews we show the branded serif empty treatment (matching
+          EmptyState/SystemState's voice) instead of a "-- / 0 reviews" head over
+          five empty gray bars — that skeleton read as broken, not empty. */}
+      {stats.total_reviews > 0 ? (
+        <div>
+          <RatingDistribution stats={stats} />
+        </div>
+      ) : !loading ? (
+        <div className="text-center py-6">
+          <p className="font-serif-italic text-[22px] leading-tight text-cream">
+            No reviews yet
+          </p>
+          <p className="body-muted mt-1.5">
+            {canReview
+              ? "Be the first to share what you took away."
+              : "Ratings appear here once students weigh in."}
+          </p>
+        </div>
+      ) : null}
 
       {/* Review form / edit toggle */}
       {canReview && (
@@ -119,11 +135,6 @@ const ReviewList = ({ courseId, isEnrolled = false }: ReviewListProps) => {
         </div>
       )}
 
-      {!loading && reviews.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          No reviews yet. Be the first to review this course!
-        </p>
-      )}
     </div>
   );
 };

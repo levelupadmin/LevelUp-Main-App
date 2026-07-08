@@ -15,7 +15,7 @@ const Outcomes = ({ outcomes }: Props) => {
       <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
         {outcomes.map((outcome, i) => (
           <li key={i} className="flex items-start gap-2.5 text-sm leading-snug">
-            <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+            <CheckCircle2 className="h-4 w-4 text-[hsl(var(--accent-emerald))] flex-shrink-0 mt-0.5" />
             <span className="text-foreground">{outcome}</span>
           </li>
         ))}

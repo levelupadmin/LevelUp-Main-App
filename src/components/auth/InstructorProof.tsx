@@ -94,7 +94,10 @@ export function InstructorProof({ className, max = 5 }: Props) {
   return (
     <div className={className}>
       <div className="flex items-center gap-3">
-        <div className="flex -space-x-2.5">
+        {/* Decorative: the same instructors are named in the text below, so the
+            avatar stack is hidden from assistive tech to avoid announcing each
+            name twice (image alt + names line). */}
+        <div className="flex -space-x-2.5" aria-hidden="true">
           {shown.map((ins) => (
             <div
               key={ins.name}

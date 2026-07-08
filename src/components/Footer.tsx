@@ -47,7 +47,7 @@ const socialLinks = [
 
 const renderLink = (link: FooterLink) => {
   const className =
-    "text-sm text-muted-foreground hover:text-foreground transition-colors duration-300 py-2 inline-block";
+    "flex items-center min-h-[44px] text-sm text-muted-foreground hover:text-foreground transition-colors duration-300";
   if (link.external || /^https?:\/\//.test(link.href)) {
     return (
       <a
@@ -88,7 +88,7 @@ const AppFooter = () => (
         href={SUPPORT_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-300"
+        className="inline-flex items-center min-h-[44px] px-2 -mx-2 text-xs text-muted-foreground hover:text-foreground transition-colors duration-300"
       >
         Support
       </a>
@@ -151,7 +151,7 @@ const Footer = ({ variant = "marketing" }: FooterProps) => {
               target="_blank"
               rel="noopener noreferrer"
               aria-label={social.label}
-              className="flex items-center justify-center w-11 h-11 md:w-10 md:h-10 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all duration-300"
+              className="flex items-center justify-center w-11 h-11 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all duration-300"
             >
               <social.icon size={18} strokeWidth={1.5} />
             </a>
@@ -165,19 +165,19 @@ const Footer = ({ variant = "marketing" }: FooterProps) => {
           <div className="flex items-center gap-6">
             <Link
               to="/terms"
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-300"
+              className="inline-flex items-center min-h-[44px] text-xs text-muted-foreground hover:text-foreground transition-colors duration-300"
             >
               Terms
             </Link>
             <Link
               to="/privacy"
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-300"
+              className="inline-flex items-center min-h-[44px] text-xs text-muted-foreground hover:text-foreground transition-colors duration-300"
             >
               Privacy
             </Link>
             <Link
               to="/refunds"
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-300"
+              className="inline-flex items-center min-h-[44px] text-xs text-muted-foreground hover:text-foreground transition-colors duration-300"
             >
               Refunds
             </Link>

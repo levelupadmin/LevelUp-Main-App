@@ -30,7 +30,7 @@ export interface ErrorStateProps {
 }
 
 export function ErrorState({
-  title = "Something went wrong",
+  title = "That didn't load",
   description = "Check your connection and try again.",
   onRetry,
   retryLabel = "Try again",

@@ -5,6 +5,7 @@ import Confetti from "@/components/Confetti";
 import { hapticImpact, hapticNotification } from "@/lib/haptics";
 import { useMotionSafe } from "@/lib/motion";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 interface Props {
   open: boolean;
@@ -58,21 +59,19 @@ export default function CompletionTakeover({
   // unmounts the exiting node.
   const dialogRef = useFocusTrap<HTMLDivElement>(open);
 
-  // Celebratory haptic on open, and lock body scroll while the takeover is up.
-  //
-  // ⚠️ INVARIANT: this is the SOLE writer of document.body.style.overflow in
-  // the app (the completion-arc gate greps for it). The effect keys on `open`,
-  // so the lock releases the instant `open` flips false — even while
-  // AnimatePresence keeps the node mounted to play the exit — and again on
-  // unmount (route change / Android back). CompletionRecap must NOT re-lock.
+  // Lock body scroll while the takeover is up, via the reference-counted
+  // body-lock module — the app's single writer of document.body.style.overflow.
+  // The lock keys on `open`, so it releases the instant `open` flips false —
+  // even while AnimatePresence keeps the node mounted to play the exit — and
+  // again on unmount (route change / Android back). The module's refcount means
+  // a concurrent overlay can no longer race capture/restore (the wedged-scroll
+  // class of bug); no by-convention "sole writer" invariant is needed anymore.
+  useBodyScrollLock(open);
+
+  // Celebratory haptic on open.
   useEffect(() => {
     if (!open) return;
     void hapticNotification("success");
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
   }, [open]);
 
   // Escape closes (or continues) the takeover.

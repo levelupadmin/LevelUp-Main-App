@@ -118,7 +118,7 @@ const NotificationPreferences = () => {
       .upsert(rows, { onConflict: "user_id,notification_type" });
 
     if (error) {
-      toast.error("Failed to save preferences");
+      toast.error("Couldn't save your preferences. Try again in a moment.");
       if (import.meta.env.DEV) console.error(error);
     } else {
       setPrefs((prev) => {
@@ -199,6 +199,7 @@ const NotificationPreferences = () => {
                     : "Disabled"}
                 </span>
                 <Switch
+                  aria-label={group.title}
                   checked={allAlwaysOn ? true : groupOn}
                   disabled={allAlwaysOn || isSaving}
                   onCheckedChange={(val) =>

@@ -152,8 +152,8 @@ const InstructorDashboard = () => {
                         <td className="py-3">
                           <span className={`text-xs font-mono px-2 py-0.5 rounded ${
                             c.status === "published"
-                              ? "bg-green-500/15 text-green-400"
-                              : "bg-yellow-500/15 text-yellow-400"
+                              ? "bg-[hsl(var(--success)/0.15)] text-[hsl(var(--success))]"
+                              : "bg-[hsl(var(--accent-amber)/0.15)] text-[hsl(var(--accent-amber))]"
                           }`}>{c.status}</span>
                         </td>
                         <td className="py-3 text-right font-mono text-xs">{c.enrolled_count}</td>

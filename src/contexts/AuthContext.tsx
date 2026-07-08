@@ -25,6 +25,21 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// Per-user localStorage watermarks that must NOT survive a session change on a
+// shared device. Kept as a literal (not imported from the home component) so the
+// critical-path auth bundle doesn't pull in YourWeek + its deps; mirrors
+// `WEEKS_SEEN_KEY_PREFIX` in components/home/YourWeek.tsx.
+const clearPerUserLocalState = () => {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("lu_weeks_seen")) localStorage.removeItem(key);
+    }
+  } catch {
+    /* storage unavailable (private mode / locked-down WebView) → nothing to clear */
+  }
+};
+
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
@@ -252,6 +267,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
+    // Wipe per-user localStorage watermarks (e.g. the weekly-consistency
+    // "weeks seen" counter) so the next account on a shared device starts clean.
+    clearPerUserLocalState();
   };
 
   return (

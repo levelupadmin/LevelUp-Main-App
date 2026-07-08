@@ -14,9 +14,11 @@
 //   whose focus-scope traps Tab inside the sheet and restores focus to the
 //   trigger on close. We deliberately do NOT layer `useFocusTrap` on top — a
 //   second trap would fight Radix's focus-scope (both moving/restoring focus).
-// • Body-lock safety → vaul never writes `document.body.style.overflow`, and
-//   `shouldScaleBackground` is OFF (see ui/drawer.tsx). CompletionTakeover stays
-//   the sole overflow writer.
+// • Body-lock safety → vaul never writes `document.body.style.overflow` inline
+//   (its lock is Radix react-remove-scroll's refcounted stylesheet), and
+//   `shouldScaleBackground` is OFF (see ui/drawer.tsx). The only inline writer
+//   of `body.style.overflow` in the app is the reference-counted
+//   `useBodyScrollLock` module, so this sheet never collides with it.
 // • Reduced motion → vaul's CSS keyframes are flattened by the global
 //   `prefers-reduced-motion` block (index.css); `MorphButton` drops its layoutId
 //   so no morph is attempted (STEAL-10 reduced-motion clause).

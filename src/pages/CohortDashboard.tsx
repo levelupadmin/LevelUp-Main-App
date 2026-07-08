@@ -189,8 +189,8 @@ export default function CohortDashboard() {
             {certThreshold > 0 && (
               <div className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1 rounded ${
                 certEligible
-                  ? "bg-green-500/20 text-green-300"
-                  : "bg-amber-500/20 text-amber-300"
+                  ? "bg-[hsl(var(--success)/0.2)] text-[hsl(var(--success))]"
+                  : "bg-[hsl(var(--accent-amber)/0.2)] text-[hsl(var(--accent-amber))]"
               }`}>
                 <Trophy className="h-3 w-3" />
                 {certEligible ? "Certificate eligible" : `Need ${certThreshold}% attendance`}
@@ -399,7 +399,7 @@ function AttendanceBar({ pct, threshold }: { pct: number; threshold: number }) {
       <div className="relative w-32 h-1.5 bg-muted rounded-full overflow-hidden">
         <div className="absolute inset-y-0 left-0 bg-cream rounded-full" style={{ width: `${Math.min(100, pct)}%` }} />
         {threshold > 0 && (
-          <div className="absolute inset-y-0 w-px bg-amber-400" style={{ left: `${Math.min(100, threshold)}%` }} title={`${threshold}% threshold`} />
+          <div className="absolute inset-y-0 w-px bg-[hsl(var(--accent-amber))]" style={{ left: `${Math.min(100, threshold)}%` }} title={`${threshold}% threshold`} />
         )}
       </div>
     </div>
@@ -484,7 +484,7 @@ function ThisWeekCard({
             <FileText className="h-4 w-4 text-cream" />
             <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Assignment</span>
             {dueSoon && (
-              <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
+              <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-[hsl(var(--accent-amber)/0.2)] text-[hsl(var(--accent-amber))]">
                 Due soon
               </span>
             )}
@@ -531,7 +531,7 @@ function ThisWeekCard({
       {/* Resubmission allowed for needs_revision or no submission */}
       {week.submission_status === "needs_revision" && week.submission_id && (
         <div className="border-t border-border p-5">
-          <p className="text-sm text-amber-300 mb-3 flex items-center gap-2">
+          <p className="text-sm text-[hsl(var(--accent-amber))] mb-3 flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" /> Mentor asked for a revision. Resubmit below.
           </p>
           <AssignmentSubmissionForm
@@ -548,12 +548,12 @@ function ThisWeekCard({
 
 function SubmissionStatusBadge({ status, rating }: { status: string; rating: number | null }) {
   const config: Record<string, { label: string; className: string; icon: JSX.Element }> = {
-    submitted: { label: "Submitted", className: "bg-blue-500/20 text-blue-300", icon: <CheckCircle2 className="h-3 w-3" /> },
+    submitted: { label: "Submitted", className: "bg-[hsl(var(--accent-indigo)/0.2)] text-[hsl(var(--accent-indigo-text))]", icon: <CheckCircle2 className="h-3 w-3" /> },
     under_review: { label: "Under review", className: "bg-cream/20 text-cream", icon: <Clock className="h-3 w-3" /> },
-    reviewed: { label: "Reviewed", className: "bg-green-500/20 text-green-300", icon: <CheckCircle2 className="h-3 w-3" /> },
-    cleared: { label: "Cleared", className: "bg-green-500/20 text-green-300", icon: <CheckCircle2 className="h-3 w-3" /> },
-    needs_revision: { label: "Needs revision", className: "bg-amber-500/20 text-amber-300", icon: <AlertTriangle className="h-3 w-3" /> },
-    late: { label: "Submitted late", className: "bg-orange-500/20 text-orange-300", icon: <Clock className="h-3 w-3" /> },
+    reviewed: { label: "Reviewed", className: "bg-[hsl(var(--success)/0.2)] text-[hsl(var(--success))]", icon: <CheckCircle2 className="h-3 w-3" /> },
+    cleared: { label: "Cleared", className: "bg-[hsl(var(--success)/0.2)] text-[hsl(var(--success))]", icon: <CheckCircle2 className="h-3 w-3" /> },
+    needs_revision: { label: "Needs revision", className: "bg-[hsl(var(--accent-amber)/0.2)] text-[hsl(var(--accent-amber))]", icon: <AlertTriangle className="h-3 w-3" /> },
+    late: { label: "Submitted late", className: "bg-[hsl(var(--accent-amber)/0.2)] text-[hsl(var(--accent-amber))]", icon: <Clock className="h-3 w-3" /> },
   };
   const c = config[status] || config.submitted;
   return (
@@ -608,7 +608,7 @@ function WeekListItem({
             </span>
           )}
           {row.attended && (
-            <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-green-500/10 text-green-300">
+            <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]">
               ✓ attended
             </span>
           )}

@@ -21,6 +21,11 @@ interface Props {
   // Login renders its own step counter in the divider above the card, where
   // this badge would just duplicate it. Login passes false to opt out.
   showStepBadge?: boolean;
+  // Caption under the success check in the STEAL-8 verified choreography. The
+  // login flow is a returning user ("Welcome back", the default); signup mints a
+  // new account, so it passes its own line (e.g. "You're in") — "Welcome back"
+  // would be wrong for a first-time member.
+  successCaption?: string;
 }
 
 // Mask the number so it reads "+91 ····· ··321", keep the country code and
@@ -59,6 +64,7 @@ export function OtpEntryStep({
   onSwitchToEmail,
   onBack,
   showStepBadge = true,
+  successCaption = "Welcome back",
 }: Props) {
   const [otp, setOtp] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -198,7 +204,7 @@ export function OtpEntryStep({
           animate={{ opacity: 1, y: 0 }}
           transition={ms.enabled ? { duration: durations.base, delay: otpSuccess.captionDelay, ease: easings.out } : instant}
         >
-          Welcome back
+          {successCaption}
         </motion.p>
       </div>
     );

@@ -175,7 +175,7 @@ const HeroCarousel = () => {
                 {pills.map((pill, idx) => (
                   <span
                     key={idx}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 text-xs font-mono text-white/80"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/15 border border-white/10 text-xs font-mono text-white/80"
                   >
                     <pill.icon className="h-3 w-3" />
                     {pill.label}

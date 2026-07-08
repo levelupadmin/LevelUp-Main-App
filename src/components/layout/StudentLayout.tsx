@@ -52,16 +52,16 @@ interface Props {
 const ContentSuspenseFallback = () => (
   <div className="px-4 md:px-8 py-6 space-y-6 max-w-5xl mx-auto w-full" role="status" aria-busy="true">
     <span className="sr-only">Loading…</span>
-    <div className="h-44 rounded-2xl bg-surface/60 animate-pulse" />
+    <div className="h-44 rounded-2xl skeleton-shimmer" />
     <div className="space-y-3">
-      <div className="h-4 w-2/5 rounded bg-surface/60 animate-pulse" />
-      <div className="h-3 w-4/5 rounded bg-surface/60 animate-pulse" />
-      <div className="h-3 w-3/5 rounded bg-surface/60 animate-pulse" />
+      <div className="h-4 w-2/5 rounded skeleton-shimmer" />
+      <div className="h-3 w-4/5 rounded skeleton-shimmer" />
+      <div className="h-3 w-3/5 rounded skeleton-shimmer" />
     </div>
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-      <div className="h-32 rounded-xl bg-surface/60 animate-pulse" />
-      <div className="h-32 rounded-xl bg-surface/60 animate-pulse" />
-      <div className="h-32 rounded-xl bg-surface/60 animate-pulse" />
+      <div className="h-32 rounded-xl skeleton-shimmer" />
+      <div className="h-32 rounded-xl skeleton-shimmer" />
+      <div className="h-32 rounded-xl skeleton-shimmer" />
     </div>
   </div>
 );
@@ -331,7 +331,7 @@ const StudentLayout = ({ children }: Props) => {
             16-unit row sits *under* that inset (min-height, not fixed height,
             so the inset is added rather than eating into the row and clipping
             the logo). */}
-        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/80 backdrop-blur-xl safe-top min-h-16">
+        <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-md safe-top min-h-16">
           <div className="flex items-center gap-2">
             <button aria-label="Open menu" className="md:hidden -ml-1.5 text-muted-foreground h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl" onClick={() => { void tapTick(); setSidebarOpen(true); }}>
               <Menu className="h-6 w-6" />
@@ -374,9 +374,9 @@ const StudentLayout = ({ children }: Props) => {
                 aria-label="Account menu"
                 aria-haspopup="menu"
                 aria-expanded={dropdownOpen}
-                className="flex items-center justify-center gap-2 min-h-[44px] min-w-[44px] focus-ring press-scale rounded-md px-1"
+                className="flex items-center justify-center gap-2 focus-ring press-scale rounded-md px-1"
               >
-                <InitialsAvatar name={profile?.full_name ?? "U"} photoUrl={profile?.avatar_url} size={32} />
+                <InitialsAvatar name={profile?.full_name ?? "U"} photoUrl={profile?.avatar_url} size={32} interactive />
                 <ChevronDown className="h-3 w-3 text-muted-foreground hidden sm:block" />
               </button>
 
@@ -461,7 +461,7 @@ const StudentLayout = ({ children }: Props) => {
       {/* Mobile bottom tab bar, respects iOS safe-area inset */}
       <nav
         aria-label="Mobile navigation"
-        className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas/80 backdrop-blur-xl border-t border-border flex items-stretch safe-bottom"
+        className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-canvas/90 backdrop-blur-md border-t border-border flex items-stretch safe-bottom"
       >
         <LayoutGroup id="mobile-tabbar">
         {mobileNavItems.map((item) => {

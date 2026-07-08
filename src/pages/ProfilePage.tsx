@@ -468,7 +468,8 @@ const ProfilePage = () => {
 
     setSaving(false);
     if (error) {
-      toast.error("Failed to update profile");
+      if (import.meta.env.DEV) console.error("Profile update failed:", error);
+      toast.error("Couldn't save your changes. Try again in a moment.");
     } else {
       toast.success("Profile updated");
       setEditing(false);
@@ -489,7 +490,16 @@ const ProfilePage = () => {
   };
 
   return (
-    <div className="space-y-8 max-w-2xl">
+    // Scroll-end clearance for the fixed FloatingSupport FAB. On mobile the FAB
+    // renders here (no sticky CTA to hide behind) at bottom-[4.5rem]+safe, and
+    // its ~44px pill reaches ~7rem up from the safe-area bottom. On native the
+    // <Footer variant="app"/> below <main> is null, so only the tab-bar padding
+    // (~5rem) sits under this content — less than the FAB's reach, which left the
+    // last interactive rows (Delete account / Sign out / invoices) tucked under
+    // the pill's right edge at 360/375. Extra bottom padding pushes those rows
+    // clear at scroll-end. Desktop is unaffected: the pill sits far right of the
+    // narrow max-w-2xl column, so no clearance is needed (md:pb-0).
+    <div className="space-y-8 max-w-2xl pb-24 md:pb-0">
       {/* ── Revolut-style account hub: identity, quick tiles, grouped menu ── */}
       <AccountHub
         name={displayProfile?.full_name ?? ""}
@@ -594,7 +604,7 @@ const ProfilePage = () => {
         {enrolments.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No enrolments yet. Your first course is just a click away.{" "}
-            <Link to="/" className="text-cream hover:underline">
+            <Link to="/" className="text-cream underline underline-offset-2">
               Explore programs →
             </Link>
           </p>
@@ -726,7 +736,15 @@ const SavedSection = () => {
         .eq("status", "active");
       if (cancelled) return;
       // Rows without a slug have no public page to link to, so skip them.
-      setOfferings(((data ?? []) as SavedOffering[]).filter((o) => o.slug));
+      // Normalize the thumbnail to trim-or-null so a whitespace-only value
+      // (`"  "`, an accidental empty-string upload) reads as absent — otherwise
+      // it's truthy and the render below paints a broken <img> instead of the
+      // placeholder tile.
+      setOfferings(
+        ((data ?? []) as SavedOffering[])
+          .filter((o) => o.slug)
+          .map((o) => ({ ...o, thumbnail_url: o.thumbnail_url?.trim() || null })),
+      );
     })();
     return () => {
       cancelled = true;

@@ -208,13 +208,13 @@ const EventsPage = () => {
           // Release the in-flight lock, otherwise the guard above
           // silently swallows every retry once the SDK does load.
           paymentInFlightRef.current = false;
-          toast({ title: "Payment unavailable", description: "Payment system is loading. Please try again in a moment.", variant: "destructive" });
+          toast({ title: "Payment's still loading", description: "Give it a moment, then try again.", variant: "destructive" });
           return;
         }
         const rzp = new (window as any).Razorpay(options);
         rzp.on("payment.failed", () => {
           paymentInFlightRef.current = false;
-          toast({ title: "Payment failed", description: "Please try again.", variant: "destructive" });
+          toast({ title: "Payment didn't complete", description: "Nothing was charged. Try again when you're ready.", variant: "destructive" });
         });
         rzp.on("modal.ondismiss", () => {
           paymentInFlightRef.current = false;
@@ -225,7 +225,7 @@ const EventsPage = () => {
         paymentInFlightRef.current = false;
       }
     } catch {
-      toast({ title: "Error", description: "Something went wrong. Please try again.", variant: "destructive" });
+      toast({ title: "That didn't go through", description: "Try once more?", variant: "destructive" });
       paymentInFlightRef.current = false;
     } finally {
       setRegistering(null);

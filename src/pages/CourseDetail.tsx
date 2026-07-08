@@ -438,7 +438,7 @@ const CourseDetail = () => {
               {course.instructor_display_name && (
                 <span>by {course.instructor_display_name}</span>
               )}
-              {course.duration_minutes && (
+              {course.duration_minutes ? (
                 <span className="flex items-center gap-1">
                   <Clock className="h-3.5 w-3.5" />
                   {(() => {
@@ -449,7 +449,7 @@ const CourseDetail = () => {
                     return `${m}m`;
                   })()}
                 </span>
-              )}
+              ) : null}
               <span className="flex items-center gap-1">
                 <BookOpen className="h-3.5 w-3.5" />
                 {totalChapters} lessons
@@ -458,8 +458,11 @@ const CourseDetail = () => {
             <div className="flex flex-wrap items-center gap-3 mt-2">
               {hasAccess && totalChapters === 0 ? (
                 // Enrolled but the course has no chapters yet. Don't show a
-                // "Continue Learning" button that does nothing; be honest.
-                <Button size="lg" disabled>
+                // "Continue Learning" button that does nothing; be honest — but
+                // keep it on-brand. The champagne variant carries a disabled
+                // floor (saturate-[.75]/opacity-70) so the quiet state reads as
+                // dimmed champagne, never flat gray on black.
+                <Button size="lg" variant="champagne" disabled>
                   Content coming soon
                 </Button>
               ) : hasAccess && completedCount >= totalChapters && totalChapters > 0 ? (
@@ -540,7 +543,7 @@ const CourseDetail = () => {
         {/* Ratings & Reviews */}
         <div className="bg-card border border-border rounded-[16px] p-6 space-y-6">
           <div className="flex items-center gap-2">
-            <Star className="h-5 w-5 text-yellow-400 fill-yellow-400" />
+            <Star className="h-5 w-5 text-gold fill-gold" />
             <h2 className="text-lg font-semibold">Ratings & Reviews</h2>
           </div>
           <ReviewList courseId={courseId!} isEnrolled={hasAccess} />
@@ -594,11 +597,11 @@ const CourseDetail = () => {
                           <div key={chapter.id}>
                             <button
                               onClick={() => handleChapterClick(chapter, sectionChapters)}
-                              className="pressable w-full flex items-start gap-3 min-h-[40px] py-2 px-4 rounded-lg text-left text-sm hover:bg-accent/50 group"
+                              className="pressable w-full flex items-start gap-3 min-h-[44px] py-2 px-4 rounded-lg text-left text-sm hover:bg-accent/50 group"
                             >
                               <span className="w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">
                                 {completed ? (
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                  <CheckCircle2 className="h-4 w-4 text-[hsl(var(--accent-emerald))]" />
                                 ) : locked ? (
                                   <Lock className="h-3.5 w-3.5 text-muted-foreground" />
                                 ) : (
@@ -617,11 +620,11 @@ const CourseDetail = () => {
                                   Free
                                 </Badge>
                               )}
-                              {chapter.duration_seconds && (
+                              {chapter.duration_seconds ? (
                                 <span className="text-xs text-muted-foreground font-mono shrink-0 mt-0.5">
                                   {formatDuration(chapter.duration_seconds)}
                                 </span>
-                              )}
+                              ) : null}
                             </button>
                             {showProgressBar && (
                               <div className="h-0.5 bg-surface-2 rounded-full overflow-hidden mx-4 mt-0.5">

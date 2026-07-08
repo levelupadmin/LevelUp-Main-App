@@ -3,16 +3,22 @@ import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 /**
- * EmptyState: shown when a list/page has no data to display.
+ * EmptyState: the single, canonical dead-end surface — shown when a list or
+ * page has no data to display.
  *
- * Replaces the ad-hoc "No courses yet" / "No events found" patterns each
- * page was rendering differently.
+ * The one true empty state for the app. Its voice matches <SystemState> so
+ * every dead-end (an empty list, a lost page) feels like the same room: calm,
+ * warm, plain-spoken — a cream-ringed icon, a serif-italic headline, a muted
+ * sub line, and a single cream-pill action (Link or button).
+ *
+ * `icon` is a ReactNode (render the lucide element yourself so you control its
+ * size/stroke), e.g. `<BookOpen size={22} strokeWidth={1.5} />`.
  *
  * ```tsx
  * <EmptyState
- *   icon={<BookOpen className="h-5 w-5" />}
+ *   icon={<BookOpen size={22} strokeWidth={1.5} />}
  *   title="No courses yet"
- *   description="Start by enrolling in your first program"
+ *   description="Start by enrolling in your first program."
  *   action={{ to: "/browse", label: "Browse courses" }}
  * />
  * ```
@@ -24,59 +30,54 @@ export interface EmptyStateProps {
   action?:
     | { to: string; label: string }
     | { onClick: () => void; label: string };
+  /**
+   * Optional custom content rendered inside the centred column, below the
+   * description/action — e.g. a row of suggestion chips. Lets a screen keep its
+   * own affordances while still inheriting the canonical icon ring, serif-italic
+   * headline, and muted sub line.
+   */
+  children?: ReactNode;
   className?: string;
-  /** Visual density: "default" centers in a surface card, "inline" uses inline spacing only. */
-  variant?: "default" | "inline";
 }
+
+const actionClasses =
+  "focus-ring pressable mt-6 inline-flex items-center justify-center h-11 px-5 rounded-full bg-cream text-cream-text font-medium text-sm hover:bg-cream/90 transition-colors";
 
 export function EmptyState({
   icon,
   title,
   description,
   action,
+  children,
   className,
-  variant = "default",
 }: EmptyStateProps) {
-  const content = (
-    <div className="flex flex-col items-center text-center py-8 md:py-12 px-4">
+  return (
+    <div
+      className={cn(
+        "anim-rise flex flex-col items-center justify-center text-center px-6 py-12",
+        className
+      )}
+    >
       {icon && (
-        <span className="flex items-center justify-center h-12 w-12 rounded-full bg-surface-2 text-muted-foreground mb-4">
+        <span className="flex h-14 w-14 items-center justify-center rounded-full border border-cream/20 bg-surface/60 text-cream mb-5">
           {icon}
         </span>
       )}
-      <h3 className="heading-3 text-foreground">{title}</h3>
+      <h3 className="font-serif-italic text-[24px] leading-tight text-cream">{title}</h3>
       {description && (
-        <p className="body-muted mt-1.5 max-w-sm">{description}</p>
+        <p className="body-muted mt-2 max-w-[300px]">{description}</p>
       )}
-      {action && (
-        <div className="mt-5">
-          {"to" in action ? (
-            <Link
-              to={action.to}
-              className="focus-ring press-scale inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-cream text-cream-text font-medium text-sm hover:bg-cream/90 transition-colors"
-            >
-              {action.label}
-            </Link>
-          ) : (
-            <button
-              onClick={action.onClick}
-              className="focus-ring press-scale inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-cream text-cream-text font-medium text-sm hover:bg-cream/90 transition-colors"
-            >
-              {action.label}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-
-  if (variant === "inline") {
-    return <div className={cn(className)}>{content}</div>;
-  }
-
-  return (
-    <div className={cn("surface-card", className)}>
-      {content}
+      {action &&
+        ("to" in action ? (
+          <Link to={action.to} className={actionClasses}>
+            {action.label}
+          </Link>
+        ) : (
+          <button type="button" onClick={action.onClick} className={actionClasses}>
+            {action.label}
+          </button>
+        ))}
+      {children && <div className="mt-6">{children}</div>}
     </div>
   );
 }
