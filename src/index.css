@@ -615,15 +615,30 @@
   .stagger-in > *:nth-child(8)  { animation-delay: 320ms; }
   .stagger-in > *:nth-child(n+9) { animation-delay: 360ms; }
 
-  /* Skeleton shimmer for loading states */
+  /* Skeleton shimmer for loading states.
+     Composited by construction: the base is a static surface fill, and a
+     single overlay gradient band sweeps across via transform:translateX only
+     (no background-position paint). This is what lets a 30-42-card loading
+     grid shimmer entirely on the compositor thread instead of repainting
+     every element every frame on the main thread. The base already clips to
+     its own border-radius (overflow:hidden), so the band follows any rounded
+     shape — pills, avatars, cards. */
   .skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+    background: hsl(var(--surface));
+  }
+  .skeleton-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
     background: linear-gradient(
       90deg,
-      hsl(var(--surface)) 25%,
+      transparent 0%,
       hsl(var(--surface-2)) 50%,
-      hsl(var(--surface)) 75%
+      transparent 100%
     );
-    background-size: 200% 100%;
+    transform: translateX(-100%);
     animation: shimmer 2s linear infinite;
   }
 

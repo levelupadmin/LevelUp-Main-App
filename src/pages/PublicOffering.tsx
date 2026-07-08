@@ -768,7 +768,7 @@ function FreePreviewPlayer({
           <Link
             to={`/login?next=${encodeURIComponent(window.location.pathname)}`}
             state={{ from: { pathname: window.location.pathname } }}
-            className="inline-flex items-center h-9 px-4 rounded-xl border border-[hsl(var(--cream))]/40 text-sm font-medium text-foreground hover:bg-[hsl(var(--cream))]/10 transition-colors"
+            className="relative inline-flex items-center h-9 px-4 rounded-xl border border-[hsl(var(--cream))]/40 text-sm font-medium text-foreground hover:bg-[hsl(var(--cream))]/10 transition-colors after:absolute after:left-1/2 after:top-1/2 after:h-11 after:w-full after:-translate-x-1/2 after:-translate-y-1/2 after:content-['']"
           >
             Sign in
           </Link>
@@ -1347,37 +1347,37 @@ export default function PublicOffering() {
     // shape immediately and don't experience a jarring layout shift when
     // the data lands.
     return (
-      <div className="min-h-screen bg-background animate-pulse">
+      <div className="min-h-screen bg-background">
         <header className="border-b border-border bg-[hsl(var(--surface))] safe-top">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-            <div className="h-6 w-24 rounded bg-[hsl(var(--surface-2))]" />
-            <div className="h-6 w-16 rounded bg-[hsl(var(--surface-2))]" />
+            <div className="h-6 w-24 rounded skeleton-shimmer" />
+            <div className="h-6 w-16 rounded skeleton-shimmer" />
           </div>
         </header>
         <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 lg:flex lg:gap-8">
           <div className="lg:w-[60%] space-y-6">
-            <div className="aspect-[16/9] md:aspect-[21/9] rounded-2xl bg-[hsl(var(--surface))]" />
+            <div className="aspect-[16/9] md:aspect-[21/9] rounded-2xl skeleton-shimmer" />
             <div className="space-y-3">
-              <div className="h-8 w-3/4 rounded bg-[hsl(var(--surface-2))]" />
-              <div className="h-5 w-1/2 rounded bg-[hsl(var(--surface-2))]" />
+              <div className="h-8 w-3/4 rounded skeleton-shimmer" />
+              <div className="h-5 w-1/2 rounded skeleton-shimmer" />
             </div>
-            <div className="h-20 rounded-xl bg-[hsl(var(--surface))]" />
+            <div className="h-20 rounded-xl skeleton-shimmer" />
             <div className="space-y-2">
-              <div className="h-5 w-40 rounded bg-[hsl(var(--surface-2))]" />
+              <div className="h-5 w-40 rounded skeleton-shimmer" />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="h-14 rounded-lg bg-[hsl(var(--surface))]" />
-                <div className="h-14 rounded-lg bg-[hsl(var(--surface))]" />
-                <div className="h-14 rounded-lg bg-[hsl(var(--surface))]" />
-                <div className="h-14 rounded-lg bg-[hsl(var(--surface))]" />
+                <div className="h-14 rounded-lg skeleton-shimmer" />
+                <div className="h-14 rounded-lg skeleton-shimmer" />
+                <div className="h-14 rounded-lg skeleton-shimmer" />
+                <div className="h-14 rounded-lg skeleton-shimmer" />
               </div>
             </div>
           </div>
           <div className="hidden lg:block lg:w-[40%]">
             <div className="rounded-2xl bg-[hsl(var(--surface))] p-6 space-y-4">
-              <div className="h-8 w-32 rounded bg-[hsl(var(--surface-2))]" />
-              <div className="h-12 rounded bg-[hsl(var(--surface-2))]" />
-              <div className="h-12 rounded bg-[hsl(var(--surface-2))]" />
-              <div className="h-12 rounded bg-[hsl(var(--surface-2))]" />
+              <div className="h-8 w-32 rounded skeleton-shimmer" />
+              <div className="h-12 rounded skeleton-shimmer" />
+              <div className="h-12 rounded skeleton-shimmer" />
+              <div className="h-12 rounded skeleton-shimmer" />
             </div>
           </div>
         </main>

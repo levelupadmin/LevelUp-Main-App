@@ -63,6 +63,18 @@ export const otpSuccess = {
   windowMs: 850,
 } as const;
 
+// ── progressFill (STEAL-4) ── the UpNextList playing row's left→right background
+// fill (a transform-only scaleX layer). Playback-driven: framer tweens scaleX
+// toward the live watched fraction each time it ticks (playback updates ≤1/s), so
+// `durations.slow` bridges the gap between ticks. Linear on purpose — no ease, no
+// spring — because the fill mirrors real elapsed playback time and any easing would
+// read as UI decoration rather than progress. The call site collapses it to
+// `instant` under reduced motion. Hoisted here so the literal isn't stranded inline.
+export const progressFill = {
+  duration: durations.slow,
+  ease: "linear",
+} as const satisfies Transition;
+
 // ── Easings ── cubic-bezier control points, mirroring the CSS --ease-* vars.
 export const easings = {
   out: [0.2, 0.8, 0.2, 1], // --ease-out

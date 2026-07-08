@@ -548,7 +548,7 @@ function ThisWeekCard({
 
 function SubmissionStatusBadge({ status, rating }: { status: string; rating: number | null }) {
   const config: Record<string, { label: string; className: string; icon: JSX.Element }> = {
-    submitted: { label: "Submitted", className: "bg-[hsl(var(--accent-indigo)/0.2)] text-[hsl(var(--accent-indigo))]", icon: <CheckCircle2 className="h-3 w-3" /> },
+    submitted: { label: "Submitted", className: "bg-[hsl(var(--accent-indigo)/0.2)] text-[hsl(var(--accent-indigo-text))]", icon: <CheckCircle2 className="h-3 w-3" /> },
     under_review: { label: "Under review", className: "bg-cream/20 text-cream", icon: <Clock className="h-3 w-3" /> },
     reviewed: { label: "Reviewed", className: "bg-[hsl(var(--success)/0.2)] text-[hsl(var(--success))]", icon: <CheckCircle2 className="h-3 w-3" /> },
     cleared: { label: "Cleared", className: "bg-[hsl(var(--success)/0.2)] text-[hsl(var(--success))]", icon: <CheckCircle2 className="h-3 w-3" /> },

@@ -182,6 +182,15 @@ const FeaturedHero = () => {
           <motion.div
             key={s.key}
             aria-hidden={i !== index}
+            // The off-screen crossfade copies are aria-hidden but still in the
+            // DOM (so the opacity fade can play). Without this, their inner
+            // "Explore" Link stays keyboard-focusable inside an aria-hidden
+            // subtree (axe aria-hidden-focus, WCAG 4.1.2). `inert` removes the
+            // whole inactive slide from focus + the a11y tree in modern engines;
+            // the per-Link tabIndex={-1} below is the fallback for older
+            // WebViews that predate `inert`. React 18's JSX types don't carry
+            // `inert` yet, so it rides in via this spread.
+            {...(i === index ? {} : { inert: "" })}
             className={cn(
               "absolute inset-0",
               i === index ? "" : "pointer-events-none"
@@ -230,6 +239,7 @@ const FeaturedHero = () => {
                     <Link
                       to={`/p/${s.slug}`}
                       aria-label={`Explore ${s.headline}`}
+                      tabIndex={i === index ? undefined : -1}
                       className="inline-flex items-center justify-center h-11 px-6 rounded-full bg-cream text-cream-text text-sm font-semibold hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
                     >
                       Explore

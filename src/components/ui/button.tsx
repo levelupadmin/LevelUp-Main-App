@@ -27,7 +27,6 @@ const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-muted hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
-        glass: "backdrop-blur-xl bg-background/60 border border-border/50 hover:bg-background/80 shadow-design-sm",
         // The champagne pay moment — the redesign's primary money-path CTA. Mirrors
         // the `.btn-champagne` treatment (index.css:310) as cva classes: vertical
         // champagne gradient, warm-dark cream text, soft inner highlight + warm glow.

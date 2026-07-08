@@ -553,7 +553,7 @@ export default function CheckoutPage() {
           });
 
       if (error || (!data?.razorpay_order_id && !(isAnon && data?.success))) {
-        toast.error(data?.error ?? "Failed to create order");
+        toast.error(data?.error ?? "Couldn't create your order. Please try again.");
         setPaying(false); paymentInFlightRef.current = false;
         return;
       }
@@ -794,7 +794,7 @@ export default function CheckoutPage() {
           {linkedCourses.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                What you'll get
+                Included courses
               </p>
               {linkedCourses.map((lc) => (
                 <div

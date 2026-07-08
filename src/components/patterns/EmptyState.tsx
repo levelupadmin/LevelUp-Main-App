@@ -30,6 +30,13 @@ export interface EmptyStateProps {
   action?:
     | { to: string; label: string }
     | { onClick: () => void; label: string };
+  /**
+   * Optional custom content rendered inside the centred column, below the
+   * description/action — e.g. a row of suggestion chips. Lets a screen keep its
+   * own affordances while still inheriting the canonical icon ring, serif-italic
+   * headline, and muted sub line.
+   */
+  children?: ReactNode;
   className?: string;
 }
 
@@ -41,6 +48,7 @@ export function EmptyState({
   title,
   description,
   action,
+  children,
   className,
 }: EmptyStateProps) {
   return (
@@ -69,6 +77,7 @@ export function EmptyState({
             {action.label}
           </button>
         ))}
+      {children && <div className="mt-6">{children}</div>}
     </div>
   );
 }

@@ -468,7 +468,8 @@ const ProfilePage = () => {
 
     setSaving(false);
     if (error) {
-      toast.error("Failed to update profile");
+      if (import.meta.env.DEV) console.error("Profile update failed:", error);
+      toast.error("Couldn't save your changes. Try again in a moment.");
     } else {
       toast.success("Profile updated");
       setEditing(false);
@@ -594,7 +595,7 @@ const ProfilePage = () => {
         {enrolments.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No enrolments yet. Your first course is just a click away.{" "}
-            <Link to="/" className="text-cream hover:underline">
+            <Link to="/" className="text-cream underline underline-offset-2">
               Explore programs →
             </Link>
           </p>

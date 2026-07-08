@@ -438,7 +438,7 @@ const CourseDetail = () => {
               {course.instructor_display_name && (
                 <span>by {course.instructor_display_name}</span>
               )}
-              {course.duration_minutes && (
+              {course.duration_minutes ? (
                 <span className="flex items-center gap-1">
                   <Clock className="h-3.5 w-3.5" />
                   {(() => {
@@ -449,7 +449,7 @@ const CourseDetail = () => {
                     return `${m}m`;
                   })()}
                 </span>
-              )}
+              ) : null}
               <span className="flex items-center gap-1">
                 <BookOpen className="h-3.5 w-3.5" />
                 {totalChapters} lessons
@@ -458,8 +458,11 @@ const CourseDetail = () => {
             <div className="flex flex-wrap items-center gap-3 mt-2">
               {hasAccess && totalChapters === 0 ? (
                 // Enrolled but the course has no chapters yet. Don't show a
-                // "Continue Learning" button that does nothing; be honest.
-                <Button size="lg" disabled>
+                // "Continue Learning" button that does nothing; be honest — but
+                // keep it on-brand. The champagne variant carries a disabled
+                // floor (saturate-[.75]/opacity-70) so the quiet state reads as
+                // dimmed champagne, never flat gray on black.
+                <Button size="lg" variant="champagne" disabled>
                   Content coming soon
                 </Button>
               ) : hasAccess && completedCount >= totalChapters && totalChapters > 0 ? (

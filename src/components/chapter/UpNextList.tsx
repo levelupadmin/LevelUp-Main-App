@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { Play, Check } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { useMotionSafe, durations, instant } from "@/lib/motion";
+import { useMotionSafe, progressFill, instant } from "@/lib/motion";
 import type { ChapterSibling } from "@/components/chapter/types";
 
 interface Props {
@@ -192,16 +192,18 @@ export default function UpNextList({ siblings, currentIndex, currentChapterId, c
           >
             {/* STEAL-4 row fill — the currently-playing row's background fills
                 left→right with its watched fraction (transform-only scaleX on a
-                cream layer behind the content). Linear, playback-driven: it
-                glides to the resume position on mount and snaps to full the
-                instant the lesson completes. Reduced motion sets it instantly. */}
+                cream layer behind the content). `initial={false}` means no mount
+                glide: the fill snaps straight to the resume position when the row
+                first paints, then tweens linearly (playback-driven, no spring) to
+                each new fraction as the lesson advances — up to full on completion.
+                Reduced motion sets every change instantly. */}
             {isCurrent && watchedFraction > 0 && (
               <motion.span
                 aria-hidden
                 className="absolute inset-y-0 left-0 z-0 w-full origin-left bg-[hsl(var(--cream))]/[0.08]"
                 initial={false}
                 animate={{ scaleX: watchedFraction }}
-                transition={motionSafe.reduced ? instant : { duration: durations.slow, ease: "linear" }}
+                transition={motionSafe.reduced ? instant : progressFill}
               />
             )}
             {/* Thumbnail: cover image (or numbered fallback) + lesson-number

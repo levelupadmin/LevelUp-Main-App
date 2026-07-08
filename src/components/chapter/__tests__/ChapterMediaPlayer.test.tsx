@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
+import { render, fireEvent, act } from "@testing-library/react";
 
 // The app-owned <video> reads chapter markers for the STEAL-4 scrub caption from
 // `chapter_moments`. Stub the client so the fetch never hits the network; each
@@ -198,6 +198,127 @@ describe("ChapterMediaPlayer — STEAL-4 scrub caption (app-owned <video> only)"
     // Past the 10s marker → the second moment's title rides the caption.
     expect(container.textContent).toContain("0:12");
     expect(container.textContent).toContain("Blocking the scene");
+  });
+
+  it("picks the right moment when fetch order (sort_order) disagrees with chronology", () => {
+    // The query orders by sort_order primary, so rows can arrive out of
+    // chronological order (author reordered the markers). momentAt() walks the
+    // list with an early break assuming seconds-ascending, so without the
+    // client-side sort it would break at the first row and mislabel the caption.
+    // Here sort_order is [m2@30, m1@10, m3@50] — reverse-ish of chronology.
+    momentsRows = [
+      { id: "m2", label: "Second beat", seconds: 30 },
+      { id: "m1", label: "First beat", seconds: 10 },
+      { id: "m3", label: "Third beat", seconds: 50 },
+    ];
+    const { container, video } = renderHls();
+    // Playhead at 0:35 sits in the 30s segment → "Second beat".
+    video.currentTime = 35;
+    fireEvent.seeking(video);
+    expect(container.textContent).toContain("0:35");
+    expect(container.textContent).toContain("Second beat");
+    expect(container.textContent).not.toContain("First beat");
+    expect(container.textContent).not.toContain("Third beat");
+  });
+
+  it("resolves the last-before-playhead marker across the whole out-of-order set", () => {
+    // Same out-of-chronology fetch order, but scrub past the final marker to
+    // prove the sort makes the entire list walkable (not just the first hit).
+    momentsRows = [
+      { id: "m2", label: "Second beat", seconds: 30 },
+      { id: "m1", label: "First beat", seconds: 10 },
+      { id: "m3", label: "Third beat", seconds: 50 },
+    ];
+    const { container, video } = renderHls();
+    video.currentTime = 55;
+    fireEvent.seeking(video);
+    expect(container.textContent).toContain("0:55");
+    expect(container.textContent).toContain("Third beat");
+    expect(container.textContent).not.toContain("Second beat");
+  });
+
+  it("coalesces a burst of mid-scrub seeking events into one animation frame", () => {
+    // Root-cause guard for the STEAL-4 render-bounding: during a fast drag
+    // `seeking` fires many times per frame, and under React 18 batching each
+    // setScrubTime is its own render. Only the leading edge commits synchronously;
+    // every later event in the frame must fold onto a SINGLE rAF, so the caption
+    // re-renders at most once per frame regardless of event count.
+    momentsRows = [];
+    const rafCallbacks: FrameRequestCallback[] = [];
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((cb: FrameRequestCallback) => {
+        rafCallbacks.push(cb);
+        return rafCallbacks.length;
+      });
+    try {
+      const { container, video } = renderHls();
+
+      // Leading edge: the caption reveals with the first timestamp synchronously,
+      // WITHOUT scheduling a frame.
+      video.currentTime = 10;
+      fireEvent.seeking(video);
+      expect(container.textContent).toContain("0:10");
+      expect(rafCallbacks).toHaveLength(0);
+
+      // A burst of further seeking events in the same frame schedules exactly ONE
+      // rAF (not one per event) and does NOT re-render the timestamp yet — it's
+      // still showing the leading value, proving the per-event setState is gone.
+      video.currentTime = 11;
+      fireEvent.seeking(video);
+      video.currentTime = 12;
+      fireEvent.seeking(video);
+      video.currentTime = 13;
+      fireEvent.seeking(video);
+      expect(rafCallbacks).toHaveLength(1);
+      expect(container.textContent).toContain("0:10");
+      expect(container.textContent).not.toContain("0:13");
+
+      // Flushing that single frame commits only the LATEST stashed time.
+      act(() => {
+        rafCallbacks[0](0);
+      });
+      expect(container.textContent).toContain("0:13");
+      expect(container.textContent).not.toContain("0:10");
+    } finally {
+      rafSpy.mockRestore();
+    }
+  });
+
+  it("commits the final time immediately on seeked, cancelling a pending frame", () => {
+    // When the drag settles the resting caption must be exact, not a frame stale:
+    // onSeeked cancels the queued rAF and sets the final time synchronously.
+    momentsRows = [];
+    const rafCallbacks: FrameRequestCallback[] = [];
+    const cancelled: number[] = [];
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((cb: FrameRequestCallback) => {
+        rafCallbacks.push(cb);
+        return rafCallbacks.length;
+      });
+    const cancelSpy = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation((handle: number) => {
+        cancelled.push(handle);
+      });
+    try {
+      const { container, video } = renderHls();
+      video.currentTime = 10;
+      fireEvent.seeking(video); // leading edge
+      video.currentTime = 20;
+      fireEvent.seeking(video); // schedules a frame (handle 1)
+      expect(rafCallbacks).toHaveLength(1);
+
+      // Settling jumps straight to the final time and cancels the queued frame.
+      video.currentTime = 25;
+      fireEvent.seeked(video);
+      expect(container.textContent).toContain("0:25");
+      expect(cancelled).toContain(1);
+    } finally {
+      rafSpy.mockRestore();
+      cancelSpy.mockRestore();
+    }
   });
 
   it("falls back to a timestamp-only caption when the chapter has no moments", () => {

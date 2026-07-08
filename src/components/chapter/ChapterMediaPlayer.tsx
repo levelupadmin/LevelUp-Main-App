@@ -91,7 +91,19 @@ function AppOwnedVideo({ url, title, chapterId }: { url: string; title: string; 
   const [scrubTime, setScrubTime] = useState(0);
   // Caption visibility: true through the drag and its short linger afterwards.
   const [captionShown, setCaptionShown] = useState(false);
+  // Mirrors captionShown synchronously (without waiting for React to commit) so a
+  // burst of `seeking` events can distinguish the leading edge of a scrub — where
+  // we reveal the caption at once — from the events that follow, which we coalesce.
+  const captionShownRef = useRef(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // rAF-coalescing for the live timestamp. `seeking` fires many times per frame
+  // during a fast drag, and under React 18 automatic batching each setScrubTime is
+  // its own render (scrubTime is rendered and feeds momentAt). After the caption's
+  // leading-edge reveal we stop calling setScrubTime per event — we stash the
+  // latest time and let a single rAF flush it, bounding the caption to ≤1 render
+  // per frame no matter how many seeking events land in that frame.
+  const scrubRafRef = useRef<number | null>(null);
+  const pendingScrubTimeRef = useRef(0);
   // Last moment id the caption showed, so the boundary haptic fires exactly once
   // per crossing rather than on every seeking event inside the same segment.
   const lastMomentIdRef = useRef<string | null>(null);
@@ -117,16 +129,26 @@ function AppOwnedVideo({ url, title, chapterId }: { url: string; title: string; 
       .order("seconds", { ascending: true })
       .then(({ data, error }) => {
         if (cancelled) return;
-        setMoments(error || !data ? [] : (data as Moment[]));
+        // The query orders by sort_order primary (its other consumer, the
+        // MomentsList, wants author order). But momentAt() walks the list
+        // assuming seconds-ascending and early-breaks, so it picks the wrong
+        // marker whenever author order and chronology disagree. Sort by seconds
+        // here — the caption/haptic then track the true playhead segment while
+        // the query stays as-is for consumers that want sort_order.
+        const rows = error || !data ? [] : (data as Moment[]);
+        setMoments([...rows].sort((a, b) => a.seconds - b.seconds));
       });
     return () => {
       cancelled = true;
     };
   }, [chapterId]);
 
-  // Tidy the linger timer on unmount.
+  // Tidy the linger timer and any pending scrub frame on unmount.
   useEffect(() => () => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    if (scrubRafRef.current != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(scrubRafRef.current);
+    }
   }, []);
 
   const activeMoment = captionShown ? momentAt(moments, scrubTime) : null;
@@ -145,21 +167,58 @@ function AppOwnedVideo({ url, title, chapterId }: { url: string; title: string; 
     lastMomentIdRef.current = activeMomentId;
   }, [activeMomentId, captionShown]);
 
+  // Commit the most recently stashed scrub time. At most one of these runs per
+  // animation frame, collapsing a frame's worth of `seeking` events into a single
+  // render.
+  const flushScrubTime = () => {
+    scrubRafRef.current = null;
+    setScrubTime(pendingScrubTimeRef.current);
+  };
+
   // Show the caption for the duration of a scrub. `seeking` fires repeatedly as
   // the user drags; `seeked` schedules the fade-out after a readable linger.
   const onSeeking = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const t = e.currentTarget.currentTime;
+    pendingScrubTimeRef.current = t;
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
       hideTimerRef.current = null;
     }
-    setScrubTime(e.currentTarget.currentTime);
-    setCaptionShown(true);
+    // Leading edge of a scrub: reveal the caption AND show the first timestamp
+    // synchronously, so the pill appears on the same frame the drag starts.
+    if (!captionShownRef.current) {
+      captionShownRef.current = true;
+      setCaptionShown(true);
+      setScrubTime(t);
+      return;
+    }
+    // Mid-scrub: `seeking` can fire many times per frame. Don't setState per
+    // event — coalesce onto a single rAF so the live timestamp re-renders at most
+    // once per frame during a fast drag. If a frame is already queued, this event
+    // just updates pendingScrubTimeRef (above) and returns without a render. Fall
+    // back to a synchronous set only where rAF is unavailable (non-DOM test env).
+    if (scrubRafRef.current == null) {
+      if (typeof requestAnimationFrame === "function") {
+        scrubRafRef.current = requestAnimationFrame(flushScrubTime);
+      } else {
+        setScrubTime(t);
+      }
+    }
   };
 
   const onSeeked = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    // The drag settled: cancel any coalesced frame and commit the final time now,
+    // so the resting caption is exact rather than up to a frame stale.
+    if (scrubRafRef.current != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(scrubRafRef.current);
+    }
+    scrubRafRef.current = null;
     setScrubTime(e.currentTarget.currentTime);
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = setTimeout(() => setCaptionShown(false), CAPTION_LINGER_MS);
+    hideTimerRef.current = setTimeout(() => {
+      captionShownRef.current = false;
+      setCaptionShown(false);
+    }, CAPTION_LINGER_MS);
   };
 
   const seek = (v: HTMLVideoElement, side: SeekSide) => {
@@ -303,7 +362,7 @@ function AppOwnedVideo({ url, title, chapterId }: { url: string; title: string; 
             exit={{ opacity: 0 }}
             transition={motionSafe.reduced ? instant : { duration: durations.fast, ease: easings.out }}
           >
-            <span className="flex max-w-full items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-[hsl(var(--cream))]">
+            <span className="flex max-w-full items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-[hsl(var(--cream))]">
               <span className="font-mono text-xs font-semibold tabular-nums">{clock(scrubTime)}</span>
               {activeMoment && (
                 <>

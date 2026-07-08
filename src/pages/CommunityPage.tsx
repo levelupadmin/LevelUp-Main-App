@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { MotionButton } from "@/components/motion/MotionButton";
 import { SurfaceCard } from "@/components/patterns/SurfaceCard";
 import ErrorState from "@/components/patterns/ErrorState";
+import { EmptyState } from "@/components/patterns/EmptyState";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import { Heart, MessageCircle, Pin, Send, Loader2, BellOff, Bell, Users, Globe, MessageSquare } from "lucide-react";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
@@ -246,7 +247,8 @@ const CommunityPage = () => {
           ? { ...p, liked_by_me: liked, like_count: p.like_count + (liked ? 1 : -1) }
           : p
       ));
-      toast.error("Failed to update like");
+      if (import.meta.env.DEV) console.error("Community like toggle failed:", error);
+      toast.error("That didn't save. Try again in a moment.");
     }
   };
 
@@ -467,10 +469,11 @@ const CommunityPage = () => {
           ) : error ? (
             <ErrorState onRetry={() => loadPosts()} description={error} />
           ) : posts.length === 0 ? (
-            <div className="text-center py-12">
-              <MessageCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-              <p className="text-lg font-medium text-foreground mb-1">No posts yet, be the first!</p>
-              <p className="text-muted-foreground text-sm mb-5">Not sure where to start? Pick a prompt:</p>
+            <EmptyState
+              icon={<MessageCircle size={22} strokeWidth={1.5} />}
+              title="No posts yet, be the first!"
+              description="Not sure where to start? Pick a prompt:"
+            >
               <div className="flex flex-wrap justify-center gap-2">
                 {[
                   "Share your latest work",
@@ -486,7 +489,7 @@ const CommunityPage = () => {
                   </button>
                 ))}
               </div>
-            </div>
+            </EmptyState>
           ) : (
             // First-page entrance: posts rise in with an incremental stagger.
             // Keyed elements only animate on mount, so refresh/like never re-runs it.

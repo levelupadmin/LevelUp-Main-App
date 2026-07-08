@@ -21,7 +21,9 @@ import { dirname, join } from "node:path";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-// Student-surface files carrying hand-rolled controls the 44px floor covers.
+// Student- and public-surface files carrying hand-rolled controls the 44px
+// floor covers. Footer + the /p/:slug public offering page are shared web
+// chrome authed students also land on, so they sit under the same lens.
 const FILES = [
   "src/components/layout/StudentLayout.tsx",
   "src/components/FloatingSupport.tsx",
@@ -32,6 +34,8 @@ const FILES = [
   "src/components/certificates/CertificateGallery.tsx",
   "src/pages/ChapterViewer.tsx",
   "src/components/InitialsAvatar.tsx",
+  "src/components/Footer.tsx",
+  "src/pages/PublicOffering.tsx",
 ];
 
 // A control clears the floor if its class list carries any of these. `after:h-11`
@@ -59,6 +63,23 @@ const SMALL = [
 // exempt (non-tap decoration living on an interactive element, etc.). Empty
 // today — every flagged control was lifted to a real 44px hit area.
 const EXCEPTIONS = [];
+
+// Governed exceptions ledger. These are centrally-owned design-system primitives
+// (src/components/ui/*) whose sizing is a deliberate, reviewed system decision —
+// not a per-call-site tap target — so they sit OUTSIDE this floor's lens, exactly
+// like the shadcn <Button>. Named here (and echoed in the report) so each carve-out
+// is a committed, reviewable ledger entry rather than a silent gap in the sweep.
+const GOVERNED = [
+  {
+    name: "shadcn Switch",
+    file: "src/components/ui/switch.tsx",
+    size: "h-6 (24px) tall × w-11 (44px) wide",
+    reason:
+      "Radix toggle; the 24px track is the shadcn/design-system standard height. " +
+      "The 44px-wide control plus its always-present, tap-through label row carry the " +
+      "touch affordance — the glyph stays 24px by design, matching the governed <Button>.",
+  },
+];
 
 const clsRe =
   /className=(?:"([^"]*)"|\{`([^`]*)`\}|\{cn\(([\s\S]*?)\)\}|\{([^}]*)\})/;
@@ -110,6 +131,17 @@ for (const rel of FILES) {
 }
 
 report.push("=".repeat(56));
+
+// Governed-exceptions ledger — the named carve-outs that are out of the floor by
+// design. Committed to the output so the exception list is auditable, not implicit.
+report.push("");
+report.push("Governed exceptions (out of floor by design, not violations):");
+for (const g of GOVERNED) {
+  report.push(`  - ${g.name}  [${g.size}]  ${g.file}`);
+  report.push(`      ${g.reason}`);
+}
+report.push("=".repeat(56));
+
 report.push(
   violations === 0
     ? `OK — every hand-rolled control clears the 44px floor across ${FILES.length} files.`

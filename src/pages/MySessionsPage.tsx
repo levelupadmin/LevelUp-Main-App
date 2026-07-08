@@ -157,18 +157,18 @@ const MySessionsPage = () => {
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-surface border border-border rounded-xl p-4 flex items-start gap-4 animate-pulse">
-                <div className="flex-shrink-0 w-14 h-14 rounded-lg bg-surface-2" />
+              <div key={i} className="bg-surface border border-border rounded-xl p-4 flex items-start gap-4">
+                <div className="flex-shrink-0 w-14 h-14 rounded-lg skeleton-shimmer" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-4 bg-surface-2 rounded w-1/2" />
-                  <div className="h-3 bg-surface-2 rounded w-1/3" />
+                  <div className="h-4 skeleton-shimmer rounded w-1/2" />
+                  <div className="h-3 skeleton-shimmer rounded w-1/3" />
                   <div className="flex items-center gap-3 mt-2">
-                    <div className="h-3 bg-surface-2 rounded w-20" />
-                    <div className="h-3 bg-surface-2 rounded w-16" />
-                    <div className="h-3 bg-surface-2 rounded w-12" />
+                    <div className="h-3 skeleton-shimmer rounded w-20" />
+                    <div className="h-3 skeleton-shimmer rounded w-16" />
+                    <div className="h-3 skeleton-shimmer rounded w-12" />
                   </div>
                 </div>
-                <div className="h-8 bg-surface-2 rounded-lg w-16 flex-shrink-0 self-center" />
+                <div className="h-8 skeleton-shimmer rounded-lg w-16 flex-shrink-0 self-center" />
               </div>
             ))}
           </div>

@@ -189,8 +189,8 @@ export default {
           "100%": { opacity: "0", transform: "translateY(-10px) scale(0.95)" },
         },
         "shimmer": {
-          "0%": { backgroundPosition: "-200% 0" },
-          "100%": { backgroundPosition: "200% 0" },
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(100%)" },
         },
         "slide-left-in": {
           from: { opacity: "0", transform: "translateX(24px)" },
