@@ -19,6 +19,14 @@ export interface FunnelStage {
     completedNoFee: boolean;
     contactablePartial: boolean;
   };
+  /**
+   * The money signal behind this stage could not be pinned to exactly one
+   * offering (a shared ₹400/₹8k/₹15k amount with no corroborating first-party
+   * row or lead status). When true the client withholds the money CTA and
+   * degrades to the status-driven timeline, which owns payments — "when in
+   * doubt, show information, never a money CTA."
+   */
+  ambiguous: boolean;
 }
 
 /**

@@ -239,7 +239,17 @@ const ApplicationStatus = () => {
     reconciledStep >= currentStepIndex
       ? RECONCILED_STAGE_UI[reconciledStage]
       : undefined;
-  const reconciledCta = reconciledUi?.cta?.(application);
+  /* Ambiguous money — withhold the CTA, keep the chip. When the reconciler
+     can't pin a shared-tier amount to exactly one offering it flags
+     `ambiguous`; we then render chip-only (information) and suppress any
+     money CTA, degrading to the status-driven timeline below, which owns
+     payments. Flag off → `reconciled` is undefined → `ambiguous` is falsy →
+     this is inert and byte-identical to the pre-reconciler CTA. */
+  const reconciledCtaCandidate = reconciledUi?.cta?.(application);
+  const reconciledCta =
+    reconciledCtaCandidate?.payment && reconciled?.ambiguous
+      ? undefined
+      : reconciledCtaCandidate;
 
   /* Determine which step was "failed" at, for rejected/withdrawn */
   // For rejected, show failure at the step after the last completed step
