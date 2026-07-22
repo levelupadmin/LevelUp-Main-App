@@ -27,6 +27,10 @@ project_id = "twqagwleffjggoemzfqs"
     verify_jwt = false
   [functions.register-for-event]
     verify_jwt = true
+  # reconcile-funnel-stage: a normal client-authenticated invoke (reads the
+  # caller via userClient.auth.getUser), same as register-for-event.
+  [functions.reconcile-funnel-stage]
+    verify_jwt = true
   # NOTE: tally-application-webhook is called by Tally with no Supabase JWT.
   # It is verify_jwt=true on prod today, which likely stops Tally reaching it
   # (it self-authenticates via HMAC, so false is the correct setting once the
