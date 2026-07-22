@@ -45,6 +45,7 @@ graph LR
     A["Round A · 2026-07-08<br/>Community-v2 corrected brief<br/>(the inversion that created<br/>cohort-room exclusivity)"] --> B["Round B · 2026-07-16<br/>Flow-feedback R1<br/>(Rahul's binding feedback)"]
     B --> C["Round C · 2026-07-17<br/>CRO scope resolution<br/>(v2 baseline + bet framing)"]
     C --> D["Round D · 2026-07-17/18<br/>PRD finalization<br/>(consolidated RAHUL DECISIONS<br/>+ PRD-internal calls)"]
+    D --> E["Round E · 2026-07-18<br/>MEMBER-1 ruling<br/>(three-tier cohort-room<br/>access boundary)"]
 ```
 
 ---
@@ -108,6 +109,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 | DL-051 | Open Q7 | Per-cohort theming assets (accents/art) from Rahul for the R0-T5 seed | 🔵 OPEN | PRD §8.2 Q7; ROOMS-BACKLOG R0-T5 |
 | DL-052 | Open Q2/Q4/Q6 | Three earlier open questions now **resolved** in the PRD — pointer entry | ✅ DECIDED (pointer) | PRD §8.2 |
 | DL-053 | CAL-1 | Calendly-webhook receiver + `interview_modality` column = net-new Tier-1 infra (build in v1, serves DL-011) | 🟠 PENDING · 🔴 | PRD §9.1; §5.5 REQ-INT-1; DL-011 |
+| DL-054 | MEMBER-1 | Three-tier cohort-room access: **accepted** (veil-only, no membership row) → **confirmation_paid** (`pre_member`, heavily redacted) → **enrolled** (`member`, full) | ✅ DECIDED · 🟠 (whitelist) · 🔴 | 02-STATE-MACHINE; 03-DATA-MODEL-ERD; 05-ACCESS-SECURITY; DL-018/022/039 |
 
 ---
 
@@ -257,6 +259,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 - **Rationale:** Low seat numbers signal an empty cohort; a locked-preview builds confirm-excitement (`FLOW-FEEDBACK-R1.md` §9i).
 - **Alternatives considered:** Seat numbers as scarcity/status (killed — they leak fill state).
 - **Affects:** PRD REQ-LOCK-1/2/3, REQ-DEC-4, REQ-MENTOR-1, NFR-COPY-3 (grep: zero "seat #"/"student #"/fill-count strings).
+- **↪ Margin note (2026-07-18, refined by MEMBER-1 / DL-054):** this entry's "the *actual* room veiled with per-module locks" is **narrowed for the accepted (pre-confirmation) tier**. Under MEMBER-1 an accepted user's locked-future view is built from **public-safe / marketing-class data — never real room rows**; the veil over *real* room content begins only at the `pre_member` tier, after the confirmation fee. The confirm-excitement beat this entry establishes is unchanged; only the data source behind the accepted-tier veil is corrected.
 
 ### DL-019 — The cohort room is not sold; redesign at world-class fidelity
 - **Date:** 2026-07-16 · **Status:** ✅ DECIDED
@@ -526,6 +529,29 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 
 ---
 
+## Round E — MEMBER-1 ruling (2026-07-18) — the three-tier cohort-room access boundary
+
+*Rahul's binding ruling (2026-07-18) fixing who may read what inside a cohort room across the accepted → confirmation_paid → enrolled ladder. It is authoritative and applied exactly. It also **kills** a path the earlier council had proposed — a redacted preview RPC for accepted users — so that reversal is recorded here and not silently re-argued. This ruling refines DL-018 (see the margin note there) and is the source of truth for docs 02/03/05 on the room-access boundary.*
+
+### DL-054 — MEMBER-1: the three-tier cohort-room access boundary (accepted / confirmation_paid / enrolled)
+- **Date:** 2026-07-18 · **Status:** ✅ DECIDED (Rahul's ruling — the tier boundary) · 🟠 the `pre_member` redaction whitelist is a **RAHUL DECISION to tune** (default active; tune before Stage-08 build) · `🔴 Tier 1 (RLS on room-content tables)`
+- **Decision:** Cohort-room access is a three-tier ladder, applied exactly:
+  1. **accepted** (post-interview, before the confirmation fee) — holds **no** cohort-room membership row and **no** read path into **any** real room-content table. The only room-adjacent thing an accepted user sees is the **LOCKED FUTURE VIEW veil** on the confirm-seat screen, built from **public-safe / marketing-class data** (the same class the public offering page already exposes), **never** real room rows. The confirm CTA is present.
+  2. **confirmation_paid** — the confirmation-fee resolver writes a scoped **`pre_member`** membership row; the user enters the room as a **limited, heavily redacted** member.
+  3. **enrolled** (remaining / full fee) — full **`member`**: nothing redacted, full read **and** community write.
+- **What CHANGED from the council default (2026-07-18):** this ruling **deletes** the council's previously-proposed "redacted SECURITY-DEFINER preview RPC for accepted." Accepted users now get **no** read path into room content of any kind — the accepted tier is **veil-only**, from marketing-class data. That preview-RPC path is removed wherever it appears. (This is the prior-stance reversal; DL-018's "the *actual* room veiled" is correspondingly refined — see its margin note.)
+- **The `pre_member` redaction whitelist — RAHUL DECISION to tune (recommended default, stated as the flagged default):**
+  - **pre_member CAN see:** the room masthead / theme, a this-week **overview** (session titles + dates only), cohort-mates presence / count, the welcome / announcements channel (**read only**), and the upcoming-session schedule / calendar.
+  - **pre_member CANNOT see or do:** full curriculum detail, any recordings, assignment content or submission, any feedback, and mentor / instructor materials; and **cannot post / write** in community (read-only). Community **write** and full content unlock at **enrolled**.
+  - This specific line-item list is a **RAHUL DECISION to tune** — it ships as the active default so the crew is not blocked, and Rahul confirms or adjusts it before the Stage-08 build.
+- **Rationale (recorded):** Smaller attack surface — accepted users hold **zero** RLS grants into room content, so there is nothing for them to leak — and it matches Rahul's flow-feedback "locked future view → excitement to confirm unlocks it" (DL-018), extended to a two-stage ladder: **locked teaser → confirm → scoped-redacted → remaining → full.**
+- **Alternatives considered:** The council's redacted SECURITY-DEFINER preview RPC for accepted (**killed** by this ruling — it granted accepted users a read path into real room content, enlarging the attack surface for no product gain over a marketing-class veil); a single accepted-vs-member boundary with no `pre_member` middle tier (rejected — loses the confirm-fee unlock beat and the two-stage ladder).
+- **Separate and UNCHANGED:** the public admission page's own whitelisted anon-read path (**SEC-PUBLIC-1**) is a **distinct** surface — this ruling does **not** touch it. The offering-page public-data path is likewise unchanged. Do not conflate the accepted-tier marketing-class veil with SEC-PUBLIC-1's anon-read grant.
+- **Tier-1 gate:** per `CLAUDE.md` Tier 1, **no RLS is applied** until this passes the bug-fix council, the adversarial suite is **green on shadow**, and Rahul gives **written sign-off**; it stays built behind the room flag throughout. No code is written and no build is run against this entry until then.
+- **Affects:** `02-STATE-MACHINE.md` (the accepted → confirmation_paid → enrolled transitions and the resolver that writes the `pre_member` row on confirmation-fee payment); `03-DATA-MODEL-ERD.md` (the membership-row model — `pre_member` vs `member`, and that **accepted holds no row**); `05-ACCESS-SECURITY.md` (the RLS boundary, the `pre_member` redaction whitelist, and the accepted-tier veil's marketing-class data source — kept **separate** from SEC-PUBLIC-1); DL-018 (refined — the veil is marketing-class data for the accepted tier, not real room rows); DL-022 (in-room community **write** gated to enrolled); DL-039 R-D2 (pre-start lobby OFF for accepted-but-unpaid — consistent: accepted gets no room entry).
+
+---
+
 ## Currently pending — what Rahul still owns
 
 *A one-glance list of everything not yet ✅ DECIDED, so nothing waits silently. Defaults are active where noted; Rahul confirms or vetoes before the named build phase.*
@@ -547,6 +573,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 | DL-038 | COMM-1 | Confirm async-only v1 | No — default active |
 | DL-039 | R-D2…R-D9 | Confirm the eight room defaults | No — defaults active |
 | DL-053 | CAL-1 | Confirm building the Calendly webhook in v1 (Tier-1 sign-off) | Partially — degraded modality-display fallback exists |
+| DL-054 | MEMBER-1 | Confirm/tune the `pre_member` redaction whitelist before Stage-08; Tier-1 written sign-off before any RLS is applied | No — tier boundary is RULED; whitelist default active |
 | DL-002 | R-C1 | Global commons direction pick | Blocks the *commons* program UI, not this PRD |
 | DL-003 | R-C2…R-C9 | Eight commons sub-decisions | Commons program only |
 | DL-048 | Open Q1 | Long-term system-of-record | No for v1 (reconciler default) |
