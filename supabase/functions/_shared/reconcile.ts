@@ -105,6 +105,18 @@ export interface OfferingContext {
   appFeeInr: number | null;
   confirmationAmountInr: number | null;
   productMatch: readonly string[];
+  /**
+   * THIS offering's OWN balance/full floor in whole rupees, derived by the edge fn
+   * from the offering's `price_inr` (`price_inr − appFee − confirmation`) — the
+   * amount a caller still owes after the seat-confirm, so a capture at or above it
+   * is a balance/full payment FOR THIS OFFERING. Replaces the old global
+   * `amount ≥ ₹22k` threshold (council B2): an unrelated ≥₹22k for another product
+   * sits below a pricier offering's floor and so can neither force a false
+   * `enrolled` nor mask a real `confirm-paid-no-balance`. `null` when the offering
+   * carries no `price_inr` — then money alone NEVER infers `enrolled` (the safe
+   * default: withhold the money stage rather than guess a cross-product capture).
+   */
+  balanceFloorInr: number | null;
 }
 
 /**
@@ -347,6 +359,55 @@ const COMPLETED_STATUSES = new Set<string>([
   "converted",
 ]);
 
+/**
+ * Statuses that CORROBORATE a shared ₹400 app-fee capture belongs to THIS
+ * offering (council B1). Reaching `Application Fee Paid` (or any later stage)
+ * proves the scoped lead actually paid the fee for this offering — mere lead
+ * EXISTENCE at `NEW`/`Fee Link Sent` does NOT (the applicant only applied; the
+ * shared ₹400 could be any Live cohort's). This is `COMPLETED_STATUSES` minus the
+ * pre-payment `fee link sent`.
+ */
+const APP_FEE_CORROBORATING_STATUSES = new Set<string>([
+  "application fee paid",
+  "interview scheduled",
+  "need to reschedule interview",
+  "interview completed",
+  "no show",
+  "accepted",
+  "converted",
+]);
+
+/**
+ * Statuses that CORROBORATE a shared ₹8k/₹15k seat-confirm belongs to THIS
+ * offering (council B1). The seat-confirm deposit is post-interview, so only
+ * `Interview completed`/`Accepted`/`Converted` prove the scoped lead reached the
+ * point where a seat-confirm is captured. `Application Fee Paid` (or earlier) is
+ * NOT sufficient — a same-SKU sibling intake shares both the amount AND the lead's
+ * `product_1`, so an app-fee-level status can never pin the seat-confirm to one
+ * intake; only a later status (or a first-party `payment_orders` row) can.
+ */
+const SEAT_CONFIRM_CORROBORATING_STATUSES = new Set<string>([
+  "interview completed",
+  "accepted",
+  "converted",
+]);
+
+/**
+ * Terminal-NEGATIVE `cohort_applications.status` values — an application that was
+ * rejected/withdrawn/waitlisted has no forward progress. The edge fn's mirror
+ * write must not stamp a progress stage or outreach markers on such a row
+ * (council data-layer floor), so a later outreach job keyed on `reconciled_*`
+ * can't fire on a dead application. NOTE: this DUPLICATES the `-1` entries of the
+ * client `STATUS_TO_STEP` map in `src/pages/ApplicationStatus.tsx`; there is no
+ * shared constant across the client bundle and this import-free edge module, so
+ * keep the two in sync by hand if the picklist grows a new terminal status.
+ */
+export const TERMINAL_NEGATIVE_STATUSES = new Set<string>([
+  "rejected",
+  "withdrawn",
+  "waitlisted",
+]);
+
 /** Newest lead (highest timestamp) of a set, or null if empty. */
 function newestLead(leads: readonly TeleCrmLead[]): TeleCrmLead | null {
   if (leads.length === 0) return null;
@@ -439,39 +500,59 @@ export function deriveStage(
   const amounts = products.map((p) => p.amountInr);
   const appFeeMatched = amounts.some((a) => withinGstBand(a, offering.appFeeInr));
   const confirmMatched = amounts.some((a) => withinGstBand(a, offering.confirmationAmountInr));
-  const balanceOrFull = products.some((p) => p.isBalanceOrFull);
-  // The person resolved to a payment (by phone/email) whenever an in-band amount
-  // matched — used for join health even if the offering attribution is ambiguous.
-  const razorpayKey =
-    appFeeMatched || confirmMatched || balanceOrFull ? razorpay.resolvedKey : null;
 
-  // --- Shared-tier disambiguation. A shared amount (Live ₹400 / ₹8k, Forge ₹15k)
-  //     is THIS offering's only when a product_1 lead OR a first-party
-  //     (payment_orders) row confirms it; otherwise it is `ambiguous`, never
-  //     mis-assigned (so a CTA is never routed to the wrong cohort). ---
-  const attributionConfident = scopedLead !== null || razorpay.firstPartyConfirmed === true;
+  // --- Shared-tier disambiguation (council B1). A shared amount (Live ₹400 / ₹8k,
+  //     Forge ₹15k) is attributed to THIS offering only when corroborated — NOT on
+  //     mere lead existence. Confidence is PER TIER: a first-party `payment_orders`
+  //     row (offering-exact) confirms any amount; otherwise the scoped lead's OWN
+  //     status must corroborate the tier — `Application Fee Paid`+ for the ₹400,
+  //     `Interview completed`/`Accepted`/`Converted` for the seat-confirm. A lead
+  //     sitting at `NEW`/`Fee Link Sent` proves only that the applicant applied, so
+  //     an uncorroborated shared amount stays `ambiguous`, never mis-assigned. ---
+  const firstPartyConfirmed = razorpay.firstPartyConfirmed === true;
+  const appFeeConfident = firstPartyConfirmed || APP_FEE_CORROBORATING_STATUSES.has(s);
+  const seatConfirmConfident = firstPartyConfirmed || SEAT_CONFIRM_CORROBORATING_STATUSES.has(s);
   let ambiguous = false;
-  const attributeToOffering = (matched: boolean, expected: number | null): boolean => {
+  const attributeShared = (
+    matched: boolean,
+    expected: number | null,
+    confident: boolean,
+  ): boolean => {
     if (!matched) return false;
-    if (isSharedTier(expected) && !attributionConfident) {
+    if (isSharedTier(expected) && !confident) {
       ambiguous = true;
       return false;
     }
     return true;
   };
-  const hasAppFee = attributeToOffering(appFeeMatched, offering.appFeeInr);
-  const hasSeatConfirm = attributeToOffering(confirmMatched, offering.confirmationAmountInr);
+  const hasAppFee = attributeShared(appFeeMatched, offering.appFeeInr, appFeeConfident);
+  const hasSeatConfirm = attributeShared(
+    confirmMatched,
+    offering.confirmationAmountInr,
+    seatConfirmConfident,
+  );
   // A shared app-fee amount matched but could NOT be attributed to this offering
-  // (shared-tier + unconfirmed) — we saw a ₹400 that MIGHT be this caller's. That
-  // is `ambiguous` (surfaced for the client to soften the CTA), and it must also
-  // hold back the outreach markers below: flagging a possibly-paid caller as
+  // (shared-tier + uncorroborated) — we saw a ₹400 that MIGHT be this caller's.
+  // That is `ambiguous` (surfaced for the client to soften the CTA), and it must
+  // also hold back the outreach markers below: flagging a possibly-paid caller as
   // "owes the app fee" is a pay-twice chase. We never mis-credit (the money stays
   // unattributed), but we also never assert the fee is unpaid over a match we saw.
   const appFeeAmbiguous =
-    appFeeMatched && isSharedTier(offering.appFeeInr) && !attributionConfident;
-  // Balance/full is terminal (→ enrolled, no onward payment CTA), and a ₹40k+
-  // full payment is effectively unique, so it is not shared-tier-gated.
-  const hasBalanceOrFull = balanceOrFull;
+    appFeeMatched && isSharedTier(offering.appFeeInr) && !appFeeConfident;
+  // Balance/full → `enrolled` (terminal, no onward CTA). Scoped to THIS offering's
+  // OWN floor (`price_inr − appFee − confirmation`), NOT a global `≥₹22k` threshold
+  // (council B2): an unrelated ≥₹22k for another product sits below a pricier
+  // offering's floor and must neither force a false `enrolled` nor mask a real
+  // `confirm-paid-no-balance`. When the offering carries no `price_inr` (floor
+  // null), money alone never infers `enrolled` — the safe default.
+  const balanceFloor = offering.balanceFloorInr;
+  const hasBalanceOrFull =
+    balanceFloor != null && balanceFloor > 0 && amounts.some((a) => a >= balanceFloor * GST_LOWER);
+  // The person resolved to a payment (by phone/email) whenever an amount matched
+  // one of THIS offering's own bands — used for join health even if the offering
+  // attribution is ambiguous.
+  const razorpayKey =
+    appFeeMatched || confirmMatched || hasBalanceOrFull ? razorpay.resolvedKey : null;
 
   // --- Resolving join key, scoped to this offering (phone primary → email) ---
   const resolvedKey = pickResolvedKey([

@@ -32,6 +32,7 @@ import {
   deriveStage,
   joinKeys,
   offeringToProductMatch,
+  TERMINAL_NEGATIVE_STATUSES,
   type OfferingContext,
   type ProductInfo,
   type RazorpayRead,
@@ -291,11 +292,16 @@ async function readRazorpay(
   };
   // An amount in one of THIS offering's own bands (GST-tolerant), used for the
   // early-stop: once we have a captured in-band amount for the caller, more pages
-  // cannot change the offering-scoped result.
+  // cannot change the offering-scoped result. Balance/full is scoped to THIS
+  // offering's OWN floor (council B2), not a global `≥₹22k` — so an unrelated large
+  // capture for another product does not short-circuit the scan.
   const inOfferingBand = (rupees: number): boolean => {
-    const p = amountToProduct(rupees);
+    const atOrAboveBalanceFloor =
+      offering.balanceFloorInr != null &&
+      offering.balanceFloorInr > 0 &&
+      rupees >= offering.balanceFloorInr * 0.98;
     return (
-      p.isBalanceOrFull ||
+      atOrAboveBalanceFloor ||
       bandHit(rupees, offering.appFeeInr) ||
       bandHit(rupees, offering.confirmationAmountInr)
     );
@@ -583,14 +589,28 @@ Deno.serve(async (req) => {
     // (offerings has no product_1 column; the map is built in `_shared/reconcile`).
     const { data: offeringRow } = await admin
       .from("offerings")
-      .select("id, slug, title, type, app_fee_inr, confirmation_amount_inr")
+      .select("id, slug, title, type, app_fee_inr, confirmation_amount_inr, price_inr")
       .eq("id", offeringId)
       .maybeSingle();
     if (!offeringRow) return jsonRes({ error: "Unknown offering" }, req, 404);
+    const appFeeInr = numOrNull(offeringRow.app_fee_inr);
+    const confirmationAmountInr = numOrNull(offeringRow.confirmation_amount_inr);
+    const priceInr = numOrNull(offeringRow.price_inr);
+    // THIS offering's OWN balance/full floor (council B2): what the caller still
+    // owes after app-fee + seat-confirm. A capture at/above it is a balance/full
+    // payment FOR THIS OFFERING — replacing the old global `≥₹22k` threshold, so an
+    // unrelated ≥₹22k for a pricier product can't force a false `enrolled`. `null`
+    // when the offering carries no `price_inr` (or no amount bands) — then money
+    // alone never infers `enrolled` (the safe default).
+    const balanceFloorInr =
+      priceInr != null && appFeeInr != null && confirmationAmountInr != null
+        ? Math.max(0, priceInr - appFeeInr - confirmationAmountInr)
+        : null;
     const offering: OfferingContext = {
       offeringId,
-      appFeeInr: numOrNull(offeringRow.app_fee_inr),
-      confirmationAmountInr: numOrNull(offeringRow.confirmation_amount_inr),
+      appFeeInr,
+      confirmationAmountInr,
+      balanceFloorInr,
       productMatch: offeringToProductMatch(offeringRow as {
         slug?: string | null;
         title?: string | null;
@@ -682,22 +702,55 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Data-layer status floor (council). Read THIS application's OWN status
+    // (scoped by user_id + offering_id). When it maps to terminal-negative
+    // (`rejected`/`withdrawn`/`waitlisted` — the client `STATUS_TO_STEP` = -1 set),
+    // the application has no forward progress: the mirror must NOT stamp a progress
+    // stage or outreach markers, so a later outreach job keyed on `reconciled_*`
+    // can't fire on a dead row. Best-effort: a failed read leaves the derived write
+    // intact (preserves today's behaviour rather than silently nulling).
+    let applicationTerminal = false;
+    try {
+      const { data: appRow } = await admin
+        .from("cohort_applications")
+        .select("status")
+        .eq("user_id", user.id)
+        .eq("offering_id", offeringId)
+        .maybeSingle();
+      const appStatus =
+        appRow && typeof appRow.status === "string" ? appRow.status.trim().toLowerCase() : null;
+      applicationTerminal = appStatus != null && TERMINAL_NEGATIVE_STATUSES.has(appStatus);
+    } catch {
+      applicationTerminal = false;
+    }
+
     // Mirror the derived stage onto the app-owned columns via the service-role
     // client. Fail-soft: a mirror-write failure never fails the read response.
     // Scoped to `offering_id` (guaranteed present), so the stage lands ONLY on
     // this application — never a sibling (cross-offering contamination). Writes
     // ONLY the five reconciled_* mirror columns — never `status`, never `accepted`.
+    // A terminal-negative application gets a NULLED progress write (no stage, no
+    // markers) — the data-layer floor above.
     let mirrored = false;
     try {
+      const mirrorPayload = applicationTerminal
+        ? {
+            reconciled_stage: null,
+            reconciled_key: null,
+            completed_no_fee: false,
+            contactable_partial: false,
+            reconciled_at: new Date().toISOString(),
+          }
+        : {
+            reconciled_stage: derived.stage,
+            reconciled_key: derived.resolvedKey,
+            completed_no_fee: derived.markers.completedNoFee,
+            contactable_partial: derived.markers.contactablePartial,
+            reconciled_at: new Date().toISOString(),
+          };
       const { error: mirrorError } = await admin
         .from("cohort_applications")
-        .update({
-          reconciled_stage: derived.stage,
-          reconciled_key: derived.resolvedKey,
-          completed_no_fee: derived.markers.completedNoFee,
-          contactable_partial: derived.markers.contactablePartial,
-          reconciled_at: new Date().toISOString(),
-        })
+        .update(mirrorPayload)
         .eq("user_id", user.id)
         .eq("offering_id", offeringId);
       if (mirrorError) {

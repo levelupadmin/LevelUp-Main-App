@@ -54,25 +54,34 @@ export const BOTH_KEYS: JoinKeys = keys("+919788385577", "aspirant@example.com")
 
 /**
  * Build an `OfferingContext`. Defaults model a Live cohort (₹400 app fee / ₹8,000
- * seat-confirm, `product_1` = `VE`). Override for a Forge product etc.
+ * seat-confirm, `product_1` = `VE`, a ₹33k programme so the balance floor is
+ * `33000 − 400 − 8000 = ₹24,600`). Override for a Forge product, a pricier intake,
+ * etc. `balanceFloorInr` is what the edge fn derives from `price_inr − appFee −
+ * confirmation`; a capture at/above it is a balance/full payment FOR THIS offering.
  */
 export function offering(overrides: Partial<OfferingContext> = {}): OfferingContext {
   return {
     offeringId: overrides.offeringId ?? "off_live",
     appFeeInr: overrides.appFeeInr ?? 400,
     confirmationAmountInr: overrides.confirmationAmountInr ?? 8000,
+    balanceFloorInr: overrides.balanceFloorInr ?? 24600,
     productMatch: overrides.productMatch ?? ["VE"],
   };
 }
 
-/** A Live cohort: ₹400 shared app fee, ₹8,000 shared seat-confirm, `product_1` VE. */
+/**
+ * A Live cohort: ₹400 shared app fee, ₹8,000 shared seat-confirm, `product_1` VE,
+ * balance floor ₹24,600 (₹33k programme). A ₹25,785 capture clears the floor →
+ * balance/full; a ₹25,000 capture for a PRICIER offering would sit below its floor.
+ */
 export const LIVE_OFFERING: OfferingContext = offering();
 
-/** A Forge product: ₹700 product-distinct app fee, ₹15,000 seat-confirm, `product_1` FC. */
+/** A Forge product: ₹700 product-distinct app fee, ₹15,000 seat-confirm, `product_1` FC, ₹40k programme. */
 export const FORGE_OFFERING: OfferingContext = offering({
   offeringId: "off_forge",
   appFeeInr: 700,
   confirmationAmountInr: 15000,
+  balanceFloorInr: 24300,
   productMatch: ["FC"],
 });
 

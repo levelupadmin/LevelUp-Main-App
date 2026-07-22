@@ -5,6 +5,7 @@ import {
   deriveStage,
   joinKeys,
   offeringToProductMatch,
+  TERMINAL_NEGATIVE_STATUSES,
 } from "@shared/reconcile";
 import {
   BOTH_KEYS,
@@ -260,6 +261,125 @@ describe("deriveStage — GST-tolerant offering-scoped money match + shared-tier
     const d = deriveStage(FORGE_OFFERING, tallyNoMatch(), telecrmNoMatch(), razorpayAmounts([700], "phone"), BOTH_KEYS);
     expect(d.ambiguous).toBe(false);
     expect(d.stage).toBe("fee-paid-no-interview");
+  });
+});
+
+describe("deriveStage — council B1/B2/B3 money-attribution repros (was-red → green)", () => {
+  it("B1 — VE lead@`NEW` + shared ₹8k is NOT confirm-paid (uncorroborated → ambiguous)", () => {
+    // The ₹8k seat-confirm is shared across every Live cohort; a lead at `NEW`
+    // proves only that the applicant applied, not that the deposit was for THIS
+    // offering. So the money is ambiguous and the confirm-paid stage is withheld —
+    // the derivation degrades to the highest non-money stage the signals support.
+    const d = deriveStage(
+      LIVE_OFFERING,
+      tallyNoMatch(),
+      telecrmStatus("NEW"),
+      razorpayAmounts([8000], "phone"),
+      BOTH_KEYS,
+    );
+    expect(d.stage).not.toBe("confirm-paid-no-balance");
+    expect(d.stage).toBe("partial");
+    expect(d.ambiguous).toBe(true);
+  });
+
+  it("B1 — same-SKU two-intake: an app-fee-level lead cannot confirm-pay intake B", () => {
+    // Two intakes of the SAME SKU share both the shared amounts AND the lead's
+    // `product_1` (`VE`), so intake B's scoped lead is the same one. At
+    // `Application Fee Paid` it corroborates the ₹400 tier but NOT the ₹8k
+    // seat-confirm (which needs `Interview completed`/`Accepted`/`Converted`), so
+    // the ₹8k stays ambiguous on B — never a false confirm-paid on the sibling.
+    const intakeB = offering({ offeringId: "off_live_b", productMatch: ["VE"] });
+    const d = deriveStage(
+      intakeB,
+      tallyNoMatch(),
+      telecrmStatus("Application Fee Paid"),
+      razorpayAmounts([400, 8000], "phone"),
+      BOTH_KEYS,
+    );
+    expect(d.stage).not.toBe("confirm-paid-no-balance");
+    expect(d.stage).toBe("fee-paid-no-interview");
+    expect(d.ambiguous).toBe(true);
+  });
+
+  it("B2 — an unrelated ₹25k below THIS offering's balance floor is NOT enrolled", () => {
+    // A pricier offering (balance floor ₹36,600). A ₹25k capture — a real
+    // balance/full for some CHEAPER product — sits below this offering's own floor,
+    // so it can no longer force a false `enrolled` via the old global `≥₹22k`.
+    const premium = offering({ offeringId: "off_live_premium", balanceFloorInr: 36600 });
+    const d = deriveStage(
+      premium,
+      tallyNoMatch(),
+      telecrmNoMatch(),
+      razorpayAmounts([25000], "phone"),
+      BOTH_KEYS,
+    );
+    expect(d.stage).not.toBe("enrolled");
+    expect(d.stage).toBe("unknown");
+  });
+
+  it("B2 — an unrelated ₹25k does NOT mask a real (corroborated) confirm-paid-no-balance", () => {
+    // Same pricier offering. A corroborated ₹8k seat-confirm (lead `Accepted`) PLUS
+    // an unrelated ₹25k for another product: the ₹25k is below this offering's
+    // floor, so it neither enrolls nor masks the genuine confirm-paid-no-balance.
+    const premium = offering({ offeringId: "off_live_premium", balanceFloorInr: 36600 });
+    const d = deriveStage(
+      premium,
+      tallyNoMatch(),
+      telecrmStatus("Accepted"),
+      razorpayAmounts([8000, 25000], "phone"),
+      BOTH_KEYS,
+    );
+    expect(d.stage).toBe("confirm-paid-no-balance");
+    expect(d.ambiguous).toBe(false);
+  });
+
+  it("B1 — lead@`Converted` + shared ₹8k: the ₹8k IS confidently attributed (non-ambiguous)", () => {
+    // The CAUTION case: `Converted` resolves to `enrolled` BEFORE the seat-confirm
+    // branch, so the STAGE is `enrolled` either way. The point this repro pins is
+    // ATTRIBUTION: `Converted` corroborates the seat-confirm tier, so the shared ₹8k
+    // is confidently attributed and `ambiguous` stays false (not a withheld money).
+    const d = deriveStage(
+      LIVE_OFFERING,
+      tallyNoMatch(),
+      telecrmStatus("Converted"),
+      razorpayAmounts([8000], "phone"),
+      BOTH_KEYS,
+    );
+    expect(d.stage).toBe("enrolled");
+    expect(d.ambiguous).toBe(false);
+  });
+
+  it("B1 — lead@`Interview completed` corroborates the shared ₹8k → confirm-paid-no-balance", () => {
+    // The confirm-paid path proper: `Interview completed` is a seat-confirm
+    // corroborating status, so the shared ₹8k attributes to THIS offering and the
+    // stage is confirm-paid-no-balance — confidently, not ambiguously.
+    const d = deriveStage(
+      LIVE_OFFERING,
+      tallyNoMatch(),
+      telecrmStatus("Interview completed"),
+      razorpayAmounts([8000], "phone"),
+      BOTH_KEYS,
+    );
+    expect(d.stage).toBe("confirm-paid-no-balance");
+    expect(d.ambiguous).toBe(false);
+  });
+});
+
+describe("TERMINAL_NEGATIVE_STATUSES — the data-layer floor set (drift guard vs client STATUS_TO_STEP)", () => {
+  it("carries exactly the terminal-negative statuses (rejected/withdrawn/waitlisted)", () => {
+    // The edge fn nulls the mirror's progress stage + markers for these, so an
+    // outreach job keyed on `reconciled_*` can't fire on a dead application. This
+    // set DUPLICATES the `-1` entries of the client `STATUS_TO_STEP` map
+    // (ApplicationStatus.tsx) — no shared constant exists across the client bundle
+    // and the import-free edge module, so this test guards the two from drifting.
+    expect(TERMINAL_NEGATIVE_STATUSES.has("rejected")).toBe(true);
+    expect(TERMINAL_NEGATIVE_STATUSES.has("withdrawn")).toBe(true);
+    expect(TERMINAL_NEGATIVE_STATUSES.has("waitlisted")).toBe(true);
+    expect([...TERMINAL_NEGATIVE_STATUSES].sort()).toEqual([
+      "rejected",
+      "waitlisted",
+      "withdrawn",
+    ]);
   });
 });
 
