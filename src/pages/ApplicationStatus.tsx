@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { isIOS } from "@/lib/platform";
+import { useFunnelStage } from "@/hooks/useFunnelStage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +60,46 @@ interface ApplicationData {
   } | null;
 }
 
+/* ── Reconciled funnel stage → home chip + single CTA (RC-T4) ──
+   Consumed ONLY under `VITE_FUNNEL_RECON`, from the useFunnelStage/edge-fn
+   payload — never off the `reconciled_*` mirror columns. Maps the reconciler's
+   derived §6 stage to the label chip + one next-action CTA. Keys are the exact
+   kebab strings of the `Stage` union in `supabase/functions/_shared/reconcile.ts`
+   (the reconciler's `deriveStage` output) — the single source of the stage
+   vocabulary. Stages that open no action here (`"unknown"` orphan, and
+   `"accepted"`, which fires its own experience in a later phase) are left
+   unmapped, so the surface falls back to the status-driven view below — the
+   same degrade path as an unreachable fn.
+   Payment CTAs reuse the existing checkout routes and stay hidden on iOS
+   (Apple anti-steering), mirroring the staged-payment guard below. */
+type ReconciledCta = { to: string; label: string; payment?: boolean };
+const RECONCILED_STAGE_UI: Record<
+  string,
+  { chip: string; cta?: (app: ApplicationData) => ReconciledCta }
+> = {
+  partial: { chip: "Application started" },
+  "completed-no-fee": {
+    chip: "Application fee due",
+    cta: (app) => ({
+      to: `/checkout/${app.offering_id}?type=app_fee&app=${app.id}`,
+      label: "Pay application fee",
+      payment: true,
+    }),
+  },
+  "fee-paid-no-interview": { chip: "Book your interview" },
+  "interview-scheduled": { chip: "Interview scheduled" },
+  "awaiting-decision": { chip: "Awaiting decision" },
+  "confirm-paid-no-balance": {
+    chip: "Balance due",
+    cta: (app) => ({
+      to: `/checkout/${app.offering_id}?type=balance&app=${app.id}`,
+      label: "Pay balance",
+      payment: true,
+    }),
+  },
+  enrolled: { chip: "Enrolled" },
+};
+
 const ApplicationStatus = () => {
   const { applicationId } = useParams<{ applicationId: string }>();
   const { user } = useAuth();
@@ -67,6 +108,10 @@ const ApplicationStatus = () => {
   const [application, setApplication] = useState<ApplicationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [unauthorized, setUnauthorized] = useState(false);
+
+  // Reconciler read (dark behind VITE_FUNNEL_RECON). Flag off → `undefined`, so
+  // every reconciled branch below is inert and the page renders byte-identically.
+  const reconciled = useFunnelStage(user?.id).data;
 
   useEffect(() => {
     if (!applicationId || !user?.id) return;
@@ -147,6 +192,12 @@ const ApplicationStatus = () => {
   const isFailed = isRejected || isWithdrawn;
   const currentStepIndex = STATUS_TO_STEP[application.status] ?? -1;
 
+  /* Reconciled chip + single CTA — present only when the flag is on AND the
+     derived stage maps to a known row. Otherwise both stay undefined and the
+     status-driven UI below is unchanged. */
+  const reconciledUi = reconciled?.stage ? RECONCILED_STAGE_UI[reconciled.stage] : undefined;
+  const reconciledCta = reconciledUi?.cta?.(application);
+
   /* Determine which step was "failed" at, for rejected/withdrawn */
   // For rejected, show failure at the step after the last completed step
   const failedAtIndex = isFailed
@@ -211,8 +262,27 @@ const ApplicationStatus = () => {
             variant="outline"
             className="text-sm border-[hsl(var(--cream))]/30 bg-[hsl(var(--cream))]/10 text-[hsl(var(--cream))]"
           >
-            {statusLabel(application.status)}
+            {reconciledUi?.chip ?? statusLabel(application.status)}
           </Badge>
+
+          {/* Single reconciled CTA (dark behind the flag). Payment CTAs stay
+              hidden on iOS per Apple anti-steering — same rule as the staged
+              timeline guard, kept as its own branch here. */}
+          {reconciledCta &&
+            (reconciledCta.payment && isIOS() ? (
+              <p className="mt-4 text-xs text-muted-foreground">
+                Complete this step from a web browser.
+              </p>
+            ) : (
+              <div className="mt-4">
+                <Link to={reconciledCta.to}>
+                  <Button size="sm">
+                    {reconciledCta.label}
+                    <ArrowRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </Link>
+              </div>
+            ))}
         </div>
 
         {/* Rejection reason: neutral surface, no red, to match the
