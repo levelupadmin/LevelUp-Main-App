@@ -46,6 +46,7 @@ graph LR
     B --> C["Round C · 2026-07-17<br/>CRO scope resolution<br/>(v2 baseline + bet framing)"]
     C --> D["Round D · 2026-07-17/18<br/>PRD finalization<br/>(consolidated RAHUL DECISIONS<br/>+ PRD-internal calls)"]
     D --> E["Round E · 2026-07-18<br/>MEMBER-1 ruling<br/>(three-tier cohort-room<br/>access boundary)"]
+    E --> F["Round F · 2026-07-18<br/>Integration & scope rulings<br/>(TeleCRM master SoR, intake<br/>chain frozen, no honors,<br/>non-refundable fee, pilot order)"]
 ```
 
 ---
@@ -84,18 +85,18 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 | DL-026 | BUILD-1 | v1 ships in **three slices, funnel-first, rooms-last** | 🟠 PENDING | PRD §4.0 |
 | DL-027 | NSM-1 | North star = blended **application→enrolled** conversion; two leading proxies | 🟠 PENDING | PRD §2.1 |
 | DL-028 | TARGET-1 | Numeric targets are provisional; instrument first, set after batch 1 | 🟠 PENDING | PRD §2.2/§7 |
-| DL-029 | CRO-1 | Funnel **inversion** (pay-first, qualify-after) = IN as an A/B; v1-prepared / fast-follow-validated; not no-op eng | 🟠 PENDING | PRD §4.1, §5.2; CRO #1 |
+| DL-029 | CRO-1 | Funnel **inversion** (pay-first, qualify-after) = IN as an A/B; v1-prepared / fast-follow-validated; not no-op eng | 🟠 PENDING · ⚠️ **parked OUT of v1** by DL-057 | PRD §4.1, §5.2; CRO #1 |
 | DL-030 | CRO-2 | Interview slots on the ₹400 success screen = IN (absorbed into v2 Stage 05) | 🟠 PENDING | PRD §5.5 REQ-INT-0; CRO #2 |
-| DL-031 | CRO-3 | Certificates with **honors tiers** = IN (depends on STANDING-1 cutoffs) | 🟠 PENDING | PRD §5.8/§5.12; CRO #3 |
-| DL-032 | STANDING-1 | Provisional Distinction/Merit/Completion cutoffs | 🟠 PENDING | PRD §5.8 REQ-ROOM-5 |
-| DL-033 | FEE-1 | Credit the ₹400 toward tuition if accepted (fast-follow) | 🟠 PENDING | PRD §4.3 #14; CRO #5 |
+| DL-031 | CRO-3 | Certificates with **honors tiers** = IN (depends on STANDING-1 cutoffs) | ⤴️ SUPERSEDED by DL-061 | PRD §5.8/§5.12; CRO #3 |
+| DL-032 | STANDING-1 | Provisional Distinction/Merit/Completion cutoffs | ⤴️ SUPERSEDED by DL-061 | PRD §5.8 REQ-ROOM-5 |
+| DL-033 | FEE-1 | Credit the ₹400 toward tuition if accepted (fast-follow) | ⤴️ SUPERSEDED by DL-062 | PRD §4.3 #14; CRO #5 |
 | DL-034 | OTP-1 | Ship **email OTP** in v1 | 🟠 PENDING | PRD §5.1 REQ-IDENT-3 |
 | DL-035 | TITLE-1 | Interviewer's title = "Admissions Interviewer" / "the admissions team" | 🟠 PENDING | PRD §5.5 REQ-INT-2 |
 | DL-036 | RENDER-1 | Acceptance-video **server** render worker = **NOT in v1** (PNG + on-device WebM floor) | 🟠 PENDING | PRD §5.6 REQ-DEC-3 |
 | DL-037 | SEAT-1 | Seat release = **split**: countdown copy in v1, automated release fast-follow | 🟠 PENDING | PRD §5.6 REQ-DEC-5 |
 | DL-038 | COMM-1 | In-room community = **async threads only** in v1 (no realtime) | 🟠 PENDING | PRD §5.9 REQ-COMM-2 |
 | DL-039 | R-D2…R-D9 | Eight rooms-architecture defaults (lobby, leaderboard, theming, WhatsApp, demo-day, retention, push, route retirement) | 🟠 PENDING | ROOMS-ARCHITECTURE §8; PRD §8.1 |
-| DL-040 | REQ-APP-3 | Straight **form-shortening** is committed to v1, **not** gated on the CRO-1 A/B | ✅ DECIDED | PRD §5.2 REQ-APP-3; TALLY-UX-ANALYSIS |
+| DL-040 | REQ-APP-3 | Straight **form-shortening** is committed to v1, **not** gated on the CRO-1 A/B | ⤴️ SUPERSEDED by DL-057 (Tally intake frozen; parked to fast-follow) | PRD §5.2 REQ-APP-3; TALLY-UX-ANALYSIS |
 | DL-041 | REQ-RECON-1 | v1 system-of-record = app **reconciles** external systems + **owns** what it controls (payments, room); reconciler is Slice-1 linchpin | ✅ DECIDED (v1) | PRD §5.1 REQ-RECON-1; FUNNEL-DATA-AUDIT §5/§6 |
 | DL-042 | REQ-COMM-2 | The in-room feed **is v1** and accepts a later unification pass (not blocked on the commons pick) | ✅ DECIDED | PRD §5.9; ROOMS-BACKLOG R3-T3; PRD §8.2 Q4 |
 | DL-043 | REQ-DEC-3 | v1 decision artifact = **PNG (floor) + on-device WebM**; a rendered file, never a screen recording | ✅ DECIDED | PRD §5.6 REQ-DEC-3 |
@@ -110,6 +111,15 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 | DL-052 | Open Q2/Q4/Q6 | Three earlier open questions now **resolved** in the PRD — pointer entry | ✅ DECIDED (pointer) | PRD §8.2 |
 | DL-053 | CAL-1 | Calendly-webhook receiver + `interview_modality` column = net-new Tier-1 infra (build in v1, serves DL-011) | 🟠 PENDING · 🔴 | PRD §9.1; §5.5 REQ-INT-1; DL-011 |
 | DL-054 | MEMBER-1 | Three-tier cohort-room access: **accepted** (veil-only, no membership row) → **confirmation_paid** (`pre_member`, heavily redacted) → **enrolled** (`member`, full) | ✅ DECIDED · 🟠 (whitelist) · 🔴 | 02-STATE-MACHINE; 03-DATA-MODEL-ERD; 05-ACCESS-SECURITY; DL-018/022/039 |
+| DL-055 | SOR-1 | **TeleCRM is the MASTER system of record; the app is a READ-ONLY MIRROR** — the app NEVER writes a funnel status (incl. acceptance) ⤴ reverses accepted-app-write; removes SEC-DECISION-1 | ✅ DECIDED · 🔴 | 02-STATE-MACHINE; 05-ACCESS-SECURITY; DL-041/048/054; PRD §5.1 REQ-RECON-1 |
+| DL-056 | INTEG-KEY-1 | **Phone = PRIMARY join key, email = fallback**; reconciler records which resolved (confirms default) | ✅ DECIDED | PRD §5.1 REQ-RECON-1; DL-041/055 |
+| DL-057 | INTEG-PAY-1 | **DO NOT modify the existing Tally→Razorpay ₹400→Calendly→app intake chain**; app inserts nothing, reconciler NET-matches legacy Razorpay by phone; new ENTRY-PARITY REQ ⤴ retires CRO-1 + REQ-APP-3 for v1 | ✅ DECIDED · 🔴 | PRD §4.1/§5.2; DL-029/040/044/049; DL-046 |
+| DL-058 | INTEG-CRM-1 | **TeleCRM read-only in v1** (no write-back) — confirmed | ✅ DECIDED | PRD §5.1; DL-041/048/055 |
+| DL-059 | INTEG-CAL-1 | **Org-level Calendly: ONE existing account in v1**; two-account availability switch = fast-follow | ✅ DECIDED (v1) · long-term OPEN | PRD §9.1; DL-011/053 |
+| DL-060 | ROSTER-SCOPE-1 | **Roster is BATCH-scoped** — a student sees only their own batch's cohort-mates (confirms default) | ✅ DECIDED | 05-ACCESS-SECURITY; DL-022/054; PRD §5.9 |
+| DL-061 | STANDING-1 (F) | **NO honors tiers in v1 — single "Completion" certificate** issued on cohort completion; attendance still tracked/shown, not a tier ⤴ retires CRO-3; supersedes DL-031/032 | ✅ DECIDED (v1) · 🟠 (attendance-gate default) | PRD §5.8 REQ-ROOM-5/§5.12; DL-031/032/052 |
+| DL-062 | FEE-1 (F) | **The ₹400 is a separate NON-REFUNDABLE review fee, NOT credited toward tuition** ⤴ reverses DL-033 | ✅ DECIDED | PRD §4.3 #14, §5.6 REQ-DEC-5; DL-033 |
+| DL-063 | PILOT-1 | **Pilot order = Creator Academy FIRST (live), then AI cohort + BFP/VE launched TOGETHER as the second wave** ⤴ changes "new Live-Filmmaking batch first" default | ✅ DECIDED | PRD §4.0; DL-021/026 |
 
 ---
 
@@ -349,6 +359,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 - **Rationale:** Attacks the biggest measured loss (form-length abandonment) and fixes essay rage-typing, but its validation depends on the fast-follow A/B harness (`CRO-SUGGESTIONS.md` #1; PRD §4.1).
 - **Alternatives considered:** Hard-replace the flow with the inverted order (rejected — unvalidated, and it reverses the approved v2). **Explicit caveat:** this is *not* near-zero engineering — it needs a second Tally form or in-app post-payment intake (`🟡 Tier 2`), not just reordering.
 - **Affects:** PRD §4.1, §5.2; **DL-040** (the *straight* form-shortening is committed separately and is NOT gated on this A/B); DL-049 (Open Q3 fallback).
+- **↪ Margin note (2026-07-18, parked by INTEG-PAY-1 / DL-057):** the funnel **inversion is now OUT of v1**. Round F froze the existing Tally→Razorpay ₹400→Calendly→app intake chain (INTEG-PAY-1): the app inserts nothing into it and does not reorder essay-vs-fee. The inversion **idea is not deleted** — it is parked as a fast-follow A/B that requires Tally changes Rahul has deferred. Until then there is no v1 A/B here, so DL-049 (Open Q3, the inconclusive-A/B fallback) cannot fire in v1 either.
 
 ### DL-030 — CRO-2: interview slots on the ₹400 success screen — IN
 - **Date:** 2026-07-17 · **Status:** 🟠 PENDING (default: IN, absorbed into v2 Stage 05)
@@ -363,6 +374,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 - **Rationale:** Turns the most shareable artifact into a 12-week attendance engine; recordings reframe as recovery-that-protects-standing (`CRO-SUGGESTIONS.md` #3).
 - **Alternatives considered:** Ship undefined tiers (rejected — un-buildable). **Fallback if Rahul declines cutoffs:** ship the single eligibility gate in v1, defer the tiered line to fast-follow — never ship undefined tiers.
 - **Affects:** PRD §5.8 REQ-ROOM-5, §5.12 REQ-FINISH-1; depends on DL-032.
+- **⤴️ SUPERSEDED (2026-07-18, by STANDING-1 Round F / DL-061):** honors tiers are **OUT of v1**. Rahul ruled a single "Completion" certificate issued on cohort completion — no Distinction/Merit, no computed standing line, no honors-tier certificate. Attendance is still tracked and shown in-room (recovery via recordings stays) but does **not** define a certificate tier. See DL-061.
 
 ### DL-032 — STANDING-1: provisional honors-tier cutoffs
 - **Date:** 2026-07-17 · **Status:** 🟠 PENDING (default active; tune before Stage-08 build)
@@ -370,6 +382,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 - **Rationale:** Every other unresolved choice carries a default, so this one must too, or REQ-ROOM-5 is un-buildable (PRD §5.8; existing `user_is_certificate_eligible` at 85%, `COHORT-LOGIC.md` §2).
 - **Alternatives considered:** Leave cutoffs undefined (blocks the build); different thresholds (Rahul's to set).
 - **Affects:** PRD §5.8 REQ-ROOM-5, §5.12 REQ-FINISH-1; DL-031.
+- **⤴️ SUPERSEDED (2026-07-18, by STANDING-1 Round F / DL-061):** these Distinction/Merit/Completion **cutoffs are retired** — there are no tiers in v1. Remove the provisional-cutoff and higher-tier language; the only certificate is "Completion." The existing 85% `user_is_certificate_eligible` gate remains the sole eligibility question (and whether attendance gates the completion cert at all is a minor Rahul decision, default "no hard gate" — see DL-061). See DL-061.
 
 ### DL-033 — FEE-1: credit the ₹400 toward tuition if accepted
 - **Date:** 2026-07-17 · **Status:** 🟠 PENDING (default: yes, credit it — deferred to fast-follow #14)
@@ -377,6 +390,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 - **Rationale:** Rounding error vs. conversion lift at these fee sizes (`CRO-SUGGESTIONS.md` #5).
 - **Alternatives considered:** Keep the ₹400 as a non-refundable application fee (status quo).
 - **Affects:** PRD §4.3 #14, REQ-DEC-5 (Stage 06-G).
+- **⤴️ SUPERSEDED (2026-07-18, by FEE-1 Round F / DL-062):** **reversed.** Rahul ruled the ₹400 is a separate **NON-REFUNDABLE review fee, NOT credited toward tuition.** Remove all "credited toward tuition" / deposit-reframe language and any tuition-credit ledger logic. See DL-062.
 
 ### DL-034 — OTP-1: ship email OTP in v1
 - **Date:** 2026-07-17 · **Status:** 🟠 PENDING (default: yes, v1) · `🔴 Tier 1`
@@ -437,6 +451,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 - **Rationale:** Form length is the dominant measured lever (91%→26%→14% by length; Walls 2/3 at Q13/Q17 bracket ~44% of abandonment; the 4 quiz questions collect no qualification signal) and these fixes do **not** touch field order or the payment gate, so they carry none of CRO-1's inversion risk — resolving the circular-scope trap where the biggest lever was parked outside v1 as a deferred test (PRD §5.2; `TALLY-UX-ANALYSIS.md` §1/§4/§5/§6).
 - **Alternatives considered:** Bundling form-shortening into the CRO-1 A/B (rejected — needlessly parks a proven, risk-free lever behind unbuilt A/B infra).
 - **Affects:** PRD §5.2 REQ-APP-3; distinct from DL-029 (CRO-1 inversion).
+- **⤴️ SUPERSEDED (2026-07-18, by INTEG-PAY-1 Round F / DL-057):** **reversed for v1.** Round F froze the existing Tally application forms EXACTLY as they are — the app inserts nothing into the intake chain and does not modify the Tally builder. The straight form-shortening (progress bar, quiz cut, page split, optional fields, essay lightening) is therefore **OUT of v1** and **parked as a fast-follow** (it needs Tally changes Rahul has deferred). The idea is not deleted. See DL-057.
 
 ### DL-041 — REQ-RECON-1: v1 system-of-record = app reconciles external systems + owns what it controls
 - **Date:** 2026-07-17 · **Status:** ✅ DECIDED (for v1) · `🔴 Tier 1` · long-term choice OPEN (DL-048)
@@ -444,6 +459,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 - **Rationale:** Today 0/199 payments carry an app id and the intermediate states have no writer, so the app cannot show a user their own funnel stage; without this the NSM silently collapses to in-app completion rate (PRD §5.1; `FUNNEL-DATA-AUDIT.md` §2/§5/§6). Read-only against external systems; join completeness is instrumented and the orphan rate is surfaced as a health alert.
 - **Alternatives considered:** Make the app the full writer of interview/accept/reject states in v1 (that is the *long-term* Open Q1, DL-048 — not forced in v1); leave the app blind and steer off external dashboards (rejected — the product assumes the app knows funnel stage).
 - **Affects:** PRD §5.1 REQ-RECON-1; §2.1 NSM; REQ-IDENT-4, REQ-INSTALL-3, REQ-INT-3; DL-048.
+- **↪ Margin note (2026-07-18, hardened by SOR-1 / DL-055):** Round F makes this stance a **rule, not a lean.** TeleCRM is the **MASTER** system of record and the app is a **READ-ONLY MIRROR**: the app **NEVER writes a funnel status** (including acceptance). The reconciler's read/observer role is confirmed, phone is the PRIMARY join key with email fallback (INTEG-KEY-1 / DL-056), and the app still authoritatively owns only what it controls (payments, room). The earlier "app writes what it controls" wording stands **only** for payments and room state — never for any funnel/acceptance status. See DL-055/056/058.
 
 ### DL-042 — REQ-COMM-2: the in-room feed is v1 and accepts a later unification pass
 - **Date:** 2026-07-17 · **Status:** ✅ DECIDED
@@ -492,6 +508,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 - **Question:** Going forward, does the app's `cohort_applications` become the funnel's source of truth (writing interview/accept/reject states), or does the app keep *reading/reconciling* TeleCRM + Razorpay + Calendly by phone/email?
 - **Why open:** The spine enables either; v1 leans toward the app writing what it controls (payments, room) and reconciling the rest (DL-041), but the long-term ownership is a business/ops choice needing Rahul (PRD §8.2 Q1; `FUNNEL-DATA-AUDIT.md` §5/§6). REQ-INT-3's batch-ledger source inherits whichever this selects.
 - **Affects:** PRD §8.2 Q1; REQ-RECON-1 (DL-041), REQ-INT-3.
+- **↪ Margin note (2026-07-18, narrowed by SOR-1 / DL-055):** for **v1** this is settled — the app is a **read-only mirror** and TeleCRM is the master SoR (no write-back, INTEG-CRM-1 / DL-058). SOR-1 also strongly **leans the long-term answer toward "keep reconciling"** (the sales team owns funnel events incl. acceptance in TeleCRM). This entry stays **OPEN only** as the formal long-term ownership question for Rahul to close; nothing in v1 waits on it.
 
 ### DL-049 — Open Q3: the essay-order fallback if the CRO-1 A/B is inconclusive
 - **Date:** 2026-07-17 · **Status:** 🔵 OPEN
@@ -519,6 +536,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
   - **Q6** (honors-tier thresholds) → now carries the **STANDING-1** default (DL-032); it is a *tuning* question, not a blocker.
 - **Rationale:** Recorded so the resolutions are not lost and the questions are not re-argued as open (PRD §8.2).
 - **Affects:** PRD §8.2 Q2/Q4/Q6; DL-041, DL-042, DL-032, DL-002.
+- **↪ Margin note (2026-07-18, Q6 overtaken by STANDING-1 Round F / DL-061):** Q6 (honors-tier thresholds) is no longer a *tuning* question — Round F **removed honors tiers from v1 entirely** (single "Completion" certificate). The STANDING-1 cutoffs this pointer referenced (DL-032) are superseded by DL-061; there are no thresholds to tune in v1. See DL-061.
 
 ### DL-053 — CAL-1: the Calendly-webhook + `interview_modality` receiver is net-new Tier-1 infra
 - **Date:** 2026-07-17 · **Status:** 🟠 PENDING (default: build in v1, needed by DL-011) · `🔴 Tier 1 (net-new webhook + auth-adjacent)`
@@ -549,6 +567,86 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 - **Separate and UNCHANGED:** the public admission page's own whitelisted anon-read path (**SEC-PUBLIC-1**) is a **distinct** surface — this ruling does **not** touch it. The offering-page public-data path is likewise unchanged. Do not conflate the accepted-tier marketing-class veil with SEC-PUBLIC-1's anon-read grant.
 - **Tier-1 gate:** per `CLAUDE.md` Tier 1, **no RLS is applied** until this passes the bug-fix council, the adversarial suite is **green on shadow**, and Rahul gives **written sign-off**; it stays built behind the room flag throughout. No code is written and no build is run against this entry until then.
 - **Affects:** `02-STATE-MACHINE.md` (the accepted → confirmation_paid → enrolled transitions and the resolver that writes the `pre_member` row on confirmation-fee payment); `03-DATA-MODEL-ERD.md` (the membership-row model — `pre_member` vs `member`, and that **accepted holds no row**); `05-ACCESS-SECURITY.md` (the RLS boundary, the `pre_member` redaction whitelist, and the accepted-tier veil's marketing-class data source — kept **separate** from SEC-PUBLIC-1); DL-018 (refined — the veil is marketing-class data for the accepted tier, not real room rows); DL-022 (in-room community **write** gated to enrolled); DL-039 R-D2 (pre-start lobby OFF for accepted-but-unpaid — consistent: accepted gets no room entry).
+- **↪ Margin note (2026-07-18, MEMBER-1 stays intact under SOR-1 / DL-055):** MEMBER-1 is **unchanged** by Round F. The tier boundary still gates on the `accepted` state — but under SOR-1 the app **READS** that state (mirrored from TeleCRM, the master SoR), it does **not write** it. The flip to `accepted` in TeleCRM is what reaches the app (via the reconciler read path and/or a TeleCRM webhook, per SOR-1) and fires the in-app acceptance experience; the veil the accepted tier sees is still built from marketing-class data, never real room rows. The removed in-app admin decision RPC (SEC-DECISION-1, killed by DL-055) is **not** the `pre_member`-writing confirmation-fee resolver, which is a **payment**-owned write the app still performs (DL-041) and is untouched.
+
+---
+
+## Round F — Integration & scope rulings (2026-07-18) — Rahul's binding rulings
+
+*Rahul's nine binding rulings of 2026-07-18, applied exactly. They fix how the app wires into the existing sales/payments stack (TeleCRM · Tally · Razorpay · Calendly) and settle five scope questions. They **override** prior recommended defaults **and** some earlier council resolutions where noted. Five of the nine reverse a prior stance; each reversal carries a dated margin note on the entry it reverses. Per `CLAUDE.md` Tier-1, anything touching payments/auth/RLS/integrations still needs the bug-fix council + Rahul's written sign-off before code — no code is written and no build is run against these entries.*
+
+**The five reversals in one line:** accepted-app-write → **TeleCRM read-only mirror** (SOR-1); credit-the-₹400 → **non-refundable review fee** (FEE-1); honors tiers → **none, single Completion cert** (STANDING-1 F); funnel-inversion + form-shortening → **parked, intake chain frozen** (INTEG-PAY-1); Live-Filmmaking-batch-first → **Creator-Academy-first** (PILOT-1).
+
+### DL-055 — SOR-1: TeleCRM is the MASTER system of record; the app is a READ-ONLY MIRROR
+- **Date:** 2026-07-18 · **Status:** ✅ DECIDED (Rahul's ruling) · `🔴 Tier 1 (funnel state ownership / auth-adjacent)`
+- **Decision:** **TeleCRM is the master system of record for the funnel; the app is a read-only mirror.** The sales team creates every funnel event — **including acceptance** — in TeleCRM; the app **reads/mirrors** those events and **reacts** to them (detecting the flip to `accepted` fires the in-app acceptance experience). **The app NEVER writes a funnel status.** The acceptance experience depends on the TeleCRM `accepted` state reaching the app promptly — specified as the reconciler read path and/or a TeleCRM webhook if available.
+- **Rationale:** The sales team owns the funnel in TeleCRM; making the app a second writer of funnel states would fork the source of truth. Read-only mirroring keeps one authority and a smaller attack surface. Grounded in the Round F ruling and the reconciler/observer role already set by DL-041 (`FUNNEL-DATA-AUDIT.md` §5/§6).
+- **⚠️ Reverses (dated 2026-07-18):** the earlier council resolution that **"accepted is the one app-WRITTEN status."** Acceptance is now **TeleCRM-sourced**, not app-written. This ruling also **REMOVES the in-app admin decision RPC (SEC-DECISION-1)** — there is no in-app accept/reject write path; delete it wherever it appears. **MEMBER-1 (DL-054) stays intact:** the app still **READS** `accepted` to gate the veil, it just does not write it (see the margin note on DL-054).
+- **Alternatives considered:** App writes acceptance (and interview/reject) states and pushes to TeleCRM (**rejected** — forks the SoR, and it is the sales team's workflow); a bi-directional sync in v1 (rejected — INTEG-CRM-1 / DL-058 keeps TeleCRM read-only, no write-back, in v1).
+- **Affects:** `02-STATE-MACHINE.md` (acceptance is a mirrored inbound state, not an app-written one; remove SEC-DECISION-1); `05-ACCESS-SECURITY.md` (no in-app decision RPC / write grant for funnel status); PRD §5.1 REQ-RECON-1; DL-041 (hardened), DL-048 (v1 settled, long-term leaned), DL-054 (reads, does not write), DL-058 (read-only confirms this).
+
+### DL-056 — INTEG-KEY-1: phone is the PRIMARY join key, email is the fallback
+- **Date:** 2026-07-18 · **Status:** ✅ DECIDED (confirms the default)
+- **Decision:** The reconciler joins app users to external records (TeleCRM, legacy Razorpay, Tally) on **phone first, email second**, and **records which key resolved** each match.
+- **Rationale:** Phone is the most reliable identifier across the Indian stack (OTP-verified at the source, DL-004) and is the field present on the legacy Razorpay payments the reconciler NET-matches (DL-057); recording the resolving key makes join completeness auditable (the orphan-rate health alert, DL-041).
+- **Alternatives considered:** Email-primary (rejected — weaker/optional at intake); a composite/fuzzy match (out of scope for v1 — phone-then-email is sufficient and instrumented).
+- **Affects:** PRD §5.1 REQ-RECON-1; DL-041 (the phone+email join), DL-055 (the read-only mirror uses this key order).
+
+### DL-057 — INTEG-PAY-1: do NOT modify the existing intake chain; app is post-intake only
+- **Date:** 2026-07-18 · **Status:** ✅ DECIDED · `🔴 Tier 1 (payments-adjacent / do-not-touch intake)`
+- **Decision:** **Hard constraint — the existing intake chain stays EXACTLY as it is.** Clicking **"Apply"** opens the **EXISTING** Tally application form; on submit it goes to the **EXISTING in-form Razorpay ₹400 link**; then **Calendly**; then the **app**. The app **inserts NOTHING** into this chain and does **NOT** route the ₹400 through its own order path. The **reconciler NET-matches** the existing/legacy Razorpay payments back to app users **by phone** (INTEG-KEY-1). The app's conversion role is now **purely post-intake experience + the abandoned-application RE-ENTRY nudge** (which reads partial state via TeleCRM/webhook and nudges **without touching the form**). **New REQ — ENTRY PARITY:** whether a user applies via the app or via a marketing landing page, the **experience and the data wiring must be EQUIVALENT** — either path yields the same flow + data. (Embedding Calendly in-app for UI control is an optional nice-to-have, not required.)
+- **Rationale:** The intake chain is live, revenue-carrying, and owned outside the app; re-routing ₹400 through an app order path or editing the Tally builder is high-blast-radius for zero product gain when a phone-keyed reconciler can mirror the same payments. This aligns with the do-not-touch payment posture of DL-046.
+- **⚠️ Reverses / retires for v1 (dated 2026-07-18):**
+  - **CRO-1 (DL-029) — funnel inversion:** **OUT of v1**, parked as a fast-follow A/B (needs deferred Tally changes; idea not deleted).
+  - **REQ-APP-3 (DL-040) — Tally form shortening:** **OUT of v1**, parked as a fast-follow (Tally builder stays untouched; idea not deleted).
+  - Consequently **DL-049 (Open Q3)** — the inconclusive-A/B essay-order fallback — has no v1 A/B to resolve.
+- **Alternatives considered:** Insert an app-owned ₹400 order into the chain / shorten the Tally form now (**rejected** — modifies a live payments+intake chain Rahul froze); ship the marketing-page path with different wiring than the app path (rejected — ENTRY PARITY REQ forbids divergence).
+- **Affects:** PRD §4.1 (CRO-1 out of v1), §5.2 (REQ-APP-3 parked; new ENTRY-PARITY REQ); DL-029 (parked), DL-040 (superseded/parked), DL-044 (the app-stage re-entry nudge is the app's conversion role), DL-046 (payment do-not-touch), DL-049 (no v1 A/B), DL-053/059 (Calendly stays in-chain).
+
+### DL-058 — INTEG-CRM-1: TeleCRM read-only in v1 (no write-back)
+- **Date:** 2026-07-18 · **Status:** ✅ DECIDED (confirmed)
+- **Decision:** In v1 the app **reads** TeleCRM only; there is **no write-back** to TeleCRM.
+- **Rationale:** Consistent with SOR-1 (DL-055) — TeleCRM is the master and the app mirrors it; a write path would fork the SoR and is not needed in v1.
+- **Alternatives considered:** Bi-directional sync / app writes enrichment back to TeleCRM (deferred — a post-v1 question, not required for the mirror).
+- **Affects:** PRD §5.1; DL-041, DL-048, DL-055.
+
+### DL-059 — INTEG-CAL-1: org-level Calendly, one account in v1
+- **Date:** 2026-07-18 · **Status:** ✅ DECIDED (v1) · long-term (two-account switch) still OPEN
+- **Decision:** v1 plugs in **ONE existing Calendly account** at the org level. **Fast-follow:** LevelUp has **two** Calendly accounts — switch between them based on availability; deferred to fast-follow (v1 is single-account).
+- **Rationale:** One account covers v1 booking without added routing logic; the availability-based two-account switch is a capacity optimization that can wait.
+- **Alternatives considered:** Wire both accounts with availability routing in v1 (deferred to fast-follow); per-interviewer Calendly links (out of scope — org-level is the v1 unit).
+- **Affects:** PRD §9.1; DL-011 (modality choice), DL-053 (the Calendly-webhook receiver serves whichever account is plugged in). Calendly stays **in the frozen intake chain** (DL-057).
+
+### DL-060 — ROSTER-SCOPE-1: the roster is batch-scoped
+- **Date:** 2026-07-18 · **Status:** ✅ DECIDED (confirms the default)
+- **Decision:** The cohort roster is **batch-scoped** — a student sees only **their own batch's** cohort-mates, not the whole offering's population.
+- **Rationale:** Batch is the real social unit of a cohort; showing the whole offering dilutes the room and leaks cross-batch presence. Consistent with the room's scoped, entitlement-gated design (DL-022) and the `pre_member`/`member` visibility model (DL-054).
+- **Alternatives considered:** Offering-wide roster (rejected — wrong social unit, larger presence-leak surface); program-wide roster (rejected outright).
+- **Affects:** `05-ACCESS-SECURITY.md` (roster read scoped to the viewer's batch); PRD §5.9; DL-022, DL-054.
+
+### DL-061 — STANDING-1 (Round F): no honors tiers in v1; a single "Completion" certificate
+- **Date:** 2026-07-18 · **Status:** ✅ DECIDED (v1) · 🟠 the "does attendance gate the completion cert" question is a **minor RAHUL DECISION** (default active: no hard gate)
+- **Decision:** **No honors tiers in v1.** There is a **single "Completion" certificate**, issued on **cohort completion**. Remove all Distinction / Merit / provisional-cutoff language and the computed "academic standing" line. Attendance is **still TRACKED and SHOWN in-room** (recovery via recordings stays) but does **not** define certificate tiers. **Minor Rahul decision:** whether attendance gates the completion cert at all — **default: "issued on completion, no hard attendance gate in v1."**
+- **Rationale:** Tiers added build complexity and a shame-register risk for a v1 that has no batch-1 data to calibrate cutoffs; a single Completion certificate is honest and shippable, and attendance still drives the in-room recovery loop without gating the artifact.
+- **⚠️ Reverses / retires for v1 (dated 2026-07-18):** **CRO-3 (DL-031)** honors-tier certificates and **STANDING-1 cutoffs (DL-032)** are **superseded** — both are OUT of v1. (The idea can return post-v1 with real data; it is not the v1 artifact.)
+- **Alternatives considered:** Keep the three-tier computed standing line (DL-031/032) (**rejected** by ruling — over-scoped and un-calibratable for v1); hard-gate the completion cert on ≥85% attendance (available as the non-default under the minor Rahul decision — the existing `user_is_certificate_eligible` 85% gate could be reused, but the **default is no hard gate**).
+- **Affects:** PRD §5.8 REQ-ROOM-5, §5.12 REQ-FINISH-1; DL-031 (superseded), DL-032 (superseded), DL-052 Q6 (no longer a tuning question); `COHORT-LOGIC.md` §2 (`user_is_certificate_eligible`).
+
+### DL-062 — FEE-1 (Round F): the ₹400 is a separate NON-REFUNDABLE review fee, not credited to tuition
+- **Date:** 2026-07-18 · **Status:** ✅ DECIDED
+- **Decision:** The **₹400 is a separate NON-REFUNDABLE review fee**, **NOT** credited toward tuition. Remove all "credited toward tuition" / deposit-reframe language and any tuition-credit ledger logic.
+- **Rationale:** The review fee pays for the review; conflating it with tuition creates a refund/credit-ledger obligation Rahul does not want. Clean separation keeps the payment model simple and the ledger honest.
+- **⚠️ Reverses (dated 2026-07-18):** the earlier fast-follow **"credit the ₹400 toward tuition" lean (FEE-1 / DL-033)** — **reversed.** DL-033 is superseded.
+- **Alternatives considered:** Credit the ₹400 to tuition on acceptance (DL-033 — **reversed**); make it refundable on rejection (rejected — it is explicitly non-refundable).
+- **Affects:** PRD §4.3 #14, §5.6 REQ-DEC-5 (Stage 06-G — remove credit/deposit language); DL-033 (superseded).
+
+### DL-063 — PILOT-1: pilot sequence = Creator Academy first, then AI cohort + BFP/VE together
+- **Date:** 2026-07-18 · **Status:** ✅ DECIDED
+- **Decision:** The pilot sequence is **Creator Academy FIRST** (already live), then the **AI cohort + BFP/VE launched TOGETHER as the second wave.** Update the rollout ladder accordingly.
+- **Rationale:** Creator Academy is already live, so the pilot must run **alongside its existing batch without disruption** — extra care versus a fresh batch — but it de-risks the room product against a real running cohort before the second wave. Grouping the AI cohort with BFP/VE launches the newer SKUs together once the pattern is proven.
+- **⚠️ Changes (dated 2026-07-18):** the earlier **"a new Live-Filmmaking batch pilots first"** default — the pilot now leads with **Creator Academy** instead.
+- **Alternatives considered:** Pilot a fresh Live-Filmmaking batch first (**changed** — the earlier default; a fresh batch is lower-risk to disrupt but forgoes the live Creator Academy signal Rahul wants first); launch AI, BFP, and VE separately (rejected — they go together as the second wave).
+- **Affects:** PRD §4.0 (rollout ladder); DL-021 (Creator-Academy + AI room variants — Creator Academy leads), DL-026 (BUILD-1 slice order — the room slice pilots on the live Creator Academy batch, with the extra-care caveat).
 
 ---
 
@@ -561,11 +659,13 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 | DL-026 | BUILD-1 | Confirm the three-slice order | No — default active; sequencing only |
 | DL-027 | NSM-1 | Confirm the north star + proxies | No — instrumentation proceeds |
 | DL-028 | TARGET-1 | (auto-resolves after batch 1) | No |
-| DL-029 | CRO-1 | Veto or confirm the inversion A/B | No — v2 control ships regardless; DL-040 carries the lever |
+| DL-029 | CRO-1 | ⤴ **parked OUT of v1 by DL-057** — no longer pending; revisit as fast-follow A/B | No — intake chain frozen (DL-057) |
 | DL-030 | CRO-2 | Confirm slots-on-success | No — it is the v2 default |
-| DL-031 | CRO-3 | Confirm honors tiers | No — gate-only fallback exists |
-| DL-032 | STANDING-1 | Confirm/adjust cutoffs before Stage-08 | Tuning; gate-only fallback |
-| DL-033 | FEE-1 | Confirm crediting the ₹400 | No — fast-follow |
+| ~~DL-031~~ | CRO-3 | ⤴ **SUPERSEDED by DL-061** (no honors tiers in v1) | — |
+| ~~DL-032~~ | STANDING-1 | ⤴ **SUPERSEDED by DL-061** (no cutoffs; single Completion cert) | — |
+| ~~DL-033~~ | FEE-1 | ⤴ **SUPERSEDED by DL-062** (₹400 is non-refundable, not credited) | — |
+| DL-061 | STANDING-1 (F) | Confirm/adjust the minor "does attendance gate the completion cert" call before Stage-08 | No — default is no hard gate |
+| DL-059 | INTEG-CAL-1 | (v1 single-account ruled; two-account switch is fast-follow) | No — one account ships |
 | DL-034 | OTP-1 | Confirm email OTP in v1 (Tier-1 sign-off) | Partially — phone-OTP fallback works |
 | DL-035 | TITLE-1 | Confirm the interviewer title | No — default active |
 | DL-036 | RENDER-1 | Confirm deferring the server worker | No — PNG+WebM floor ships |

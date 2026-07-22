@@ -16,7 +16,7 @@
 - `design/cohorts/docs/01-PRD.md` — the requirements and the §7 success-metric table this plan instruments. **Read it first.**
 - `design/cohorts/funnel/FUNNEL-DATA-AUDIT.md` — the measured funnel reality (81% abandon; TeleCRM `status` picklist; amount→product map; the phone/email join and its ~10% orphan rate; §6 stage→CTA table).
 - `design/cohorts/funnel/TALLY-UX-ANALYSIS.md` — form-length completion curve (91/26/14%), the three walls, the ~69%-contactable finding.
-- `design/cohorts/CRO-SUGGESTIONS.md` — the 15 CRO additions; #15 names the three A/B tests this plan wires (§4).
+- `design/cohorts/CRO-SUGGESTIONS.md` — the 15 CRO additions; #15's original three A/B tests are narrowed to **app-side only** in v1 (Round-F INTEG-PAY-1: the two form-side tests are parked, Tally untouched) — see §4.
 - `src/lib/analytics.ts` — the **existing** browser analytics layer (Meta/GA4/Twitter pixels + PostHog funnel sink). This plan **reconciles reuse-vs-new against it** (§1), never re-invents it.
 - `design/cohorts/ROOMS-BACKLOG.md` R4-T4 — the **exactly seven** room engagement events, already specced; this plan reuses them verbatim (§3.7).
 
@@ -70,6 +70,8 @@ Every event carries exactly one **Source**:
 
 A funnel stage can have **both** a `server` writer (for app-path events) *and* a `reconciler` fallback (for the live-link path that dominates today). Where so, the event is emitted **once**, deduped on a shared idempotency key (§2.5), so the two paths never double-count.
 
+> **Margin note (2026-07-18, Round-F SOR-1 — TeleCRM is the master system of record; the app is a read-only mirror):** the funnel events are **unchanged**, but their *truth* is **sourced from the mirror**. The sales team creates the funnel events (including **acceptance**) in **TeleCRM**; the app **READS/mirrors** them and reacts — it **never writes a funnel status**. So every `reconciler`-sourced funnel event here is a read off the TeleCRM master (resolved by phone-primary / email-fallback join, INTEG-KEY-1), and even the app-owned reveal in §3.5 reads its **outcome from the mirror**, not from an in-app admin decision. This **removes any in-app "write acceptance" path** (the former SEC-DECISION-1 admin-decision RPC is gone); acceptance reaches the app via the reconciler read path and/or a TeleCRM webhook so the in-app acceptance experience can fire promptly. MEMBER-1 is intact — the app still **reads** `accepted` to gate the veil, it just doesn't write it.
+
 ### 2.3 Sinks & the server-side capture path
 
 ```mermaid
@@ -114,7 +116,9 @@ flowchart LR
 
 ### 2.6 Experiment exposure (A/B) — one shared primitive
 
-All three A/B tests (§4) emit **one** exposure event — `experiment_exposed {experiment, variant}` — at the moment a user is assigned/first sees a variant (PostHog's `$feature_flag_called` convention). Every downstream funnel event is then sliced by the exposed variant in the warehouse; the variant is **not** duplicated onto every event. The **assignment engine** (feature flags / Tally form split) is fast-follow #15 (§4.4), but the **exposure event and the `variant` fields are v1-prepared** so no re-instrumentation is needed when the harness lands.
+All A/B tests (§4) emit **one** exposure event — `experiment_exposed {experiment, variant}` — at the moment a user is assigned/first sees a variant (PostHog's `$feature_flag_called` convention). Every downstream funnel event is then sliced by the exposed variant in the warehouse; the variant is **not** duplicated onto every event. The **assignment engine** (app-side PostHog feature flags) is fast-follow #15 (§4.6), but the **exposure event and the `variant` fields are v1-prepared** so no re-instrumentation is needed when the harness lands.
+
+> **Margin note (2026-07-18, Round-F INTEG-PAY-1):** the assignment engine is now **app-side only**. The earlier "Tally form split" mechanism is dropped because the Tally intake chain stays **exactly as-is** (Apply → existing Tally form → in-form Razorpay ₹400 → Calendly → app); the app inserts nothing into that chain and cannot split it. Any test that would require a second/altered Tally form is retired for v1 (see §4).
 
 ---
 
@@ -147,6 +151,8 @@ Organized to mirror the PRD §7 success-metric table, stage by stage. Each event
 | `app_fee_gap_detected` | REQ-RECON-1 marker: `has_essay`/`Fee Link Sent` **minus** a matching captured ₹400 (the warmest recoverable lead, `FUNNEL-DATA-AUDIT.md` §5 gap 2) | **reconciler** | `{form_id}` | "Completed form, never paid" pool size — the previously-invisible positive marker | New |
 | `app_fee_gap_cleared` | A matching ₹400 later appears for a gapped user | **reconciler** | `{amount_inr}` | Recovery of the completed-no-fee pool | New |
 
+> **Margin note (2026-07-18, Round-F FEE-1 — reverses the earlier "credit ₹400" lean):** the ₹400 is a **separate, non-refundable review fee** — it is **NOT** credited toward tuition, and there is no deposit/credit reframe. Consequently this plan instruments **no tuition-credit event and no `₹400→tuition` ledger metric**: `app_fee_paid` records the review-fee capture and nothing more; any later `refund_recorded{payment_stage:app_fee}` (§3.6) is a genuine refund/dispute signal (the 🛡️ guardrail), never a "credit applied" event. Remove any prior credited-toward-tuition language from downstream dashboards.
+
 **Honesty note — fee *initiation* on the live path is largely invisible.** An applicant who lands on the hardcoded ₹400 Razorpay page and closes it *without attempting* leaves **no Razorpay record at all** (`FUNNEL-DATA-AUDIT.md`: `created` count is 0; only ~35 *failed* attempts/7d are visible). So `payment_initiated` is meaningful **only** for the app-path; on the live-link path, initiation cannot be counted, and the funnel measures `application_completed → app_fee_paid` directly (with `app_fee_gap_detected` as the negative-space marker). Do not present a live-link "initiation rate" — it would be fabricated.
 
 ### 3.3 Re-entry & the reminder ladder `Serves abandoner→resumed`
@@ -174,7 +180,7 @@ Cap-compliance is auditable directly off `reminder_sent`: a per-user-per-day cou
 | Event | Trigger | Source | Payload | Measures | R/N |
 |---|---|---|---|---|---|
 | `decision_opened` | "Open your decision" tap (REQ-DEC-1) — the sealed reveal gate | client | `{}` — **verdict is NOT in this payload** (no surface, including telemetry, carries the verdict before the reveal) | Decision-open rate | New |
-| `decision_revealed` | The reveal animation resolves (or the reduced-motion crossfade, REQ-DEC-2) | client | `{outcome}` — `outcome` ∈ `accepted`\|`waitlisted`\|`rejected` | Accept/waitlist/reject mix (the user's own outcome; not PII) | New |
+| `decision_revealed` | The reveal animation resolves (or the reduced-motion crossfade, REQ-DEC-2) | client | `{outcome}` — `outcome` ∈ `accepted`\|`waitlisted`\|`rejected`; **the outcome VALUE is mirror-sourced from TeleCRM (SOR-1), not app-written** — the client event only records that the reveal fired | Accept/waitlist/reject mix (the user's own outcome; not PII) | New |
 | `admission_artifact_shared` | OS share sheet invoked on the PNG card or on-device WebM (REQ-DEC-3) | client | `{artifact_type}` — `∈ card_png`\|`webm`\|`server_mp4` | Share rate = top of the **acquisition loop** (PRD §7 Loop); *the brief's `artifact_shared`* | New |
 | `seat_claim_started` | "Claim my seat" tap → **before** Razorpay opens (REQ-DEC-5) | client | `{}` | Claim-intent (pre-payment) | New |
 | `confirmation_paid` | ₹8k captured — app-path `verify-razorpay-payment` (`type=confirmation`, this path **works**) or reconciler by amount | **server** *or* **reconciler** (deduped) | `{amount_inr}` | Interview-held→confirmed; *the brief's `confirmation_fee_paid`* | New |
@@ -210,35 +216,34 @@ These are **already specified** in `ROOMS-BACKLOG.md` R4-T4 ("exactly seven… e
 
 | Event | Trigger | Source | Payload | Measures | R/N |
 |---|---|---|---|---|---|
-| `certificate_claimed` | Eligible student claims the certificate (REQ-FINISH-1) | client | `{standing_tier}` — `∈ distinction`\|`merit`\|`completion` (STANDING-1 cutoffs) | Certificate claim; *the brief's `certificate_earned`* | New |
-| `certificate_verify_viewed` | Public verify URL opened (recipient side) | **server**/client (public route) | `{standing_tier}` | Certificate-as-credential reach (loop) | New |
+| `certificate_claimed` | Eligible student claims the certificate (REQ-FINISH-1) | client | `{}` — **single Completion certificate, no tier field** (STANDING-1) | Certificate claim; *the brief's `certificate_earned`* | New |
+| `certificate_verify_viewed` | Public verify URL opened (recipient side) | **server**/client (public route) | `{}` | Certificate-as-credential reach (loop) | New |
 | `admission_page_viewed` | Public admission page loaded, logged-out (REQ-DEC-6) | **server**/client (public route) | `{cohort, batch}` — **no user identifier** (§2.4) | Loop: artifact→viewer | New |
 | `artifact_door_clicked` | The tracked "applications open" door on card/cert/video is clicked (CRO #13) | **server**/client (public route) | `{artifact_type, cohort, batch}` | **share→application** — the loop's payoff metric (CRO #13, PRD §7 Loop) | New |
 | `referral_started` | An alumni referral affordance is used (REQ-FINISH-2) | client | `{cohort}` | Alumni referral → new application | New |
+
+> **Margin note (2026-07-18, Round-F STANDING-1 — reverses honors-tier instrumentation):** v1 issues a **single "Completion" certificate**; there are **no Distinction/Merit/provisional tiers** and therefore **no tier events or `standing_tier` payload field**. `certificate_claimed` carries no tier. Attendance is still tracked and shown in-room (recovery via recordings stays) but does **not** define a certificate tier. Whether attendance hard-gates the completion cert at all is a minor Rahul decision (default: issued on completion, no hard attendance gate in v1). This retires the earlier CRO-3 honors-tier plan for v1.
 
 > **RAHUL DECISION — CERT-1: `certificate_claimed` / `certificate_verify_viewed` extend R4-T4's "exactly seven" room events.**
 > R4-T4 fixes the room-*engagement* set at seven. The completion + loop events above are **Stage-12 funnel events**, not room-engagement events, so they live outside that seven. **Recommended:** treat them as a distinct **Stage-12 event group** (not room events), so R4-T4 stays exactly seven and the certificate/loop instrumentation still ships — because the certificate is both the completion **guardrail** (PRD §2.2) and the top of the **acquisition loop** (CRO #13), and leaving it un-instrumented would make the loop "arguable not measurable" — the exact failure this plan exists to prevent. If Rahul prefers the strict seven-only room scope with no Stage-12 events in v1, the fallback is: derive completion % server-side from tables (as §5 already does) and defer the loop events (`artifact_door_clicked`, `referral_started`) to fast-follow with CRO #13.
 
 ---
 
-## 4. The three named A/B tests (CRO #15)
+## 4. The app-side A/B tests
 
-CRO #15 commits to three tests: *(a) fee-position inversion, (b) success-page slot embed, (c) essay before/after payment* (`CRO-SUGGESTIONS.md` #15). This section wires each to the event set so it reads a real number, not an opinion. **All three share the `experiment_exposed` primitive (§2.6).** Per PRD §4.3, the **A/B assignment harness itself is fast-follow #15** — so these are **v1-prepared** (the exposure event + `variant` payload fields ship in v1) and **fast-follow-validated** (the harness that *assigns* and *reads* them lands in fast-follow). REQ-APP-3's straight form-shortening ships in v1 **without** the harness (PRD §5.2), so the biggest form-length lever is not blocked on any of this.
+> **Margin note (2026-07-18, Round-F INTEG-PAY-1 — reverses the "three form/flow tests" list):** CRO #15 originally committed three tests: *(a) fee-position inversion, (b) success-page slot embed, (c) essay before/after payment*. INTEG-PAY-1 keeps the **Tally intake chain untouched** in v1, so **the two form-side tests — (a) fee-position inversion (CRO-1) and (c) essay before/after payment (essay-order) — are RETIRED from v1** (they need Tally changes Rahul has deferred; parked as fast-follow A/B, idea preserved, see §4.1/§4.3). What remains are **app-side tests only** — surfaces the app itself owns and can split with an app-side flag: the success-page slot embed (kept), plus the app's new conversion levers under Round-F (the abandoned-application **re-entry nudge** and the **acceptance-share** experience).
+
+This section wires each **app-side** test to the event set so it reads a real number, not an opinion. **All share the `experiment_exposed` primitive (§2.6).** Per PRD §4.3, the **A/B assignment harness itself is fast-follow #15** — so these are **v1-prepared** (the exposure event + `variant` payload fields ship in v1) and **fast-follow-validated** (the harness that *assigns* and *reads* them lands in fast-follow). Note the app's conversion role under Round-F is purely **post-intake experience + the re-entry nudge** — it does not touch the Tally form, so no test here depends on a form change.
 
 **Shared exposure event:**
 
 | Event | Trigger | Source | Payload |
 |---|---|---|---|
-| `experiment_exposed` | User is assigned to / first sees a variant | client (app-side flags) or **server** (Tally form-split, resolved post-provision) | `{experiment, variant}` |
+| `experiment_exposed` | User is assigned to / first sees a variant | **client** (app-side PostHog flags only) | `{experiment, variant}` |
 
-### 4.1 Test A — fee-position inversion (CRO-1)
+### 4.1 Test A — fee-position inversion (CRO-1) — ⛔ RETIRED from v1
 
-- **Hypothesis:** moving essay/quiz/portfolio to *after* the ₹400 (pay-first) lifts completion + fee-paid without degrading show-rate.
-- **Variants:** `control` = v2 baseline (essay/quiz before the ₹400 gate) · `treatment` = pay-first (~5-field pre-pay form, qualification after).
-- **Assignment:** which Tally form the user enters (two forms / URL param), resolved to `user_id` at provisioning (PRD CRO-1 requires a second Tally form or in-app intake — **not** a no-op). `experiment='fee_position'`.
-- **Primary metric:** `application_completed` rate **and** `app_fee_paid` rate, sliced by `variant`.
-- **🛡️ Guardrail (must-not-regress):** `interview_no_show` rate and `interview_completed`/`app_fee_paid` (show-rate) — the PRD's explicit false-win trap (§2.2). Treatment can *raise* completion while *filling the top with low-intent payers*; the test **fails** if it lifts completion but tanks show-rate.
-- **Segment stitch:** because assignment happens on an external form before the account fully mints, join exposure→outcome on `user_id` after REQ-RECON-1 resolves the person (the same phone/email join, PRD §5.1).
+> **Round-F INTEG-PAY-1 (2026-07-18):** RETIRED for v1. This test required a **second/altered Tally form** (pay-first, ~5-field pre-pay form), which INTEG-PAY-1 forbids — the existing Tally application form and its in-form Razorpay ₹400 link stay **exactly as they are**, and the app inserts nothing into that chain. **The idea is parked, not deleted:** it returns as a fast-follow A/B once Rahul re-opens the Tally form for changes (the funnel-inversion / CRO-1 lever also depends on that same Tally edit). No `experiment='fee_position'` exposure is emitted in v1.
 
 ### 4.2 Test B — success-page slot embed (CRO-2)
 
@@ -248,21 +253,34 @@ CRO #15 commits to three tests: *(a) fee-position inversion, (b) success-page sl
 - **Primary metric:** `interview_scheduled` within the session / within 24h of `app_fee_paid`, sliced by `variant` (the ⏩ leading proxy).
 - **Guardrail:** `interview_no_show` (a slot booked in a rushed one-tap must still show).
 
-### 4.3 Test C — essay before/after payment
+### 4.3 Test C — essay before/after payment — ⛔ RETIRED from v1
 
-- **Hypothesis:** asking the essay *after* the ₹400 (only paid, serious applicants write it) improves completion and downstream signal quality without losing admit quality.
-- **Variants:** `essay_before` · `essay_after`. (Related to Test A but isolates the *essay ordering* specifically; can run nested within CRO-1's treatment arm or standalone.)
-- **Assignment:** Tally form config; `experiment='essay_order'`.
-- **Primary metric:** `application_completed` rate + `app_fee_paid` rate.
-- **Signal-quality metric (the point of the test):** downstream `interview_completed` / `interview_no_show` and admit rate (`decision_revealed{outcome=accepted}` per applicant) — does moving the essay after payment *keep* the qualification signal the essay does today as a "commitment gate" (`TALLY-UX-ANALYSIS.md` §5)?
-- **NFR-COPY-1 hold:** in *every* arm the essay text stays out of telemetry; only `has_essay` and ordering are measured.
+> **Round-F INTEG-PAY-1 (2026-07-18):** RETIRED for v1. Essay ordering is a **Tally form config change**, which INTEG-PAY-1 defers (the intake chain is untouched in v1). **The idea is parked, not deleted:** it returns as a fast-follow A/B alongside Test A once Rahul re-opens the Tally form. No `experiment='essay_order'` exposure is emitted in v1. (The NFR-COPY-1 hold still stands whenever it does run — the essay text never enters telemetry; only `has_essay` and ordering would be measured.)
 
-### 4.4 Experiment reporting
+### 4.4 Test D — re-entry-nudge variants (NEW, app-side) `Round-F: the app's v1 conversion lever`
 
-Each test reads as a two-row funnel (control vs variant) over the §3 events, with the guardrail row shown beside the primary so a false win is visible at a glance. The harness (assignment + readout dashboard) is fast-follow #15; until it lands, the **exposure events accumulate** so the first post-harness read has history, and REQ-APP-3's straight wins are measured off `application_completed{field_count}` with no experiment at all.
+- **Context:** under INTEG-PAY-1 the app's conversion role is the **abandoned-application re-entry nudge** — it reads partial state via TeleCRM/webhook and nudges the applicant back **without touching the Tally form**. This is fully app-owned, so it splits cleanly with an app-side flag.
+- **Hypothesis:** a given nudge treatment (copy / channel / timing of the re-entry touch) lifts `application_resumed` and downstream `application_completed` for the `form_incomplete` and `completed_no_fee` pools without breaching the notification caps.
+- **Variants:** e.g. `control` (baseline single-touch) · `treatment` (varied copy/channel/cadence within the cap). `experiment='reentry_nudge'`.
+- **Assignment:** app-side PostHog feature flag, resolved to `user_id`. Exposure `experiment_exposed{experiment:'reentry_nudge', variant}` fires when the nudge audience is assigned.
+- **Primary metric:** `application_resumed` rate, then `application_completed` / `app_fee_paid`, sliced by `variant` (reads off §3.3 events).
+- **🛡️ Guardrail (must-not-regress):** notification-cap compliance auditable off `reminder_sent` (≤1/day, ≤4/application, no 21:30–09:00 IST send, §3.3) and `interview_no_show` — a nudge that recovers volume but fills the top with low-intent applicants who never show is a false win.
 
-> **RAHUL DECISION — ABTEST-1: assignment mechanism for the three tests.**
-> **Recommended default:** app-side variants (Test B) via **PostHog feature flags** (already the warehouse, SINK-1); form-side variants (Tests A, C) via **Tally's native form split / URL-param forms**, resolved to `user_id` at provisioning so exposure joins outcomes on the same key the whole funnel uses. One `experiment_exposed` event regardless of mechanism. Alternative: a single app-side flag service for all three — cleaner, but it cannot assign a variant *before* the account mints on the pre-pay Tally form (Test A's whole point), so the split has to live partly Tally-side. `🟡 Tier 2` (config + a flag read; no schema, no payment change).
+### 4.5 Test E — acceptance-share (NEW, app-side) `Round-F: the acquisition-loop lever`
+
+- **Context:** the in-app **acceptance experience** fires when the mirror flips the applicant to `accepted` (SOR-1 / MEMBER-1) — a post-intake, app-owned surface. Its share affordance (the admission artifact) is the top of the acquisition loop.
+- **Hypothesis:** a given treatment of the acceptance/share surface (artifact styling, share-prompt copy, reveal framing) lifts `admission_artifact_shared` and the downstream `artifact_door_clicked → application_started` loop without degrading the acceptance experience.
+- **Variants:** e.g. `control` (baseline reveal + share) · `treatment` (varied share prompt / artifact). `experiment='acceptance_share'`.
+- **Assignment:** app-side PostHog feature flag at the acceptance surface, resolved to `user_id`.
+- **Primary metric:** `admission_artifact_shared` rate per accepted user, then loop payoff `artifact_door_clicked` → `application_started` (§3.5/§3.8), sliced by `variant`.
+- **Guardrail:** no regression to `decision_opened → decision_revealed` completion (a share-heavy treatment must not degrade the reveal itself).
+
+### 4.6 Experiment reporting
+
+Each test reads as a two-row funnel (control vs variant) over the §3 events, with the guardrail row shown beside the primary so a false win is visible at a glance. The harness (assignment + readout dashboard) is fast-follow #15; until it lands, the **exposure events accumulate** so the first post-harness read has history. All v1 tests are **app-side** — no test depends on a Tally form change.
+
+> **RAHUL DECISION — ABTEST-1: assignment mechanism for the app-side tests.**
+> **Margin note (2026-07-18, Round-F INTEG-PAY-1):** the Tally form-split mechanism is removed; all v1 tests assign **app-side via PostHog feature flags** (already the warehouse, SINK-1), resolved to `user_id` so exposure joins outcomes on the same key the whole funnel uses. One `experiment_exposed` event regardless of test. The two former form-side tests (A, C) are parked as fast-follow and will need a Tally-side split mechanism whenever Rahul re-opens the form. `🟡 Tier 2` (config + a flag read; no schema, no payment change).
 
 ---
 
@@ -274,8 +292,8 @@ Some PRD §7 metrics are **computed server-side from authoritative tables**, nev
 |---|---|---|
 | **Weekly room engagement** (the >60% WhatsApp-sunset bar, R-D5) | `cohort_room_members` × per-week activity tables | R4-T4: *"derives server-side from tables, not events"* — the G10 gap |
 | **Attendance % / recovered weeks** (`attendance_recovered`) | attendance + `cohort_week_submissions` (recovery = recording watched + recap within 6 days, REQ-ROOM-5) | Authoritative table state; an event would race the table and double-count |
-| **Cohort completion / certificate-eligible %** (🛡️ guardrail) | attendance vs the 85% threshold (`user_is_certificate_eligible`, `COHORT-LOGIC.md` §2) | Server-computed gate; `certificate_claimed` (§3.8) measures *claim*, this measures *eligibility* |
-| **Academic standing tier** (Distinction/Merit/Completion) | attendance + submissions vs STANDING-1 cutoffs | Computed view (PRD §5.8); the *tier* rides `certificate_claimed{standing_tier}` when claimed |
+| **Cohort completion / certificate-eligible %** (🛡️ guardrail) | cohort completion state (`user_is_certificate_eligible`, `COHORT-LOGIC.md` §2); **STANDING-1: single Completion cert, no hard attendance gate in v1 by default** | Server-computed gate; `certificate_claimed` (§3.8) measures *claim*, this measures *eligibility* |
+| ~~**Academic standing tier** (Distinction/Merit/Completion)~~ **— REMOVED (Round-F STANDING-1, 2026-07-18):** no honors tiers in v1 | — | Single Completion certificate only; no tier is computed, surfaced, or instrumented. Retires the CRO-3 tier view for v1. |
 | **Reconciliation join completeness / orphan rate** (health) | REQ-RECON-1's own join instrumentation (share of Tally starts + captured ₹400 resolving to a `user_id`; ~10% orphan watch line) | A **health metric with an alert**, not a funnel event (PRD §5.1 acceptance): a drop below the watch line raises an alert rather than silently under-counting the NSM |
 
 **The NSM itself is derived**, not an event: *application-start → enrolled* is computed over the `application_started` (denominator) → `enrolled` (numerator) chain in the warehouse, gated on REQ-RECON-1 producing both ends (PRD §2.1). The two ⏩ leading proxies (`application_completed` rate; `app_fee_paid`→`interview_completed` **held** rate — the proxy keys on *attendance*, not booking, per PRD §2.1/NSM-1) are likewise warehouse queries over §3 events, readable within days of a form/flow change. `interview_scheduled` is tracked as a **supporting** metric, not a ⏩ proxy, because a scheduled-but-no-show is a false win the no-show guardrail exists to catch.
@@ -298,7 +316,7 @@ Add these arms (client-source events only), each dispatched through `captureFunn
 | { name: "decision_revealed"; outcome: "accepted" | "waitlisted" | "rejected" }
 | { name: "admission_artifact_shared"; artifact_type: "card_png" | "webm" | "server_mp4" }
 | { name: "seat_claim_started" }
-| { name: "certificate_claimed"; standing_tier: "distinction" | "merit" | "completion" }
+| { name: "certificate_claimed" }  // single Completion cert, no tier field (STANDING-1, 2026-07-18)
 | { name: "referral_started"; cohort: string }
 | { name: "experiment_exposed"; experiment: string; variant: string }
 // room events (R4-T4) — add as specified there, fired via tapTick():
@@ -365,7 +383,7 @@ flowchart TD
 
 ## 8. Open questions (tracking-specific)
 
-1. **True per-field form telemetry.** `application_field_reached` gives *furthest question* from Tally partials (reconciler), not a per-field client stream. A true field-by-field funnel (to pinpoint sub-question drop within a wall) needs an app-hosted form or Tally's analytics API — worth it only if REQ-APP-3's straight shortening doesn't move the walls enough. **Default: ship furthest-field; revisit after batch 1.**
+1. **True per-field form telemetry.** `application_field_reached` gives *furthest question* from Tally partials (reconciler), not a per-field client stream. A true field-by-field funnel (to pinpoint sub-question drop within a wall) needs an app-hosted form or Tally's analytics API — both **out of v1 scope** since INTEG-PAY-1 keeps the Tally intake chain untouched (REQ-APP-3 form-shortening is parked as a fast-follow). **Default: ship furthest-field; revisit when/if Rahul re-opens the Tally form.**
 2. **Warehouse retention & PII audit cadence.** How long PostHog retains raw events, and who runs the periodic payload-PII grep (§9). **Default: quarterly PII audit; retention per PostHog project default until Rahul sets a policy.**
 3. **Attribution window for the loop.** `artifact_door_clicked → application_started` needs an attribution rule (same session? 30-day? UTM on the door). **Default: UTM `cohort`/`batch` on the door + 30-day last-touch, no user id in the URL (§2.4).**
 4. **Cross-device identity before sign-in.** A reconciler event resolves to `user_id`; a *pre-sign-in* browser event is anonymous until `identify()`. PostHog's alias-on-identify stitches them, but a user who clicks a door on a new device is a fresh anon until they start an application. **Default: accept the anon→identify stitch PostHog already does (`analytics.ts:246-254`); do not build custom cross-device identity in v1.**
@@ -376,7 +394,7 @@ flowchart TD
 |---|---|---|
 | **SINK-1** | Warehouse + server capture path | PostHog as the single funnel warehouse; add `_shared/posthog-capture.ts` for server/reconciler events keyed on `user_id` (§1) |
 | **CERT-1** | Do completion/loop events extend R4-T4's seven? | Yes — as a distinct Stage-12 event group (not room events); R4-T4 stays exactly seven; else derive completion server-side + defer loop events to fast-follow (§3.8) |
-| **ABTEST-1** | A/B assignment mechanism | PostHog flags (app-side, Test B) + Tally form-split (form-side, Tests A/C), unified by `user_id`; one `experiment_exposed` event (§4.4) |
+| **ABTEST-1** | A/B assignment mechanism | **App-side PostHog flags only** (Round-F INTEG-PAY-1, 2026-07-18) — Tally form-split removed; v1 tests are slot-embed + re-entry-nudge + acceptance-share, unified by `user_id`; one `experiment_exposed` event. Former form-side tests A/C parked as fast-follow (§4.6) |
 
 ---
 

@@ -67,7 +67,9 @@ Deadlines are real and named; urgency is never invented. Every reminder counts b
 
 ### 2.5 Money in daylight (v2 Rule 03 / NFR-COPY-5)
 
-Every rupee, date, and consequence is stated **before** it is due and **before** any Razorpay sheet opens (REQ-DEC-5). No money detail is ever first seen inside the payment sheet. The ₹8,000 is always framed as "part of your program fee, not an extra." Reminders keep office hours; "doors never lock mid-class." Currency renders as `₹40,000` (grouped, no decimals) in tabular-nums.
+Every rupee, date, and consequence is stated **before** it is due and **before** any Razorpay sheet opens (REQ-DEC-5). No money detail is ever first seen inside the payment sheet. The ₹8,000 is always framed as "part of your program fee, not an extra." The ₹400 is always framed as a **separate, non-refundable review fee — never credited toward tuition** (FEE-1). Reminders keep office hours; "doors never lock mid-class." Currency renders as `₹40,000` (grouped, no decimals) in tabular-nums.
+
+> **Margin note (2026-07-22, per FEE-1 ruled 2026-07-18):** REVERSES the earlier fast-follow "credit ₹400 toward tuition" lean. The ₹400 is a separate non-refundable review fee; all deposit-reframe / tuition-credit language is struck from this deck (see §4.2, §4.7-6G).
 
 ### 2.6 Scarcity only when true (v2 Rule 02 / NFR-COPY-3)
 
@@ -144,7 +146,7 @@ The single next-action button label is derived from status and reuses the stage'
 | `CD-02-FORM-06` | Continue to the review fee | ✎ draft | Advances toward the ₹400 gate |
 | `CD-02-PAY-01` | ₹400 to enter review | ✎ draft | The gate header; money in daylight |
 | `CD-02-PAY-02` | The fee keeps the pile serious. Every application that pays gets a full read and an interview slot held against it. | ✎ draft | Frames the fee as commitment + a promise, not a toll |
-| `CD-02-PAY-03` | Application review — Cohort 8 · ₹400 · Applies to this cohort's application only. | ✎ draft | Line-item clarity before Razorpay |
+| `CD-02-PAY-03` | Application review — Cohort 8 · ₹400 · Non-refundable review fee, separate from tuition. | ✎ draft | Line-item clarity before Razorpay; states plainly the fee is non-refundable and **not** credited toward tuition (FEE-1, ruled 2026-07-18) |
 | `CD-02-PAY-04` | Pay ₹400 · Secured by Razorpay · UPI, cards, netbanking | ✎ draft | Payment CTA + trust line |
 
 Progress indicator copy: **"Step {n} of {total}"** (tabular-nums). The quiz block, when present, carries no scored-quiz framing — it reads as part of the application, never "test."
@@ -362,11 +364,11 @@ Waitlisted/rejected use the same staging, quieter, straight to a kind letter (no
 
 | ID | Copy | Status | Note |
 |---|---|---|---|
-| `CD-06-ENR-01` | ₹40,000, in three parts. | ✎ draft | Header; no surprises |
-| `CD-06-ENR-02` | Application · paid 12 Jul · ₹400 ✓ / Seat confirmation · this week · ₹8,000 / Balance · due Sun 10 Aug · ₹32,000 | ✎ draft | The three parts with dates |
+| `CD-06-ENR-01` | ₹40,000, in two parts. | ✎ draft | Header; no surprises. Tuition is ₹8,000 + ₹32,000; the ₹400 review fee is a separate non-refundable step, already paid, **not** part of this total (FEE-1) |
+| `CD-06-ENR-02` | Seat confirmation · this week · ₹8,000 / Balance · due Sun 10 Aug · ₹32,000 · (Your ₹400 review fee, paid 12 Jul, was a separate non-refundable step — not credited here.) | ✎ draft | The two tuition parts with dates. ₹400 named as a separate non-refundable review fee, never a tuition installment (FEE-1, reverses the earlier three-part/credit framing) |
 | `CD-06-ENR-03` | Need the balance split in two? Say so — the schedule flexes, the dates stay in writing. | ✎ draft | Flexibility, on the record |
 | `CD-06-ENR-04` | The twelve weeks: Learning sessions · Sundays 11:00 AM · live / Feedback sessions · Saturdays 5:00 PM / One assignment a week · recordings within 24h | ✎ draft | Cadence |
-| `CD-06-ENR-05` | What's expected: Attendance 85%+ for the certificate · missed weeks recoverable · reminders keep office hours · doors never lock mid-class | ✎ draft | Expectations (Rule 03/04) |
+| `CD-06-ENR-05` | What's expected: Show up — attendance is tracked and shown · missed weeks recoverable via recordings · reminders keep office hours · doors never lock mid-class. Your Certificate of Completion is issued when the cohort finishes. | ✎ draft | Expectations (Rule 03/04). STANDING-1: one Certificate of Completion, no honors tiers; attendance is tracked and shown but is **not** a hard cert gate in v1 (default no-gate) |
 
 **6H Public admission page** — `🔴 Tier 1 (data whitelist)`
 
@@ -432,7 +434,7 @@ Waitlisted/rejected use the same staging, quieter, straight to a kind letter (no
 | `CD-08-SES-03` | 24 of your cohort inside · doors open | ✎ draft | Presence, not fill |
 | `CD-08-SES-04` | Join · begins in 12:41 | ✎ draft | Countdown resolves into a join button |
 | `CD-08-SES-05` | How the hour runs | ✎ draft | Run-of-show header (`session_agenda`, new field) |
-| `CD-08-SES-06` | Can't make it? The recording lands on this page within 24 hours — and it counts toward recovery. | ✎ draft | Keeps the recording promise; reframes as recovery (CRO-3) |
+| `CD-08-SES-06` | Can't make it? The recording lands on this page within 24 hours — and it counts toward recovery. | ✎ draft | Keeps the recording promise; reframes as recovery (recovery stays intact under STANDING-1; CRO-3 honors tiers retired) |
 
 **8C Assignment (timed unlock)**
 
@@ -453,15 +455,17 @@ Waitlisted/rejected use the same staging, quieter, straight to a kind letter (no
 | `CD-08-REC-03` | Missed Week 7? Watching its recording counts toward recovery — see your record. | ✎ draft | Recovery framing, not a substitute for attending |
 | `CD-08-REC-04` | *(iOS, FairPlay gap)* This recording opens on the web — tap to watch in your browser. | ✎ draft `[new-to-voice]` | Graceful iOS degradation (PRD §4.4, Open Q5); **WORD-4** |
 
-**8E The record (+ academic standing)**
+**8E The record**
 
 | ID | Copy | Status | Note |
 |---|---|---|---|
 | `CD-08-RCD-01` | ✓ present · R recovered · × missed | ✎ draft | The attendance legend — "Recovered" distinct from "present" |
-| `CD-08-RCD-02` | Attendance · 9 of 10 · 90% / Certificate threshold · 85% | ✎ draft | Real numbers vs the gate |
+| `CD-08-RCD-02` | Attendance · 9 of 10 · 90% · tracked and shown | ✎ draft | Real attendance number, tracked and shown in-room; no certificate threshold or tier (STANDING-1 removes the 85% cert gate/tiers) |
 | `CD-08-RCD-03` | Missed Week 7? Watch the recording and post a 3-line recap within 6 days. It lands on your record as **Recovered** — distinct from present, and it counts. | ✎ draft | The recovery path |
 | `CD-08-RCD-04` | Recover Week 7 | ✎ draft | Primary; names the exact week |
-| `CD-08-RCD-05` | Academic standing: **Distinction** / **Merit** / **Completion** | ✎ draft | The standing labels (CRO-3 / STANDING-1) — **WORD-5**; registrar words, no gamification |
+| `CD-08-RCD-05` | Certificate · one Certificate of Completion, issued when the cohort finishes | ✎ draft | Single completion certificate — no honors tiers. Distinction/Merit removed per STANDING-1 (reverses CRO-3 honors tiers; WORD-5 resolved) |
+
+> **Margin note (2026-07-22, per STANDING-1 ruled 2026-07-18):** RETIRES CRO-3 (honors tiers) for v1. There is one **Certificate of Completion** — no Distinction/Merit, no provisional cutoffs. Attendance is still tracked and shown in-room and recovery via recordings stays; it just does not define certificate tiers. Whether attendance gates the completion cert at all is a minor Rahul decision, default "issued on completion, no hard attendance gate in v1."
 
 **8F Picks, wins, resources**
 
@@ -474,8 +478,8 @@ Waitlisted/rejected use the same staging, quieter, straight to a kind letter (no
 > **RAHUL DECISION — WORD-4: iOS recordings copy when FairPlay isn't supported.** *(The wording side of PRD Open Q5.)*
 > Until VdoCipher FairPlay plays in the iOS WKWebView, recordings must degrade gracefully. Three copy postures: (a) **"opens on the web"** link-out (`CD-08-REC-04`, recommended — honest, keeps the promise), (b) "watch on web" as a quieter inline note, (c) hide the row on iOS (worst — silently breaks the recording promise). **Recommended default: (a).** Tie the final string to the engineering choice in Open Q5.
 
-> **RAHUL DECISION — WORD-5: the academic-standing labels.** *(The wording side of PRD STANDING-1.)*
-> The tiers are **Distinction / Merit / Completion** (`CD-08-RCD-05`), registrar language, no gamification. **Recommended default:** keep these three words; they read as a transcript, not a game (§2.4). The *cutoffs* are STANDING-1's job (a numbers decision, PRD §5.8); the *words* are this. If STANDING-1 is declined (gate-only in v1), `CD-08-RCD-05` renders only "Certificate eligibility · met/not yet" and the tier words don't ship.
+> **~~RAHUL DECISION — WORD-5: the academic-standing labels~~ — RESOLVED by STANDING-1 (ruled 2026-07-18).** *(The wording side of PRD STANDING-1.)*
+> **RULED: NO honors tiers in v1.** There is one **Certificate of Completion**, issued on cohort completion. Distinction / Merit / provisional-cutoff language is removed (`CD-08-RCD-05` now renders the single completion line). Attendance is still tracked and shown (`CD-08-RCD-01/02`) and recovery via recordings stays (`CD-08-RCD-03/04`) — it just does not define certificate tiers. *Margin note (2026-07-22): reverses the earlier WORD-5 default that kept the three tier words.* Residual minor Rahul decision: whether attendance is a hard gate on the completion cert — default "issued on completion, no hard attendance gate in v1."
 
 ### 4.10 Stage 09 — The Room's Commons  `🟡 Tier 2` (backbone `🔴`)
 
@@ -530,8 +534,8 @@ Waitlisted/rejected use the same staging, quieter, straight to a kind letter (no
 | ID | Copy | Status | Note |
 |---|---|---|---|
 | `CD-12-TR-01` | Twelve weeks, on the record. | ✎ draft (serif) | Header |
-| `CD-12-TR-02` | Attendance · 11 of 12 · 92% / Recovered weeks · 1 / Assignments · 12 of 12 / Mentor grade · A− / Certificate eligibility · met · ≥85% | ✎ draft | Real tracked numbers |
-| `CD-12-TR-03` | *(ineligible)* `{pct}`% attendance · `{threshold}`% needed. Your recordings shelf is the make-up path — recover the weeks you missed. | ✎ draft `[new-to-voice]` | Honest, no shame register (REQ-FINISH-1 acceptance) |
+| `CD-12-TR-02` | Attendance · 11 of 12 · 92% / Recovered weeks · 1 / Assignments · 12 of 12 / Mentor grade · A− / Certificate · Completion, issued on finish | ✎ draft | Real tracked numbers; the certificate issues on completion — no honors tier, no attendance-eligibility gate (STANDING-1) |
+| `CD-12-TR-03` | *(low attendance)* `{pct}`% attendance this cohort. Your recordings shelf is the make-up path — recover the weeks you missed to round out your record. | ✎ draft `[new-to-voice]` | Honest, no shame register (REQ-FINISH-1). No hard attendance gate on the certificate in v1 (STANDING-1 default); attendance is shown, recovery encouraged, cert still issues on completion |
 | `CD-12-TR-04` | Claim my certificate · Download my transcript · PDF | ✎ draft | Actions |
 
 **12B Certificate**
@@ -635,7 +639,7 @@ Waitlisted/rejected use the same staging, quieter, straight to a kind letter (no
 | **WORD-2** | `CD-LOCK-02` "closes at [time]" vs. the date-only data | Keep the sentence verbatim; render `[time]` as a **date** in v1 (data can't defend a wall-clock time). `timestamptz` column first if Rahul wants "at 9 PM." | PRD REQ-INSTALL-3; §3 |
 | **WORD-3** | The "Email code · new" honesty chip | Ship the "new" chip through cohort 1, then drop it. Tie to OTP-1; if email-OTP is deferred, remove the Email tab. | PRD OTP-1; §4.1 |
 | **WORD-4** | iOS recordings copy when FairPlay is unsupported | "This recording opens on the web" link-out (`CD-08-REC-04`) — honest, keeps the promise. | PRD Open Q5; §4.9 |
-| **WORD-5** | The academic-standing labels | Distinction / Merit / Completion (registrar words, no gamification). If STANDING-1 is gate-only, the tier words don't ship. | PRD STANDING-1; §4.9 |
+| **WORD-5** | ~~The academic-standing labels~~ — RESOLVED by STANDING-1 (2026-07-18) | RULED: **no honors tiers**. One Certificate of Completion, issued on cohort completion. Distinction/Merit removed. Attendance tracked/shown but not a tier definer; no hard cert gate in v1 (minor decision, default no-gate). | PRD STANDING-1; §4.9 |
 | **WORD-6** | The AI cohort's program name | "The AI Generalist Program" pending confirmation — it's a proposal, not a live brand; verify against `/ai-cohort` + Rahul memory. | PRD REQ-VOCAB-2; §5 |
 
 ---

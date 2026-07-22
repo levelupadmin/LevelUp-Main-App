@@ -29,6 +29,12 @@ Net-new suggestions beyond the flow-vision v2, ordered by funnel position. Every
 
 **Fable's ranking if only three ship: #1, #2, #3** — they attack the three biggest measured losses and none waits on the app build (#1/#2 are largely Tally + Razorpay config).
 
+## Placement rulings (Rahul, 2026-07-18)
+- **#1 (pay-first / form-shorten): PARKED as a future A/B in the LAST phase of the app roadmap** — not v1. It needs Tally-form changes Rahul has deferred ("do not mess with the Tally forms"). Keep the idea; schedule it last; test it then.
+- **#2 (slots on the ₹400 success screen): absorbed into the flow (v2 Stage 05)** — but note the intake chain is untouched (INTEG-PAY-1), so this = the app surfacing the next step, not modifying Razorpay/Calendly.
+- **#3 (honors-tier certs): OUT of v1** — Rahul ruled STANDING-1 = single Completion certificate. Honors tiers = fast-follow.
+- **#4–#15:** remain the fast-follow backlog; sequence during backlog v3.
+
 ---
 
 ## Scope resolution for the PRD (Fable's default, pending Rahul's explicit confirm)

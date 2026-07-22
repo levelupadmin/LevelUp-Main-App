@@ -8,7 +8,7 @@
 - **Forward contract.** For each external system this doc states the contract *we are building toward* (the "forward" state), always anchored to the real code that exists today. Where today's behaviour differs from the forward contract, both are shown and the delta is named. No invented behaviour: every claim cites a repo file, a migration, or the funnel audit.
 - **The one hard key.** §2 is the spine of the whole document. Everything else is an application of it. Read it first.
 - **Tier tags** follow `CLAUDE.md`'s blast-radius model. Every item here touches auth, payments, or an edge function on the money/login path, so nearly all of it is `🔴 Tier 1` and gated on the bugfix council + adversarial suite + Rahul's written sign-off before ship.
-- **RAHUL DECISION blocks** mark every contract choice Rahul has not confirmed, each with a recommended default so the crew is never blocked.
+- **RULED blocks** carry Rahul's Round-F decisions (2026-07-18). All four integration choices in this doc — INTEG-KEY-1 (phone primary), INTEG-PAY-1 (do not touch the intake chain), INTEG-CRM-1 (TeleCRM read-only) and INTEG-CAL-1 (org-level single Calendly account) — are now **RULED**, together with SOR-1 (TeleCRM master / app read-only mirror) and FEE-1 (₹400 non-refundable, not tuition-credited). Where a ruling reverses an earlier recommended default, a dated ⚠️ margin note marks the reversal in place.
 - **Do-not-touch.** The staged-checkout pipeline (`create-razorpay-order` staged branch, `verify-razorpay-payment`, `razorpay-webhook`) and the `ApplicationStatus.tsx:319,337` `isIOS()` guard are sacred (PRD §4.4, NFR-SEC-5). This doc *reads and extends around* them; it does not modify them.
 
 **Terms defined once (used throughout):**
@@ -37,7 +37,7 @@ flowchart LR
 
 **The one structural fact (from `FUNNEL-DATA-AUDIT.md` §1/§2):** the live funnel is stitched together by **phone number and email only**. No system passes a stable id to the next. Tally's completion redirect to the Razorpay link drops the `responseId`; the Razorpay page re-collects name/email/phone into `notes`; TeleCRM matches back on phone/`email_1`. **Across 199 recent Razorpay payments, 0 carried an `application_id`, `offering_id`, or `payment_order_id`** — the live money runs through hardcoded Razorpay Payment Links, not the app's order path. The app's clean `cohort_applications` pipeline is real code on a **parallel, largely-dormant track**.
 
-Everything in this doc is in service of one repair: **give the four systems a hard key so they stop disagreeing about who a person is.** That repair is §2. The per-system contracts (§3–§6) each state how they participate in it. §7 is the reconciler that operates the join until the hard key is universal.
+Everything in this doc is in service of one repair: **standardise all four systems on the one hard identity key they already share — the phone number (email fallback) — so they stop disagreeing about who a person is.** That repair is §2. The per-system contracts (§3–§6) each state how they participate in it. §7 is the reconciler that operates the phone-first join. Note (RULED INTEG-PAY-1, 2026-07-18): because the app must not touch the intake chain, it does **not** try to push its own id outward to make it "universal" — phone is the shared key, and the app reads/reconciles on it.
 
 ---
 
@@ -47,11 +47,13 @@ Everything in this doc is in service of one repair: **give the four systems a ha
 
 ### 2.1 What we standardise on
 
-**The forward hard key is `auth.users.id` (the Supabase app user id, a.k.a. `auth.uid`), minted at the earliest system touch and carried forward on `cohort_applications.user_id`.**
+**The ONE hard identity key across all four external systems is the normalized phone number.** It is the only identifier every system in the live funnel already carries (Tally field, the in-form Razorpay `contact`, TeleCRM `fields.phone`, Calendly `text_reminder_number`) and the identifier our own auth stack mints sessions on. Email is the fallback join key where phone is absent (§2.2). Every cross-system link in this document is a phone-first, email-fallback match.
 
-The mechanism (PRD REQ-IDENT-1/2): the moment a Tally `FORM_RESPONSE` arrives, the webhook mints **one** passwordless auth user carrying **both** email and phone, using the proven `guest-create-order` provisioning surface — `auth.admin.createUser({ email, phone, email_confirm:false, phone_confirm:false })` (`guest-create-order/index.ts:247-255` today does the email-only version; the forward contract adds `phone`). `cohort_applications.user_id` is stamped to that uid. Because both identifiers live on the one auth user, a later OTP on **either** channel resolves — via `find_login_identity(p_phone, p_email)` (`verify-msg91-otp/index.ts:175`) — to the same `auth.uid`.
+`auth.users.id` (a.k.a. `auth.uid`) remains the app's **internal** user id — the primary key of a person *inside* our own tables (`cohort_applications.user_id`, `payment_orders.user_id`). It is **not** an external join key and is **never injected into the intake chain**: per **INTEG-PAY-1** (§4.1) the app does not modify Tally, the in-form ₹400 Razorpay link, or Calendly, so our uid can never reach those systems in v1. The bridge between the internal uid and the external hard key is therefore always phone (email fallback), operated by the reconciler (§7).
 
-From that point the app owns a hard key. It stamps that key into everything it controls (payment `notes`, Calendly invitee tracking) so downstream systems finally carry it.
+> ⚠️ **Margin note — reversal (RULED 2026-07-18, Round-F INTEG-PAY-1 / INTEG-KEY-1).** Earlier drafts of this section named `auth.users.id` the "forward hard key … minted at the earliest system touch" and had the app **stamp that key into everything it controls (payment `notes`, Calendly invitee tracking) so downstream systems finally carry it.** That stance is retired for v1: the intake chain is a HARD CONSTRAINT the app must not touch, so the app cannot propagate its id into the live money or the booking flow. Phone is the one hard key that all four systems already share; the app reads/mirrors on it rather than trying to seed its own id outward.
+
+The app still provisions its own account for a person (passwordless, carrying **both** email and phone, via the proven `guest-create-order` surface — `auth.admin.createUser({ email, phone, email_confirm:false, phone_confirm:false })`, `guest-create-order/index.ts:247-255`) so that a later OTP on **either** channel resolves — via `find_login_identity(p_phone, p_email)` (`verify-msg91-otp/index.ts:175`) — to the same `auth.uid`. Binding both identifiers to one auth user is what keeps phone (primary) and email (fallback) pointing at a single internal user. This is app-internal identity, not a write into the intake chain.
 
 ### 2.2 The two external join keys (used only where `user_id` is not yet emitted)
 
@@ -62,8 +64,8 @@ External systems (Tally partials, TeleCRM leads, hardcoded Razorpay links) canno
 | **Primary** | **Normalized phone** | last-10 digits (`normalizePhone`) / `+91`-prefixed `e164()` | It is the **OTP login key** — `find_login_identity` resolves users by last-10 phone (`verify-msg91-otp/index.ts:167-178`); it is present on TeleCRM `fields.phone` and Razorpay `contact`; it is already canonicalised by shared helpers; and phone is harder to mistype than email at a payment page. |
 | **Secondary** | **Lowercased email** | `trim().toLowerCase()` | The Tally-webhook dedup key (`tally-application-webhook/index.ts:104-109`, on `(offering_id, email)`) and TeleCRM `fields.email_1`. Used when phone is absent or when the phone match is empty. |
 
-> **RAHUL DECISION — INTEG-KEY-1: phone as the primary external join key.** `🔴 Tier 1`
-> **Recommended default: phone-primary, email-secondary, as above.** Rationale: phone is the login key the whole auth stack already trusts (`find_login_identity` by last-10; `verify-msg91-otp`); the audit's ~90% match runs on phone/email jointly, and phone mistypes are rarer than email typos at the Razorpay page. Alternative Rahul may prefer: email-primary (matches the Tally-webhook dedup key and is case-insensitively stable). Recommendation stays phone-primary because it is the one identifier that already mints sessions. **Whichever is chosen, the reconciler must attempt BOTH and record which key resolved each match** (§7 join-completeness instrumentation) so we can measure the orphan rate the audit puts at ~10% (`FUNNEL-DATA-AUDIT.md` §5 gap 1).
+> **RULED — INTEG-KEY-1 (Rahul, 2026-07-18): phone is the PRIMARY join key, email is the fallback.** `🔴 Tier 1`
+> Phone-primary, email-fallback, exactly as tabled above. Rationale (confirmed): phone is the login key the whole auth stack already trusts (`find_login_identity` by last-10; `verify-msg91-otp`); the audit's ~90% match runs on phone/email jointly, and phone mistypes are rarer than email typos at the payment page. **The reconciler tries phone FIRST, email SECOND, and records which key resolved each match** (§7 join-completeness instrumentation) so we can measure the orphan rate the audit puts at ~10% (`FUNNEL-DATA-AUDIT.md` §5 gap 1). *(This confirms the standing default; the email-primary alternative is closed.)*
 
 ### 2.3 The collision rule (never a silent merge) `🔴 Tier 1`
 
@@ -88,7 +90,7 @@ flowchart TD
 
 ```mermaid
 erDiagram
-    AUTH_USER ||--o| COHORT_APPLICATION : "user_id (hard key)"
+    AUTH_USER ||--o| COHORT_APPLICATION : "user_id (INTERNAL app key)"
     AUTH_USER ||--o{ PAYMENT_ORDER : "user_id"
     COHORT_APPLICATION ||--o{ PAYMENT_ORDER : "application_id"
     COHORT_APPLICATION ||--o| TELECRM_LEAD : "join: phone / email_1"
@@ -97,9 +99,9 @@ erDiagram
     TALLY_RESPONSE ||--o| COHORT_APPLICATION : "tally_response_id (idempotency)"
 
     AUTH_USER {
-        uuid id PK "the forward hard key"
-        text email
-        text phone "last-10 normalized"
+        uuid id PK "internal app user id (NOT an external join key)"
+        text email "fallback join key"
+        text phone "last-10 normalized — THE cross-system hard key"
     }
     COHORT_APPLICATION {
         uuid id PK
@@ -123,6 +125,8 @@ erDiagram
 ## 3. Tally — the intake contract `🔴 Tier 1 (webhook) / 🟢 Tier 3 (form-builder)`
 
 Ground truth: `supabase/functions/tally-application-webhook/index.ts`; `FUNNEL-DATA-AUDIT.md` §2; `TALLY-UX-ANALYSIS.md`.
+
+> ⚠️ **RULED — INTEG-PAY-1 (2026-07-18): the Tally forms stay EXACTLY as they are.** The app inserts nothing into the intake chain: clicking "Apply" opens the EXISTING Tally form; on submit it goes to the EXISTING in-form Razorpay ₹400 link; then Calendly; then the app. **This section documents a READ/WEBHOOK contract only** — the app is a read-only mirror of what Tally already emits (the `FORM_RESPONSE` webhook Tally→app, plus the reconciler's read of partials via the Tally API). It does **not** change the form, its fields, its order, or its redirect. The form-shortening work (REQ-APP-3) and funnel inversion (CRO-1) are **OUT of v1** (parked as fast-follow — see the delta table in §3.5).
 
 ### 3.1 Auth
 
@@ -160,7 +164,7 @@ Ground truth: `supabase/functions/tally-application-webhook/index.ts`; `FUNNEL-D
 | `city` | `city` → `location` | |
 | `occupation` | `occupation` → `profession` → `work` | |
 | `bio` (the essay) | `about` → `bio` → `tell us` | reviewer-only forever (PRD REQ-APP-1); never rendered back to the applicant |
-| `craft` | `craft` → `discipline` → `what do you make` | **NEW extraction** → typed `cohort_applications.craft`. Feeds COPY's `{craft}` safe-personalization token (`03-DATA-MODEL-ERD.md` §4.2). Confirm the exact Tally quiz-field label as part of REQ-APP-3 form work. |
+| `craft` | `craft` → `discipline` → `what do you make` | **NEW extraction** → typed `cohort_applications.craft`. Feeds COPY's `{craft}` safe-personalization token (`03-DATA-MODEL-ERD.md` §4.2). Extraction reads whatever the EXISTING form already labels — no form change (INTEG-PAY-1); a token that finds no matching label simply stays empty. Tightening the label is deferred with REQ-APP-3 (fast-follow). |
 | `quiz_goal` | `goal` → `what do you want` → `outcome` | **NEW extraction** → `cohort_applications.quiz_goal`; feeds `{quiz_goal}`. |
 | `experience_band` | `experience` → `years` → `level` | **NEW extraction** → `cohort_applications.experience_band`; feeds `{experience_band}`. |
 
@@ -171,6 +175,7 @@ Full raw `data` is stored in `cohort_applications.tally_data` (jsonb) for replay
 - **The webhook fires ONLY on `FORM_RESPONSE` = completed submissions. Partials never reach it** (`index.ts:46-50`; `FUNNEL-DATA-AUDIT.md` §2). So the webhook **cannot** mint the `application_started` denominator the north-star metric needs (PRD §5.1, §7).
 - **Partials, and how far each got, live only in the Tally API.** The audit read "2,000 most-recent VE partials, bucketed by the furthest question each reached" (`TALLY-UX-ANALYSIS.md` §4) — that furthest-question data exists in Tally's partial-response payloads. The reconciler (§7) reads it; the webhook cannot see it.
 - **Save-and-resume is Tally-native** (`TALLY-UX-ANALYSIS.md` §6 rec 8): a form-stage abandoner's recovery link is Tally's own resume link (PRD REQ-INSTALL-1), not an app deep-link. v1 does **not** promise a unified field-precise magic link (that is CRO #4, fast-follow).
+- **The abandoned-application RE-ENTRY nudge (INTEG-PAY-1) READS, it does not rewrite.** The app's only conversion role on the intake path is a nudge: it reads partial state (via the reconciler's Tally-API read and/or the TeleCRM mirror, §5.3/§7.2), and prompts the person to come back — handing them Tally's own resume link. It **never** writes into or alters the form. The prior CRO-1 "funnel inversion" (routing the application through the app) is OUT of v1 — the app's job is a post-intake experience + this re-entry nudge, nothing that touches the chain.
 
 ### 3.4 Offering resolution & idempotency
 
@@ -187,7 +192,7 @@ Full raw `data` is stored in `cohort_applications.tally_data` (jsonb) for replay
 | Collision | not handled (no createUser at all today) | defer → `pending_claim`, interactive claim at sign-in (§2.3) |
 | Partials | invisible | read by the reconciler (§7) for the NSM denominator + resume signal |
 
-**Tier note:** the webhook change is `🔴 Tier 1` (auth/provisioning on the login path). The form-builder shortening (REQ-APP-3: progress bar, cut the quiz block, split contact page, optional Q7/Q9, forward-dated availability) is `🟢 Tier 3` Tally-side and touches **no** field order or the payment gate.
+**Tier note:** the webhook change is `🔴 Tier 1` (auth/provisioning on the login path). ⚠️ **Reversal — RULED INTEG-PAY-1 (2026-07-18):** the form-builder shortening (REQ-APP-3: progress bar, cut the quiz block, split contact page, optional Q7/Q9, forward-dated availability) and CRO-1 (funnel inversion) are **OUT of v1** — the forms stay untouched. They are **parked as a fast-follow A/B** (do NOT delete the idea; it needs Tally-side form changes Rahul has deferred). Because nothing on the form changes in v1, the only Tally-side work in scope is this READ contract (webhook + reconciler partials read).
 
 ---
 
@@ -195,7 +200,9 @@ Full raw `data` is stored in `cohort_applications.tally_data` (jsonb) for replay
 
 Ground truth: `create-razorpay-order`, `guest-create-order`, `verify-razorpay-payment`, `razorpay-webhook`; `_shared/pricing.ts`; `FUNNEL-DATA-AUDIT.md` §4; migration `20260413100000`.
 
-> **The core of this section is sacred.** The staged-order branch, both verification functions, and the `isIOS()` guard must not change (PRD §4.4, NFR-SEC-5). The forward contract here is about **making the payment carry the hard key** (§2) and reconciling the payments that don't — not re-architecting checkout.
+> **The core of this section is sacred.** The staged-order branch, both verification functions, and the `isIOS()` guard must not change (PRD §4.4, NFR-SEC-5).
+>
+> ⚠️ **RULED — INTEG-PAY-1 (2026-07-18): the app does NOT create the live ₹400 orders, and does not route the intake ₹400 (or the ₹8k seat-confirm) through its own order path.** The live intake money runs on the EXISTING in-form Razorpay ₹400 link and the existing confirmation link — untouched. The app's Razorpay role in v1 is therefore **read-only reconciliation**: the reconciler (§4.5/§7) NET-matches those existing/legacy payments back to app users **by phone (primary), email (fallback)**. This section documents (a) the sacred staged/verify core as the do-not-touch reference, and (b) the reconciler read that stitches the real money to users by phone — **not** a plan to make the app originate the intake payments.
 
 ### 4.1 Order creation — two paths, both stamp `notes`
 
@@ -206,10 +213,13 @@ Ground truth: `create-razorpay-order`, `guest-create-order`, `verify-razorpay-pa
 
 Both POST `https://api.razorpay.com/v1/orders` with HTTP Basic `RAZORPAY_KEY_ID:RAZORPAY_KEY_SECRET` (`index.ts:316-332`). Both create a `payment_orders` row **first** (status `created`), then attach `razorpay_order_id` after Razorpay responds.
 
-**The forward contract's central Razorpay move:** every payment the app originates carries **`notes.payment_order_id` + `receipt = payment_orders.id`**, and for staged payments `payment_orders.application_id` links straight to the application. This is the hard key that fixes the "0/199 carried an app id" problem (`FUNNEL-DATA-AUDIT.md` §2) — **for payments that flow through the app**.
+**How app-originated payments are keyed (unchanged reference, do-not-touch):** any payment the app *does* originate through these functions carries **`notes.payment_order_id` + `receipt = payment_orders.id`**, and for staged payments `payment_orders.application_id` links straight to the application.
 
-> **RAHUL DECISION — INTEG-PAY-1: route the live ₹400 through the app's order path (so it carries the hard key)?** `🔴 Tier 1 (revenue)`
-> The 0/199 problem exists because the **live funnel's ₹400 is a hardcoded Razorpay Payment Link** in Tally's completion redirect (`FUNNEL-DATA-AUDIT.md` §1/§2), not `create-razorpay-order`. Two ways forward: **(a)** point Tally's completion redirect (or the ₹400 success screen, REQ-INT-0) at the app's `type=app_fee` staged order so the payment is born with `payment_order_id` + `application_id`; or **(b)** keep the hardcoded links and lean entirely on the reconciler (§7) to phone/email-match payments after the fact. **Recommended: (a) for NEW cohorts / the ₹400 success-screen flow, (b) as the reconciliation safety net for anything still on hardcoded links.** Rationale: (a) is the only way to get a real foreign key on the money; (b) alone perpetuates the ~10% orphan rate. This is a revenue-path change → council + staged rollout; the existing staged functions are **reused unchanged** (the ₹400 already has an `app_fee` code path — `create-razorpay-order/index.ts:121-125`). Do **not** change `verify-*` or the `isIOS()` guard to do this.
+⚠️ **But in v1 the intake ₹400 and the ₹8k seat-confirm do NOT flow through these functions** (INTEG-PAY-1). They run on the existing in-form Razorpay links, so they carry **no** `payment_order_id` and no `application_id` — exactly the "0/199 carried an app id" reality (`FUNNEL-DATA-AUDIT.md` §2). The v1 fix is therefore **not** to make the app originate them; it is the reconciler NET-matching them to users **by phone (primary), email (fallback)** — §4.5. The app-originated key path above stays documented as the sacred contract for any payment that legitimately runs through `create-razorpay-order` (e.g. non-intake single purchases), not as a plan to re-route the intake chain.
+
+> **RULED — INTEG-PAY-1 (Rahul, 2026-07-18): DO NOT modify the existing intake chain. Option (b) only.** `🔴 Tier 1 (revenue)`
+> ⚠️ **This REVERSES the earlier lean toward option (a).** The Tally forms stay EXACTLY as they are; clicking "Apply" opens the existing Tally form; on submit it goes to the existing in-form Razorpay ₹400 link; then Calendly; then the app. **The app inserts NOTHING into this chain and does NOT route the ₹400 through its own order path.** There is no `type=app_fee` re-route of the intake payment, no repointing of Tally's completion redirect, no app-owned ₹400 success screen in the intake flow. Option (a) is closed for v1.
+> The 0/199 problem is accepted as v1 reality: because the live ₹400 is a hardcoded Razorpay Payment Link (`FUNNEL-DATA-AUDIT.md` §1/§2), it carries no app id, and the **reconciler NET-matches it (and the ₹8k seat-confirm) back to app users by phone (primary), email (fallback)** — §4.5. The residual ~10% orphan rate is measured and surfaced (§7.3), not engineered away by re-routing the money. The sacred staged/`verify-*` functions and the `isIOS()` guard are untouched. *(The idea of a first-party keyed intake payment is parked as a fast-follow that requires the Tally/link changes Rahul has deferred — do not delete it, do not build it in v1.)*
 
 ### 4.2 Staged amounts (the SKU is the amount)
 
@@ -222,6 +232,8 @@ Razorpay carries **no SKU**; amount **is** the product (`FUNNEL-DATA-AUDIT.md` �
 | Balance | `balance` | `price_inr − (app_fee + confirmation)` (`index.ts:139-142`) | requires `confirmation_payment_id`; rejects if `balance_payment_id` set |
 
 Staged payments **skip bumps and coupons** (`index.ts:156-190`). Ownership is verified: `application_id` must belong to the requesting `userId`, else 403 (`index.ts:116-117`). The reconciler (§7) reads captured amounts to infer stage for payments that never touched this path.
+
+> ⚠️ **Margin note — FEE-1 (RULED 2026-07-18, reverses the earlier "credit ₹400" lean).** The ₹400 is a **separate, NON-REFUNDABLE review fee, NOT credited toward tuition.** The balance formula above (`price_inr − (app_fee + confirmation)`) credits the ₹400 back against the price — that is the tuition-credit behaviour FEE-1 removes. Under FEE-1 the balance must be `price_inr − confirmation` (only the seat-confirm is tuition; the review fee sits outside the tuition ledger). This is a change to the **sacred staged math**, so it does **not** ship silently: it goes through the bugfix council + Rahul's written sign-off before any edit to `create-razorpay-order`. Two facts soften the urgency in v1: (1) per INTEG-PAY-1 the intake ₹400/₹8k don't flow through this staged path at all, so no live intake balance is being computed here yet; (2) any tuition-credit / deposit-reframe language elsewhere in the docs set is retired. Flagging here so the formula is corrected the moment the staged path is used for a real tuition balance.
 
 ### 4.3 Verification — two independent, defense-in-depth mechanisms
 
@@ -276,17 +288,34 @@ sequenceDiagram
 | Money-on-the-floor safety | any account-resolution failure → park `needs_review`, ack, human recovers; never drop the payment | `verify-razorpay-payment/index.ts:451-511` |
 | Unknown order (e.g. hardcoded link) | webhook returns 200 `{skipped:"no payment_order"}` so Razorpay stops retrying | `razorpay-webhook/index.ts:193-204` |
 
-That last row is the audit's 0/199 case at runtime: a ₹400 paid on a hardcoded Payment Link has no `payment_orders` row, so the webhook can't advance any application — **only the reconciler (§7) can attach it, by phone/email.** This is exactly why INTEG-PAY-1 matters.
+That last row is the audit's 0/199 case at runtime: a ₹400 paid on the existing in-form Payment Link has no `payment_orders` row, so the webhook can't advance any application — **only the reconciler (§7) can attach it, by phone (primary) / email (fallback).** Under RULED INTEG-PAY-1 this is the accepted v1 design (not a gap to close by re-routing the money): the app reads and reconciles the existing links; it never originates them.
 
 ### 4.5 What the reconciler reads from Razorpay (read-only)
 
-`GET https://api.razorpay.com/v1/payments?from&to&count&skip`, HTTP Basic (`FUNNEL-DATA-AUDIT.md` §4 method notes). Per payment: `amount, status, created_at, method, contact, email, order_id, notes`. Bucketed by amount → stage (₹400 applied / ₹8k·₹15k confirmed / ≥₹40k or ₹22–32k balance). Join to a user by `notes.phone`/`notes.email` or top-level `contact`/`email` (§2.2). **No writes to Razorpay, ever.**
+This is the v1 mechanism for INTEG-PAY-1: the app never creates these orders, it **reads** them.
+
+`GET https://api.razorpay.com/v1/payments?from&to&count&skip`, HTTP Basic (`FUNNEL-DATA-AUDIT.md` §4 method notes). Per payment: `amount, status, created_at, method, contact, email, order_id, notes`. Bucketed by amount → stage:
+
+- **₹400** (`offerings.app_fee_inr`, ₹600–900 Forge) → application fee paid — the existing in-form link's payment;
+- **₹8k / ₹15k** → seat-confirm — the second existing link's payment;
+- **≥₹40k or ₹22–32k** → balance.
+
+**Join to a user by phone FIRST (`notes.phone` / top-level `contact`), email SECOND (`notes.email` / top-level `email`)** — INTEG-KEY-1 / §2.2 — recording which key resolved each match.
+
+**Read-path idempotency & verification (the reconciler is a read, but must not double-count):**
+- **Dedup by Razorpay `payment.id`.** Each captured payment is applied to app state at most once; a re-read of the same `payment.id` is a no-op (the reconciled marker is keyed on `payment.id`, not on the run).
+- **Only `status ∈ {captured, authorized}` advances a stage;** pending/failed are ignored.
+- **Amount → stage is the only SKU signal** (Razorpay carries no SKU, §4.2) — the reconciler records the raw amount alongside the inferred stage so a mis-bucketed edge amount is auditable, never silently promoted.
+- **A payment whose phone (then email) matches no app user is parked as an orphan and counted in the join-completeness metric (§7.3), never dropped and never force-attached.**
+- **No writes to Razorpay, ever.** The only write is onto `cohort_applications` (the reconciled stage), for states the app can own.
 
 ---
 
 ## 5. TeleCRM — the funnel-stage read contract `🔴 Tier 1 (read path)`
 
 Ground truth: `FUNNEL-DATA-AUDIT.md` §3. **There is no TeleCRM code in the repo today** — this is a net-new read integration inside the reconciler (§7). No writes in v1.
+
+> ⚠️ **RULED — SOR-1 (Rahul, 2026-07-18): TeleCRM is the MASTER system of record; the app is a READ-ONLY MIRROR.** The sales team creates every funnel event — **including acceptance** — inside TeleCRM. The app READS/mirrors those events and reacts to them; it **NEVER writes a funnel status** to any system. In particular the app's in-app acceptance experience is triggered by **detecting the flip to `accepted` in TeleCRM** (SOR-1 + MEMBER-1: the app reads `accepted` to gate the member veil, it does not write it). See §5.2 for the acceptance-read contract and its latency requirement.
 
 ### 5.1 Auth & endpoint
 
@@ -313,15 +342,23 @@ Top-level: `{ id, status, score, rating, labelids, actions, createdBy, fields{�
 | `Interview Scheduled` | Calendly booked | `interview_scheduled` |
 | `Need to reschedule interview` | | `interview_scheduled` (reschedule flag) |
 | `Interview completed` | interview held | `interview_done` |
+| `Accepted` *(TeleCRM-sourced, SOR-1 — sales-team set; confirm exact status/field name)* | decision made in TeleCRM | `accepted` (READ-ONLY mirror; fires the in-app acceptance experience + gates the MEMBER-1 veil) |
 | `No show` | booked, didn't attend | `interview_no_show` (reconciled_stage; a branch off `interview_scheduled`, **not** interview_done — aligned with STATE §3.2 / DATA §4.3) — the **show-rate guardrail**, PRD §2.2 |
 | `Deffered` *(sic)* | deferred to a later cohort | — (policy: lapsed ≠ lost, CRO #8) |
 | `Converted` | **won** — seat-confirm OR full payment (collapsed) | `confirmation_paid` / `balance_paid` / `enrolled` |
 
-**Two gaps this vocabulary can't close (`§3`, `§5` gap 4):**
-1. **No explicit `Accepted` state** — acceptance is implicit between `Interview completed` and `Converted`. The app enum has `accepted`/`rejected` but **no writer anywhere** (`FUNNEL-DATA-AUDIT.md` §2). Post-interview acceptance cannot be read from TeleCRM.
-2. **`Converted` collapses** ₹8k/₹15k seat-confirm and full payment into one state — the money-stage distinction survives **only in Razorpay amounts**, not TeleCRM.
+**Acceptance is TeleCRM-sourced (SOR-1) — the app READS it, never writes it:**
+⚠️ **Reversal (RULED 2026-07-18, SOR-1).** Earlier drafts treated `accepted` as "the one app-WRITTEN status" (with an in-app admin decision RPC, SEC-DECISION-1). **That is removed.** TeleCRM is the master: the sales team marks acceptance **in TeleCRM** (as a `status` picklist value and/or a `fields.*` flag on the lead — confirm the exact TeleCRM representation during integration; the audit shows acceptance sitting implicitly between `Interview completed` and `Converted`, so a dedicated `Accepted` value must be surfaced by the sales team's own workflow for the app to read it cleanly). The app **detects the flip to `accepted`** and fires the in-app acceptance experience; it maps that read onto its own `accepted` enum for the MEMBER-1 veil gate. There is **no app-side writer** and no admin decision RPC.
 
-So the reconciler derives stage from **TeleCRM `status` joined with Razorpay amounts** — neither alone is sufficient.
+**Latency requirement (new — the acceptance experience depends on it):** the `accepted` state must reach the app **promptly** so the acceptance moment doesn't feel stale. Two delivery paths, in preference order:
+1. **A TeleCRM webhook** on lead status change, if TeleCRM offers one for this org — near-real-time, the preferred path; verified + read-only like the other receivers (§6.2/§8).
+2. **The reconciler poll** as the guaranteed fallback — a short poll interval (target: minutes, not hours) so acceptance surfaces within one cycle even without a webhook.
+Spec this dependency explicitly: whichever path delivers it, the reconciler still treats TeleCRM as the source of truth for `accepted` and the app never round-trips a write back.
+
+**One gap the vocabulary still can't close (`§3`, `§5` gap 4):**
+- **`Converted` collapses** ₹8k/₹15k seat-confirm and full payment into one state — the money-stage distinction survives **only in Razorpay amounts**, not TeleCRM.
+
+So the reconciler derives stage from **TeleCRM `status` (incl. the `accepted` read) joined with Razorpay amounts** — neither alone is sufficient.
 
 ### 5.3 Partial vs complete, and the ~10% join failure
 
@@ -330,14 +367,20 @@ So the reconciler derives stage from **TeleCRM `status` joined with Razorpay amo
 
 ### 5.4 Write-back — out of scope in v1
 
-> **RAHUL DECISION — INTEG-CRM-1: does the app write back to TeleCRM (or stay read-only)?** `🔴 Tier 1`
-> This is the integration-level face of PRD **Open Q1** (system of record, §8.2). **Recommended default: read-only in v1.** The app becomes authoritative for the states **it controls** (provisioning, the staged payments it originates, room/enrolment) and **reconciles** TeleCRM/Razorpay/Calendly for the rest — it does not write TeleCRM statuses. Rationale: TeleCRM is the sales team's live workspace; a bidirectional sync is a much larger, higher-blast-radius contract and is unnecessary to make the app a first-party *observer* of stage (which is all the NSM needs). If Rahul later wants the app to own interview/accept/reject, that is a net-new **write** contract (status push + conflict policy) scoped after one reconciliation cycle proves the read path. Until then, the app **never** writes TeleCRM.
+> **RULED — INTEG-CRM-1 (Rahul, 2026-07-18): TeleCRM read-only in v1, no write-back.** `🔴 Tier 1`
+> Confirmed, and now settled at the system-of-record level by **SOR-1**: TeleCRM is the MASTER; the app is a READ-ONLY MIRROR. PRD Open Q1 is answered — the app **reconciles** TeleCRM/Razorpay/Calendly and is authoritative only for the states it genuinely owns internally (app account provisioning, room/enrolment rendering). It does **not** write any funnel status — not interview, not accept/reject, not converted. The acceptance state in particular is TeleCRM-sourced and read-only (§5.2); the earlier in-app admin decision RPC (SEC-DECISION-1) is **removed**. A future write-back would be a net-new, higher-blast-radius contract (status push + conflict policy), out of scope until Rahul re-opens it. Until then, the app **never** writes TeleCRM.
 
 ---
 
 ## 6. Calendly — the interview-booking contract `🔴 Tier 1 (net-new)`
 
 Ground truth: today Calendly is **only** two config columns — `offerings.calendly_url` and `offerings.thankyou_show_calendly` (migration `20260413100000:59,61`; `types.ts:4037,4079`). **There is no Calendly webhook, no receiver, and no `interview_modality` column anywhere** (PRD REQ-INT-1 feasibility note; `FUNNEL-DATA-AUDIT.md` §5: "Calendly is the source; it is not joined to the app"). This is the largest net-new external→app surface in the funnel, comparable to the render worker (PRD §9.1).
+
+> ⚠️ **RULED — INTEG-CAL-1 + INTEG-PAY-1 (Rahul, 2026-07-18):**
+> - **Calendly stays in the EXISTING intake chain.** Per INTEG-PAY-1 the chain is Tally → in-form Razorpay ₹400 → **Calendly** → app; the app does **not** insert itself before Calendly and does **not** own a ₹400 success screen that books the interview (that was the retired CRO-1 / REQ-INT-0 app-owned success flow — see §6.4). The Calendly receiver here is a **read/mirror** into the app's own tables, not a write into the intake chain or back to Calendly/TeleCRM.
+> - **v1 = ONE existing org-level Calendly account** (a single subscription, one signing key). **Dual-account availability-switch is FAST-FOLLOW** (LevelUp has two Calendly accounts; switching between them by availability is deferred, not v1).
+> - **Optional in-app Calendly embed** for UI control is a **nice-to-have, not required** in v1; either path (in-app embed or the existing hosted Calendly link) must yield the **same flow and the same data**.
+> - **ENTRY PARITY (new REQ):** whether a person applies via the app or via a marketing landing page, the experience and the data wiring must be **EQUIVALENT** — same Tally→₹400→Calendly→app chain, same reconciler reads, same phone-primary identity. No entry point gets a divergent flow or a divergent data path.
 
 ### 6.1 What must be built (all four are prerequisites, none is a "tag")
 
@@ -377,36 +420,41 @@ Calendly delivers `invitee.created` and `invitee.canceled`. The receiver reads:
 
 **Modality (PRD REQ-INT-1):** the student picks **Google Meet or phone** at booking, mapped to Calendly **location** options. The receiver persists `interview_modality` (CHECK `google_meet|phone` — the canonical enum, mirrored in DATA §4.2) from the `location.type` (Meet → `join_url`; phone → the invitee's number). **Zoom is never assumed for the interview modality** (the delivered cohort-room session legitimately runs on Zoom — see COPY CD-08-SES-01; this rule binds the interview only). The appointment card renders the chosen variant exactly.
 
-### 6.4 The fee-paid → schedule handoff (CRO #2 / REQ-INT-0)
+### 6.4 The fee-paid → schedule handoff (existing chain; app nudges, does not own it)
 
-- The ₹400 payment-success screen presents the **three soonest interview slots as one-tap buttons** ("receipt → booking, one motion", v2 Stage 05-A). Booking at peak intent closes the "fee paid, interview not scheduled" gap the audit flags (`FUNNEL-DATA-AUDIT.md` §5: leads stuck in `Application Fee Paid` never reaching `Interview Scheduled`).
-- Slot embedding options: **(a)** Calendly inline embed widget, or **(b)** app-native slot buttons backed by Calendly's availability API. CRO #2's named A/B is "embed slots vs. link out"; the embed path is the v1 default.
-- A student who declines still lands in the reminder ladder's "you paid, book your interview" nudge (REQ-INSTALL-3), driven off the reconciler's fee-paid-no-interview marker.
+⚠️ **Reversal — RULED INTEG-PAY-1 (2026-07-18).** Earlier drafts had **the app** own a ₹400 payment-success screen presenting the three soonest slots (CRO #2 / REQ-INT-0, "receipt → booking, one motion"). That app-owned success flow is **OUT of v1** — the app inserts nothing into the intake chain.
 
-> **RAHUL DECISION — INTEG-CAL-1: subscription scope + slot mechanism.** `🔴 Tier 1`
-> Two sub-choices: **(1)** webhook subscription scope — a single **org-level** subscription (one secret, all interviewers) vs **per-user** subscriptions (finer control, more secrets to manage); **(2)** slot source on the success screen — Calendly **inline embed** vs app-native buttons over the **availability API**. **Recommended: org-level subscription + inline embed for v1** (fewest moving parts, one signing key, and the embed inherits Calendly's own availability truth so we never double-book). Revisit per-user + availability-API if per-interviewer routing or a fully native booking UI becomes a requirement. Either way: signature verification is mandatory and the receiver **writes `interview_scheduled` + `interview_date` + `interview_modality`** onto `cohort_applications` — this is the writer the intermediate state has lacked (`FUNNEL-DATA-AUDIT.md` §2).
+- **The handoff already lives in the EXISTING chain:** the in-form Razorpay ₹400 success flows straight to **Calendly** (Tally → ₹400 link → Calendly → app). Booking at peak intent is handled by that existing redirect, not by an app screen.
+- **The app's only role here is the re-entry nudge (INTEG-PAY-1):** for anyone who paid ₹400 but has no Calendly booking, the reconciler's fee-paid-no-interview marker (§7.2) fires the reminder-ladder "you paid, book your interview" nudge (REQ-INSTALL-3), which hands them the existing Calendly link. The nudge **reads** state; it does not restructure the chain.
+- **Optional in-app Calendly embed** (INTEG-CAL-1) may render the same Calendly availability inside the app for UI polish — a nice-to-have that must yield identical flow + data to the hosted link. The retired app-native "slot buttons over the availability API" A/B is parked with CRO-1 as fast-follow.
 
-### 6.5 What the receiver writes (the state it now owns)
+> **RULED — INTEG-CAL-1 (Rahul, 2026-07-18): org-level subscription, ONE existing account in v1.** `🔴 Tier 1`
+> - **Subscription scope: a single ORG-LEVEL Calendly subscription** — plug in ONE existing Calendly account (one signing key, all interviewers). Per-user subscriptions are not v1.
+> - **v1 uses exactly one Calendly account.** LevelUp has TWO; the **availability-based switch between the two accounts is FAST-FOLLOW**, not v1.
+> - **Slot rendering:** the interview is booked through the existing hosted Calendly in the intake chain (§6.4); an **optional in-app inline embed** is a nice-to-have that inherits Calendly's own availability truth (so we never double-book) and must yield identical flow + data. App-native buttons over the availability API are parked (fast-follow, with CRO-1).
+> - Signature verification is mandatory. The receiver **writes `interview_scheduled` + `interview_date` + `interview_modality` onto the app's own `cohort_applications` mirror** — a read-into-mirror, consistent with SOR-1 (it does **not** write back to Calendly or TeleCRM). This gives the intermediate interview state the mirror record it has lacked (`FUNNEL-DATA-AUDIT.md` §2), without the app becoming a funnel-status writer to any master system.
+
+### 6.5 What the receiver records into the app's mirror (read-only mirror, SOR-1)
 
 ```mermaid
 sequenceDiagram
     participant S as Student
-    participant CS as ₹400 success screen (REQ-INT-0)
-    participant Cal as Calendly
-    participant WH as calendly-webhook (net-new)
-    participant DB as cohort_applications
-    S->>CS: pays ₹400 (app_fee)
-    CS->>S: 3 soonest slots (Meet | phone)
-    S->>Cal: books a slot, picks modality
+    participant RZP as existing in-form ₹400 link (INTEG-PAY-1, not app-owned)
+    participant Cal as Calendly (existing hosted; optional in-app embed)
+    participant WH as calendly-webhook (net-new receiver)
+    participant DB as cohort_applications (app's OWN mirror)
+    S->>RZP: pays ₹400 on the existing link
+    RZP->>Cal: existing chain redirects to Calendly
+    S->>Cal: books a slot, picks modality (Meet | phone)
     Cal->>WH: invitee.created (Calendly-Webhook-Signature)
     WH->>WH: verify HMAC(t.body, CALENDLY_SIGNING_KEY)
-    WH->>DB: join by phone/email → status=interview_scheduled,\ninterview_date, interview_modality
-    Note over Cal,WH: invitee.canceled → status back to app_fee_paid\n(or 'Need to reschedule'); one reschedule allowed (REQ-INT-3)
+    WH->>DB: join by phone (then email) → mirror interview_scheduled,\ninterview_date, interview_modality
+    Note over Cal,WH: invitee.canceled → mirror back to app_fee_paid\n(or 'Need to reschedule'); one reschedule allowed (REQ-INT-3)
 ```
 
-- `invitee.created` → `status='interview_scheduled'`, set `interview_date`, `interview_modality`.
-- `invitee.canceled` → revert to `app_fee_paid` / flag reschedule; **one** reschedule allowed, and the word "free" never appears near it (PRD REQ-INT-3, NFR-COPY-4).
-- Join to `user_id` by phone/email (§2.2); if unresolved, park + surface in the orphan-rate health metric (§7) rather than silently dropping.
+- `invitee.created` → mirror `status='interview_scheduled'`, set `interview_date`, `interview_modality` **on the app's own `cohort_applications`** (no write back to Calendly or TeleCRM).
+- `invitee.canceled` → revert the mirror to `app_fee_paid` / flag reschedule; **one** reschedule allowed, and the word "free" never appears near it (PRD REQ-INT-3, NFR-COPY-4).
+- Join to `user_id` by phone (primary), email (fallback) (§2.2); if unresolved, park + surface in the orphan-rate health metric (§7) rather than silently dropping.
 
 ---
 
@@ -416,12 +464,13 @@ This is PRD **REQ-RECON-1** (§5.1), the north-star linchpin and Slice-1's first
 
 ### 7.1 Contract
 
-- **Trigger key:** the **logged-in user's normalized phone + email** — exactly the join the whole funnel already runs on (§2.2).
+- **Trigger key:** the logged-in user's **normalized phone (primary), email (fallback)** — INTEG-KEY-1, exactly the join the whole funnel already runs on (§2.2). Phone is tried first, email second, and the reconciler records which key resolved each match.
 - **Reads (all read-only, secrets by name):**
-  - **Tally API** → completed submission? partial + furthest question? → the `application_started` denominator (which the completion-only webhook cannot see, §3.3) and the resume signal.
-  - **TeleCRM** `POST …/lead/search` → `status` + `mql` (§5).
-  - **Razorpay** `GET /payments` → captured ₹400 / ₹8k·₹15k / balance amounts (§4.5).
-- **Writes:** only `cohort_applications` (a net-new reconciled-stage field + the two markers below), for states the app can own. **Never** writes Tally, TeleCRM, or Razorpay (INTEG-CRM-1).
+  - **Tally API** → completed submission? partial + furthest question? → the `application_started` denominator (which the completion-only webhook cannot see, §3.3) and the resume signal for the re-entry nudge.
+  - **TeleCRM** `POST …/lead/search` → `status` (incl. the **`accepted` read**, SOR-1 §5.2) + `mql` (§5). TeleCRM is the master; the reconciler mirrors, never writes.
+  - **Razorpay** `GET /payments` → captured ₹400 / ₹8k·₹15k / balance amounts, matched by phone→email (§4.5).
+- **Acceptance latency (SOR-1):** the `accepted` flip must reach the app promptly for the in-app acceptance experience. Preferred path is a **TeleCRM webhook** (near-real-time) if the org exposes one; the **reconciler poll is the guaranteed fallback** at a short interval (target minutes, not hours). Either way the app only READS `accepted` and fires the experience — it never writes the status.
+- **Writes:** only the app's own `cohort_applications` mirror (a net-new reconciled-stage field + the markers below), for states the app can own. **Never** writes Tally, TeleCRM, or Razorpay (INTEG-CRM-1 / SOR-1).
 - **Derives the stage→CTA table** (`FUNNEL-DATA-AUDIT.md` §6):
 
 | Detected state (phone/email reads) | CTA the app renders |
@@ -429,7 +478,8 @@ This is PRD **REQ-RECON-1** (§5.1), the north-star linchpin and Slice-1's first
 | Tally partial, no completion | Resume application (Tally save-and-resume) |
 | Completed form, no captured ₹400 | Pay the ₹400 application fee |
 | `Application Fee Paid`, no `Interview Scheduled` | Book your interview (Calendly, §6.4) |
-| `Interview completed`, not `Converted` | Awaiting decision / pay seat-confirm when accepted |
+| `Interview completed`, not yet `accepted` in TeleCRM | Awaiting decision (no app action; app is mirroring) |
+| TeleCRM flips to `accepted` (SOR-1 read) | Fire the in-app acceptance experience; surface the seat-confirm (₹8k) CTA |
 | ₹8k/₹15k paid, balance not paid | Pay your balance before the cohort starts |
 | `Converted` / full payment | Enrolled: show cohort content |
 
@@ -460,8 +510,9 @@ Without this the NSM (PRD §2.1) collapses to in-app completion rate, because th
 | `RAZORPAY_WEBHOOK_SECRET` | Razorpay | `razorpay-webhook` only — **separate** from KEY_SECRET | exists |
 | `MSG91_AUTH_KEY` | MSG91 | `verify-msg91-otp` (phone-OTP login) | exists |
 | `REVIEW_LOGIN_CODE` | MSG91 bypass | App-review demo login for `+918888777666` only | exists |
-| `TELECRM_API_TOKEN` + `enterpriseId` | TeleCRM | reconciler read path (§5) | **net-new** |
-| `CALENDLY_SIGNING_KEY` | Calendly | `calendly-webhook` receiver (§6) | **net-new** |
+| `TELECRM_API_TOKEN` + `enterpriseId` | TeleCRM | reconciler read path incl. the `accepted` read (§5, SOR-1) | **net-new** |
+| `TELECRM_WEBHOOK_SECRET` *(only if a TeleCRM status webhook is used)* | TeleCRM | verify the optional near-real-time `accepted`-flip webhook (§5.2 latency path 1) | **net-new / conditional** |
+| `CALENDLY_SIGNING_KEY` | Calendly | `calendly-webhook` receiver, single org-level account (§6, INTEG-CAL-1) | **net-new** |
 | Tally API token | Tally | reconciler partials read (§7) | **net-new** (read path; distinct from the webhook signing secret) |
 
 ### 8.2 Signature scheme quick-reference (grep-checkable, so nobody copies the wrong one)
@@ -488,11 +539,11 @@ Note the deliberate split: Tally is base64, both hex ones use **different** secr
 ## 9. Known ambiguities & forward risks (named so none is under-planned)
 
 - **Tally offering-match ambiguity.** `tally_form_url.includes(formId)` (`tally-application-webhook:79-81`) assumes one form ↔ one offering. If a single form ever serves multiple offerings, the match is non-deterministic. *Forward:* keep one form per staged offering, or add an explicit form→offering map. `🟡 Tier 2`.
-- **The phone label must contain `phone`/`mobile`/`whatsapp`.** The hard-key mint (§2) needs the phone; `extractField` will silently return `""` if the Tally form's phone field is labelled otherwise. *Forward:* assert the label as part of REQ-APP-3 form work. `🟢 Tier 3`.
+- **The phone label must contain `phone`/`mobile`/`whatsapp`.** Phone is THE hard identity key (§2); `extractField` silently returns `""` if the existing Tally form's phone field is labelled otherwise, weakening every phone-primary join. *Forward:* per INTEG-PAY-1 the forms are untouched in v1, so we **cannot** fix the label via form work now — instead verify the existing label already matches, and where it doesn't the reconciler falls back to email and the orphan-rate metric (§7.3) surfaces the loss. Tightening the label rides with the parked REQ-APP-3 fast-follow. `🟢 Tier 3`.
 - **~10% cross-system orphans are structural**, not a bug to eliminate — they are the ~10% who switch email/phone between form and payment page (`FUNNEL-DATA-AUDIT.md` §5 gap 1). *Mitigation:* §2 binds both identifiers at the source; §7.3 measures the residue. `🔴 Tier 1` (metric integrity).
-- **TeleCRM has no `Accepted` state and collapses confirm/full into `Converted`** (§5.2). Post-interview acceptance and the ₹8k-vs-full distinction are **unreadable from TeleCRM alone**; they need Razorpay amounts (confirm/full) and, for acceptance, an app-side writer (Open Q1 / INTEG-CRM-1). *Until resolved, the interview-ledger row hides rather than invents numbers* (PRD REQ-INT-3).
+- **TeleCRM collapses confirm/full into `Converted`** (§5.2). The ₹8k-vs-full money distinction is **unreadable from TeleCRM alone** and needs Razorpay amounts (confirm/full). ⚠️ **Acceptance is no longer an app-writer gap (reversed by SOR-1, 2026-07-18):** acceptance is TeleCRM-sourced — the sales team sets it, the app READS the flip. The remaining work is (a) confirming the exact TeleCRM representation of `accepted` and (b) delivering it promptly (webhook preferred, poll fallback, §5.2). There is **no** app-side acceptance writer and no admin decision RPC. *Until the money-stage split is resolved, the interview-ledger row hides rather than invents numbers* (PRD REQ-INT-3).
 - **Calendly is entirely net-new** (§6). Under-planning it as "a webhook write" is the failure mode the PRD explicitly warns against (REQ-INT-1). It needs a receiver + signature + subscription + a schema column before any interview UI can honour the modality choice.
-- **The hardcoded-Razorpay-link legacy** (0/199 app-linked, §4.4) is not removed in v1 — the reconciler absorbs it. INTEG-PAY-1 is the decision that begins retiring it for new cohorts. `🔴 Tier 1 (revenue)`.
+- **The existing in-form Razorpay links** (0/199 app-linked, §4.4) are **kept** in v1 — INTEG-PAY-1 (RULED 2026-07-18) is now the decision NOT to touch the intake chain, so the reconciler absorbs the ₹400 and ₹8k by phone (primary) / email (fallback). A first-party keyed intake payment is parked as a fast-follow that needs the Tally/link changes Rahul has deferred; it is **not** begun in v1. `🔴 Tier 1 (revenue)`.
 - **Do-not-touch surfaces** (`verify-*`, `razorpay-webhook` core, the `isIOS()` guard, the staged-order math) stay byte-for-byte. Every forward change here is *additive* — new receivers, new read paths, new `notes` propagation, new columns — never a rewrite of the money core (PRD §4.4, NFR-SEC-5, Risk R7).
 
 ---
