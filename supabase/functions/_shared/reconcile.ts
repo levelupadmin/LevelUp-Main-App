@@ -8,6 +8,21 @@
  * `FUNNEL-DATA-AUDIT.md` §6 stage→CTA table and the §4 amount→product buckets
  * as pure functions of already-fetched, already-normalized reads.
  *
+ * The derivation is OFFERING-SCOPED (RC-PHASE-RC / council Risk A). A caller who
+ * applied to more than one offering has ONE Tally/TeleCRM/Razorpay footprint that
+ * spans several cohorts; a global "furthest progress" stage stamped onto every
+ * application shows a wrong badge on siblings and, once the flag flips, routes a
+ * payment CTA to the wrong offering. So `deriveStage` takes the target offering
+ * context (`OfferingContext`) and resolves the stage FOR THAT OFFERING ONLY:
+ *   - TeleCRM: the lead whose `product_1` maps to this offering (not any lead).
+ *   - Razorpay: amounts matched against THIS offering's own `appFeeInr` /
+ *     `confirmationAmountInr` with a GST-tolerant band (a GST-inclusive capture
+ *     is a few percent above the base, so an exact `=== 8000` would miss it).
+ *   - The Live ₹400 app-fee (and the ₹8k/₹15k seat-confirm deposits) are shared
+ *     across cohorts, so a shared-tier amount is attributed to this offering only
+ *     when a product_1 lead (or a first-party `payment_orders` row) confirms it;
+ *     otherwise the money signal is `ambiguous`, never mis-assigned.
+ *
  * IMPORTANT — keep this file DEPENDENCY-FREE (no imports; no Deno/Node/DOM-only
  * globals), exactly like `_shared/phone.ts` and `_shared/pricing.ts`. It is
  * imported by the Deno edge fn (`../_shared/reconcile.ts`) AND bundled into the
@@ -75,9 +90,28 @@ export interface JoinKeys {
 }
 
 /**
+ * The target offering the derivation is scoped to. Built by the edge fn from the
+ * `offerings` row it loads for the requested `offering_id`:
+ *   - `appFeeInr` / `confirmationAmountInr` — this offering's OWN amounts, fed to
+ *     the GST-tolerant Razorpay match (so a captured amount is matched against the
+ *     right expected value, not a global table).
+ *   - `productMatch` — the normalized TeleCRM `product_1` codes that identify this
+ *     offering. `offerings` has NO `product_1` column and there is no shared map,
+ *     so this is built at the code level (`offeringToProductMatch`); empty means
+ *     the offering couldn't be mapped, and TeleCRM falls back to newest-overall.
+ */
+export interface OfferingContext {
+  offeringId: string;
+  appFeeInr: number | null;
+  confirmationAmountInr: number | null;
+  productMatch: readonly string[];
+}
+
+/**
  * Normalized read from Tally (the intake system). `available: false` means the
  * source was unreachable or its secret was unset — it contributes no signal and
- * is NEVER treated as "no submission".
+ * is NEVER treated as "no submission". Tally is per-person (a submission is a
+ * completed/partial application), not per-product, so it is not product-scoped.
  */
 export interface TallyRead {
   available: boolean;
@@ -89,25 +123,47 @@ export interface TallyRead {
 }
 
 /**
- * Normalized read from TeleCRM (the master funnel-status system, §5). The stage
- * lives in the top-level `status` picklist; `mql` is the real MQL score.
+ * A single matched TeleCRM lead, carrying its `product_1` (the SKU code — `VE`,
+ * `FC`, `FFM`, `FW`, `FAI`, `BFP`, `L3C`, … per `FUNNEL-DATA-AUDIT.md` §84/§193)
+ * so the offering-scoped derivation can pick the lead for THIS offering rather
+ * than the newest lead across all of them. `timestamp` drives newest-wins within
+ * a product.
+ */
+export interface TeleCrmLead {
+  resolvedKey: ResolvedKey; // which key matched this lead (phone primary → email)
+  product1: string | null; // fields.product_1 (raw; normalized at compare time)
+  status: string | null; // the top-level status picklist value
+  mql: number | null; // fields.mql (≥40 = high)
+  essayPresent: boolean; // fields.essay present / character_count > 0 (§5.3)
+  timestamp: number; // recency (updated/created), for newest-wins within a product
+}
+
+/**
+ * Normalized read from TeleCRM (the master funnel-status system, §5). Carries ALL
+ * matched leads (a multi-application caller has several, one per `product_1`); the
+ * offering-scoped `deriveStage` selects the lead for the target offering. Keeping
+ * every lead here — rather than pre-collapsing to one — is what makes the
+ * no-cross-offering-contamination guarantee unit-testable in the pure core.
  */
 export interface TeleCrmRead {
   available: boolean;
-  resolvedKey: ResolvedKey;
-  status: string | null; // the top-level status picklist value (newest lead wins)
-  mql: number | null; // fields.mql (≥40 = high)
-  essayPresent: boolean; // fields.essay present / character_count > 0 (§5.3)
+  resolvedKey: ResolvedKey; // any-lead match (phone preferred) — for join health
+  leads: TeleCrmLead[];
 }
 
 /**
  * Normalized read from Razorpay (payments). Only captured/authorized payments
  * matched to the user by phone→email appear here (§4.5); amount → product.
+ * `firstPartyConfirmed` is set when the supplementary app-owned `payment_orders`
+ * lookup (keyed on user_id + offering_id) resolved a captured payment for THIS
+ * offering — an unambiguous, offering-scoped attribution that resolves the
+ * shared-tier ambiguity the same way a matching TeleCRM `product_1` lead does.
  */
 export interface RazorpayRead {
   available: boolean;
   resolvedKey: ResolvedKey;
   products: ProductInfo[];
+  firstPartyConfirmed?: boolean;
 }
 
 /** The two markers invisible in `cohort_applications.status` today (§7.2). */
@@ -122,10 +178,36 @@ export interface DerivedStage {
   stage: Stage;
   resolvedKey: ResolvedKey;
   markers: StageMarkers;
-  /** The TeleCRM status the derivation saw (null when TeleCRM was unavailable / no match). */
+  /** The TeleCRM status the derivation saw for THIS offering (null when no product_1 lead matched). */
   telecrmStatus: string | null;
   /** Raw Razorpay amounts that resolved to this user, for auditability (§4.5). */
   amounts: number[];
+  /**
+   * A shared-tier money signal (Live ₹400 / ₹8k, Forge ₹15k) matched but could
+   * not be pinned to THIS offering (no confirming `product_1` lead / first-party
+   * payment) — surfaced so the client never routes a payment CTA off an
+   * unattributable payment. `false` on every confidently-attributed run.
+   */
+  ambiguous: boolean;
+}
+
+/**
+ * The per-run join-completeness metric. Lives here (pure, no Deno/DOM globals) so
+ * the edge fn's health/orphan branch is unit-testable without mocking.
+ */
+export interface JoinHealth {
+  /** true when at least one reachable source resolved a match for this caller. */
+  resolved: boolean;
+  /** true when NO reachable source matched (stage `unknown`). */
+  orphan: boolean;
+  /** how many of the three externals were reachable this run. */
+  sourcesAvailable: number;
+  /** how many reachable externals actually resolved a match. */
+  sourcesResolved: number;
+  /** 0..1 join-completeness for this single run (1 = joined, 0 = orphan). */
+  joinCompleteness: number;
+  /** 1 - joinCompleteness — the per-run orphan share compared to the watch line. */
+  orphanRate: number;
 }
 
 /**
@@ -152,13 +234,34 @@ export function joinKeys({ phone, email }: RawIdentity): JoinKeys {
   return { phone: p || null, email: e || null };
 }
 
+// GST-tolerance for matching a captured amount against an expected SKU amount. A
+// GST-inclusive capture sits a few percent above the base (18% ceiling in India);
+// a small under-tolerance absorbs rounding-down. Used both by `amountToProduct`
+// (the generic §4 buckets) and by the offering-scoped `withinGstBand` match, so
+// the two never drift.
+const GST_LOWER = 0.98;
+const GST_UPPER = 1.18;
+
+/**
+ * withinGstBand — does a captured whole-rupee `amount` fall in the GST-tolerant
+ * band around an `expected` SKU amount? `[expected*0.98, expected*1.18]` (+₹1
+ * rounding slack), so a GST-inclusive ₹472 still matches an expected ₹400 while a
+ * neighbouring tier (₹600, ₹8,000) never does. Null/zero expected → no match.
+ */
+function withinGstBand(amount: number, expected: number | null | undefined): boolean {
+  const e = Number(expected);
+  const a = Number(amount);
+  if (!Number.isFinite(e) || e <= 0 || !Number.isFinite(a) || a <= 0) return false;
+  return a >= e * GST_LOWER && a <= e * GST_UPPER + 1;
+}
+
 /**
  * amountToProduct — classify a Razorpay payment by its whole-rupee amount, per
  * `FUNNEL-DATA-AUDIT.md` §4 (Razorpay carries no SKU, so the amount IS the
- * product). Ranges (not just the exact tabled amounts) are used for the fee and
- * balance/full buckets so a real ₹25,785 balance or a ₹650 fee still classifies;
- * the raw amount is retained on the result so an edge amount is auditable and
- * never silently promoted.
+ * product). The tabled amounts are matched with a GST-tolerant band (not an exact
+ * `=== 400` / `=== 8000`), so a GST-inclusive capture still classifies; the
+ * forge-app-fee and balance/full buckets stay ranges. The raw amount is retained
+ * on the result so an edge amount is auditable and never silently promoted.
  */
 export function amountToProduct(amountInr: number): ProductInfo {
   const amount = Number(amountInr);
@@ -166,15 +269,15 @@ export function amountToProduct(amountInr: number): ProductInfo {
 
   if (!Number.isFinite(amount) || amount <= 0) {
     kind = "unknown";
-  } else if (amount === 400) {
+  } else if (withinGstBand(amount, 400)) {
     kind = "live-app-fee";
-  } else if (amount >= 600 && amount <= 900) {
+  } else if (amount >= 600 * GST_LOWER && amount <= 900 * GST_UPPER + 1) {
     kind = "forge-app-fee";
-  } else if (amount === 8000) {
+  } else if (withinGstBand(amount, 8000)) {
     kind = "live-seat-confirm";
-  } else if (amount === 15000) {
+  } else if (withinGstBand(amount, 15000)) {
     kind = "forge-seat-confirm";
-  } else if (amount >= 22000) {
+  } else if (amount >= 22000 * GST_LOWER) {
     kind = "balance-or-full";
   } else {
     kind = "unknown";
@@ -189,9 +292,42 @@ export function amountToProduct(amountInr: number): ProductInfo {
   };
 }
 
+/**
+ * offeringToProductMatch — build the offering → TeleCRM `product_1` map at the
+ * CODE level (per the brief: `offerings` has no `product_1` column and no shared
+ * map exists; a migration is explicitly out of scope this phase). Maps an
+ * offering's slug/title keywords to the `product_1` codes seen in the audit
+ * (`VE`, `FC`, `FFM`, `FW`, `FAI`, `BFP`, `L3C`). Best-effort: an offering that
+ * maps to nothing returns `[]`, and the TeleCRM scope then falls back to
+ * newest-overall (single-application safe). Pure + unit-tested.
+ */
+export function offeringToProductMatch(o: {
+  slug?: string | null;
+  title?: string | null;
+  type?: string | null;
+}): string[] {
+  const hay = `${o.slug ?? ""} ${o.title ?? ""}`.toLowerCase();
+  const codes = new Set<string>();
+  // Forge track — product-distinct app fees; product_1 names the vertical.
+  if (/writ/.test(hay)) codes.add("FW"); // Forge Writing
+  if (/creator|content/.test(hay)) codes.add("FC"); // Forge Creators
+  if (/film/.test(hay)) codes.add("FFM"); // Forge Filmmaking
+  if (/\bai\b|artificial/.test(hay)) codes.add("FAI"); // Forge AI
+  // Live track.
+  if (/\bbfp\b|breakthrough/.test(hay)) codes.add("BFP");
+  if (/video edit|editing academy|\bve\b/.test(hay)) codes.add("VE");
+  if (/\bl3c\b|builder cohort|ai builder/.test(hay)) codes.add("L3C");
+  return [...codes];
+}
+
 /** Lowercase + trim a TeleCRM status for stable comparison (the picklist has mixed case). */
 function normStatus(status: string | null): string {
   return (status ?? "").trim().toLowerCase();
+}
+
+/** Uppercase + trim a `product_1` code for stable comparison. */
+function normProduct(product: string | null | undefined): string {
+  return (product ?? "").trim().toUpperCase();
 }
 
 /**
@@ -211,35 +347,70 @@ const COMPLETED_STATUSES = new Set<string>([
   "converted",
 ]);
 
+/** Newest lead (highest timestamp) of a set, or null if empty. */
+function newestLead(leads: readonly TeleCrmLead[]): TeleCrmLead | null {
+  if (leads.length === 0) return null;
+  let best = leads[0];
+  for (const l of leads) if (l.timestamp > best.timestamp) best = l;
+  return best;
+}
+
+/**
+ * selectScopedLead — pick the TeleCRM lead for THIS offering: the newest lead
+ * whose `product_1` is in `productMatch`. If the offering couldn't be mapped
+ * (`productMatch` empty) OR no lead carries any `product_1` at all, fall back to
+ * newest-overall (legacy behaviour — correct for a single-application caller). If
+ * leads ARE product-tagged but none match this offering, return null: this
+ * offering has no TeleCRM signal, and a sibling's lead must NOT leak into it.
+ */
+function selectScopedLead(
+  leads: readonly TeleCrmLead[],
+  productMatch: readonly string[],
+): TeleCrmLead | null {
+  if (leads.length === 0) return null;
+  const want = new Set(productMatch.map(normProduct).filter((c) => c !== ""));
+  const anyTagged = leads.some((l) => normProduct(l.product1) !== "");
+  if (want.size === 0 || !anyTagged) return newestLead(leads);
+  const scoped = leads.filter((l) => want.has(normProduct(l.product1)));
+  return scoped.length > 0 ? newestLead(scoped) : null;
+}
+
+/**
+ * A shared-tier expected amount cannot be pinned to one offering by amount alone:
+ * the Live ₹400 app-fee is shared across all Live cohorts, and the ₹8k (Live) /
+ * ₹15k (Forge) seat-confirm deposits are shared across their track. Forge app
+ * fees (₹600–900) are product-distinct and so are NOT shared.
+ */
+function isSharedTier(expected: number | null): boolean {
+  if (expected == null) return false;
+  const k = amountToProduct(expected).kind;
+  return k === "live-app-fee" || k === "live-seat-confirm" || k === "forge-seat-confirm";
+}
+
 /**
  * Prefer phone over email, take the first source that resolved a real match.
- * Returns null only when NOTHING matched in any reachable system (the orphan).
+ * Returns null only when NOTHING resolved to this offering (the orphan).
  */
-function pickResolvedKey(
-  tally: TallyRead,
-  telecrm: TeleCrmRead,
-  razorpay: RazorpayRead,
-): ResolvedKey {
-  const keys: ResolvedKey[] = [
-    tally.available ? tally.resolvedKey : null,
-    telecrm.available ? telecrm.resolvedKey : null,
-    razorpay.available ? razorpay.resolvedKey : null,
-  ];
+function pickResolvedKey(keys: ResolvedKey[]): ResolvedKey {
   if (keys.includes("phone")) return "phone";
   if (keys.includes("email")) return "email";
   return null;
 }
 
 /**
- * deriveStage — the pure §6 stage→CTA derivation.
+ * deriveStage — the pure, OFFERING-SCOPED §6 stage→CTA derivation.
  *
- * Given the three normalized (already fail-soft) reads plus the caller's join
- * keys, resolve the single furthest-progressed funnel stage, the resolving join
- * key, and the two markers. Evaluation is most-advanced-first so a user who has
- * moved on is never pinned to an earlier stage. An unavailable source
- * contributes no signal (never a fabricated stage). If nothing matched anywhere,
- * the result is the orphan (`stage: "unknown"`, `resolvedKey: null`) — surfaced
- * by the health metric, not an error.
+ * Given the target `offering` plus the three normalized (already fail-soft) reads
+ * and the caller's join keys, resolve the single furthest-progressed funnel stage
+ * FOR THAT OFFERING, the resolving join key, and the two markers. The TeleCRM
+ * signal is the lead whose `product_1` maps to this offering; the money signals
+ * are captured amounts matched against this offering's OWN amounts (GST-tolerant),
+ * with shared-tier amounts attributed only when a `product_1` lead or a
+ * first-party payment confirms them (otherwise `ambiguous`). Evaluation is
+ * most-advanced-first so a user who has moved on is never pinned to an earlier
+ * stage. If nothing resolved to this offering, the result is the orphan
+ * (`stage: "unknown"`, `resolvedKey: null`) — surfaced by the health metric, not
+ * an error.
  *
  * `keys` are the caller's normalized join keys (from `joinKeys`). They gate the
  * `contactablePartial` marker, whose §7.2 definition is a *phone+email* partial —
@@ -247,64 +418,103 @@ function pickResolvedKey(
  * must NOT flip it (that gate can't be read off the source reads alone).
  */
 export function deriveStage(
+  offering: OfferingContext,
   tally: TallyRead,
   telecrm: TeleCrmRead,
   razorpay: RazorpayRead,
   keys: JoinKeys,
 ): DerivedStage {
-  const resolvedKey = pickResolvedKey(tally, telecrm, razorpay);
-
-  // --- Money signals (only captured/authorized payments reach `products`, §4.5) ---
-  const products = razorpay.available ? razorpay.products : [];
-  const hasAppFee = products.some((p) => p.isAppFee);
-  const hasSeatConfirm = products.some((p) => p.isSeatConfirm);
-  const hasBalanceOrFull = products.some((p) => p.isBalanceOrFull);
-  const amounts = products.map((p) => p.amountInr);
-
-  // --- Funnel-status signal (TeleCRM is master; unavailable → no status) ---
-  const status = telecrm.available ? (telecrm.status ?? null) : null;
+  // --- TeleCRM: scope to the lead whose product_1 maps to THIS offering (§5) ---
+  const scopedLead = telecrm.available
+    ? selectScopedLead(telecrm.leads, offering.productMatch)
+    : null;
+  const status = scopedLead?.status ?? null;
   const s = normStatus(status);
+  const telecrmEssay = scopedLead?.essayPresent ?? false;
+  const telecrmKey = scopedLead?.resolvedKey ?? null;
+
+  // --- Money signals: match captured amounts to THIS offering's own amounts,
+  //     GST-tolerant (§4.5). `amounts` retains every resolved amount for audit. ---
+  const products = razorpay.available ? razorpay.products : [];
+  const amounts = products.map((p) => p.amountInr);
+  const appFeeMatched = amounts.some((a) => withinGstBand(a, offering.appFeeInr));
+  const confirmMatched = amounts.some((a) => withinGstBand(a, offering.confirmationAmountInr));
+  const balanceOrFull = products.some((p) => p.isBalanceOrFull);
+  // The person resolved to a payment (by phone/email) whenever an in-band amount
+  // matched — used for join health even if the offering attribution is ambiguous.
+  const razorpayKey =
+    appFeeMatched || confirmMatched || balanceOrFull ? razorpay.resolvedKey : null;
+
+  // --- Shared-tier disambiguation. A shared amount (Live ₹400 / ₹8k, Forge ₹15k)
+  //     is THIS offering's only when a product_1 lead OR a first-party
+  //     (payment_orders) row confirms it; otherwise it is `ambiguous`, never
+  //     mis-assigned (so a CTA is never routed to the wrong cohort). ---
+  const attributionConfident = scopedLead !== null || razorpay.firstPartyConfirmed === true;
+  let ambiguous = false;
+  const attributeToOffering = (matched: boolean, expected: number | null): boolean => {
+    if (!matched) return false;
+    if (isSharedTier(expected) && !attributionConfident) {
+      ambiguous = true;
+      return false;
+    }
+    return true;
+  };
+  const hasAppFee = attributeToOffering(appFeeMatched, offering.appFeeInr);
+  const hasSeatConfirm = attributeToOffering(confirmMatched, offering.confirmationAmountInr);
+  // A shared app-fee amount matched but could NOT be attributed to this offering
+  // (shared-tier + unconfirmed) — we saw a ₹400 that MIGHT be this caller's. That
+  // is `ambiguous` (surfaced for the client to soften the CTA), and it must also
+  // hold back the outreach markers below: flagging a possibly-paid caller as
+  // "owes the app fee" is a pay-twice chase. We never mis-credit (the money stays
+  // unattributed), but we also never assert the fee is unpaid over a match we saw.
+  const appFeeAmbiguous =
+    appFeeMatched && isSharedTier(offering.appFeeInr) && !attributionConfident;
+  // Balance/full is terminal (→ enrolled, no onward payment CTA), and a ₹40k+
+  // full payment is effectively unique, so it is not shared-tier-gated.
+  const hasBalanceOrFull = balanceOrFull;
+
+  // --- Resolving join key, scoped to this offering (phone primary → email) ---
+  const resolvedKey = pickResolvedKey([
+    tally.available ? tally.resolvedKey : null,
+    telecrmKey,
+    razorpayKey,
+  ]);
 
   // --- Completion signals (essay presence OR a post-completion status, §3.3/§5.3) ---
-  const essayPresent =
-    (tally.available && tally.essayPresent) ||
-    (telecrm.available && telecrm.essayPresent);
+  const essayPresent = (tally.available && tally.essayPresent) || telecrmEssay;
   const completed =
-    (tally.available && tally.completed) ||
-    essayPresent ||
-    COMPLETED_STATUSES.has(s);
+    (tally.available && tally.completed) || essayPresent || COMPLETED_STATUSES.has(s);
   const partial =
-    (tally.available && tally.partial && !tally.completed) ||
-    (s === "new" && !essayPresent);
+    (tally.available && tally.partial && !tally.completed) || (s === "new" && !essayPresent);
 
   // --- Markers (§7.2) ---
-  // completed-no-fee: essay present anywhere AND no matching captured ₹400/₹600–900.
-  // Uses essay presence specifically (NOT the broader `completed`), so a ₹400
-  // with no Tally completion keeps this FALSE — the marker needs essay-present.
-  const completedNoFee = essayPresent && !hasAppFee;
+  // completed-no-fee: essay present anywhere AND no matching captured app fee. An
+  // ambiguous app-fee match (a ₹400 we couldn't attribute) suppresses it — see
+  // `appFeeAmbiguous` — so a possibly-paid caller is never queued for the fee chase.
+  const completedNoFee = essayPresent && !hasAppFee && !appFeeAmbiguous;
   // contactable-partial (§7.2): a *phone+email* partial with no completion and no
-  // fee — a known lead we can reach on BOTH channels who never finished. Requires
-  // both join keys present (not merely one resolved), so a phone-only or
-  // email-only partial does NOT flip it. Clears once they complete.
+  // fee — a known lead we can reach on BOTH channels who never finished. Likewise
+  // held back by an ambiguous app-fee match (they may already have paid).
   const contactablePartial =
     keys.phone !== null &&
     keys.email !== null &&
     partial &&
     !completed &&
-    !hasAppFee;
+    !hasAppFee &&
+    !appFeeAmbiguous;
 
   const markers: StageMarkers = { completedNoFee, contactablePartial };
 
-  // --- Orphan: nothing resolved and no signal anywhere → unknown (not an error) ---
+  // --- Orphan: nothing resolved to THIS offering and no signal → unknown (not an error) ---
   const matchedAnything =
     resolvedKey !== null ||
     hasAppFee ||
     hasSeatConfirm ||
     hasBalanceOrFull ||
-    (telecrm.available && !!status) ||
+    (scopedLead !== null && !!status) ||
     (tally.available && (tally.completed || tally.partial));
   if (!matchedAnything) {
-    return { stage: "unknown", resolvedKey: null, markers, telecrmStatus: null, amounts };
+    return { stage: "unknown", resolvedKey: null, markers, telecrmStatus: null, amounts, ambiguous };
   }
 
   // --- §6 stage resolution, most-advanced-first ---
@@ -334,5 +544,45 @@ export function deriveStage(
     stage = "unknown";
   }
 
-  return { stage, resolvedKey, markers, telecrmStatus: status, amounts };
+  return { stage, resolvedKey, markers, telecrmStatus: status, amounts, ambiguous };
+}
+
+/**
+ * computeJoinHealth — the per-run join-completeness metric. This is a PERSON-LEVEL
+ * (source-level) health signal, deliberately independent of the offering-scoped
+ * derivation: an orphan is a caller that NO reachable source matched
+ * (`sourcesResolved === 0`), NOT a caller who resolved to a source but not to the
+ * queried offering. Scoping orphan to the offering-scoped derived key would count a
+ * multi-application caller (or a `product_1` that doesn't map to this offering) as
+ * an orphan even though a source resolved them — self-contradictory
+ * (`orphan` yet `sourcesResolved >= 1`) and it inflates the aggregate surge alert,
+ * the opposite of calming it. When every source is unavailable the run isn't
+ * assessable (source availability is a separate signal already in `sources`), so it
+ * is NOT counted as an orphan — a total outage must not masquerade as an orphan surge.
+ */
+export function computeJoinHealth(
+  tally: TallyRead,
+  telecrm: TeleCrmRead,
+  razorpay: RazorpayRead,
+): JoinHealth {
+  const all = [tally, telecrm, razorpay];
+  const sourcesAvailable = all.filter((s) => s.available).length;
+  const sourcesResolved = all.filter((s) => s.available && s.resolvedKey !== null).length;
+  // Person-level: resolved when ANY reachable source matched this caller. Kept
+  // consistent with `sourcesResolved` so `orphan` can never contradict it.
+  const resolved = sourcesResolved > 0;
+  const assessable = sourcesAvailable > 0;
+  const orphan = assessable && !resolved;
+  // Not assessable (no reachable source) → treat as complete so the orphan alert
+  // stays quiet; a joined caller is complete; an orphan against reachable sources
+  // is 0.
+  const joinCompleteness = !assessable ? 1 : resolved ? 1 : 0;
+  return {
+    resolved,
+    orphan,
+    sourcesAvailable,
+    sourcesResolved,
+    joinCompleteness,
+    orphanRate: 1 - joinCompleteness,
+  };
 }

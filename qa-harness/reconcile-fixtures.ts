@@ -7,7 +7,8 @@
  *
  * These are the ALREADY-NORMALIZED, ALREADY-FETCHED source reads that
  * `deriveStage` consumes — the exact `TallyRead` / `TeleCrmRead` / `RazorpayRead`
- * shapes the edge fn's fail-soft I/O layer produces. There is ZERO network here:
+ * shapes the edge fn's fail-soft I/O layer produces — plus the `OfferingContext`
+ * that scopes the derivation to a single offering. There is ZERO network here:
  * every builder returns a plain object, so the pure derive path is fully green
  * without mocking a single fetch. The §4 amount→product classification is reused
  * from `@shared/reconcile` (`amountToProduct`) so a Razorpay fixture buckets its
@@ -22,10 +23,12 @@
 import {
   amountToProduct,
   type JoinKeys,
+  type OfferingContext,
   type ProductInfo,
   type RazorpayRead,
   type ResolvedKey,
   type TallyRead,
+  type TeleCrmLead,
   type TeleCrmRead,
 } from "@shared/reconcile";
 
@@ -44,6 +47,34 @@ export function keys(phone: string | null, email: string | null): JoinKeys {
 
 /** A caller reachable on BOTH channels — the default identity for most rows. */
 export const BOTH_KEYS: JoinKeys = keys("+919788385577", "aspirant@example.com");
+
+// ---------------------------------------------------------------------------
+// Offering context (the target the derivation is scoped to)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build an `OfferingContext`. Defaults model a Live cohort (₹400 app fee / ₹8,000
+ * seat-confirm, `product_1` = `VE`). Override for a Forge product etc.
+ */
+export function offering(overrides: Partial<OfferingContext> = {}): OfferingContext {
+  return {
+    offeringId: overrides.offeringId ?? "off_live",
+    appFeeInr: overrides.appFeeInr ?? 400,
+    confirmationAmountInr: overrides.confirmationAmountInr ?? 8000,
+    productMatch: overrides.productMatch ?? ["VE"],
+  };
+}
+
+/** A Live cohort: ₹400 shared app fee, ₹8,000 shared seat-confirm, `product_1` VE. */
+export const LIVE_OFFERING: OfferingContext = offering();
+
+/** A Forge product: ₹700 product-distinct app fee, ₹15,000 seat-confirm, `product_1` FC. */
+export const FORGE_OFFERING: OfferingContext = offering({
+  offeringId: "off_forge",
+  appFeeInr: 700,
+  confirmationAmountInr: 15000,
+  productMatch: ["FC"],
+});
 
 // ---------------------------------------------------------------------------
 // Tally (intake) reads
@@ -107,35 +138,75 @@ export function tallyCompleted(resolvedKey: ResolvedKey = "phone"): TallyRead {
 }
 
 // ---------------------------------------------------------------------------
-// TeleCRM (funnel-status master) reads
+// TeleCRM (funnel-status master) reads — now a list of leads (one per product_1)
 // ---------------------------------------------------------------------------
 
 /** TeleCRM source unreachable / secrets unset — no signal. */
 export function telecrmUnavailable(): TeleCrmRead {
-  return { available: false, resolvedKey: null, status: null, mql: null, essayPresent: false };
+  return { available: false, resolvedKey: null, leads: [] };
 }
 
 /** Reachable TeleCRM with no matching lead. */
 export function telecrmNoMatch(): TeleCrmRead {
-  return { available: true, resolvedKey: null, status: null, mql: null, essayPresent: false };
+  return { available: true, resolvedKey: null, leads: [] };
 }
 
 /**
- * A matched TeleCRM lead at a given top-level `status` picklist value (the §6
- * driver). Case is preserved as the live picklist carries it; `deriveStage`
- * normalizes internally.
+ * A single matched lead. Defaults to a Live (`VE`) lead resolved on phone. Pass a
+ * `product1` to model a Forge / other-vertical lead, and a `timestamp` to control
+ * newest-wins.
  */
-export function telecrmStatus(
+export function lead(
   status: string,
-  opts: { resolvedKey?: ResolvedKey; mql?: number | null; essayPresent?: boolean } = {},
-): TeleCrmRead {
+  opts: {
+    resolvedKey?: ResolvedKey;
+    product1?: string | null;
+    mql?: number | null;
+    essayPresent?: boolean;
+    timestamp?: number;
+  } = {},
+): TeleCrmLead {
   return {
-    available: true,
     resolvedKey: opts.resolvedKey ?? "phone",
+    product1: opts.product1 ?? "VE",
     status,
     mql: opts.mql ?? null,
     essayPresent: opts.essayPresent ?? false,
+    timestamp: opts.timestamp ?? 1000,
   };
+}
+
+/**
+ * A matched TeleCRM read carrying ONE lead at a given top-level `status` picklist
+ * value (the §6 driver). Case is preserved as the live picklist carries it;
+ * `deriveStage` normalizes internally. Defaults to `product_1` = `VE`.
+ */
+export function telecrmStatus(
+  status: string,
+  opts: {
+    resolvedKey?: ResolvedKey;
+    product1?: string | null;
+    mql?: number | null;
+    essayPresent?: boolean;
+  } = {},
+): TeleCrmRead {
+  const l = lead(status, opts);
+  return { available: true, resolvedKey: l.resolvedKey, leads: [l] };
+}
+
+/**
+ * A matched TeleCRM read carrying MULTIPLE leads — the multi-application caller
+ * whose single CRM footprint spans several `product_1` verticals. The
+ * offering-scoped `deriveStage` must pick the lead for the target offering and
+ * never let a sibling's lead leak in.
+ */
+export function telecrmLeads(leads: TeleCrmLead[]): TeleCrmRead {
+  const resolvedKey: ResolvedKey = leads.some((l) => l.resolvedKey === "phone")
+    ? "phone"
+    : leads.some((l) => l.resolvedKey === "email")
+      ? "email"
+      : null;
+  return { available: true, resolvedKey, leads };
 }
 
 // ---------------------------------------------------------------------------
@@ -155,16 +226,20 @@ export function razorpayNoMatch(): RazorpayRead {
 /**
  * Build a Razorpay read from a list of whole-rupee amounts, bucketed through the
  * SAME `amountToProduct` classifier the live read uses (§4). An empty list is a
- * reachable-but-no-payment read with a null resolving key.
+ * reachable-but-no-payment read with a null resolving key. Set
+ * `firstPartyConfirmed` to model a supplementary app-owned `payment_orders` row
+ * that pins the payment to this offering (unambiguous attribution).
  */
 export function razorpayAmounts(
   amountsInr: number[],
   resolvedKey: ResolvedKey = "phone",
+  opts: { firstPartyConfirmed?: boolean } = {},
 ): RazorpayRead {
   const products: ProductInfo[] = amountsInr.map((a) => amountToProduct(a));
   return {
     available: true,
     resolvedKey: products.length > 0 ? resolvedKey : null,
     products,
+    ...(opts.firstPartyConfirmed ? { firstPartyConfirmed: true } : {}),
   };
 }
