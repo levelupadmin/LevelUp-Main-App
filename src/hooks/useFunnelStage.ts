@@ -22,24 +22,33 @@ export interface FunnelStage {
 }
 
 /**
- * useFunnelStage — read the caller's reconciled funnel stage, ONLY when
- * `VITE_FUNNEL_RECON` is on.
+ * useFunnelStage — read the caller's reconciled funnel stage for ONE offering,
+ * ONLY when `VITE_FUNNEL_RECON` is on.
  *
- * Flag off → the query never runs and `data` stays `undefined`, so consumers
- * fall back to `cohort_applications.status` exactly as today (zero behavioral
- * diff). The whole reconciler path is inert. A fail-soft `null` (fn unreachable)
- * degrades the surface to the status-only view — the queryFn resolves rather
- * than throwing, so there is never a spinner-lock or retry storm.
+ * `offeringId` scopes the derivation to a single application's offering: the
+ * edge fn requires `offering_id` in the body (it 400s without it) and returns a
+ * per-application stage, so the chip/CTA can never bleed a sibling offering's
+ * global progress onto this row. It is part of the query key so each offering
+ * caches independently.
+ *
+ * Flag off — or no `uid`/`offeringId` yet (the application is still loading) —
+ * the query never runs and `data` stays `undefined`, so consumers fall back to
+ * `cohort_applications.status` exactly as today (zero behavioral diff). The
+ * whole reconciler path is inert. A fail-soft `null` (fn unreachable) degrades
+ * the surface to the status-only view — the queryFn resolves rather than
+ * throwing, so there is never a spinner-lock or retry storm.
  */
-export function useFunnelStage(uid: string | undefined) {
-  const enabled = flag(FUNNEL_RECON) && !!uid;
+export function useFunnelStage(uid: string | undefined, offeringId: string | undefined) {
+  const enabled = flag(FUNNEL_RECON) && !!uid && !!offeringId;
 
   return useQuery<FunnelStage | null>({
-    queryKey: ["funnel", "stage", uid],
+    queryKey: ["funnel", "stage", uid, offeringId],
     enabled,
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke("reconcile-funnel-stage");
+      const { data, error } = await supabase.functions.invoke("reconcile-funnel-stage", {
+        body: { offering_id: offeringId },
+      });
       // Degrade to status-only on any error/empty — never throw (no spinner-lock).
       if (error || !data) return null;
       return data as FunnelStage;

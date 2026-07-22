@@ -100,6 +100,23 @@ const RECONCILED_STAGE_UI: Record<
   enrolled: { chip: "Enrolled" },
 };
 
+/* Each reconciled stage's position on the STEPS ladder (the highest step it
+   implies), used as a FLOOR against the application's own status. The reconciler
+   is allowed to run AHEAD of `cohort_applications.status` (its whole purpose:
+   surface an external signal the app hasn't mirrored yet), but it must never
+   render BEHIND a positive local status — a derived `confirm-paid-no-balance`
+   on an already-`enrolled` row would otherwise stamp a stale 'Pay balance' CTA
+   on a paid student. Keys mirror RECONCILED_STAGE_UI exactly; keep them in sync. */
+const RECONCILED_STAGE_STEP: Record<string, number> = {
+  partial: 0,
+  "completed-no-fee": 0,
+  "fee-paid-no-interview": 1,
+  "interview-scheduled": 2,
+  "awaiting-decision": 2,
+  "confirm-paid-no-balance": 4,
+  enrolled: 6,
+};
+
 const ApplicationStatus = () => {
   const { applicationId } = useParams<{ applicationId: string }>();
   const { user } = useAuth();
@@ -111,7 +128,10 @@ const ApplicationStatus = () => {
 
   // Reconciler read (dark behind VITE_FUNNEL_RECON). Flag off → `undefined`, so
   // every reconciled branch below is inert and the page renders byte-identically.
-  const reconciled = useFunnelStage(user?.id).data;
+  // Scoped to THIS application's offering so the derived chip/CTA reflect this
+  // offering only (no global-stage contamination); `offering_id` is undefined
+  // while the application loads, which keeps the query disabled until it lands.
+  const reconciled = useFunnelStage(user?.id, application?.offering_id).data;
 
   useEffect(() => {
     if (!applicationId || !user?.id) return;
@@ -193,9 +213,32 @@ const ApplicationStatus = () => {
   const currentStepIndex = STATUS_TO_STEP[application.status] ?? -1;
 
   /* Reconciled chip + single CTA — present only when the flag is on AND the
-     derived stage maps to a known row. Otherwise both stay undefined and the
-     status-driven UI below is unchanged. */
-  const reconciledUi = reconciled?.stage ? RECONCILED_STAGE_UI[reconciled.stage] : undefined;
+     derived stage maps to a known row. Two floors keep a POSITIVE derived stage
+     from contaminating a row it shouldn't touch, because `deriveStage`'s Stage
+     union has no rejected/withdrawn/waitlisted state and never reads
+     `cohort_applications.status`:
+       1. Non-progressing statuses (rejected, withdrawn, waitlisted — every status
+          STATUS_TO_STEP maps to -1) suppress it entirely: a failed/held application
+          whose offering still carries a captured payment in the externals would
+          otherwise stamp a progress chip over its badge and route a payment CTA at
+          a dead/un-accepted application (`currentStepIndex >= 0` gate).
+       2. The derived stage must sit AT or AHEAD of the local status on the STEPS
+          ladder. Running ahead is intended (reconciler surfaces an un-mirrored
+          external signal); running BEHIND (e.g. `confirm-paid-no-balance` derived
+          for an already-`enrolled` row) would show a stale 'Pay balance' CTA to a
+          paid student, so it falls back to the status-driven UI instead.
+     Flag off → `reconciled?.stage` is undefined → both floors are inert and this
+     is byte-identical to the status-driven view below. */
+  const reconciledStage = reconciled?.stage;
+  const reconciledStep =
+    reconciledStage != null ? RECONCILED_STAGE_STEP[reconciledStage] : undefined;
+  const reconciledUi =
+    currentStepIndex >= 0 &&
+    reconciledStage &&
+    reconciledStep !== undefined &&
+    reconciledStep >= currentStepIndex
+      ? RECONCILED_STAGE_UI[reconciledStage]
+      : undefined;
   const reconciledCta = reconciledUi?.cta?.(application);
 
   /* Determine which step was "failed" at, for rejected/withdrawn */
