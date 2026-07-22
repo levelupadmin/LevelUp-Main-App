@@ -255,6 +255,21 @@ const GST_LOWER = 0.98;
 const GST_UPPER = 1.18;
 
 /**
+ * Conservative global upper-sanity for balance/full detection, used ONLY when this
+ * offering carries no `price_inr` (so `balanceFloorInr` is null and the exact,
+ * offering-scoped floor is unavailable). A capture at or above it is treated as a
+ * balance/full payment so a fully-paid student still derives `enrolled` rather than
+ * being pinned at `confirm-paid-no-balance` — an imperfect money stage that would
+ * corrupt the read-through MIRROR and mis-measure the NSM. It is set ABOVE every
+ * seat-confirm tier's GST-inclusive ceiling (₹15k × 1.18 ≈ ₹17,700) so no
+ * app-fee/seat-confirm capture can ever reach it, and the derivation additionally
+ * takes the max with `confirmationAmountInr × 2`, so a pricier offering's own
+ * seat-confirm can't reach it either. This is a fallback sanity, NOT a substitute
+ * for the offering floor: the offering floor is always preferred when present.
+ */
+const NULL_FLOOR_SANITY_INR = 20000;
+
+/**
  * withinGstBand — does a captured whole-rupee `amount` fall in the GST-tolerant
  * band around an `expected` SKU amount? `[expected*0.98, expected*1.18]` (+₹1
  * rounding slack), so a GST-inclusive ₹472 still matches an expected ₹400 while a
@@ -543,11 +558,28 @@ export function deriveStage(
   // OWN floor (`price_inr − appFee − confirmation`), NOT a global `≥₹22k` threshold
   // (council B2): an unrelated ≥₹22k for another product sits below a pricier
   // offering's floor and must neither force a false `enrolled` nor mask a real
-  // `confirm-paid-no-balance`. When the offering carries no `price_inr` (floor
-  // null), money alone never infers `enrolled` — the safe default.
+  // `confirm-paid-no-balance`.
+  //
+  // P1 (mirror correctness): when the offering carries no `price_inr` (floor null),
+  // do NOT disable balance/full detection outright — that pins a fully-paid student
+  // at `confirm-paid-no-balance` (they paid a ₹8k/₹15k seat-confirm AND the balance,
+  // but only the seat-confirm was ever detectable), corrupting the read-through
+  // MIRROR + the NSM measurement. Instead fall back to a CONSERVATIVE global
+  // upper-sanity (`NULL_FLOOR_SANITY_INR`, also ≥ this offering's own seat-confirm ×2)
+  // that no app-fee/seat-confirm can reach, so a real balance/full capture still
+  // infers `enrolled`. The offering floor is always preferred when present; the
+  // conservative sanity is used ONLY when the floor is null.
   const balanceFloor = offering.balanceFloorInr;
-  const hasBalanceOrFull =
-    balanceFloor != null && balanceFloor > 0 && amounts.some((a) => a >= balanceFloor * GST_LOWER);
+  const effectiveBalanceFloor =
+    balanceFloor != null && balanceFloor > 0
+      ? balanceFloor
+      : Math.max(
+          NULL_FLOOR_SANITY_INR,
+          offering.confirmationAmountInr != null && offering.confirmationAmountInr > 0
+            ? offering.confirmationAmountInr * 2
+            : 0,
+        );
+  const hasBalanceOrFull = amounts.some((a) => a >= effectiveBalanceFloor * GST_LOWER);
   // The person resolved to a payment (by phone/email) whenever an amount matched
   // one of THIS offering's own bands — used for join health even if the offering
   // attribution is ambiguous.
@@ -599,6 +631,19 @@ export function deriveStage(
   }
 
   // --- §6 stage resolution, most-advanced-first ---
+  //
+  // v1 money-stage mirror caveat: the money-bearing stages below (`enrolled` via a
+  // shared seat-confirm, `confirm-paid-no-balance`) rest on shared-tier attribution
+  // (council B1). For a multi-Live-application user, a single ₹8k/₹15k seat-confirm
+  // is shared across cohorts, so even with the `ambiguous` guard a corroborated
+  // seat-confirm can still be mirrored onto the "wrong" one of two same-track
+  // applications (P2/P3) until Phase-2 staged payments populate `payment_orders`
+  // with offering-EXACT, first-party attribution. That residual imperfection is
+  // precisely WHY money stages do NOT drive UI in v1: the client suppresses the
+  // reconciled override for `completed-no-fee`/`confirm-paid-no-balance` and falls
+  // back to the status-driven timeline (V1-1). The stages are still DERIVED here for
+  // the mirror + NSM measurement, and all confident-attribution + `ambiguous`
+  // machinery stays intact, ready for the fast-follow money-CTA re-enable.
   let stage: Stage;
   if (hasBalanceOrFull || s === "converted") {
     stage = "enrolled";

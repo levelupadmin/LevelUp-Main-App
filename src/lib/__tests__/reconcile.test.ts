@@ -333,6 +333,42 @@ describe("deriveStage — council B1/B2/B3 money-attribution repros (was-red →
     expect(d.ambiguous).toBe(false);
   });
 
+  it("P1 — null-floor (offering missing price_inr) fully-paid derives enrolled, NOT confirm-paid-no-balance", () => {
+    // The offering carries no `price_inr`, so the edge fn hands a null balance floor.
+    // The student is fully paid: a corroborated ₹8k seat-confirm (lead `Accepted`)
+    // PLUS a ₹33k balance capture. With the floor null we must NOT disable balance
+    // detection outright (that pins them at `confirm-paid-no-balance`, an imperfect
+    // money stage that corrupts the mirror + NSM). The conservative global
+    // upper-sanity catches the ₹33k → `enrolled`.
+    const nullFloor = offering({ balanceFloorInr: null });
+    const d = deriveStage(
+      nullFloor,
+      tallyNoMatch(),
+      telecrmStatus("Accepted"),
+      razorpayAmounts([8000, 33000], "phone"),
+      BOTH_KEYS,
+    );
+    expect(d.stage).toBe("enrolled");
+    expect(d.stage).not.toBe("confirm-paid-no-balance");
+    expect(d.ambiguous).toBe(false);
+  });
+
+  it("P1 — null-floor with ONLY a seat-confirm (no balance) stays confirm-paid-no-balance (sanity not tripped by ₹8k)", () => {
+    // The conservative sanity must be high enough that a seat-confirm alone can never
+    // reach it: a null-floor offering with a corroborated ₹8k but NO balance capture
+    // is still `confirm-paid-no-balance`, not a false `enrolled`.
+    const nullFloor = offering({ balanceFloorInr: null });
+    const d = deriveStage(
+      nullFloor,
+      tallyNoMatch(),
+      telecrmStatus("Accepted"),
+      razorpayAmounts([8000], "phone"),
+      BOTH_KEYS,
+    );
+    expect(d.stage).toBe("confirm-paid-no-balance");
+    expect(d.stage).not.toBe("enrolled");
+  });
+
   it("B1 — lead@`Converted` + shared ₹8k: the ₹8k IS confidently attributed (non-ambiguous)", () => {
     // The CAUTION case: `Converted` resolves to `enrolled` BEFORE the seat-confirm
     // branch, so the STAGE is `enrolled` either way. The point this repro pins is

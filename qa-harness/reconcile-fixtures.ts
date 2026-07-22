@@ -58,13 +58,17 @@ export const BOTH_KEYS: JoinKeys = keys("+919788385577", "aspirant@example.com")
  * `33000 − 400 − 8000 = ₹24,600`). Override for a Forge product, a pricier intake,
  * etc. `balanceFloorInr` is what the edge fn derives from `price_inr − appFee −
  * confirmation`; a capture at/above it is a balance/full payment FOR THIS offering.
+ * Pass `balanceFloorInr: null` explicitly to model an offering with no `price_inr`
+ * (the P1 null-floor case) — the `in` check preserves an explicit null rather than
+ * coalescing it back to the default.
  */
 export function offering(overrides: Partial<OfferingContext> = {}): OfferingContext {
   return {
     offeringId: overrides.offeringId ?? "off_live",
     appFeeInr: overrides.appFeeInr ?? 400,
     confirmationAmountInr: overrides.confirmationAmountInr ?? 8000,
-    balanceFloorInr: overrides.balanceFloorInr ?? 24600,
+    balanceFloorInr:
+      "balanceFloorInr" in overrides ? (overrides.balanceFloorInr ?? null) : 24600,
     productMatch: overrides.productMatch ?? ["VE"],
   };
 }
