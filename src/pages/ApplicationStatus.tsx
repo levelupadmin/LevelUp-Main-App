@@ -100,6 +100,23 @@ const RECONCILED_STAGE_UI: Record<
   enrolled: { chip: "Enrolled" },
 };
 
+/* ── v1: reconciler drives NON-MONEY stages only ──
+   Rahul RULED (2026-07-22, cohort-rc-v1-scope V1-1): disable reconciler payment
+   CTAs in v1 — the reconciler's payment-CTA attribution from shared external
+   amounts is structurally fragile (P1 null-floor, P2/P3 shared-amount wrong-
+   cohort). MONEY_STAGES are the reconciled stages whose RECONCILED_STAGE_UI CTA
+   carries `payment: true` (`completed-no-fee` → "Pay application fee",
+   `confirm-paid-no-balance` → "Pay balance"). For these the client SUPPRESSES the
+   entire reconciled override: the badge falls back to `statusLabel` and no
+   reconciled CTA renders, so no reconciler-driven payment CTA can surface in v1.
+   The status-driven timeline below still owns the staged payment CTAs. Money CTAs
+   re-enable as a fast-follow once Phase-2 staged payments populate `payment_orders`
+   for offering-exact, first-party attribution. Keep in sync with RECONCILED_STAGE_UI. */
+const MONEY_STAGES = new Set<string>([
+  "completed-no-fee",
+  "confirm-paid-no-balance",
+]);
+
 /* Each reconciled stage's position on the STEPS ladder (the highest step it
    implies), used as a FLOOR against the application's own status. The reconciler
    is allowed to run AHEAD of `cohort_applications.status` (its whole purpose:
@@ -232,18 +249,36 @@ const ApplicationStatus = () => {
   const reconciledStage = reconciled?.stage;
   const reconciledStep =
     reconciledStage != null ? RECONCILED_STAGE_STEP[reconciledStage] : undefined;
-  const reconciledUi =
+  const reconciledUiCandidate =
     currentStepIndex >= 0 &&
     reconciledStage &&
     reconciledStep !== undefined &&
     reconciledStep >= currentStepIndex
       ? RECONCILED_STAGE_UI[reconciledStage]
       : undefined;
+  /* v1 money-stage suppression (V1-1). When the reconciled stage is money-
+     bearing — in MONEY_STAGES OR its candidate CTA carries `payment: true` —
+     suppress the ENTIRE reconciled override: `reconciledUi` goes undefined, so
+     the badge falls back to `statusLabel(application.status)` and no reconciled
+     CTA is computed. NON-money stages (partial, fee-paid-no-interview,
+     interview-scheduled, awaiting-decision, enrolled) still let the reconciler
+     drive chip + CTA exactly as before. The `payment: true` check makes this
+     robust even if a new money CTA is added to RECONCILED_STAGE_UI without being
+     listed in MONEY_STAGES. Flag off → `reconciledStage` is undefined → not money
+     → inert, byte-identical to the status-driven view. */
+  const reconciledIsMoney =
+    !!reconciledStage &&
+    (MONEY_STAGES.has(reconciledStage) ||
+      reconciledUiCandidate?.cta?.(application)?.payment === true);
+  const reconciledUi = reconciledIsMoney ? undefined : reconciledUiCandidate;
   /* Ambiguous money — withhold the CTA, keep the chip. When the reconciler
      can't pin a shared-tier amount to exactly one offering it flags
      `ambiguous`; we then render chip-only (information) and suppress any
      money CTA, degrading to the status-driven timeline below, which owns
-     payments. Flag off → `reconciled` is undefined → `ambiguous` is falsy →
+     payments. In v1 this is a strict SUBSET of the money-stage suppression
+     above (all money stages are already suppressed regardless of `ambiguous`),
+     so it never fires today — kept intact and ready for the fast-follow
+     re-enable. Flag off → `reconciled` is undefined → `ambiguous` is falsy →
      this is inert and byte-identical to the pre-reconciler CTA. */
   const reconciledCtaCandidate = reconciledUi?.cta?.(application);
   const reconciledCta =
