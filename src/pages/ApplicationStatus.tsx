@@ -19,7 +19,7 @@ import {
 const STEPS = [
   { key: "submitted", label: "Applied", expect: "We've received your application." },
   { key: "app_fee_paid", label: "App Fee Paid", expect: "Pay the application fee to unlock your interview." },
-  { key: "interview_done", label: "Interview", expect: "A mentor reviews your work in a short interview." },
+  { key: "interview_done", label: "Interview", expect: "We review your work in a short interview." },
   { key: "accepted", label: "Accepted", expect: "We let you know if you've earned a seat." },
   { key: "confirmation_paid", label: "Confirmation Paid", expect: "Confirm your seat with the booking amount." },
   { key: "balance_paid", label: "Balance Paid", expect: "Clear the remaining fee before the cohort starts." },
