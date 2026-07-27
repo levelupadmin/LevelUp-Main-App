@@ -23,7 +23,7 @@
  *      nothing is inlined.
  */
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { last10, normalizePhone } from "../_shared/phone.ts";
 import {
@@ -41,6 +41,15 @@ import {
   type TeleCrmLead,
   type TeleCrmRead,
 } from "../_shared/reconcile.ts";
+
+// The concrete generic shape of a Supabase client differs between a bare
+// `ReturnType<typeof createClient>` (schema params default to `never`) and what
+// `createClient(url, key)` actually returns (`"public"`), so annotating a helper
+// with the former rejects the real client. The service-role helpers below only
+// touch `.from()`, so a permissive client type keeps the annotation honest —
+// same precedent as `_shared/email.ts`. Types only; erased at runtime.
+// deno-lint-ignore no-explicit-any
+type Admin = SupabaseClient<any, any, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 const TELECRM_BASE = "https://next.telecrm.in/autoupdate/v2";
 const RAZORPAY_BASE = "https://api.razorpay.com/v1";
@@ -384,7 +393,7 @@ function bandHit(amount: number, expected: number | null): boolean {
  * attribute the shared ₹400/₹8k to this offering with certainty. Read-only.
  */
 async function readPaymentOrders(
-  admin: ReturnType<typeof createClient>,
+  admin: Admin,
   userId: string,
   offering: OfferingContext,
 ): Promise<{ products: ProductInfo[]; confirmed: boolean }> {
@@ -427,7 +436,7 @@ async function readPaymentOrders(
  */
 async function readTally(
   keys: { phone: string | null; email: string | null },
-  admin: ReturnType<typeof createClient>,
+  admin: Admin,
 ): Promise<TallyRead> {
   const apiKey = Deno.env.get("TALLY_API_KEY");
   if (!apiKey) return TALLY_UNAVAILABLE;

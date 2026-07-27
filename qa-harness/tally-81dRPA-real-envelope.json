@@ -1,0 +1,281 @@
+{
+  "_note": "REAL question envelope from Tally form 81dRPA (probed 2026-07-27). Question ids/titles/order are REAL. ALL answers are synthetic or nulled: the 19 visible-question answers are replaced with fixtures, and the 6 HIDDEN attribution fields (utm_source/medium/campaign/content, fbclid, click_ts) are NULLED — they carried real ad-click identifiers for a real person. submittedAt is synthetic. buildQuestionMap drops all 6 (title:null) so nothing depends on them.",
+  "questions": [
+    {
+      "id": "4kWYXb",
+      "type": "HIDDEN_FIELDS",
+      "title": null
+    },
+    {
+      "id": "jMdrDR",
+      "type": "HIDDEN_FIELDS",
+      "title": null
+    },
+    {
+      "id": "2kqY8p",
+      "type": "HIDDEN_FIELDS",
+      "title": null
+    },
+    {
+      "id": "xQk7xG",
+      "type": "HIDDEN_FIELDS",
+      "title": null
+    },
+    {
+      "id": "zeMWjZ",
+      "type": "HIDDEN_FIELDS",
+      "title": null
+    },
+    {
+      "id": "529Ebv",
+      "type": "HIDDEN_FIELDS",
+      "title": null
+    },
+    {
+      "id": "1rRNMg",
+      "type": "MULTIPLE_CHOICE",
+      "title": "Who are you ?"
+    },
+    {
+      "id": "MAV6Ll",
+      "type": "MULTIPLE_CHOICE",
+      "title": "What is your objective of applying for the Creator Academy ?"
+    },
+    {
+      "id": "J2oeLr",
+      "type": "MULTIPLE_CHOICE",
+      "title": "What’s the single biggest difficulty stopping you from becoming a creator?"
+    },
+    {
+      "id": "g5zJLP",
+      "type": "INPUT_TEXT",
+      "title": "Your name"
+    },
+    {
+      "id": "yl1ox8",
+      "type": "INPUT_NUMBER",
+      "title": "Your Whatsapp Number"
+    },
+    {
+      "id": "XeQ8EP",
+      "type": "INPUT_EMAIL",
+      "title": "Your Email ID"
+    },
+    {
+      "id": "8dr6Gl",
+      "type": "INPUT_TEXT",
+      "title": "Your Social Media Handle - Instagram or Youtube (optional)"
+    },
+    {
+      "id": "0EkZL9",
+      "type": "DROPDOWN",
+      "title": "@Your name, What do you do?"
+    },
+    {
+      "id": "zKdGZk",
+      "type": "INPUT_TEXT",
+      "title": "What is your most recent designation?"
+    },
+    {
+      "id": "5dVeLN",
+      "type": "INPUT_TEXT",
+      "title": "Which City are you from?"
+    },
+    {
+      "id": "dYz8lr",
+      "type": "DROPDOWN",
+      "title": "What is your Gender?"
+    },
+    {
+      "id": "YZ9JrN",
+      "type": "DROPDOWN",
+      "title": "What's your age?"
+    },
+    {
+      "id": "DVax5l",
+      "type": "MULTIPLE_CHOICE",
+      "title": "Are you available for the program ?"
+    },
+    {
+      "id": "Ld6PYG",
+      "type": "MULTIPLE_CHOICE",
+      "title": "What is the LevelUp Creator Academy?"
+    },
+    {
+      "id": "pLkDWV",
+      "type": "MULTIPLE_CHOICE",
+      "title": "How does the academy work week to week?\n"
+    },
+    {
+      "id": "J2WODJ",
+      "type": "MULTIPLE_CHOICE",
+      "title": "At the Academy, you are mentored by:"
+    },
+    {
+      "id": "g5k9ZN",
+      "type": "MULTIPLE_CHOICE",
+      "title": "By the end of the program, you will leave with"
+    },
+    {
+      "id": "BG2xD7",
+      "type": "MULTIPLE_CHOICE",
+      "title": "Select one"
+    },
+    {
+      "id": "kYkNW6",
+      "type": "TEXTAREA",
+      "title": "Write your heart out! (In 100 words or more)"
+    },
+    {
+      "id": "NAy8gN",
+      "type": "HIDDEN_FIELDS",
+      "title": null
+    },
+    {
+      "id": "qbejp8",
+      "type": "HIDDEN_FIELDS",
+      "title": null
+    },
+    {
+      "id": "QAy8Xl",
+      "type": "HIDDEN_FIELDS",
+      "title": null
+    },
+    {
+      "id": "9d52aK",
+      "type": "HIDDEN_FIELDS",
+      "title": null
+    }
+  ],
+  "submission": {
+    "id": "REAL-SHAPE-001",
+    "isCompleted": true,
+    "submittedAt": "2026-07-20T10:00:00.000Z",
+    "responses": [
+      {
+        "questionId": "4kWYXb",
+        "answer": null
+      },
+      {
+        "questionId": "jMdrDR",
+        "answer": null
+      },
+      {
+        "questionId": "2kqY8p",
+        "answer": null
+      },
+      {
+        "questionId": "xQk7xG",
+        "answer": null
+      },
+      {
+        "questionId": "zeMWjZ",
+        "answer": null
+      },
+      {
+        "questionId": "529Ebv",
+        "answer": null
+      },
+      {
+        "questionId": "1rRNMg",
+        "answer": [
+          "I'm a founder who wants to build a personal brand that gets my business noticed"
+        ]
+      },
+      {
+        "questionId": "MAV6Ll",
+        "answer": [
+          "Build visibility for your business through content"
+        ]
+      },
+      {
+        "questionId": "J2oeLr",
+        "answer": [
+          "I have no idea what to talk about"
+        ]
+      },
+      {
+        "questionId": "g5zJLP",
+        "answer": "Test Applicant"
+      },
+      {
+        "questionId": "XeQ8EP",
+        "answer": "applicant@example.invalid"
+      },
+      {
+        "questionId": "yl1ox8",
+        "answer": "9000000001"
+      },
+      {
+        "questionId": "8dr6Gl",
+        "answer": "[redacted]"
+      },
+      {
+        "questionId": "0EkZL9",
+        "answer": [
+          "Entrepreneur/Founder"
+        ]
+      },
+      {
+        "questionId": "zKdGZk",
+        "answer": "Freelance Video Editor"
+      },
+      {
+        "questionId": "5dVeLN",
+        "answer": "Chennai"
+      },
+      {
+        "questionId": "dYz8lr",
+        "answer": [
+          "Male"
+        ]
+      },
+      {
+        "questionId": "YZ9JrN",
+        "answer": [
+          "32-45"
+        ]
+      },
+      {
+        "questionId": "DVax5l",
+        "answer": [
+          "I am available from August 1st, 2026 for the next Cohort"
+        ]
+      },
+      {
+        "questionId": "Ld6PYG",
+        "answer": [
+          "A recorded course you watch at your pace"
+        ]
+      },
+      {
+        "questionId": "pLkDWV",
+        "answer": [
+          "Learn live on weekends. Execute during the week. Improve with feedback and community."
+        ]
+      },
+      {
+        "questionId": "J2WODJ",
+        "answer": [
+          "Established Creators themselves"
+        ]
+      },
+      {
+        "questionId": "g5k9ZN",
+        "answer": [
+          "All of the above"
+        ]
+      },
+      {
+        "questionId": "BG2xD7",
+        "answer": [
+          "I would like to apply for a grant for the program and understand the acceptance rate may be lower than a normal application"
+        ]
+      },
+      {
+        "questionId": "kYkNW6",
+        "answer": "REDACTED_ESSAY_TEXT_100_WORDS"
+      }
+    ]
+  }
+}

@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "typecheck:functions": "node scripts/typecheck-functions.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
