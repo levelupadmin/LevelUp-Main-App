@@ -56,12 +56,15 @@
 -- auth.users.email is usually the synthetic @phone.leveluplearning.in address
 -- which can never match a TagMango row. This also makes the TG_OP='INSERT'
 -- latch moot rather than silently reverted.
---   ⚠️ IT IS NOT FREE, AND AN EARLIER DRAFT OF THIS HEADER WRONGLY SAID IT WAS.
---   463 legacy rows / ~366 people hold non-+91 or `foreign:` phones, and
---   Signup.tsx:125 routes every non-+91 number to the email magic link. With the
---   email branch gone they have NO automatic path. They are no worse off than
---   under today's outage (nobody claims at all), so this does not block the
---   fix — but it needs a one-off admin backfill, filed as follow-up.
+--   ⚠️ IT IS NOT FREE, AND EARLIER DRAFTS OF THIS HEADER GOT THE SIZE WRONG
+--   TWICE. Measured on prod: 73,441 rows match ^\+91[0-9]{10}$, 485 are
+--   `foreign:<digits>:<handle>` placeholders, and ZERO are neither — so the
+--   "non-+91 OR foreign:" phrasing was vacuous, and 463/366 was a strict subset
+--   (foreign AND unclaimed AND mapped). THE REAL BACKFILL DEBT IS 485 ROWS /
+--   384 PEOPLE, all of them `foreign:` placeholders reachable by no phone key at
+--   all. They are no worse off than under today's outage (nobody claims), so
+--   this does not block the fix — but it is paid entitlement and needs a
+--   one-off admin backfill, filed as follow-up.
 --
 -- ⚠️ KNOWN GAP, deliberately not fixed here (decide, don't discover):
 --   All three payment paths — razorpay-webhook:112-119, verify-razorpay-payment:
@@ -107,6 +110,21 @@ BEGIN
     -- Trust the AUTH row, never the public.users mirror, which carries
     -- attacker-supplied signup metadata. COALESCE because SELECT INTO leaves
     -- the flag NULL when no auth row matches, which would fall through.
+    -- `NEW.deleted_at IS NULL`: BOTH soft-delete paths
+    -- (20260522180000:228-236 and delete-account/index.ts:161-170) UPDATE
+    -- public.users SET phone=NULL, email=NULL, deleted_at=now(), which TOUCHES
+    -- phone/email and therefore fires this trigger. The previously-deployed body
+    -- keyed off NEW.phone — just NULLed — so it was inert. This one keys off
+    -- auth.users.phone, which soft-delete PRESERVES by design (measured: 11 of
+    -- 11 soft-deleted users still carry one). Without this guard, deleting an
+    -- account would claim and PERMANENTLY stamp entitlements. It does not
+    -- self-heal: `cleanup_deleted_users` exists but is NOT scheduled — prod has
+    -- exactly two cron jobs, neither of them it — so the auth row is never
+    -- hard-deleted and the ON DELETE SET NULL never fires.
+    IF NEW.deleted_at IS NOT NULL THEN
+      RETURN NEW;
+    END IF;
+
     SELECT au.phone, COALESCE(au.phone IS NOT NULL, false)
       INTO v_auth_phone, v_phone_ok
       FROM auth.users au
