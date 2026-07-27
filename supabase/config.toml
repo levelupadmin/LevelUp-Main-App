@@ -32,11 +32,15 @@ project_id = "twqagwleffjggoemzfqs"
   [functions.reconcile-funnel-stage]
     verify_jwt = true
   # NOTE: tally-application-webhook is called by Tally with no Supabase JWT.
-  # It is verify_jwt=true on prod today, which likely stops Tally reaching it
-  # (it self-authenticates via HMAC, so false is the correct setting once the
-  # cohort Tally flow is tested end-to-end). Kept true here to match current
-  # prod and avoid an unverified behaviour change in this deploy.
+  # Tally calls this server-to-server with NO Supabase JWT — it self-authenticates
+  # with an HMAC `tally-signature` header. verify_jwt=true therefore made the
+  # gateway reject EVERY Tally delivery with 401 UNAUTHORIZED_NO_AUTH_HEADER
+  # before the function could run (verified live 2026-07-22). Set to false to
+  # match the other self-authenticating webhooks (razorpay-webhook,
+  # auth-email-hook). This is safe: the function is FAIL-CLOSED — it rejects any
+  # request whose HMAC doesn't verify, and rejects everything outright while
+  # TALLY_SIGNING_SECRET is unset (index.ts:9-12).
   [functions.tally-application-webhook]
-    verify_jwt = true
+    verify_jwt = false
   [functions.generate-invoice-pdf]
     verify_jwt = false
