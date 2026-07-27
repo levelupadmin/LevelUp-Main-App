@@ -10,15 +10,26 @@
  * (`TALLY_API_KEY`). The webhook stays deployed and UNMODIFIED as the
  * instant-delivery option if a signing secret is ever set.
  *
- * THE HARD REQUIREMENT — THE INTAKE CUTOFF. One Tally form is reused across
- * editions (form `81dRPA` carries 880 historical completed submissions from
- * Edition 1 and earlier). Ingesting them would fabricate hundreds of bogus
- * applications and corrupt the NSM baseline. So every submission is gated on
- * `offerings.intake_opens_at ?? offerings.created_at`, and because Tally
- * returns newest-first the scan STOPS at the first out-of-window row. The
- * comparison itself lives in `_shared/tally.ts` (`isInIntakeWindow` /
- * `partitionByCutoff`) so it is unit-testable — this file must not reimplement
- * it inline.
+ * THE HARD REQUIREMENT — THE INTAKE WINDOW, BOUNDED AT BOTH ENDS. One Tally
+ * form is reused across editions (form `81dRPA` carries 880 historical
+ * completed submissions from Edition 1 and earlier) AND keeps taking traffic
+ * after an edition closes, so an unbounded scan fabricates applications off
+ * both ends of the stream. Every submission is therefore gated on:
+ *   • START — `offerings.intake_opens_at`, REQUIRED. An offering without one is
+ *     not polled at all: it is excluded from the scan query, counted once at
+ *     the top level as `skippedNoCutoff`, and logged. There is NO `created_at`
+ *     fallback (FX-2.1) — see `resolveIntakeWindow` for why that fallback was
+ *     the dangerous branch rather than the safe one.
+ *   • END — `offerings.application_deadline` when set, as end of that day in
+ *     IST (FX-2.2). NULL means no ceiling, reported as `windowEnd: null`.
+ * Because Tally returns newest-first the scan STOPS at the first row BELOW the
+ * start; a row above the END is skipped and counted, never a stop signal (that
+ * would halt on row 1 of every closed edition — see `partitionByCutoff`).
+ * All of it — the window resolution, the comparison, and the completed-only
+ * guard — lives in `_shared/tally.ts` (`resolveIntakeWindow`,
+ * `isInIntakeWindow`, `partitionByCutoff`, `isIngestableSubmission`) so it is
+ * unit-testable; this file CALLS those and must not reimplement any of it
+ * inline.
  *
  * THE THREE INVIOLABLE RULES:
  *   1. READ-ONLY against Tally (SOR-1). GET only, zero writes to any external
@@ -54,16 +65,22 @@
  * from an ordinary already-exists skip, and the offering scan is ORDERED
  * newest-intake-first so the winner is deterministic and is the live edition.
  *
- * PARTIALS ARE COUNTED, NEVER CREATED. `cohort_applications.status` has no
- * honest value for an incomplete form, so partials are reported as a number
- * per form (response + one structured log line) and nothing else.
+ * PARTIALS ARE COUNTED, NEVER CREATED, AND THE GUARD IS IN CODE. The Tally
+ * fetch asks for `&filter=completed` and the envelope reports the form's whole
+ * partial pool, which is reported per form as `partialCount` and nothing else.
+ * But a query string in one URL is not a guarantee, so every submission is ALSO
+ * put through `isIngestableSubmission` before it can become a row (FX-2.3);
+ * anything that reaches the loop without `isCompleted === true` is skipped and
+ * counted as `skippedNotCompleted`.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildQuestionMap,
   dedupeBySubmissionId,
   formIdFromTallyUrl,
+  isIngestableSubmission,
   partitionByCutoff,
+  resolveIntakeWindow,
   toApplicationRow,
   type CohortApplicationRow,
   type TallyEnvelope,
@@ -118,20 +135,39 @@ function log(level: "info" | "warn" | "error", event: string, fields: Record<str
   else console.log(line);
 }
 
+/**
+ * The offering columns the scan reads. `created_at` is deliberately NOT among
+ * them: FX-2.1 removed the cutoff fallback, and not selecting the column is the
+ * cheapest way to keep it removed. (It is still ORDERED on below — PostgREST
+ * does not require an ordered column to be selected.)
+ */
 interface OfferingRow {
   id: string;
   title: string | null;
   slug: string | null;
   tally_form_url: string | null;
   intake_opens_at: string | null;
-  created_at: string;
+  application_deadline: string | null;
 }
 
 /**
- * The brief's per-form summary shape. The three optional fields are emitted
- * ONLY when non-zero/present, so a healthy run still returns exactly the shape
- * the brief specifies; each one exists because folding it into `skipped` would
- * make a real fault indistinguishable from routine dedupe.
+ * The brief's per-form summary shape, plus the resolved window (FX-2.4).
+ *
+ * `windowStart` / `windowEnd` are ALWAYS present: they are the two instants
+ * every other number on this summary is relative to, and `windowEnd: null` —
+ * "this form has no closing date, it will ingest for as long as it is staged" —
+ * is exactly the state that has to be visible rather than inferred from a
+ * missing key.
+ *
+ * The optional counters are emitted ONLY when non-zero, so a healthy run still
+ * returns essentially the shape the brief specifies; each one exists because
+ * folding it into `skipped` would make a real fault indistinguishable from
+ * routine dedupe.
+ *
+ * `skippedNoCutoff` is NOT here, and cannot be: an offering with no
+ * `intake_opens_at` is filtered out of the scan query, so it never reaches a
+ * per-form summary at all. It is reported once, at the top level of the
+ * response body — see `countOfferingsWithoutCutoff`.
  */
 interface FormSummary {
   formId: string;
@@ -141,8 +177,16 @@ interface FormSummary {
   skipped: number;
   partialCount: number;
   stoppedAtCutoff: boolean;
+  /** Inclusive start of the window: the offering's `intake_opens_at`. */
+  windowStart: string;
+  /** Inclusive end (IST end of `application_deadline`), or null = no ceiling. */
+  windowEnd: string | null;
   /** Submissions with no usable `submittedAt`: skipped, never a stop signal. */
   undatedSkipped?: number;
+  /** Submissions ABOVE the ceiling: skipped, and never a stop signal either. */
+  afterDeadlineSkipped?: number;
+  /** Reached the loop without `isCompleted === true`. Never inserted (FX-2.3). */
+  skippedNotCompleted?: number;
   /** 23505s owned by a DIFFERENT offering — this form is shared, see the header. */
   crossOfferingCollisions?: number;
   /**
@@ -265,6 +309,59 @@ async function lookupUserIds(admin: AdminClient, emails: string[]): Promise<Map<
   return byEmail;
 }
 
+/** How many un-opted-in offerings the warn log names before it truncates. */
+const NO_CUTOFF_LABEL_LIMIT = 20;
+
+/**
+ * THE OFFERINGS THIS RUN DELIBERATELY DID NOT TOUCH — staged, carrying a Tally
+ * form, and with no `intake_opens_at`.
+ *
+ * WHY THIS IS A SECOND QUERY RATHER THAN A SUMMARY FIELD. FX-2.1 asks for two
+ * things that one query cannot both do: such offerings must NEVER BE SCANNED
+ * (so the scan query filters them out with `.not("intake_opens_at","is",null)`)
+ * and they must be REPORTED as `skippedNoCutoff` (so something has to see
+ * them). A row removed by a filter produces no per-form summary. Resolved as:
+ * the filter stays, and this read — over exactly the complement of the scan
+ * query — supplies one TOP-LEVEL `skippedNoCutoff` for the whole run, plus one
+ * warn log naming the offerings so the fix is actionable. "Never scanned" and
+ * "visible" both hold; the count is a run-level fact, which is what it is.
+ *
+ * It selects identifying columns rather than being strictly head-only, because
+ * a bare count cannot name anything and "some offering somewhere is not
+ * ingesting" is not a report anyone can act on. The read is bounded by the
+ * number of STAGED offerings carrying a form URL — single digits — and capped
+ * anyway; the exact count comes from the count header, so the cap truncates the
+ * names and never the number.
+ *
+ * Fail-soft: a failure here must not cost the run any ingest, so it is logged
+ * and reported as `skippedNoCutoff: null` — unknown, explicitly not zero.
+ */
+async function countOfferingsWithoutCutoff(
+  admin: AdminClient,
+): Promise<{ count: number | null; labels: string[] }> {
+  const { data, count, error } = await admin
+    .from("offerings")
+    .select("id, title, slug", { count: "exact" })
+    .eq("payment_mode", "staged")
+    .not("tally_form_url", "is", null)
+    .is("intake_opens_at", null)
+    .limit(NO_CUTOFF_LABEL_LIMIT);
+
+  if (error) {
+    log("error", "no_cutoff_count_failed", {
+      message: error.message,
+      note: "cannot report how many staged offerings are un-pollable for want of intake_opens_at; ingest itself is unaffected",
+    });
+    return { count: null, labels: [] };
+  }
+
+  const rows = (data ?? []) as { id: string; title: string | null; slug: string | null }[];
+  return {
+    count: count ?? rows.length,
+    labels: rows.map((row) => row.slug || row.title || row.id),
+  };
+}
+
 /** One page of a form's completed submissions, newest-first. GET only. */
 async function fetchPage(formId: string, page: number, apiKey: string): Promise<TallyEnvelope> {
   const url =
@@ -318,20 +415,27 @@ Deno.serve(async (req) => {
 
   const admin = createAdminClient();
 
+  // FILTERED, and the filter is the requirement (FX-2.1). `intake_opens_at` is
+  // the offering's explicit opt-in to being polled: without one there is no
+  // honest lower bound, so the row is not scanned, not paged, not even read
+  // here. `countOfferingsWithoutCutoff` reports what this excluded.
+  //
   // ORDERED, not incidental. Two staged offerings may point at the same form
   // (see the header), and because the unique index on tally_response_id is
   // global, whichever one is scanned FIRST claims each submission. An unordered
   // select would hand that to whatever Postgres happened to return first and
-  // could change the winner between runs. Ordered newest-intake-first — with
-  // NULL intake_opens_at last, then created_at, then id so the order is total —
-  // the live edition wins and a stale leftover edition is the one that reports
-  // the collision, which is the right way round.
+  // could change the winner between runs. Ordered newest-intake-first, then
+  // created_at, then id so the order is total: the live edition wins and a
+  // stale leftover edition is the one that reports the collision, which is the
+  // right way round. (Every row now HAS an intake_opens_at, so the old
+  // NULLs-last tie-break is gone with the rows it sorted.)
   const { data: offeringData, error: offeringsErr } = await admin
     .from("offerings")
-    .select("id, title, slug, tally_form_url, intake_opens_at, created_at")
+    .select("id, title, slug, tally_form_url, intake_opens_at, application_deadline")
     .eq("payment_mode", "staged")
     .not("tally_form_url", "is", null)
-    .order("intake_opens_at", { ascending: false, nullsFirst: false })
+    .not("intake_opens_at", "is", null)
+    .order("intake_opens_at", { ascending: false })
     .order("created_at", { ascending: false })
     .order("id", { ascending: false });
 
@@ -341,6 +445,16 @@ Deno.serve(async (req) => {
   }
 
   const offerings = (offeringData ?? []) as OfferingRow[];
+  const noCutoff = await countOfferingsWithoutCutoff(admin);
+  if (noCutoff.count) {
+    log("warn", "offerings_skipped_no_cutoff", {
+      count: noCutoff.count,
+      offerings: noCutoff.labels,
+      truncated: noCutoff.count > noCutoff.labels.length,
+      note: "staged offerings with a tally_form_url and NULL offerings.intake_opens_at are not polled at all; set that column to opt one in. The poller never falls back to created_at.",
+    });
+  }
+
   const forms: FormSummary[] = [];
   let pageCapHit = false;
 
@@ -354,22 +468,33 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    // The cutoff. NULL intake_opens_at falls back to the offering's own
-    // created_at — and that fallback is LOUD, because it is the one path that
-    // can mass-backfill history. TP-1 only hardened the pilot offering's
-    // intake_opens_at; any other staged offering whose row predates its form's
-    // traffic (an earlier edition still marked staged, a draft created months
-    // before intake opened, a row cloned in the admin editor) would otherwise
-    // ingest every completed submission since the ROW was created, silently,
-    // reported only as a large `created` count.
-    const cutoff = offering.intake_opens_at ?? offering.created_at;
-    if (!offering.intake_opens_at) {
-      log("warn", "cutoff_defaulted_to_created_at", {
+    // The window, resolved by the pure core — both ends come off this row and
+    // nothing is inferred from anything else.
+    const { windowStart, windowEnd, skipReason } = resolveIntakeWindow(offering);
+    if (skipReason || !windowStart) {
+      // Unreachable: the query above already excluded these. Kept because the
+      // filter and the resolver are independent statements of the same rule,
+      // and the failure this guards is silent mass-backfill — if a PostgREST
+      // filter ever stops meaning what it says, this must not be the run that
+      // finds out by ingesting Edition 1.
+      log("error", "offering_missing_cutoff_after_filter", {
         formId,
         offering: label,
         offeringId: offering.id,
-        cutoff,
-        note: "offerings.intake_opens_at is NULL; set it to bound this form's intake window",
+        skipReason,
+        note: "offerings.intake_opens_at is NULL/unusable but the row survived the scan filter; skipped",
+      });
+      continue;
+    }
+    if (offering.application_deadline && !windowEnd) {
+      // A deadline that exists but cannot be read: the scan runs UNBOUNDED
+      // above (better than dropping every application), so say so loudly.
+      log("error", "application_deadline_unusable", {
+        formId,
+        offering: label,
+        offeringId: offering.id,
+        applicationDeadline: offering.application_deadline,
+        note: "offerings.application_deadline is set but not a readable date; this form is scanning with NO upper bound",
       });
     }
 
@@ -381,6 +506,8 @@ Deno.serve(async (req) => {
       skipped: 0,
       partialCount: 0,
       stoppedAtCutoff: false,
+      windowStart,
+      windowEnd,
     };
     forms.push(summary);
 
@@ -388,6 +515,7 @@ Deno.serve(async (req) => {
       const questionMap: Record<string, string> = {};
       const collected: TallySubmission[] = [];
       let undated = 0;
+      let afterDeadline = 0;
 
       for (let page = 1; page <= TALLY_MAX_PAGES; page++) {
         const envelope = await fetchPage(formId, page, apiKey);
@@ -401,12 +529,11 @@ Deno.serve(async (req) => {
         Object.assign(questionMap, buildQuestionMap(envelope.questions));
 
         const pageSubmissions = envelope.submissions ?? [];
-        const { inWindow, skippedUndated, stoppedAtCutoff } = partitionByCutoff(
-          pageSubmissions,
-          cutoff,
-        );
+        const { inWindow, skippedUndated, skippedAfterDeadline, stoppedAtCutoff } =
+          partitionByCutoff(pageSubmissions, windowStart, windowEnd);
         collected.push(...inWindow);
         undated += skippedUndated;
+        afterDeadline += skippedAfterDeadline;
 
         if (stoppedAtCutoff) {
           // Newest-first: everything past this row is older than the cutoff.
@@ -433,9 +560,27 @@ Deno.serve(async (req) => {
         });
       }
 
+      if (afterDeadline > 0) {
+        summary.afterDeadlineSkipped = afterDeadline;
+        log("info", "after_deadline_submissions_skipped", {
+          formId,
+          offering: label,
+          count: afterDeadline,
+          windowEnd,
+          note: "submitted after offerings.application_deadline (IST end of day); not ingested, and not treated as the cutoff boundary. Routine once an edition closes while its form stays live.",
+        });
+      }
+
       // Map purely first, so the DB is only asked about rows that could exist.
+      let notCompleted = 0;
       const candidates: CohortApplicationRow[] = [];
       for (const submission of submissions) {
+        if (!isIngestableSubmission(submission)) {
+          // FX-2.3. `&filter=completed` should already have kept partials off
+          // this page; that is a query string, this is the guarantee.
+          notCompleted++;
+          continue;
+        }
         const row = toApplicationRow(submission, questionMap, offering.id, null);
         if (!row || !row.tally_response_id) {
           // No email (or no stable response id) — same skip as the webhook.
@@ -443,6 +588,16 @@ Deno.serve(async (req) => {
           continue;
         }
         candidates.push(row);
+      }
+
+      if (notCompleted > 0) {
+        summary.skippedNotCompleted = notCompleted;
+        log("error", "not_completed_submissions_skipped", {
+          formId,
+          offering: label,
+          count: notCompleted,
+          note: "a submission without isCompleted=true reached the ingest loop despite the completed-only fetch filter; not inserted. Check the Tally query string.",
+        });
       }
 
       // ONE read of what this offering already holds, instead of two per
