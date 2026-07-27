@@ -718,28 +718,50 @@ Deno.serve(async (req) => {
     // stage or outreach markers, so a later outreach job keyed on `reconciled_*`
     // can't fire on a dead row. Best-effort: a failed read leaves the derived write
     // intact (preserves today's behaviour rather than silently nulling).
+    //
+    // The same read also answers the ONE question the held-seat anchor needs:
+    // has `accepted_at` already been stamped? (see the stamp block below).
     let applicationTerminal = false;
+    let acceptedAtIsUnstamped = false;
     try {
       const { data: appRow } = await admin
         .from("cohort_applications")
-        .select("status")
+        .select("status, accepted_at")
         .eq("user_id", user.id)
         .eq("offering_id", offeringId)
         .maybeSingle();
       const appStatus =
         appRow && typeof appRow.status === "string" ? appRow.status.trim().toLowerCase() : null;
       applicationTerminal = appStatus != null && TERMINAL_NEGATIVE_STATUSES.has(appStatus);
+      // Only a row we actually READ can be known to be unstamped. A failed read
+      // leaves this false, so the anchor is never re-stamped on a guess.
+      acceptedAtIsUnstamped = !!appRow && appRow.accepted_at == null;
     } catch {
       applicationTerminal = false;
+      acceptedAtIsUnstamped = false;
     }
+
+    // ── The held-seat anchor (REQ-DEC-5, migration 20260728120000) ──
+    // `accepted_at` is stamped ONCE — the first time this application is observed
+    // at the derived `accepted` stage — and never again. It is what the client's
+    // "seat held · closes {countdown}" is dated from, and it is the ONLY column
+    // here that is not a read-through mirror: re-stamping it would slide the
+    // student's deadline forward on every reconcile run, which is exactly why
+    // `reconciled_at` cannot be used for this. It is never cleared either, not
+    // even on a later terminal-negative read — the acceptance stays valid for the
+    // next batch even after the seat releases. Still not a status write: SOR-1
+    // holds, this only records WHEN WE FIRST SAW the flip TeleCRM authored.
+    const stampAcceptedAt =
+      !applicationTerminal && derived.stage === "accepted" && acceptedAtIsUnstamped;
 
     // Mirror the derived stage onto the app-owned columns via the service-role
     // client. Fail-soft: a mirror-write failure never fails the read response.
     // Scoped to `offering_id` (guaranteed present), so the stage lands ONLY on
     // this application — never a sibling (cross-offering contamination). Writes
-    // ONLY the five reconciled_* mirror columns — never `status`, never `accepted`.
-    // A terminal-negative application gets a NULLED progress write (no stage, no
-    // markers) — the data-layer floor above.
+    // ONLY the five reconciled_* mirror columns, plus the once-ever `accepted_at`
+    // anchor above — never `status`, never `accepted`. A terminal-negative
+    // application gets a NULLED progress write (no stage, no markers) — the
+    // data-layer floor above.
     let mirrored = false;
     try {
       const mirrorPayload = applicationTerminal
@@ -756,6 +778,10 @@ Deno.serve(async (req) => {
             completed_no_fee: derived.markers.completedNoFee,
             contactable_partial: derived.markers.contactablePartial,
             reconciled_at: new Date().toISOString(),
+            // Present in the payload ONLY on the first observation of `accepted`;
+            // omitted on every other run, so the column is written once and then
+            // left alone forever.
+            ...(stampAcceptedAt ? { accepted_at: new Date().toISOString() } : {}),
           };
       const { error: mirrorError } = await admin
         .from("cohort_applications")
