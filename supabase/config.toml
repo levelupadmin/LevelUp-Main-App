@@ -59,3 +59,23 @@ project_id = "twqagwleffjggoemzfqs"
     verify_jwt = true
   [functions.generate-invoice-pdf]
     verify_jwt = false
+  # calendly-webhook: Calendly delivers server-to-server with NO Supabase JWT, so
+  # verify_jwt = true would make the gateway reject EVERY delivery with 401
+  # UNAUTHORIZED_NO_AUTH_HEADER before the function could run — the exact failure
+  # tally-application-webhook hit live on 2026-07-22. It self-authenticates via
+  # HMAC exactly like razorpay-webhook: HMAC-SHA256 of `${t}.${rawBody}` with
+  # CALENDLY_SIGNING_KEY, hex, constant-time compare. It is FAIL-CLOSED — a bad,
+  # absent or malformed `Calendly-Webhook-Signature` returns 401 with no detail
+  # and writes nothing, and it rejects everything outright while
+  # CALENDLY_SIGNING_KEY is unset.
+  # DEPLOY REQUIREMENT — it needs a SECOND env value, CALENDLY_INTERVIEW_EVENT_TYPE
+  # (config, not a credential): the interview event type on the one org-level
+  # Calendly account (INTEG-CAL-1), as an API URI, a bare uuid, the hosted
+  # scheduling link or the event type's name; comma-separated for more than one. A
+  # Calendly subscription is org/user-scoped and cannot be narrowed to one event
+  # type, so every OTHER booking on that account is delivered here too and this
+  # allowlist is the only thing keeping a sales call from overwriting an
+  # applicant's interview. It is fail-closed: unset → the receiver mirrors nothing
+  # and says so at error level on every delivery.
+  [functions.calendly-webhook]
+    verify_jwt = false
