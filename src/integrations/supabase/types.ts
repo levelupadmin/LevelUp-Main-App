@@ -1408,6 +1408,7 @@ export type Database = {
           interview_notes: string | null
           occupation: string | null
           offering_id: string
+          pending_claim: boolean
           phone: string | null
           rejection_reason: string | null
           status: string
@@ -1431,6 +1432,7 @@ export type Database = {
           interview_notes?: string | null
           occupation?: string | null
           offering_id: string
+          pending_claim?: boolean
           phone?: string | null
           rejection_reason?: string | null
           status?: string
@@ -1454,6 +1456,7 @@ export type Database = {
           interview_notes?: string | null
           occupation?: string | null
           offering_id?: string
+          pending_claim?: boolean
           phone?: string | null
           rejection_reason?: string | null
           status?: string

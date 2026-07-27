@@ -33,7 +33,8 @@
  *
  * THE THREE INVIOLABLE RULES:
  *   1. READ-ONLY against Tally (SOR-1). GET only, zero writes to any external
- *      system. The only write is the app-owned `cohort_applications` insert.
+ *      system. The only writes are app-owned: the `cohort_applications` insert
+ *      and the applicant's own auth user (see IDENTITY PROVISIONING below).
  *   2. Fail-soft per form. A 429/5xx/throw on one form records the error in
  *      that form's summary and moves on; it never aborts the run. An unset
  *      `TALLY_API_KEY` returns early instead of throwing.
@@ -65,6 +66,37 @@
  * from an ordinary already-exists skip, and the offering scan is ORDERED
  * newest-intake-first so the winner is deterministic and is the live edition.
  *
+ * IDENTITY PROVISIONING — WHY IT LIVES HERE AND NOT IN THE WEBHOOK (phase SP,
+ * REQ-IDENT-1). An applicant must become an app user WITHOUT ever seeing a
+ * signup screen, so intake provisions the `auth.users` row itself. The PRD
+ * writes that against the webhook; the webhook is fail-closed and inert (no
+ * `TALLY_SIGNING_SECRET`), so provisioning built there would never run. This
+ * function is the live host. The decision itself is pure and shared
+ * (`_shared/identity.ts`), and the webhook calls the SAME sequence, so
+ * behaviour is identical if a signing secret is ever set.
+ *
+ * It is IDEMPOTENT for the same reason the insert is: provisioning runs only
+ * for genuinely-new rows (`fresh`, already past the response-id/email dedupe),
+ * and even if a run creates the user and then fails to insert, the next tick
+ * finds that user by email and stamps it rather than minting a second one.
+ * It is FAIL-SOFT: any provisioning error leaves `user_id` NULL and the
+ * application is still inserted — an unlinked application is recoverable, a
+ * lost one is not. And it NEVER MERGES: ANY partial identity match — the email
+ * belongs to an account, the phone belongs to an account, or the two belong to
+ * different accounts — is a collision, which defers to an interactive claim
+ * (`pending_claim`), never a silent join on the strength of a form answer.
+ * The account it mints carries BOTH identifiers, both UNCONFIRMED, and is
+ * tagged as unverified intake so it grants no entitlements until a real OTP
+ * proves a channel (see `provisionApplicant`).
+ *
+ * DEPLOY ORDER — MIGRATION FIRST. The collision path names `pending_claim`, so
+ * this function must not be deployed ahead of
+ * `20260727120000_cohort_applications_pending_claim.sql`. A tick in between
+ * inserts ordinary rows fine (the column is never named for them) but raises
+ * 42703 on a collision row and counts it as `insertFailed`. It self-heals —
+ * nothing was inserted and the window never shrinks, so the next tick after
+ * the migration lands retries it — but the gap is avoidable and should be.
+ *
  * PARTIALS ARE COUNTED, NEVER CREATED, AND THE GUARD IS IN CODE. The Tally
  * fetch asks for `&filter=completed` and the envelope reports the form's whole
  * partial pool, which is reported per form as `partialCount` and nothing else.
@@ -75,6 +107,8 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { timingSafeEqual } from "../_shared/crypto.ts";
+import { decideProvision, identityKeys, type ProvisionOutcome } from "../_shared/identity.ts";
+import { normalizePhone } from "../_shared/phone.ts";
 import {
   buildQuestionMap,
   buildQuestionTypeMap,
@@ -109,21 +143,6 @@ const TALLY_MAX_PAGES = 20;
 const EXISTING_PAGE_SIZE = 1000;
 /** Runaway guard on that read. Exceeding it throws into the per-form fail-soft. */
 const EXISTING_MAX_PAGES = 20;
-/**
- * Email spellings per `users` `.in()` chunk. Sized against the REQUEST LINE,
- * not the row count: PostgREST puts the whole `in.(...)` list in the URL and
- * Kong/nginx default to an 8 KB request line (`large_client_header_buffers 4
- * 8k`). 200 percent-encoded addresses of the form firstname.lastname@gmail.com
- * measure ~8.4 KB — over the limit — and the resulting 414 comes back as an
- * ordinary chunk error, so every application in it would insert with `user_id`
- * NULL. That NULL is permanent (this function never updates) and RLS
- * `students_read_own_applications` (`user_id = auth.uid()`) then hides the
- * application from the applicant forever. 50 keeps the same list near 2.1 KB, a
- * ~4x margin; the read is chunked anyway, so a smaller chunk costs round-trips
- * and nothing else. Counted in SPELLINGS, not addresses — see `lookupUserIds`,
- * a mixed-case answer contributes two.
- */
-const USER_LOOKUP_CHUNK = 50;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -203,6 +222,17 @@ interface FormSummary {
   skippedNotCompleted?: number;
   /** 23505s owned by a DIFFERENT offering — this form is shared, see the header. */
   crossOfferingCollisions?: number;
+  /** Applicants given a brand-new passwordless auth user by this run. */
+  provisionCreated?: number;
+  /**
+   * Identity collisions: inserted with `user_id` NULL + `pending_claim`, with
+   * NOTHING minted and nothing merged. Counted separately from `insertFailed`
+   * because it is a correct, expected outcome — but it is also the only state
+   * that needs a human-facing claim step, so it must never hide inside `created`.
+   */
+  provisionCollisions?: number;
+  /** Provisioning threw: the application was still inserted, `user_id` NULL. */
+  provisionFailed?: number;
   /**
    * Inserts that FAILED (anything that is not a 23505). Never folded into
    * `skipped`: a skip means "already ingested, nothing to do", so counting a
@@ -273,54 +303,318 @@ async function loadExistingKeys(
 }
 
 /**
- * `email → users.id` for the rows about to be inserted, in chunked `.in()`
- * reads instead of one round-trip per submission. Keyed lower-case because
- * mailbox case is not meaningful and the two sides are typed by different
- * humans.
+ * ONE `auth.users` lookup on ONE key, via the deterministic
+ * `find_login_identity` RPC. Never GoTrue's admin list `?email=`/`?phone=`
+ * filter: that param is silently ignored and returns page 1 of ALL users, so
+ * every applicant past page 1 would read as brand-new and get a second account
+ * (the exact bug 20260603120000_legacy_login_fix.sql was written to kill).
  *
- * THE FILTER HAS TO CARRY THE CASE, TOO. `users.email` is plain `text` and
- * PostgREST `in.(...)` is exact equality, so normalising only the rows that
- * come BACK is half a fix: a form answer typed `Meera@Example.com` would never
- * match its lower-case `users` row, and because this function never updates an
- * existing application, that unlinked state is permanent. So every address is
- * sent in both spellings — as typed and lower-cased — and the map is keyed
- * lower-case for the caller. (An `ilike` filter would also cover a `users` row
- * stored in a third casing, but `_` and `%` are legal in a local part and are
- * ILIKE wildcards; getting that escaping wrong links an application to the
- * WRONG account, which is strictly worse than not linking it.)
+ * The RPC normalises internally the same way `identityKeys` does — lower/trim
+ * on email, last-10 subscriber digits on phone — so the caller's keys go
+ * straight in. It is `service_role`-only and returns at most one row.
  *
- * A failed chunk is logged and treated as "no match" — an unlinked application
- * is recoverable by hand, a lost application is not — but at ERROR level,
- * because the resulting NULL never self-heals.
+ * Exactly ONE key per call, deliberately. The RPC ORs its two predicates and
+ * `LIMIT 1`s the result, so passing both at once collapses "email belongs to A,
+ * phone belongs to B" — the collision this whole path exists to detect — into a
+ * single winner. `decideProvision` needs the two answers separately.
+ *
+ * Throws on error rather than returning null: a lookup failure that read as
+ * "nobody has this email" would mint a duplicate account for an existing user.
+ * The throw lands in `provisionApplicant`'s fail-soft catch.
  */
-async function lookupUserIds(admin: AdminClient, emails: string[]): Promise<Map<string, string>> {
-  const byEmail = new Map<string, string>();
+async function findAuthIdentity(
+  admin: AdminClient,
+  key: { email: string } | { phone: string },
+): Promise<{ id: string } | null> {
+  const { data, error } = await admin.rpc("find_login_identity", {
+    p_phone: "phone" in key ? key.phone : null,
+    p_email: "email" in key ? key.email : null,
+  });
+  if (error) throw new Error(`find_login_identity failed: ${error.message}`);
+  const row = (Array.isArray(data) ? data[0] : data) as { id?: string } | undefined;
+  return row?.id ? { id: row.id } : null;
+}
 
-  const spellings = new Set<string>();
-  for (const email of emails) {
-    const trimmed = email.trim();
-    if (!trimmed) continue;
-    spellings.add(trimmed);
-    spellings.add(trimmed.toLowerCase());
-  }
-  const unique = [...spellings];
+/**
+ * The applicant's identity BY EMAIL — `auth.users` first, then the
+ * `public.users` mirror.
+ *
+ * THE MIRROR LEG IS NOT A BELT-AND-BRACES EXTRA; without it this lookup misses
+ * most of the existing user base. `find_login_identity` matches
+ * `lower(auth.users.email)`, but the app's phone-first signup mints the auth
+ * row with a PLACEHOLDER address — `Signup.tsx` sends `syntheticEmail(phone)`
+ * (`…@phone.leveluplearning.in`) — and the real address is written later by
+ * `set_onboarding_profile`, which updates `public.users` ONLY
+ * (20260611100000). So for essentially every user who signed up by phone,
+ * `auth.users.email` is the placeholder and their real email exists solely in
+ * the mirror. Asking GoTrue alone would report them as "email belongs to
+ * nobody" and park their application in a claim flow they should never have
+ * seen — the exact regression against the `email -> users.id` lookup this
+ * function replaced.
+ *
+ * Both legs are keyed on the SAME normalised value: `identityKeys` lowercases
+ * and trims, `find_login_identity` lowercases internally, and
+ * `set_onboarding_profile` stores `lower(btrim(p_email))` — so a plain `.eq`
+ * on the mirror is an exact match, not a case-sensitivity gamble. `deleted_at
+ * IS NULL` because a soft-deleted profile must not adopt new applications, and
+ * `public.users.email` is UNIQUE (20260530120000) so this can never be
+ * ambiguous.
+ *
+ * `id` is shared by both tables (`handle_new_user` mirrors with the same id),
+ * so either leg returns something `decideProvision` can compare with `byPhone`.
+ * Throws rather than swallowing: a lookup read as "nobody has this email"
+ * mints a duplicate account for an existing user.
+ */
+async function findIdentityByEmail(
+  admin: AdminClient,
+  email: string,
+): Promise<{ id: string } | null> {
+  const authRow = await findAuthIdentity(admin, { email });
+  if (authRow) return authRow;
 
-  for (let i = 0; i < unique.length; i += USER_LOOKUP_CHUNK) {
-    const chunk = unique.slice(i, i + USER_LOOKUP_CHUNK);
-    const { data, error } = await admin.from("users").select("id, email").in("email", chunk);
-    if (error) {
-      log("error", "user_lookup_failed", {
-        chunkSize: chunk.length,
-        message: error.message,
-        note: "applications in this chunk insert with user_id NULL; the poller never updates, so they stay unlinked until fixed by hand",
-      });
-      continue;
+  const { data, error } = await admin
+    .from("users")
+    .select("id")
+    .eq("email", email)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) throw new Error(`users mirror email lookup failed: ${error.message}`);
+  const id = (data as { id?: string } | null)?.id;
+  return id ? { id } : null;
+}
+
+/**
+ * The applicant's phone as GoTrue must receive it, or null when it cannot be
+ * trusted as a real number.
+ *
+ * `normalizePhone` accepts only a 10-digit subscriber number or a 12-digit
+ * `91`-prefixed one and returns the 10 digits, which we render as
+ * `+91XXXXXXXXXX` — the canonical form `legacy_enrolments`, verify-msg91-otp
+ * and `claim_legacy_enrolments_for_user` all agree on. Deliberately NOT
+ * `e164()`: that only prepends a `+`, so raw form text of "9788385577" would
+ * mint the auth row with "+9788385577", a number that exists nowhere and that
+ * no MSG91 login could ever present.
+ *
+ * Anything else (a foreign number, a typo, a landline) returns null and the
+ * account is minted email-only. That is a smaller loss than binding a login
+ * key to digits nobody can prove.
+ */
+function mintablePhone(raw: string | null): string | null {
+  const digits = normalizePhone((raw ?? "").trim());
+  return digits ? `+91${digits}` : null;
+}
+
+/**
+ * `app_metadata` stamped on every account this intake mints. `app_metadata` is
+ * service-role-only (a user can never write it, unlike `user_metadata`), which
+ * is what makes it usable as a TRUST SIGNAL: it marks an identity whose email
+ * and phone are still nothing but unauthenticated form text.
+ *
+ * `claim_legacy_enrolments_for_user` (hardened in
+ * 20260727120000_cohort_applications_pending_claim.sql) reads this flag and
+ * grants NOTHING while it is set and no channel is confirmed. Without it,
+ * minting a user here fires the legacy-entitlement claim on an unverified
+ * email and hands a stranger a real TagMango customer's paid catalogue —
+ * `handle_new_user` → `public.users` INSERT → `users_claim_legacy_enrolments`
+ * with `v_email_claims_ok = (TG_OP = 'INSERT') = true`. That INSERT-only
+ * carve-out was written on the assumption that an INSERT into `public.users`
+ * only ever follows a VERIFIED auth path; this function is the first intake
+ * that breaks the assumption, so it must announce itself.
+ *
+ * The flag is never cleared. The gate stops applying the moment GoTrue records
+ * a `phone_confirmed_at`/`email_confirmed_at` on the row — i.e. when a real OTP
+ * finally proves a channel — and parts 4 and 5 of that migration are what
+ * actually re-drive the withheld claim at that point (the phone arm on the
+ * mirror write, the email arm on first email confirmation). Neither arm can
+ * fire off the gate alone: this function's own INSERT is the only event the
+ * email-keyed claim was ever allowed to run on.
+ */
+const INTAKE_APP_METADATA = {
+  levelup_unverified_intake: true,
+  provisioned_by: "tally_intake",
+} as const;
+
+/** What provisioning decided for one application, in the shape the row needs. */
+interface ProvisionResult {
+  /** The auth uid to stamp, or null (no identity, collision, or failure). */
+  userId: string | null;
+  /** Collision only: the row is inserted unlinked and awaits an OTP claim. */
+  pendingClaim: boolean;
+  /** `created | existing | collision | skipped | error`, for the summary. */
+  status: ProvisionOutcome["status"] | "error";
+}
+
+/**
+ * Resolve — and if necessary CREATE — the applicant's auth identity, so the
+ * application is already bound to an `auth.uid` before it is inserted and the
+ * applicant never meets a signup screen (REQ-IDENT-1).
+ *
+ * The decision is `decideProvision`, which is pure and unit-tested; this
+ * function performs the two lookups, applies the INTAKE POLICY the pure module
+ * deliberately refuses to own, and does the one write that is left.
+ *
+ * ── WHAT A MINTED ACCOUNT CARRIES ───────────────────────────────────────────
+ * BOTH identifiers, BOTH unconfirmed, plus `INTAKE_APP_METADATA`. Carrying
+ * both is the whole point of the phase — "one passwordless `auth.users` row
+ * carries both phone and email, so a later OTP on EITHER channel resolves to
+ * the same `auth.uid`" — and it is what keeps the applicant away from a signup
+ * screen. Minting email-only would dead-end the phone tab: `find_login_identity`
+ * would find no row for the number, `verify-msg91-otp` would return
+ * `signup_requires_email_and_name`, Login.tsx would say "No account with this
+ * number. Sign up first.", and the ensuing signup would mint a SECOND account
+ * on `syntheticEmail(phone)` — one human, two identities, and the application
+ * stamped on the one they are not signed into.
+ *
+ *  • `email_confirm: false` / `phone_confirm: false` — the
+ *    guest-create-order/index.ts:247-255 reasoning. Both values are
+ *    unauthenticated form text; the account must be INERT (no entitlements,
+ *    nothing confirmed) until a real OTP proves a channel.
+ *
+ *  • ACCEPTED RESIDUAL RISK, stated plainly because it is inherent to the
+ *    design and not to this implementation: `auth.users.phone` is the phone-OTP
+ *    login key and `find_login_identity` matches it with no reference to
+ *    `phone_confirmed_at`, so a number written here is reachable before anyone
+ *    proves it. Someone who submits the public form with {their own email, a
+ *    stranger's number} pre-binds that number, and the stranger's first genuine
+ *    MSG91 OTP resolves into an account whose email the submitter controls. It
+ *    is bounded: a number that ALREADY belongs to an account is never touched
+ *    (that is `phone_taken` → parked, below), so only unregistered numbers can
+ *    be pre-bound. Closing it properly means teaching `find_login_identity` to
+ *    prefer a confirmed row — a change to the live login path for every user,
+ *    which is neither this task's file nor its blast radius.
+ *
+ *  • NO `user_metadata.phone`, which is a DIFFERENT field from the above.
+ *    `handle_new_user` mirrors `NEW.raw_user_meta_data->>'phone'` (never
+ *    `NEW.phone`) into the UNIQUE `public.users.phone`, where an unproven value
+ *    both feeds `claim_legacy_enrolments_for_user`'s PHONE-keyed arm and squats
+ *    the column against its real owner. The mirror phone is written later, by
+ *    `sync_confirmed_phone_to_users` (20260727120000), and only once GoTrue has
+ *    recorded a `phone_confirmed_at` — i.e. only with proof.
+ *
+ * ── INTAKE POLICY ON THE THREE COLLISION REASONS ────────────────────────────
+ * All three are handled IDENTICALLY: insert with `user_id` NULL +
+ * `pending_claim`, mint nothing, join nothing. That is the brief's S-2 spec
+ * ("`collision` → leave `user_id` NULL and set `pending_claim = true`"), the
+ * shared module's authoritative statement of the trigger, and inviolable rule
+ * 3 (never a silent merge).
+ *
+ * There is no carve-out for `email_taken`, and the tempting one — "the email
+ * has an account, the phone has none, so there is nothing to merge, just
+ * stamp it" — is a hole: nothing at intake proves the email. Anyone could POST
+ * the public form with a stranger's address and their own phone, and the
+ * application (their name, phone, city, occupation, bio) would be stamped onto
+ * the stranger's `user_id`, surfaced to the stranger by
+ * `students_read_own_applications`, and rendered by S-5 as the stranger's own
+ * applicant stage. The ordinary "someone who already has an account applies"
+ * case does NOT land here anyway: their email and phone both resolve to the
+ * same uid, which is `existing`, and `findIdentityByEmail`'s mirror leg is
+ * what makes that hold for the phone-first user base.
+ *
+ * CONSEQUENCE, for S-4: a parked row need not carry both channels. An
+ * `email_taken` collision on a submission with no usable phone parks a row
+ * whose only channel is the email — and the claim must prove the channel the
+ * caller has NOT already used, so such a row cannot be self-claimed. It is
+ * rare (the Tally form asks for a phone) and it is a stuck row rather than a
+ * wrong bind, which is the correct way round.
+ *
+ * FAIL-SOFT throughout: every failure path returns `userId: null` and the
+ * caller still inserts the application. It is logged at ERROR because the NULL
+ * never self-heals — this function never updates an existing row.
+ */
+async function provisionApplicant(
+  admin: AdminClient,
+  applicant: { email: string; phone: string | null; fullName: string },
+): Promise<ProvisionResult> {
+  const keys = identityKeys({ email: applicant.email, phone: applicant.phone });
+
+  try {
+    const byEmail = keys.email ? await findIdentityByEmail(admin, keys.email) : null;
+    const byPhone = keys.phone ? await findAuthIdentity(admin, { phone: keys.phone }) : null;
+    const outcome = decideProvision(keys, { byEmail, byPhone });
+
+    switch (outcome.status) {
+      case "existing":
+        return { userId: await mirroredUserId(admin, outcome.userId), pendingClaim: false, status: "existing" };
+
+      case "collision": {
+        // All three reasons, one handling. See the INTAKE POLICY note above.
+        log("warn", "provision_collision", {
+          reason: outcome.reason,
+          note: "an existing account already owns one of the applicant's identifiers, and intake cannot prove the applicant is that account; inserted with user_id NULL + pending_claim, nothing merged, no user minted. Resolved interactively at first sign-in by an OTP on the channel the caller has not already used.",
+        });
+        return { userId: null, pendingClaim: true, status: "collision" };
+      }
+
+      case "created": {
+        // An email is the only thing we may key a new identity on (GoTrue
+        // needs one to mint a magiclink session, and `handle_new_user` mirrors
+        // it), so a submission without a usable one is left unlinked rather
+        // than minting a phone-only account. Tally guarantees an email and the
+        // column is NOT NULL, so this is a guard, not a path.
+        if (!keys.email) {
+          log("warn", "provision_no_email", {
+            note: "application carries no usable email; inserted with user_id NULL rather than minting an account with no way to mint a session",
+          });
+          return { userId: null, pendingClaim: false, status: "skipped" };
+        }
+        // BOTH identifiers, both unconfirmed — the phase requirement. A phone
+        // we cannot render as a real +91 number is dropped rather than guessed
+        // at; the account is then email-only and the applicant's phone tab
+        // falls back to today's signup, which is the pre-phase behaviour.
+        const phone = mintablePhone(applicant.phone);
+        if (keys.phone && !phone) {
+          log("warn", "provision_phone_unmintable", {
+            note: "the application's phone is not a 10-digit or 91-prefixed 12-digit number, so the auth identity is minted email-only and a later phone OTP will not resolve to it",
+          });
+        }
+        const { data: created, error: createErr } = await admin.auth.admin.createUser({
+          email: keys.email,
+          ...(phone ? { phone } : {}),
+          email_confirm: false,
+          phone_confirm: false,
+          user_metadata: { full_name: applicant.fullName },
+          app_metadata: { ...INTAKE_APP_METADATA },
+        });
+        if (createErr || !created?.user?.id) {
+          throw new Error(createErr?.message ?? "createUser returned no user");
+        }
+        return {
+          userId: await mirroredUserId(admin, created.user.id),
+          pendingClaim: false,
+          status: "created",
+        };
+      }
+
+      case "skipped":
+        return { userId: null, pendingClaim: false, status: "skipped" };
     }
-    for (const user of (data ?? []) as { id: string; email: string | null }[]) {
-      if (user.email) byEmail.set(user.email.toLowerCase(), user.id);
-    }
+  } catch (err) {
+    log("error", "provision_failed", {
+      message: err instanceof Error ? err.message : String(err),
+      note: "the application is still inserted, with user_id NULL; the poller never updates, so it stays unlinked until fixed by hand",
+    });
+    return { userId: null, pendingClaim: false, status: "error" };
   }
-  return byEmail;
+}
+
+/**
+ * `cohort_applications.user_id` references `public.users(id)`, not
+ * `auth.users(id)`. `handle_new_user()` (20260405070345) mirrors one to the
+ * other with the SAME id on AFTER INSERT, so a freshly-created uid is always
+ * present — but an auth row that predates that trigger need not be, and
+ * stamping an unmirrored uid would fail the FK and cost us the whole
+ * application. So the uid is confirmed against the mirror before it is used,
+ * and an unmirrored one degrades to NULL: unlinked, not lost.
+ */
+async function mirroredUserId(admin: AdminClient, userId: string): Promise<string | null> {
+  const { data, error } = await admin.from("users").select("id").eq("id", userId).maybeSingle();
+  if (error) throw new Error(`users mirror check failed: ${error.message}`);
+  if (data) return userId;
+  log("error", "provisioned_user_not_mirrored", {
+    userId,
+    note: "auth user exists but public.users has no row with that id; user_id left NULL rather than risking the FK and losing the application",
+  });
+  return null;
 }
 
 /** How many un-opted-in offerings the warn log names before it truncates. */
@@ -722,14 +1016,34 @@ Deno.serve(async (req) => {
         fresh.push(row);
       }
 
-      // Link existing accounts in one chunked read rather than per row.
-      const userIds = await lookupUserIds(admin, fresh.map((row) => row.email));
-
       let insertFailed = 0;
       let lastInsertError = "";
+      let provisionCreated = 0;
+      let provisionCollisions = 0;
+      let provisionFailed = 0;
 
       for (const row of fresh) {
-        row.user_id = userIds.get(row.email.toLowerCase()) ?? null;
+        // IDENTITY FIRST, THEN THE INSERT (phase SP, see the header). `fresh` is
+        // already past the response-id/email dedupe, so this only ever runs for
+        // a genuinely-new application — which is what makes it idempotent
+        // across ticks. It replaces the old `email → users.id` lookup: that
+        // single key could only ever LINK an account that happened to exist,
+        // whereas this also creates the missing one and refuses to guess when
+        // the two keys disagree.
+        const provisioned = await provisionApplicant(admin, {
+          email: row.email,
+          phone: row.phone,
+          fullName: row.full_name,
+        });
+        row.user_id = provisioned.userId;
+        // Only ever SET, never cleared: the column defaults to false, so an
+        // ordinary row is left alone rather than carrying a redundant field.
+        // A collision row DOES name it, which is why the migration has to be
+        // applied before this function is deployed (see the header).
+        if (provisioned.pendingClaim) row.pending_claim = true;
+        if (provisioned.status === "created") provisionCreated++;
+        else if (provisioned.status === "collision") provisionCollisions++;
+        else if (provisioned.status === "error") provisionFailed++;
 
         const { error: insertErr } = await admin.from("cohort_applications").insert(row);
         if (insertErr) {
@@ -785,6 +1099,9 @@ Deno.serve(async (req) => {
         summary.insertFailed = insertFailed;
         summary.error = `${insertFailed} of ${fresh.length} insert(s) failed (last: ${lastInsertError})`;
       }
+      if (provisionCreated > 0) summary.provisionCreated = provisionCreated;
+      if (provisionCollisions > 0) summary.provisionCollisions = provisionCollisions;
+      if (provisionFailed > 0) summary.provisionFailed = provisionFailed;
 
       // The recoverable pool, finally visible as a number.
       log("info", "form_polled", {
@@ -801,6 +1118,9 @@ Deno.serve(async (req) => {
         created: summary.created,
         skipped: summary.skipped,
         insertFailed: summary.insertFailed ?? 0,
+        provisionCreated: summary.provisionCreated ?? 0,
+        provisionCollisions: summary.provisionCollisions ?? 0,
+        provisionFailed: summary.provisionFailed ?? 0,
         undatedSkipped: summary.undatedSkipped ?? 0,
         crossOfferingCollisions: summary.crossOfferingCollisions ?? 0,
         partialCount: summary.partialCount,
