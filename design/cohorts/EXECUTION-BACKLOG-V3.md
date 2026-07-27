@@ -36,7 +36,7 @@
 | OTP-1 (ship email OTP in v1) | Phase SP | ✅ **RULED yes, v1** | build behind the Tier-1 gate; phone path untouched fallback |
 | MEMBER-1 three-tier room access | Phase ROOM (R0) | ✅ **RULED** | `accepted` = veil only (offering-chrome, **NO membership row, NO room read, NO preview RPC**); `confirmation_paid` = scoped `pre_member` (redacted); `enrolled` = full `member`. Adversarial suite (R10/R11) must prove the boundary |
 | CHANNEL-KEY-1 (channel storage = columns on `cohort_room_posts`, not a table) | Phase ROOM (R0/R3) | ✅ **defaulted** (DATA §4.7) | land `channel_key` + `cohort_week_id` columns **dark in R0** (delta below) |
-| `live_sessions.week_id` FK-type check (declared text, FK'd to uuid) | Phase ROOM (R0) | ⏳ **mechanical, open** | introspect prod; `ALTER` if mismatched — a pre-R0 chore, not a design decision |
+| `live_sessions.week_id` FK-type check (declared text, FK'd to uuid) | Phase ROOM (R0) | ✅ **CLOSED 2026-07-21** | Already fixed on prod: `week_id` is `uuid` with `live_sessions_week_id_fkey → cohort_weeks(id) ON DELETE SET NULL`. Verified 2026-07-22; the migration was applied directly to prod without a committed file, now reconstructed as `20260721000000_live_sessions_week_id_fk.sql` |
 | TARGET-1 (provisional numeric targets) | All | ⏳ set after batch 1 | instrument events first (Phase RC); real targets follow the first reconciled batch |
 | `play-publish.mjs --rollout <fraction>` flag | Phase ROOM native train | ⏳ **prerequisite** | add the flag before any Tier-1 native room release (Rollout §12 Q3) |
 
