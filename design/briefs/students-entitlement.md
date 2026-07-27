@@ -1,80 +1,67 @@
 # PHASE ST — Students already in the system: see what you bought
-*Rahul, 2026-07-27: "any of those 60,000+ students, if they go ahead and use their phone number or email that they have given on TagMango during an order, they should be able to see their offering very clearly." Prior work exists; this phase solidifies it and makes it bug-free.*
+*Rahul, 2026-07-27: any of the 60,000+ students who log in with the phone/email they used on TagMango must see their offering clearly. Prior work exists; this phase solidifies it.*
 
-## TERMINOLOGY (Rahul's instruction)
-Never say **"legacy students"** in user-facing copy, comments, or UI. They are **students already in the system**. The DB tables are named `legacy_enrolments` / `legacy_program_mapping` — those names stay (renaming them is a separate, riskier migration), but nothing a student reads may use the word.
+> **v2 — this brief was REWRITTEN after the plan-check disproved three claims in v1.** The corrections are recorded below because two of them are the difference between fixing this and causing an incident.
 
-## THE RULING THAT DEFINES THIS PHASE (Rahul, verbatim)
+## TERMINOLOGY
+Never "legacy students" in student-facing copy or UI — they are **students already in the system**. The DB tables keep their `legacy_*` names (renaming is a separate, riskier migration). Admin-only strings ("Legacy mappings" nav, `/admin/legacy-mappings`) are OUT of scope for this phase.
+
+## RAHUL'S RULING (the spec)
 > "Archived should mean that people who bought it can only see it, and the others who are new and have not bought it cannot see it on the home or browse."
 
-So `offerings.status = 'archived'` means exactly two things, and they must stop being conflated:
-- **NOT discoverable** — excluded from home, browse, catalog, recommendations, search, and any purchase path. A new visitor must never encounter it.
-- **FULLY visible to an entitled owner** — a student who bought it sees it in their library, can open it, and gets its resources, exactly as if it were active.
+- **NOT discoverable** — no home, browse, catalog, recommendations, search, or **purchase path**, for anyone, owners included.
+- **Fully visible to an entitled owner** in their own library: open it, get its resources.
 
-## VERIFIED DIAGNOSIS (all checked against prod `ivkvluezuiojovpotlyb`, 2026-07-27)
-| # | Defect | Evidence |
-|---|---|---|
-| **A** | `claim_legacy_enrolments_for_user` is **never called** — not from the client, not from any edge function | `grep -rn` across `src/` + `supabase/functions/` returns nothing |
-| **B** | Nothing student-facing reads `legacy_enrolments`; only admin pages do. `MyCoursesPage` reads only `enrolments` (**63 rows**), so **73,926** rows are invisible | `MyCoursesPage.tsx:74-80` |
-| **C** | **1,067 mappings covering 67,129 students point at ARCHIVED offerings**, and every student surface filters `status='active'` | `useEnrolledProgress.ts:84`, `useEnrolmentCounts.ts:34`, `MyCoursesPage.tsx:78,244`, `CourseDetail.tsx:187,237,246`, `MySessionsPage.tsx:50` |
-| **D** | `legacy_enrolments` loaded once **2026-05-24**; **1,810 orders / 1,276 students** since are absent | all 73,926 rows share one `created_at` |
-| **E** | 16 recently-sold products unmapped | see rulings |
-
-**C is the dominant defect: ~92% of mapped students are entitled to archived offerings and therefore see nothing.**
-
-## RULINGS (do not re-litigate)
-- **Film Direction 101 Workshop #Batch 407/408/409 → the EXISTING archived offering "The Film Direction 101 Workshop"** (batches 10–39 already map there). Do not create a new offering.
-- **"The Ultimate Learning Subscription -AG/-KS/-LK/-ND/-RB/-VR" stay `pending`.** Do NOT guess whether they grant one masterclass or all. Leave unmapped, surface them in the report.
-- **Forge products are SKIPPED entirely** — Forge is a separate app with its own Supabase. Exclude every Forge title from the sync; report the count.
-- Screenwriting batches 415/416/417 → **Screenwriting & Storytelling** (older batches already map there).
-- Creators Academy - 1 → **Creator Academy**. Video Editing Academy - 6 / -N → **Video Editing Academy**.
+## WHAT v1 GOT WRONG (do not repeat)
+1. **v1 blamed client-side `.eq("status","active")` filters. The real blocker is RLS.**
+   `CREATE POLICY offerings_read_active ON offerings FOR SELECT USING (status = 'active' OR is_admin())` (`20260405063223_…sql:100`, never relaxed). A non-admin **cannot SELECT an archived offering at all** — the rows never leave Postgres, so no client change can work. Likewise `legacy_enrolments` and `legacy_program_mapping` are **admin-only SELECT** (`20260524130000:77`, `20260524180000:108`), so a student-side entitlement query returns empty for everyone.
+2. **v1 told the crew to strip eight `status='active'` filters. SIX OF THEM ARE `enrolments.status`, NOT `offerings.status`** — `MyCoursesPage:78`, `useEnrolledProgress:84`, `useEnrolmentCounts:34`, `MySessionsPage:50`, `CourseDetail:187`, `CourseDetail:246`. `enrolments` carries `revoked_at / revoked_by / revoked_reason / expires_at`, and **`CourseDetail:187` IS the entitlement check**. Stripping those would have handed course access to every revoked and refunded student. **Only `CourseDetail:237` and `MyCoursesPage:244` are `offerings.status`.**
+3. **`claim_legacy_enrolments_for_user` is NOT an RPC.** It is `RETURNS trigger`, zero-arg, fired by `CREATE TRIGGER users_claim_legacy_enrolments AFTER INSERT OR UPDATE OF phone, email ON public.users` (`20260524130000:153`). PostgREST does not expose trigger functions and it is absent from `types.ts`, so `supabase.rpc(...)` would not even typecheck. It already fires on signup — the low claim count reflects only 247 app users, not a broken trigger.
 
 ---
 
-## Task ST-1 — One entitlement resolver, used everywhere (`tier: 1`)
-**Files:** `src/hooks/useMyEntitlements.ts` *(new)*, `src/lib/entitlements.ts` *(new, pure + unit-tested)*, `src/lib/__tests__/entitlements.test.ts` *(new)*
-**Spec:** A single source of truth for "what is this student entitled to", so the archived rule cannot drift between five call sites.
-1. `useMyEntitlements(userId)` returns the union of: rows in `enrolments` (status active) **and** rows in `legacy_enrolments` claimed by this user, resolved through `legacy_program_mapping` to `offering_id`. De-duplicate by `offering_id`.
-2. Pure helper `resolveVisibleOfferings({ entitledOfferingIds, offerings, surface })` in `entitlements.ts` implementing the ruling:
-   - `surface: 'library'` → include an offering if the student is entitled, **regardless of status** (active OR archived).
-   - `surface: 'catalog'` → include only `status='active'`, **minus nothing** — archived never appears, even for owners (they reach it from their library, not the shop).
-   - An offering that is neither entitled nor active is never returned by either surface.
-3. Unit-test the matrix exhaustively: {entitled, not-entitled} × {active, archived, draft} × {library, catalog}.
-**Acceptance:** the pure matrix is fully covered by tests; no call site re-implements the rule.
+## Task ST-0 — The database change (owns ALL DB work) `🔴 Tier 1`
+**Files:** `supabase/migrations/<ts>_student_entitlement_visibility.sql` *(new)*, `src/integrations/supabase/types.ts` *(regenerated)*
+**Spec:**
+1. **Relax `offerings` SELECT so an entitled owner can read their archived offering — and nobody else can.** Keep `status='active' OR is_admin()`, and ADD: the caller is entitled, i.e. an `enrolments` row for `auth.uid()` that is active and not revoked/expired, OR a `legacy_enrolments` row with `claimed_by_user_id = auth.uid()` whose `offering_id` matches. Non-entitled users must see exactly what they see today.
+2. **Add a narrow student SELECT policy on `legacy_enrolments`: `claimed_by_user_id = auth.uid()`.** Nothing else. A student may read only their own claimed rows. `legacy_program_mapping` stays admin-only — **do not join it client-side**; `offering_id` is already denormalised onto `legacy_enrolments`.
+3. **Add a real callable RPC `claim_my_student_enrolments()`** (SECURITY DEFINER, zero-arg, uses `auth.uid()`): claims `legacy_enrolments` rows matching the caller's phone (last-10 normalised, primary) or verified email (fallback) to their `user_id`. **Idempotent.** It must NOT silently revert the two deliberate decisions in the existing trigger: the `TG_OP='INSERT'`-only guard on email claims (an unverified-email guard) and the `app.suppress_legacy_claim` GUC. Mirror that intent — only claim by email when the caller's email is verified.
+4. Migration must be additive, reversible (include the DROP/undo in a comment block), and contain **no `RAISE EXCEPTION`**.
+**Acceptance:** an adversarial suite proves — an entitled student reads their archived offering; a NON-entitled authenticated user gets **0 rows** for that same offering; an anonymous user gets 0; a student reads only their own `legacy_enrolments` rows and no one else's; `legacy_program_mapping` remains unreadable to non-admins; the RPC is idempotent and claims nothing it shouldn't.
+**Gate:** Tier-1 — `bugfix-council` + the adversarial suite green on a **shadow project** before `db push` to `ivkvluezuiojovpotlyb`. Rahul has pre-authorised applying once both are green.
 
-## Task ST-2 — Apply the rule to every student surface (`tier: 1`)
-**Files:** `src/pages/MyCoursesPage.tsx`, `src/pages/CourseDetail.tsx`, `src/pages/MySessionsPage.tsx`, `src/hooks/useEnrolledProgress.ts`, `src/hooks/useEnrolmentCounts.ts`
-**Spec:** Replace the bare `.eq("status","active")` in each student-facing read with the ST-1 resolver.
-- **Library surfaces** (`MyCoursesPage` enrolled section, `useEnrolledProgress`, `useEnrolmentCounts`, `MySessionsPage`) must include archived offerings the student is entitled to.
-- **Catalog/recommendation surfaces** (`MyCoursesPage`'s recommendations block at ~:244, and anything feeding home/browse) keep excluding archived — a non-owner must never see it.
-- `CourseDetail` (~:187/:237/:246): an **entitled** student may open an archived offering and see its content/resources; a **non-entitled** visitor gets the existing not-available path, NOT a 500 and not a silent empty page.
-- Do NOT widen anything for non-entitled users. Entitlement is the gate; status is not.
-**Acceptance:** an entitled student sees an archived offering in their library and can open it; a non-entitled visitor cannot see or open it anywhere; home/browse show zero archived offerings for anyone; existing active-offering behaviour is byte-identical.
+## Task ST-1 — One entitlement resolver `🟡`
+**Files:** `src/lib/entitlements.ts` *(new)*, `src/hooks/useMyEntitlements.ts` *(new)*, `src/lib/__tests__/entitlements.test.ts` *(new)*
+**Spec:** Sequential after ST-0 (needs its policies + types). Pure `resolveVisibleOfferings({ entitledOfferingIds, offerings, surface })` with `surface: 'library' | 'catalog'` — library includes entitled offerings regardless of status; catalog includes only `active`, archived never appears even for owners. `useMyEntitlements(userId)` returns the union of active non-revoked `enrolments` and the caller's own claimed `legacy_enrolments` rows, **reading `offering_id` straight off `legacy_enrolments`** (no `legacy_program_mapping` join — it stays admin-only). A NULL `offering_id` (unmapped purchase) is excluded from entitlements without erroring. Do NOT persist this payload in `queryClient` — it decides access. Exhaustive tests over {entitled, not-entitled} × {active, archived, draft} × {library, catalog}.
 
-## Task ST-3 — Claim on login, so entitlement actually happens (`tier: 1` — auth path)
-**Files:** `src/contexts/AuthContext.tsx`, `supabase/functions/claim-student-enrolments/index.ts` *(new, if a server-side call is the safer shape)*
-**Spec:** `claim_legacy_enrolments_for_user` exists and is called by nobody. Wire it so that when a student signs in (phone OTP **or** email OTP), their rows in `legacy_enrolments` matching their phone **or** email are claimed to their `user_id`.
-- Match on **phone (primary) and email (fallback)**, using the existing `_shared/phone.ts` normalisation — the same last-10 rule `find_login_identity` uses, so a `+91`/bare/`0`-prefixed number all resolve.
-- **Idempotent**: claiming twice must not duplicate or thrash `claimed_at`.
-- **Non-blocking**: if the claim fails, sign-in must still succeed — a student must never be locked out because the claim errored. Log and continue.
-- Must run for a student who signed up BEFORE their purchase was synced (so re-run on each sign-in, cheaply, not just at account creation).
-**Acceptance:** a fixture student whose `legacy_enrolments` rows match by phone-only, by email-only, and by both, ends up with all of them claimed after one sign-in; a second sign-in changes nothing; a forced RPC failure still yields a successful login.
+## Task ST-2 — Apply the rule, and CLOSE THE PURCHASE HOLES `🔴`
+**Files:** `src/pages/MyCoursesPage.tsx`, `src/pages/CourseDetail.tsx`, `src/pages/ProfilePage.tsx`, `src/components/**/QuickPick.tsx`, `src/pages/CheckoutPage.tsx`, `src/lib/queryClient.ts`
+**Spec:** Sequential after ST-1.
+- **ONLY touch `offerings.status` filters**: `CourseDetail:237`, `MyCoursesPage:244`, `ProfilePage:752`.
+- **DO NOT TOUCH any `enrolments.status` filter** — `MyCoursesPage:78`, `useEnrolledProgress:84`, `useEnrolmentCounts:34`, `MySessionsPage:50`, `CourseDetail:187`, `CourseDetail:246` are revocation/expiry checks and `CourseDetail:187` is the entitlement check itself. Touching them grants access to revoked and refunded students. Those five files are NOT in this task's file list for that reason.
+- **NEW REGRESSION SURFACE created by ST-0 — close it.** Relaxing offerings RLS makes an owner's archived offering readable on *every* surface. Three purchase/discovery sites have **no status filter today** and would begin offering a closed product for sale: `QuickPick.tsx:102`, `CheckoutPage.tsx:338`, `CheckoutPage.tsx:426`. Add an explicit `status='active'` guard to each. This is the sharpest way this phase could violate Rahul's own ruling.
+- `ChapterViewer.tsx:406/426` and `PublicOffering.tsx:1219` already use `.in("status",["active","archived"])` — verify they remain correct under the new policy; change only if wrong.
+**Acceptance:** an entitled student sees and opens their archived offering; a non-entitled visitor sees it nowhere and cannot reach checkout for it; home/browse/QuickPick/Checkout show zero archived offerings to anyone; active-offering behaviour byte-identical; no revocation filter altered (diff-verify those five files are untouched).
 
-## Task ST-4 — Sync the missing two months + close the mappable gaps (`tier: 1` — prod data)
+## Task ST-3 — Claim on every sign-in `🔴 auth path`
+**Files:** `src/contexts/AuthContext.tsx`
+**Spec:** Sequential after ST-0 (calls its new RPC). The existing trigger only fires on `users` INSERT/UPDATE of phone/email, and email claims only on INSERT — so a student who signed up **before** their purchase was synced is never claimed. Call `claim_my_student_enrolments()` after a successful sign-in. **Idempotent**, **non-blocking** (a failed claim must never prevent login — log and continue), and cheap enough to run every sign-in. The MSG91 phone-OTP path stays byte-identical.
+
+## Task ST-4 — Sync the missing two months `🔴 prod data`
 **Files:** `scripts/sync-student-enrolments.mjs` *(new)*, `design/students/SYNC-REPORT.md` *(new)*
-**Spec:** A re-runnable, idempotent Node script (repo style: stdlib + fetch, no new deps) that reads the committed export at `LevelUp Core/TagMango LevelUp Data/orders.csv` and upserts into `legacy_enrolments`.
-1. **Idempotent on `legacy_order_id`** (the TagMango order `_id`). Re-running must insert nothing new.
-2. Only ingest orders whose status is completed and `isRefunded` is false.
-3. Resolve `offering_id` via `legacy_program_mapping` on `legacy_program_name`. Unmapped → still insert the row with `offering_id` NULL (so the purchase is recorded and claimable later) and count it in the report — never drop a student's purchase silently.
-4. **Skip every Forge product** (title matches `forge`); count them separately.
-5. Add the resolvable mappings named in the rulings above (Film Direction 407/408/409, Screenwriting 415/416/417, Creators Academy - 1, Video Editing Academy - 6 and -N). Leave the six `Ultimate Learning Subscription -XX` rows `pending`.
-6. `--dry-run` prints the plan and writes nothing. Default is dry-run; require an explicit `--apply`.
-7. Write `SYNC-REPORT.md`: rows inserted, skipped-Forge, unmapped-but-recorded, still-pending mappings, and the resulting per-offering student counts.
-**Acceptance:** dry-run reports ~1,810 candidate orders / ~1,276 students; `--apply` is idempotent on a second run (0 new); no Forge row inserted; no purchase silently dropped.
+**Spec:** Independent of ST-0/1/2/3 — may run in parallel from the start. Re-runnable idempotent Node script (stdlib + fetch, no new deps, in the style of `scripts/backfill-thumbnails.mjs`) reading `LevelUp Core/TagMango LevelUp Data/orders.csv` and upserting `legacy_enrolments` on prod (`ivkvluezuiojovpotlyb`; `SUPABASE_PAT` from the vault, secrets by name, never echoed).
+1. Idempotent on `legacy_order_id` — a second run inserts 0.
+2. Completed, non-refunded orders only.
+3. Unmapped product → still insert with `offering_id` NULL so the purchase is recorded and claimable later; count it. **Never silently drop a purchase.**
+4. **Skip every Forge title** (`/forge/i`) — separate app. Count separately.
+5. Add mappings: Film Direction 101 `#Batch 407/408/409` → the **existing ARCHIVED** offering "The Film Direction 101 Workshop"; Screenwriting `#Batch 415/416/417` → "Screenwriting & Storytelling"; "The LevelUp Creators Academy - 1" → "Creator Academy"; "The LevelUp Video Editing Academy - 6" and "-N" → "Video Editing Academy". **Leave the six "Ultimate Learning Subscription -XX" rows `pending`** — Rahul ruled do-not-guess.
+6. **Default dry-run**; require `--apply`.
+7. ⚠️ `--apply` fires `grant_enrolment_after_offering_resolved`, retro-granting real enrolments to already-claimed students. Say so in the report.
+**Acceptance:** dry-run reports ~1,810 candidate orders / ~1,276 students; `--apply` idempotent on re-run; zero Forge rows; no purchase dropped.
 
 ---
 ## Phase acceptance
-- `npx vitest run` green · `npm run build` green · `npm run typecheck:functions` exits 0 · lint no NEW errors.
-- **Security invariant: nothing here may widen access for a NON-entitled user.** Entitlement gates content; `status` gates discovery. A logged-out or non-entitled visitor must see exactly what they see today.
-- No user-facing string contains "legacy".
-- The payment pipeline and `ApplicationStatus.tsx` `isIOS()` guard remain untouched.
+- `npx vitest run` green · `npm run build` green · lint no NEW errors. *(There is no `typecheck:functions` script on this branch — it lives on the unmerged TP branch. Do not add it here.)*
+- **Security invariant: nothing may widen access for a NON-entitled user.** Entitlement gates content; status gates discovery; revocation filters are untouchable.
+- No student-facing string contains "legacy".
+- The payment pipeline and the `ApplicationStatus.tsx` `isIOS()` guard remain untouched.
