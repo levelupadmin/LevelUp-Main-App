@@ -1,157 +1,148 @@
 -- ============================================================
 -- HOTFIX: students who already bought something cannot sign up
+--         (and the two claim paths must not become theft paths)
 -- ============================================================
 --
 -- SEVERITY: production incident. `claim_legacy_enrolments_for_user` runs as
 -- `AFTER INSERT OR UPDATE OF phone, email ON public.users`. An exception in an
--- AFTER trigger ABORTS THE TRANSACTION, so the failures below do not merely
--- skip a claim — they prevent the `users` row being written at all. Any student
--- whose phone or email matches one of the 73,865 unclaimed `legacy_enrolments`
--- rows cannot complete signup, and cannot change their phone or email after.
--- 247 accounts against 67,722 buyers is not slow adoption; it is a blocked door.
+-- AFTER trigger ABORTS THE TRANSACTION, so its failures did not skip a claim —
+-- they blocked the signup. Any student matching one of the 73,865 unclaimed
+-- `legacy_enrolments` rows could not create an account. 247 accounts against
+-- 67,722 buyers was a blocked door, not slow adoption.
 --
--- FOUR DEFECTS (1-3 verified against prod 2026-07-27; 4 found by the council):
+-- ── The four defects ────────────────────────────────────────────────────
+-- 1. `source='tagmango_migration'` violates `enrolments_source_check` (allows
+--    checkout/admin_grant/admin_manual/bulk_import/migration/manual/import/
+--    free) → 23514 on every claim. Proof it never once succeeded:
+--    tagmango_migration=0 rows vs migration=59 (which predate the regression).
+--    'migration' is also what the sibling granter already writes for this same
+--    population (20260524180000:236), so it is the only non-conflating value.
+-- 2. No `offering_id IS NOT NULL` filter while `enrolments.offering_id` is NOT
+--    NULL, and 779 unclaimed rows carry a null offering → 23502.
+--    `ON CONFLICT DO NOTHING` absorbs neither: it suppresses UNIQUE only.
+-- 3. The claiming UPDATE stamped pending rows, permanently disqualifying them
+--    from `grant_enrolment_after_offering_resolved`, which requires
+--    `claimed_by_user_id IS NULL`.
+-- 4. SECURITY. The 23514 has been an accidental access control on the WHOLE
+--    SIGNUP since 2026-06-11 — a forged signup currently cannot even commit.
+--    Ending the outage lets it commit, so both claim paths must be gated in
+--    THE SAME migration or we trade an outage for permanent entitlement theft.
 --
--- 1. `source = 'tagmango_migration'` violates `enrolments_source_check`, which
---    allows only checkout/admin_grant/admin_manual/bulk_import/migration/
---    manual/import/free.  → 23514 on EVERY claim. Proof it has never once
---    succeeded: enrolments carries migration=59, checkout=2, manual=2 and
---    tagmango_migration=0. The 59 predate the regression.
---    'migration' is not merely legal, it is the ONLY non-conflating choice —
---    the sibling granter `grant_enrolment_after_offering_resolved` already
---    writes 'migration' for this identical population
---    (20260524180000_legacy_enrolments_v2.sql:236). Any other value would give
---    the same student a different source depending only on whether their
---    mapping happened to be resolved at signup time.
+-- ── Why the gate is `auth.users.phone IS NOT NULL` ──────────────────────
+-- An earlier revision gated on `phone_confirmed_at`. That is INERT: GoTrue's
+-- admin createUser inserts the row and applies phone_confirm as a SEPARATE
+-- UPDATE, so an AFTER trigger on the INSERT sees NULL. Measured on this
+-- database: 242/242 rows have phone_confirmed_at > created_at, ZERO equal,
+-- min delta 5.95ms. That gate would have ended the outage and then claimed
+-- nothing, forever, silently — and "signups succeed" reads exactly like success.
 --
--- 2. The INSERT selects `le.offering_id` with no NOT NULL filter while
---    `enrolments.offering_id` is NOT NULL, and 779 unclaimed rows carry a NULL
---    offering.  → 23502.  (`ON CONFLICT DO NOTHING` suppresses UNIQUE
---    violations only — it absorbs neither 23514 nor 23502.)
+-- `auth.users.phone` is the correct gate: it is written by the server inside
+-- the same INSERT (so it is ordering-independent) and only ever by
+-- verify-msg91-otp AFTER its MSG91 token↔phone binding check (index.ts:147-150,
+-- 266-272). `signInWithOtp` — the anon-key path in Signup.tsx:110 that carries
+-- attacker-supplied `options.data.phone` into `public.users.phone` via
+-- handle_new_user:35 — never populates `auth.users.phone` at all. Verified:
+-- 242 rows have auth phone set; 0 have it set without confirmation following.
 --
--- 3. The claiming UPDATE marked those pending rows claimed, which permanently
---    disqualifies them: `grant_enrolment_after_offering_resolved` fires only
---    when `OLD.offering_id IS NULL AND NEW.offering_id IS NOT NULL AND
---    NEW.claimed_by_user_id IS NULL`. Claiming early strands the purchase.
---
--- 4. ⚠️ SECURITY — the 23514 has been an ACCIDENTAL ACCESS CONTROL since
---    2026-06-11. Simply repairing 1-3 would arm an anon-reachable entitlement
---    theft: `Signup.tsx:110` sends `data: { full_name, phone }` through
---    `signInWithOtp` using the anon key that ships in the client bundle, and
---    `handle_new_user` copies `raw_user_meta_data->>'phone'` VERBATIM into
---    `public.users.phone` (20260530120000:35). Both WHERE branches would then
---    match attacker-supplied values and stamp `claimed_by_user_id`
---    PERMANENTLY — after which the real buyer can never claim, because the
---    trigger requires `claimed_by_user_id IS NULL`. The auth row is created at
---    link-REQUEST time, so the attacker never needs to receive the email.
---    THE FIX IS NOT to drop the email branch: `options.data.phone` is equally
---    forgeable and reaches the phone branch by the same path.
---    THE FIX IS to trust only CONFIRMED AUTH FACTS. `verify-msg91-otp`
---    (index.ts:266-272) creates users with `phone_confirm: true`, so a genuine
---    OTP buyer has `auth.users.phone_confirmed_at` set; `signInWithOtp` never
---    populates `auth.users.phone` at all. Gating on the confirmed auth row
---    keeps every real buyer claiming and closes the forged path.
+-- ── Why the email branch is DELETED, not latched ────────────────────────
+-- `email_confirmed_at` is not ownership proof here. verify-msg91-otp is
+-- verify_jwt=false, takes caller-supplied body.email (index.ts:212), creates
+-- the account with it, then mintSession (:368-391) generateLink+verifyOtp
+-- CONFIRMS whatever address was supplied. ensureSyntheticEmail (:351-366) sets
+-- email_confirm:true outright on an MX-less domain. So the flag can be
+-- manufactured. Deleting the branch costs the target population nothing: when
+-- the signup email is trustworthy it was itself derived from legacy_enrolments
+-- keyed by the OTP-verified phone (:225-244), so the phone branch already
+-- claims those exact rows; and for +91 users auth.users.email is the synthetic
+-- @phone.leveluplearning.in address, which can never match a TagMango row.
+-- This also makes the TG_OP='INSERT' latch moot rather than silently reverted.
 --
 -- HISTORY: 20260603120000 fixed 1 and 2; 20260611130000 rewrote the function
--- eight days later to add the `app.suppress_legacy_claim` GUC and the
--- TG_OP='INSERT' email latch and silently reintroduced both. This is the third
--- time this function has shipped broken, which is why the body is now wrapped
--- in its own exception block: a MISSED CLAIM IS RECOVERABLE, A BLOCKED SIGNUP
--- IS NOT. `handle_new_user`'s own handler catches only `unique_violation`
--- (20260530120000:65-76), so without this wrapper any future constraint,
--- deadlock or statement_timeout in here becomes another signup outage.
+-- eight days later (adding the suppress GUC and the email latch) and silently
+-- reintroduced both. Third break. Hence the exception wrapper: A MISSED CLAIM
+-- IS RECOVERABLE, A BLOCKED SIGNUP IS NOT. `handle_new_user` catches only
+-- unique_violation (20260530120000:65-76), so anything else in here is an outage.
+-- NOTE: plain `WHEN OTHERS` does NOT catch query_canceled (57014), so
+-- statement_timeout is trapped explicitly.
 --
--- Idempotent (CREATE OR REPLACE), reversible, and contains no RAISE EXCEPTION
--- so it can never abort a `db push`.
+-- Idempotent (CREATE OR REPLACE), reversible, no RAISE EXCEPTION.
 
+-- ────────────────────────────────────────────────────────────────────────
+-- 1/2 — the signup-time claim
+-- ────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.claim_legacy_enrolments_for_user()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
--- widened from `public` to reach auth.users for the confirmed-fact gate (4)
-SET search_path = public, auth
+-- auth.users is fully qualified below, so the path stays narrow.
+SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_phone_norm  text;
-  v_auth_phone  text;
-  v_auth_email  text;
-  v_phone_ok    boolean := false;
-  v_email_ok    boolean := false;
+  v_auth_phone text;
+  v_phone_norm text;
+  v_phone_ok   boolean := false;
 BEGIN
-  -- KEPT from 20260611130000: per-transaction opt-out (the onboarding RPC
-  -- writes an UNVERIFIED email and must not claim).
+  -- KEPT from 20260611130000: per-transaction opt-out.
   IF current_setting('app.suppress_legacy_claim', true) = 'on' THEN
     RETURN NEW;
   END IF;
 
-  -- ── EXCEPTION ISOLATION (defect 4's structural half) ──────────────────
-  -- Everything below is best-effort. A claim that fails must never take the
-  -- signup down with it.
+  -- Best-effort. A claim failure must never take a signup down with it.
   BEGIN
-    -- Trust the AUTH row, never the mirrored public.users values, which carry
-    -- attacker-supplied signup metadata.
-    SELECT au.phone,
-           au.email,
-           (au.phone IS NOT NULL AND au.phone_confirmed_at IS NOT NULL),
-           (au.email IS NOT NULL AND au.email_confirmed_at IS NOT NULL)
-      INTO v_auth_phone, v_auth_email, v_phone_ok, v_email_ok
+    -- Trust the AUTH row, never the public.users mirror, which carries
+    -- attacker-supplied signup metadata. COALESCE because SELECT INTO leaves
+    -- the flag NULL when no auth row matches, which would fall through.
+    SELECT au.phone, COALESCE(au.phone IS NOT NULL, false)
+      INTO v_auth_phone, v_phone_ok
       FROM auth.users au
      WHERE au.id = NEW.id;
+    v_phone_ok := COALESCE(v_phone_ok, false);
 
-    -- Normalise the CONFIRMED auth phone to +91XXXXXXXXXX, the canonical form
-    -- legacy_enrolments stores.
-    IF v_phone_ok THEN
-      v_phone_norm := regexp_replace(v_auth_phone, '\D', '', 'g');
-      IF length(v_phone_norm) = 10 THEN
-        v_phone_norm := '+91' || v_phone_norm;
-      ELSIF length(v_phone_norm) = 12 AND v_phone_norm LIKE '91%' THEN
-        v_phone_norm := '+' || v_phone_norm;
-      ELSE
-        v_phone_norm := v_auth_phone;  -- non-Indian numbers pass through
-      END IF;
+    IF NOT v_phone_ok THEN
+      RETURN NEW;   -- nothing server-verified to match on
     END IF;
 
-    -- Nothing confirmed → nothing to claim. A magic-link signup lands here,
-    -- which is exactly the forged path we are closing. Such a student is
-    -- claimed later by claim_my_student_enrolments() once a fact is confirmed.
-    IF NOT v_phone_ok AND NOT v_email_ok THEN
-      RETURN NEW;
+    -- Canonicalise to +91XXXXXXXXXX, the form legacy_enrolments stores.
+    v_phone_norm := regexp_replace(v_auth_phone, '\D', '', 'g');
+    IF length(v_phone_norm) = 10 THEN
+      v_phone_norm := '+91' || v_phone_norm;
+    ELSIF length(v_phone_norm) = 12 AND v_phone_norm LIKE '91%' THEN
+      v_phone_norm := '+' || v_phone_norm;
+    ELSE
+      v_phone_norm := v_auth_phone;   -- non-Indian numbers pass through
     END IF;
 
-    -- FIX 1: 'migration' is legal and matches the sibling granter.
-    -- FIX 2: skip NULL offerings — enrolments.offering_id is NOT NULL.
+    -- FIX 1 ('migration') + FIX 2 (skip NULL offerings).
+    -- `e.status='active'` added so this agrees with the sibling granter.
     INSERT INTO public.enrolments (user_id, offering_id, payment_order_id, status, source)
     SELECT NEW.id, le.offering_id, NULL, 'active', 'migration'
     FROM public.legacy_enrolments le
     WHERE le.claimed_by_user_id IS NULL
       AND le.offering_id IS NOT NULL
-      AND (
-        (v_phone_ok AND v_phone_norm IS NOT NULL AND le.phone = v_phone_norm)
-        OR (v_email_ok AND le.email = v_auth_email)
-      )
+      AND le.phone = v_phone_norm
       AND NOT EXISTS (
         SELECT 1 FROM public.enrolments e
-        WHERE e.user_id = NEW.id AND e.offering_id = le.offering_id
+        WHERE e.user_id = NEW.id
+          AND e.offering_id = le.offering_id
+          AND e.status = 'active'
       )
     ON CONFLICT DO NOTHING;
 
-    -- FIX 3: only claim what we could actually grant. A row whose offering is
-    -- not mapped yet stays UNCLAIMED on purpose so
-    -- grant_enrolment_after_offering_resolved can still grant it later.
+    -- FIX 3: only claim what we could actually grant, so an unmapped purchase
+    -- stays eligible for grant_enrolment_after_offering_resolved.
     UPDATE public.legacy_enrolments le
     SET claimed_by_user_id = NEW.id,
         claimed_at = now()
     WHERE le.claimed_by_user_id IS NULL
       AND le.offering_id IS NOT NULL
-      AND (
-        (v_phone_ok AND v_phone_norm IS NOT NULL AND le.phone = v_phone_norm)
-        OR (v_email_ok AND le.email = v_auth_email)
-      );
+      AND le.phone = v_phone_norm;
 
-  EXCEPTION WHEN OTHERS THEN
-    -- Never abort the signup. Surface it loudly instead.
-    RAISE WARNING 'claim_legacy_enrolments_for_user failed for user %: % %',
-      NEW.id, SQLSTATE, SQLERRM;
+  EXCEPTION
+    WHEN query_canceled THEN
+      RAISE WARNING 'claim_legacy_enrolments_for_user timed out for user %', NEW.id;
+    WHEN OTHERS THEN
+      RAISE WARNING 'claim_legacy_enrolments_for_user failed for user %: % %',
+        NEW.id, SQLSTATE, SQLERRM;
   END;
 
   RETURN NEW;
@@ -159,8 +150,65 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.claim_legacy_enrolments_for_user() IS
-  'Claims a student''s already-in-the-system purchases on users INSERT/UPDATE of phone/email. Trusts only CONFIRMED auth.users facts (never the forgeable signup metadata mirrored into public.users), writes source=''migration'', skips NULL-offering rows so they stay eligible for grant_enrolment_after_offering_resolved, and can never abort a signup. Fixed 2026-07-27 after 20260611130000 reintroduced a 23514/23502 that blocked signup for every buyer.';
+  'Claims a student''s already-in-the-system purchases on users INSERT/UPDATE of phone/email. Matches ONLY on auth.users.phone (server-written by verify-msg91-otp after its MSG91 binding check, and present at INSERT time so it is ordering-independent) — never the forgeable public.users mirror, and never email, which mintSession can confirm for any supplied address. Writes source=''migration'', skips NULL-offering rows so they stay eligible for grant_enrolment_after_offering_resolved, and can never abort a signup.';
+
+-- ────────────────────────────────────────────────────────────────────────
+-- 2/2 — the mapping-resolution granter, gated identically
+--
+-- This fires BEFORE UPDATE OF offering_id ON legacy_enrolments, i.e. on exactly
+-- the mapping resolutions that will cover 1,067 programs / 67,129 students. It
+-- matched `u.phone` / `u.email` against public.users — the SAME forgeable
+-- mirror — with a bare LIMIT 1 and no ORDER BY, then stamped claimed_by_user_id
+-- permanently. Ending the signup outage arms it, so it is gated in this push:
+-- match only on the server-written auth phone, and make the pick deterministic.
+-- ────────────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.grant_enrolment_after_offering_resolved()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_user_id uuid;
+BEGIN
+  IF OLD.offering_id IS NULL
+     AND NEW.offering_id IS NOT NULL
+     AND NEW.claimed_by_user_id IS NULL THEN
+
+    -- AUTH phone only. The email fallback is removed for the same reason as
+    -- above: a confirmed email is not proof of ownership on this stack.
+    SELECT u.id INTO v_user_id
+    FROM public.users u
+    JOIN auth.users au ON au.id = u.id
+    WHERE au.phone IS NOT NULL
+      AND NEW.phone IS NOT NULL
+      AND au.phone = NEW.phone
+    ORDER BY u.created_at ASC, u.id ASC   -- deterministic, was bare LIMIT 1
+    LIMIT 1;
+
+    IF v_user_id IS NOT NULL THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.enrolments e
+        WHERE e.user_id = v_user_id
+          AND e.offering_id = NEW.offering_id
+          AND e.status = 'active'
+      ) THEN
+        INSERT INTO public.enrolments (user_id, offering_id, payment_order_id, status, source)
+        VALUES (v_user_id, NEW.offering_id, NULL, 'active', 'migration');
+      END IF;
+
+      NEW.claimed_by_user_id := v_user_id;
+      NEW.claimed_at := now();
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+COMMENT ON FUNCTION public.grant_enrolment_after_offering_resolved() IS
+  'Grants the enrolment when an unmapped purchase finally gets an offering_id. Matches ONLY the server-written auth.users.phone (never the forgeable public.users mirror, never email) and picks deterministically, because this stamps claimed_by_user_id permanently and a wrong match locks the real buyer out for good.';
 
 -- ── Reversal (reference only) ──
--- Re-apply the body from 20260611130000_unbrick_onboarding_for_shipped_clients.sql:53-110.
--- NOTE: doing so restores the signup-blocking defects AND the forgeable-claim path.
+-- claim_legacy_enrolments_for_user  → 20260611130000_unbrick_onboarding_for_shipped_clients.sql:53-110
+-- grant_enrolment_after_offering_resolved → 20260524180000_legacy_enrolments_v2.sql:205-245
+-- NOTE: reverting restores the signup-blocking defects AND both forgeable-claim paths.
