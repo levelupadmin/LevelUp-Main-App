@@ -12,10 +12,14 @@
 -- fabricated funnel, a corrupted NSM baseline, and (once the reminder ladder
 -- ships) outreach to hundreds of stale contacts.
 --
--- `intake_opens_at` is that cutoff. The poller ingests a submission only when
--- its Tally `submittedAt >= COALESCE(intake_opens_at, created_at)`, and stops
+-- `intake_opens_at` is that cutoff, and it is REQUIRED. The poller scans only
+-- staged offerings whose `intake_opens_at` is NOT NULL, ingests a submission
+-- only when its Tally `submittedAt` is at or after that instant, and stops
 -- paging as soon as it crosses the line
--- (supabase/functions/tally-application-poll/index.ts).
+-- (supabase/functions/tally-application-poll/index.ts). An offering left NULL
+-- is not polled AT ALL: it is filtered out of the scan query, counted once per
+-- run as `skippedNoCutoff` and logged. There is NO fallback to `created_at`.
+-- Setting this column is how an offering opts INTO intake.
 --
 -- Additive, idempotent (`ADD COLUMN IF NOT EXISTS`), reversible (see the
 -- reversal block at the end). No RLS change: the offering read policies already
@@ -23,6 +27,14 @@
 -- scans the handful of staged offerings, not this column.
 --
 -- ── ⚠️ SAFETY ASSUMPTION THE WHOLE PHASE RESTS ON — CONFIRM BEFORE `db push` ──
+-- The UPDATE at the bottom SEEDS the pilot's cutoff from its `created_at`. That
+-- is a one-time starting VALUE picked for one row on one day, NOT a fallback
+-- rule: nothing at runtime ever consults `created_at` (a NULL row is skipped
+-- outright, see above), so if the seeded value turns out to be wrong the fix is
+-- to UPDATE this column to the right instant, never to drop the seed and leave
+-- the column NULL. A NULL column is not "defaults to created_at", it is "no
+-- intake at all".
+--
 -- Seeding the cutoff from `created_at` is only safe if the Edition 2 offering
 -- ROW was created at or after the instant Edition 2 intake actually opened. The
 -- row is `draft`+non-public and was only BOUND as the pilot on 2026-07-22, so it
@@ -80,21 +92,36 @@
 --    WHERE slug = 'creator-academy-edition-2';
 --
 -- Expect exactly one row with a non-null `intake_opens_at` equal to the
--- confirmed intake-open instant (TP-1's acceptance criterion). If the row is
--- missing (expected on local/branch DBs), or `intake_opens_at` is NULL, or the
--- value is earlier than the confirmed instant, the poller is unsafe: disarm it
--- with `SELECT cron.unschedule('tally_application_poll_every_15min');`, fix the
--- value with a targeted UPDATE, then re-run the cron migration.
+-- confirmed intake-open instant (TP-1's acceptance criterion). Two different
+-- failures with two OPPOSITE responses — do not confuse them:
+--
+--   • `intake_opens_at` IS NULL, or the row is missing entirely (the latter is
+--     expected on local/branch DBs) → intake is DEAD for that offering, not
+--     merely unbounded. The poller excludes NULL rows from its scan, counts
+--     them as `skippedNoCutoff`, and ingests nothing for them, ever. That is a
+--     silent intake outage, and unscheduling the cron makes it strictly worse.
+--     Leave the cron ARMED and set the column with a targeted UPDATE to the
+--     confirmed instant, which is what opts the offering in.
+--   • `intake_opens_at` is EARLIER than the confirmed instant → over-ingest
+--     hazard: everything submitted in between lands as an Edition 2
+--     application on the next tick. THIS is the case to disarm for: `SELECT
+--     cron.unschedule('tally_application_poll_every_15min');`, fix the value
+--     with a targeted UPDATE, then re-run the cron migration.
 
 ALTER TABLE public.offerings
   ADD COLUMN IF NOT EXISTS intake_opens_at timestamptz;
 
 COMMENT ON COLUMN public.offerings.intake_opens_at IS
-  'Poller ingests Tally submissions submitted on/after this instant only; NULL falls back to offerings.created_at. Exists because one Tally form is reused across editions.';
+  'REQUIRED for Tally intake polling: the poller ingests submissions submitted on/after this instant only. NULL is NOT a default and NOT a fallback to offerings.created_at: an offering with NULL here is excluded from the poll scan entirely, reported as skippedNoCutoff, and never ingests a single application. Set this column to opt an offering into intake. Exists because one Tally form is reused across editions.';
 
 -- Seed the pilot only. Guarded on `IS NULL` so a re-run never clobbers a cutoff
 -- someone has since corrected, and scoped by slug so no other offering is
 -- touched.
+--
+-- `created_at` appears here as a SEED VALUE for one row, and nowhere else. It
+-- is not a fallback and the poller never reads it (see the header); do not
+-- "clean this up" by removing it, or the pilot ships with a NULL cutoff and is
+-- never polled at all.
 --
 -- Accepted side effect: this fires the pre-existing `offerings_updated_at`
 -- BEFORE UPDATE trigger, so the pilot row's `updated_at` bumps to now() even

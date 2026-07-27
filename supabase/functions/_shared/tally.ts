@@ -38,6 +38,19 @@
  * disagree on a pathological form, and when they do the poller is the one that
  * is right.
  *
+ * AND ABOVE ALL OF THAT ENGLISH SITS THE ONE FACT THE ENVELOPE STATES: the
+ * block TYPE. `questions[].type` says outright that "Your Email ID" is an
+ * `INPUT_EMAIL` and that every FAQ decoy is a `MULTIPLE_CHOICE`, and the parser
+ * used to throw it away and then try to re-derive it from word order. Three fix
+ * rounds each closed one direction and opened another, because no alias
+ * ordering can both beat a prose decoy ("Can we add your email to the
+ * newsletter?" → "Yes") and lose to a bare "Name" against "Full name of my
+ * mentor". `buildQuestionTypeMap` + `extractAnswerTypes` preserve the type,
+ * `TYPE_ALLOWLIST` states each field's preference, and `pickField` ranks by type
+ * BEFORE any English signal. The vocabulary below is not obsolete — type cannot
+ * separate an `INPUT_EMAIL` "Your Email ID" from an `INPUT_EMAIL` "Referrer
+ * email", and that is precisely what the vocabulary is for.
+ *
  * NOTHING HERE MAY BE TUNED TO ONE FORM. The poller walks EVERY staged offering
  * carrying a `tally_form_url` — one form per offering — so every rule in this
  * file also governs cohort forms nobody has read. A rule that is merely
@@ -62,10 +75,22 @@
 
 // ── Wire shapes (the VERIFIED live API envelope, probed 2026-07-22) ──
 
-/** An entry of the envelope's `questions[]`. `title` may contain HTML or be empty. */
+/**
+ * An entry of the envelope's `questions[]`. `title` may contain HTML or be empty.
+ *
+ * `type` IS THE BLOCK TYPE TALLY AUTHORED, and it is the one signal on this
+ * wire that is a FACT rather than an inference: `INPUT_EMAIL`, `INPUT_NUMBER`,
+ * `INPUT_PHONE_NUMBER`, `INPUT_TEXT`, `TEXTAREA`, `DROPDOWN`,
+ * `MULTIPLE_CHOICE`, `CHECKBOXES`, `HIDDEN_FIELDS`, plus the layout blocks
+ * (`TITLE`, `DIVIDER`, …). It is deliberately typed as a bare string, not a
+ * union: Tally can add a block type without asking us, and an unknown type must
+ * degrade to "no preference" rather than fail to compile or throw.
+ * `buildQuestionTypeMap` is the reader; `TYPE_ALLOWLIST` is what it buys.
+ */
 export interface TallyQuestion {
   id?: string;
   title?: string | null;
+  type?: string | null;
   [key: string]: unknown;
 }
 
@@ -208,6 +233,69 @@ export const FIELD_ALIASES = {
   bio: ["write your heart", "100 words", "about you", "bio", "tell us"],
 } as const;
 
+/** Every group in `FIELD_ALIASES`, i.e. the six identity fields the poller maps. */
+export type FieldKey = keyof typeof FIELD_ALIASES;
+
+/**
+ * THE ONE BLOCK TYPE THAT CAN NEVER BE AN IDENTITY FIELD.
+ *
+ * A `MULTIPLE_CHOICE` block is a question the form OWNER wrote the answers to.
+ * Nobody's name, email, phone, city, job title or 100-word essay is ever one, on
+ * any form — the applicant picks from a list somebody else authored. Every decoy
+ * that cost this file three fix rounds is one of these: the FAQ blocks ("How
+ * does the academy work week to week?"), the curriculum blurb, the grant opt-in
+ * ("Select one"), and the prose consent question whose answer is "Yes" ("Can we
+ * add your email to the newsletter?"). Excluding the type kills the whole class
+ * structurally, in every question ordering, without one word of English — which
+ * is what no alias ordering could do, because the alias ordering that beats the
+ * prose decoy is the same one that hands "Name" to "Full name of my mentor".
+ */
+const TYPE_MULTIPLE_CHOICE = "MULTIPLE_CHOICE";
+
+/**
+ * PREFERRED BLOCK TYPES PER FIELD GROUP, best first — a PREFERENCE, not a
+ * permission list. A candidate whose type is preferred is considered before any
+ * candidate whose type is not, and only when the preferred types answer nothing
+ * at all does the search reach everything else (see `pickField`). Every type
+ * here is a real Tally block type; anything Tally invents later simply lands in
+ * the fail-soft rank.
+ *
+ * KEYED OFF THE FIELD GROUP, NOT GLOBAL, AND THAT IS LOAD-BEARING. `DROPDOWN` is
+ * simultaneously `city`'s second preference (forms do ask for a city from a
+ * list) and `occupation`'s DEMOTED decoy type — the live form's
+ * "@Your name, What do you do?" is a coarse `DROPDOWN` bucket while the real
+ * "What is your most recent designation?" is `INPUT_TEXT`. One global type
+ * ranking cannot say both things at once, so the preference is per group.
+ *
+ * `phone` LISTS THREE TYPES ON PURPOSE. The live form asks its WhatsApp number
+ * as an `INPUT_NUMBER`, but Tally's dedicated phone block is
+ * `INPUT_PHONE_NUMBER` (what a form author gets when they pick "Phone number"),
+ * and `INPUT_PHONE` is carried as a defensive alias for the same idea. Listing
+ * only one of them would drop every phone-typed form to the fail-soft rank,
+ * where the type layer buys nothing.
+ *
+ * WHAT THIS DOES NOT DO: it cannot separate two candidates of the SAME type —
+ * an `INPUT_EMAIL` "Your Email ID" against an `INPUT_EMAIL` "Referrer email" is
+ * a tie here by construction. That is exactly what `THIRD_PARTY_LABEL`, the
+ * deny-list and the possessive rule are still for, and why none of them was
+ * deleted when this arrived.
+ */
+export const TYPE_ALLOWLIST: Record<FieldKey, readonly string[]> = {
+  fullName: ["INPUT_TEXT"],
+  email: ["INPUT_EMAIL"],
+  phone: ["INPUT_NUMBER", "INPUT_PHONE_NUMBER", "INPUT_PHONE"],
+  city: ["INPUT_TEXT", "DROPDOWN"],
+  // INPUT_TEXT MUST OUTRANK DROPDOWN: the applicant's real designation is the
+  // free-text one, the coarse "What do you do?" bucket is the dropdown.
+  occupation: ["INPUT_TEXT", "DROPDOWN"],
+  bio: ["TEXTAREA", "INPUT_TEXT"],
+};
+
+/** Types are compared case-insensitively and trimmed; anything else is "unknown". */
+function normalizeType(value: unknown): string {
+  return typeof value === "string" ? value.trim().toUpperCase() : "";
+}
+
 // ── Label join ──
 
 /** A handful of entities Tally emits inside question titles. */
@@ -246,6 +334,42 @@ export function buildQuestionMap(
     const title = stripHtml(q?.title);
     if (!title) continue;
     map[id] = title;
+  }
+  return map;
+}
+
+/**
+ * `questions[]` → `{questionId: BLOCK_TYPE}`, the sibling of `buildQuestionMap`.
+ *
+ * ADDITIVE ON PURPOSE. `buildQuestionMap` keeps returning `Record<id,label>` and
+ * every existing caller and test keeps working unchanged; the type arrives
+ * beside it, so a caller that does not care never has to know. That also makes
+ * the fail-soft path free: a caller that passes no type map gets exactly the
+ * pre-type behaviour.
+ *
+ * IT MUST HAVE THE IDENTICAL KEY SET TO `buildQuestionMap`, and both drops are
+ * repeated verbatim to keep it so: no string `id` → dropped, and a `title` that
+ * cleans to nothing → dropped. Those two are what remove the real form's ten
+ * `HIDDEN_FIELDS` rows (the attribution fields, `title: null`) and Tally's
+ * layout blocks. If this map kept a row the label map dropped, a hidden field
+ * would regain a type entry and the two maps would disagree about what the form
+ * even asked — pinned by test in both directions.
+ *
+ * A QUESTION WITH NO USABLE TYPE STORES `""`, NOT NOTHING. Same reason: the key
+ * sets must match. `""` reads downstream as "unknown type", which is the
+ * fail-soft rank, so an envelope from a Tally that has stopped sending `type`
+ * degrades to the old behaviour instead of losing the question.
+ */
+export function buildQuestionTypeMap(
+  questions: TallyQuestion[] | null | undefined,
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const q of questions ?? []) {
+    const id = typeof q?.id === "string" ? q.id : "";
+    if (!id) continue;
+    const title = stripHtml(q?.title);
+    if (!title) continue;
+    map[id] = normalizeType(q?.type);
   }
   return map;
 }
@@ -364,6 +488,46 @@ export function extractAnswers(
     }
   }
   return answers;
+}
+
+/**
+ * THE TYPE SIDE OF THE JOIN: `{cleanLabel: BLOCK_TYPE}`, keyed EXACTLY like
+ * `extractAnswers`' result, so `pickField` can read a candidate's type with the
+ * same key it reads its value with. This is what "carry a type alongside each
+ * `{label, value}` candidate" means here — a sibling map rather than a widened
+ * return, for the same reason `buildQuestionTypeMap` is a sibling: ~90 existing
+ * call sites read `answers[label]` as a plain string.
+ *
+ * IT NEEDS NO SUBMISSION. A question's type is a property of the FORM, not of
+ * one response, so this is a pure re-key of the two question maps. Emitting a
+ * type for a label that this submission happens not to answer is harmless:
+ * `pickField` only ever looks up labels that are present in `answers`.
+ *
+ * A DUPLICATED LABEL WITH TWO DIFFERENT TYPES YIELDS "UNKNOWN", NOT THE FIRST
+ * ONE. Two questions can clean to the same title (the same field asked again on
+ * a later page), and `extractAnswers` collapses them to one entry whose value is
+ * the first NON-EMPTY answer — which may well have come from the second
+ * question. Taking the first type would then be a guess, and a guess in the
+ * wrong direction is expensive in one specific way: if the first were a
+ * `MULTIPLE_CHOICE` the label would be struck out entirely and a real email
+ * could be lost, dropping the whole submission. Ambiguity therefore resolves to
+ * `""` — "this form did not tell us" — which is the fail-soft rank, i.e. exactly
+ * the ranking the label would have had before any of this existed.
+ */
+export function extractAnswerTypes(
+  questionMap: Record<string, string>,
+  questionTypeMap: Record<string, string> | null | undefined,
+): Record<string, string> {
+  const types: Record<string, string> = Object.create(null);
+  if (!questionTypeMap) return types;
+  for (const [qid, label] of Object.entries(questionMap)) {
+    if (!label) continue;
+    const type = hasOwn(questionTypeMap, qid) ? normalizeType(questionTypeMap[qid]) : "";
+    const existing = types[label];
+    if (existing === undefined) types[label] = type;
+    else if (existing !== type) types[label] = "";
+  }
+  return types;
 }
 
 /**
@@ -644,15 +808,109 @@ function selectByAlias(
 }
 
 /**
+ * The QUESTION-TYPE channel for `pickField`, supplied as an OPTIONAL third
+ * argument so the two load-bearing positions never move: ~90 existing call sites
+ * pass a plain object literal and nothing else, and each of them is also the
+ * proof that an UNTYPED form still resolves by the pre-type rules.
+ */
+export interface FieldTypePreference {
+  /** label → block type, exactly as `extractAnswerTypes` keys it. */
+  types?: Record<string, string> | null;
+  /** Preferred types, best first — one `TYPE_ALLOWLIST` entry. */
+  prefer?: readonly string[] | null;
+}
+
+/** A label/value pair that survived the deny-list and the MULTIPLE_CHOICE rule. */
+interface Candidate {
+  label: string;
+  value: string;
+}
+
+/**
+ * ONE ALIAS SWEEP PER TYPE RANK, best rank first — the type channel's whole
+ * contribution to the ranking, and nothing else.
+ *
+ * The buckets PARTITION one candidate set by `TYPE_ALLOWLIST` position, so a
+ * candidate whose block type is what this group prefers is asked before any
+ * candidate whose type is not, and the fail-soft bucket at the end is reached
+ * only when everything better answered nothing at all. With no types on the form
+ * there is exactly ONE bucket, holding exactly the candidates the pre-type code
+ * saw, and this reduces to the single `selectByAlias` call it used to be.
+ *
+ * A RANK THAT MATCHED BUT ANSWERED BLANK FALLS THROUGH TO THE NEXT RANK, and
+ * that is safe precisely because a blank answer is never promoted by its type
+ * (see `pickField`): every candidate above the fail-soft bucket carries a real
+ * answer, so `matched` there always comes with a value. Only the fail-soft
+ * bucket can match blank, and it is last, so the blank-yields-"" rule the alias
+ * sweep has always had is untouched — `matched` is still reported up so the
+ * caller can tell "nobody asked this" from "asked, left empty".
+ */
+function sweepByTypeRank(
+  buckets: ReadonlyArray<readonly Candidate[]>,
+  aliases: readonly string[],
+): { value: string; matched: boolean } {
+  let matched = false;
+  for (const bucket of buckets) {
+    if (bucket.length === 0) continue;
+    const result = selectByAlias(bucket, aliases);
+    if (result.value) return { value: result.value, matched: true };
+    if (result.matched) matched = true;
+  }
+  return { value: "", matched };
+}
+
+/**
  * Scored alias match over joined answers. "" when nothing matches.
  *
- * THE SCORE KEY IS `(ownFieldFirst, aliasIndex, matchTier, questionOrder)` — IN
- * THAT ORDER. The whole alias sweep runs over the applicant's own labels first
+ * THE SCORE KEY IS `(ownFieldFirst, typeRank, aliasIndex, matchTier,
+ * questionOrder)` — type outranks every ENGLISH signal, and the third-party
+ * demotion outranks type. Candidates are bucketed by how well their Tally block
+ * type matches what this field group prefers (`TYPE_ALLOWLIST`), the entire
+ * existing sweep runs inside the best bucket first, and a lower bucket is
+ * reached only when the better one answered nothing for this group
+ * (`sweepByTypeRank`). Within one bucket the scoring below is unchanged, to the
+ * letter.
+ *
+ * WHY `ownFieldFirst` SITS ABOVE `typeRank` AND NOT BELOW IT. Running the
+ * two sweeps INSIDE each type bucket — which is what the first cut of this
+ * change did — hands the form to a recognised third party whenever their block
+ * type outranks the applicant's: a bucket holding only "Email of the person who
+ * referred you" (`INPUT_EMAIL`) matches, runs its own sweep 2 and returns before
+ * the applicant's `INPUT_TEXT` "Your Email ID" is ever consulted. That is
+ * regression class (b) rebuilt out of the very mechanism meant to retire it, on
+ * the one field — email — whose wrong answer is a PERMANENT
+ * `(offering_id, email)` dedupe key. Type is a statement about what a question
+ * COLLECTS; it says nothing about WHOSE it is, so it must never be allowed to
+ * answer that question.
+ *
+ * A BLANK ANSWER IS NEVER PROMOTED BY ITS TYPE. A candidate with no answer
+ * enters the fail-soft bucket whatever its block type, so it can only win where
+ * the pre-type English key would have let it win anyway. Without that rule an
+ * optional "Work email" (`INPUT_EMAIL`, left empty) outranks the applicant's
+ * filled "Email Address" (`INPUT_TEXT`) purely on type, `pickField` returns "",
+ * and `toApplicationRow` DROPS a submission the pre-type code ingested
+ * correctly. The type layer exists to rank answers the form actually collected;
+ * an empty one carries no evidence to rank. The blank-yields-"" rule itself is
+ * unchanged — see the alias note below — it simply stops being reachable by
+ * type promotion alone.
+ *
+ * `MULTIPLE_CHOICE` NEVER ENTERS ANY BUCKET. It is dropped alongside the
+ * deny-list, before ranking, and it stays dropped on the fail-soft path — see
+ * `TYPE_MULTIPLE_CHOICE` for why that single line retires three rounds of decoys.
+ *
+ * FAIL-SOFT IS THE DEFAULT, NOT AN EXCEPTION. Every candidate whose type is
+ * unknown, absent, or simply not one this group prefers lands in the LAST
+ * bucket, so a form that sends no types at all has exactly one bucket holding
+ * exactly the candidates the pre-type code saw, ranked by exactly the rules
+ * below. The poller walks forms nobody here has read; it must not return empty
+ * because a form is shaped oddly.
+ *
+ * The whole ranked sweep runs over the applicant's own labels first
  * and is repeated over every label only when that sweep matched NO label at all
  * (see `THIRD_PARTY_LABEL`), so a RECOGNISED third-party label — "Email ID of
  * the person who referred you", "Referrer email" — cannot beat the applicant's
- * own field however well it scores, in either question ordering, while still
- * answering for a form where it is the only email on offer.
+ * own field however well it scores, in either question ordering AND at any block
+ * type, while still answering for a form where it is the only email on offer.
  *
  * STATE THAT GUARANTEE EXACTLY, BECAUSE IT IS NARROWER THAN IT SOUNDS. It holds
  * for the wordings `THIRD_PARTY_LABEL` recognises, and no vocabulary is
@@ -716,24 +974,50 @@ function selectByAlias(
 export function pickField(
   answers: Record<string, string>,
   aliases: readonly string[],
+  preference?: FieldTypePreference | null,
 ): string {
-  const candidates: Array<{ label: string; value: string }> = [];
-  const ownFields: Array<{ label: string; value: string }> = [];
+  const types = preference?.types ?? null;
+  const prefer = (preference?.prefer ?? []).map(normalizeType).filter(Boolean);
+
+  // One bucket per preferred type, plus a final fail-soft bucket for everything
+  // else — unknown types, absent types, types this group has no opinion on, and
+  // every blank answer. The buckets PARTITION the candidates, so with no types
+  // at all the last one holds them all and each sweep reduces to the single
+  // `selectByAlias` call it was before. Both sweeps are bucketed identically;
+  // only their membership differs.
+  const failSoftRank = prefer.length;
+  const everyField: Candidate[][] = [];
+  const ownFields: Candidate[][] = [];
+  for (let rank = 0; rank <= failSoftRank; rank++) {
+    everyField.push([]);
+    ownFields.push([]);
+  }
+  let hasThirdParty = false;
+
   for (const [rawLabel, value] of Object.entries(answers)) {
     const label = normalizeQuestionLabel(rawLabel);
     if (!label || isDeniedLabel(label)) continue;
+    // The caller's `types` is a plain object like the question map, so the same
+    // own-property rule applies: a label of "toString" must read as unknown.
+    const type = types && hasOwn(types, rawLabel) ? normalizeType(types[rawLabel]) : "";
+    if (type === TYPE_MULTIPLE_CHOICE) continue;
+    // A blank answer is never promoted by its type (see the score key above).
+    const preferredRank = value && type ? prefer.indexOf(type) : -1;
+    const rank = preferredRank < 0 ? failSoftRank : preferredRank;
     const candidate = { label, value };
-    candidates.push(candidate);
-    if (!isThirdPartyLabel(label)) ownFields.push(candidate);
+    everyField[rank].push(candidate);
+    if (isThirdPartyLabel(label)) hasThirdParty = true;
+    else ownFields[rank].push(candidate);
   }
 
-  // Sweep 1 — the applicant's own labels. Sweep 2 only happens on a form that
-  // carries a recognised third-party label AND never asked the applicant this
-  // group at all; an asked-but-blank answer stays blank rather than falling
-  // through to somebody else's (see the score key above).
-  const own = selectByAlias(ownFields, aliases);
-  if (own.matched || ownFields.length === candidates.length) return own.value;
-  return selectByAlias(candidates, aliases).value;
+  // Sweep 1 — the applicant's own labels, every type rank of them. Sweep 2 only
+  // happens on a form that carries a recognised third-party label AND never
+  // asked the applicant this group at ANY rank; an asked-but-blank answer stays
+  // blank rather than falling through to somebody else's (see the score key).
+  const own = sweepByTypeRank(ownFields, aliases);
+  if (own.matched) return own.value;
+  if (!hasThirdParty) return "";
+  return sweepByTypeRank(everyField, aliases).value;
 }
 
 // ── Form id ──
@@ -1031,27 +1315,38 @@ function nullIfEmpty(value: string): string | null {
  * `status` is hard-coded to `'submitted'`; `full_name` falls back to the email
  * local-part exactly like `tally-application-webhook/index.ts:148`; the raw
  * submission is preserved in `tally_data` so a re-parse never needs Tally.
+ *
+ * `questionTypeMap` IS OPTIONAL AND LAST, deliberately. The first four
+ * parameters are the ones every caller and ~12 test call sites already pass, so
+ * they do not move; a caller that omits the type map gets the pre-type
+ * behaviour verbatim. `tally-application-poll/index.ts` builds it from the same
+ * envelope, merged across pages exactly like the label map.
  */
 export function toApplicationRow(
   submission: TallySubmission,
   questionMap: Record<string, string>,
   offeringId: string,
   userId: string | null,
+  questionTypeMap?: Record<string, string> | null,
 ): CohortApplicationRow | null {
   const answers = extractAnswers(submission, questionMap);
-  const email = pickField(answers, FIELD_ALIASES.email);
+  const types = extractAnswerTypes(questionMap, questionTypeMap);
+  const pick = (field: FieldKey) =>
+    pickField(answers, FIELD_ALIASES[field], { types, prefer: TYPE_ALLOWLIST[field] });
+
+  const email = pick("email");
   if (!email) return null;
 
-  const fullName = pickField(answers, FIELD_ALIASES.fullName);
+  const fullName = pick("fullName");
   return {
     offering_id: offeringId,
     user_id: userId,
     full_name: fullName || email.split("@")[0],
     email,
-    phone: nullIfEmpty(pickField(answers, FIELD_ALIASES.phone)),
-    city: nullIfEmpty(pickField(answers, FIELD_ALIASES.city)),
-    occupation: nullIfEmpty(pickField(answers, FIELD_ALIASES.occupation)),
-    bio: nullIfEmpty(pickField(answers, FIELD_ALIASES.bio)),
+    phone: nullIfEmpty(pick("phone")),
+    city: nullIfEmpty(pick("city")),
+    occupation: nullIfEmpty(pick("occupation")),
+    bio: nullIfEmpty(pick("bio")),
     status: "submitted",
     tally_response_id: typeof submission?.id === "string" ? submission.id : "",
     tally_data: submission,

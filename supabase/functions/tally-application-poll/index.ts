@@ -77,6 +77,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { timingSafeEqual } from "../_shared/crypto.ts";
 import {
   buildQuestionMap,
+  buildQuestionTypeMap,
   dedupeBySubmissionId,
   formIdFromTallyUrl,
   isIngestableSubmission,
@@ -589,6 +590,7 @@ Deno.serve(async (req) => {
 
     try {
       const questionMap: Record<string, string> = {};
+      const questionTypeMap: Record<string, string> = {};
       const collected: TallySubmission[] = [];
       let undated = 0;
       let afterDeadline = 0;
@@ -601,8 +603,12 @@ Deno.serve(async (req) => {
         summary.partialCount = envelope.totalNumberOfSubmissionsPerFilter?.partial ?? 0;
 
         // Labels live in the envelope, not in the submissions. Merge across
-        // pages so a question absent from a later page keeps its label.
+        // pages so a question absent from a later page keeps its label. The
+        // TYPE map is merged the same way, in the same place, and must stay
+        // that way: field selection ranks by block type first, so a type lost
+        // mid-scan would silently drop that question to the fail-soft path.
         Object.assign(questionMap, buildQuestionMap(envelope.questions));
+        Object.assign(questionTypeMap, buildQuestionTypeMap(envelope.questions));
 
         const pageSubmissions = envelope.submissions ?? [];
         const { inWindow, skippedUndated, skippedAfterDeadline, stoppedAtCutoff } =
@@ -657,7 +663,7 @@ Deno.serve(async (req) => {
           notCompleted++;
           continue;
         }
-        const row = toApplicationRow(submission, questionMap, offering.id, null);
+        const row = toApplicationRow(submission, questionMap, offering.id, null, questionTypeMap);
         if (!row || !row.tally_response_id) {
           // No email (or no stable response id) — same skip as the webhook.
           summary.skipped++;

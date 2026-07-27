@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   buildQuestionMap,
+  buildQuestionTypeMap,
   dedupeBySubmissionId,
   extractAnswers,
+  extractAnswerTypes,
   FIELD_ALIASES,
   formIdFromTallyUrl,
   isInIntakeWindow,
@@ -11,6 +13,8 @@ import {
   pickField,
   resolveIntakeWindow,
   toApplicationRow,
+  TYPE_ALLOWLIST,
+  type FieldKey,
 } from "@shared/tally";
 import {
   closedEditionPage,
@@ -29,6 +33,9 @@ import {
   submission,
   SYNTHETIC_QUESTIONS,
   syntheticSubmission,
+  typedForm,
+  type TypedField,
+  type TypedFormFixture,
 } from "../../../qa-harness/tally-fixtures";
 
 /**
@@ -60,7 +67,37 @@ import {
 
 const QUESTION_MAP = buildQuestionMap(REAL_QUESTIONS);
 const SYNTHETIC_MAP = buildQuestionMap(SYNTHETIC_QUESTIONS);
+const REAL_TYPE_MAP = buildQuestionTypeMap(REAL_QUESTIONS);
+const REAL_TYPES = extractAnswerTypes(QUESTION_MAP, REAL_TYPE_MAP);
 const OFFERING_ID = "11111111-1111-4111-8111-111111111111";
+
+/** `pickField` with the type channel on, exactly as `toApplicationRow` calls it. */
+function pickTyped(form: TypedFormFixture, field: FieldKey): string {
+  return pickField(form.answers, FIELD_ALIASES[field], {
+    types: form.types,
+    prefer: TYPE_ALLOWLIST[field],
+  });
+}
+
+/**
+ * The same questions asked in BOTH orders. Every regression this file has ever
+ * shipped was right in one ordering and wrong in the other, so a single-ordering
+ * assertion proves nothing.
+ */
+function typedBothWays(fields: readonly TypedField[], field: FieldKey): [string, string] {
+  return [
+    pickTyped(typedForm(fields), field),
+    pickTyped(typedForm([...fields].reverse()), field),
+  ];
+}
+
+/** The same pair with the type channel OFF — the pre-fix behaviour, for contrast. */
+function untypedBothWays(fields: readonly TypedField[], field: FieldKey): [string, string] {
+  return [
+    pickField(typedForm(fields).answers, FIELD_ALIASES[field]),
+    pickField(typedForm([...fields].reverse()).answers, FIELD_ALIASES[field]),
+  ];
+}
 
 /** The anonymised answers the real decoy questions carry. */
 const DECOY_ANSWERS = {
@@ -140,6 +177,109 @@ describe("buildQuestionMap — the label join source", () => {
     expect(buildQuestionMap(null)).toEqual({});
     expect(buildQuestionMap(undefined)).toEqual({});
     expect(buildQuestionMap([{ title: "No id here" }])).toEqual({});
+  });
+});
+
+describe("buildQuestionTypeMap — the fact the envelope states", () => {
+  it("agrees with buildQuestionMap about which questions exist", () => {
+    // THE INVARIANT THE WHOLE TYPE LAYER RESTS ON. The two maps are read
+    // together and keyed by the same id, so a row one keeps and the other drops
+    // is a form the parser disagrees with itself about — e.g. a hidden
+    // attribution field (title:null) that regained a type entry and could then
+    // be ranked as a candidate. Both drops (no string id, empty cleaned title)
+    // have to be repeated verbatim in both functions.
+    expect(Object.keys(REAL_TYPE_MAP)).toEqual(Object.keys(QUESTION_MAP));
+    expect(Object.keys(buildQuestionTypeMap(SYNTHETIC_QUESTIONS))).toEqual(
+      Object.keys(SYNTHETIC_MAP),
+    );
+    // SYNTHETIC_QUESTIONS carries a TITLE block ("<h1>  </h1>") and a DIVIDER
+    // ("") precisely to exercise that, so prove they are the rows being dropped.
+    expect(buildQuestionTypeMap(SYNTHETIC_QUESTIONS)[SQID.heading]).toBeUndefined();
+    expect(buildQuestionTypeMap(SYNTHETIC_QUESTIONS)[SQID.divider]).toBeUndefined();
+  });
+
+  it("states the block type of every field the poller maps", () => {
+    // Ground truth, from the committed live envelope. These six lines are the
+    // entire premise of fix round 3: the form already says which question is
+    // the email and which are the FAQ blocks.
+    expect(REAL_TYPE_MAP[QID.fullName]).toBe("INPUT_TEXT");
+    expect(REAL_TYPE_MAP[QID.email]).toBe("INPUT_EMAIL");
+    expect(REAL_TYPE_MAP[QID.phone]).toBe("INPUT_NUMBER");
+    expect(REAL_TYPE_MAP[QID.city]).toBe("INPUT_TEXT");
+    expect(REAL_TYPE_MAP[QID.occupation]).toBe("INPUT_TEXT");
+    expect(REAL_TYPE_MAP[QID.bio]).toBe("TEXTAREA");
+  });
+
+  it("marks the occupation decoy a DROPDOWN and every FAQ decoy a MULTIPLE_CHOICE", () => {
+    expect(REAL_TYPE_MAP[QID.decoyWhatDoYouDo]).toBe("DROPDOWN");
+    for (const id of [
+      QID.decoyWhatIsAcademy,
+      QID.decoyAcademyWork,
+      QID.decoyMentoredBy,
+      QID.decoyEndOfProgram,
+      QID.decoySelectOne,
+    ]) {
+      expect(REAL_TYPE_MAP[id]).toBe("MULTIPLE_CHOICE");
+    }
+  });
+
+  it("stores '' rather than nothing for a question with no usable type", () => {
+    // Key-set equality again, from the other side: a form whose questions carry
+    // no type must still produce an entry per question, or the label map and
+    // the type map stop describing the same form.
+    const untyped = buildQuestionTypeMap([
+      { id: "q1", title: "Your Email ID" },
+      { id: "q2", title: "Your name", type: null },
+      { id: "q3", title: "Your city", type: 42 as unknown as string },
+    ]);
+    expect(untyped).toEqual({ q1: "", q2: "", q3: "" });
+  });
+
+  it("normalises the type, and tolerates a null/undefined questions array", () => {
+    expect(buildQuestionTypeMap([{ id: "q1", title: "Email", type: " input_email " }]).q1)
+      .toBe("INPUT_EMAIL");
+    expect(buildQuestionTypeMap(null)).toEqual({});
+    expect(buildQuestionTypeMap(undefined)).toEqual({});
+    expect(buildQuestionTypeMap([{ title: "No id here", type: "INPUT_TEXT" }])).toEqual({});
+  });
+});
+
+describe("extractAnswerTypes — the type side of the join", () => {
+  it("re-keys the type onto the same label extractAnswers uses", () => {
+    const answers = extractAnswers(submission(), QUESTION_MAP);
+    for (const label of [LABEL.email, LABEL.phone, LABEL.bio]) {
+      expect(answers[label]).toBeTruthy();
+      expect(REAL_TYPES[label]).toBeTruthy();
+    }
+    expect(REAL_TYPES[LABEL.email]).toBe("INPUT_EMAIL");
+    expect(REAL_TYPES[LABEL.decoyMentoredBy]).toBe("MULTIPLE_CHOICE");
+  });
+
+  it("yields '' — not a guess — when two questions share a label but not a type", () => {
+    // extractAnswers collapses duplicate labels and takes the first NON-EMPTY
+    // answer, which may well have come from the second question, so taking the
+    // first type would be a guess. Guessing MULTIPLE_CHOICE would strike the
+    // label out entirely and could lose a real email — i.e. the whole
+    // submission. Ambiguity therefore degrades to the fail-soft rank.
+    const questions = [
+      { id: "q1", title: "Email", type: "MULTIPLE_CHOICE" },
+      { id: "q2", title: "Email", type: "INPUT_EMAIL" },
+    ];
+    const types = extractAnswerTypes(buildQuestionMap(questions), buildQuestionTypeMap(questions));
+    expect(types["Email"]).toBe("");
+    // Agreeing duplicates keep their type.
+    const agreeing = [
+      { id: "q1", title: "Email", type: "INPUT_EMAIL" },
+      { id: "q2", title: "Email", type: "INPUT_EMAIL" },
+    ];
+    expect(
+      extractAnswerTypes(buildQuestionMap(agreeing), buildQuestionTypeMap(agreeing))["Email"],
+    ).toBe("INPUT_EMAIL");
+  });
+
+  it("returns an empty map when no type map is supplied at all", () => {
+    expect(extractAnswerTypes(QUESTION_MAP, null)).toEqual({});
+    expect(extractAnswerTypes(QUESTION_MAP, undefined)).toEqual({});
   });
 });
 
@@ -775,6 +915,12 @@ describe("pickField — scored word-boundary matching on the REAL form", () => {
           FIELD_ALIASES.bio,
         ),
       ).toBe("Someone Else");
+      // Both assertions are about the ENGLISH layer alone, and the second one
+      // is the case the type preference later moves: where the referral essay
+      // is a TEXTAREA and the applicant's is not, bio goes the other way. That
+      // is recorded in "what the preference MOVES that alias order used to
+      // decide" rather than left to be discovered.
+      //
       // And the residual that scoping leaves behind, stated rather than hidden:
       // an "<other field> of <someone>" label outside the three identity groups
       // is still decided by tier alone. Widening the sweep to cover it would
@@ -1068,6 +1214,612 @@ describe("pickField — scored word-boundary matching on the REAL form", () => {
     expect(pickField(synthetic, FIELD_ALIASES.bio)).toBe(
       "Six years cutting wedding films, moving into brand work.",
     );
+  });
+});
+
+describe("pickField — the block TYPE outranks every English signal", () => {
+  /**
+   * FIX ROUND 3. Three consecutive rounds each closed one direction of the
+   * English heuristic and opened another — the FAQ "work" block, then
+   * "Email of the person who referred you", then the prose "Can we add your
+   * email to the newsletter?" answered "Yes" — and the obvious reorder
+   * (most-specific alias first) immediately breaks the pinned counter-case
+   * {"Full name of my mentor", "Name"}. There is no alias ordering that
+   * satisfies both, which is the point: the envelope STATES the type and the
+   * parser used to throw it away.
+   *
+   * Everything below is a synthetic persona on an invented form. The real
+   * envelope's own assertions are unchanged and live in the block above.
+   */
+
+  it("keys TYPE_ALLOWLIST off the same groups as FIELD_ALIASES", () => {
+    // A preference is per GROUP, not a global type ranking — DROPDOWN is city's
+    // second choice AND occupation's demoted decoy type at the same time, which
+    // one global ordering cannot express. So the two objects must stay aligned.
+    expect(Object.keys(TYPE_ALLOWLIST).sort()).toEqual(Object.keys(FIELD_ALIASES).sort());
+  });
+
+  it("names all three phone block types, not just one", () => {
+    // The live form asks its number as INPUT_NUMBER, but Tally's dedicated
+    // phone block is INPUT_PHONE_NUMBER. Shipping only one of them drops every
+    // phone-typed form to fail-soft, where the type layer buys nothing.
+    expect(TYPE_ALLOWLIST.phone).toContain("INPUT_NUMBER");
+    expect(TYPE_ALLOWLIST.phone).toContain("INPUT_PHONE_NUMBER");
+    expect(TYPE_ALLOWLIST.phone).toContain("INPUT_PHONE");
+  });
+
+  describe("the REAL envelope, with the type channel on", () => {
+    const realTyped = (field: FieldKey) =>
+      pickField(extractAnswers(submission(), QUESTION_MAP), FIELD_ALIASES[field], {
+        types: REAL_TYPES,
+        prefer: TYPE_ALLOWLIST[field],
+      });
+
+    it("resolves all six fields to the applicant's own answers", () => {
+      // Identical to the untyped assertions above, on purpose: the fix must not
+      // move the one form anyone has actually read.
+      expect(realTyped("fullName")).toBe("Test Applicant");
+      expect(realTyped("email")).toBe("applicant@example.invalid");
+      expect(realTyped("phone")).toBe("9000000001");
+      expect(realTyped("city")).toBe("Chennai");
+      expect(realTyped("occupation")).toBe("Freelance Video Editor");
+      expect(realTyped("bio")).toBe("REDACTED_ESSAY_TEXT_100_WORDS");
+    });
+
+    it("produces the identical cohort_applications row through toApplicationRow", () => {
+      const untyped = toApplicationRow(submission(), QUESTION_MAP, OFFERING_ID, "user-1");
+      const typed = toApplicationRow(
+        submission(),
+        QUESTION_MAP,
+        OFFERING_ID,
+        "user-1",
+        REAL_TYPE_MAP,
+      );
+      expect(typed).toEqual(untyped);
+      expect(typed?.email).toBe("applicant@example.invalid");
+    });
+
+    it("beats the DROPDOWN occupation decoy on TYPE, not just on alias order", () => {
+      // "@Your name, What do you do?" is a DROPDOWN; the real designation is an
+      // INPUT_TEXT. Alias order was the only defence before; now the decoy is
+      // an entire rank below and is never even consulted.
+      expect(REAL_TYPES[LABEL.decoyWhatDoYouDo]).toBe("DROPDOWN");
+      expect(REAL_TYPES[LABEL.occupation]).toBe("INPUT_TEXT");
+      expect(realTyped("occupation")).toBe("Freelance Video Editor");
+    });
+  });
+
+  describe("MULTIPLE_CHOICE is never eligible for an identity field", () => {
+    it("kills the FAQ decoy the deny-list cannot reach", () => {
+      // Deliberately NOT one of the five deny-listed labels: the deny-list is
+      // anchored to this one form's informational blocks, and the whole claim of
+      // fix round 3 is that the type retires the CLASS, not five strings.
+      const fields: TypedField[] = [
+        {
+          title: "Email updates from the academy work how?",
+          type: "MULTIPLE_CHOICE",
+          value: "Every Friday",
+        },
+        { title: "Contact email", type: "INPUT_EMAIL", value: "asha@example.invalid" },
+      ];
+      // Without types the FAQ block wins outright — it PREFIX-matches "email"
+      // while the applicant's own label only manages a mid-label hit, and tier
+      // outranks position. This is the regression, reproduced.
+      expect(untypedBothWays(fields, "email")).toEqual(["Every Friday", "Every Friday"]);
+      expect(typedBothWays(fields, "email")).toEqual([
+        "asha@example.invalid",
+        "asha@example.invalid",
+      ]);
+    });
+
+    it("kills the prose consent question answered 'Yes'", () => {
+      const fields: TypedField[] = [
+        {
+          title: "Can we add your email to the newsletter?",
+          type: "MULTIPLE_CHOICE",
+          value: "Yes",
+        },
+        { title: "Email", type: "INPUT_EMAIL", value: "asha@example.invalid" },
+      ];
+      expect(typedBothWays(fields, "email")).toEqual([
+        "asha@example.invalid",
+        "asha@example.invalid",
+      ]);
+      // And on its own it is not an email at all — where the untyped parser,
+      // before the possessive restriction landed, filed "Yes" as the applicant's
+      // address and made it the permanent (offering_id, email) dedupe key.
+      const alone: TypedField[] = [
+        { title: "Can we add your email to the newsletter?", type: "MULTIPLE_CHOICE", value: "Yes" },
+      ];
+      expect(typedBothWays(alone, "email")).toEqual(["", ""]);
+    });
+
+    it("stays excluded on the FAIL-SOFT path, where nothing else matched", () => {
+      // The single most important line of the change: exclusion is not a
+      // preference that a barren form can talk its way past. A form whose only
+      // "email" is a MULTIPLE_CHOICE yields NO email, so toApplicationRow skips
+      // the submission — visible and re-pollable — rather than filing marketing
+      // copy as somebody's identity, permanently.
+      const mcOnly: TypedField[] = [
+        { title: "Your name", type: "MULTIPLE_CHOICE", value: "Pick one" },
+        { title: "Your Email ID", type: "MULTIPLE_CHOICE", value: "Yes" },
+        { title: "Your Whatsapp Number", type: "MULTIPLE_CHOICE", value: "Yes" },
+        { title: "Which city are you from?", type: "MULTIPLE_CHOICE", value: "Chennai" },
+        { title: "What is your most recent designation?", type: "MULTIPLE_CHOICE", value: "Founder" },
+        { title: "Tell us your story", type: "MULTIPLE_CHOICE", value: "All of the above" },
+      ];
+      const form = typedForm(mcOnly);
+      for (const field of Object.keys(FIELD_ALIASES) as FieldKey[]) {
+        expect(pickTyped(form, field)).toBe("");
+      }
+      expect(
+        toApplicationRow(form.submission, form.questionMap, OFFERING_ID, null, form.questionTypeMap),
+      ).toBeNull();
+    });
+  });
+
+  describe("the preference ORDER inside a group", () => {
+    it("puts INPUT_TEXT above DROPDOWN for occupation", () => {
+      // The live form's shape, generalised: the coarse dropdown bucket must
+      // lose to the free-text designation even when the DROPDOWN carries the
+      // EARLIER alias, which is the one thing alias order cannot fix.
+      const fields: TypedField[] = [
+        { title: "Your occupation category", type: "DROPDOWN", value: "Entrepreneur/Founder" },
+        { title: "Most recent designation", type: "INPUT_TEXT", value: "Video Editor" },
+      ];
+      expect(untypedBothWays(fields, "occupation")).toEqual([
+        "Entrepreneur/Founder",
+        "Entrepreneur/Founder",
+      ]);
+      expect(typedBothWays(fields, "occupation")).toEqual(["Video Editor", "Video Editor"]);
+    });
+
+    it("still reaches DROPDOWN for occupation when no INPUT_TEXT answers", () => {
+      // A preference, not a permission list: the dropdown is the intended floor
+      // when the form only offers one.
+      expect(
+        typedBothWays(
+          [{ title: "What do you do?", type: "DROPDOWN", value: "Entrepreneur/Founder" }],
+          "occupation",
+        ),
+      ).toEqual(["Entrepreneur/Founder", "Entrepreneur/Founder"]);
+    });
+
+    it("puts INPUT_TEXT above DROPDOWN for city, and still accepts a DROPDOWN city", () => {
+      const fields: TypedField[] = [
+        { title: "City of residence", type: "DROPDOWN", value: "Kochi" },
+        { title: "Your city", type: "INPUT_TEXT", value: "Chennai" },
+      ];
+      // Untyped, "City of residence" wins on tier — the pinned pre-type
+      // behaviour, kept intact for forms that state no type.
+      expect(untypedBothWays(fields, "city")).toEqual(["Kochi", "Kochi"]);
+      expect(typedBothWays(fields, "city")).toEqual(["Chennai", "Chennai"]);
+      expect(
+        typedBothWays([{ title: "Which city are you from?", type: "DROPDOWN", value: "Chennai" }], "city"),
+      ).toEqual(["Chennai", "Chennai"]);
+    });
+
+    it("puts TEXTAREA above INPUT_TEXT for bio", () => {
+      const fields: TypedField[] = [
+        { title: "About you in one line", type: "INPUT_TEXT", value: "Editor, Chennai" },
+        { title: "Tell us your story", type: "TEXTAREA", value: "The hundred word essay" },
+      ];
+      // "about you" is declared before "tell us", so alias order alone picks the
+      // one-liner over the essay — the funnel's core qualification signal.
+      expect(untypedBothWays(fields, "bio")).toEqual(["Editor, Chennai", "Editor, Chennai"]);
+      expect(typedBothWays(fields, "bio")).toEqual([
+        "The hundred word essay",
+        "The hundred word essay",
+      ]);
+    });
+
+    it("honours each of the three phone block types", () => {
+      for (const phoneType of ["INPUT_NUMBER", "INPUT_PHONE_NUMBER", "INPUT_PHONE"]) {
+        const fields: TypedField[] = [
+          { title: "Phone extension at your workplace", type: "INPUT_TEXT", value: "404" },
+          { title: "Your mobile", type: phoneType, value: "9000000003" },
+        ];
+        // Untyped, the extension PREFIX-matches "phone" and wins on tier.
+        expect(untypedBothWays(fields, "phone")).toEqual(["404", "404"]);
+        expect(typedBothWays(fields, "phone")).toEqual(["9000000003", "9000000003"]);
+      }
+    });
+  });
+
+  describe("what the preference MOVES that alias order used to decide", () => {
+    it("inverts the essay decoy for bio — recorded, not silent", () => {
+      // A type preference outranks alias order for ORDINARY decoys too, not just
+      // for the three regression classes, and this is the one place in the suite
+      // where that visibly changes an answer. "Tell us who referred you and why"
+      // is an essay about somebody else; THIRD_PARTY_LABEL cannot touch it (it
+      // is anchored to identity nouns, deliberately — see the sweep's own tests
+      // above), so untyped it loses only because "about you" is declared before
+      // "tell us". Both are TEXTAREA-vs-INPUT_TEXT here, so the preference now
+      // decides first and the referral essay wins.
+      const fields: TypedField[] = [
+        { title: "Tell us who referred you and why", type: "TEXTAREA", value: "My friend R" },
+        { title: "About you", type: "INPUT_TEXT", value: "Editor, Chennai" },
+      ];
+      expect(untypedBothWays(fields, "bio")).toEqual(["Editor, Chennai", "Editor, Chennai"]);
+      expect(typedBothWays(fields, "bio")).toEqual(["My friend R", "My friend R"]);
+      // ACCEPTED, WITH ITS PRICE STATED. `bio` is a nullable qualification
+      // column — not the email dedupe key, not the name — so the cost is one
+      // wrong nullable field on a form that asks two essays, against a
+      // preference that is right on every form asking one (the live 100-word
+      // essay IS a TEXTAREA, and the one-line "About you" it would otherwise
+      // lose to is the thing this preference exists to beat). Buying it back
+      // would mean ranking alias order above type, which is exactly what the
+      // DROPDOWN occupation decoy proves cannot work.
+      expect(
+        typedBothWays(
+          [
+            { title: "About you in one line", type: "INPUT_TEXT", value: "Editor, Chennai" },
+            { title: "Tell us your story", type: "TEXTAREA", value: "The hundred word essay" },
+          ],
+          "bio",
+        ),
+      ).toEqual(["The hundred word essay", "The hundred word essay"]);
+    });
+
+    it("leaves the same-type residual exactly where it already was", () => {
+      // The other half of the honesty: where the two labels share a type, the
+      // type layer abstains and the pre-existing limit stands unchanged — the
+      // "<other field> of <someone>" wording outside the three identity groups
+      // is still decided by tier alone, typed or not.
+      const fields: TypedField[] = [
+        { title: "Occupation of your referrer", type: "INPUT_TEXT", value: "Editor" },
+        { title: "Your occupation", type: "INPUT_TEXT", value: "Director" },
+      ];
+      expect(typedBothWays(fields, "occupation")).toEqual(untypedBothWays(fields, "occupation"));
+      expect(typedBothWays(fields, "occupation")).toEqual(["Editor", "Editor"]);
+    });
+  });
+
+  describe("the English machinery still does the job type cannot", () => {
+    it("separates a SAME-TYPE third party from the applicant", () => {
+      // Type is blind here by construction — both are INPUT_EMAIL — so this is
+      // exactly the residual THIRD_PARTY_LABEL exists for, and the reason none
+      // of the vocabulary was deleted when the type layer arrived.
+      expect(
+        typedBothWays(
+          [
+            {
+              title: "Email of the person who referred you",
+              type: "INPUT_EMAIL",
+              value: "referrer@example.invalid",
+            },
+            { title: "Email Address", type: "INPUT_EMAIL", value: "asha@example.invalid" },
+          ],
+          "email",
+        ),
+      ).toEqual(["asha@example.invalid", "asha@example.invalid"]);
+      expect(
+        typedBothWays(
+          [
+            { title: "Guardian name", type: "INPUT_TEXT", value: "Other Person" },
+            { title: "Legal name", type: "INPUT_TEXT", value: "Asha Menon" },
+          ],
+          "fullName",
+        ),
+      ).toEqual(["Asha Menon", "Asha Menon"]);
+      expect(
+        typedBothWays(
+          [
+            { title: "Emergency contact number", type: "INPUT_NUMBER", value: "222" },
+            { title: "Phone", type: "INPUT_NUMBER", value: "9000000002" },
+          ],
+          "phone",
+        ),
+      ).toEqual(["9000000002", "9000000002"]);
+    });
+
+    it("separates a third party whose TYPE outranks the applicant's own", () => {
+      // The one the first cut of the type layer got wrong, and the reason the
+      // score key reads (ownFieldFirst, typeRank, …) rather than the other way
+      // round. Bucketing by type first and running the third-party sweep INSIDE
+      // each bucket lets a bucket holding only the referrer match, run its own
+      // fallback sweep and return before the applicant's lower-typed field is
+      // ever consulted — regression class (b), rebuilt out of the mechanism
+      // meant to retire it, on the field whose wrong answer is the permanent
+      // (offering_id, email) dedupe key.
+      expect(
+        typedBothWays(
+          [
+            {
+              title: "Email of the person who referred you",
+              type: "INPUT_EMAIL",
+              value: "referrer@example.invalid",
+            },
+            { title: "Your Email ID", type: "INPUT_TEXT", value: "asha@example.invalid" },
+          ],
+          "email",
+        ),
+      ).toEqual(["asha@example.invalid", "asha@example.invalid"]);
+      expect(
+        typedBothWays(
+          [
+            { title: "Emergency contact phone", type: "INPUT_NUMBER", value: "222" },
+            { title: "Your Whatsapp Number", type: "INPUT_PHONE_NUMBER", value: "9000000002" },
+          ],
+          "phone",
+        ),
+      ).toEqual(["9000000002", "9000000002"]);
+      // Including where the applicant's own question states no type at all —
+      // the fail-soft rank is still ABOVE anybody else's typed field.
+      expect(
+        typedBothWays(
+          [
+            { title: "Guardian name", type: "INPUT_TEXT", value: "Other Person" },
+            { title: "Your name", value: "Asha Menon" },
+          ],
+          "fullName",
+        ),
+      ).toEqual(["Asha Menon", "Asha Menon"]);
+      // And the row it files, since email is the column that makes it permanent.
+      const form = typedForm([
+        { title: "Referrer email", type: "INPUT_EMAIL", value: "referrer@example.invalid" },
+        { title: "Email", type: "INPUT_TEXT", value: "asha@example.invalid" },
+        { title: "Your name", type: "INPUT_TEXT", value: "Asha Menon" },
+      ]);
+      expect(
+        toApplicationRow(form.submission, form.questionMap, OFFERING_ID, null, form.questionTypeMap)
+          ?.email,
+      ).toBe("asha@example.invalid");
+    });
+
+    it("still ANSWERS from a third party's field when it is the only one", () => {
+      // The demotion is not a deny at any type rank: a form whose only email is
+      // the referrer's still produces a row, exactly as it did untyped. A deny
+      // would return "" and drop the whole application.
+      expect(
+        typedBothWays(
+          [
+            {
+              title: "Email of the person who referred you",
+              type: "INPUT_EMAIL",
+              value: "referrer@example.invalid",
+            },
+            { title: "Which city are you from?", type: "INPUT_TEXT", value: "Chennai" },
+          ],
+          "email",
+        ),
+      ).toEqual(["referrer@example.invalid", "referrer@example.invalid"]);
+    });
+
+    it("keeps the deny-list working under a perfectly innocent type", () => {
+      // The deny-list is NOT subsumed by the MULTIPLE_CHOICE rule: a form owner
+      // can author an informational block as anything, and the deny-list is
+      // also the second line of defence on an UNTYPED form.
+      expect(
+        typedBothWays([{ title: "Select one", type: "INPUT_TEXT", value: "a grant, please" }], "city"),
+      ).toEqual(["", ""]);
+      expect(pickField({ "Select one": "a grant, please" }, ["select one"])).toBe("");
+    });
+
+    it("keeps the possessive restriction working under type", () => {
+      // "your email" may still only win where the label LEADS with it, so a
+      // typed prose question that merely contains it cannot outrank the
+      // applicant's own field.
+      expect(
+        typedBothWays(
+          [
+            { title: "Where should we send your email receipts?", type: "INPUT_TEXT", value: "Anywhere" },
+            { title: "Email", type: "INPUT_EMAIL", value: "asha@example.invalid" },
+          ],
+          "email",
+        ),
+      ).toEqual(["asha@example.invalid", "asha@example.invalid"]);
+    });
+  });
+
+  describe("the pinned counter-cases still resolve to the applicant", () => {
+    it("{'Full name of my mentor', 'Name'} → the applicant", () => {
+      // The case that kills "just reorder the aliases most-specific-first".
+      // "full name" ahead of "name" hands this to the mentor in both orderings;
+      // both labels are INPUT_TEXT here, so the type layer is deliberately not
+      // what saves it — the bare-noun-first alias order is, and stays.
+      expect(
+        typedBothWays(
+          [
+            { title: "Full name of my mentor", type: "INPUT_TEXT", value: "M" },
+            { title: "Name", type: "INPUT_TEXT", value: "Asha Menon" },
+          ],
+          "fullName",
+        ),
+      ).toEqual(["Asha Menon", "Asha Menon"]);
+    });
+
+    it("{'Alternate phone number', 'Phone'} → the applicant", () => {
+      expect(
+        typedBothWays(
+          [
+            { title: "Alternate phone number", type: "INPUT_NUMBER", value: "222" },
+            { title: "Phone", type: "INPUT_NUMBER", value: "9000000002" },
+          ],
+          "phone",
+        ),
+      ).toEqual(["9000000002", "9000000002"]);
+    });
+  });
+
+  describe("all three historical regression classes, on one form, both orderings", () => {
+    // (a) FAQ/informational decoys, (b) a NAMED third party's fields, (c) a
+    // prose question whose answer is "Yes". Each of the three closed a previous
+    // round and opened the next; the acceptance for this one is all three green
+    // AT THE SAME TIME, on a form asked in either direction.
+    const gauntlet: TypedField[] = [
+      // (a)
+      { title: "What is the Creator Academy?", type: "MULTIPLE_CHOICE", value: "A live cohort" },
+      {
+        title: "Email updates from the academy work how?",
+        type: "MULTIPLE_CHOICE",
+        value: "Every Friday",
+      },
+      // (c)
+      { title: "Can we add your email to the newsletter?", type: "MULTIPLE_CHOICE", value: "Yes" },
+      // (b)
+      { title: "Name of the person who referred you", type: "INPUT_TEXT", value: "Referrer R" },
+      {
+        title: "Email of the person who referred you",
+        type: "INPUT_EMAIL",
+        value: "referrer@example.invalid",
+      },
+      { title: "Phone number of your reference", type: "INPUT_NUMBER", value: "999" },
+      // The applicant. Not one label is 81dRPA-shaped, and none carries a
+      // possessive — the wording alias order is powerless against.
+      { title: "Full Name", type: "INPUT_TEXT", value: "Asha Menon" },
+      { title: "Email Address", type: "INPUT_EMAIL", value: "asha@example.invalid" },
+      { title: "Contact Phone", type: "INPUT_NUMBER", value: "9000000002" },
+      { title: "Which city are you from?", type: "DROPDOWN", value: "Chennai" },
+      { title: "Most recent designation", type: "INPUT_TEXT", value: "Video Editor" },
+      { title: "Tell us your story", type: "TEXTAREA", value: "The hundred word essay" },
+    ];
+
+    it("resolves every one of the six fields to the applicant, in both orderings", () => {
+      expect(typedBothWays(gauntlet, "fullName")).toEqual(["Asha Menon", "Asha Menon"]);
+      expect(typedBothWays(gauntlet, "email")).toEqual([
+        "asha@example.invalid",
+        "asha@example.invalid",
+      ]);
+      expect(typedBothWays(gauntlet, "phone")).toEqual(["9000000002", "9000000002"]);
+      expect(typedBothWays(gauntlet, "city")).toEqual(["Chennai", "Chennai"]);
+      expect(typedBothWays(gauntlet, "occupation")).toEqual(["Video Editor", "Video Editor"]);
+      expect(typedBothWays(gauntlet, "bio")).toEqual([
+        "The hundred word essay",
+        "The hundred word essay",
+      ]);
+    });
+
+    it("is a form the English-only matcher decides by question ORDER", () => {
+      // Why the gauntlet is worth having: with the type channel off, the two
+      // orderings of the SAME form disagree about who the applicant is. That is
+      // the defect class, stated as a property rather than as one wording.
+      const untyped = untypedBothWays(gauntlet, "email");
+      expect(new Set(untyped).size).toBe(2);
+    });
+
+    it("files the applicant's row end to end, through toApplicationRow", () => {
+      const form = typedForm(gauntlet);
+      const row = toApplicationRow(
+        form.submission,
+        form.questionMap,
+        OFFERING_ID,
+        null,
+        form.questionTypeMap,
+      );
+      expect(row?.full_name).toBe("Asha Menon");
+      expect(row?.email).toBe("asha@example.invalid");
+      expect(row?.phone).toBe("9000000002");
+      expect(row?.city).toBe("Chennai");
+      expect(row?.occupation).toBe("Video Editor");
+      expect(row?.bio).toBe("The hundred word essay");
+      expect(row?.status).toBe("submitted");
+    });
+  });
+
+  describe("fail-soft — a form that states no type at all", () => {
+    const untypedForm: TypedField[] = [
+      { title: "Full Name", value: "Asha Menon" },
+      { title: "Email Address", value: "asha@example.invalid" },
+      { title: "Contact Phone", value: "9000000002" },
+      { title: "Which city are you from?", value: "Chennai" },
+      { title: "Most recent designation", value: "Video Editor" },
+      { title: "Tell us your story", value: "The hundred word essay" },
+    ];
+
+    it("resolves all six fields anyway", () => {
+      // The poller walks forms nobody here has read. A missing type must cost
+      // the ranking, not the row.
+      const form = typedForm(untypedForm);
+      expect(Object.values(form.types).every((t) => t === "")).toBe(true);
+      expect(pickTyped(form, "fullName")).toBe("Asha Menon");
+      expect(pickTyped(form, "email")).toBe("asha@example.invalid");
+      expect(pickTyped(form, "phone")).toBe("9000000002");
+      expect(pickTyped(form, "city")).toBe("Chennai");
+      expect(pickTyped(form, "occupation")).toBe("Video Editor");
+      expect(pickTyped(form, "bio")).toBe("The hundred word essay");
+    });
+
+    it("gives the identical answer with the type channel off entirely", () => {
+      // Which is the same statement made from the other side, and the reason
+      // the ~90 untyped `pickField(answers, aliases)` call sites in this file
+      // are themselves the fallback-path proof.
+      const form = typedForm(untypedForm);
+      for (const field of Object.keys(FIELD_ALIASES) as FieldKey[]) {
+        expect(pickTyped(form, field)).toBe(pickField(form.answers, FIELD_ALIASES[field]));
+      }
+    });
+
+    it("falls back per FIELD, not per form, when only some types are known", () => {
+      // A partially-typed form must not lose the untyped half.
+      const mixed: TypedField[] = [
+        { title: "Email Address", type: "INPUT_EMAIL", value: "asha@example.invalid" },
+        { title: "Which city are you from?", value: "Chennai" },
+      ];
+      expect(typedBothWays(mixed, "email")).toEqual([
+        "asha@example.invalid",
+        "asha@example.invalid",
+      ]);
+      expect(typedBothWays(mixed, "city")).toEqual(["Chennai", "Chennai"]);
+    });
+
+    it("falls back when a type is present but is not one the group prefers", () => {
+      // CHECKBOXES is neither preferred nor MULTIPLE_CHOICE, so it ranks last —
+      // and last is still reachable when nothing better answered.
+      expect(
+        typedBothWays([{ title: "Which city are you from?", type: "CHECKBOXES", value: "Chennai" }], "city"),
+      ).toEqual(["Chennai", "Chennai"]);
+    });
+
+    it("never PROMOTES a blank answer by its type — it ranks as it did untyped", () => {
+      // The type layer ranks the answers a form COLLECTED; an empty one carries
+      // no evidence to rank. A blank therefore drops to the fail-soft rank
+      // whatever its block type, and the pre-type English key decides — the same
+      // answer, in both orderings, as with the type channel off entirely.
+      const fields: TypedField[] = [
+        { title: "Your Email ID", type: "INPUT_EMAIL", value: "" },
+        { title: "Where do we email your invoice?", type: "INPUT_TEXT", value: "Accounts dept" },
+      ];
+      expect(typedBothWays(fields, "email")).toEqual(untypedBothWays(fields, "email"));
+      // Asked first, the blank still speaks for its alias and still yields "":
+      // "asked and left empty" does not become "so use the next label down".
+      // That rule is the alias sweep's, and it is untouched — what changed is
+      // only that TYPE alone can no longer put a blank at the front of the queue.
+      expect(pickTyped(typedForm(fields), "email")).toBe("");
+    });
+
+    it("does not let a blank at a preferred type swallow the applicant's answer", () => {
+      // The defect that rule exists for. An optional "Work email" left empty is
+      // an INPUT_EMAIL and the applicant's real address is a plain INPUT_TEXT,
+      // so promoting the blank on type alone returned "" — and toApplicationRow
+      // DROPS a submission with no email, one the pre-type code ingested
+      // correctly. A blank may cost the ranking; it may never cost the row.
+      const fields: TypedField[] = [
+        { title: "Your name", type: "INPUT_TEXT", value: "Asha Menon" },
+        { title: "Work email (optional)", type: "INPUT_EMAIL", value: "" },
+        { title: "Email Address", type: "INPUT_TEXT", value: "asha@example.invalid" },
+      ];
+      expect(typedBothWays(fields, "email")).toEqual([
+        "asha@example.invalid",
+        "asha@example.invalid",
+      ]);
+      const form = typedForm(fields);
+      expect(
+        toApplicationRow(form.submission, form.questionMap, OFFERING_ID, null, form.questionTypeMap)
+          ?.email,
+      ).toBe("asha@example.invalid");
+      // The same shape on phone, where the blank sits at the group's FIRST
+      // preferred type and the answer at its second.
+      expect(
+        typedBothWays(
+          [
+            { title: "Your Whatsapp Number", type: "INPUT_NUMBER", value: "" },
+            { title: "Your mobile", type: "INPUT_PHONE_NUMBER", value: "9000000003" },
+          ],
+          "phone",
+        ),
+      ).toEqual(["9000000003", "9000000003"]);
+    });
   });
 });
 

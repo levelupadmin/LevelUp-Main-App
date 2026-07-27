@@ -32,6 +32,12 @@
  * form happens not to exhibit: HTML-wrapped titles, a title that is HTML but
  * cleans to nothing, and single-object answers.
  *
+ * `typedForm` (bottom of this file) builds an ARBITRARY form carrying per-question
+ * BLOCK TYPES, for the fix-round-3 type layer. The real envelope proves the live
+ * form; `typedForm` proves the forms nobody here has read — the third-party
+ * decoys, the prose consent question, the untyped fallback and the
+ * `MULTIPLE_CHOICE`-only pathological case — in BOTH question orderings.
+ *
  * There is ZERO network here: every builder returns a plain object, so the pure
  * parse/window/map path is fully green without mocking a single fetch. Types
  * come from `@shared/tally` (alias wired in vitest.config.ts + both tsconfigs)
@@ -40,6 +46,9 @@
 
 import {
   buildQuestionMap,
+  buildQuestionTypeMap,
+  extractAnswers,
+  extractAnswerTypes,
   type IntakeWindowSource,
   type TallyEnvelope,
   type TallyQuestion,
@@ -371,5 +380,69 @@ export function syntheticSubmission(overrides: SubmissionOverrides = {}): TallyS
       ...response(qid, answer),
       submissionId: id,
     })),
+  };
+}
+
+// ── Arbitrary forms carrying a BLOCK TYPE ──
+
+/** One question of a `typedForm`: the label, the Tally block type, the answer. */
+export interface TypedField {
+  title: string;
+  /**
+   * The Tally block type (`INPUT_EMAIL`, `MULTIPLE_CHOICE`, …). OMIT IT to
+   * model a form that states no type at all — that is the fail-soft path, and
+   * it has to be expressible here or it cannot be proven.
+   */
+  type?: string;
+  value: string;
+}
+
+/** Everything `pickField` / `toApplicationRow` need for one typed form. */
+export interface TypedFormFixture {
+  questions: TallyQuestion[];
+  questionMap: Record<string, string>;
+  questionTypeMap: Record<string, string>;
+  submission: TallySubmission;
+  answers: Record<string, string>;
+  types: Record<string, string>;
+}
+
+/**
+ * An arbitrary form with per-question BLOCK TYPES, built by running the SHIPPED
+ * join over invented `questions[]` + `responses[]` rather than by hand-writing
+ * the two maps. That matters: a fixture that assembled `{label: type}` directly
+ * would keep passing if `buildQuestionTypeMap` started disagreeing with
+ * `buildQuestionMap` about which questions exist, which is the one way the type
+ * layer can go quietly wrong.
+ *
+ * Question ORDER is the array order, so a test can assert both orderings by
+ * reversing its input — the standard here, because every historical regression
+ * in this file was right in one ordering and wrong in the other.
+ *
+ * PERSONAS ARE SYNTHETIC. No real applicant, address or number appears in any
+ * fixture; `example.invalid` is reserved by RFC 6761 and the numbers are made up.
+ */
+export function typedForm(fields: readonly TypedField[]): TypedFormFixture {
+  const questions: TallyQuestion[] = fields.map((field, index) => ({
+    id: `q_typed_${index}`,
+    type: field.type ?? null,
+    title: field.title,
+  }));
+  const questionMap = buildQuestionMap(questions);
+  const questionTypeMap = buildQuestionTypeMap(questions);
+  const submission: TallySubmission = {
+    id: "sub_typed",
+    formId: FORM_ID,
+    isCompleted: true,
+    submittedAt: "2026-07-20T09:15:00.000Z",
+    responses: fields.map((field, index) => response(`q_typed_${index}`, field.value)),
+  };
+  return {
+    questions,
+    questionMap,
+    questionTypeMap,
+    submission,
+    answers: extractAnswers(submission, questionMap),
+    types: extractAnswerTypes(questionMap, questionTypeMap),
   };
 }
