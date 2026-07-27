@@ -78,5 +78,14 @@ project_id = "twqagwleffjggoemzfqs"
   # the full rationale and the pg_cron/vault-secret coupling it depends on.
   [functions.tally-application-poll]
     verify_jwt = true
+  # claim-application: the server half of the interactive claim (PHASE SP/S-4).
+  # UNLIKE the two OTP entry points above, this one is the OPPOSITE case — the
+  # caller is signed in BY DEFINITION (the claim only exists to bind a parked
+  # application to the session they are already holding), and the handler
+  # resolves that JWT to an auth row and derives the unproven channel from it.
+  # verify_jwt = true so an anonymous request is rejected at the gateway rather
+  # than reaching a handler that has nothing to decide against.
+  [functions.claim-application]
+    verify_jwt = true
   [functions.generate-invoice-pdf]
     verify_jwt = false

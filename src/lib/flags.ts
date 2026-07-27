@@ -15,9 +15,20 @@
 /** The reconciler flag. Default off — the whole reconciler path is inert. */
 export const FUNNEL_RECON = "VITE_FUNNEL_RECON";
 
+/**
+ * The additive Email sign-in tab (PHASE SP). Default off, so the MSG91 phone
+ * form is the only login surface until this is switched on: the tab dark-ships
+ * and inviolable rule 2 ("phone-OTP stays byte-identical to production") holds
+ * by construction while it is unset. Lives here rather than next to the claim
+ * hook so the Tier-1 login page depends on the registry, not on a Phase-SP
+ * feature module, to learn the flag's name.
+ */
+export const EMAIL_OTP_TAB = "VITE_EMAIL_OTP_TAB";
+
 /** Known flags and their default when neither localStorage nor env speaks. */
 const REGISTRY: Record<string, boolean> = {
   [FUNNEL_RECON]: false,
+  [EMAIL_OTP_TAB]: false,
 };
 
 function truthy(value: unknown): boolean {
