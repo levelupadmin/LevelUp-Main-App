@@ -74,6 +74,7 @@
  * counted as `skippedNotCompleted`.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { timingSafeEqual } from "../_shared/crypto.ts";
 import {
   buildQuestionMap,
   dedupeBySubmissionId,
@@ -381,28 +382,85 @@ async function fetchPage(formId: string, page: number, apiKey: string): Promise<
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  // Auth: service_role only. `verify_jwt = true` in config.toml only proves the
-  // caller holds SOME valid project JWT — the anon key qualifies — so without
-  // this check any anonymous caller could hammer the poller and burn the Tally
-  // API quota. Parse the bearer token and require role=service_role, the same
-  // guarantee notify-cohort/index.ts:47-60 relies on.
+  // Auth: the caller must present the SERVICE-ROLE KEY ITSELF, byte for byte
+  // (FX-3). `verify_jwt = true` (config.toml:58-59) only proves the caller holds
+  // SOME valid project JWT — the anon key qualifies — so it cannot be the gate.
+  //
+  // WHY A KEY COMPARE AND NOT A CLAIM PARSE. The gate this replaces base64URL-
+  // decoded the bearer token's payload and required `role=service_role` WITHOUT
+  // verifying the signature, the same shape notify-cohort/index.ts:59-68 uses.
+  // An unverified payload is a string an attacker can author: mint any token
+  // whose middle segment decodes to `{"role":"service_role"}` and the gate
+  // opens. It survived only because `verify_jwt` happened to be on — and this
+  // repo's own deploy docs (src/docs/content/tech.ts:119-120) present
+  // `--no-verify-jwt` as the standard flag, one deploy away from reducing the
+  // gate to a forgeable string. Comparing against SUPABASE_SERVICE_ROLE_KEY is
+  // unforgeable without the key and holds regardless of `verify_jwt` or any
+  // deploy flag; `verify_jwt = true` stays as defense in depth. This is the
+  // guarantee process-email-queue/index.ts:109-117 already relies on.
+  //
+  // REBUTTING notify-cohort/index.ts:52-55. That comment asserts a byte compare
+  // is UNWORKABLE here — "the deployed function's SUPABASE_SERVICE_ROLE_KEY env
+  // var occasionally returns a different representation than what's stored in
+  // the vault (Supabase sometimes re-issues internal JWTs without rotating the
+  // dashboard key)" — and uses that to justify the claim parse. If it were true
+  // this gate would 401 the cron at some arbitrary later date. It is not
+  // supported by this repo's own production evidence:
+  // process-email-queue/index.ts:115-117 performs the IDENTICAL byte compare
+  // against SUPABASE_SERVICE_ROLE_KEY, and its pg_cron caller sends the SAME
+  // vault secret this poll's cron sends (`email_queue_service_role_key` — see
+  // 20260722140100_tally_poll_cron.sql:35-37,46, which reuses the email
+  // worker's secret by name). That compare has been live and passing in
+  // production, so the divergence notify-cohort describes is not something this
+  // deployment exhibits. Two contradictory comments in one codebase are how a
+  // 401 debug session gets stranded, so: if this gate ever rejects the cron,
+  // read THIS paragraph first and go compare the two values (see the coupling
+  // note below) rather than reaching for the claim parse.
+  //
+  // ⚠️ COUPLED TO THE VAULT SECRET — VERIFY BEFORE DEPLOYING. The only
+  // production caller is the pg_cron job
+  // (supabase/migrations/20260722140100_tally_poll_cron.sql:44-47), which sends
+  // `Bearer ' || vault.decrypted_secrets['email_queue_service_role_key']`. This
+  // gate passes ONLY if that vault secret is byte-identical to this function's
+  // SUPABASE_SERVICE_ROLE_KEY. If it was stored with a trailing newline, or is a
+  // separately-minted worker JWT rather than the literal key, intake dies
+  // silently every 15 minutes. The `.trim()` below absorbs stray whitespace the
+  // header itself picks up; it cannot fix a genuinely different secret.
+  //
+  // The pre-deploy comparison of those two values is necessary but NOT
+  // sufficient: it runs once, and a later key rotation that misses the vault
+  // would break intake with no user-visible symptom. The standing signal is the
+  // pair of log events below — after deploy, confirm the first cron run logs a
+  // successful poll and neither `auth_rejected` nor `auth_misconfigured`, and
+  // keep an alert on both. Either one repeating at a 15-minute cadence with no
+  // other traffic means the cron itself is being turned away: `auth_rejected`
+  // points at the vault secret, `auth_misconfigured` at this function's env.
   const authHeader = req.headers.get("Authorization") ?? "";
-  if (!authHeader.toLowerCase().startsWith("bearer ")) {
+  const token = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : "";
+  // `timingSafeEqual` returns false on a length mismatch, but an UNSET key and
+  // an empty bearer are both "" and would compare EQUAL — so a missing key is a
+  // hard 401 before the compare can ever run. It gets its OWN event (the same
+  // way `tally_api_key_unset` below does for the other server-side secret):
+  // folded into `auth_rejected` it is indistinguishable from a bad caller, and
+  // the operator burns the outage chasing the vault secret and the cron job
+  // while the fault is on this function's side. The RESPONSE is byte-identical
+  // either way — the caller learns nothing about which half failed.
+  if (!SERVICE_KEY) {
+    log("error", "auth_misconfigured", { reason: "service_key_unset" });
     return jsonRes({ error: "Unauthorized" }, 401);
   }
-  const token = authHeader.slice(7).trim();
-  try {
-    // base64URL → base64 before decoding. `atob` implements WHATWG
-    // forgiving-base64, which REJECTS `-` and `_` — the exact substitutions
-    // base64url makes for `+` and `/`. Whether a given service-role payload
-    // happens to encode a 62/63 sextet is luck of the claim bytes, and this is
-    // the first function whose only caller is cron: an unlucky key would 401
-    // every 15 minutes and take intake down with no other signal.
-    const segment = (token.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
-    const payload = JSON.parse(atob(segment)) as { role?: string };
-    if (payload.role !== "service_role") return jsonRes({ error: "Forbidden" }, 403);
-  } catch {
-    return jsonRes({ error: "Invalid token" }, 401);
+  if (!token || !timingSafeEqual(token, SERVICE_KEY)) {
+    // The RESPONSE carries no detail (no reason, no hint about which half
+    // failed). But a cron-wide 401 with zero log signal is an invisible outage
+    // repeating every 15 minutes, so emit exactly one structured line — shape
+    // only. Never the token, never a prefix of it, never the key.
+    log("warn", "auth_rejected", {
+      hasAuthHeader: authHeader.length > 0,
+      tokenLength: token.length,
+    });
+    return jsonRes({ error: "Unauthorized" }, 401);
   }
 
   const apiKey = Deno.env.get("TALLY_API_KEY") ?? "";

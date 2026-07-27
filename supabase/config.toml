@@ -47,9 +47,14 @@ project_id = "twqagwleffjggoemzfqs"
   # [functions.process-email-queue] — the existing cron-invoked function with an
   # explicit entry. (notify-cohort is cron-invoked too but has NO entry here; it
   # relies on the implicit default, so it is not the precedent to copy.)
-  # verify_jwt = true only proves the caller holds SOME valid project JWT — the
-  # anon key qualifies — so the handler additionally parses the bearer token and
-  # requires role=service_role before spending any Tally API quota.
+  # verify_jwt = true is NOT what makes this function safe: it only proves the
+  # caller holds SOME valid project JWT, and the anon key qualifies. The real
+  # gate is in the handler, which compares the bearer token BYTE FOR BYTE
+  # (constant-time) against SUPABASE_SERVICE_ROLE_KEY before spending any Tally
+  # API quota — unforgeable without the key, and it holds even if this flag is
+  # flipped or the function is deployed with --no-verify-jwt. verify_jwt = true
+  # stays on as defense in depth only. See tally-application-poll/index.ts for
+  # the full rationale and the pg_cron/vault-secret coupling it depends on.
   [functions.tally-application-poll]
     verify_jwt = true
   [functions.generate-invoice-pdf]
