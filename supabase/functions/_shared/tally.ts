@@ -32,9 +32,11 @@
  * matcher than the webhook. Hence, in the order they run: alias lists retuned
  * against the real labels, Tally's piped-personalisation prefix normalised off
  * a label before it is matched (`MENTION_PREFIX`), an anchored deny-list for
- * the form's informational blocks (`DENIED_LABEL`), then word-boundary scoring
- * (`pickField`). The two paths can now legitimately disagree on a pathological
- * form, and when they do the poller is the one that is right.
+ * the form's informational blocks (`DENIED_LABEL`), an anchored demotion for a
+ * NAMED third party's name / email / phone (`THIRD_PARTY_LABEL`), then
+ * word-boundary scoring (`pickField`). The two paths can now legitimately
+ * disagree on a pathological form, and when they do the poller is the one that
+ * is right.
  *
  * NOTHING HERE MAY BE TUNED TO ONE FORM. The poller walks EVERY staged offering
  * carrying a `tally_form_url` — one form per offering — so every rule in this
@@ -42,8 +44,12 @@
  * belt-and-braces on `81dRPA` can be the thing that NULLs a real column
  * elsewhere, or, if it silences the email label, drops the whole submission
  * (`toApplicationRow` returns null without an email). That is why the deny-list
- * is anchored to whole labels instead of loose substrings, and why the
- * personalisation token is normalised away rather than deny-listed.
+ * is anchored to whole labels instead of loose substrings, why the
+ * personalisation token is normalised away rather than deny-listed, why a
+ * referrer's field is scored LAST rather than refused outright, and why the
+ * only vocabulary in this file that can move a label names THIRD PARTIES —
+ * never applicants — so that everything it fails to recognise keeps exactly the
+ * ranking it had before the rule existed.
  *
  * Dependency-free: no imports, and only globals that exist in every target
  * (Deno, Node, jsdom) — Date, JSON, RegExp, Object. Imported by the edge fn as
@@ -134,14 +140,62 @@ export interface CohortApplicationRow {
  *     "Write your heart out! (In 100 words or more)", which `about | bio |
  *     tell us` missed entirely, and `about` alone is too greedy — it matches
  *     "How did you hear about us?" — so it is now `about you`.
- * name / email / phone / city are unchanged: they already resolve correctly on
- * the real form, and the real-envelope tests re-verify that under the new
- * matcher.
+ *   - `fullName` / `email` / `phone` now LEAD WITH THE APPLICANT'S OWN
+ *     POSSESSIVE FORM, ahead of the bare noun (fix round 2, finding 1). A
+ *     third-party label — "Name of referrer", "Email ID of the person who
+ *     referred you", "Phone number of your reference" — STARTS with the generic
+ *     alias and so scores `TIER_PREFIX`, whereas the applicant's own "Your
+ *     Email ID" can only ever score `TIER_WORD`. Tier outranks position, so the
+ *     referrer's answer won in BOTH question orderings, deterministically — a
+ *     regression against the old `includes()` matcher, which was at least right
+ *     whenever the applicant's field came first. ALIAS PRIORITY IS THE ONLY
+ *     LEVER IN THESE LISTS THAT CAN OUTRANK A `TIER_PREFIX` THIRD-PARTY LABEL:
+ *     it is scored ABOVE tier, so the specific alias settles the group before
+ *     the tier comparison is ever reached (the same reason `designation` leads
+ *     `what do you do`). It matters most on `email`, which is the
+ *     `(offering_id, email)` dedupe key, the users-join key and the reminder
+ *     recipient — and the poller never UPDATEs a row, so one wrong pick is
+ *     permanent and hides the application from the person who filed it.
+ *     Every real `81dRPA` label is a `TIER_WORD` hit, so the defect was inert
+ *     there and the real-envelope fixture could not see it. That is precisely
+ *     the failure mode "NOTHING HERE MAY BE TUNED TO ONE FORM" exists to catch.
+ *   - THE POSSESSIVE FORM IS THE ONLY THING PROMOTED, and the rest of each
+ *     group stays in bare-noun-first order. Promoting an alias the applicant's
+ *     own label does NOT contain hands the group to whatever third-party label
+ *     does contain it, before tier or position is ever consulted — the same
+ *     mechanism, pointed the wrong way. Two earlier cuts of this very fix
+ *     proved it: `full name` ahead of `name` filed "Full name of <someone
+ *     else>" as the applicant on any form asking a bare "Name", and `phone
+ *     number` ahead of `phone` filed "<someone else>'s phone number" over a
+ *     bare "Phone" — both order-independent, both the exact defect the
+ *     possessive lead exists to close. `full name` and `phone number` therefore
+ *     sit AFTER their bare nouns, where they are still reachable as the floor
+ *     when the bare-noun candidate is present but blank. This ordering is what
+ *     protects the forms `THIRD_PARTY_LABEL` does NOT recognise — "Full name of
+ *     my mentor", "Alternate phone number" — which is most of them.
+ *   - ALIAS ORDER CANNOT DO THE WHOLE JOB, and what it cannot do is bounded and
+ *     known. It needs the applicant's label to CONTAIN the possessive, so an
+ *     applicant who is asked a bare "Email Address" gives it nothing to lead
+ *     with, and against "Email ID of the person who referred you" that ties at
+ *     `TIER_PREFIX` and is then settled by question position — the referrer's
+ *     way, on the usual form, because the referral block is usually asked
+ *     first. It is equally powerless over a third party worded as a bare
+ *     compound ("Referrer email"), which ties a mid-label applicant hit
+ *     ("Contact email") and wins the same way. `THIRD_PARTY_LABEL` exists for
+ *     that residual and for nothing else, and only for the roles it can name.
+ *     It scores a NAMED third party's field LAST instead of denying it, so no
+ *     label is ever removed: the cost of a deny that over-matches on `email` is
+ *     not a NULL column but a DROPPED submission (`toApplicationRow` returns
+ *     null without an email), on every cohort form the poller scans including
+ *     the ones nobody has read.
+ * `city` is deliberately NOT led with "your city". It has no observed
+ * third-party twin, and the group's pinned behaviour is the opposite one:
+ * "City of residence" is meant to beat a bare "Your city" on tier.
  */
 export const FIELD_ALIASES = {
-  fullName: ["name", "full name"],
-  email: ["email"],
-  phone: ["phone", "mobile", "whatsapp"],
+  fullName: ["your name", "name", "full name"],
+  email: ["your email", "email"],
+  phone: ["your whatsapp", "your phone", "phone", "phone number", "mobile", "whatsapp"],
   city: ["city", "location"],
   occupation: ["occupation", "profession", "designation", "what do you do"],
   bio: ["write your heart", "100 words", "about you", "bio", "tell us"],
@@ -347,6 +401,93 @@ function isDeniedLabel(label: string): boolean {
 }
 
 /**
+ * A NAMED THIRD PARTY'S NAME / EMAIL / PHONE — scored LAST rather than denied.
+ *
+ * A cohort form that asks for a referrer, a reference or a guardian asks for
+ * the SAME nouns as the applicant's own fields: "Name of referrer", "Email ID
+ * of the person who referred you", "Phone number of your reference",
+ * "Guardian's name". Those all START with, or contain, the generic alias, so
+ * they compete directly with the applicant's own label and can beat it on tier
+ * or on question position. Leading the alias lists with the applicant's
+ * possessive form settles the pairs where the applicant's own label says
+ * "your"; it can do nothing at all when the applicant is asked a bare "Email
+ * Address", which is what this pass is for.
+ *
+ * THE VOCABULARY NAMES THIRD PARTIES, NEVER APPLICANTS, AND THAT DIRECTION IS
+ * THE WHOLE POINT. An earlier cut of this rule matched `^<noun> of` and then
+ * carved out an APPLICANT vocabulary (`applicant|candidate|participant|
+ * student|you`). Any such list is incomplete, and its incompleteness DEMOTED
+ * REAL APPLICANTS: "Email of the filmmaker", "Name of the delegate", "Email ID
+ * of the person applying" all fell out of the first sweep and lost — in both
+ * question orderings — to a genuine "Referrer email" the rule never recognised.
+ * That was a fresh regression on the `(offering_id, email)` dedupe key, and it
+ * was the same "tuned to one form" defect the rule was written to fix, pointed
+ * the other way. Naming the third party instead inverts the failure mode: a
+ * role this list has never heard of is simply not demoted, and the form ranks
+ * exactly as it would if this rule did not exist — literally so: when nothing
+ * on a form matches, `ownFields` IS `candidates` and `pickField` reduces to the
+ * single sweep it was before. Under-reach therefore costs nothing that was not
+ * already there; over-reach is what has to be guarded, and is.
+ *
+ * A DEMOTION, NOT A DENY. `pickField` runs its alias search over the
+ * non-third-party labels FIRST and repeats it over every label only when that
+ * sweep matched no label at all, so a matched label is never removed — it is
+ * simply the last thing anyone asks. Over-reach therefore costs a re-rank on a
+ * form that has another candidate, instead of a NULL column, or a DROPPED
+ * submission outright when the label silenced is the email one
+ * (`toApplicationRow` returns null without an email). That matters because this
+ * runs against every cohort form the poller scans, including the ones nobody
+ * here has read.
+ *
+ * ANCHORED, AND SELF-SCOPING TO NAME / EMAIL / PHONE. Both patterns are pinned
+ * to the start of the label and both require an identity noun, so they can only
+ * ever describe a label those three groups could match: `city`, `occupation`
+ * and `bio` are untouched by construction, including the pinned "City of
+ * residence" and the "Tell us who referred you" essay decoy — a loose
+ * `\breferr(er|ed)\b` would have taken both of those with it.
+ *
+ * WHAT IT DOES NOT CATCH, AND WHO LOSES WHEN IT DOES NOT. Only the roles below,
+ * in only two shapes. An unlisted role ("Name of your mentor", "Colleague
+ * email") or an unlisted shape ("Name — reference") is decided by tier and then
+ * by question order, exactly as it was before this rule existed. BE CLEAR THAT
+ * THIS IS NOT ALWAYS HARMLESS: when the applicant's own label is a mid-label
+ * hit ("Legal name") and the unrecognised third-party label is a prefix hit
+ * ("Name of my mentor"), the third party still wins, in both orderings. There
+ * is no rule that separates those two by structure alone — only a vocabulary,
+ * and every vocabulary is incomplete — so the guarantee this file makes is
+ * deliberately narrow: a RECOGNISED third-party label cannot outrank the
+ * applicant's own field, and an unrecognised one is no worse than it was.
+ *
+ * Matched against the CLEANED, normalised, mention-stripped label, exactly like
+ * `DENIED_LABEL` — never the raw title.
+ */
+const IDENTITY_NOUN =
+  "(?:full name|name|e-?mail(?: id| address)?|phone(?: number)?|mobile(?: number)?|whatsapp(?: number)?|contact number)";
+/**
+ * Roles that CANNOT be the applicant. `nominee`, `delegate`, `candidate` and
+ * friends are deliberately absent: on a nomination or institutional form those
+ * name the person the application is FOR.
+ */
+const THIRD_PARTY_ROLE =
+  "(?:referrers?|referees?|references?|person who referred you|guardians?|parents?|father|mother|spouse|emergency(?: contact)?|next of kin)";
+/** Leading determiners, so "of your reference" reads the same as "of reference". */
+const ROLE_DETERMINER = "(?:the |your |a |an |their |his |her )*";
+
+const THIRD_PARTY_LABEL: readonly RegExp[] = [
+  // "Email ID of the person who referred you", "Phone number of your reference"
+  new RegExp(`^${IDENTITY_NOUN} of ${ROLE_DETERMINER}${THIRD_PARTY_ROLE}\\b`),
+  // "Referrer email", "Guardian's full name", "Emergency contact number"
+  new RegExp(`^${ROLE_DETERMINER}${THIRD_PARTY_ROLE}(?:['’]s|s['’])? ${IDENTITY_NOUN}\\b`),
+];
+
+function isThirdPartyLabel(label: string): boolean {
+  for (const pattern of THIRD_PARTY_LABEL) {
+    if (pattern.test(label)) return true;
+  }
+  return false;
+}
+
+/**
  * TALLY'S PIPED-PERSONALISATION PREFIX, normalised off a label before matching.
  * A form author can splice an earlier answer into a later question's title, and
  * the API returns the token UNRESOLVED, as `@<the referenced question's title>,
@@ -440,10 +581,66 @@ function aliasMatchTier(label: string, alias: string): number {
 }
 
 /**
+ * One full alias sweep over a candidate set — see the score key on `pickField`,
+ * which owns the two sweeps and the rationale.
+ *
+ * `matched` IS NOT `!!value`. It says whether any label in this set answered
+ * for any alias in the group AT ALL, blank answer included, which is the only
+ * way `pickField` can tell "this form never asked the applicant for an email"
+ * from "it asked and they left it empty". The two must not lead to the same
+ * place: only the first may fall through to somebody else's field.
+ */
+function selectByAlias(
+  candidates: ReadonlyArray<{ label: string; value: string }>,
+  aliases: readonly string[],
+): { value: string; matched: boolean } {
+  let matched = false;
+  for (const alias of aliases) {
+    const needle = normalizeLabel(alias);
+    let bestTier = TIER_NONE;
+    let bestValue = "";
+    for (const candidate of candidates) {
+      const tier = aliasMatchTier(candidate.label, needle);
+      // Strictly better only, so an equal tier leaves the earlier question in place.
+      if (tier < bestTier) {
+        bestTier = tier;
+        bestValue = candidate.value;
+      }
+    }
+    if (bestTier !== TIER_NONE) matched = true;
+    if (bestValue) return { value: bestValue, matched: true };
+  }
+  return { value: "", matched };
+}
+
+/**
  * Scored alias match over joined answers. "" when nothing matches.
  *
- * THE SCORE KEY IS `(aliasIndex, matchTier, questionOrder)` — IN THAT ORDER.
- * Alias priority outranks match quality, which outranks position:
+ * THE SCORE KEY IS `(ownFieldFirst, aliasIndex, matchTier, questionOrder)` — IN
+ * THAT ORDER. The whole alias sweep runs over the applicant's own labels first
+ * and is repeated over every label only when that sweep matched NO label at all
+ * (see `THIRD_PARTY_LABEL`), so a RECOGNISED third-party label — "Email ID of
+ * the person who referred you", "Referrer email" — cannot beat the applicant's
+ * own field however well it scores, in either question ordering, while still
+ * answering for a form where it is the only email on offer.
+ *
+ * STATE THAT GUARANTEE EXACTLY, BECAUSE IT IS NARROWER THAN IT SOUNDS. It holds
+ * for the wordings `THIRD_PARTY_LABEL` recognises, and no vocabulary is
+ * complete; an unrecognised one ("Name of my mentor") competes on tier and
+ * position like any other label, and can win. What the two sweeps do buy
+ * unconditionally is that a recognised third-party label never wins by
+ * DEFAULT — including when the applicant's own question exists but was left
+ * blank. Sweep 2 is gated on "the applicant's labels said nothing for this
+ * group", not on "sweep 1 produced no value", so a non-required "Your Email ID"
+ * submitted empty yields "" and the submission is skipped
+ * (`toApplicationRow` returns null without an email) rather than being filed
+ * under the referrer's address. That trade is deliberate: a skipped submission
+ * is visible and re-pollable, whereas a wrong email is the permanent
+ * `(offering_id, email)` dedupe key, the users-join key and the reminder
+ * recipient, and the poller never UPDATEs a row it has already written.
+ *
+ * Within one sweep, alias priority outranks match quality, which outranks
+ * position:
  *   1. aliases are tried in their declared order, and the first alias that
  *      yields a non-empty answer wins outright;
  *   2. within one alias, the best TIER wins — exact label, then label starts
@@ -458,10 +655,12 @@ function aliasMatchTier(label: string, alias: string): number {
  * ("Entrepreneur/Founder") over the applicant's actual job title purely because
  * the form asks it one question earlier.
  *
- * AN EMPTY ANSWER FALLS THROUGH TO THE NEXT ALIAS, NOT THE NEXT LABEL. Exactly
- * one label — the alias's best-scoring candidate — ever answers for a given
- * alias. If that candidate's answer is blank, the search moves on to the next
- * ALIAS and the runner-up is never consulted, in either direction.
+ * AN EMPTY ANSWER FALLS THROUGH TO THE NEXT ALIAS, NOT THE NEXT LABEL, AND NOT
+ * TO THE NEXT SWEEP. Exactly one label — the alias's best-scoring candidate —
+ * ever answers for a given alias. If that candidate's answer is blank, the
+ * search moves on to the next ALIAS and the runner-up is never consulted, in
+ * either direction; and when the whole group is exhausted that way, the result
+ * is "", never a demoted label's answer.
  *
  * BE CLEAR ABOUT WHAT THAT DOES NOT BUY. It bounds the damage of a collision
  * (only one label per alias can ever speak) but it does not RESOLVE one: when
@@ -469,13 +668,17 @@ function aliasMatchTier(label: string, alias: string): number {
  * earlier question and the loser is ignored whether it is blank or not. So
  * "tell us" prefix-matches both "Tell us about yourself" and "Tell us who
  * referred you", and which of them answers for `bio` depends on which the form
- * asks first. The defences against that are alias tuning and the deny-list, not
- * this rule — which is why the bio group leads with "write your heart" and
- * "100 words", the labels the live form actually uses.
+ * asks first. The defences against that are alias tuning, the deny-list and the
+ * third-party sweep, not this rule — which is why the bio group leads with
+ * "write your heart" and "100 words", the labels the live form actually uses,
+ * and why the name / email / phone groups lead with the applicant's own
+ * possessive form rather than the bare noun a third-party label would
+ * prefix-match.
  *
  * Before any of this runs each label is normalised, has any piped
- * personalisation prefix removed (`MENTION_PREFIX`), and is dropped outright if
- * it is an informational block (`DENIED_LABEL`).
+ * personalisation prefix removed (`MENTION_PREFIX`), is dropped outright if it
+ * is an informational block (`DENIED_LABEL`), and is flagged as a named third
+ * party's field if it reads as one (`THIRD_PARTY_LABEL`).
  *
  * This is NOT the webhook's matcher — see the divergence note in the file
  * header for why the poller has to be stricter than `tally-application-webhook`.
@@ -485,27 +688,22 @@ export function pickField(
   aliases: readonly string[],
 ): string {
   const candidates: Array<{ label: string; value: string }> = [];
+  const ownFields: Array<{ label: string; value: string }> = [];
   for (const [rawLabel, value] of Object.entries(answers)) {
     const label = normalizeQuestionLabel(rawLabel);
     if (!label || isDeniedLabel(label)) continue;
-    candidates.push({ label, value });
+    const candidate = { label, value };
+    candidates.push(candidate);
+    if (!isThirdPartyLabel(label)) ownFields.push(candidate);
   }
 
-  for (const alias of aliases) {
-    const needle = normalizeLabel(alias);
-    let bestTier = TIER_NONE;
-    let bestValue = "";
-    for (const candidate of candidates) {
-      const tier = aliasMatchTier(candidate.label, needle);
-      // Strictly better only, so an equal tier leaves the earlier question in place.
-      if (tier < bestTier) {
-        bestTier = tier;
-        bestValue = candidate.value;
-      }
-    }
-    if (bestValue) return bestValue;
-  }
-  return "";
+  // Sweep 1 — the applicant's own labels. Sweep 2 only happens on a form that
+  // carries a recognised third-party label AND never asked the applicant this
+  // group at all; an asked-but-blank answer stays blank rather than falling
+  // through to somebody else's (see the score key above).
+  const own = selectByAlias(ownFields, aliases);
+  if (own.matched || ownFields.length === candidates.length) return own.value;
+  return selectByAlias(candidates, aliases).value;
 }
 
 // ── Form id ──

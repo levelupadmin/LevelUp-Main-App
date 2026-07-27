@@ -291,6 +291,71 @@ describe("FIELD_ALIASES — retuned against the real labels", () => {
     expect(bio).toContain("write your heart");
     expect(bio).toContain("100 words");
   });
+
+  it("leads name / email / phone with the applicant's own possessive form", () => {
+    // Alias priority is scored ABOVE tier, so it is the only lever INSIDE
+    // these lists that can outrank a third-party label PREFIX-matching the bare
+    // noun ("Name of referrer", "Email ID of the person who referred you"); the
+    // THIRD_PARTY_LABEL sweep is the other, and it sits outside them. Pinning
+    // the order here means the fix cannot be undone by a later "tidy-up".
+    const fullName: readonly string[] = FIELD_ALIASES.fullName;
+    const email: readonly string[] = FIELD_ALIASES.email;
+    const phone: readonly string[] = FIELD_ALIASES.phone;
+    expect(fullName.indexOf("your name")).toBeLessThan(fullName.indexOf("name"));
+    expect(email.indexOf("your email")).toBeLessThan(email.indexOf("email"));
+    expect(phone.indexOf("your whatsapp")).toBeLessThan(phone.indexOf("whatsapp"));
+    expect(phone.indexOf("your phone")).toBeLessThan(phone.indexOf("phone"));
+  });
+
+  it("promotes ONLY the possessive form, keeping every bare noun ahead of its compound", () => {
+    // The mechanism cuts both ways: promoting an alias the applicant's own
+    // label does NOT contain hands the group to whatever third-party label
+    // does. An earlier cut of this fix put "full name" ahead of "name" and
+    // "phone number" ahead of "phone", which filed somebody else's compound
+    // over a plainly-worded "Name" / "Phone" — order-independently, the same
+    // defect class the possessive lead closes.
+    const fullName: readonly string[] = FIELD_ALIASES.fullName;
+    const phone: readonly string[] = FIELD_ALIASES.phone;
+    expect(fullName.indexOf("name")).toBeLessThan(fullName.indexOf("full name"));
+    expect(phone.indexOf("phone")).toBeLessThan(phone.indexOf("phone number"));
+    // And the behaviour that ordering buys, on wordings THIRD_PARTY_LABEL
+    // cannot recognise — which is where alias order is the ONLY defence.
+    expect(
+      pickField({ "Full name of my mentor": "M", "Name": "Asha Menon" }, FIELD_ALIASES.fullName),
+    ).toBe("Asha Menon");
+    expect(
+      pickField({ "Alternate phone number": "222", "Phone": "9000000002" }, FIELD_ALIASES.phone),
+    ).toBe("9000000002");
+  });
+
+  it("keeps the bare noun as the floor, so a plainly-worded form still resolves", () => {
+    // The possessive lead re-ranks candidates; it must not remove any. A form
+    // that simply asks "Name" / "Email" / "Phone" is the common case, and the
+    // poller walks forms nobody here has read.
+    expect(pickField({ "Name": "Asha Menon" }, FIELD_ALIASES.fullName)).toBe("Asha Menon");
+    expect(pickField({ "Email": "asha@example.invalid" }, FIELD_ALIASES.email))
+      .toBe("asha@example.invalid");
+    expect(pickField({ "Phone": "9000000002" }, FIELD_ALIASES.phone)).toBe("9000000002");
+  });
+
+  it("keeps the compound noun reachable as a floor when the bare one is blank", () => {
+    // "phone number" sits after "phone" and looks redundant — any \bphone
+    // number\b hit implies a \bphone\b hit — but it is not: when the bare
+    // "Phone" input is present and EMPTY, the sweep moves to the next ALIAS,
+    // and "phone number" is what then reaches the other label. Same for
+    // "full name" behind "name". Removing either loses a real answer.
+    expect(pickField({ "Phone": "", "Contact phone number": "222" }, FIELD_ALIASES.phone))
+      .toBe("222");
+    expect(pickField({ "Name": "", "Full name": "Asha Menon" }, FIELD_ALIASES.fullName))
+      .toBe("Asha Menon");
+  });
+
+  it("leaves city alone — its pinned behaviour is the opposite one", () => {
+    // "City of residence" is MEANT to beat a bare "Your city" on tier, so
+    // leading this group with "your city" would flip a pinned case rather than
+    // fix anything. city has no observed third-party twin.
+    expect(FIELD_ALIASES.city).not.toContain("your city");
+  });
 });
 
 describe("pickField — scored word-boundary matching on the REAL form", () => {
@@ -414,10 +479,383 @@ describe("pickField — scored word-boundary matching on the REAL form", () => {
       // ONLY thing separating them is question order. Reversing the form's
       // question order therefore has to reverse the answer — a test whose
       // second label cannot win proves nothing about the tie-break.
-      const first = { "Your name": "Test Applicant", "Referrer name": "Someone Else" };
-      const reversed = { "Referrer name": "Someone Else", "Your name": "Test Applicant" };
+      //
+      // THE PAIR WAS "Your name" / "Referrer name" AND IS RETIRED. fullName now
+      // LEADS with "your name" (fix round 2, finding 1), so the applicant's own
+      // field wins on alias priority before tier or position is consulted —
+      // correct, but it means that pair can no longer demonstrate a tie at all.
+      // These two are neutral by construction: neither is the lead alias of any
+      // group, both are mid-label 'name' hits, so nothing but position separates
+      // them. The third-party pairs get their own suite below.
+      const first = { "Preferred name": "Test Applicant", "Legal name": "T Applicant" };
+      const reversed = { "Legal name": "T Applicant", "Preferred name": "Test Applicant" };
       expect(pickField(first, FIELD_ALIASES.fullName)).toBe("Test Applicant");
-      expect(pickField(reversed, FIELD_ALIASES.fullName)).toBe("Someone Else");
+      expect(pickField(reversed, FIELD_ALIASES.fullName)).toBe("T Applicant");
+    });
+  });
+
+  describe("a third party's field never outranks the applicant's own", () => {
+    // FIX ROUND 2, FINDING 1 — a regression the real-envelope fixture cannot
+    // see. "Name of X" / "Email ID of X" / "Phone number of X" all START with
+    // the generic alias, so they scored TIER_PREFIX while the applicant's own
+    // "Your Email ID" could only ever score TIER_WORD; tier outranks position,
+    // so the referrer won deterministically. Every real 81dRPA label is a
+    // TIER_WORD hit, which is exactly why the live form stayed correct while
+    // the rule underneath it was wrong.
+    //
+    // BOTH ORDERINGS ARE ASSERTED ON PURPOSE. The pre-FX-1 includes() matcher
+    // was at least right whenever the applicant's field came first, so a
+    // single-ordering test would have called this regression fixed.
+    //
+    // TWO LEVERS ARE UNDER TEST HERE, NOT ONE. Alias order handles the pairs
+    // where the applicant's label carries the possessive ("Your Email ID"); the
+    // THIRD_PARTY_LABEL sweep handles the rest, and it is the only thing that
+    // can reach a plainly-worded "Email Address" tying the referrer's label at
+    // the same tier. Both are exercised below, and the sweep is proven to be a
+    // demotion rather than a deny.
+    //
+    // AND THE SWEEP'S VOCABULARY IS PROVEN TO POINT AT THIRD PARTIES ONLY. An
+    // earlier cut matched "<noun> of <anyone>" and carved out an APPLICANT word
+    // list; that list was incomplete, so it demoted real applicants ("Email of
+    // the filmmaker") and handed the group to a genuine "Referrer email" in
+    // both orderings — the same defect, inverted. The suites below pin both
+    // directions: a recognised third party never wins, and a label the
+    // vocabulary does not recognise is never moved.
+    const bothWays = (
+      own: readonly [string, string],
+      other: readonly [string, string],
+      aliases: readonly string[],
+    ) => [
+      pickField({ [own[0]]: own[1], [other[0]]: other[1] }, aliases),
+      pickField({ [other[0]]: other[1], [own[0]]: own[1] }, aliases),
+    ];
+
+    it("keeps the applicant's email out of the referrer's hands", () => {
+      // The worst of the four. email is the (offering_id, email) dedupe key,
+      // the users-join key and the reminder recipient, and the poller never
+      // UPDATEs a row — so a wrong pick is permanent and hides the application
+      // from the applicant, who cannot see it under RLS either.
+      expect(
+        bothWays(
+          ["Your Email ID", "real@example.invalid"],
+          ["Email ID of the person who referred you", "ref@example.invalid"],
+          FIELD_ALIASES.email,
+        ),
+      ).toEqual(["real@example.invalid", "real@example.invalid"]);
+    });
+
+    it("keeps the applicant's name out of the referrer's hands", () => {
+      expect(
+        bothWays(
+          ["Your Name", "Real Person"],
+          ["Name of referrer", "Someone Else"],
+          FIELD_ALIASES.fullName,
+        ),
+      ).toEqual(["Real Person", "Real Person"]);
+    });
+
+    it("keeps the applicant's whatsapp out of the reference's hands", () => {
+      expect(
+        bothWays(
+          ["Your WhatsApp number", "111"],
+          ["Phone number of your reference", "222"],
+          FIELD_ALIASES.phone,
+        ),
+      ).toEqual(["111", "111"]);
+    });
+
+    it("does the same when the applicant's field is worded as a phone", () => {
+      // The phone group has two possessive leads because forms use both words;
+      // this pair exercises "your phone" rather than "your whatsapp".
+      expect(
+        bothWays(
+          ["Your phone number", "111"],
+          ["Phone number of your reference", "222"],
+          FIELD_ALIASES.phone,
+        ),
+      ).toEqual(["111", "111"]);
+    });
+
+    it("holds when the applicant's own label is a BARE noun, with no possessive", () => {
+      // The case alias order cannot reach, and the one a form nobody has read
+      // is most likely to ask: "Name" / "Email" / "Phone" against a third
+      // party's version of the same noun. Nothing here says "your", so the
+      // THIRD_PARTY_LABEL sweep is the only thing standing between the
+      // applicant and somebody else's contact details.
+      expect(
+        bothWays(["Name", "Real Person"], ["Full name of guardian", "G"], FIELD_ALIASES.fullName),
+      ).toEqual(["Real Person", "Real Person"]);
+      expect(
+        bothWays(
+          ["Email Address", "real@example.invalid"],
+          ["Email ID of the person who referred you", "ref@example.invalid"],
+          FIELD_ALIASES.email,
+        ),
+      ).toEqual(["real@example.invalid", "real@example.invalid"]);
+      expect(
+        bothWays(["Phone", "111"], ["Phone number of your reference", "222"], FIELD_ALIASES.phone),
+      ).toEqual(["111", "111"]);
+    });
+
+    it("holds when the APPLICANT's label is the compound one", () => {
+      // The mirror of the case above, and the reason "full name" / "phone
+      // number" could not simply be promoted: on this pair the applicant is the
+      // one saying "Full Name" and the third party prefix-matches the bare
+      // noun. Both directions have to hold at once, which is what the sweep —
+      // rather than any alias ordering — buys.
+      expect(
+        bothWays(["Full Name", "Real Person"], ["Name of referrer", "Ref"], FIELD_ALIASES.fullName),
+      ).toEqual(["Real Person", "Real Person"]);
+      expect(
+        bothWays(
+          ["Mobile number", "111"],
+          ["Mobile number of your parent", "222"],
+          FIELD_ALIASES.phone,
+        ),
+      ).toEqual(["111", "111"]);
+    });
+
+    it("catches the bare-compound wording too, not just '<noun> of <someone>'", () => {
+      // "Referrer email" / "Guardian name" / "Emergency phone number" never say
+      // "of", so the "<noun> of <role>" pattern cannot see them. They are the
+      // wording that beats an applicant whose own label is only a mid-label hit
+      // ("Legal name", "Contact email"): both score TIER_WORD, and the referral
+      // block is usually asked first, so position hands it over. The second
+      // anchored pattern — "<role>['s] <identity noun>" — is what settles those.
+      expect(
+        bothWays(["Legal name", "Real Person"], ["Guardian name", "Other"], FIELD_ALIASES.fullName),
+      ).toEqual(["Real Person", "Real Person"]);
+      expect(
+        bothWays(["Legal name", "Real Person"], ["Referrer's name", "Other"], FIELD_ALIASES.fullName),
+      ).toEqual(["Real Person", "Real Person"]);
+      expect(
+        bothWays(["Phone", "111"], ["Emergency phone number", "222"], FIELD_ALIASES.phone),
+      ).toEqual(["111", "111"]);
+      expect(
+        bothWays(["Name", "Real Person"], ["Emergency contact name", "Other"], FIELD_ALIASES.fullName),
+      ).toEqual(["Real Person", "Real Person"]);
+    });
+
+    it("never demotes an APPLICANT whose own field is worded institutionally", () => {
+      // THE REGRESSION THIS VOCABULARY'S DIRECTION EXISTS TO MAKE IMPOSSIBLE.
+      // The previous cut demoted "<identity noun> of <anything not in a short
+      // applicant word list>", so a form that calls its applicant a filmmaker,
+      // an artist, a delegate, a trainee or "the person applying" had its OWN
+      // email pushed out of the first sweep — and lost, in both orderings, to a
+      // genuine "Referrer email" the rule never recognised. Pinning only "Name
+      // of the applicant" (the one wording that happened to be carved out) is
+      // exactly the false confidence that let it through review, so the whole
+      // class is enumerated here instead.
+      const applicantWordings = [
+        "the applicant",
+        "the candidate",
+        "the participant",
+        "the student",
+        "the filmmaker",
+        "the artist",
+        "the nominee",
+        "the delegate",
+        "the trainee",
+        "the person applying",
+        "the founder",
+        "the team lead",
+      ];
+      for (const who of applicantWordings) {
+        expect(
+          bothWays([`Name of ${who}`, "Real Person"], ["Referrer name", "Other"], FIELD_ALIASES.fullName),
+        ).toEqual(["Real Person", "Real Person"]);
+        expect(
+          bothWays(
+            [`Email of ${who}`, "real@example.invalid"],
+            ["Reference email", "other@example.invalid"],
+            FIELD_ALIASES.email,
+          ),
+        ).toEqual(["real@example.invalid", "real@example.invalid"]);
+        expect(
+          bothWays([`Phone number of ${who}`, "111"], ["Emergency phone", "222"], FIELD_ALIASES.phone),
+        ).toEqual(["111", "111"]);
+      }
+    });
+
+    it("leaves a wording it does not recognise exactly where it already was", () => {
+      // THE HONEST LIMIT, PINNED SO IT CANNOT BE MISREAD AS A GUARANTEE. The
+      // role vocabulary is finite and no vocabulary is complete. An unlisted
+      // role in the "<noun> of <someone>" shape is not demoted, so it is
+      // decided by tier and then position like any other label — and when the
+      // applicant's own label is only a mid-label hit, the third party WINS,
+      // in both orderings. This is not a desired answer; it is the pre-existing
+      // behaviour of a rule that deliberately does nothing when it is unsure,
+      // because the alternative — guessing which side is the applicant — is the
+      // regression above.
+      expect(
+        bothWays(["Legal name", "Real Person"], ["Name of my mentor", "Other"], FIELD_ALIASES.fullName),
+      ).toEqual(["Other", "Other"]);
+      // Where the applicant's own label scores better, tier alone still carries
+      // it — which is why an incomplete vocabulary is survivable at all.
+      expect(
+        bothWays(["Name", "Real Person"], ["Name of my mentor", "Other"], FIELD_ALIASES.fullName),
+      ).toEqual(["Real Person", "Real Person"]);
+      expect(
+        bothWays(["Your name", "Real Person"], ["Name of my mentor", "Other"], FIELD_ALIASES.fullName),
+      ).toEqual(["Real Person", "Real Person"]);
+    });
+
+    it("does not fall through to a third party when the applicant's answer is BLANK", () => {
+      // Sweep 2 is gated on "the applicant's labels matched no alias at all",
+      // not on "sweep 1 produced no value". An applicant email question that is
+      // optional and left empty must yield "" — toApplicationRow then skips the
+      // submission — rather than filing the row under the referrer's address,
+      // which would be the permanent (offering_id, email) dedupe key, the
+      // users-join key and the reminder recipient for a person who never
+      // applied. A skipped submission is recoverable; a wrong one is not.
+      expect(
+        pickField(
+          { "Your Email ID": "", "Email ID of the person who referred you": "ref@example.invalid" },
+          FIELD_ALIASES.email,
+        ),
+      ).toBe("");
+      expect(
+        pickField({ "Your Name": "", "Name of referrer": "Someone Else" }, FIELD_ALIASES.fullName),
+      ).toBe("");
+      // The gate is per GROUP, not per form: the same submission still resolves
+      // every field the applicant DID answer.
+      expect(
+        pickField(
+          { "Your Email ID": "", "Your Name": "Real Person", "Name of referrer": "Someone Else" },
+          FIELD_ALIASES.fullName,
+        ),
+      ).toBe("Real Person");
+    });
+
+    it("DEMOTES a third party's field, never denies it", () => {
+      // The whole reason this is a sweep and not a deny-list entry. On a form
+      // where the referrer's email is the ONLY email, the row still has one —
+      // a deny would return "" and toApplicationRow would drop the submission
+      // outright, on forms nobody here has read, every time the pattern
+      // over-matched. A re-rank costs at most a wrong column; a deny costs the
+      // whole application.
+      expect(
+        pickField(
+          { "Email ID of the person who referred you": "ref@example.invalid" },
+          FIELD_ALIASES.email,
+        ),
+      ).toBe("ref@example.invalid");
+      expect(pickField({ "Name of referrer": "Someone Else" }, FIELD_ALIASES.fullName))
+        .toBe("Someone Else");
+      // Including when the form has other labels, just none this group can use:
+      // the fallback is gated on "this GROUP matched nothing", not on "every
+      // label on the form was demoted".
+      expect(
+        pickField(
+          { "Your city": "Kochi", "Name of referrer": "Someone Else" },
+          FIELD_ALIASES.fullName,
+        ),
+      ).toBe("Someone Else");
+    });
+
+    it("cannot reach city, occupation or bio — it is anchored to identity nouns", () => {
+      // The sweep is scoped by construction: a pattern must START with a name /
+      // email / phone noun, so no city, occupation or bio label can match one.
+      // That is what keeps "City of residence" beating a bare "Your city" on
+      // tier, and what a loose /\breferr(er|ed)\b/ deny would have broken along
+      // with the essay decoy below it.
+      expect(
+        pickField({ "Your city": "Kochi", "City of residence": "Chennai" }, FIELD_ALIASES.city),
+      ).toBe("Chennai");
+      expect(
+        pickField(
+          { "Tell us who referred you": "Someone Else", "Tell us about yourself": "My story" },
+          FIELD_ALIASES.bio,
+        ),
+      ).toBe("Someone Else");
+      // And the residual that scoping leaves behind, stated rather than hidden:
+      // an "<other field> of <someone>" label outside the three identity groups
+      // is still decided by tier alone. Widening the sweep to cover it would
+      // put "City of residence" and the essay decoy back in play, which the two
+      // assertions above exist to prevent — so this stays a known limit, not a
+      // desired answer.
+      expect(
+        pickField(
+          { "Occupation of your referrer": "Editor", "Your occupation": "Director" },
+          FIELD_ALIASES.occupation,
+        ),
+      ).toBe("Editor");
+    });
+
+    it("files the row against the applicant, not the referrer, end to end", () => {
+      // The consequence, not just the selection: this is the exact
+      // cohort_applications payload a third-party-carrying form produces.
+      const thirdPartyForm = buildQuestionMap([
+        { id: "q_ref_name", title: "Name of referrer" },
+        { id: "q_ref_email", title: "Email ID of the person who referred you" },
+        { id: "q_ref_phone", title: "Phone number of your reference" },
+        { id: "q_name", title: "Your Name" },
+        { id: "q_email", title: "Your Email ID" },
+        { id: "q_phone", title: "Your WhatsApp number" },
+      ]);
+      const row = toApplicationRow(
+        {
+          id: "sub_third_party",
+          responses: [
+            { questionId: "q_ref_name", answer: "Someone Else" },
+            { questionId: "q_ref_email", answer: "ref@example.invalid" },
+            { questionId: "q_ref_phone", answer: "222" },
+            { questionId: "q_name", answer: "Real Person" },
+            { questionId: "q_email", answer: "real@example.invalid" },
+            { questionId: "q_phone", answer: "111" },
+          ],
+        },
+        thirdPartyForm,
+        OFFERING_ID,
+        null,
+      );
+      expect(row?.full_name).toBe("Real Person");
+      expect(row?.email).toBe("real@example.invalid");
+      expect(row?.phone).toBe("111");
+    });
+
+    it("holds on a form whose labels look NOTHING like 81dRPA's", () => {
+      // The "NOTHING HERE MAY BE TUNED TO ONE FORM" invariant, stated at the
+      // top of tally.ts. The poller walks EVERY staged offering carrying a
+      // tally_form_url, so a rule that merely happens to be inert on the one
+      // form anyone has read is not a rule.
+      //
+      // NOT ONE APPLICANT LABEL HERE IS 81dRPA-SHAPED. An earlier cut of this
+      // test used "Your Name (as you want it on the certificate)" and friends,
+      // which are the REAL labels ("Your name", "Your Email ID", "Your Whatsapp
+      // Number") with a suffix bolted on — so it re-proved the possessive lead
+      // and nothing else. These three carry no possessive at all, which is the
+      // wording alias order is powerless against; and the third-party questions
+      // are asked FIRST, the ordering that used to lose.
+      const otherForm = {
+        "Name of the person who referred you to us": "Referrer R",
+        "Email ID of the person who referred you to us": "referrer@example.invalid",
+        "Phone number of your reference": "999",
+        "Full Name": "Asha Menon",
+        "Email Address": "asha@example.invalid",
+        "Contact Phone": "9000000002",
+      };
+      expect(pickField(otherForm, FIELD_ALIASES.fullName)).toBe("Asha Menon");
+      expect(pickField(otherForm, FIELD_ALIASES.email)).toBe("asha@example.invalid");
+      expect(pickField(otherForm, FIELD_ALIASES.phone)).toBe("9000000002");
+
+      // A THIRD SHAPE, which no lever in this file is tuned for: the applicant
+      // is named by their ROLE ("of the filmmaker") and the third party is a
+      // bare compound ("Referrer email"). Neither the possessive lead nor the
+      // "<noun> of <role>" pattern speaks to the applicant's labels here; they
+      // win on tier, exactly as they did before any of this was written, and
+      // the previous cut of the fix broke precisely this form.
+      const institutionalForm = {
+        "Referrer name": "Referrer R",
+        "Referrer email": "referrer@example.invalid",
+        "Emergency phone": "999",
+        "Name of the filmmaker": "Asha Menon",
+        "Email of the filmmaker": "asha@example.invalid",
+        "Phone number of the filmmaker": "9000000002",
+      };
+      expect(pickField(institutionalForm, FIELD_ALIASES.fullName)).toBe("Asha Menon");
+      expect(pickField(institutionalForm, FIELD_ALIASES.email)).toBe("asha@example.invalid");
+      expect(pickField(institutionalForm, FIELD_ALIASES.phone)).toBe("9000000002");
     });
   });
 
