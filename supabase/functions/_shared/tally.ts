@@ -221,10 +221,11 @@ export const FIELD_ALIASES = {
   // BARE NOUN AHEAD OF ITS COMPOUND — deliberately, and pinned by test. Putting
   // "full name"/"phone number" first hands the group to a third party's compound
   // ("Full name of my mentor", "Alternate phone number") over a plainly-worded
-  // "Name"/"Phone". The mirror defect — a prose label tying with the real field
-  // on the bare noun — is closed structurally by QUESTION TYPE, not by alias
-  // order: see TYPE_ALLOWLIST. Reordering this list trades one defect for the
-  // other and is not the lever.
+  // "Name"/"Phone". The mirror defect — an FAQ or prose label tying with the
+  // real field on the bare noun — is closed structurally by the question TYPE,
+  // not by alias order: see TYPE_MULTIPLE_CHOICE, which EXCLUDES that whole
+  // class rather than out-ranking it. Reordering this list trades one defect for
+  // the other and is not the lever.
   fullName: ["your name", "name", "full name"],
   email: ["your email", "email"],
   phone: ["your whatsapp", "your phone", "phone", "phone number", "mobile", "whatsapp"],
@@ -253,26 +254,61 @@ export type FieldKey = keyof typeof FIELD_ALIASES;
 const TYPE_MULTIPLE_CHOICE = "MULTIPLE_CHOICE";
 
 /**
- * PREFERRED BLOCK TYPES PER FIELD GROUP, best first — a PREFERENCE, not a
- * permission list. A candidate whose type is preferred is considered before any
- * candidate whose type is not, and only when the preferred types answer nothing
- * at all does the search reach everything else (see `pickField`). Every type
- * here is a real Tally block type; anything Tally invents later simply lands in
- * the fail-soft rank.
+ * PREFERRED BLOCK TYPES PER FIELD GROUP, best first — a TIE-BREAK, not a filter
+ * and not a rank above the English signals. Every type here is a real Tally
+ * block type; anything Tally invents later, or omits, simply sorts last.
+ *
+ * WHERE IT SITS IN THE KEY, AND WHY THAT IS THE ONLY SAFE PLACE. A block type
+ * states what a question COLLECTS. It says nothing whatever about WHOSE answer
+ * it holds — so the moment it is allowed to outrank alias priority or match
+ * tier, it starts handing identity fields to other people. Measured, in BOTH
+ * question orderings, on the cut of this file that ranked type first:
+ *   - `INPUT_EMAIL` "Email of my mentor" beat `INPUT_TEXT` "Your Email ID";
+ *   - `INPUT_EMAIL` "Colleague email" beat `INPUT_TEXT` "Email Address";
+ *   - `INPUT_EMAIL` "Alternate email address" beat `INPUT_TEXT` "Your Email ID";
+ *   - `INPUT_TEXT` "Full name of my mentor" beat `DROPDOWN` "Name";
+ *   - `INPUT_TEXT` "Shoot location preference" beat the `DROPDOWN` that was
+ *     literally the city question.
+ * The pre-type English key got every one of those RIGHT, in both orderings, and
+ * the first three are on `email` — the permanent `(offering_id, email)` dedupe
+ * key, where a wrong pick hides the real applicant under RLS forever. None of
+ * the roles involved is one `THIRD_PARTY_LABEL` names, and no vocabulary can
+ * name them all, so this is not fixable by extending that list. The fix is to
+ * consult the type only where the English signals are SILENT.
+ *
+ * A DELIBERATE DEVIATION FROM THE BRIEF, RECORDED SO IT IS NOT RE-INHERITED.
+ * The brief specifies `(typeRank, ownFieldFirst, aliasIndex, matchTier,
+ * questionOrder)`, "type outranks every English signal". That literal ordering
+ * is what produced the five regressions above; the shipped key applies the
+ * preference one step ABOVE question order instead. What the brief actually
+ * needed from the type channel — retiring the FAQ / prose / "Yes" decoy class in
+ * every ordering — is delivered in full by `TYPE_MULTIPLE_CHOICE`, which is an
+ * EXCLUSION and answers to no ranking at all.
+ *
+ * WHAT THE PREFERENCE STILL BUYS, WHICH IS REAL. Where two labels tie under the
+ * same alias at the same tier, the winner used to be whichever question the form
+ * asked first: a coin toss, and historically the single largest source of "right
+ * in one ordering, wrong in the other". The block type now settles those, so the
+ * two orderings of a form agree — "Occupation category" (`DROPDOWN`) loses to
+ * "Occupation (as printed on your card)" (`INPUT_TEXT`), "Tell us your website"
+ * (`INPUT_TEXT`) loses to "Tell us your story" (`TEXTAREA`).
  *
  * KEYED OFF THE FIELD GROUP, NOT GLOBAL, AND THAT IS LOAD-BEARING. `DROPDOWN` is
  * simultaneously `city`'s second preference (forms do ask for a city from a
- * list) and `occupation`'s DEMOTED decoy type — the live form's
+ * list) and `occupation`'s demoted decoy type — the live form's
  * "@Your name, What do you do?" is a coarse `DROPDOWN` bucket while the real
  * "What is your most recent designation?" is `INPUT_TEXT`. One global type
  * ranking cannot say both things at once, so the preference is per group.
  *
- * `phone` LISTS THREE TYPES ON PURPOSE. The live form asks its WhatsApp number
- * as an `INPUT_NUMBER`, but Tally's dedicated phone block is
- * `INPUT_PHONE_NUMBER` (what a form author gets when they pick "Phone number"),
- * and `INPUT_PHONE` is carried as a defensive alias for the same idea. Listing
- * only one of them would drop every phone-typed form to the fail-soft rank,
- * where the type layer buys nothing.
+ * `phone` LISTS THREE TYPES, DEDICATED BLOCK FIRST. `INPUT_PHONE_NUMBER` is what
+ * a Tally author gets when they pick "Phone number", `INPUT_PHONE` is carried as
+ * a defensive alias for the same idea, and `INPUT_NUMBER` is the GENERIC number
+ * block — which is what the live form happens to use, but also what a room count
+ * or a year of experience uses. Where a form offers both, the dedicated block is
+ * the better statement, so the generic one sorts last of the three. Listing only
+ * one would leave every phone-typed form with no tie-break at all. The live form
+ * is unmoved either way: its only number question is won on the alias
+ * "your whatsapp" long before any tie-break is reached.
  *
  * WHAT THIS DOES NOT DO: it cannot separate two candidates of the SAME type —
  * an `INPUT_EMAIL` "Your Email ID" against an `INPUT_EMAIL` "Referrer email" is
@@ -283,10 +319,13 @@ const TYPE_MULTIPLE_CHOICE = "MULTIPLE_CHOICE";
 export const TYPE_ALLOWLIST: Record<FieldKey, readonly string[]> = {
   fullName: ["INPUT_TEXT"],
   email: ["INPUT_EMAIL"],
-  phone: ["INPUT_NUMBER", "INPUT_PHONE_NUMBER", "INPUT_PHONE"],
+  // Tally's dedicated phone blocks first; the generic number block last.
+  phone: ["INPUT_PHONE_NUMBER", "INPUT_PHONE", "INPUT_NUMBER"],
   city: ["INPUT_TEXT", "DROPDOWN"],
-  // INPUT_TEXT MUST OUTRANK DROPDOWN: the applicant's real designation is the
-  // free-text one, the coarse "What do you do?" bucket is the dropdown.
+  // A tie between the free-text designation and the coarse "What do you do?"
+  // bucket goes to the free text. On the live form alias order settles it first
+  // ("designation" is declared ahead of "what do you do"), so this is the floor,
+  // not the defence.
   occupation: ["INPUT_TEXT", "DROPDOWN"],
   bio: ["TEXTAREA", "INPUT_TEXT"],
 };
@@ -619,15 +658,30 @@ function isDeniedLabel(label: string): boolean {
  *
  * WHAT IT DOES NOT CATCH, AND WHO LOSES WHEN IT DOES NOT. Only the roles below,
  * in only two shapes. An unlisted role ("Name of your mentor", "Colleague
- * email") or an unlisted shape ("Name — reference") is decided by tier and then
- * by question order, exactly as it was before this rule existed. BE CLEAR THAT
- * THIS IS NOT ALWAYS HARMLESS: when the applicant's own label is a mid-label
- * hit ("Legal name") and the unrecognised third-party label is a prefix hit
- * ("Name of my mentor"), the third party still wins, in both orderings. There
- * is no rule that separates those two by structure alone — only a vocabulary,
- * and every vocabulary is incomplete — so the guarantee this file makes is
- * deliberately narrow: a RECOGNISED third-party label cannot outrank the
- * applicant's own field, and an unrecognised one is no worse than it was.
+ * email") or an unlisted shape ("Name — reference") is decided by alias, then
+ * tier, then block type, then question order, essentially as it was before this
+ * rule existed. BE CLEAR THAT THIS IS NOT ALWAYS HARMLESS: when the applicant's
+ * own label is a mid-label hit ("Legal name") and the unrecognised third-party
+ * label is a prefix hit ("Name of my mentor"), the third party still wins, in
+ * both orderings. There is no rule that separates those two by structure
+ * alone — only a vocabulary, and every vocabulary is incomplete — so the
+ * guarantee this file makes is deliberately narrow: a RECOGNISED third-party
+ * label cannot outrank the applicant's own field, and an unrecognised one is
+ * decided by the same key as everything else.
+ *
+ * STATE THE TYPE LAYER'S EFFECT ON THAT SENTENCE EXACTLY, BECAUSE AN EARLIER
+ * ROUND OVERSTATED IT. Block type is consulted only where alias and tier tie
+ * (see `TYPE_ALLOWLIST`), so it can never PROMOTE an unrecognised third party
+ * over an applicant label that matched an earlier alias or a better tier — the
+ * defect that ranking type first shipped, on `email`, in both orderings. What it
+ * can still do is settle a genuine tie: an `INPUT_EMAIL` "Mentor email" against
+ * an `INPUT_TEXT` "Contact email" both match `email` mid-label, and the type now
+ * decides it for the mentor in BOTH orderings where question order used to
+ * decide it either way depending on which was asked first. That is a coin toss
+ * replaced by a signal that is right on the average form and wrong on that one,
+ * traded for an answer that no longer depends on the order the form asks its
+ * questions in. It is the residual, it is bounded to exact ties, and it is the
+ * whole of what the type channel costs here.
  *
  * Matched against the CLEANED, normalised, mention-stripped label, exactly like
  * `DENIED_LABEL` — never the raw title.
@@ -752,6 +806,19 @@ function aliasMatchTier(label: string, alias: string): number {
 }
 
 /**
+ * One label/value pair that survived the deny-list and the `MULTIPLE_CHOICE`
+ * exclusion, carrying the one thing the envelope states about it: where its
+ * block type sits in this field group's `TYPE_ALLOWLIST` (`prefer.length`, the
+ * fail-soft rank, when the type is unknown, absent, unpreferred — or when the
+ * answer is blank, which is never promoted by its type; see `pickField`).
+ */
+interface Candidate {
+  label: string;
+  value: string;
+  typeRank: number;
+}
+
+/**
  * One full alias sweep over a candidate set — see the score key on `pickField`,
  * which owns the two sweeps and the rationale.
  *
@@ -762,7 +829,7 @@ function aliasMatchTier(label: string, alias: string): number {
  * place: only the first may fall through to somebody else's field.
  */
 function selectByAlias(
-  candidates: ReadonlyArray<{ label: string; value: string }>,
+  candidates: readonly Candidate[],
   aliases: readonly string[],
 ): { value: string; matched: boolean } {
   let matched = false;
@@ -791,15 +858,27 @@ function selectByAlias(
      */
     const possessiveOnly = needle.startsWith("your ");
     let bestTier = TIER_NONE;
+    let bestTypeRank = Number.POSITIVE_INFINITY;
     let bestValue = "";
     for (const candidate of candidates) {
       const tier = aliasMatchTier(candidate.label, needle);
+      if (tier === TIER_NONE) continue;
       if (possessiveOnly && tier === TIER_WORD) continue;
-      // Strictly better only, so an equal tier leaves the earlier question in place.
-      if (tier < bestTier) {
-        bestTier = tier;
-        bestValue = candidate.value;
-      }
+      /**
+       * THE BLOCK TYPE IS THE LAST THING ASKED BEFORE QUESTION ORDER, and only
+       * that. Tier first, so a better English match always wins; then the
+       * `TYPE_ALLOWLIST` rank, which turns what used to be "whichever question
+       * the form asked first" into a decision both orderings agree on; then, on
+       * a full tie, the earlier question, exactly as before. Ranking the type
+       * any higher than this hands `email` to "Colleague email" (see
+       * `TYPE_ALLOWLIST`), so the comparison is deliberately lexicographic on
+       * `(tier, typeRank)` and strictly-better-only in both components.
+       */
+      if (tier > bestTier) continue;
+      if (tier === bestTier && candidate.typeRank >= bestTypeRank) continue;
+      bestTier = tier;
+      bestTypeRank = candidate.typeRank;
+      bestValue = candidate.value;
     }
     if (bestTier !== TIER_NONE) matched = true;
     if (bestValue) return { value: bestValue, matched: true };
@@ -820,90 +899,51 @@ export interface FieldTypePreference {
   prefer?: readonly string[] | null;
 }
 
-/** A label/value pair that survived the deny-list and the MULTIPLE_CHOICE rule. */
-interface Candidate {
-  label: string;
-  value: string;
-}
-
-/**
- * ONE ALIAS SWEEP PER TYPE RANK, best rank first — the type channel's whole
- * contribution to the ranking, and nothing else.
- *
- * The buckets PARTITION one candidate set by `TYPE_ALLOWLIST` position, so a
- * candidate whose block type is what this group prefers is asked before any
- * candidate whose type is not, and the fail-soft bucket at the end is reached
- * only when everything better answered nothing at all. With no types on the form
- * there is exactly ONE bucket, holding exactly the candidates the pre-type code
- * saw, and this reduces to the single `selectByAlias` call it used to be.
- *
- * A RANK THAT MATCHED BUT ANSWERED BLANK FALLS THROUGH TO THE NEXT RANK, and
- * that is safe precisely because a blank answer is never promoted by its type
- * (see `pickField`): every candidate above the fail-soft bucket carries a real
- * answer, so `matched` there always comes with a value. Only the fail-soft
- * bucket can match blank, and it is last, so the blank-yields-"" rule the alias
- * sweep has always had is untouched — `matched` is still reported up so the
- * caller can tell "nobody asked this" from "asked, left empty".
- */
-function sweepByTypeRank(
-  buckets: ReadonlyArray<readonly Candidate[]>,
-  aliases: readonly string[],
-): { value: string; matched: boolean } {
-  let matched = false;
-  for (const bucket of buckets) {
-    if (bucket.length === 0) continue;
-    const result = selectByAlias(bucket, aliases);
-    if (result.value) return { value: result.value, matched: true };
-    if (result.matched) matched = true;
-  }
-  return { value: "", matched };
-}
-
 /**
  * Scored alias match over joined answers. "" when nothing matches.
  *
- * THE SCORE KEY IS `(ownFieldFirst, typeRank, aliasIndex, matchTier,
- * questionOrder)` — type outranks every ENGLISH signal, and the third-party
- * demotion outranks type. Candidates are bucketed by how well their Tally block
- * type matches what this field group prefers (`TYPE_ALLOWLIST`), the entire
- * existing sweep runs inside the best bucket first, and a lower bucket is
- * reached only when the better one answered nothing for this group
- * (`sweepByTypeRank`). Within one bucket the scoring below is unchanged, to the
- * letter.
+ * THE SCORE KEY IS `(ownFieldFirst, aliasIndex, matchTier, typeRank,
+ * questionOrder)`. The third-party demotion is asked first, then the English
+ * signals in the order they have always run, then — where those TIE — the Tally
+ * block type, and only then the position of the question on the form.
  *
- * WHY `ownFieldFirst` SITS ABOVE `typeRank` AND NOT BELOW IT. Running the
- * two sweeps INSIDE each type bucket — which is what the first cut of this
- * change did — hands the form to a recognised third party whenever their block
- * type outranks the applicant's: a bucket holding only "Email of the person who
- * referred you" (`INPUT_EMAIL`) matches, runs its own sweep 2 and returns before
- * the applicant's `INPUT_TEXT` "Your Email ID" is ever consulted. That is
- * regression class (b) rebuilt out of the very mechanism meant to retire it, on
- * the one field — email — whose wrong answer is a PERMANENT
- * `(offering_id, email)` dedupe key. Type is a statement about what a question
- * COLLECTS; it says nothing about WHOSE it is, so it must never be allowed to
- * answer that question.
+ * WHY `typeRank` SITS THERE AND NOT AT THE TOP, WHICH IS A DELIBERATE DEVIATION
+ * FROM THE BRIEF. The brief specifies `(typeRank, ownFieldFirst, aliasIndex,
+ * matchTier, questionOrder)`, "type outranks every English signal". Shipped that
+ * way, an `INPUT_EMAIL` question belonging to somebody else beat the applicant's
+ * own `INPUT_TEXT` email question in BOTH orderings for every role
+ * `THIRD_PARTY_ROLE` does not name — "Email of my mentor", "Colleague email",
+ * "Alternate email address" — each of which the pre-type code got right, and
+ * each of which is the permanent `(offering_id, email)` dedupe key. The same
+ * shape broke the brief's own pinned counter-case as soon as the types differed
+ * (`INPUT_TEXT` "Full name of my mentor" over `DROPDOWN` "Name") and demoted a
+ * `DROPDOWN` city under any `INPUT_TEXT` that merely says "location". A block
+ * type states what a question COLLECTS and nothing about WHOSE answer it holds,
+ * so it cannot be allowed to overrule a signal that does. See `TYPE_ALLOWLIST`
+ * for the full measured list.
  *
- * A BLANK ANSWER IS NEVER PROMOTED BY ITS TYPE. A candidate with no answer
- * enters the fail-soft bucket whatever its block type, so it can only win where
- * the pre-type English key would have let it win anyway. Without that rule an
+ * WHAT THE BRIEF WANTED FROM THE TYPE IS DELIVERED BY THE EXCLUSION, NOT BY THE
+ * RANK. `MULTIPLE_CHOICE` is dropped outright alongside the deny-list, before
+ * any ranking, and stays dropped on every path — which is what actually retires
+ * all three historical decoy classes in every ordering (see
+ * `TYPE_MULTIPLE_CHOICE`). The preference below is the residual: a tie-break
+ * that replaces "whichever question the form happened to ask first" with a
+ * statement the form made.
+ *
+ * A BLANK ANSWER IS NEVER PROMOTED BY ITS TYPE. A candidate with no answer takes
+ * the fail-soft rank whatever its block type, so it can only win where the
+ * pre-type English key would have let it win anyway. Without that rule an
  * optional "Work email" (`INPUT_EMAIL`, left empty) outranks the applicant's
- * filled "Email Address" (`INPUT_TEXT`) purely on type, `pickField` returns "",
- * and `toApplicationRow` DROPS a submission the pre-type code ingested
- * correctly. The type layer exists to rank answers the form actually collected;
- * an empty one carries no evidence to rank. The blank-yields-"" rule itself is
- * unchanged — see the alias note below — it simply stops being reachable by
- * type promotion alone.
- *
- * `MULTIPLE_CHOICE` NEVER ENTERS ANY BUCKET. It is dropped alongside the
- * deny-list, before ranking, and it stays dropped on the fail-soft path — see
- * `TYPE_MULTIPLE_CHOICE` for why that single line retires three rounds of decoys.
+ * filled "Email Address" (`INPUT_TEXT`) on a tie, `pickField` returns "", and
+ * `toApplicationRow` DROPS a submission the pre-type code ingested correctly.
+ * The type layer exists to rank answers the form actually collected; an empty
+ * one carries no evidence to rank.
  *
  * FAIL-SOFT IS THE DEFAULT, NOT AN EXCEPTION. Every candidate whose type is
- * unknown, absent, or simply not one this group prefers lands in the LAST
- * bucket, so a form that sends no types at all has exactly one bucket holding
- * exactly the candidates the pre-type code saw, ranked by exactly the rules
- * below. The poller walks forms nobody here has read; it must not return empty
- * because a form is shaped oddly.
+ * unknown, absent, or simply not one this group prefers takes the LAST rank, so
+ * a form that sends no types at all has every candidate at one rank and the key
+ * collapses to exactly the pre-type one. The poller walks forms nobody here has
+ * read; it must not return empty because a form is shaped oddly.
  *
  * The whole ranked sweep runs over the applicant's own labels first
  * and is repeated over every label only when that sweep matched NO label at all
@@ -914,8 +954,11 @@ function sweepByTypeRank(
  *
  * STATE THAT GUARANTEE EXACTLY, BECAUSE IT IS NARROWER THAN IT SOUNDS. It holds
  * for the wordings `THIRD_PARTY_LABEL` recognises, and no vocabulary is
- * complete; an unrecognised one ("Name of my mentor") competes on tier and
- * position like any other label, and can win. What the two sweeps do buy
+ * complete; an unrecognised one ("Name of my mentor") competes on alias, tier,
+ * type and position like any other label, and can win — including on the type
+ * tie-break, which is the one place this layer can move an unrecognised third
+ * party (`THIRD_PARTY_LABEL` records that residual in full). What the two sweeps
+ * do buy
  * unconditionally is that a recognised third-party label never wins by
  * DEFAULT — including when the applicant's own question exists but was left
  * blank. Sweep 2 is gated on "the applicant's labels said nothing for this
@@ -927,15 +970,18 @@ function sweepByTypeRank(
  * `(offering_id, email)` dedupe key, the users-join key and the reminder
  * recipient, and the poller never UPDATEs a row it has already written.
  *
- * Within one sweep, alias priority outranks match quality, which outranks
- * position:
+ * Within one sweep, alias priority outranks match quality, which outranks the
+ * block type, which outranks position:
  *   1. aliases are tried in their declared order, and the first alias that
  *      yields a non-empty answer wins outright;
  *   2. within one alias, the best TIER wins — exact label, then label starts
  *      with the alias (at a word boundary), then the alias appears as a whole
  *      word anywhere in the label;
- *   3. within one alias AND one tier, the EARLIEST question wins (see the
- *      ordering note on `extractAnswers` — key order is question order).
+ *   3. within one alias AND one tier, the best `TYPE_ALLOWLIST` rank wins —
+ *      the only thing the type channel decides, and the reason two orderings of
+ *      the same form now agree where they used to disagree;
+ *   4. within one alias, one tier AND one type rank, the EARLIEST question wins
+ *      (see the ordering note on `extractAnswers` — key order is question order).
  * Alias priority has to come first, and the live form proves it: "@Your name,
  * What do you do?" (question 13) and "What is your most recent designation?"
  * (question 14) are both whole-word hits for the occupation group. Scoring tier
@@ -952,11 +998,12 @@ function sweepByTypeRank(
  *
  * BE CLEAR ABOUT WHAT THAT DOES NOT BUY. It bounds the damage of a collision
  * (only one label per alias can ever speak) but it does not RESOLVE one: when
- * two labels score identically under the same alias, the winner is simply the
- * earlier question and the loser is ignored whether it is blank or not. So
- * "tell us" prefix-matches both "Tell us about yourself" and "Tell us who
- * referred you", and which of them answers for `bio` depends on which the form
- * asks first. The defences against that are alias tuning, the deny-list and the
+ * two labels score identically under the same alias, the winner is the better
+ * block type and then the earlier question, and the loser is ignored whether it
+ * is blank or not. So "tell us" prefix-matches both "Tell us about yourself" and
+ * "Tell us who referred you", and which of them answers for `bio` comes down to
+ * their block types, or to which the form asks first when those agree too. The
+ * defences against that are alias tuning, the deny-list and the
  * third-party sweep, not this rule — which is why the bio group leads with
  * "write your heart" and "100 words", the labels the live form actually uses,
  * and why the name / email / phone groups lead with the applicant's own
@@ -979,19 +1026,14 @@ export function pickField(
   const types = preference?.types ?? null;
   const prefer = (preference?.prefer ?? []).map(normalizeType).filter(Boolean);
 
-  // One bucket per preferred type, plus a final fail-soft bucket for everything
-  // else — unknown types, absent types, types this group has no opinion on, and
-  // every blank answer. The buckets PARTITION the candidates, so with no types
-  // at all the last one holds them all and each sweep reduces to the single
-  // `selectByAlias` call it was before. Both sweeps are bucketed identically;
-  // only their membership differs.
+  // The fail-soft rank sits one past the last preferred type and holds
+  // everything else — unknown types, absent types, types this group has no
+  // opinion on, and every blank answer. With no types at all every candidate
+  // takes it, the tie-break is a constant, and the key collapses to the pre-type
+  // one. Both sweeps rank identically; only their membership differs.
   const failSoftRank = prefer.length;
-  const everyField: Candidate[][] = [];
-  const ownFields: Candidate[][] = [];
-  for (let rank = 0; rank <= failSoftRank; rank++) {
-    everyField.push([]);
-    ownFields.push([]);
-  }
+  const everyField: Candidate[] = [];
+  const ownFields: Candidate[] = [];
   let hasThirdParty = false;
 
   for (const [rawLabel, value] of Object.entries(answers)) {
@@ -1003,21 +1045,24 @@ export function pickField(
     if (type === TYPE_MULTIPLE_CHOICE) continue;
     // A blank answer is never promoted by its type (see the score key above).
     const preferredRank = value && type ? prefer.indexOf(type) : -1;
-    const rank = preferredRank < 0 ? failSoftRank : preferredRank;
-    const candidate = { label, value };
-    everyField[rank].push(candidate);
+    const candidate: Candidate = {
+      label,
+      value,
+      typeRank: preferredRank < 0 ? failSoftRank : preferredRank,
+    };
+    everyField.push(candidate);
     if (isThirdPartyLabel(label)) hasThirdParty = true;
-    else ownFields[rank].push(candidate);
+    else ownFields.push(candidate);
   }
 
-  // Sweep 1 — the applicant's own labels, every type rank of them. Sweep 2 only
-  // happens on a form that carries a recognised third-party label AND never
-  // asked the applicant this group at ANY rank; an asked-but-blank answer stays
-  // blank rather than falling through to somebody else's (see the score key).
-  const own = sweepByTypeRank(ownFields, aliases);
+  // Sweep 1 — the applicant's own labels. Sweep 2 only happens on a form that
+  // carries a recognised third-party label AND never asked the applicant this
+  // group at all; an asked-but-blank answer stays blank rather than falling
+  // through to somebody else's (see the score key).
+  const own = selectByAlias(ownFields, aliases);
   if (own.matched) return own.value;
   if (!hasThirdParty) return "";
-  return sweepByTypeRank(everyField, aliases).value;
+  return selectByAlias(everyField, aliases).value;
 }
 
 // ── Form id ──

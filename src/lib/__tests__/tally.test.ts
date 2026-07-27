@@ -915,11 +915,11 @@ describe("pickField — scored word-boundary matching on the REAL form", () => {
           FIELD_ALIASES.bio,
         ),
       ).toBe("Someone Else");
-      // Both assertions are about the ENGLISH layer alone, and the second one
-      // is the case the type preference later moves: where the referral essay
-      // is a TEXTAREA and the applicant's is not, bio goes the other way. That
-      // is recorded in "what the preference MOVES that alias order used to
-      // decide" rather than left to be discovered.
+      // Both assertions are about the ENGLISH layer alone, and both still hold
+      // with the type channel on: the block type is only ever a tie-break under
+      // the alias and the tier, so it cannot re-open a question those two have
+      // already answered ("what the preference MOVES that alias order used to
+      // decide" pins the second one in both directions).
       //
       // And the residual that scoping leaves behind, stated rather than hidden:
       // an "<other field> of <someone>" label outside the three identity groups
@@ -1217,7 +1217,7 @@ describe("pickField — scored word-boundary matching on the REAL form", () => {
   });
 });
 
-describe("pickField — the block TYPE outranks every English signal", () => {
+describe("pickField — the block TYPE the envelope already states", () => {
   /**
    * FIX ROUND 3. Three consecutive rounds each closed one direction of the
    * English heuristic and opened another — the FAQ "work" block, then
@@ -1227,6 +1227,13 @@ describe("pickField — the block TYPE outranks every English signal", () => {
    * {"Full name of my mentor", "Name"}. There is no alias ordering that
    * satisfies both, which is the point: the envelope STATES the type and the
    * parser used to throw it away.
+   *
+   * THE TYPE DOES TWO THINGS AND NOT A THIRD. It EXCLUDES `MULTIPLE_CHOICE`,
+   * which is what retires all three decoy classes in every ordering; and it
+   * breaks a TIE that alias order and match tier both left open. It does NOT
+   * outrank them — the round that let it do so handed `email` to a mentor, a
+   * colleague and an "alternate address" in both orderings, which is pinned in
+   * "the type may NOT overrule an alias or a tier" below.
    *
    * Everything below is a synthetic persona on an invented form. The real
    * envelope's own assertions are unchanged and live in the block above.
@@ -1279,13 +1286,18 @@ describe("pickField — the block TYPE outranks every English signal", () => {
       expect(typed?.email).toBe("applicant@example.invalid");
     });
 
-    it("beats the DROPDOWN occupation decoy on TYPE, not just on alias order", () => {
+    it("records the DROPDOWN occupation decoy's type without depending on it", () => {
       // "@Your name, What do you do?" is a DROPDOWN; the real designation is an
-      // INPUT_TEXT. Alias order was the only defence before; now the decoy is
-      // an entire rank below and is never even consulted.
+      // INPUT_TEXT. Alias order is what beats it — "designation" is declared
+      // ahead of "what do you do", and the decoy matches no earlier alias — and
+      // the type agrees rather than overruling. Both are asserted so that a
+      // future change to either lever fails here by name.
       expect(REAL_TYPES[LABEL.decoyWhatDoYouDo]).toBe("DROPDOWN");
       expect(REAL_TYPES[LABEL.occupation]).toBe("INPUT_TEXT");
       expect(realTyped("occupation")).toBe("Freelance Video Editor");
+      expect(realTyped("occupation")).toBe(
+        pickField(extractAnswers(submission(), QUESTION_MAP), FIELD_ALIASES.occupation),
+      );
     });
   });
 
@@ -1358,19 +1370,21 @@ describe("pickField — the block TYPE outranks every English signal", () => {
     });
   });
 
-  describe("the preference ORDER inside a group", () => {
-    it("puts INPUT_TEXT above DROPDOWN for occupation", () => {
-      // The live form's shape, generalised: the coarse dropdown bucket must
-      // lose to the free-text designation even when the DROPDOWN carries the
-      // EARLIER alias, which is the one thing alias order cannot fix.
+  describe("the preference ORDER inside a group, on a genuine TIE", () => {
+    // The type is consulted only where alias AND tier tie — see the block
+    // below for the measured reason it may not sit any higher than that. So
+    // every fixture here is a tie the pre-type key settled by question order,
+    // which is why each one also asserts that the two orderings DISAGREED
+    // untyped: that coin toss is the whole of what the preference buys.
+    const coinToss = (fields: TypedField[], field: FieldKey) =>
+      new Set(untypedBothWays(fields, field)).size;
+
+    it("settles an occupation tie for INPUT_TEXT over DROPDOWN", () => {
       const fields: TypedField[] = [
-        { title: "Your occupation category", type: "DROPDOWN", value: "Entrepreneur/Founder" },
-        { title: "Most recent designation", type: "INPUT_TEXT", value: "Video Editor" },
+        { title: "Occupation category", type: "DROPDOWN", value: "Entrepreneur/Founder" },
+        { title: "Occupation (as printed on your card)", type: "INPUT_TEXT", value: "Video Editor" },
       ];
-      expect(untypedBothWays(fields, "occupation")).toEqual([
-        "Entrepreneur/Founder",
-        "Entrepreneur/Founder",
-      ]);
+      expect(coinToss(fields, "occupation")).toBe(2);
       expect(typedBothWays(fields, "occupation")).toEqual(["Video Editor", "Video Editor"]);
     });
 
@@ -1385,80 +1399,211 @@ describe("pickField — the block TYPE outranks every English signal", () => {
       ).toEqual(["Entrepreneur/Founder", "Entrepreneur/Founder"]);
     });
 
-    it("puts INPUT_TEXT above DROPDOWN for city, and still accepts a DROPDOWN city", () => {
+    it("settles a city tie for INPUT_TEXT, and still accepts a DROPDOWN city", () => {
       const fields: TypedField[] = [
-        { title: "City of residence", type: "DROPDOWN", value: "Kochi" },
-        { title: "Your city", type: "INPUT_TEXT", value: "Chennai" },
+        { title: "City you would like to attend in", type: "DROPDOWN", value: "Mumbai" },
+        { title: "City (as on your ID)", type: "INPUT_TEXT", value: "Chennai" },
       ];
-      // Untyped, "City of residence" wins on tier — the pinned pre-type
-      // behaviour, kept intact for forms that state no type.
-      expect(untypedBothWays(fields, "city")).toEqual(["Kochi", "Kochi"]);
+      expect(coinToss(fields, "city")).toBe(2);
       expect(typedBothWays(fields, "city")).toEqual(["Chennai", "Chennai"]);
+      // A DROPDOWN city is a perfectly ordinary city question and is picked on
+      // its own, and where TIER separates the two the type does not interfere:
+      // "City of residence" still beats a mid-label "Your city", typed or not.
       expect(
         typedBothWays([{ title: "Which city are you from?", type: "DROPDOWN", value: "Chennai" }], "city"),
       ).toEqual(["Chennai", "Chennai"]);
+      const byTier: TypedField[] = [
+        { title: "City of residence", type: "DROPDOWN", value: "Kochi" },
+        { title: "Your city", type: "INPUT_TEXT", value: "Chennai" },
+      ];
+      expect(typedBothWays(byTier, "city")).toEqual(untypedBothWays(byTier, "city"));
+      expect(typedBothWays(byTier, "city")).toEqual(["Kochi", "Kochi"]);
     });
 
-    it("puts TEXTAREA above INPUT_TEXT for bio", () => {
+    it("settles a bio tie for TEXTAREA over INPUT_TEXT", () => {
       const fields: TypedField[] = [
-        { title: "About you in one line", type: "INPUT_TEXT", value: "Editor, Chennai" },
+        { title: "Tell us your website", type: "INPUT_TEXT", value: "portfolio.example.invalid" },
         { title: "Tell us your story", type: "TEXTAREA", value: "The hundred word essay" },
       ];
-      // "about you" is declared before "tell us", so alias order alone picks the
-      // one-liner over the essay — the funnel's core qualification signal.
-      expect(untypedBothWays(fields, "bio")).toEqual(["Editor, Chennai", "Editor, Chennai"]);
+      // Both PREFIX-match "tell us", so untyped the funnel's core qualification
+      // signal came down to which question the form happened to ask first.
+      expect(coinToss(fields, "bio")).toBe(2);
       expect(typedBothWays(fields, "bio")).toEqual([
         "The hundred word essay",
         "The hundred word essay",
       ]);
     });
 
-    it("honours each of the three phone block types", () => {
-      for (const phoneType of ["INPUT_NUMBER", "INPUT_PHONE_NUMBER", "INPUT_PHONE"]) {
+    it("settles a phone tie for each of the three phone block types", () => {
+      for (const phoneType of ["INPUT_PHONE_NUMBER", "INPUT_PHONE", "INPUT_NUMBER"]) {
         const fields: TypedField[] = [
-          { title: "Phone extension at your workplace", type: "INPUT_TEXT", value: "404" },
-          { title: "Your mobile", type: phoneType, value: "9000000003" },
+          { title: "Phone for deliveries", type: "INPUT_TEXT", value: "404" },
+          { title: "Phone number", type: phoneType, value: "9000000003" },
         ];
-        // Untyped, the extension PREFIX-matches "phone" and wins on tier.
-        expect(untypedBothWays(fields, "phone")).toEqual(["404", "404"]);
+        expect(coinToss(fields, "phone")).toBe(2);
         expect(typedBothWays(fields, "phone")).toEqual(["9000000003", "9000000003"]);
       }
+    });
+
+    it("puts Tally's DEDICATED phone block above the generic number block", () => {
+      // INPUT_NUMBER is what a room count or a year of experience uses too, so
+      // where a form offers both, the dedicated block is the better statement.
+      expect(TYPE_ALLOWLIST.phone.indexOf("INPUT_PHONE_NUMBER")).toBeLessThan(
+        TYPE_ALLOWLIST.phone.indexOf("INPUT_NUMBER"),
+      );
+      const fields: TypedField[] = [
+        { title: "Phone (landline)", type: "INPUT_NUMBER", value: "04422220000" },
+        { title: "Phone (mobile)", type: "INPUT_PHONE_NUMBER", value: "9000000003" },
+      ];
+      expect(coinToss(fields, "phone")).toBe(2);
+      expect(typedBothWays(fields, "phone")).toEqual(["9000000003", "9000000003"]);
+      // And the live form, whose only number question is a generic INPUT_NUMBER,
+      // is unmoved by that ordering — it is won on the alias, not on the type.
+      expect(
+        pickField(extractAnswers(submission(), QUESTION_MAP), FIELD_ALIASES.phone, {
+          types: REAL_TYPES,
+          prefer: TYPE_ALLOWLIST.phone,
+        }),
+      ).toBe("9000000001");
+    });
+  });
+
+  describe("the type may NOT overrule an alias or a tier", () => {
+    /**
+     * THE CORRECTION THAT DEFINES WHERE THE PREFERENCE SITS. The brief asked for
+     * `(typeRank, ownFieldFirst, aliasIndex, matchTier, questionOrder)` — "type
+     * outranks every English signal" — and shipped that way it handed identity
+     * fields to other people, in BOTH orderings, on cases the pre-type code got
+     * right. A block type states what a question COLLECTS, never whose answer it
+     * holds, so every case below asserts the typed answer EQUALS the untyped one:
+     * the type channel may add a tie-break and may exclude MULTIPLE_CHOICE, and
+     * it may do nothing else.
+     */
+
+    it("does not let a mismatched-type third party take the email dedupe key", () => {
+      // None of these roles is one THIRD_PARTY_LABEL names — "mentor",
+      // "colleague" and "alternate" are absent by design, and no vocabulary can
+      // name them all — so the type rank was the ONLY thing moving them, and it
+      // moved them onto the permanent (offering_id, email) key.
+      const pairs: TypedField[][] = [
+        [
+          { title: "Email of my mentor", type: "INPUT_EMAIL", value: "mentor@example.invalid" },
+          { title: "Your Email ID", type: "INPUT_TEXT", value: "asha@example.invalid" },
+        ],
+        [
+          { title: "Colleague email", type: "INPUT_EMAIL", value: "colleague@example.invalid" },
+          { title: "Email Address", type: "INPUT_TEXT", value: "asha@example.invalid" },
+        ],
+        [
+          {
+            title: "Alternate email address",
+            type: "INPUT_EMAIL",
+            value: "alternate@example.invalid",
+          },
+          { title: "Your Email ID", type: "INPUT_TEXT", value: "asha@example.invalid" },
+        ],
+      ];
+      for (const fields of pairs) {
+        expect(typedBothWays(fields, "email")).toEqual([
+          "asha@example.invalid",
+          "asha@example.invalid",
+        ]);
+        expect(typedBothWays(fields, "email")).toEqual(untypedBothWays(fields, "email"));
+        const form = typedForm(fields);
+        expect(
+          toApplicationRow(form.submission, form.questionMap, OFFERING_ID, null, form.questionTypeMap)
+            ?.email,
+        ).toBe("asha@example.invalid");
+      }
+    });
+
+    it("holds the pinned counter-cases when the two TYPES differ", () => {
+      // The brief's own counter-cases, with the types set against the applicant.
+      // Pinning only the same-type variant is what let the cross-type break ship.
+      expect(
+        typedBothWays(
+          [
+            { title: "Full name of my mentor", type: "INPUT_TEXT", value: "M" },
+            { title: "Name", type: "DROPDOWN", value: "Asha Menon" },
+          ],
+          "fullName",
+        ),
+      ).toEqual(["Asha Menon", "Asha Menon"]);
+      expect(
+        typedBothWays(
+          [
+            { title: "Alternate phone number", type: "INPUT_NUMBER", value: "222" },
+            { title: "Phone", type: "INPUT_PHONE_NUMBER", value: "9000000002" },
+          ],
+          "phone",
+        ),
+      ).toEqual(["9000000002", "9000000002"]);
+      expect(
+        typedBothWays(
+          [
+            { title: "Office phone number", type: "INPUT_NUMBER", value: "222" },
+            { title: "Your Whatsapp Number", type: "INPUT_PHONE_NUMBER", value: "9000000002" },
+          ],
+          "phone",
+        ),
+      ).toEqual(["9000000002", "9000000002"]);
+    });
+
+    it("does not demote a DROPDOWN city under an INPUT_TEXT that merely says 'location'", () => {
+      // city prefers INPUT_TEXT over DROPDOWN, and on a filmmaking-cohort form —
+      // exactly the population this poller scans — an INPUT_TEXT "location"
+      // question is entirely ordinary. Ranked above the alias, the preference
+      // filed the shoot location as the applicant's city in both orderings.
+      for (const decoy of [
+        "Shoot location preference",
+        "Preferred location for the workshop",
+        "Studio location",
+      ]) {
+        const fields: TypedField[] = [
+          { title: decoy, type: "INPUT_TEXT", value: "Studio B" },
+          { title: "Which city are you from?", type: "DROPDOWN", value: "Chennai" },
+        ];
+        expect(typedBothWays(fields, "city")).toEqual(["Chennai", "Chennai"]);
+        expect(typedBothWays(fields, "city")).toEqual(untypedBothWays(fields, "city"));
+      }
+    });
+
+    it("leaves an alias-order decision to alias order, cost and all", () => {
+      // THE PRICE OF THE CORRECTION, STATED. The coarse dropdown bucket beats
+      // the free-text designation here, because "occupation" is declared ahead
+      // of "designation" and the type is no longer allowed to overrule that.
+      // Accepted: `occupation` is a nullable qualification column, the live form
+      // resolves correctly on alias order alone (its dropdown decoy reads "What
+      // do you do?", which no earlier alias matches), and the alternative —
+      // letting type outrank the alias — is what put a mentor's address on the
+      // permanent email key above.
+      const fields: TypedField[] = [
+        { title: "Your occupation category", type: "DROPDOWN", value: "Entrepreneur/Founder" },
+        { title: "Most recent designation", type: "INPUT_TEXT", value: "Video Editor" },
+      ];
+      expect(typedBothWays(fields, "occupation")).toEqual(untypedBothWays(fields, "occupation"));
+      expect(typedBothWays(fields, "occupation")).toEqual([
+        "Entrepreneur/Founder",
+        "Entrepreneur/Founder",
+      ]);
     });
   });
 
   describe("what the preference MOVES that alias order used to decide", () => {
-    it("inverts the essay decoy for bio — recorded, not silent", () => {
-      // A type preference outranks alias order for ORDINARY decoys too, not just
-      // for the three regression classes, and this is the one place in the suite
-      // where that visibly changes an answer. "Tell us who referred you and why"
-      // is an essay about somebody else; THIRD_PARTY_LABEL cannot touch it (it
-      // is anchored to identity nouns, deliberately — see the sweep's own tests
-      // above), so untyped it loses only because "about you" is declared before
-      // "tell us". Both are TEXTAREA-vs-INPUT_TEXT here, so the preference now
-      // decides first and the referral essay wins.
+    it("no longer inverts the essay decoy for bio", () => {
+      // "Tell us who referred you and why" is an essay about somebody else;
+      // THIRD_PARTY_LABEL cannot touch it (it is anchored to identity nouns,
+      // deliberately — see the sweep's own tests above), so the only thing
+      // keeping it out of `bio` is that "about you" is declared before
+      // "tell us". The round that ranked type above alias order inverted
+      // exactly this and filed the referral essay as the applicant's bio;
+      // with the preference demoted to a tie-break, alias order decides again.
       const fields: TypedField[] = [
         { title: "Tell us who referred you and why", type: "TEXTAREA", value: "My friend R" },
         { title: "About you", type: "INPUT_TEXT", value: "Editor, Chennai" },
       ];
-      expect(untypedBothWays(fields, "bio")).toEqual(["Editor, Chennai", "Editor, Chennai"]);
-      expect(typedBothWays(fields, "bio")).toEqual(["My friend R", "My friend R"]);
-      // ACCEPTED, WITH ITS PRICE STATED. `bio` is a nullable qualification
-      // column — not the email dedupe key, not the name — so the cost is one
-      // wrong nullable field on a form that asks two essays, against a
-      // preference that is right on every form asking one (the live 100-word
-      // essay IS a TEXTAREA, and the one-line "About you" it would otherwise
-      // lose to is the thing this preference exists to beat). Buying it back
-      // would mean ranking alias order above type, which is exactly what the
-      // DROPDOWN occupation decoy proves cannot work.
-      expect(
-        typedBothWays(
-          [
-            { title: "About you in one line", type: "INPUT_TEXT", value: "Editor, Chennai" },
-            { title: "Tell us your story", type: "TEXTAREA", value: "The hundred word essay" },
-          ],
-          "bio",
-        ),
-      ).toEqual(["The hundred word essay", "The hundred word essay"]);
+      expect(typedBothWays(fields, "bio")).toEqual(untypedBothWays(fields, "bio"));
+      expect(typedBothWays(fields, "bio")).toEqual(["Editor, Chennai", "Editor, Chennai"]);
     });
 
     it("leaves the same-type residual exactly where it already was", () => {
@@ -1515,13 +1660,13 @@ describe("pickField — the block TYPE outranks every English signal", () => {
 
     it("separates a third party whose TYPE outranks the applicant's own", () => {
       // The one the first cut of the type layer got wrong, and the reason the
-      // score key reads (ownFieldFirst, typeRank, …) rather than the other way
-      // round. Bucketing by type first and running the third-party sweep INSIDE
-      // each bucket lets a bucket holding only the referrer match, run its own
-      // fallback sweep and return before the applicant's lower-typed field is
-      // ever consulted — regression class (b), rebuilt out of the mechanism
-      // meant to retire it, on the field whose wrong answer is the permanent
-      // (offering_id, email) dedupe key.
+      // score key reads (ownFieldFirst, aliasIndex, matchTier, typeRank, …).
+      // Ranking the type above the third-party sweep let a set holding only the
+      // referrer match, run its own fallback and return before the applicant's
+      // lower-typed field was ever consulted — regression class (b), rebuilt out
+      // of the mechanism meant to retire it, on the field whose wrong answer is
+      // the permanent (offering_id, email) dedupe key. The demotion is asked
+      // FIRST, and the type only ever breaks a tie inside one sweep.
       expect(
         typedBothWays(
           [
