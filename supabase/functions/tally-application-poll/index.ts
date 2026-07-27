@@ -91,6 +91,14 @@ import {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+/**
+ * The token the pg_cron caller presents, compared constant-time in the handler.
+ * Set to the SAME value the cron sends (the vault secret
+ * `email_queue_service_role_key`). Explicit rather than inferred, because
+ * `SUPABASE_SERVICE_ROLE_KEY` and that vault secret are DIFFERENT key formats on
+ * a project mid-migration — see the auth block for the live evidence.
+ */
+const POLL_AUTH_TOKEN = Deno.env.get("POLL_AUTH_TOKEN") ?? "";
 
 const TALLY_BASE = "https://api.tally.so";
 const TALLY_PAGE_SIZE = 100;
@@ -452,11 +460,25 @@ Deno.serve(async (req) => {
   // the operator burns the outage chasing the vault secret and the cron job
   // while the fault is on this function's side. The RESPONSE is byte-identical
   // either way — the caller learns nothing about which half failed.
-  if (!SERVICE_KEY) {
-    log("error", "auth_misconfigured", { reason: "service_key_unset" });
+  // WHICH SECRET THE CRON ACTUALLY SENDS IS NOT `SUPABASE_SERVICE_ROLE_KEY`.
+  // The cron sends the vault secret `email_queue_service_role_key`, which on this
+  // project is the LEGACY service_role JWT (`eyJ…`, 219 chars). The platform
+  // injects `SUPABASE_SERVICE_ROLE_KEY` into the edge runtime in the NEW
+  // `sb_secret_…` format, because the project carries both key generations at
+  // once. Comparing the bearer against the injected env var therefore 401s the
+  // cron on EVERY tick — verified live 2026-07-27, and silently, since a cron
+  // 401 has no user-visible symptom. The gateway can't catch it either:
+  // verify_jwt=true only proves the bearer is SOME valid project JWT.
+  //
+  // So the shared secret is explicit and format-independent: POLL_AUTH_TOKEN,
+  // set to the same value the cron sends. `SUPABASE_SERVICE_ROLE_KEY` stays the
+  // fallback so this keeps working on a project where the two DO coincide.
+  const EXPECTED = POLL_AUTH_TOKEN || SERVICE_KEY;
+  if (!EXPECTED) {
+    log("error", "auth_misconfigured", { reason: "poll_auth_token_unset" });
     return jsonRes({ error: "Unauthorized" }, 401);
   }
-  if (!token || !timingSafeEqual(token, SERVICE_KEY)) {
+  if (!token || !timingSafeEqual(token, EXPECTED)) {
     // The RESPONSE carries no detail (no reason, no hint about which half
     // failed). But a cron-wide 401 with zero log signal is an invisible outage
     // repeating every 15 minutes, so emit exactly one structured line — shape
