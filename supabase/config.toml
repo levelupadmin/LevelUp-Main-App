@@ -42,5 +42,15 @@ project_id = "twqagwleffjggoemzfqs"
   # TALLY_SIGNING_SECRET is unset (index.ts:9-12).
   [functions.tally-application-webhook]
     verify_jwt = false
+  # tally-application-poll: the PULL replacement for the webhook above. Invoked
+  # every 15 minutes by pg_cron with a service-role JWT, so it mirrors
+  # [functions.process-email-queue] — the existing cron-invoked function with an
+  # explicit entry. (notify-cohort is cron-invoked too but has NO entry here; it
+  # relies on the implicit default, so it is not the precedent to copy.)
+  # verify_jwt = true only proves the caller holds SOME valid project JWT — the
+  # anon key qualifies — so the handler additionally parses the bearer token and
+  # requires role=service_role before spending any Tally API quota.
+  [functions.tally-application-poll]
+    verify_jwt = true
   [functions.generate-invoice-pdf]
     verify_jwt = false
