@@ -82,6 +82,44 @@ export const easings = {
   spring: [0.34, 1.56, 0.64, 1], // --ease-spring (overshoot curve)
 } as const satisfies Record<string, [number, number, number, number]>;
 
+// ── decisionReveal (REQ-DEC-2) ── the Stage-06 full-viewport decision reveal.
+// ONE timeline, hoisted here so the reveal screen and every downstream decision
+// surface animate off the same beats instead of duplicated literals. Nothing in
+// motion.ts was long enough for it: `durations.slow` (0.4s) and `sweep` (0.7s)
+// are UI transitions, and `kenburns` (9s) is a hero drift, not a reveal.
+//
+// The named keys are framer `transition.delay` offsets in SECONDS, measured from
+// the tap on "Open your decision"; `beat` is how long each staged element
+// animates for. The last element therefore settles at `letter + beat` = 2.3s,
+// inside the ≤2.6s ceiling the PRD fixes (`total`). Storyboard F1–F5: hush →
+// crest draws → name + verdict land → rule sweeps → letter arrives.
+//
+// Every call site animates TRANSFORM/OPACITY ONLY (no filter, no
+// backdrop-filter) — the Android-WebView compositing budget.
+export const decisionReveal = {
+  // Hard ceiling from REQ-DEC-2. No offset + `beat` may exceed it.
+  total: 2.6,
+  // F1 — the sealed frame holds before anything moves.
+  hush: 0,
+  // F2 — the crest draws in.
+  crest: 0.15,
+  // F3 — name + verdict land. The beat that carries the outcome.
+  verdict: 0.7,
+  // F4 — the rule sweeps (scaleX from 0).
+  rule: 1.35,
+  // F5 — the letter arrives; "Claim my seat" is the last thing to appear.
+  letter: 1.75,
+  // Shared per-element duration, so the cadence stays even across the timeline.
+  beat: 0.55,
+  // Arrivals ride --ease-out; the rule sweep rides --ease-in-out.
+  ease: easings.out,
+  ruleEase: easings.inOut,
+  // prefers-reduced-motion — ONE crossfade, ≤200ms, that STILL reveals the
+  // verdict. The outcome is never gated behind a motion preference; this
+  // replaces the staged delays with a single opacity tween, no transform.
+  reducedCrossfade: 0.2,
+} as const;
+
 // ── pressTap ── canonical `whileTap` prop: subtle press-in on the snap spring.
 export const pressTap = {
   scale: 0.97,

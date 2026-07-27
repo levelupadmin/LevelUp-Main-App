@@ -15,9 +15,23 @@
 /** The reconciler flag. Default off — the whole reconciler path is inert. */
 export const FUNNEL_RECON = "VITE_FUNNEL_RECON";
 
+/**
+ * The decision-experience flag (Phase DC). Default off — the sealed reveal, the
+ * acceptance card, the claim flow and the public admission page are all inert,
+ * and an `accepted` application falls back to today's TeleCRM-managed admin +
+ * email path with no in-app reveal.
+ *
+ * It gates a READ path only: the app never writes a funnel status (SOR-1), and
+ * there is no in-app admin decision RPC. Because the `accepted` signal is
+ * sourced from `useFunnelStage`, which is itself gated on `FUNNEL_RECON`, the
+ * reveal needs BOTH flags on to fire.
+ */
+export const DECISION_FLOW = "VITE_DECISION_FLOW";
+
 /** Known flags and their default when neither localStorage nor env speaks. */
 const REGISTRY: Record<string, boolean> = {
   [FUNNEL_RECON]: false,
+  [DECISION_FLOW]: false,
 };
 
 function truthy(value: unknown): boolean {

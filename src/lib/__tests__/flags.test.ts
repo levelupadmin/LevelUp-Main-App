@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { flag, FUNNEL_RECON } from "@/lib/flags";
+import { DECISION_FLOW, flag, FUNNEL_RECON } from "@/lib/flags";
 
 // This jsdom build ships without a working `localStorage` (same gap the
 // queryClient persist test papers over). Install a memory-backed mock so the
@@ -31,6 +31,20 @@ afterEach(() => {
 describe("flag()", () => {
   it("VITE_FUNNEL_RECON defaults off (dark) with no override or env", () => {
     expect(flag(FUNNEL_RECON)).toBe(false);
+  });
+
+  // The whole Phase DC acceptance ("flag off = byte-identical to today") rests
+  // on this default: the decision routes are not even registered, no reveal
+  // fires, and an `accepted` application keeps today's admin + email path.
+  it("VITE_DECISION_FLOW defaults off (dark) with no override or env", () => {
+    expect(flag(DECISION_FLOW)).toBe(false);
+  });
+
+  it("VITE_DECISION_FLOW is independent of VITE_FUNNEL_RECON", () => {
+    // The reveal needs BOTH on; turning the reconciler on must not switch the
+    // decision experience on by itself.
+    localStorage.setItem(FUNNEL_RECON, "true");
+    expect(flag(DECISION_FLOW)).toBe(false);
   });
 
   it("unknown flags read false", () => {
