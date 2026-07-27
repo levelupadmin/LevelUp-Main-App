@@ -8,7 +8,12 @@
  * THE PRIMARY FIXTURE IS THE REAL FORM, NOT AN INVENTED ONE. Everything below
  * `REAL_QUESTIONS` is derived from `./tally-81dRPA-real-envelope.json` — the
  * genuine 29-question envelope of live form `81dRPA`, probed 2026-07-27, real
- * ids / titles / order, every answer anonymised (zero PII). The JSON is
+ * ids / titles / order. ANSWERS CARRY NO REAL DATA: the 19 visible-question
+ * answers are synthetic fixtures, and the 6 HIDDEN attribution fields
+ * (utm_source/medium/campaign/content, fbclid, click_ts) are NULLED — the first
+ * cut of this file wrongly certified "zero PII" while those six still held a
+ * real person's Meta click identifiers. `buildQuestionMap` drops all six
+ * (title:null), so nothing here ever depended on them. The JSON is
  * IMPORTED rather than transcribed so a fixture can never drift from ground
  * truth. This matters because the invented labels the first cut of this file
  * used ("Full Name", "Your occupation", "Tell us about yourself") all matched
