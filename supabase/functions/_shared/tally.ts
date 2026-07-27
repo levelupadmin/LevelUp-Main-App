@@ -193,6 +193,13 @@ export interface CohortApplicationRow {
  * "City of residence" is meant to beat a bare "Your city" on tier.
  */
 export const FIELD_ALIASES = {
+  // BARE NOUN AHEAD OF ITS COMPOUND — deliberately, and pinned by test. Putting
+  // "full name"/"phone number" first hands the group to a third party's compound
+  // ("Full name of my mentor", "Alternate phone number") over a plainly-worded
+  // "Name"/"Phone". The mirror defect — a prose label tying with the real field
+  // on the bare noun — is closed structurally by QUESTION TYPE, not by alias
+  // order: see TYPE_ALLOWLIST. Reordering this list trades one defect for the
+  // other and is not the lever.
   fullName: ["your name", "name", "full name"],
   email: ["your email", "email"],
   phone: ["your whatsapp", "your phone", "phone", "phone number", "mobile", "whatsapp"],
@@ -597,10 +604,33 @@ function selectByAlias(
   let matched = false;
   for (const alias of aliases) {
     const needle = normalizeLabel(alias);
+    /**
+     * A POSSESSIVE ALIAS MAY ONLY WIN WHERE THE LABEL ACTUALLY STARTS WITH IT.
+     *
+     * Aliases are iterated OUTERMOST, so alias index outranks tier by
+     * construction: the first alias to match anything returns. That is right for
+     * "your email" vs "email" when the possessive identifies the applicant's own
+     * field ("Your Email ID" — TIER_PREFIX) — and catastrophically wrong when the
+     * possessive merely appears mid-prose. "Can we add your email to the
+     * newsletter?" is a TIER_WORD hit for "your email", so it beat the
+     * applicant's bare "Email" (TIER_PREFIX) and filed the answer — "Yes" — as
+     * the email. That is the PERMANENT WRONG IDENTITY class: email is the
+     * `(offering_id,email)` dedupe key and the users-join key, and this poller
+     * never updates a row, so the real applicant is hidden under RLS forever.
+     *
+     * Restricting possessives to TIER_EXACT/TIER_PREFIX means a possessive can
+     * only ever speak for a label that LEADS with it. When it appears mid-prose
+     * the sweep falls through to the bare alias — i.e. exactly the behaviour
+     * before possessives were introduced — so no new ordering is representable.
+     * Every live `81dRPA` label is unaffected: all three possessive hits there
+     * ("Your name", "Your Email ID", "Your Whatsapp Number") are at index 0.
+     */
+    const possessiveOnly = needle.startsWith("your ");
     let bestTier = TIER_NONE;
     let bestValue = "";
     for (const candidate of candidates) {
       const tier = aliasMatchTier(candidate.label, needle);
+      if (possessiveOnly && tier === TIER_WORD) continue;
       // Strictly better only, so an equal tier leaves the earlier question in place.
       if (tier < bestTier) {
         bestTier = tier;
