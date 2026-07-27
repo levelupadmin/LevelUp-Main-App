@@ -15,9 +15,18 @@
 /** The reconciler flag. Default off — the whole reconciler path is inert. */
 export const FUNNEL_RECON = "VITE_FUNNEL_RECON";
 
+/**
+ * The interview-cluster flag (PHASE IV). Default off — the slot buttons,
+ * interviewer card, batch ledger and reschedule control stay dark.
+ * `ApplicationStatus` renders for real applicants today, so the whole cluster
+ * ships behind this before any of it is switched on.
+ */
+export const COHORT_INTERVIEW = "VITE_COHORT_INTERVIEW";
+
 /** Known flags and their default when neither localStorage nor env speaks. */
 const REGISTRY: Record<string, boolean> = {
   [FUNNEL_RECON]: false,
+  [COHORT_INTERVIEW]: false,
 };
 
 function truthy(value: unknown): boolean {

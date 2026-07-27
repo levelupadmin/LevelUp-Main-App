@@ -79,3 +79,12 @@ project_id = "twqagwleffjggoemzfqs"
   # and says so at error level on every delivery.
   [functions.calendly-webhook]
     verify_jwt = false
+  # calendly-slots: the availability read behind the interview slot UI. It is a
+  # PUBLIC PRE-AUTH read — an applicant reaches the booking step straight off the
+  # intake chain, before any app session exists — so a gateway JWT requirement
+  # would break the guest path outright. verify_jwt = false is therefore about
+  # guests, not about trust: CALENDLY_TOKEN stays server-side and never reaches
+  # the client, and the handler itself is the real gate (it exposes only open slot
+  # times for the configured org account, never the token and never invitee PII).
+  [functions.calendly-slots]
+    verify_jwt = false
