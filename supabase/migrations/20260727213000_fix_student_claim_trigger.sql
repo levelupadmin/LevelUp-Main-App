@@ -50,12 +50,27 @@
 -- the account with it, then mintSession (:368-391) generateLink+verifyOtp
 -- CONFIRMS whatever address was supplied. ensureSyntheticEmail (:351-366) sets
 -- email_confirm:true outright on an MX-less domain. So the flag can be
--- manufactured. Deleting the branch costs the target population nothing: when
--- the signup email is trustworthy it was itself derived from legacy_enrolments
--- keyed by the OTP-verified phone (:225-244), so the phone branch already
--- claims those exact rows; and for +91 users auth.users.email is the synthetic
--- @phone.leveluplearning.in address, which can never match a TagMango row.
--- This also makes the TG_OP='INSERT' latch moot rather than silently reverted.
+-- manufactured. For the +91 population it costs nothing: a trustworthy signup
+-- email was itself derived from legacy_enrolments keyed by the OTP-verified
+-- phone (:225-244), so the phone branch already claims those exact rows, and
+-- auth.users.email is usually the synthetic @phone.leveluplearning.in address
+-- which can never match a TagMango row. This also makes the TG_OP='INSERT'
+-- latch moot rather than silently reverted.
+--   ⚠️ IT IS NOT FREE, AND AN EARLIER DRAFT OF THIS HEADER WRONGLY SAID IT WAS.
+--   463 legacy rows / ~366 people hold non-+91 or `foreign:` phones, and
+--   Signup.tsx:125 routes every non-+91 number to the email magic link. With the
+--   email branch gone they have NO automatic path. They are no worse off than
+--   under today's outage (nobody claims at all), so this does not block the
+--   fix — but it needs a one-off admin backfill, filed as follow-up.
+--
+-- ⚠️ KNOWN GAP, deliberately not fixed here (decide, don't discover):
+--   All three payment paths — razorpay-webhook:112-119, verify-razorpay-payment:
+--   412-419, guest-create-order:248-255 — call createUser with NO top-level
+--   phone and then `.from("users").update({ phone })`. That UPDATE fires this
+--   trigger, which reads auth.users.phone = NULL and returns at the guard below.
+--   So every GUEST-CHECKOUT buyer is a silent no-op under this gate. Fixing it
+--   means trusting a service-role-written phone, which is a new trust surface
+--   and belongs in its own reviewed change — not bolted onto an outage fix.
 --
 -- HISTORY: 20260603120000 fixed 1 and 2; 20260611130000 rewrote the function
 -- eight days later (adding the suppress GUC and the email latch) and silently
@@ -177,14 +192,35 @@ BEGIN
 
     -- AUTH phone only. The email fallback is removed for the same reason as
     -- above: a confirmed email is not proof of ownership on this stack.
-    SELECT u.id INTO v_user_id
-    FROM public.users u
-    JOIN auth.users au ON au.id = u.id
-    WHERE au.phone IS NOT NULL
-      AND NEW.phone IS NOT NULL
-      AND au.phone = NEW.phone
-    ORDER BY u.created_at ASC, u.id ASC   -- deterministic, was bare LIMIT 1
-    LIMIT 1;
+    --
+    -- THE TWO COLUMNS STORE DIFFERENT DIALECTS. `legacy_enrolments.phone` is
+    -- '+91XXXXXXXXXX'; GoTrue strips the '+', so `auth.users.phone` is
+    -- '91XXXXXXXXXX' (measured here: 241 of 242 rows '91'-prefixed, 1 '+'-
+    -- prefixed). A raw `au.phone = NEW.phone` therefore matches ZERO of 73,926
+    -- rows — which is exactly why function 1 above canonicalises before
+    -- comparing. An earlier revision of THIS file compared them raw and would
+    -- have ended the outage while granting nothing, the same silent-no-op class
+    -- as the phone_confirmed_at gate it replaced. The IN-list covers all three
+    -- storage dialects and keeps `users_phone_key` usable.
+    --
+    -- The key is derived ONLY from an already-canonical legacy phone. 485 rows
+    -- hold `foreign:<digits>:<handle>` placeholders rather than numbers; digit-
+    -- stripping those would mint a 10-digit key that can COLLIDE with a real
+    -- subscriber and stamp claimed_by_user_id permanently. The regex guard means
+    -- they produce no key at all, so they add zero collision space.
+    --
+    -- `u.deleted_at IS NULL`: soft-delete nulls public.users.phone but PRESERVES
+    -- the auth row and its phone (11 of 11 soft-deleted users still carry one),
+    -- so without this a deleted account could claim a live buyer's purchases.
+    IF NEW.phone ~ '^\+91[0-9]{10}$' THEN
+      SELECT u.id INTO v_user_id
+      FROM public.users u
+      JOIN auth.users au ON au.id = u.id
+      WHERE u.deleted_at IS NULL
+        AND au.phone IN (right(NEW.phone, 10), '91' || right(NEW.phone, 10), NEW.phone)
+      ORDER BY u.created_at ASC, u.id ASC   -- deterministic, was bare LIMIT 1
+      LIMIT 1;
+    END IF;
 
     IF v_user_id IS NOT NULL THEN
       IF NOT EXISTS (
