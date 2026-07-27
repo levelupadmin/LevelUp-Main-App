@@ -32,6 +32,15 @@ killing vertical scroll.)
 - 🟢 **Tier 3 — trivial → verify it builds + ship.** Copy, one visual tweak, docs.
 
 ### Tier-1 pre-ship checklist (all must pass)
+0. **If the change touches `supabase/functions/`, run `npm run typecheck:functions`.**
+   NOTHING ELSE SEES THAT TREE: `tsconfig.app.json` includes only `src`, `npm run
+   build` is a bare `vite build` (no `tsc`), eslint has `no-undef` off under
+   typescript-eslint, and vitest only ever imports the pure `_shared/*` modules —
+   never a handler with a top-level `Deno.serve`. On 2026-07-22 a poll handler that
+   referenced a deleted `cutoff` binding passed 395/395 tests, a green build and a
+   clean lint, and would have thrown on EVERY cron tick *after* its inserts
+   committed — silencing the success log and firing ERROR forever. `deno check` is
+   the only gate that catches this, and it takes two seconds.
 1. **Council:** `Workflow({ name: "bugfix-council", args: { fix, files, scope } })`
    — resolve every blocking issue. Its job is to ARGUE the fix, not approve it.
 2. **Cross-platform verify EVERY surface it renders on**, not just the one you

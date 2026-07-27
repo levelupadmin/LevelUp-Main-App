@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "typecheck:functions": "npx -y deno@latest check supabase/functions/*/index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

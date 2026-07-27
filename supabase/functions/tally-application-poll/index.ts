@@ -744,7 +744,13 @@ Deno.serve(async (req) => {
       log("info", "form_polled", {
         formId,
         offering: label,
-        cutoff,
+        // FX-2 replaced the single `cutoff` with an explicit window; this
+        // shorthand was left pointing at the deleted binding, which made the
+        // per-form success log throw AFTER the inserts had already committed —
+        // silencing the one health signal and turning every form into a
+        // `form_failed` at ERROR. Only `deno check` sees this file.
+        windowStart: summary.windowStart,
+        windowEnd: summary.windowEnd,
         scanned: summary.scanned,
         created: summary.created,
         skipped: summary.skipped,
