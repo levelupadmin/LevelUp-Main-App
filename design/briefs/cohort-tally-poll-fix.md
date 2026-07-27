@@ -2,7 +2,7 @@
 *The `bugfix-council` returned **REVISE** on `design/cohort-tally-poll`. This brief closes every blocking finding. Branch unchanged. Nothing is deployed or applied until this passes.*
 
 ## What the council got WRONG (do not "fix" this — it is already correct)
-The council claimed `full_name` would capture a Meta ad creative name (`ad_name` alias collision). **I probed the live form and disproved it.** Form `81dRPA`'s hidden fields have **EMPTY titles** (question indices 0–5) — `ad_name`/`campaign`/`fdclid` are *TeleCRM* field names, NOT Tally question titles. `buildQuestionMap` already drops empty titles. Verified against a real live submission: `fullName = "Test Applicant"` ✅, `email` ✅, `phone` ✅, `city` ✅. **Leave that behavior as-is.**
+The council claimed `full_name` would capture a Meta ad creative name (`ad_name` alias collision). **I probed the live form and disproved it.** Form `81dRPA`'s hidden fields have **EMPTY titles** (question indices 0–5) — `ad_name`/`campaign`/`fdclid` are *TeleCRM* field names, NOT Tally question titles. `buildQuestionMap` already drops empty titles. Verified against a real live submission: `fullName` resolved to the applicant's own name ✅, `email` ✅, `phone` ✅, `city` ✅. **Leave that behavior as-is.**
 
 ## What the council got RIGHT (verified by running the shipped parser on a REAL submission)
 Two genuine parser defects, same root cause the council identified (naive substring alias matching against a real form):
