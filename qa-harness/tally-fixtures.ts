@@ -40,6 +40,7 @@
 
 import {
   buildQuestionMap,
+  type IntakeWindowSource,
   type TallyEnvelope,
   type TallyQuestion,
   type TallyResponse,
@@ -220,6 +221,88 @@ export function straddlingPage(): TallySubmission[] {
       answers: { [QID.email]: "ancient@example.invalid" },
     }),
   ];
+}
+
+/**
+ * The Edition-2 ceiling (FX-2.2), in the exact shape PostgREST hands over a SQL
+ * `date` column: `YYYY-MM-DD`, carrying NO time and NO zone. That shape is the
+ * whole reason `resolveIntakeWindow` has to choose the instant the day ends —
+ * the column cannot say it.
+ */
+export const EDITION_2_DEADLINE = "2026-07-31";
+
+/**
+ * The instant `EDITION_2_DEADLINE` ends: end of that day in Asia/Kolkata.
+ *
+ * SPELLED OUT BY HAND, NEVER DERIVED. A fixture that recomputed this from the
+ * date would agree with the implementation by construction and would keep
+ * passing if the ceiling were reverted to a UTC boundary. This literal is the
+ * ground truth the test asserts the shipped function against.
+ */
+export const EDITION_2_WINDOW_END_IST = "2026-07-31T23:59:59.999+05:30";
+
+/**
+ * Instants around that ceiling, chosen so a revert to UTC FAILS rather than
+ * passing quietly. Both wrong answers are covered:
+ *   • `middayIst` — 12:00 IST on the deadline day. UTC MIDNIGHT (what
+ *     `PublicOffering.tsx` renders the column with, and the obvious "just parse
+ *     the date" reading) lands at 05:30 IST, so a UTC cut would drop this and
+ *     with it the entire last-day rush, which on an applications funnel is the
+ *     busiest hours it has.
+ *   • `nextDayFirstMinuteIst` — 00:01 IST the morning after. END-OF-DAY IN UTC
+ *     (`…T23:59:59.999Z`) is 05:29 IST on that morning, so that cut would
+ *     wrongly ingest this one.
+ * `lastMinuteIst` is the in-window edge; `EDITION_2_WINDOW_END_IST` itself is
+ * inclusive and is asserted separately.
+ */
+export const DEADLINE_BOUNDARY = {
+  middayIst: "2026-07-31T12:00:00.000+05:30",
+  lastMinuteIst: "2026-07-31T23:59:00.000+05:30",
+  nextDayFirstMinuteIst: "2026-08-01T00:01:00.000+05:30",
+} as const;
+
+/**
+ * A newest-first page from a CLOSED edition: the post-deadline rows arrive
+ * FIRST, because that is the real arrival order once an always-on lead form
+ * outlives its edition. Every row here is ABOVE the cutoff, so nothing on this
+ * page may end the scan — the two in-window rows underneath must still be
+ * collected and `stoppedAtCutoff` must stay false.
+ *
+ * This is the shape that makes treating the ceiling as a stop signal
+ * catastrophic rather than merely wrong: it would halt on row 1, ingest
+ * NOTHING from the moment an edition closes, and report the same healthy
+ * `stoppedAtCutoff: true` while doing it.
+ */
+export function closedEditionPage(): TallySubmission[] {
+  return [
+    submission({
+      id: "sub_after_deadline_1",
+      submittedAt: "2026-08-05T09:00:00.000Z",
+      answers: { [QID.email]: "late-1@example.invalid" },
+    }),
+    submission({
+      id: "sub_after_deadline_2",
+      submittedAt: "2026-08-01T05:00:00.000Z",
+      answers: { [QID.email]: "late-2@example.invalid" },
+    }),
+    submission({ id: "sub_in_window_1", submittedAt: "2026-07-20T09:15:00.000Z" }),
+    submission({ id: "sub_in_window_2", submittedAt: "2026-07-02T11:00:00.000Z" }),
+  ];
+}
+
+/**
+ * The two `offerings` columns `resolveIntakeWindow` reads, snake_cased like the
+ * DB row. Defaults are the healthy Edition-2 pair, so a test states only the
+ * column it is actually about — a NULL cutoff, an unparseable one, no ceiling.
+ */
+export function offeringWindow(
+  overrides: Partial<IntakeWindowSource> = {},
+): IntakeWindowSource {
+  return {
+    intake_opens_at: EDITION_2_CUTOFF,
+    application_deadline: EDITION_2_DEADLINE,
+    ...overrides,
+  };
 }
 
 // ── The synthetic edge-case form ──

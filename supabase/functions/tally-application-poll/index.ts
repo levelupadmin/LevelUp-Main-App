@@ -168,7 +168,11 @@ interface OfferingRow {
  * `skippedNoCutoff` is NOT here, and cannot be: an offering with no
  * `intake_opens_at` is filtered out of the scan query, so it never reaches a
  * per-form summary at all. It is reported once, at the top level of the
- * response body — see `countOfferingsWithoutCutoff`.
+ * response body — present UNCONDITIONALLY on every run that polls, unlike the
+ * optional counters above, with `null` meaning "unknown" rather than none. See
+ * `countOfferingsWithoutCutoff`. (The one body without it is the `skipped:
+ * "TALLY_API_KEY not configured"` early return, which says in the body itself
+ * that no run happened.)
  */
 interface FormSummary {
   formId: string;
@@ -467,6 +471,12 @@ Deno.serve(async (req) => {
   if (!apiKey) {
     // Fail-soft: an unset key is a config state, not an incident. Nothing is
     // ingested and the next run picks up once the secret is set.
+    //
+    // No `skippedNoCutoff` here, and that is not the ambiguity the field exists
+    // to remove: this body carries `skipped`, which says outright that the run
+    // never polled anything, so nobody can read a missing count as "none". The
+    // alternative — a DB round-trip to count offerings for a run that is about
+    // to do nothing — buys a number with no run to be about.
     log("warn", "tally_api_key_unset", {});
     return jsonRes({ ok: true, skipped: "TALLY_API_KEY not configured", forms: [] });
   }
@@ -504,12 +514,20 @@ Deno.serve(async (req) => {
 
   const offerings = (offeringData ?? []) as OfferingRow[];
   const noCutoff = await countOfferingsWithoutCutoff(admin);
-  if (noCutoff.count) {
+  // FIRES FOR "SOME" **AND** FOR "UNKNOWN", AND SAYS WHICH. The guard used to be
+  // `if (noCutoff.count)`, which is falsy for `null` as well as `0` — so the one
+  // state that needs a human ("we cannot tell whether an offering is silently
+  // un-pollable", i.e. the count query itself failed) was the one state that
+  // emitted nothing at all. `0` stays silent: there is nothing to report.
+  if (noCutoff.count === null || noCutoff.count > 0) {
     log("warn", "offerings_skipped_no_cutoff", {
       count: noCutoff.count,
+      counted: noCutoff.count !== null,
       offerings: noCutoff.labels,
-      truncated: noCutoff.count > noCutoff.labels.length,
-      note: "staged offerings with a tally_form_url and NULL offerings.intake_opens_at are not polled at all; set that column to opt one in. The poller never falls back to created_at.",
+      truncated: noCutoff.count !== null && noCutoff.count > noCutoff.labels.length,
+      note: noCutoff.count === null
+        ? "UNKNOWN, not zero: the count query failed, so it cannot be said whether any staged offering with a tally_form_url is un-pollable for want of offerings.intake_opens_at. Ingest itself is unaffected; such offerings are not polled at all, and setting that column opts one in. The poller never falls back to created_at."
+        : "staged offerings with a tally_form_url and NULL offerings.intake_opens_at are not polled at all; set that column to opt one in. The poller never falls back to created_at.",
     });
   }
 
@@ -767,7 +785,16 @@ Deno.serve(async (req) => {
     }
   }
 
-  const body: Record<string, unknown> = { ok: true, forms };
+  // `skippedNoCutoff` IS UNCONDITIONAL, UNLIKE `pageCapHit`. `pageCapHit` is a
+  // flag whose absence means the same thing as `false`, so emitting it only when
+  // true costs nothing. This is a COUNT, and the whole reason it exists is to
+  // state "no staged offering is silently un-pollable" as a fact rather than as
+  // an inference from a missing key — omitting a zero would put `0` and "the
+  // poller is too old to report this" back in the same place, which is precisely
+  // the ambiguity `countOfferingsWithoutCutoff` was written to remove. `null` is
+  // carried through verbatim: the count query failed, so the answer is unknown
+  // and explicitly not zero.
+  const body: Record<string, unknown> = { ok: true, forms, skippedNoCutoff: noCutoff.count };
   if (pageCapHit) body.pageCapHit = true;
   return jsonRes(body);
 });

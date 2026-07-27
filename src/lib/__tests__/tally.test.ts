@@ -6,14 +6,21 @@ import {
   FIELD_ALIASES,
   formIdFromTallyUrl,
   isInIntakeWindow,
+  isIngestableSubmission,
   partitionByCutoff,
   pickField,
+  resolveIntakeWindow,
   toApplicationRow,
 } from "@shared/tally";
 import {
+  closedEditionPage,
+  DEADLINE_BOUNDARY,
   EDITION_2_CUTOFF,
+  EDITION_2_DEADLINE,
+  EDITION_2_WINDOW_END_IST,
   envelope,
   LABEL,
+  offeringWindow,
   QID,
   REAL_QUESTIONS,
   REAL_SUBMISSION_ID,
@@ -1104,6 +1111,132 @@ describe("formIdFromTallyUrl", () => {
   });
 });
 
+describe("resolveIntakeWindow — the window the scan runs on (FX-2.1/FX-2.2)", () => {
+  it("resolves the healthy pair into both bounds", () => {
+    expect(resolveIntakeWindow(offeringWindow())).toEqual({
+      windowStart: EDITION_2_CUTOFF,
+      windowEnd: EDITION_2_WINDOW_END_IST,
+      skipReason: null,
+    });
+  });
+
+  it("ingests NOTHING when intake_opens_at is NULL — no created_at fallback", () => {
+    // FX-2.1's whole point: NULL is the PERMANENT default (nothing sets the
+    // column for a new offering), so the old created_at fallback would have
+    // back-filled a cloned edition with up to 2000 rows of Edition-1 history on
+    // its first tick. The failure mode of a forgotten cutoff has to be an
+    // offering that ingests nothing and SAYS SO — hence a skipReason, not a
+    // guessed window.
+    expect(resolveIntakeWindow(offeringWindow({ intake_opens_at: null }))).toEqual({
+      windowStart: null,
+      windowEnd: null,
+      skipReason: "no_cutoff",
+    });
+  });
+
+  it("fails closed the same way on a non-null but unparseable intake_opens_at", () => {
+    // The column is timestamptz, so PostgREST cannot produce these today; the
+    // branch exists so a schema change can never turn a bad value into an
+    // UNBOUNDED scan. Note both bounds go null: a usable ceiling on top of an
+    // unusable floor would still be an unbounded scan downwards.
+    for (const bad of ["", "   ", "not a date", "2026-13-45T99:99:99Z"]) {
+      expect(resolveIntakeWindow(offeringWindow({ intake_opens_at: bad }))).toEqual({
+        windowStart: null,
+        windowEnd: null,
+        skipReason: "no_cutoff",
+      });
+    }
+  });
+
+  it("treats a missing offering row as no cutoff rather than no ceiling", () => {
+    for (const missing of [null, undefined, {}]) {
+      expect(resolveIntakeWindow(missing).skipReason).toBe("no_cutoff");
+    }
+  });
+
+  it("reports windowEnd: null when there is no deadline — visible, not assumed", () => {
+    // The ceiling fails OPEN, in the opposite direction to the floor: a NULL
+    // deadline means the offering ingests for as long as it is staged, and the
+    // caller has to be able to see that state rather than infer it.
+    for (const noDeadline of [null, undefined, "", "   ", "not a date"]) {
+      expect(resolveIntakeWindow(offeringWindow({ application_deadline: noDeadline }))).toEqual({
+        windowStart: EDITION_2_CUTOFF,
+        windowEnd: null,
+        skipReason: null,
+      });
+    }
+  });
+
+  it("ends the deadline day at 23:59:59.999 IST, not at any UTC boundary", () => {
+    // Asserted against the hand-written literal in the fixture, which is NOT
+    // derived from the date — a computed expectation would agree with the
+    // implementation by construction.
+    const { windowEnd } = resolveIntakeWindow(
+      offeringWindow({ application_deadline: EDITION_2_DEADLINE }),
+    );
+    expect(windowEnd).toBe(EDITION_2_WINDOW_END_IST);
+    // And it is the instant it claims to be, ~18.5h AFTER the UTC midnight the
+    // applicant was shown on PublicOffering — strictly the more generous of the
+    // two, which is the only safe direction for a date already advertised.
+    expect(Date.parse(windowEnd!)).toBe(Date.parse("2026-07-31T18:29:59.999Z"));
+    expect(Date.parse(windowEnd!)).toBeGreaterThan(Date.parse(`${EDITION_2_DEADLINE}T00:00:00Z`));
+  });
+
+  it("honours a full instant verbatim if the column is ever widened", () => {
+    // Not a shape a `date` column can produce. It must NOT be re-derived into
+    // somebody's idea of a day boundary the author did not ask for.
+    const stored = "2026-07-31T09:00:00.000+05:30";
+    expect(resolveIntakeWindow(offeringWindow({ application_deadline: stored })).windowEnd).toBe(
+      stored,
+    );
+  });
+});
+
+describe("the IST end-of-day ceiling — the boundary a UTC cut gets wrong", () => {
+  // The window under test is the resolved one, not a hand-built pair, so this
+  // exercises the derivation and the comparison together — which is the whole
+  // path a submission actually travels.
+  const { windowStart, windowEnd } = resolveIntakeWindow(offeringWindow());
+
+  it("keeps 12:00 IST on the deadline day IN — a UTC-midnight cut would drop it", () => {
+    // UTC midnight on the deadline date is 05:30 IST that morning. Cutting
+    // there discards the entire last-day rush; this assertion fails the moment
+    // anyone reverts to it.
+    expect(isInIntakeWindow(DEADLINE_BOUNDARY.middayIst, windowStart, windowEnd)).toBe(true);
+  });
+
+  it("keeps 23:59 IST on the deadline day IN", () => {
+    expect(isInIntakeWindow(DEADLINE_BOUNDARY.lastMinuteIst, windowStart, windowEnd)).toBe(true);
+  });
+
+  it("treats the ceiling instant itself as IN — both bounds are inclusive", () => {
+    expect(isInIntakeWindow(EDITION_2_WINDOW_END_IST, windowStart, windowEnd)).toBe(true);
+  });
+
+  it("puts 00:01 IST the next morning OUT — a UTC end-of-day cut would ingest it", () => {
+    // `2026-07-31T23:59:59.999Z` is 05:29 IST on 2026-08-01, i.e. AFTER this
+    // instant. So this assertion fails on the other wrong reading too.
+    expect(isInIntakeWindow(DEADLINE_BOUNDARY.nextDayFirstMinuteIst, windowStart, windowEnd)).toBe(
+      false,
+    );
+  });
+
+  it("still enforces the floor with a ceiling present", () => {
+    expect(isInIntakeWindow("2026-03-14T08:00:00.000Z", windowStart, windowEnd)).toBe(false);
+  });
+
+  it("imposes no ceiling at all when the offering has no deadline", () => {
+    const unbounded = resolveIntakeWindow(offeringWindow({ application_deadline: null }));
+    expect(
+      isInIntakeWindow(
+        DEADLINE_BOUNDARY.nextDayFirstMinuteIst,
+        unbounded.windowStart,
+        unbounded.windowEnd,
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("isInIntakeWindow — the cutoff, fail-closed", () => {
   it("accepts a submission after the cutoff", () => {
     expect(isInIntakeWindow("2026-07-20T09:15:00.000Z", EDITION_2_CUTOFF)).toBe(true);
@@ -1220,6 +1353,118 @@ describe("partitionByCutoff — newest-first, stop on the first out-of-window ro
     };
     expect(partitionByCutoff([], EDITION_2_CUTOFF)).toEqual(empty);
     expect(partitionByCutoff(null, EDITION_2_CUTOFF)).toEqual(empty);
+  });
+});
+
+describe("partitionByCutoff — the ceiling skips, and MUST NOT stop the scan (FX-2.2)", () => {
+  const { windowStart, windowEnd } = resolveIntakeWindow(offeringWindow());
+  const result = partitionByCutoff(closedEditionPage(), windowStart, windowEnd);
+
+  it("collects the in-window rows that sit UNDERNEATH the post-deadline ones", () => {
+    // The load-bearing assertion. Tally is newest-first, so once an edition
+    // closes the post-deadline rows are the ones that arrive first — exactly
+    // how `closedEditionPage()` is built. If the ceiling ever became a stop
+    // signal the scan would halt on row 1 and this list would be empty.
+    expect(result.inWindow.map((s) => s.id)).toEqual(["sub_in_window_1", "sub_in_window_2"]);
+  });
+
+  it("counts the post-deadline rows as skipped rather than ingesting them", () => {
+    expect(result.skippedAfterDeadline).toBe(2);
+    expect(result.inWindow.map((s) => s.id)).not.toContain("sub_after_deadline_1");
+    const rows = result.inWindow.map((s) => toApplicationRow(s, QUESTION_MAP, OFFERING_ID, null));
+    expect(rows.map((r) => r?.email)).not.toContain("late-1@example.invalid");
+    expect(rows.map((r) => r?.email)).not.toContain("late-2@example.invalid");
+  });
+
+  it("reports stoppedAtCutoff FALSE — a stop here would read healthy while zeroing the form", () => {
+    // This is the pairing that makes the bug invisible: `stoppedAtCutoff: true`
+    // is the normal, expected value on a straddling page, so a ceiling-stop
+    // would ingest nothing on every closed edition and still look fine in the
+    // summary. The count and the flag must disagree in exactly this way.
+    expect(result.stoppedAtCutoff).toBe(false);
+    expect(result.skippedUndated).toBe(0);
+  });
+
+  it("skips EVERY post-deadline row, not just the run at the top of the page", () => {
+    // Late arrivals interleaved with in-window rows (a clock skew, or a page
+    // boundary) must each be skipped and counted individually.
+    const page = [
+      submission({ id: "late_a", submittedAt: DEADLINE_BOUNDARY.nextDayFirstMinuteIst }),
+      submission({ id: "in_a", submittedAt: DEADLINE_BOUNDARY.lastMinuteIst }),
+      submission({ id: "late_b", submittedAt: "2026-08-02T00:00:00.000Z" }),
+      submission({ id: "in_b", submittedAt: DEADLINE_BOUNDARY.middayIst }),
+    ];
+    const mixed = partitionByCutoff(page, windowStart, windowEnd);
+    expect(mixed.inWindow.map((s) => s.id)).toEqual(["in_a", "in_b"]);
+    expect(mixed.skippedAfterDeadline).toBe(2);
+    expect(mixed.stoppedAtCutoff).toBe(false);
+  });
+
+  it("still stops at a row below the FLOOR while the ceiling is in force", () => {
+    // Only the lower bound may ever end the scan — the ceiling changes nothing
+    // about that.
+    const withHistory = partitionByCutoff(
+      [...closedEditionPage(), ...straddlingPage().slice(2)],
+      windowStart,
+      windowEnd,
+    );
+    expect(withHistory.inWindow.map((s) => s.id)).toEqual(["sub_in_window_1", "sub_in_window_2"]);
+    expect(withHistory.skippedAfterDeadline).toBe(2);
+    expect(withHistory.stoppedAtCutoff).toBe(true);
+  });
+
+  it("ingests the whole page when the offering has no deadline", () => {
+    // Same page, no ceiling: the two late rows are ordinary in-window rows.
+    const unbounded = resolveIntakeWindow(offeringWindow({ application_deadline: null }));
+    const open = partitionByCutoff(closedEditionPage(), unbounded.windowStart, unbounded.windowEnd);
+    expect(open.inWindow).toHaveLength(4);
+    expect(open.skippedAfterDeadline).toBe(0);
+    expect(open.stoppedAtCutoff).toBe(false);
+  });
+
+  it("ingests nothing for an offering resolveIntakeWindow refused to open", () => {
+    // The no_cutoff offering never reaches the scan in production (it is
+    // filtered out of the query), but if it ever did, its null windowStart
+    // fails closed here too.
+    const skipped = resolveIntakeWindow(offeringWindow({ intake_opens_at: null }));
+    const scan = partitionByCutoff(closedEditionPage(), skipped.windowStart, skipped.windowEnd);
+    expect(scan.inWindow).toEqual([]);
+    expect(scan.stoppedAtCutoff).toBe(true);
+  });
+});
+
+describe("isIngestableSubmission — completed-only, without depending on a URL (FX-2.3)", () => {
+  it("accepts a completed submission", () => {
+    expect(isIngestableSubmission(submission())).toBe(true);
+  });
+
+  it("rejects isCompleted:false even though it reached the loop", () => {
+    // `cohort_applications.status` has no honest value for a half-filled form.
+    // Until FX-2 the only thing standing between a partial and an insert was
+    // `&filter=completed` in a URL literal in another file, unreachable by any
+    // test; this is the code-side twin of that filter.
+    expect(isIngestableSubmission(submission({ isCompleted: false }))).toBe(false);
+    expect(isIngestableSubmission(syntheticSubmission({ isCompleted: false }))).toBe(false);
+  });
+
+  it("rejects an ABSENT flag — the guard is `=== true`, not `!== false`", () => {
+    // A payload that simply does not carry `isCompleted` is not a completion.
+    // `!== false` would have waved all four of these through.
+    const withFlag = submission();
+    delete withFlag.isCompleted;
+    expect(isIngestableSubmission(withFlag)).toBe(false);
+    expect(isIngestableSubmission({})).toBe(false);
+    expect(isIngestableSubmission(null)).toBe(false);
+    expect(isIngestableSubmission(undefined)).toBe(false);
+  });
+
+  it("is independent of the window — the two guards answer different questions", () => {
+    // An in-window partial is still not ingestable, and an out-of-window
+    // completion is still not in window. Neither guard may stand in for the
+    // other.
+    const partial = submission({ isCompleted: false, submittedAt: "2026-07-20T09:15:00.000Z" });
+    expect(isIngestableSubmission(partial)).toBe(false);
+    expect(isInIntakeWindow(partial.submittedAt, EDITION_2_CUTOFF)).toBe(true);
   });
 });
 
