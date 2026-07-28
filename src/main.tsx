@@ -4,6 +4,18 @@ import App from "./App.tsx";
 import "./index.css";
 import { initSentry } from "./lib/sentry";
 import { durationsMs } from "./lib/motion";
+import { registerInstallCapture } from "./hooks/useInstallMoment";
+
+// Capture `beforeinstallprompt` from the ENTRY, not from a route. The browser
+// fires that event once per page load, shortly after its installability check
+// finishes, and never re-fires it on SPA navigation. The only surface that
+// offers an install today is a lazily-loaded route (`/my-application/:id`),
+// whose chunk arrives minutes later — so a listener registered there would be
+// attached to an event that already came and went, and the offer would never
+// appear. Registering here costs nothing measurable (the module is a few hundred
+// bytes and pulls in only `@capacitor/core`, already in this entry) and is the
+// difference between the feature working and the feature being dead. Idempotent.
+registerInstallCapture();
 
 // Kick off error reporting. This is cheap and non-blocking: it schedules the
 // @sentry/react load for first idle (so Sentry stays off the entry chunk and

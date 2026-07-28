@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { flag, FUNNEL_RECON } from "@/lib/flags";
+import { flag, FUNNEL_RECON, REMINDER_LADDER } from "@/lib/flags";
 
 // This jsdom build ships without a working `localStorage` (same gap the
 // queryClient persist test papers over). Install a memory-backed mock so the
@@ -31,6 +31,10 @@ afterEach(() => {
 describe("flag()", () => {
   it("VITE_FUNNEL_RECON defaults off (dark) with no override or env", () => {
     expect(flag(FUNNEL_RECON)).toBe(false);
+  });
+
+  it("VITE_REMINDER_LADDER defaults off (dark) with no override or env", () => {
+    expect(flag(REMINDER_LADDER)).toBe(false);
   });
 
   it("unknown flags read false", () => {

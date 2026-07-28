@@ -15,9 +15,25 @@
 /** The reconciler flag. Default off — the whole reconciler path is inert. */
 export const FUNNEL_RECON = "VITE_FUNNEL_RECON";
 
+/**
+ * The re-entry reminder ladder. Default off (PHASE RE, Δ3 — enabling it is
+ * Rahul's switch, not ours).
+ *
+ * ⚠️ THIS FLAG GATES THE CLIENT ONLY, AND THE CLIENT IS NOT WHERE THE MESSAGES
+ * COME FROM. The ladder runs as a Deno edge function on pg_cron
+ * (`supabase/functions/cohort-reentry-cron`), and `import.meta.env` — which
+ * every value below is resolved through — does not exist in Deno. So this flag
+ * cannot and does not gate a single outbound message. The switch that does is
+ * the server-side env var `REMINDER_LADDER_ENABLED` on that function, which is
+ * fail-closed and unset. Turning this one on lights up any future client
+ * surface for the ladder; it does not start the sending.
+ */
+export const REMINDER_LADDER = "VITE_REMINDER_LADDER";
+
 /** Known flags and their default when neither localStorage nor env speaks. */
 const REGISTRY: Record<string, boolean> = {
   [FUNNEL_RECON]: false,
+  [REMINDER_LADDER]: false,
 };
 
 function truthy(value: unknown): boolean {

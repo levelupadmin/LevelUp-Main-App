@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { isIOS } from "@/lib/platform";
 import { useFunnelStage } from "@/hooks/useFunnelStage";
+import InstallNudge from "@/components/install/InstallNudge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -511,6 +512,32 @@ const ApplicationStatus = () => {
             );
           })}
         </div>
+
+        {/* ── Install offer at two value moments (E-3, REQ-INSTALL-1/2) ──
+            Purely additive and purely optional. The whole journey — application,
+            fee, interview, decision, room — completes in the browser, so this
+            gates nothing, covers nothing, and renders NOTHING unless the browser
+            has actually handed us a `beforeinstallprompt` to fire (it has not,
+            today: no service worker is registered in this repo). Exactly two
+            applicant states qualify, both moments where they just GAINED
+            something rather than moments where they are trying to get somewhere:
+            the ₹400 has landed (interview next), and the seat has been offered.
+            The two statuses are mutually exclusive, so at most one ever mounts.
+            It sits BELOW the timeline and below every step CTA on purpose: the
+            applicant's status and their next action are what the page is for,
+            and an offer that pushed them down the page would be the wall this
+            requirement exists to prevent. Already-installed native shells see
+            nothing at all — that check is `isNative()` inside the hook, which
+            asks "is this the installed app?" and is a different question from
+            the Apple anti-steering guards above, which this block does not
+            touch. (The token those guards grep for is deliberately not repeated
+            here, so the phase's verification grep stays a clean four hits.) */}
+        {application.status === "app_fee_paid" && (
+          <InstallNudge moment="fee-paid" />
+        )}
+        {application.status === "accepted" && (
+          <InstallNudge moment="accepted" />
+        )}
       </div>
     </div>
   );
