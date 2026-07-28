@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { DECISION_FLOW, flag } from "@/lib/flags";
+import { isIOS } from "@/lib/platform";
 import { useDecision } from "@/hooks/useDecision";
 
 /**
@@ -83,9 +84,24 @@ const formatDateTime = (date: Date): string | null => {
  * Route: `/decision/:applicationId/details`, inside the student shell.
  *
  * Three sections: what happens when you claim, the per-SKU fee structure, and
- * the schedule. No essay text and no seat number, and no payment entry point of
- * its own — the money CTA lives on ClaimSeat behind the `isIOS()` guard, so
- * this page links there rather than to checkout.
+ * the schedule. No essay text and no seat number, and no order of its own — the
+ * money runs on the existing checkout route, which ClaimSeat owns, so this page
+ * links to ClaimSeat rather than to checkout.
+ *
+ * That indirection is NOT the iOS guard, which is the thing this page's own
+ * comment used to claim. Apple's anti-steering rules are about what the screen
+ * SHOWS as much as where the tap lands, and this page shows the whole ₹ fee
+ * schedule and a full-width primary CTA into the payment flow. So it carries the
+ * same `isIOS()` guard as the shipped precedent on `ApplicationStatus.tsx`: on
+ * iOS there are no rupee amounts anywhere on the page and no CTA into the claim
+ * flow, only the same fallback sentence that surface already uses — once, in
+ * the CTA slot, because that sentence stands in for a step. Web and Android are
+ * untouched.
+ *
+ * The guard changes WHICH figures are shown, never WHETHER the page can back
+ * what it says: both platforms gate the fee-policy copy on the same offering
+ * read, so a failed read drops the refund term on iOS exactly as it does on the
+ * web and leaves a pointer to where the figures are in its place.
  */
 const EnrollmentDetails = () => {
   const { applicationId } = useParams<{ applicationId: string }>();
@@ -155,6 +171,11 @@ const EnrollmentDetails = () => {
     return <Navigate to={todaysPath} replace />;
   }
 
+  /* Apple anti-steering: no price and no purchase entry point inside the iOS
+     shell. Read once so the fee table, the step titles and the CTA cannot
+     disagree with each other about which platform they are on. */
+  const ios = isIOS();
+
   const confirmation = positiveAmount(terms.data?.confirmation_amount_inr);
   const appFee = positiveAmount(terms.data?.app_fee_inr);
   const total = positiveAmount(terms.data?.price_inr);
@@ -185,7 +206,10 @@ const EnrollmentDetails = () => {
      promise the access boundary does not keep. */
   const claimSteps = [
     {
-      title: confirmation !== null ? `You pay ${inr(confirmation)}` : "You confirm the seat",
+      title:
+        !ios && confirmation !== null
+          ? `You pay ${inr(confirmation)}`
+          : "You confirm the seat",
       body: "The seat comes off the list for this batch and stops being offered to anyone else.",
     },
     {
@@ -194,7 +218,9 @@ const EnrollmentDetails = () => {
     },
     {
       title:
-        balance !== null ? `You clear the balance of ${inr(balance)}` : "You clear the balance",
+        !ios && balance !== null
+          ? `You clear the balance of ${inr(balance)}`
+          : "You clear the balance",
       body: "Due before the cohort begins. You can pay it any time between confirming and the first session.",
     },
     {
@@ -251,9 +277,41 @@ const EnrollmentDetails = () => {
           <h2 id="fees-heading" className="text-sm font-medium text-foreground">
             The fee structure
           </h2>
+          {/* iOS gets the terms without the numbers: the one sentence of this
+              section that carries no amount, kept verbatim, plus a pointer to
+              where the figures are.
+
+              The policy sentence is gated on the SAME `hasFeeRows` as the web
+              branch below, not on `ios` alone. When the offering read fails
+              every amount reads null, and a page that has just failed to load a
+              fee schedule must not assert a refund term off it — the web branch
+              deliberately says nothing about fee policy in that state, and the
+              two platforms have to agree about what the page can back.
+
+              The pointer is NOT the CTA's "Complete this step from a web
+              browser." That sentence replaces a BUTTON wherever it ships
+              (`ApplicationStatus.tsx`, `ClaimSeat.tsx`), so "this step" has an
+              antecedent; this section describes a fee policy, not a step, and
+              repeating it here would put the same sentence on screen twice. */}
+          {ios && (
+            <>
+              {hasFeeRows && (
+                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                  The application fee you already paid counts towards the total
+                  programme fee rather than stacking on top of it. It is not
+                  refundable on its own: if you do not take a seat, it is not
+                  returned.
+                </p>
+              )}
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                The exact figures for this cohort are shown when you open this
+                page in a web browser.
+              </p>
+            </>
+          )}
           {/* Only rendered when there is at least one real figure: an empty
               bordered <dl> is a stray 2px rectangle, not a table. */}
-          {hasFeeRows && (
+          {!ios && hasFeeRows && (
             <dl className="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
               {appFee !== null && (
                 <div className="flex items-baseline justify-between gap-4 p-4">
@@ -303,14 +361,14 @@ const EnrollmentDetails = () => {
               figures are somewhere else entirely. The "rows above" clause is
               narrowed further to the case where the application-fee row is
               actually one of them. */}
-          {hasFeeRows && (
+          {!ios && hasFeeRows && (
             <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
               {appFee !== null
                 ? "The application fee you already paid counts towards the total programme fee, so the rows above add up rather than stack on top of each other. It is not refundable on its own: if you do not take a seat, it is not returned."
                 : "The application fee you already paid counts towards the total programme fee rather than stacking on top of it. It is not refundable on its own: if you do not take a seat, it is not returned."}
             </p>
           )}
-          {!hasFeeRows && (
+          {!ios && !hasFeeRows && (
             <p className="mt-3 text-xs text-muted-foreground">
               The exact figures for this cohort are on your claim page and on the
               checkout screen before you pay anything.
@@ -358,12 +416,21 @@ const EnrollmentDetails = () => {
           not have to apply again.
         </p>
 
-        <Link to={`/decision/${applicationId}/claim`} className="mt-8 block">
-          <Button size="lg" className="w-full">
-            Claim my seat
-            <ArrowRight className="ml-1 h-4 w-4" />
-          </Button>
-        </Link>
+        {/* The one CTA. On iOS it is replaced by the same sentence
+            `ApplicationStatus.tsx` uses, rather than steering to a page whose
+            only purpose is to start a payment. */}
+        {ios ? (
+          <p className="mt-8 text-xs text-muted-foreground">
+            Complete this step from a web browser.
+          </p>
+        ) : (
+          <Link to={`/decision/${applicationId}/claim`} className="mt-8 block">
+            <Button size="lg" className="w-full">
+              Claim my seat
+              <ArrowRight className="ml-1 h-4 w-4" />
+            </Button>
+          </Link>
+        )}
       </div>
     </div>
   );
