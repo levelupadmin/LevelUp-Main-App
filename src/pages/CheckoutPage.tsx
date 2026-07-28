@@ -418,21 +418,37 @@ export default function CheckoutPage() {
         setTotalPreviouslyPaid(paid);
       }
 
-      // Load bump offering details
+      // Load bump offering details.
+      //
+      // A bump is a SALE, so it must obey the same rule as the main offering
+      // above: archived is not for sale. The offering row alone is no longer
+      // the gate — offerings_read_entitled (20260728010000) lets a caller read
+      // an offering they already own whatever its status, so for a returning
+      // student a bump pointing at an archived product would now come back
+      // fully populated and be purchasable, which is exactly the "closed
+      // product back on sale" case the archived rule exists to prevent.
+      //
+      // Filtering only the OFFERINGS query would be worse than the hole: the
+      // render falls back to `headline ?? "Add-on"` and
+      // `bump_price_override_inr ?? 0`, so a bump with no detail still draws a
+      // checkbox reading "Add-on +₹0". The bump itself has to go.
       const bumpData = bumpsRes.data ?? [];
       if (bumpData.length > 0) {
         const bumpOfferingIds = bumpData.map((b: Bump) => b.bump_offering_id);
         const { data: bumpOfferings } = await supabase
           .from("offerings")
           .select("*")
-          .in("id", bumpOfferingIds);
+          .in("id", bumpOfferingIds)
+          .eq("status", "active");
 
-        const enriched = bumpData.map((b: Bump) => ({
-          ...b,
-          offeringDetail: bumpOfferings?.find(
-            (o) => o.id === b.bump_offering_id
-          ),
-        }));
+        const enriched = bumpData
+          .map((b: Bump) => ({
+            ...b,
+            offeringDetail: bumpOfferings?.find(
+              (o) => o.id === b.bump_offering_id
+            ),
+          }))
+          .filter((b) => b.offeringDetail);
         setBumps(enriched);
       }
 

@@ -206,9 +206,17 @@ Deno.serve(async (req) => {
   // phone may belong to a LEGACY TagMango student we already hold. Those
   // are existing, paying customers; they must log in seamlessly, NOT be
   // bounced to "create an account". legacy_enrolments carries their email
-  // + full_name (TagMango orders had both), so we provision from that and
-  // the users_claim_legacy_enrolments trigger grants their entitlements
-  // automatically on insert.
+  // + full_name (TagMango orders had both), so we provision from that.
+  //
+  // NOTE (2026-07-28): entitlements are NO LONGER granted by the
+  // users_claim_legacy_enrolments trigger on insert — that trigger was neutered
+  // to RETURN NEW in 20260727220000_claim_at_signin.sql, because an exception in
+  // an AFTER trigger aborts the signup transaction (it did, from 2026-06-11) and
+  // because the phone it acted on was merely asserted, not proven. The claim now
+  // happens after a VERIFIED sign-in via public.claim_my_purchases(), which this
+  // branch's `phone_confirm: true` is exactly what makes possible. Today only
+  // the web bundle calls it, so a native client provisions here and claims on
+  // its next build; moving the call server-side into this function is filed.
   let signupEmail: string | null = body.email?.trim() || null;
   let signupName: string | null = body.full_name?.trim() || null;
   let isLegacy = false;
