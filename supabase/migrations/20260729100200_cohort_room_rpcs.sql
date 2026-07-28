@@ -80,18 +80,20 @@ CREATE INDEX IF NOT EXISTS live_sessions_week_idx
 --    mentor/host grant (or an admin). A member/alumni row is always scoped to
 --    its own batch_id, so batch A1 can never enumerate batch A2.
 --
---    ONE FLAG, ONE OWNER (NFR-SEC-2, and R-1 contract note 1 at
---    20260729100000:34-42, which names closing this duplication as R-3's job).
+--    ONE FLAG, ONE OWNER (NFR-SEC-2, and R-1 contract note 1 under the heading
+--    "CITE THESE BY NAME, NEVER BY LINE", which names closing this duplication
+--    as R-3's job).
 --    `offering_wide` is not recomputed here: it is R-1's published
---    `cohort_room_is_offering_wide(p_offering)` (20260729100000:351-361), which
---    is the single definition of the staff scope lift and already ORs in
+--    `public.cohort_room_is_offering_wide(uuid)` (20260729100000 §3), which is
+--    the single definition of the staff scope lift and already ORs in
 --    public.is_admin(). Nothing in this file restates the predicate inline.
 --
 --    A ROUND-G ROLLBACK, recorded so it is not re-attempted: an earlier pass
 --    carried a SECOND flag, `all_batches`, that added `pre_member` to the
 --    widening, on the stated grounds that R-1 had made
 --    cohort_room_in_lobby(offering, batch) permissive for a batch-less lobby
---    row. THAT WAS FALSE. The real helper (20260729100000:375-385) reads
+--    row. THAT WAS FALSE. The real helper —
+--    `public.cohort_room_in_lobby(uuid, uuid)`, 20260729100000 §3 — reads
 --        AND m.role = 'pre_member'
 --        AND (p_batch IS NULL OR m.batch_id = p_batch)
 --    with no `OR m.batch_id IS NULL` clause, so for a lobby row and a batch-A1
@@ -176,10 +178,11 @@ COMMENT ON FUNCTION public.cohort_room_caller_scope(uuid) IS
 --     every OTHER batch-less member of the offering, and roster_count counted
 --     them — the exact opposite of what §3's roster_count comment and runbook B2
 --     both claim. It was reachable, not theoretical: R-1's resolver branch (a2)
---     (20260729100000:802-843 — the INSERT under the "(a2) OFFERING-WIDE
---     membership for a paid, enrolled student the admin has not put in a batch
---     yet" comment; cite it by that comment, not by the line number, because
---     that file is modified in this same changeset and the range moves with it)
+--     (20260729100000 §4, `public.cohort_room_resolve_user(uuid)` — the INSERT
+--     under the "(a2) OFFERING-WIDE membership for a paid, enrolled student the
+--     admin has not put in a batch yet" comment; cited by that comment and not
+--     by a line number, because that file moves under its own maintenance —
+--     R-1's §7A restructure shifted this range once already)
 --     mints exactly those rows for a paid, enrolled
 --     student an admin has not put in a batch yet, so an unplaced student was
 --     handed the names, faces, occupations and cities of every other unplaced
@@ -1307,9 +1310,9 @@ GRANT EXECUTE ON FUNCTION public.get_cohort_progress(uuid, uuid) TO authenticate
 --          -- the one caller for whom a cross-batch payload is correct.
 --
 --          -- as an UNPLACED member (paid + enrolled, no batch row yet — R-1
---          -- resolver branch (a2), 20260729100000:802-843, the INSERT under the
---          -- "(a2) OFFERING-WIDE membership …" comment in the SHIPPING tree, not
---          -- the pre-change range at that offset in git HEAD): roster_count must be
+--          -- resolver branch (a2) in 20260729100000 §4, the INSERT under the
+--          -- "(a2) OFFERING-WIDE membership …" comment in the SHIPPING tree; by
+--          -- comment, never by line): roster_count must be
 --          -- exactly 1, and get_room_roster must return that one row plus the
 --          -- offering's mentors/hosts and NOBODY else. Before the §1b NULL-batch
 --          -- fix this enumerated every OTHER unplaced student in the offering —

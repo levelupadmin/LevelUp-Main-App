@@ -31,16 +31,33 @@
  *   optional: ROOM_QA_DIFF_BASE (default "main") for the Delta-6 copy grep
  *
  * A SHADOW RUN, EXACTLY
- *   1. The three R0 migrations (20260729100000 / 100100 / 100200) must already
+ *   1. If the shadow was REBUILT from supabase/migrations/ (rather than cloned
+ *      from prod), arm the default privileges FIRST:
+ *        psql "$SHADOW_DB_URL" -f qa-harness/shadow-grants.sql
+ *      That file's hand-maintained bootstrap block reproduces the platform's
+ *      `ALTER DEFAULT PRIVILEGES … GRANT ALL ON TABLES`, which only affects
+ *      tables created AFTER it runs — so it has to precede `db push`.
+ *   2. The three R0 migrations (20260729100000 / 100100 / 100200) must already
  *      be applied to the shadow project. Nothing here applies them, and the
  *      fixture failure message decodes the SQLSTATE if they are missing.
- *   2. Export the five names above (values live in the vault, never here, never
+ *   3. Run shadow-grants.sql AGAIN, after `db push`: its generated grant loop
+ *      skips every table that did not exist on the first pass, and the
+ *      pre-existing tables are created BY the migrations. Both passes are
+ *      idempotent; the file is written to be run exactly this way.
+ *   4. Export the five names above (values live in the vault, never here, never
  *      in a log line, and never in this file's output).
- *   3. `npm run test:room-access`. Exit 0 = the wall holds; exit 1 = a leak;
+ *   5. `npm run test:room-access`. Exit 0 = the wall holds; exit 1 = a leak;
  *      exit 2 = it could not run at all, which is NOT a pass; exit 3 = --list.
  *   The suite creates and deletes its own auth users, plants canaries, revokes
  *   and re-grants an enrolment, and briefly arms a forced trigger failure. It
  *   is destructive by design and refuses the prod ref for exactly that reason.
+ *
+ *   STEPS 1 AND 3 ARE NOT OPTIONAL HOUSEKEEPING. A database built purely from
+ *   this repo's migrations grants the client roles almost nothing, and PostgreSQL
+ *   checks the GRANT before it ever consults RLS — so every read attack in this
+ *   file would be refused for the wrong reason and print the same word it prints
+ *   when the wall holds. The PRECONDITION section below refuses to run the suite
+ *   in that state rather than hand back a green summary that means nothing.
  *
  * A NOTE FOR R1–R4 — live_sessions HAS NO BATCH DIMENSION
  *   The table hangs off course_id and reaches a batch only through
@@ -438,6 +455,7 @@ function die(msg, code = 2) {
 
 // ── Case inventory (also printed by --list) ─────────────────────────────────
 const INVENTORY = [
+  ["PRECONDITION", "the shadow carries production's grants — aborts (exit 2) if it does not, because every RLS assertion would be vacuous"],
   ["PRE", "fixture world + membership preflight (derived vs manual vs none)"],
   ["Δ6", "R0 diff carries no certificate tiers and no tuition-credit phrasing"],
   ["SEC-ENT-2", "the four guarded triggers ARE attached and armed, and a forced failure — thrown, and CANCELLED — never blocks the enrolment write"],
@@ -451,6 +469,7 @@ const INVENTORY = [
   ["MYROOMS", "the room-LIST RPC is self-scoped and carries the lobby redaction"],
   ["W1/W2/W5/W6/W7", "write attacks on announcements, demo entries and the feed"],
   ["W3/W4", "membership and config are server-derived, never client-claimed"],
+  ["GRANT", "the verb list under the wall: SELECT-only on the room tables, and no TRUNCATE anywhere — the one layer PostgREST cannot probe"],
   ["W3.5/W3.6", "the admin grant/revoke RPCs DO work from an admin JWT (W3.4's control)"],
   ["W6b", "pre_member community write is rejected"],
   ["W8", "forged channel_key is rejected by the write RPC"],
@@ -865,6 +884,7 @@ async function teardown() {
     DROP FUNCTION IF EXISTS public._room_qa_uid(text);
     DROP FUNCTION IF EXISTS public._room_qa_cancel(uuid);
     DROP FUNCTION IF EXISTS public._room_qa_boom();
+    DROP SEQUENCE IF EXISTS public._room_qa_cancel_seq;
     SELECT 1;
   `).catch(() => {});
   const emails = Object.values(ACTORS).map(lit).join(",");
@@ -988,6 +1008,127 @@ section(
       : creditHits.length === 0
         ? `${scanned.length} shipped added lines scanned; zero un-negated credit phrasings`
         : `found: ${show(creditHits)}`);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PRECONDITION — THE SHADOW MUST CARRY PRODUCTION'S GRANTS, OR NOTHING BELOW
+// IS EVIDENCE. This aborts the run; it never prints a summary.
+// ════════════════════════════════════════════════════════════════════════════
+//
+// THE ENVIRONMENT-LAYER VERSION OF THE EXACT DEFECT THE ASSERTION LAYER JUST
+// FIXED. Every read attack in this file is an RLS attack, and PostgreSQL checks
+// the table GRANT strictly BEFORE it consults a row policy. On a shadow built
+// from supabase/migrations/ alone, the client roles hold almost nothing —
+// measured on a clean local stack, 3 of 103 public tables grant SELECT to anon —
+// so "outsider reads offering A and gets denied" is produced by a missing GRANT
+// and is printed with the identical word a holding wall prints. A whole green
+// run in that state is worth precisely zero, and it is the most expensive kind
+// of zero because it looks like a sign-off artifact.
+//
+// TWO SAMPLES, AND THE SECOND IS THE ONE THAT WAS ALMOST MISSED:
+//   · PRE-EXISTING tables, probed as `anon`. Nothing in this repo's migrations
+//     grants these — only the hosted platform's bootstrap, or
+//     qa-harness/shadow-grants.sql, does — so `anon` holding SELECT here is the
+//     single reliable signal that this shadow gates on RLS the way prod does.
+//   · R0-CREATED tables, probed as `authenticated`. shadow-grants.sql was
+//     generated from prod on 2026-07-28 and therefore CANNOT contain the nine
+//     tables R0 adds; a sample drawn only from pre-existing tables would pass
+//     while the nine tables this entire suite is about were unreachable. `anon`
+//     is deliberately NOT the probe role for these: 20260729100000 §7 and
+//     20260729100100 §7 REVOKE ALL on them FROM anon on purpose, so demanding
+//     anon SELECT there would abort a CORRECTLY provisioned shadow. What must
+//     hold for the room cases to mean anything is that `authenticated` — the
+//     role every room policy is written `TO` — can reach them at all.
+//
+// This does NOT prove the bootstrap default-privilege grant ran; that is a
+// different claim, it is what makes section 7's REVOKEs load-bearing rather
+// than decorative, and the GRANT section proves it separately with its own
+// arming control (GRANT.0).
+{
+  const GRANT_SAMPLE = [
+    ["offerings", "anon"], ["courses", "anon"], ["users", "anon"],
+    ["enrolments", "anon"], ["cohort_batches", "anon"],
+    ["cohort_batch_members", "anon"], ["cohort_weeks", "anon"],
+    ["live_sessions", "anon"],
+    ["cohort_room_configs", "authenticated"],
+    ["cohort_room_members", "authenticated"],
+    ["cohort_announcements", "authenticated"],
+    ["cohort_room_posts", "authenticated"],
+  ];
+  const R0_CREATED = new Set([
+    "cohort_room_configs", "cohort_room_members", "cohort_announcements",
+    "cohort_resources", "cohort_room_posts", "cohort_room_post_replies",
+    "cohort_recording_progress", "cohort_demo_entries", "cohort_room_seen",
+  ]);
+  // has_table_privilege() ERRORS on a missing table or role, so both are
+  // resolved through LEFT JOINs and the call is guarded by a CASE that can only
+  // reach it with two live oids.
+  const values = GRANT_SAMPLE.map(([t, g]) => `(${lit(t)}, ${lit(g)})`).join(", ");
+  let grants;
+  try {
+    grants = await sql(`
+      SELECT t.tbl, t.grantee,
+             (c.oid IS NOT NULL) AS present,
+             (r.oid IS NOT NULL) AS role_exists,
+             CASE WHEN c.oid IS NULL OR r.oid IS NULL THEN false
+                  ELSE has_table_privilege(r.oid, c.oid, 'SELECT') END AS can_select
+        FROM (VALUES ${values}) AS t(tbl, grantee)
+        LEFT JOIN pg_class c
+          ON c.relname = t.tbl AND c.relnamespace = 'public'::regnamespace
+        LEFT JOIN pg_roles r ON r.rolname = t.grantee
+       ORDER BY 1`);
+  } catch (e) {
+    die(`Could not read table privileges through the SQL channel: ${e.message}`);
+  }
+
+  const missingRole = grants.filter((g) => !g.role_exists);
+  const missingTable = grants.filter((g) => g.role_exists && !g.present);
+  const ungranted = grants.filter((g) => g.role_exists && g.present && !g.can_select);
+  const missingR0 = missingTable.filter((g) => R0_CREATED.has(g.tbl));
+  const show = (rows) => rows.map((g) => `${g.tbl}→${g.grantee}`).join(", ");
+
+  if (missingRole.length) {
+    die(
+      "The client roles this suite depends on do not exist on this project — " +
+        `${[...new Set(missingRole.map((g) => g.grantee))].join(", ")}. This is not a Supabase project ` +
+        "in the shape the suite assumes, and every RLS assertion below would be meaningless."
+    );
+  }
+  if (missingR0.length) {
+    die(
+      "THE R0 MIGRATIONS ARE NOT ON THIS PROJECT — NOT ONE ASSERTION RAN.\n" +
+        `  missing: ${show(missingR0)}\n\n` +
+        "Apply 20260729100000 / 20260729100100 / 20260729100200 to the shadow first " +
+        "(`supabase db push` against the shadow ref), then re-run."
+    );
+  }
+  if (ungranted.length || missingTable.length) {
+    die(
+      "THE SHADOW IS UNGRANTED — REFUSING TO RUN, BECAUSE EVERY RLS ASSERTION IN THIS SUITE\n" +
+        "WOULD PASS VACUOUSLY AND THE RUN WOULD PRINT A GREEN SUMMARY THAT PROVES NOTHING.\n\n" +
+        (ungranted.length
+          ? `  no SELECT: ${show(ungranted)}\n`
+          : "") +
+        (missingTable.length ? `  table absent entirely: ${show(missingTable)}\n` : "") +
+        "\nPostgreSQL checks the table GRANT before it ever consults a row policy. With the grant\n" +
+        "missing, `outsider reads offering A → denied` is the GRANT refusing, not the wall holding —\n" +
+        "and this file prints the same word either way. A database built from supabase/migrations/\n" +
+        "alone does NOT reproduce production's grants: on a clean local stack only 3 of 103 public\n" +
+        "tables grant SELECT to anon. Production grants anon/authenticated/service_role full DML and\n" +
+        "relies on RLS as the gate, applied by the hosted platform's bootstrap rather than by any\n" +
+        "migration in this repo.\n\n" +
+        "FIX (both passes — see the header's A SHADOW RUN, EXACTLY):\n" +
+        "  psql \"$SHADOW_DB_URL\" -f qa-harness/shadow-grants.sql   # BEFORE db push (arms default privileges)\n" +
+        "  supabase db push --db-url \"$SHADOW_DB_URL\"\n" +
+        "  psql \"$SHADOW_DB_URL\" -f qa-harness/shadow-grants.sql   # AFTER db push (the generated grant loop)"
+    );
+  }
+  console.log(
+    `${C.d}precondition: ${grants.length} representative grants verified ` +
+      `(${GRANT_SAMPLE.filter(([t]) => !R0_CREATED.has(t)).length} pre-existing tables readable by anon, ` +
+      `${GRANT_SAMPLE.filter(([t]) => R0_CREATED.has(t)).length} R0-created tables readable by authenticated) — ` +
+      `this shadow gates on RLS, not on a missing GRANT${C.x}`
+  );
 }
 
 await loadKeys();
@@ -1431,13 +1572,37 @@ section("SEC-ENT-2 — a failing room trigger can never block an enrolment",
     DELETE FROM public.cohort_room_members WHERE user_id = ${lit(OUT)};
     SELECT 1;`);
 
+  /**
+   * THE SIDE CHANNEL THAT SURVIVES THE ROLLBACK, and the reason .3 can prove
+   * the guard EXECUTED rather than merely that the enrolment committed.
+   *
+   * _room_qa_cancel() raises inside the trigger's subtransaction, and the guard
+   * catching it rolls that subtransaction back — so anything the function wrote
+   * to a counter TABLE is undone with it and reads as zero. A counter table
+   * therefore proves nothing. `nextval()` is explicitly non-transactional: the
+   * bump is not rolled back, by design, so a sequence read before and after the
+   * INSERT is the one witness that says "the cancelled path was entered".
+   */
+  const cancelCount = async () => {
+    const r = await sqlOne(
+      `SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END AS n
+         FROM public._room_qa_cancel_seq`);
+    return Number(r?.n ?? -1);
+  };
+
   let enrolA = null;
   let enrolB = null;
   try {
     await sql(`
+      DROP SEQUENCE IF EXISTS public._room_qa_cancel_seq;
+      CREATE SEQUENCE public._room_qa_cancel_seq START 1;
       CREATE OR REPLACE FUNCTION public._room_qa_cancel(p_user uuid)
       RETURNS boolean LANGUAGE plpgsql VOLATILE COST 1 AS $fn$
       BEGIN
+        -- Bump BEFORE the raise, and through a sequence rather than a table:
+        -- the RAISE aborts the subtransaction the guard is about to catch, which
+        -- would undo a table write. nextval() is non-transactional and survives.
+        PERFORM nextval('public._room_qa_cancel_seq');
         RAISE EXCEPTION 'ROOM QA: simulated statement cancellation while resolving %', p_user
           USING ERRCODE = '57014';
       END $fn$;
@@ -1484,16 +1649,32 @@ section("SEC-ENT-2 — a failing room trigger can never block an enrolment",
     await sql(`ALTER TABLE public.cohort_room_members
                  ADD CONSTRAINT tmp_room_qa_force_cancel
                  CHECK (public._room_qa_cancel(user_id)) NOT VALID;`);
+    const cancelsBefore = await cancelCount();
     const insB = await attempt(enrolInto("room-qa-offering-b"));
     enrolB = insB.ok ? insB.rows[0]?.id : null;
     const rowB = await sqlOne(
       `SELECT id, status FROM public.enrolments
         WHERE user_id = ${lit(OUT)} AND offering_id = ${lit(ids.offering_b)}`);
+    const cancelsAfter = await cancelCount();
+    const memB = await memberRows();
+    // THREE HALVES, BECAUSE THIS IS THE CASE WRITTEN TO PROVE THE HEADLINE FIX
+    // AND IT USED TO ASSERT ONLY THE FIRST. `insB.ok && rowB.status === 'active'`
+    // is satisfied byte-for-byte by a build where the trigger was never attached
+    // and the cancel therefore never happened — the same shape .0a exists to
+    // rule out, arriving here through a different door. So: the money write
+    // committed, the cancelled path was ENTERED (the sequence moved, and it can
+    // only be moved from inside _room_qa_cancel), and the resolver wrote nothing
+    // (which is what being cancelled means, and what .1's sibling already
+    // asserted with memA.n === 0).
     prove("SEC-ENT-2.3",
-      "the resolver being CANCELLED mid-write — SQLSTATE 57014, what a statement_timeout looks like from inside a trigger — also leaves the enrolment committed: `EXCEPTION WHEN OTHERS` does not match query_canceled, so a handler that catches everything else still lets a timeout roll the money write back, and a timeout is likeliest exactly when the system is busiest, which is checkout",
-      insB.ok && rowB?.status === "active",
+      "the resolver being CANCELLED mid-write — SQLSTATE 57014, what a statement_timeout looks like from inside a trigger — also leaves the enrolment committed: `EXCEPTION WHEN OTHERS` does not match query_canceled, so a handler that catches everything else still lets a timeout roll the money write back, and a timeout is likeliest exactly when the system is busiest, which is checkout. The cancel is proven to have HAPPENED, not assumed: a QA sequence bumped inside the cancelling function and read either side of the INSERT moved, and nextval() is non-transactional so the bump outlives the subtransaction the guard rolls back — a build whose trigger silently never fired would leave the sequence still and fail here instead of printing a pass",
+      insB.ok && rowB?.status === "active" && cancelsAfter > cancelsBefore && memB.n === 0,
       insB.ok
-        ? `enrolment ${rowB?.id} committed with status=${rowB?.status} while every membership write was being cancelled`
+        ? `enrolment ${rowB?.id} committed with status=${rowB?.status}; the resolver entered the cancelled path ` +
+          `${cancelsAfter - cancelsBefore} time(s) (sequence ${cancelsBefore}→${cancelsAfter}) and wrote ${memB.n} membership row(s)` +
+          (cancelsAfter > cancelsBefore
+            ? ""
+            : " — THE GUARD NEVER RAN: the enrolment committed because nothing was ever cancelled, which makes this case's PASS condition unearned. Check SEC-ENT-2.0a: the resolver trigger on enrolments is missing or disabled.")
         : `THE ENROLMENT WAS ROLLED BACK BY A CANCELLED RESOLVER: ${insB.error}. ` +
           "The guard must name query_canceled explicitly — `WHEN query_canceled THEN … WHEN OTHERS THEN …` — because OTHERS does not cover it.");
 
@@ -1565,6 +1746,7 @@ section("SEC-ENT-2 — a failing room trigger can never block an enrolment",
       DELETE FROM public.cohort_room_members WHERE user_id = ${lit(OUT)};
       DROP FUNCTION IF EXISTS public._room_qa_cancel(uuid);
       DROP FUNCTION IF EXISTS public._room_qa_boom();
+      DROP SEQUENCE IF EXISTS public._room_qa_cancel_seq;
       SELECT 1;`).catch(() => {});
   }
 
@@ -1575,15 +1757,16 @@ section("SEC-ENT-2 — a failing room trigger can never block an enrolment",
       (SELECT count(*)::int FROM pg_constraint
         WHERE conname LIKE 'tmp_room_qa_force%') AS forced_constraints,
       (SELECT count(*)::int FROM pg_class WHERE relname = 'enrolments_room_qa_real') AS renamed_tables,
+      (SELECT count(*)::int FROM pg_class WHERE relname = '_room_qa_cancel_seq') AS qa_sequences,
       (SELECT count(*)::int FROM pg_class WHERE relname = 'enrolments' AND relkind = 'r') AS enrolments_is_table`);
   prove("SEC-ENT-2.5",
-    "the forced-failure world is fully dismantled — no CHECK constraint left armed on cohort_room_members, `public.enrolments` is a TABLE again, and the outsider is back to zero enrolments and zero memberships: this section mutates the money tables, so proving it put them back is part of proving anything that follows it",
+    "the forced-failure world is fully dismantled — no CHECK constraint left armed on cohort_room_members, no QA sequence left in public, `public.enrolments` is a TABLE again, and the outsider is back to zero enrolments and zero memberships: this section mutates the money tables, so proving it put them back is part of proving anything that follows it",
     leftovers?.enrolments === 0 && leftovers?.memberships === 0 &&
       leftovers?.forced_constraints === 0 && leftovers?.renamed_tables === 0 &&
-      leftovers?.enrolments_is_table === 1,
+      leftovers?.qa_sequences === 0 && leftovers?.enrolments_is_table === 1,
     `outsider enrolments=${leftovers?.enrolments} memberships=${leftovers?.memberships}; ` +
       `forced constraints=${leftovers?.forced_constraints} renamed tables=${leftovers?.renamed_tables} ` +
-      `public.enrolments is a table=${leftovers?.enrolments_is_table === 1}`);
+      `qa sequences=${leftovers?.qa_sequences} public.enrolments is a table=${leftovers?.enrolments_is_table === 1}`);
 }
 
 // ── R1 / R2 / R3 — the cross-offering read attacks ──────────────────────────
@@ -2331,6 +2514,112 @@ section("W3 / W4 — membership and config are server-derived", "inviolable rule
     w4u.rejected || w4u.changedNothing, w4u.describe);
 }
 
+// ── GRANT — the verb list underneath the wall ──────────────────────────────
+//
+// THE ONE LAYER NOTHING IN THIS FILE HAD EVER READ. Every other case in the
+// suite attacks through PostgREST, and PostgREST speaks GET/POST/PATCH/DELETE
+// and nothing else. TRUNCATE has no verb there — so a client role holding
+// TRUNCATE on a room table is invisible to every probe above, while being
+// strictly worse than the INSERT/UPDATE/DELETE those probes do attack: it
+// empties the table without evaluating a single row policy, it cannot be
+// scoped by a USING clause, and it is not undone by revoking anything else.
+// W3.1–W3.3 pass with it wide open.
+//
+// It is also not hypothetical. Supabase's bootstrap `ALTER DEFAULT PRIVILEGES
+// IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role`
+// hands every newly created table the full verb list — TRUNCATE included — and
+// 20260729100000 §7 revokes `INSERT, UPDATE, DELETE` while 20260729100100 §7
+// states its GRANTs explicitly and revokes only `anon`. Neither takes TRUNCATE
+// back from `authenticated`. This section reads the catalogue and says so.
+//
+// WHAT THIS PROVES ON A SHADOW, HONESTLY. The whole section is only meaningful
+// if something ever GRANTED the verbs it claims are absent — which on a
+// migrations-built shadow is exactly what shadow-grants.sql's hand-maintained
+// default-privileges block does, and what nothing else does. GRANT.0 is that
+// arming control, asserted rather than assumed: without it, "authenticated
+// holds no TRUNCATE on the room tables" is printed by a database where nothing
+// ever held TRUNCATE on anything, and a REVOKE that was never needed reads
+// exactly like a REVOKE that worked. It is therefore a hard assertion, not a
+// note: if the bootstrap grant is missing this section FAILS and names itself
+// vacuous instead of printing three green lines.
+//
+// Asserted through the SQL channel on purpose — has_table_privilege() is the
+// only way to ask this question, and PostgREST exposes no TRUNCATE verb to ask
+// it through.
+section("GRANT — the verb list underneath the wall",
+  "RLS is the second lock; the GRANT is the first, and TRUNCATE is the verb no PostgREST probe can reach");
+{
+  const ROOM_TABLES = ["cohort_room_configs", "cohort_room_members"];
+  const CONTENT_TABLES = [
+    "cohort_announcements", "cohort_resources", "cohort_room_posts",
+    "cohort_room_post_replies", "cohort_recording_progress",
+    "cohort_demo_entries", "cohort_room_seen",
+  ];
+  // A pre-existing table R0 never touches, whose grants can only have come from
+  // the platform bootstrap or shadow-grants.sql. It is the arming control.
+  const CONTROL_TABLE = "offerings";
+  const VERBS = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"];
+  const DESTRUCTIVE = ["INSERT", "UPDATE", "DELETE", "TRUNCATE"];
+
+  const tblValues = [...ROOM_TABLES, ...CONTENT_TABLES, CONTROL_TABLE].map((t) => `(${lit(t)})`).join(", ");
+  const verbValues = VERBS.map((v) => `(${lit(v)})`).join(", ");
+  const rows = await sql(`
+    SELECT t.tbl, r.rolname AS grantee, v.verb,
+           has_table_privilege(r.oid, c.oid, v.verb) AS held
+      FROM (VALUES ${tblValues}) AS t(tbl)
+      CROSS JOIN (VALUES ${verbValues}) AS v(verb)
+      CROSS JOIN pg_roles r
+      JOIN pg_class c ON c.relname = t.tbl AND c.relnamespace = 'public'::regnamespace
+     WHERE r.rolname IN ('anon', 'authenticated')
+     ORDER BY 1, 2, 3`);
+  const held = new Map(rows.map((r) => [`${r.tbl}|${r.grantee}|${r.verb}`, r.held === true]));
+  const has = (tbl, grantee, verb) => held.get(`${tbl}|${grantee}|${verb}`) === true;
+  const verbsOf = (tbl, grantee) => VERBS.filter((v) => has(tbl, grantee, v));
+
+  const controlArmed = has(CONTROL_TABLE, "authenticated", "TRUNCATE");
+  prove("GRANT.0",
+    `\`authenticated\` DOES hold TRUNCATE on public.${CONTROL_TABLE} — a pre-existing table this phase never touches, whose grants can only have come from production's bootstrap \`ALTER DEFAULT PRIVILEGES … GRANT ALL ON TABLES\` or from the hand-maintained block in qa-harness/shadow-grants.sql that reproduces it. That is the arming control for the two assertions below: without it they would be measuring a database in which nothing was ever granted TRUNCATE to anybody, and a REVOKE that was never needed prints the same word as a REVOKE that worked`,
+    controlArmed,
+    controlArmed
+      ? `${CONTROL_TABLE} → authenticated holds [${verbsOf(CONTROL_TABLE, "authenticated").join(", ")}]`
+      : `${CONTROL_TABLE} → authenticated holds [${verbsOf(CONTROL_TABLE, "authenticated").join(", ") || "nothing"}] — NO TRUNCATE, so this shadow never had the create-time bootstrap grant. ` +
+        "GRANT.1 and GRANT.2 below are VACUOUS in this state and are reported as failures rather than passes. " +
+        "Run the shadow-grants.sql default-privileges block BEFORE `supabase db push` (see that file's ORDERING header), rebuild, and re-run.");
+
+  const roomOffenders = [];
+  for (const tbl of ROOM_TABLES) {
+    if (!has(tbl, "authenticated", "SELECT")) roomOffenders.push(`${tbl}: authenticated has NO SELECT`);
+    for (const v of DESTRUCTIVE) if (has(tbl, "authenticated", v)) roomOffenders.push(`${tbl}: authenticated holds ${v}`);
+    for (const v of VERBS) if (has(tbl, "anon", v)) roomOffenders.push(`${tbl}: anon holds ${v}`);
+  }
+  prove("GRANT.1",
+    "on BOTH room tables `authenticated` holds SELECT and none of the four verbs that can change or destroy a row — no INSERT, no UPDATE, no DELETE and no TRUNCATE — and `anon` holds nothing at all. Membership is server-derived (NFR-SEC-1) and the config is ops-owned, so the client role's entire relationship with cohort_room_members and cohort_room_configs is reading its own rows through RLS. TRUNCATE is named because it is the one verb the bootstrap hands out that section 7's `REVOKE INSERT, UPDATE, DELETE` does not take back, it empties a table without evaluating one row policy, and PostgREST exposes no verb for it — so W3.1–W3.3 all pass with it held",
+    controlArmed && roomOffenders.length === 0,
+    !controlArmed
+      ? "VACUOUS — GRANT.0's arming control is not held, so this assertion could not have failed. See GRANT.0."
+      : roomOffenders.length === 0
+        ? ROOM_TABLES.map((t) => `${t}: authenticated=[${verbsOf(t, "authenticated").join(", ")}] anon=[${verbsOf(t, "anon").join(", ") || "none"}]`).join(" · ") +
+          " (REFERENCES/TRIGGER are reported, not asserted: neither reads nor destroys a row, and both are inert without CREATE on the schema)"
+        : `HELD: ${roomOffenders.join("; ")}`);
+
+  const contentOffenders = [];
+  for (const tbl of CONTENT_TABLES) {
+    if (!has(tbl, "authenticated", "SELECT")) contentOffenders.push(`${tbl}: authenticated has NO SELECT`);
+    if (has(tbl, "authenticated", "TRUNCATE")) contentOffenders.push(`${tbl}: authenticated holds TRUNCATE`);
+    for (const v of VERBS) if (has(tbl, "anon", v)) contentOffenders.push(`${tbl}: anon holds ${v}`);
+  }
+  prove("GRANT.2",
+    "no client role can TRUNCATE any of the seven room-content tables, and `anon` holds nothing on any of them. Their SELECT/INSERT/UPDATE/DELETE sets are the ones 20260729100100 §7 states deliberately and are not narrowed here — every one of those verbs is filtered by a row policy the rest of this suite attacks. TRUNCATE is the exception: it is granted by the same bootstrap, revoked by nothing, filtered by no policy, and would let any logged-in user with a direct connection empty a cohort's noticeboard, library, feed, gallery and every recording position in one statement",
+    controlArmed && contentOffenders.length === 0,
+    !controlArmed
+      ? "VACUOUS — GRANT.0's arming control is not held, so this assertion could not have failed. See GRANT.0."
+      : contentOffenders.length === 0
+        ? `${CONTENT_TABLES.length} tables, authenticated verb sets: ` +
+          CONTENT_TABLES.map((t) => `${t}=[${verbsOf(t, "authenticated").join(", ")}]`).join(" · ") +
+          "; anon holds nothing on any of them"
+        : `HELD: ${contentOffenders.join("; ")}`);
+}
+
 // ── W8 / W9 — the write RPC's two server-side stamps ────────────────────────
 section("W8 / W9 — channel + mentor-answer forgery", "the two controls that cannot be expressed as a table policy");
 {
@@ -2720,12 +3009,32 @@ section("L1 / L2 — lifecycle", "the exact regression the resolver exists to pr
       WHERE offering_id = ${lit(ids.offering_a)}
         AND user_id = ${lit(session.member_A1.id)}`);
 
-  const membership = await sqlOne(
-    `SELECT status FROM public.cohort_room_members
-      WHERE user_id = ${lit(session.member_A1.id)} AND offering_id = ${lit(ids.offering_a)}`);
+  // THE SAME TWO-ROW PROBLEM PRE.2 DOCUMENTS, AND THIS CASE USED TO IGNORE IT.
+  // member_A1 legitimately owns TWO membership rows in offering A — the partial
+  // unique indexes (:601 on user+batch, :604 on user+offering WHERE batch IS
+  // NULL) exist precisely so both can coexist — and one of them, the batch-less
+  // row branch (c) retracted when the roster placement landed, has read
+  // 'revoked' since the fixtures applied. An unordered single-row SELECT here
+  // therefore returned "revoked" out of heap order whether or not the revocation
+  // trigger fired at all, which is a case that cannot fail. PRE.2 solves the
+  // same problem by sorting active-first; the revocation claim needs the
+  // complementary shape: name the row PRE.2 proved was ACTIVE and require IT to
+  // have flipped, and require that no row of any kind is left active.
+  const membershipRows = await sql(
+    `SELECT batch_id, status FROM public.cohort_room_members
+      WHERE user_id = ${lit(session.member_A1.id)} AND offering_id = ${lit(ids.offering_a)}
+      ORDER BY (batch_id IS NULL), batch_id`);
+  const scopedRow = membershipRows.find((r) => r.batch_id === ids.batch_a1);
+  const stillActive = membershipRows.filter((r) => r.status === "active");
   prove("L1.1",
-    "flipping the enrolment off 'active' retracts the derived membership through the AFTER-trigger path — no nightly job, no manual cleanup, no window where a refunded student is still a member",
-    membership?.status === "revoked", `membership status is now ${membership?.status}`);
+    "flipping the enrolment off 'active' retracts the derived membership through the AFTER-trigger path — no nightly job, no manual cleanup, no window where a refunded student is still a member. The assertion names the BATCH-SCOPED row PRE.2 proved was active and requires that specific row to have flipped, and separately requires zero active rows of any shape to remain: this member owns two rows by design, one of which was already 'revoked' before the enrolment was touched, so an unordered read of either one is a result the revocation could not have changed",
+    scopedRow?.status === "revoked" && stillActive.length === 0,
+    membershipRows.length
+      ? `${membershipRows.length} membership row(s): ` +
+        membershipRows.map((r) => `${r.batch_id === ids.batch_a1 ? "batch A1" : r.batch_id ?? "offering-wide"}=${r.status}`).join(", ") +
+        `; rows still active: ${stillActive.length}` +
+        (scopedRow ? "" : " — the batch-A1 row PRE.2 asserted on is GONE, which is not what revocation does (it is a status flip, not a delete)")
+      : "no membership rows at all for member_A1 in offering A — PRE.2 proved one existed, so something deleted it rather than revoking it");
 
   const after = mark("member_A1");
   const results = [];

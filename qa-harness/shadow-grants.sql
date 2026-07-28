@@ -16,18 +16,97 @@
 -- running either against an ungranted shadow produces a green result that means
 -- nothing.
 --
--- USAGE: run AFTER `supabase start` and BEFORE any adversarial suite, so the
--- shadow gates on RLS exactly as production does:
---   psql "$SHADOW_DB_URL" -f qa-harness/shadow-grants.sql
+-- ═══ ORDERING — RUN THIS FILE TWICE, AND THE FIRST PASS IS THE ONE PEOPLE MISS ═══
 --
--- This file is GENERATED. Regenerate it from production rather than hand-editing,
--- so it cannot drift into asserting a grant model production does not have.
+--   1. psql "$SHADOW_DB_URL" -f qa-harness/shadow-grants.sql   # BEFORE db push
+--   2. supabase db push --db-url "$SHADOW_DB_URL"              # build the schema
+--   3. psql "$SHADOW_DB_URL" -f qa-harness/shadow-grants.sql   # AFTER db push
+--   4. …then, and only then, the adversarial suites.
+--
+-- WHY BOTH PASSES ARE REQUIRED, AND WHY NEITHER ONE SUBSUMES THE OTHER.
+-- This file does two different things with opposite timing requirements:
+--   · SECTION A (hand-maintained) arms `ALTER DEFAULT PRIVILEGES`. Default
+--     privileges apply ONLY to tables created AFTER the statement runs, so it is
+--     useless once `db push` has already created them. It must go FIRST.
+--   · SECTION B (generated) GRANTs on named tables. Every table it names is
+--     created BY the migrations, so on pass 1 it finds nothing and skips all of
+--     them by design (`to_regclass … IS NULL → SKIP`). It must go LAST.
+-- Both passes are idempotent, and a re-run costs a second. Running only pass 3
+-- leaves every table R0 creates outside this file's reach (see below); running
+-- only pass 1 leaves the 103 pre-existing tables ungranted.
+--
+-- THE GAP SECTION A EXISTS TO CLOSE. Section B was generated from prod on
+-- 2026-07-28 and therefore contains ONLY the tables that existed then. The nine
+-- tables PHASE R0 creates — cohort_room_configs, cohort_room_members and
+-- 20260729100100's seven content tables — are not in it and cannot be. Without
+-- Section A those nine get whatever the R0 migrations grant explicitly and
+-- nothing else, which sounds harmless and is not: the migrations' `REVOKE`
+-- statements exist specifically to take back what the platform bootstrap hands
+-- out, so on a shadow where the bootstrap never ran, a REVOKE that was never
+-- needed is indistinguishable from a REVOKE that worked. Any assertion of the
+-- form "the client role does NOT hold verb X on a room table" is then vacuous.
+-- cohort-room-access.spec.mjs's GRANT section asserts exactly that shape and
+-- carries its own arming control (GRANT.0) for exactly this reason.
+--
+-- This file is GENERATED, with one exception. Regenerate SECTION B from
+-- production rather than hand-editing it, so it cannot drift into asserting a
+-- grant model production does not have — and PRESERVE SECTION A verbatim when
+-- you do. Section A is not derivable from a `information_schema.role_table_grants`
+-- dump: default privileges live in pg_default_acl, describe tables that do not
+-- exist yet, and are the one part of prod's grant model a per-table snapshot
+-- structurally cannot capture.
 --
 -- NOTE: deliberately NO explicit BEGIN. psql autocommits each statement, and an
 -- earlier revision of this file opened a transaction the DO block never closed —
 -- so psql rolled everything back on exit while still printing "305 applied".
 -- A success message is not evidence; the grant query afterwards is.
 
+-- ════════════════════════════════════════════════════════════════════════════
+-- SECTION A — HAND-MAINTAINED. NOT GENERATED. A REGENERATION MUST PRESERVE IT.
+--
+-- Production's create-time bootstrap, reproduced. The hosted platform runs this
+-- once per project so that every table any migration later creates arrives with
+-- the client roles already holding the full verb list, and each migration then
+-- REVOKEs its way down to what that table actually needs. A shadow without it
+-- silently inverts the model: tables arrive with nothing, the REVOKEs are
+-- no-ops, and the end state coincidentally resembles the intended one while
+-- proving nothing about the statements that were supposed to produce it.
+--
+-- MUST RUN BEFORE `db push` — see the ORDERING block in the header. Running it
+-- after is harmless and useless.
+--
+-- Default privileges are recorded PER GRANTING ROLE, so this is applied for the
+-- roles that actually create objects here (`postgres` locally and on a hosted
+-- shadow, `supabase_admin` on the platform). Roles that do not exist, or that
+-- this connection is not a member of, are skipped with a NOTICE rather than
+-- aborting the file.
+-- ════════════════════════════════════════════════════════════════════════════
+DO $bootstrap$
+DECLARE owner_role text; armed int := 0;
+BEGIN
+  FOREACH owner_role IN ARRAY ARRAY['postgres', 'supabase_admin'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = owner_role) THEN
+      BEGIN
+        EXECUTE format(
+          'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public '
+          || 'GRANT ALL ON TABLES TO anon, authenticated, service_role', owner_role);
+        armed := armed + 1;
+        RAISE NOTICE 'shadow-grants: default privileges armed for creator role %', owner_role;
+      EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'shadow-grants: not a member of % — default privileges NOT armed for it', owner_role;
+      END;
+    END IF;
+  END LOOP;
+  IF armed = 0 THEN
+    RAISE WARNING 'shadow-grants: NO default privileges were armed — tables created after this point will not receive production''s create-time grants, and every "the client role does not hold verb X" assertion against them will be vacuous. Connect as the same role that runs db push.';
+  END IF;
+END
+$bootstrap$;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- SECTION B — GENERATED from production (ivkvluezuiojovpotlyb) on 2026-07-28.
+-- Regenerate this section; do not hand-edit it. MUST RUN AFTER `db push`.
+-- ════════════════════════════════════════════════════════════════════════════
 DO $shadow$
 DECLARE r record; skipped int := 0; applied int := 0;
 BEGIN

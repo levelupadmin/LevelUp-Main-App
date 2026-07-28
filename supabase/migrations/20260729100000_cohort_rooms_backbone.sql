@@ -127,12 +127,15 @@
 --    the SECURITY DEFINER resolver (fired by triggers on payment/admin-gated
 --    truth tables), the alumni-flip trigger, the nightly reconcile, and the
 --    is_admin()-guarded manual grant/revoke RPCs. `authenticated` holds SELECT on
---    its own rows and NO INSERT/UPDATE/DELETE on either room table — revoked
---    explicitly, because Supabase's bootstrap `ALTER DEFAULT PRIVILEGES IN
---    SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role`
---    hands every new table full DML to the client roles. Admin config writes go
---    through `admin_upsert_room_config()` (SECURITY DEFINER, is_admin()-gated),
---    not through PostgREST DML.
+--    its own rows and NO INSERT/UPDATE/DELETE **AND NO TRUNCATE** on either room
+--    table — all four revoked explicitly, because Supabase's bootstrap `ALTER
+--    DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon,
+--    authenticated, service_role` hands every new table full DML to the client
+--    roles, and `ALL` is seven verbs, not four. TRUNCATE is in the revoke because
+--    TRUNCATE BYPASSES RLS ENTIRELY — see §7 for the scope of that claim, which
+--    is defence-in-depth and sign-off accuracy, not a live PostgREST hole. Admin
+--    config writes go through `admin_upsert_room_config()` (SECURITY DEFINER,
+--    is_admin()-gated), not through PostgREST DML.
 --
 -- 6. REVOCATION IS TERMINAL, and idempotent across runs. Once a NON-ACTIVE
 --    `enrolments` row exists for (user, offering) the lobby is over for that
@@ -237,7 +240,7 @@
 --        commit: every AFTER trigger on `enrolments` / `cohort_batch_members` /
 --        `cohort_applications`, the alumni flip, and every DDL block in this
 --        file and in 20260729100100 — including the four trigger-ATTACH blocks
---        in §5, which take ACCESS EXCLUSIVE on the money tables themselves.
+--        in §7A, which take ACCESS EXCLUSIVE on the money tables themselves.
 --        It reads:
 --
 --          EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
@@ -259,7 +262,7 @@
 --        · What `OTHERS` DOES carry here, and what the list therefore does not
 --          need to name: every ordinary ERROR, including 55P03
 --          `lock_not_available` — the code a wait cut short by the LOCAL
---          `lock_timeout` in §0 and §5 raises. A bounded lock wait is caught by
+--          `lock_timeout` at every §7A site raises. A bounded wait is caught by
 --          the plain `OTHERS`; 57014 is what a `statement_timeout` or a
 --          `pg_cancel_backend()` aimed at the push raises, and that is the one
 --          the explicit names exist for.
@@ -300,24 +303,140 @@
 --    what shape (B) is for. A cancel aimed at `SELECT
 --    public.cohort_room_reconcile();` still ends that sweep.
 --
---    Shape (A) also guards the DDL blocks, of which this file has TWO classes
---    against LIVE tables — both are inventoried here so neither is mistaken for
---    the only one:
---      · §0's `ALTER TABLE public.cohort_batches ADD CONSTRAINT … UNIQUE`, which
---        takes ACCESS EXCLUSIVE on cohort_batches AND builds the backing index
---        inside the migration's transaction;
---      · §5's four trigger attachments on `cohort_batch_members`, `enrolments`
+--    Shape (A) also guards the LIVE-TABLE DDL, all of which now executes in ONE
+--    place: section 7A, the last executable section of this file. THREE classes,
+--    not two — and the lock model below is stated correctly here for the first
+--    time. An earlier revision of this note inventoried two classes and got
+--    Postgres wrong, and that one wrong sentence is what kept the hazard
+--    invisible through four reviewers and a whole fix round.
+--
+--    ⚠️ WHAT POSTGRES ACTUALLY DOES. `ALTER TABLE` acquires its lock and HOLDS
+--    IT UNTIL THE TRANSACTION COMMITS — not until the statement ends. The text
+--    that used to stand here said the catalogue-only DDL is "quick ONCE THEY
+--    HAVE THE LOCK, and the whole hazard is the WAIT". That is false. There is
+--    no top-level COMMIT anywhere in this file, so a lock taken on line N is
+--    held for every line after N. ACCESS EXCLUSIVE conflicts with SELECT, and
+--    Postgres queues lock requests FIFO, so a lock HELD (not merely waited for)
+--    on `cohort_batches` parks every subsequent READER behind it —
+--    `cohort_batches` is joined by R-3's room RPCs (20260729100200) and by
+--    `get_cohort_progress` (20260526180000), i.e. by the shipped student
+--    dashboard on desktop web, Android System WebView, Android Chrome and iOS
+--    WKWebView. The same hold on `enrolments` queues checkout. HOLD DURATION,
+--    not wait duration, is the quantity to minimise.
+--
+--    THE THREE CLASSES, all executed in §7A:
+--      · `ALTER TABLE public.cohort_batches ADD CONSTRAINT
+--        cohort_batches_id_offering_key UNIQUE (id, offering_id)` — ACCESS
+--        EXCLUSIVE on cohort_batches, held to COMMIT, and it builds the backing
+--        unique index inside the transaction. The one item here that does real
+--        work rather than catalogue work.
+--      · `ALTER TABLE public.cohort_room_configs ADD CONSTRAINT
+--        room_config_batch_belongs_to_offering FOREIGN KEY (batch_id,
+--        offering_id) REFERENCES public.cohort_batches (id, offering_id)` —
+--        ACCESS EXCLUSIVE on cohort_room_configs (this file's own, traffic-free
+--        table) AND SHARE ROW EXCLUSIVE on the REFERENCED table,
+--        `cohort_batches`, also held to COMMIT. This class was absent from the
+--        old inventory entirely. SHARE ROW EXCLUSIVE does NOT conflict with
+--        SELECT, so it does not block the dashboard — it blocks every WRITE to
+--        cohort_batches (admin roster and batch edits) for the remainder of the
+--        push. Different verb, same "held to COMMIT" rule.
+--        AND MOVING IT BUYS LESS THAN THE OTHER TWO, which is worth saying out
+--        loud rather than letting the section imply otherwise: §1's own
+--        `CREATE TABLE cohort_room_configs (… batch_id uuid REFERENCES
+--        public.cohort_batches(id) …)` ALREADY takes SHARE ROW EXCLUSIVE on
+--        cohort_batches on a first apply, and holds it to COMMIT too — as do the
+--        four tables 20260729100100 creates against the same parent. Writes to
+--        cohort_batches are therefore blocked from §1 onward no matter where
+--        this constraint sits. What deferring it does remove is its ACCESS
+--        EXCLUSIVE on cohort_room_configs and its second wait on cohort_batches;
+--        the reason it belongs in §7A is uniformity and the dependency on block
+--        1, not a lock win of its own. Removing the §1 write block would mean
+--        creating the table without the parent reference and adding it back in
+--        §7A — a bigger change than this round is scoped for, and it is filed
+--        rather than done.
+--      · the four trigger attachments on `cohort_batch_members`, `enrolments`
 --        (twice) and `cohort_applications` — the money path's own tables.
 --        `DROP TRIGGER` takes ACCESS EXCLUSIVE and `CREATE TRIGGER` takes SHARE
---        ROW EXCLUSIVE; both are catalogue-only (no rewrite, no scan), so they
---        are quick ONCE THEY HAVE THE LOCK, and the whole hazard is the WAIT.
---    Every one of the above is unsafe unguarded for the same two reasons: an
---    unhandled error there aborts the whole `db push` and takes every sibling
---    migration down with it — the exact failure this file's header rules out —
---    and an UNBOUNDED ACCESS EXCLUSIVE wait behind one open transaction queues
---    every subsequent reader of that table behind us, which on `enrolments`
---    means stalling the money path to install a trigger that is downstream of
---    it. So each site takes a short LOCAL `lock_timeout` as well as a handler.
+--        ROW EXCLUSIVE; neither rewrites nor scans, so each EXECUTES in
+--        microseconds — but the ACCESS EXCLUSIVE the DROP takes is held to
+--        COMMIT exactly like the other two classes.
+--
+--    WHY SECTION 7A EXISTS. These six blocks used to sit where they read best:
+--    the UNIQUE at the very top (old §0), the composite FK in §1, the four
+--    attachments in §5. That put `cohort_batches` under ACCESS EXCLUSIVE about
+--    1600 lines before COMMIT and `enrolments` about 780 lines before it, across
+--    every helper, resolver, policy, grant and admin RPC in between — a
+--    dashboard-and-checkout outage for the length of the apply, not a slow
+--    migration. Nothing about that ORDER was load-bearing: §1's table is created
+--    empty so it has no row that could violate the FK, and no function, policy
+--    or grant between them reads the constraint or the triggers. So all six are
+--    deferred to §7A, in dependency order (the UNIQUE ahead of the composite FK
+--    that needs it). NOTHING IN THIS FILE EXECUTES AFTER §7A — what follows is
+--    the section-8 VERIFY query, the A6 measurements and the DOWN block, all
+--    comments.
+--
+--    WHAT THAT DOES AND DOES NOT BUY, stated precisely, because an over-claim
+--    here would be the same category of error as the sentence it replaces.
+--
+--    IT DOES NOT RELEASE THE LOCKS EARLY. They are still held to COMMIT; a
+--    migration cannot release a lock without issuing a COMMIT, which this file
+--    is not allowed to do (it has to stay ONE reversible unit, and `db push`
+--    owns the transaction). What §7A shortens is the HOLD WINDOW, and only that.
+--
+--    THE WINDOW GOES FROM "this entire file" TO "§7A's six blocks, plus whatever
+--    the same push runs after this file" — because this file's own rule that an
+--    abort here takes sibling migrations down with it means the push is one
+--    transaction across siblings, so COMMIT is the END OF THE PUSH, not the end
+--    of this file. For R0 the siblings after us are 20260729100100 and
+--    20260729100200. State what they actually do rather than waving at it:
+--      · 20260729100100 creates four content tables that carry
+--        `REFERENCES public.cohort_batches(id)`. Each such CREATE TABLE takes
+--        SHARE ROW EXCLUSIVE on cohort_batches. That is NOT a further
+--        escalation — §7A block 1 already holds ACCESS EXCLUSIVE on that table,
+--        which is strictly stronger, so those references are granted instantly
+--        and add no new class of blocking. But cohort_batches DOES stay under
+--        §7A's ACCESS EXCLUSIVE for the length of 100100 and 100200, and that is
+--        real dashboard exposure. Do not read "moved to the foot" as "over in
+--        milliseconds".
+--      · 20260729100200 creates functions and grants only. It touches no table.
+--      · Neither file touches `enrolments` or `cohort_applications` at all, so
+--        the CHECKOUT exposure really does end with §7A's own blocks.
+--    THE RESIDUAL, in full:
+--      · cohort_batches SELECT blocked from §7A block 1 to the end of the push.
+--        This is the dashboard, and it is the exposure §7A actually shrinks —
+--        from "the whole apply" to "the tail of it".
+--      · cohort_batches WRITE blocked from §1 to the end of the push, and NOT
+--        by §7A: §1's CREATE TABLE, and 20260729100100's four content tables,
+--        each reference cohort_batches and take SHARE ROW EXCLUSIVE on it. Admin
+--        roster edits queue for the whole apply either way. Unchanged by this
+--        round and stated so nobody assumes otherwise.
+--      · enrolments and cohort_applications blocked ONLY across §7A's own
+--        blocks. Checkout is the case this closes completely.
+--    Push R0 ALONE — queueing it behind or in front of a long unrelated
+--    migration re-opens exactly the hazard §7A closes — and treat the push as a
+--    maintenance window, not a background task.
+--
+--    WHY EACH SITE IS STILL GUARDED. Two reasons, unchanged: an unhandled error
+--    there aborts the whole `db push` and takes every sibling migration down
+--    with it — the exact failure this file's header rules out — and an UNBOUNDED
+--    lock WAIT parks our request in front of every subsequent reader of that
+--    table, which on `enrolments` means stalling the money path to install a
+--    trigger that is downstream of it. So each site takes a short LOCAL
+--    `lock_timeout` as well as a handler.
+--
+--    THE COST OF THE SUCCESS PATH, stated because this file used to state it
+--    nowhere. `lock_timeout` bounds each individual lock ACQUISITION, and that
+--    bound is paid on the way IN whether the block ultimately succeeds or not:
+--    while our request sits in the queue, every reader arriving behind it waits
+--    with us. §7A runs SIX guarded blocks, each of which can spend up to its
+--    whole `lock_timeout` waiting for its first lock, and TWO of them wait on
+--    `enrolments`. At the 4s every site used to set, `enrolments` alone could
+--    queue checkout for up to 8s on the fully SUCCESSFUL path, and §7A for up
+--    to 24s in total, with nothing in the file admitting it. Every site is now
+--    1s: worst case 2s
+--    of queued checkout, 6s across §7A, and a wait longer than that degrades to
+--    a WARNING plus note 11(a) rather than holding the money path open. Pick a
+--    quiet minute anyway — 1s is a ceiling on the damage, not a licence.
 --    What the resulting degradation costs, and how to recover from it, is
 --    note 11.
 --
@@ -338,7 +457,7 @@
 --          copied verbatim from this file. Every guarded block is safe to run at
 --          any time and as often as needed, by one of two mechanisms — the
 --          CONSTRAINT blocks re-probe pg_constraint / pg_class first and are a
---          no-op when the object is already there; §5's four TRIGGER blocks are
+--          no-op when the object is already there; §7A's four TRIGGER blocks are
 --          idempotent by construction instead (`DROP TRIGGER IF EXISTS` then
 --          `CREATE TRIGGER`, both inside one transaction, so the trigger is
 --          never observably absent to a concurrent writer). Run it when the
@@ -363,80 +482,42 @@
 
 
 -- ---------------------------------------------------------------------------
--- 0. Prerequisite: let a batch-scoped config row carry a real composite FK.
+-- 0. Prerequisite (READ HERE — EXECUTED IN §7A): let a batch-scoped config row
+--    carry a real composite FK.
 --    cohort_batches has no (id, offering_id) unique pair yet; adding one is
 --    additive and lets the "a batch override must belong to its offering" rule
 --    be declarative instead of a raising trigger.
 --
---    THIS IS THE HEAVIEST DDL IN R0 AGAINST A LIVE PRODUCTION TABLE — not the
---    only one. The full live-table inventory is contract note 10: this block,
---    plus §5's four trigger attachments on cohort_batch_members / enrolments
---    (twice) / cohort_applications. Those are catalogue-only; this one is the
---    heavy one because `ADD CONSTRAINT … UNIQUE` takes ACCESS EXCLUSIVE on
---    cohort_batches AND builds the backing unique index inside the migration's
---    transaction. An unguarded failure here — a lock wait cancelled by
---    statement_timeout, a concurrent admin roster edit holding the table, a
---    duplicate (id, offering_id) pair — aborts the ENTIRE `db push` and takes
---    every sibling migration in the same push down with it. So:
---      · a short LOCAL lock_timeout bounds the wait instead of blocking behind
---        an open transaction (and behind US, since ACCESS EXCLUSIVE queues in
---        front of every subsequent reader) — restored on the success path, and
---        rolled back automatically with the subtransaction on the failure path;
---      · the handler catches BOTH ways the wait can end, which is why the list
---        is what it is (contract note 10). A wait cut short by the lock_timeout
---        just set raises 55P03 `lock_not_available`, an ordinary ERROR that the
---        plain `WHEN OTHERS` already carries; 57014 `query_canceled` — from a
---        `statement_timeout` or a `pg_cancel_backend()` aimed at the push — is
---        the one `OTHERS` would have missed, and it is named for that reason.
---    DEGRADATION, named exactly, because it is a real loss of a guarantee and
---    not a formality: without this UNIQUE the composite FK below cannot be
---    created either, so "a batch override belongs to its offering" stops being
---    enforced by the DATABASE. What is left is the imperative check inside
---    admin_upsert_room_config(), which exists for precisely this case and
---    rejects a foreign batch with NULL + a WARNING. That covers the admin RPC —
---    the only write path `authenticated` has, since section 7 revokes their DML
---    on the table — and covers NOTHING ELSE: a `service_role` write or direct
---    SQL bypasses it, and until the constraint exists there is no guard on
---    those. A config row whose batch belongs to another offering is live, not
---    inert: cohort_room_phase() and room_configs_member_read both resolve
---    through batch_id.
+--    ➜ THE DDL THAT USED TO STAND HERE HAS MOVED TO SECTION 7A, at the foot of
+--      this file. It is the heaviest DDL in R0 against a live production table:
+--      `ADD CONSTRAINT … UNIQUE` takes ACCESS EXCLUSIVE on cohort_batches and
+--      builds the backing unique index inside the migration's transaction — and
+--      Postgres holds that lock UNTIL THE TRANSACTION COMMITS, not until the
+--      statement ends. Executed here, at the top of a 2000-line file with no
+--      top-level COMMIT, it locked `cohort_batches` against every SELECT for the
+--      whole apply, which is a student-dashboard outage rather than a slow
+--      migration. Nothing between here and §7A depends on the constraint (§1's
+--      cohort_room_configs is created empty, so it has no row that could violate
+--      the FK that needs it), so the block runs last instead. The full lock
+--      model, the three classes of live-table DDL and the cost of the success
+--      path are contract note 10.
+--
+--    DEGRADATION, named exactly here rather than at §7A, because it is a loss of
+--    a semantic guarantee and this is where the semantics are described: without
+--    this UNIQUE the composite FK in §1 cannot be created either, so "a batch
+--    override belongs to its offering" stops being enforced by the DATABASE.
+--    What is left is the imperative check inside admin_upsert_room_config(),
+--    which exists for precisely this case and rejects a foreign batch with NULL
+--    + a WARNING. That covers the admin RPC — the only write path
+--    `authenticated` has, since section 7 revokes their DML on the table — and
+--    covers NOTHING ELSE: a `service_role` write or direct SQL bypasses it, and
+--    until the constraint exists there is no guard on those. A config row whose
+--    batch belongs to another offering is live, not inert: cohort_room_phase()
+--    and room_configs_member_read both resolve through batch_id.
 --    RECOVERY IS MANUAL AND IS CONTRACT NOTE 11 — another `db push` will NOT
---    re-apply this file once the version is stamped. Re-run this DO block by
+--    re-apply this file once the version is stamped. Re-run the §7A block by
 --    hand (it is idempotent and re-probes pg_constraint) when the table is
 --    quiet, then confirm with the section-8 VERIFY query.
--- ---------------------------------------------------------------------------
-DO $$
-DECLARE
-  v_prev_lock_timeout text;
-BEGIN
-  IF to_regclass('public.cohort_batches') IS NOT NULL
-     AND NOT EXISTS (
-       SELECT 1 FROM pg_constraint
-       WHERE conname = 'cohort_batches_id_offering_key'
-         AND conrelid = 'public.cohort_batches'::regclass
-     )
-  THEN
-    BEGIN
-      v_prev_lock_timeout := current_setting('lock_timeout', true);
-      PERFORM set_config('lock_timeout', '4s', true);   -- LOCAL: this txn only
-
-      ALTER TABLE public.cohort_batches
-        ADD CONSTRAINT cohort_batches_id_offering_key UNIQUE (id, offering_id);
-
-      PERFORM set_config('lock_timeout',
-                         COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
-    EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
-                OR crash_shutdown OR cannot_connect_now OR others THEN
-      -- The subtransaction rollback also restores lock_timeout, so nothing is
-      -- left set for the rest of the push.
-      RAISE WARNING 'cohort_room: could not add cohort_batches_id_offering_key (%) [%] — the composite FK on cohort_room_configs is skipped with it, so batch/offering integrity now holds ONLY on the admin_upsert_room_config() write path (service_role and direct SQL are unguarded). Another db push will NOT fix this: re-run this DO block by hand when the lock is free — contract note 11.',
-        SQLERRM, SQLSTATE;
-    END;
-  END IF;
-EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
-            OR crash_shutdown OR cannot_connect_now OR others THEN
-  RAISE WARNING 'cohort_room: cohort_batches_id_offering_key probe failed (%) [%] — constraint not added; re-run this DO block by hand (contract note 11)', SQLERRM, SQLSTATE;
-END $$;
 
 
 -- ---------------------------------------------------------------------------
@@ -525,31 +606,23 @@ EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
 END $$;
 
 -- A batch override must belong to the same offering as the config row.
--- Guarded (contract note 10): this ALTER needs the UNIQUE added in section 0 —
--- if that one degraded to a WARNING, this one CANNOT succeed, and an unhandled
--- "there is no unique constraint matching given keys" would abort the whole
--- shared `db push` for a rule that keeps a PARTIAL imperative fallback in
--- admin_upsert_room_config() — the admin RPC path only, not service_role or
--- direct SQL (see section 0). It also takes a lock on BOTH tables, so a cancel
--- is possible on its own account.
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'room_config_batch_belongs_to_offering'
-      AND conrelid = 'public.cohort_room_configs'::regclass
-  ) THEN
-    ALTER TABLE public.cohort_room_configs
-      ADD CONSTRAINT room_config_batch_belongs_to_offering
-      FOREIGN KEY (batch_id, offering_id)
-      REFERENCES public.cohort_batches (id, offering_id)
-      ON DELETE CASCADE;
-  END IF;
-EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
-            OR crash_shutdown OR cannot_connect_now OR others THEN
-  RAISE WARNING 'cohort_room_configs: could not add room_config_batch_belongs_to_offering (%) [%] — a batch override is no longer declaratively pinned to its offering; admin_upsert_room_config() still rejects one on the RPC path, but service_role and direct SQL are unguarded. Another db push will NOT fix this: re-run this DO block by hand once cohort_batches_id_offering_key exists — contract note 11.',
-    SQLERRM, SQLSTATE;
-END $$;
+--
+-- ➜ MOVED TO SECTION 7A. This is the live-table DDL class contract note 10's
+--   old inventory left out completely: `ADD … FOREIGN KEY … REFERENCES
+--   public.cohort_batches (id, offering_id)` takes ACCESS EXCLUSIVE on
+--   cohort_room_configs AND **SHARE ROW EXCLUSIVE on cohort_batches**, the
+--   referenced live table — and, like every lock in a transaction, holds it to
+--   COMMIT. SHARE ROW EXCLUSIVE spares readers but blocks every WRITE to
+--   cohort_batches (admin roster and batch edits) for the rest of the push.
+--   BE PRECISE ABOUT THE WIN: the CREATE TABLE above already holds that same
+--   SHARE ROW EXCLUSIVE via `batch_id … REFERENCES public.cohort_batches(id)`,
+--   so deferring this block does not give cohort_batches writes back — what it
+--   defers is its ACCESS EXCLUSIVE on cohort_room_configs and its own wait. It
+--   moves mainly because it needs `cohort_batches_id_offering_key`, which §7A
+--   creates in the block immediately before it, and because one place for
+--   live-table DDL beats three. Contract note 10 spells this out.
+--   The rule this constraint enforces, and what is lost when it degrades, are
+--   described in section 0.
 
 -- Exactly one offering-level row; at most one override per batch.
 CREATE UNIQUE INDEX IF NOT EXISTS cohort_room_configs_offering_default
@@ -567,7 +640,7 @@ CREATE INDEX IF NOT EXISTS cohort_room_configs_offering_idx
 -- Bare DDL, deliberately: cohort_room_configs is created by the block above, so
 -- on a first apply nothing else can hold a lock on it and on a re-apply it is a
 -- room table with no money-path traffic. The lock_timeout + handler wrapper of
--- §5 buys nothing here (contract note 10's live-table inventory excludes it).
+-- §7A buys nothing here (contract note 10's live-table inventory excludes it).
 DROP TRIGGER IF EXISTS cohort_room_configs_updated_at ON public.cohort_room_configs;
 CREATE TRIGGER cohort_room_configs_updated_at
   BEFORE UPDATE ON public.cohort_room_configs
@@ -1074,24 +1147,26 @@ END $$;
 --    never in front of it. Drift from a swallowed failure self-heals at the
 --    nightly reconcile.
 --
---    ⚠️ ATTACHING THE TRIGGER IS ITSELF DDL AGAINST A LIVE MONEY TABLE, and it
---    is guarded for the same reasons §0 is — the runtime guard inside the
---    function protects the money path AFTER the trigger exists; it does nothing
---    for the moment of installation. `DROP TRIGGER` takes ACCESS EXCLUSIVE and
---    `CREATE TRIGGER` takes SHARE ROW EXCLUSIVE on `cohort_batch_members`,
---    `enrolments` (twice) and `cohort_applications`. Neither rewrites nor scans
---    the table, so both are instant once they hold the lock; the hazard is
---    entirely the WAIT. Left bare at the top level they inherit the session
---    `lock_timeout`, which on the CLAUDE.md deploy path (`npx supabase db push`)
---    is the default 0 = wait forever — so one open transaction on `enrolments`
---    parks an ACCESS EXCLUSIVE request in front of every subsequent reader of
---    the money table for as long as it holds. That is a worse outcome than the
---    aborted push, and it is the same effect §0 bounds its own wait to avoid.
+--    ⚠️ ATTACHING THE TRIGGER IS ITSELF DDL AGAINST A LIVE MONEY TABLE, so all
+--    four attachments have MOVED TO SECTION 7A at the foot of this file; only
+--    the trigger FUNCTIONS are defined here, and defining a function locks
+--    nothing but pg_proc. The runtime guard inside each function protects the
+--    money path AFTER the trigger exists; it does nothing for the moment of
+--    installation. `DROP TRIGGER` takes ACCESS EXCLUSIVE and `CREATE TRIGGER`
+--    takes SHARE ROW EXCLUSIVE on `cohort_batch_members`, `enrolments` (twice)
+--    and `cohort_applications`. Neither rewrites nor scans the table, so both
+--    EXECUTE instantly — but Postgres HOLDS the lock until the transaction
+--    COMMITS, and this file has no top-level COMMIT, so attaching them here left
+--    `enrolments` under ACCESS EXCLUSIVE for the remaining ~780 lines and queued
+--    every checkout behind the push. That is the defect §7A exists to close, and
+--    contract note 10 carries the full lock model.
 --
---    So each of the four money-table attachments below runs inside a DO block
---    that (a) sets a short LOCAL `lock_timeout` — restored on the success path,
---    rolled back with the block on the failure path — and (b) carries the
---    shape-(A) handler of contract note 10.
+--    Each of the four blocks, in §7A, still (a) sets a short LOCAL
+--    `lock_timeout` — otherwise it inherits the session default of 0 = wait
+--    forever on the CLAUDE.md deploy path (`npx supabase db push`), which parks
+--    an ACCESS EXCLUSIVE request in front of every subsequent reader of the
+--    money table for as long as one open transaction holds it — and (b) carries
+--    the shape-(A) handler of contract note 10.
 --
 --    WHAT THE SWALLOW COSTS HERE, stated so it is a decision and not a
 --    copy-paste: a trigger that fails to attach leaves the room membership
@@ -1179,28 +1254,8 @@ BEGIN
   RETURN NEW;
 END $$;
 
--- Attachment 1 of 4 on a live money table — bounded lock wait + shape-(A)
--- handler, per the §5 preamble. The DDL is spelled out in EXECUTE strings only
--- because a LOCAL lock_timeout has to share a statement with the DDL it bounds;
--- the object names stay greppable.
-DO $$
-DECLARE
-  v_prev_lock_timeout text := current_setting('lock_timeout', true);
-BEGIN
-  PERFORM set_config('lock_timeout', '4s', true);   -- LOCAL: this txn only
-  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_batch_member ON public.cohort_batch_members';
-  EXECUTE $ddl$
-    CREATE TRIGGER room_resolve_on_batch_member
-      AFTER INSERT OR UPDATE OR DELETE ON public.cohort_batch_members
-      FOR EACH ROW EXECUTE FUNCTION public._room_resolve_from_batch_member()
-  $ddl$;
-  PERFORM set_config('lock_timeout',
-                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
-EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
-            OR crash_shutdown OR cannot_connect_now OR others THEN
-  RAISE WARNING 'cohort_room: could not attach room_resolve_on_batch_member to cohort_batch_members (%) [%] — roster edits will NOT derive membership on write; the 03:45 reconcile still does, so this degrades to <=24h lag, not to a leak. Another db push will NOT fix it: re-run this DO block by hand when the table is quiet (contract note 11) and confirm with the section-8 VERIFY query.',
-    SQLERRM, SQLSTATE;
-END $$;
+-- ➜ Attachment 1 of 4 (`room_resolve_on_batch_member` on
+--   `public.cohort_batch_members`) has MOVED TO SECTION 7A. §5 preamble.
 
 CREATE OR REPLACE FUNCTION public._room_resolve_from_enrolment()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
@@ -1217,27 +1272,9 @@ BEGIN
   RETURN NEW;
 END $$;
 
--- Attachment 2 of 4 — and the first of two on `enrolments` itself, the table a
--- parked ACCESS EXCLUSIVE request would stall every reader of. §5 preamble.
-DO $$
-DECLARE
-  v_prev_lock_timeout text := current_setting('lock_timeout', true);
-BEGIN
-  PERFORM set_config('lock_timeout', '4s', true);   -- LOCAL: this txn only
-  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_enrolment_status ON public.enrolments';
-  EXECUTE $ddl$
-    CREATE TRIGGER room_resolve_on_enrolment_status
-      AFTER UPDATE OF status ON public.enrolments
-      FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status)
-      EXECUTE FUNCTION public._room_resolve_from_enrolment()
-  $ddl$;
-  PERFORM set_config('lock_timeout',
-                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
-EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
-            OR crash_shutdown OR cannot_connect_now OR others THEN
-  RAISE WARNING 'cohort_room: could not attach room_resolve_on_enrolment_status to enrolments (%) [%] — an enrolment status flip (including a REVOCATION) will not re-derive membership on write; the 03:45 reconcile still revokes, so access outlives the flip by up to 24h. Re-run this DO block by hand when the table is quiet (contract note 11), then run the section-8 VERIFY query.',
-    SQLERRM, SQLSTATE;
-END $$;
+-- ➜ Attachment 2 of 4 (`room_resolve_on_enrolment_status` on
+--   `public.enrolments`) has MOVED TO SECTION 7A — the first of two on the money
+--   table an ACCESS EXCLUSIVE hold would stall every reader of. §5 preamble.
 
 -- Fresh enrolments (contract note 9). An earlier revision left INSERT
 -- deliberately trigger-free on the theory that the `cohort_applications` status
@@ -1281,26 +1318,8 @@ BEGIN
   RETURN NEW;
 END $$;
 
--- Attachment 3 of 4 — the second on `enrolments`. §5 preamble.
-DO $$
-DECLARE
-  v_prev_lock_timeout text := current_setting('lock_timeout', true);
-BEGIN
-  PERFORM set_config('lock_timeout', '4s', true);   -- LOCAL: this txn only
-  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_enrolment_insert ON public.enrolments';
-  EXECUTE $ddl$
-    CREATE TRIGGER room_resolve_on_enrolment_insert
-      AFTER INSERT ON public.enrolments
-      FOR EACH ROW WHEN (NEW.status = 'active')
-      EXECUTE FUNCTION public._room_resolve_from_enrolment_insert()
-  $ddl$;
-  PERFORM set_config('lock_timeout',
-                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
-EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
-            OR crash_shutdown OR cannot_connect_now OR others THEN
-  RAISE WARNING 'cohort_room: could not attach room_resolve_on_enrolment_insert to enrolments (%) [%] — a fresh purchase will not open the room until the 03:45 reconcile, which is exactly the <=24h gap contract note 9 added this trigger to close. Re-run this DO block by hand when the table is quiet (contract note 11), then run the section-8 VERIFY query.',
-    SQLERRM, SQLSTATE;
-END $$;
+-- ➜ Attachment 3 of 4 (`room_resolve_on_enrolment_insert` on
+--   `public.enrolments`) has MOVED TO SECTION 7A. §5 preamble.
 
 -- The lobby writer (A3 / LOBBY-1). Fires on the confirmation-payment stamp that
 -- verify-razorpay-payment + razorpay-webhook write alongside the status flip,
@@ -1327,33 +1346,10 @@ BEGIN
   RETURN NEW;
 END $$;
 
--- Attachment 4 of 4 — cohort_applications carries the confirmation- and
--- balance-payment stamps, so it is a money-path table too. §5 preamble.
-DO $$
-DECLARE
-  v_prev_lock_timeout text := current_setting('lock_timeout', true);
-BEGIN
-  PERFORM set_config('lock_timeout', '4s', true);   -- LOCAL: this txn only
-  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_application_status ON public.cohort_applications';
-  EXECUTE $ddl$
-    CREATE TRIGGER room_resolve_on_application_status
-      AFTER UPDATE OF status, confirmation_payment_id, user_id ON public.cohort_applications
-      FOR EACH ROW WHEN (
-        NEW.user_id IS NOT NULL AND (
-          OLD.status IS DISTINCT FROM NEW.status
-          OR OLD.confirmation_payment_id IS DISTINCT FROM NEW.confirmation_payment_id
-          OR OLD.user_id IS DISTINCT FROM NEW.user_id
-        )
-      )
-      EXECUTE FUNCTION public._room_resolve_from_application()
-  $ddl$;
-  PERFORM set_config('lock_timeout',
-                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
-EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
-            OR crash_shutdown OR cannot_connect_now OR others THEN
-  RAISE WARNING 'cohort_room: could not attach room_resolve_on_application_status to cohort_applications (%) [%] — the confirmation-capture stamp will not mint the lobby row and the balance flip will not promote it until the 03:45 reconcile. Re-run this DO block by hand when the table is quiet (contract note 11), then run the section-8 VERIFY query.',
-    SQLERRM, SQLSTATE;
-END $$;
+-- ➜ Attachment 4 of 4 (`room_resolve_on_application_status` on
+--   `public.cohort_applications`, which carries the confirmation- and
+--   balance-payment stamps and is therefore a money-path table too) has MOVED
+--   TO SECTION 7A. §5 preamble.
 
 -- Alumni flip: rooms are never deleted, so when a config's phase moves to
 -- 'alumni' the membership survives and the ROLE renames. Scoped to the config's
@@ -1385,7 +1381,7 @@ BEGIN
 END $$;
 
 -- Bare DDL: cohort_room_configs is this file's own table (see the configs
--- trigger in §1), not a money-path table, so it is outside the §5 wrapper.
+-- trigger in §1), not a money-path table, so it stays here rather than in §7A.
 DROP TRIGGER IF EXISTS room_alumni_flip ON public.cohort_room_configs;
 CREATE TRIGGER room_alumni_flip
   AFTER UPDATE OF phase ON public.cohort_room_configs
@@ -1545,8 +1541,32 @@ GRANT ALL    ON public.cohort_room_members TO service_role;
 -- is mandatory, not implied — and it applies to BOTH room tables. The service
 -- role (edge functions, the fixture loader) and the SECURITY DEFINER writers
 -- below are the only paths that remain.
-REVOKE INSERT, UPDATE, DELETE ON public.cohort_room_members FROM authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.cohort_room_configs FROM authenticated;
+--
+-- ⚠️ TRUNCATE IS IN THE LIST, and it was not always. The bootstrap this revoke
+-- exists to undo is `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON
+-- TABLES TO anon, authenticated, service_role`, and ALL is seven verbs, not
+-- four: SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER. That is
+-- the shape production actually has — qa-harness/shadow-grants.sql is generated
+-- from prod (ivkvluezuiojovpotlyb) and every row in it reads 'DELETE, INSERT,
+-- REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE'. Naming only INSERT/UPDATE/
+-- DELETE therefore left `authenticated` — the role every logged-in student
+-- carries — holding TRUNCATE on both room tables, and **TRUNCATE BYPASSES RLS
+-- ENTIRELY**: no policy is consulted, so none of the membership gating above
+-- would have applied to it.
+-- SCOPED HONESTLY, because overstating this would repeat the error contract
+-- note 10 was rewritten to fix: PostgREST exposes no TRUNCATE verb, so there is
+-- no live client-reachable exploit here today. It is (1) defence in depth, on
+-- the same "the day someone adds a permissive route, that default is the
+-- difference between a bug and a leak" footing as the rest of this block, and
+-- (2) claim accuracy — section 8's A6 block asserts that `authenticated` ends
+-- holding SELECT and nothing else on both room tables, and until this line that
+-- assertion was simply false on the target environment.
+-- REFERENCES and TRIGGER are deliberately NOT revoked: both require ownership
+-- of, or a matching privilege on, objects `authenticated` cannot reach, and
+-- neither reads or destroys a row. TRUNCATE does.
+-- 20260729100100 §7 carries the identical revoke for the seven content tables.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.cohort_room_members FROM authenticated;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.cohort_room_configs FROM authenticated;
 REVOKE ALL ON public.cohort_room_members FROM anon;
 REVOKE ALL ON public.cohort_room_configs FROM anon;
 
@@ -1691,7 +1711,8 @@ BEGIN
   END IF;
 
   -- BATCH/OFFERING INTEGRITY, imperatively. Section 0's UNIQUE and the composite
-  -- FK it enables are the DECLARATIVE form of this rule, and both degrade to a
+  -- FK it enables (both executed in §7A) are the DECLARATIVE form of this rule,
+  -- and both degrade to a
   -- WARNING when their lock is cancelled (contract notes 10 and 11) — so on a
   -- degraded project this check is the only thing between an admin RPC call and
   -- a config row whose batch belongs to a DIFFERENT offering. Such a row is not
@@ -1761,6 +1782,226 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
   'The single definition of the offering-wide staff scope (ROSTER-SCOPE-1): a NULL-batch mentor/host grant, or an admin. R-3''s cohort_room_caller_scope() must call this instead of re-stating it.';
 
 
+-- ---------------------------------------------------------------------------
+-- 7A. LIVE-TABLE DDL — LAST, ON PURPOSE. Do not move anything below this line
+--     back up the file, and do not add an executable statement after it.
+--
+--     THE RULE THIS SECTION EXISTS FOR: a lock taken by `ALTER TABLE` /
+--     `DROP TRIGGER` / `CREATE TRIGGER` is HELD UNTIL THE TRANSACTION COMMITS,
+--     not until the statement ends. This file has no top-level COMMIT, so a
+--     lock taken at the top is a lock held for two thousand lines. ACCESS
+--     EXCLUSIVE conflicts with SELECT and lock requests queue FIFO, so that hold
+--     on `cohort_batches` (joined by R-3's room RPCs and by get_cohort_progress)
+--     blanks the shipped student dashboard on every surface for the length of
+--     the apply, and the same hold on `enrolments` queues checkout. The six
+--     blocks below used to live in §0, §1 and §5 for readability; they are
+--     gathered here so their locks are taken with nothing left in THIS FILE to
+--     execute afterwards. Contract note 10 carries the full model, the three
+--     lock classes and the cost of the success path.
+--
+--     WHAT IS STILL EXPOSED, so nobody reads "moved to the foot" as "instant":
+--     the push commits at the END OF THE PUSH, not at the end of this file, so
+--     block 1's ACCESS EXCLUSIVE on cohort_batches is held across 20260729100100
+--     and 20260729100200 as well. Those two add no stronger lock and touch
+--     neither `enrolments` nor `cohort_applications` — so the CHECKOUT exposure
+--     really does end with this section, while the cohort_batches read exposure
+--     runs to the end of the push. cohort_batches WRITES were already blocked
+--     from §1 by the plain FK on cohort_room_configs.batch_id and this section
+--     does not change that (contract note 10). Push R0 alone, in a quiet window.
+--
+--     ORDER IS LOAD-BEARING IN EXACTLY ONE PLACE: block 1's UNIQUE (id,
+--     offering_id) is what block 2's composite FK references, so 1 precedes 2.
+--     Nothing else here depends on anything else here.
+--
+--     EVERY BLOCK IS INDEPENDENTLY RE-RUNNABLE BY HAND, which is what contract
+--     note 11(a) recovery means in practice: blocks 1 and 2 re-probe
+--     pg_constraint and no-op when the object exists; blocks 3-6 are
+--     `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` inside one transaction, so the
+--     trigger is never observably absent to a concurrent writer. Copy the block
+--     that warned, verbatim, and run it against the target project when the
+--     table is quiet. Detection is the section-8 VERIFY query, not the push log.
+--
+--     LOCK_TIMEOUT IS 1s AT EVERY SITE (was 4s). It is a bound on ACQUISITION
+--     and it is paid on the way in whether or not the block succeeds — six
+--     guarded blocks here, two of them waiting on `enrolments`, so the
+--     worst-case SUCCESS path queues checkout for 2s and the whole section for
+--     6s. At the old 4s those figures were 8s and 24s, and no comment in the
+--     file said so.
+-- ---------------------------------------------------------------------------
+
+-- 1 of 6 — the prerequisite UNIQUE on cohort_batches. Section 0 states what this
+-- constraint is for and exactly what is lost when it degrades to a WARNING; this
+-- is only where it executes. ACCESS EXCLUSIVE on a live table PLUS a real index
+-- build, so it is the heaviest single statement in R0.
+DO $$
+DECLARE
+  v_prev_lock_timeout text;
+BEGIN
+  IF to_regclass('public.cohort_batches') IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+       WHERE conname = 'cohort_batches_id_offering_key'
+         AND conrelid = 'public.cohort_batches'::regclass
+     )
+  THEN
+    BEGIN
+      v_prev_lock_timeout := current_setting('lock_timeout', true);
+      PERFORM set_config('lock_timeout', '1s', true);   -- LOCAL: this txn only
+
+      ALTER TABLE public.cohort_batches
+        ADD CONSTRAINT cohort_batches_id_offering_key UNIQUE (id, offering_id);
+
+      PERFORM set_config('lock_timeout',
+                         COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+    EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+                OR crash_shutdown OR cannot_connect_now OR others THEN
+      -- The subtransaction rollback also restores lock_timeout, so nothing is
+      -- left set for the rest of the push.
+      RAISE WARNING 'cohort_room: could not add cohort_batches_id_offering_key (%) [%] — the composite FK on cohort_room_configs is skipped with it, so batch/offering integrity now holds ONLY on the admin_upsert_room_config() write path (service_role and direct SQL are unguarded). Another db push will NOT fix this: re-run this DO block by hand when the lock is free — contract note 11.',
+        SQLERRM, SQLSTATE;
+    END;
+  END IF;
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room: cohort_batches_id_offering_key probe failed (%) [%] — constraint not added; re-run this DO block by hand (contract note 11)', SQLERRM, SQLSTATE;
+END $$;
+
+-- 2 of 6 — the composite FK that pins a batch override to its offering (declared
+-- in §1, executed here). It needs block 1's UNIQUE: if that degraded to a
+-- WARNING this one CANNOT succeed, and an unhandled "there is no unique
+-- constraint matching given keys" would abort the whole shared `db push` for a
+-- rule that keeps a PARTIAL imperative fallback in admin_upsert_room_config() —
+-- the admin RPC path only, not service_role or direct SQL (see §0). It takes
+-- ACCESS EXCLUSIVE on cohort_room_configs and SHARE ROW EXCLUSIVE on the
+-- referenced LIVE table cohort_batches, so it now carries a bounded wait of its
+-- own; the old version inherited the session default of "wait forever".
+DO $$
+DECLARE
+  v_prev_lock_timeout text;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'room_config_batch_belongs_to_offering'
+      AND conrelid = 'public.cohort_room_configs'::regclass
+  ) THEN
+    BEGIN
+      v_prev_lock_timeout := current_setting('lock_timeout', true);
+      PERFORM set_config('lock_timeout', '1s', true);   -- LOCAL: this txn only
+
+      ALTER TABLE public.cohort_room_configs
+        ADD CONSTRAINT room_config_batch_belongs_to_offering
+        FOREIGN KEY (batch_id, offering_id)
+        REFERENCES public.cohort_batches (id, offering_id)
+        ON DELETE CASCADE;
+
+      PERFORM set_config('lock_timeout',
+                         COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+    EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+                OR crash_shutdown OR cannot_connect_now OR others THEN
+      RAISE WARNING 'cohort_room_configs: could not add room_config_batch_belongs_to_offering (%) [%] — a batch override is no longer declaratively pinned to its offering; admin_upsert_room_config() still rejects one on the RPC path, but service_role and direct SQL are unguarded. Another db push will NOT fix this: re-run this DO block by hand once cohort_batches_id_offering_key exists — contract note 11.',
+        SQLERRM, SQLSTATE;
+    END;
+  END IF;
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room_configs: room_config_batch_belongs_to_offering probe failed (%) [%] — constraint not added; re-run this DO block by hand (contract note 11)', SQLERRM, SQLSTATE;
+END $$;
+
+-- 3 of 6 — attachment 1 of 4, on cohort_batch_members. §5 preamble. The DDL is
+-- spelled out in EXECUTE strings only because a LOCAL lock_timeout has to share
+-- a statement with the DDL it bounds; the object names stay greppable.
+DO $$
+DECLARE
+  v_prev_lock_timeout text := current_setting('lock_timeout', true);
+BEGIN
+  PERFORM set_config('lock_timeout', '1s', true);   -- LOCAL: this txn only
+  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_batch_member ON public.cohort_batch_members';
+  EXECUTE $ddl$
+    CREATE TRIGGER room_resolve_on_batch_member
+      AFTER INSERT OR UPDATE OR DELETE ON public.cohort_batch_members
+      FOR EACH ROW EXECUTE FUNCTION public._room_resolve_from_batch_member()
+  $ddl$;
+  PERFORM set_config('lock_timeout',
+                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room: could not attach room_resolve_on_batch_member to cohort_batch_members (%) [%] — roster edits will NOT derive membership on write; the 03:45 reconcile still does, so this degrades to <=24h lag, not to a leak. Another db push will NOT fix it: re-run this DO block by hand when the table is quiet (contract note 11) and confirm with the section-8 VERIFY query.',
+    SQLERRM, SQLSTATE;
+END $$;
+
+-- 4 of 6 — attachment 2 of 4, and the first of two on `enrolments` itself, the
+-- table an ACCESS EXCLUSIVE hold would stall every reader of. §5 preamble.
+DO $$
+DECLARE
+  v_prev_lock_timeout text := current_setting('lock_timeout', true);
+BEGIN
+  PERFORM set_config('lock_timeout', '1s', true);   -- LOCAL: this txn only
+  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_enrolment_status ON public.enrolments';
+  EXECUTE $ddl$
+    CREATE TRIGGER room_resolve_on_enrolment_status
+      AFTER UPDATE OF status ON public.enrolments
+      FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status)
+      EXECUTE FUNCTION public._room_resolve_from_enrolment()
+  $ddl$;
+  PERFORM set_config('lock_timeout',
+                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room: could not attach room_resolve_on_enrolment_status to enrolments (%) [%] — an enrolment status flip (including a REVOCATION) will not re-derive membership on write; the 03:45 reconcile still revokes, so access outlives the flip by up to 24h. Re-run this DO block by hand when the table is quiet (contract note 11), then run the section-8 VERIFY query.',
+    SQLERRM, SQLSTATE;
+END $$;
+
+-- 5 of 6 — attachment 3 of 4, the second on `enrolments`. §5 preamble.
+DO $$
+DECLARE
+  v_prev_lock_timeout text := current_setting('lock_timeout', true);
+BEGIN
+  PERFORM set_config('lock_timeout', '1s', true);   -- LOCAL: this txn only
+  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_enrolment_insert ON public.enrolments';
+  EXECUTE $ddl$
+    CREATE TRIGGER room_resolve_on_enrolment_insert
+      AFTER INSERT ON public.enrolments
+      FOR EACH ROW WHEN (NEW.status = 'active')
+      EXECUTE FUNCTION public._room_resolve_from_enrolment_insert()
+  $ddl$;
+  PERFORM set_config('lock_timeout',
+                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room: could not attach room_resolve_on_enrolment_insert to enrolments (%) [%] — a fresh purchase will not open the room until the 03:45 reconcile, which is exactly the <=24h gap contract note 9 added this trigger to close. Re-run this DO block by hand when the table is quiet (contract note 11), then run the section-8 VERIFY query.',
+    SQLERRM, SQLSTATE;
+END $$;
+
+-- 6 of 6 — attachment 4 of 4, on cohort_applications, which carries the
+-- confirmation- and balance-payment stamps and is a money-path table too.
+-- §5 preamble. NOTHING EXECUTES AFTER THIS BLOCK.
+DO $$
+DECLARE
+  v_prev_lock_timeout text := current_setting('lock_timeout', true);
+BEGIN
+  PERFORM set_config('lock_timeout', '1s', true);   -- LOCAL: this txn only
+  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_application_status ON public.cohort_applications';
+  EXECUTE $ddl$
+    CREATE TRIGGER room_resolve_on_application_status
+      AFTER UPDATE OF status, confirmation_payment_id, user_id ON public.cohort_applications
+      FOR EACH ROW WHEN (
+        NEW.user_id IS NOT NULL AND (
+          OLD.status IS DISTINCT FROM NEW.status
+          OR OLD.confirmation_payment_id IS DISTINCT FROM NEW.confirmation_payment_id
+          OR OLD.user_id IS DISTINCT FROM NEW.user_id
+        )
+      )
+      EXECUTE FUNCTION public._room_resolve_from_application()
+  $ddl$;
+  PERFORM set_config('lock_timeout',
+                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room: could not attach room_resolve_on_application_status to cohort_applications (%) [%] — the confirmation-capture stamp will not mint the lobby row and the balance flip will not promote it until the 03:45 reconcile. Re-run this DO block by hand when the table is quiet (contract note 11), then run the section-8 VERIFY query.',
+    SQLERRM, SQLSTATE;
+END $$;
+
+
 -- ============================================================================
 -- 8. POST-PUSH VERIFY (contract note 11) — the check that replaces "read the
 --    WARNINGs". Every guarded DDL block in R0 lets the migration COMPLETE
@@ -1776,9 +2017,9 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 --                  WHEN NOT c.convalidated THEN 'present (NOT VALID)'
 --                  ELSE 'ok' END AS verdict
 --        FROM (VALUES
---          ('cohort_batches',           'cohort_batches_id_offering_key',        'UNIQUE(id,offering_id)      — 100000 §0'),
+--          ('cohort_batches',           'cohort_batches_id_offering_key',        'UNIQUE(id,offering_id)      — 100000 §7A.1'),
 --          ('cohort_room_configs',      'room_config_vocab_object',              'CHECK vocab is an object    — 100000 §1'),
---          ('cohort_room_configs',      'room_config_batch_belongs_to_offering', 'FK batch belongs to offering— 100000 §1'),
+--          ('cohort_room_configs',      'room_config_batch_belongs_to_offering', 'FK batch belongs to offering— 100000 §7A.2'),
 --          ('cohort_announcements',     'cohort_announcements_author_id_fkey',   'author FK (SET NULL)        — 100100 §1'),
 --          ('cohort_room_posts',        'room_posts_body_len_chk',               'CHECK body 1..20000         — 100100 §3'),
 --          ('cohort_room_posts',        'room_posts_media_array_chk',            'CHECK media is an array     — 100100 §3'),
@@ -1795,20 +2036,21 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 --    room_config_vocab_object: there it means the validating scan was cancelled
 --    or a legacy row holds a non-object vocab.
 --
---    THE SECOND HALF — the four trigger attachments on the money tables (§5).
---    They are guarded the same way and degrade the same way (a WARNING, and
---    membership derived only by the 03:45 reconcile), so they need the same
---    check and they are NOT in pg_constraint:
+--    THE SECOND HALF — the four trigger attachments on the money tables
+--    (declared in §5, executed in §7A blocks 3-6). They are guarded the same way
+--    and degrade the same way (a WARNING, and membership derived only by the
+--    03:45 reconcile), so they need the same check and they are NOT in
+--    pg_constraint:
 --
 --      SELECT v.what,
 --             CASE WHEN t.oid IS NULL THEN 'MISSING — contract note 11'
 --                  WHEN t.tgenabled = 'D' THEN 'present but DISABLED'
 --                  ELSE 'ok' END AS verdict
 --        FROM (VALUES
---          ('cohort_batch_members', 'room_resolve_on_batch_member',       'roster edit -> resolve   — §5'),
---          ('enrolments',           'room_resolve_on_enrolment_status',   'status flip -> resolve   — §5'),
---          ('enrolments',           'room_resolve_on_enrolment_insert',   'fresh purchase -> resolve— §5'),
---          ('cohort_applications',  'room_resolve_on_application_status', 'confirmation -> lobby    — §5')
+--          ('cohort_batch_members', 'room_resolve_on_batch_member',       'roster edit -> resolve   — §7A.3'),
+--          ('enrolments',           'room_resolve_on_enrolment_status',   'status flip -> resolve   — §7A.4'),
+--          ('enrolments',           'room_resolve_on_enrolment_insert',   'fresh purchase -> resolve— §7A.5'),
+--          ('cohort_applications',  'room_resolve_on_application_status', 'confirmation -> lobby    — §7A.6')
 --        ) AS v(tbl, tgname, what)
 --        LEFT JOIN pg_trigger t
 --          ON t.tgname   = v.tgname
@@ -1819,6 +2061,35 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 --    A MISSING here is not a leak — a trigger that never attached grants nobody
 --    anything — but it IS an up-to-24h lag on both opening and REVOKING room
 --    access, so treat it as an incident on the same footing as the constraints.
+--
+--    THE THIRD CHECK — THE GRANTS, and this one must be run on the TARGET
+--    project, never on a shadow built from supabase/migrations/ alone. §7 (and
+--    20260729100100 §7) revokes verbs that only EXIST on a database carrying
+--    Supabase's `ALTER DEFAULT PRIVILEGES … GRANT ALL ON TABLES TO anon,
+--    authenticated, service_role` bootstrap; a migrations-only stack never
+--    granted them, so it answers "clean" for a reason that has nothing to do
+--    with the revoke and proves nothing about prod (this is the false-assurance
+--    trap qa-harness/shadow-grants.sql exists to close — load it first, or run
+--    this against prod itself). The expected answer for `authenticated` on all
+--    NINE R0 tables is SELECT alone, plus whatever INSERT/UPDATE/DELETE
+--    20260729100100 §7 grants a content table on purpose; TRUNCATE must not
+--    appear on ANY row, because TRUNCATE bypasses RLS.
+--
+--      SELECT table_name, grantee, string_agg(privilege_type, ', ' ORDER BY privilege_type)
+--        FROM information_schema.role_table_grants
+--       WHERE table_schema = 'public'
+--         AND grantee IN ('anon','authenticated')
+--         AND table_name IN ('cohort_room_configs','cohort_room_members',
+--                            'cohort_announcements','cohort_resources',
+--                            'cohort_room_posts','cohort_room_post_replies',
+--                            'cohort_recording_progress','cohort_demo_entries',
+--                            'cohort_room_seen')
+--       GROUP BY 1, 2
+--       ORDER BY 1, 2;
+--
+--    `anon` should return no rows at all. A TRUNCATE anywhere in the output is
+--    the §7 revoke not having landed — re-run those REVOKE statements by hand
+--    (they are plain DDL, idempotent, and take no lock on a money table).
 --
 --    Two things those queries cannot cover:
 --      · the announcements author FK must also be ON DELETE SET NULL rather than
@@ -1961,11 +2232,51 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 --     a re-pointed batch leaves no active row on the old offering; the alumni
 --     flip renames derived rows; the migration re-applies onto its own output,
 --     including onto a project that is missing the `vocab` column, where the
---     re-apply restores the column AND its shape CHECK; `authenticated` ends
---     holding SELECT and nothing else on BOTH room tables and `anon` holding
---     nothing; and the DOWN block below runs to completion with an R-2-style
---     dependent policy in place, leaving zero cohort_room objects and all three
---     truth tables intact.
+--     re-apply restores the column AND its shape CHECK; and the DOWN block below
+--     runs to completion with an R-2-style dependent policy in place, leaving
+--     zero cohort_room objects and all three truth tables intact.
+--
+-- (6) NOT MEASURED, AND THE REASON IS THE POINT. This block used to end item (5)
+--     with "`authenticated` ends holding SELECT and nothing else on BOTH room
+--     tables and `anon` holding nothing", stated as executed fact. It was
+--     WITHDRAWN rather than restated, because the harness cannot establish it
+--     and, on the environment that matters, it was false.
+--       · The harness is a database built from supabase/migrations/ on PGlite.
+--         It never runs Supabase's hosted bootstrap (`ALTER DEFAULT PRIVILEGES
+--         IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated,
+--         service_role`), so `authenticated` was never granted the verbs §7
+--         revokes. Observing "SELECT and nothing else" there measures the
+--         ABSENCE OF THE BOOTSTRAP, not the presence of the revoke — the exact
+--         false-assurance failure qa-harness/shadow-grants.sql was written to
+--         document.
+--       · On production, where the bootstrap HAS run, the claim was untrue when
+--         it was written: §7 revoked INSERT/UPDATE/DELETE only, and `ALL` is
+--         seven verbs, so `authenticated` retained TRUNCATE — which bypasses RLS
+--         — on both room tables. §7 now revokes TRUNCATE as well (and
+--         20260729100100 §7 does the same for the seven content tables), but a
+--         fix is not a measurement.
+--     WHAT WOULD MAKE IT TRUE AGAIN: run the grants query in the THIRD CHECK of
+--     section 8 against a shadow that has had qa-harness/shadow-grants.sql
+--     applied — or against prod after the push — and paste the output here.
+--     Until someone does that, this file claims nothing about grants beyond the
+--     text of the REVOKE statements themselves.
+--
+-- (7) THE §7A REORDERING POST-DATES EVERY MEASUREMENT ABOVE, and does not
+--     invalidate any of them: it moved six DDL blocks from §0/§1/§5 to the foot
+--     of the file without changing one character of the constraint or trigger
+--     DEFINITIONS or of the functions they call. (What did change around them:
+--     the LOCAL lock_timeout ceiling went 4s → 1s at every site, and the
+--     composite-FK block gained the lock_timeout wrapper it never had. Both are
+--     apply-time only — no trigger fires differently, no constraint checks
+--     differently.) Runtime cost is therefore identical and (1) through (5)
+--     stand as measured. What it changes is APPLY
+--     time only, and specifically the lock HOLD window (contract note 10), which
+--     none of these measurements ever covered: the harness applies to an idle
+--     single-connection database where a held ACCESS EXCLUSIVE has nobody to
+--     block, so no A/B on this machine can show the difference. The apply-time
+--     property is argued from Postgres's documented locking rules and verified
+--     on the target by the section-8 VERIFY queries, not measured here. Do not
+--     let a future revision "confirm" it on PGlite.
 -- ============================================================================
 
 
@@ -2025,7 +2336,7 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 -- DROP FUNCTION IF EXISTS public.cohort_room_can_access(uuid, uuid) CASCADE;
 -- DROP FUNCTION IF EXISTS public.cohort_room_is_member(uuid) CASCADE;
 --
--- -- IF EXISTS, because section 0 degrades to a WARNING rather than aborting a
+-- -- IF EXISTS, because §7A block 1 degrades to a WARNING rather than aborting a
 -- -- shared `db push`: on a project where the ADD was cancelled there is nothing
 -- -- to drop, and the reversal must still run to completion.
 -- ALTER TABLE public.cohort_batches DROP CONSTRAINT IF EXISTS cohort_batches_id_offering_key;

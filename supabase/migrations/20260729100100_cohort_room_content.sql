@@ -616,9 +616,12 @@ BEGIN
   PERFORM set_config('app.cohort_room_counter', '0', true);
 
   -- An AFTER trigger's return value is discarded, and touching OLD on INSERT
-  -- (or NEW on DELETE) is the hazard R-1 works around explicitly at
-  -- 20260729100000:443. Branch on TG_OP the same way rather than COALESCE-ing
-  -- the two together.
+  -- (or NEW on DELETE) is the hazard R-1 works around explicitly in
+  -- `public._room_resolve_from_batch_member()` (20260729100000 §5). Branch on
+  -- TG_OP the same way rather than COALESCE-ing the two together.
+  -- BY NAME, NOT BY LINE: the ":443" this comment used to carry pointed at R-1's
+  -- section 1 header, not at the code — R-1's own contract note 1 says line
+  -- citations into that file go stale and forbids new ones.
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;
   END IF;
@@ -958,6 +961,27 @@ CREATE POLICY room_seen_own ON public.cohort_room_seen FOR ALL TO authenticated
 --    default is the difference between a bug and a leak.
 --    Grants to `authenticated` are stated explicitly rather than inherited, so
 --    the verb list per table is one grep, not an inference about defaults.
+--
+--    ⚠️ AND THE REVOKE FOR `authenticated` IS NOT OPTIONAL EITHER, which this
+--    block used to assume. A `GRANT SELECT, INSERT, UPDATE, DELETE` does not
+--    take away what the bootstrap already handed over: `GRANT ALL` is SEVEN
+--    verbs — SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER — and
+--    naming four in a GRANT is additive, not a replacement. qa-harness/
+--    shadow-grants.sql, generated from production (ivkvluezuiojovpotlyb), shows
+--    every public table reading 'DELETE, INSERT, REFERENCES, SELECT, TRIGGER,
+--    TRUNCATE, UPDATE' for `authenticated`, so on the target environment all
+--    seven content tables below were leaving TRUNCATE on the role every logged-in
+--    student carries — and **TRUNCATE BYPASSES RLS ENTIRELY**: not one of the 21
+--    policies above is consulted for it, including the ones protecting the rows
+--    the access suite plants its LEAK_CANARY sentinels in.
+--    SCOPED HONESTLY: PostgREST exposes no TRUNCATE verb, so this is not a live
+--    client-reachable exploit today. It is defence in depth on exactly the
+--    footing this block already argues for `anon` ("the day someone adds a
+--    permissive policy … that default is the difference between a bug and a
+--    leak"), plus accuracy for anything that signs off on the grant surface.
+--    REFERENCES and TRIGGER are deliberately left alone: both need ownership of
+--    or privileges on objects `authenticated` cannot reach, and neither reads or
+--    destroys a row. TRUNCATE does. Same shape as 20260729100000 §7.
 ----------------------------------------------------------------------
 REVOKE ALL ON public.cohort_announcements       FROM anon;
 REVOKE ALL ON public.cohort_resources           FROM anon;
@@ -967,6 +991,29 @@ REVOKE ALL ON public.cohort_recording_progress  FROM anon;
 REVOKE ALL ON public.cohort_demo_entries        FROM anon;
 REVOKE ALL ON public.cohort_room_seen           FROM anon;
 
+-- TRUNCATE first, on all seven, because a later GRANT of the four DML verbs
+-- would not have removed it. Ordered before the GRANTs so the end state is
+-- readable top to bottom: take away what the bootstrap gave, then state exactly
+-- what each table hands back.
+REVOKE TRUNCATE ON public.cohort_announcements       FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_resources           FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_room_posts          FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_room_post_replies   FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_recording_progress  FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_demo_entries        FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_room_seen           FROM authenticated;
+
+-- ⚠️ OUT OF SCOPE FOR THIS FIX, RECORDED SO IT IS NOT LOST: the same "a GRANT
+-- does not un-grant" reasoning applies to INSERT on cohort_room_posts and
+-- cohort_room_post_replies. The GRANT below omits INSERT for the commons
+-- (SEC-WRITE-1 — they are written through R-3's SECURITY DEFINER RPCs), but on a
+-- project carrying the bootstrap, OMITTING a verb does not remove it, so
+-- `authenticated` still holds the bootstrap's INSERT on both. Unlike TRUNCATE,
+-- that one IS gated: no INSERT policy exists for `authenticated` on either
+-- table, so RLS denies every attempt, and PostgREST does reach INSERT. It is
+-- therefore defence-in-depth of exactly the same kind rather than an open hole,
+-- and closing it is a separate change to the commons write path.
+--
 -- INSERT is absent for the commons on purpose (SEC-WRITE-1, revoked above).
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.cohort_announcements       TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.cohort_resources           TO authenticated;
