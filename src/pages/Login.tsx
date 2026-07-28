@@ -126,9 +126,37 @@ const Login = () => {
     return () => mql.removeEventListener?.("change", sync);
   }, []);
 
+  // SC-3 handoff. Signup stops anyone who already has an account or a purchase
+  // with us and sends them here instead of letting them fill in a form they
+  // don't need. It hands over what they just typed (so they never retype it)
+  // plus a reason flag, which we turn into our OWN fixed copy below —
+  // nothing rendered here is read out of router state. The email matters for
+  // non-+91 numbers: their sign-in door is the email link below, not an SMS,
+  // and without the handoff they would retype the address one screen after
+  // entering it. The pre-existing `from` redirect is read exactly as before
+  // (see redirectTarget).
+  const handoff =
+    (location.state as {
+      from?: { pathname?: string };
+      prefillPhone?: string;
+      prefillEmail?: string;
+      reason?: string;
+    } | null) ?? null;
+  const fromExistingAccount = handoff?.reason === "existing_account";
+  const handoffPhone =
+    typeof handoff?.prefillPhone === "string" && /^\+?[0-9]{6,15}$/.test(handoff.prefillPhone)
+      ? handoff.prefillPhone
+      : "";
+  const handoffEmail =
+    typeof handoff?.prefillEmail === "string" &&
+    handoff.prefillEmail.length <= 200 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(handoff.prefillEmail)
+      ? handoff.prefillEmail
+      : "";
+
   const [step, setStep] = useState<Step>(EMAIL_ONLY_AUTH ? "email_input" : "phone");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState(handoffPhone);
+  const [email, setEmail] = useState(handoffEmail);
   const [channel, setChannel] = useState<"sms" | "whatsapp">("sms");
   const [loading, setLoading] = useState(false);
 
@@ -138,7 +166,9 @@ const Login = () => {
   // email-only fallback we skip straight into the form so the welcome layer
   // never traps a non-Indian user. Once the user is past the phone step
   // (OTP / email), the form is always open.
-  const [formOpen, setFormOpen] = useState(EMAIL_ONLY_AUTH);
+  // Someone sent here from signup has already committed to signing in, so the
+  // welcome layer would be one tap of friction for no reason: open the form.
+  const [formOpen, setFormOpen] = useState(EMAIL_ONLY_AUTH || fromExistingAccount);
 
   // Animation key so the form column re-mounts the slide-in animation
   // on every step transition.
@@ -193,8 +223,7 @@ const Login = () => {
   // navTimer owns the actual route paint.
   if (user && !celebratingRef.current) return null;
 
-  const rawFrom =
-    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/home";
+  const rawFrom = handoff?.from?.pathname || "/home";
   const redirectTarget = rawFrom.startsWith("/") && !rawFrom.includes("//") ? rawFrom : "/home";
   const isIndianPhone = phone.startsWith("+91");
   // App Review demo login: reviewers cannot receive an Indian OTP, so for
@@ -348,6 +377,18 @@ const Login = () => {
     <>
       {step === "phone" && (
         <>
+          {fromExistingAccount && (
+            <div role="status" className="mb-5 rounded-2xl border border-border bg-surface px-4 py-3">
+              <p className="text-sm text-foreground font-medium">
+                You already have an account with us.
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {isIndianPhone
+                  ? "Sign in instead. Your number is filled in, we'll text you a code."
+                  : "Sign in instead. Your details are filled in, we'll email you a sign-in link."}
+              </p>
+            </div>
+          )}
           <h1 className="text-[28px] sm:text-[30px] font-semibold tracking-[-0.015em] leading-[1.1] mb-2">
             What's your <span className="font-serif-italic text-cream">number</span>?
           </h1>

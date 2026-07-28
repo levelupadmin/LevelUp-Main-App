@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 import { toast } from "@/lib/toast";
-import { purgePersistedQueryCache } from "@/lib/queryClient";
+import { purgePersistedQueryCache, queryClient } from "@/lib/queryClient";
 
 interface UserProfile {
   id: string;
@@ -40,6 +40,20 @@ const clearPerUserLocalState = () => {
     /* storage unavailable (private mode / locked-down WebView) → nothing to clear */
   }
 };
+
+// Query-key roots a successful purchase claim (SC-2) makes stale: the
+// entitlement gate plus the two enrolment-backed surfaces. Kept as literals
+// (not imported from the catalog/course hooks) for the same reason as
+// `clearPerUserLocalState` above — the critical-path auth bundle must not pull
+// those modules in. Mirrors `ENROLLED_OFFERINGS_QUERY_KEY`
+// (components/catalog/useCatalog.ts), `ENROLLED_PROGRESS_QUERY_KEY`
+// (hooks/useEnrolledProgress.ts) and the `["my-courses", uid]` key in
+// pages/MyCoursesPage.tsx. Prefix keys, so every user-scoped variant matches.
+const CLAIM_INVALIDATED_QUERY_ROOTS = [
+  "enrolled-offering-ids",
+  "enrolled-progress",
+  "my-courses",
+];
 
 // ────────────────────────────────────────────────────────────────────
 // Profile-row cache (P6-T4) — auth gate off the critical path
@@ -371,13 +385,93 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       initialLoadDone = true;
     };
 
-    void supabase.auth.getSession().then(({ data: { session: currentSession } }) =>
-      syncAuthState(currentSession)
-    );
+    // ── Purchase claim at verified sign-in (SC-2) ─────────────────────────
+    // `claim_my_purchases()` attaches purchases already in the system that were
+    // made on the phone this user has just verified. It is SECURITY DEFINER and
+    // idempotent, so running it once per real sign-in is both safe and the
+    // point: a student whose purchase synced only after they signed up gets
+    // claimed on their next visit.
+    //
+    // Three hard constraints:
+    //   • NON-BLOCKING — fire-and-forget, never awaited, so it cannot land on
+    //     the auth critical path. A failed claim must never lock a student out;
+    //     it is logged in DEV, reported to Sentry, and otherwise swallowed.
+    //   • A REAL SIGN-IN ONLY — and a `SIGNED_IN` event is NOT by itself one.
+    //     supabase-js re-emits `SIGNED_IN` (not TOKEN_REFRESHED) from
+    //     `_recoverAndRefresh()` on every visibilitychange → visible for an
+    //     already-persisted session, i.e. on every tab focus and on every
+    //     background→foreground cycle of the Capacitor WebViews. Gating on the
+    //     event alone would therefore put 60k+ users through a needless
+    //     SECURITY DEFINER write per resume — the write storm the brief calls
+    //     out. So the real gate is the TRANSITION this provider observes: claim
+    //     only when a `SIGNED_IN` carries a user we were not already holding a
+    //     session for (signed-out → signed-in, or an account switch). A resume
+    //     or post-refresh re-emission repeats the SAME user id and is ignored —
+    //     which also makes a re-emitted identical session a no-op. `INITIAL_SESSION`
+    //     is a transition too (cold start), hence the event check as well.
+    //   • CACHE INVALIDATION — the claim races the post-sign-in navigation, so
+    //     the enrolment queries can cache their (empty) result before it
+    //     commits. With `staleTime` 5min and `refetchOnWindowFocus` off, the
+    //     student would need a hard reload to see what they just got, which
+    //     defeats the purpose. So a claim that actually attached rows
+    //     invalidates the entitlement roots.
+
+    // Which user this provider is currently holding a session for. Updated on
+    // EVERY resolution (the cold-start `getSession()` below + every auth event).
+    // Deliberately NOT tracked inside `syncAuthState` — its refresh early-return
+    // would bury the claim's trigger condition, and reading it here keeps the
+    // transition legible and read before the async sync can move it.
+    let observedUserId: string | null = null;
+
+    const claimPurchases = () => {
+      void (async () => {
+        try {
+          // Not in the generated supabase types yet; cast per the repo
+          // convention (see pages/admin/AdminRevenue.tsx).
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data, error } = await supabase.rpc("claim_my_purchases" as any);
+          if (error) throw error;
+          // SC-1 returns `{"claimed": n}` precisely so the client can act on it.
+          const claimed = Number((data as { claimed?: number } | null)?.claimed ?? 0);
+          if (import.meta.env.DEV) {
+            console.info("[AuthContext] claim_my_purchases claimed:", claimed);
+          }
+          if (claimed > 0) {
+            CLAIM_INVALIDATED_QUERY_ROOTS.forEach((root) => {
+              void queryClient.invalidateQueries({ queryKey: [root] });
+            });
+          }
+        } catch (err) {
+          if (import.meta.env.DEV) console.error("[AuthContext] claim_my_purchases failed:", err);
+          // Prod signal: without this a Tier-1 auth-path rollout is invisible
+          // outside DEV. Dynamic import so unauthenticated pages don't pull
+          // Sentry into their bundle (same pattern as `attachSentryUser`).
+          void import("@/lib/sentry").then((m) =>
+            m.captureException(err, { scope: "claim_my_purchases" })
+          );
+        }
+      })();
+    };
+
+    void supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      // The cold-start path carries no event and must never claim — but it does
+      // establish who we're holding, so a later resume-driven `SIGNED_IN` for
+      // that same user reads as "not a new sign-in". Only ever fills a still-
+      // empty slot, so it can never undo an event that already landed.
+      if (currentSession?.user && observedUserId === null) {
+        observedUserId = currentSession.user.id;
+      }
+      return syncAuthState(currentSession);
+    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, nextSession) => {
+      (event, nextSession) => {
+        const previousUserId = observedUserId;
+        observedUserId = nextSession?.user.id ?? null;
         void syncAuthState(nextSession);
+        if (event === "SIGNED_IN" && nextSession && nextSession.user.id !== previousUserId) {
+          claimPurchases();
+        }
       }
     );
 

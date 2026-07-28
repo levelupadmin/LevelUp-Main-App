@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from "vitest";
 import {
   render,
   screen,
@@ -49,6 +49,9 @@ const h = vi.hoisted(() => ({
   // flips before the profile fetch resolves.
   profileResponder: (): Promise<{ data: unknown; error: unknown }> =>
     Promise.resolve({ data: null, error: null }),
+  // SC-2: what `claim_my_purchases()` returns. `{claimed: n}` per SC-1.
+  rpcResponder: (): Promise<{ data: unknown; error: unknown }> =>
+    Promise.resolve({ data: { claimed: 0 }, error: null }),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -73,19 +76,29 @@ vi.mock("@/integrations/supabase/client", () => ({
         })),
       })),
     })),
+    // SC-2: the post-sign-in `claim_my_purchases()` call. Resolves like a real
+    // PostgREST rpc so the awaited destructure in AuthContext sees
+    // `{ data, error }`.
+    rpc: vi.fn(() => h.rpcResponder()),
   },
 }));
 
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock("@/lib/queryClient", () => ({
   purgePersistedQueryCache: vi.fn(() => Promise.resolve()),
+  // SC-2: a claim that actually attached rows invalidates the entitlement
+  // query roots, otherwise the newly-claimed courses stay invisible behind the
+  // 5-minute staleTime.
+  queryClient: { invalidateQueries: vi.fn(() => Promise.resolve()) },
 }));
-vi.mock("@/lib/sentry", () => ({ setSentryUser: vi.fn() }));
+vi.mock("@/lib/sentry", () => ({ setSentryUser: vi.fn(), captureException: vi.fn() }));
 
 import { AuthProvider, useAuth } from "../AuthContext";
 import RequireAuth from "@/components/guards/RequireAuth";
 import RequireRole from "@/components/guards/RequireRole";
 import { toast } from "@/lib/toast";
+import { supabase } from "@/integrations/supabase/client";
+import { queryClient } from "@/lib/queryClient";
 
 const PROFILE_CACHE_KEY = "lu_profile_v1";
 
@@ -148,6 +161,7 @@ beforeEach(() => {
   h.authCallbacks.length = 0;
   h.getSessionResult = { data: { session: null } };
   h.profileResponder = () => Promise.resolve({ data: null, error: null });
+  h.rpcResponder = () => Promise.resolve({ data: { claimed: 0 }, error: null });
   vi.clearAllMocks();
 });
 
@@ -286,6 +300,124 @@ describe("P6-T4 auth gate — expired session", () => {
     expect(result.current.profile).toBeNull();
     expect(toast.error).toHaveBeenCalledWith("Your session has expired. Please sign in again.");
     expect(localStorage.getItem(PROFILE_CACHE_KEY)).toBeNull();
+  });
+});
+
+describe("SC-2 — claim_my_purchases fires only on a real sign-in", () => {
+  const emit = async (event: string, session: unknown) => {
+    await act(async () => {
+      h.authCallbacks.forEach((cb) => cb(event, session));
+      await Promise.resolve();
+    });
+  };
+
+  it("claims exactly once when a signed-out user actually signs in", async () => {
+    // The claim is a SECURITY DEFINER write, so it must fire on the sign-in and
+    // on nothing else: `onAuthStateChange` also emits INITIAL_SESSION on cold
+    // start and TOKEN_REFRESHED roughly hourly, and at 60k+ users either one
+    // becomes a write storm.
+    const rpc = supabase.rpc as unknown as Mock;
+    h.getSessionResult = { data: { session: null } };
+    h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
+
+    renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
+
+    // Cold start for a signed-out visitor: INITIAL_SESSION carries no session.
+    await emit("INITIAL_SESSION", null);
+    expect(rpc).not.toHaveBeenCalled();
+
+    // The MSG91 / magic-link paths land a session via `setSession`, which fans
+    // out SIGNED_IN. THIS is the real sign-in.
+    const session = { ...makeSession("u1"), access_token: "tok-1" } as Session;
+    await emit("SIGNED_IN", session);
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+    expect(rpc).toHaveBeenCalledWith("claim_my_purchases");
+
+    // Neither a re-emitted identical SIGNED_IN nor the hourly refresh may claim again.
+    await emit("SIGNED_IN", session);
+    await emit("TOKEN_REFRESHED", { ...session, access_token: "tok-2" } as Session);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("never claims for a returning user's cold start, hourly refresh, or app resume", async () => {
+    // The load-bearing case, and the one a literal `event === "SIGNED_IN"` gate
+    // gets WRONG. supabase-js re-emits SIGNED_IN — not TOKEN_REFRESHED — from
+    // `_recoverAndRefresh()` on every visibilitychange → visible for an
+    // already-persisted session (GoTrueClient `_onVisibilityChanged`), i.e. on
+    // every tab focus and every Android/iOS WebView background→foreground
+    // cycle, carrying a freshly rotated access_token. None of that is a sign-in
+    // and none of it may write.
+    const rpc = supabase.rpc as unknown as Mock;
+    const persisted = { ...makeSession("u1"), access_token: "tok-1" } as Session;
+    h.getSessionResult = { data: { session: persisted } };
+    h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
+
+    // NOT awaited before the first emit: the real client resolves
+    // `getSession()` only after `initialize()`, which is what emits
+    // INITIAL_SESSION — so INITIAL_SESSION reaches the subscriber while the
+    // provider still holds no session. Only the event check stops it claiming.
+    const { result } = renderHook(() => useAuth(), { wrapper: providerWrapper });
+
+    // Cold start with a stored session.
+    await emit("INITIAL_SESSION", persisted);
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    // ~Hourly rotation.
+    const rotated = { ...persisted, access_token: "tok-2" } as Session;
+    await emit("TOKEN_REFRESHED", rotated);
+    // App resume / tab focus: SIGNED_IN for the SAME user, new access_token.
+    await emit("SIGNED_IN", rotated);
+    await emit("SIGNED_IN", { ...persisted, access_token: "tok-3" } as Session);
+
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("invalidates the entitlement caches only when the claim actually attached rows", async () => {
+    // The claim races the post-sign-in navigation, so the enrolment queries can
+    // already have cached an empty result (staleTime 5min, refetchOnWindowFocus
+    // off). Without invalidation the student who this whole phase exists for
+    // still sees no courses until a hard reload.
+    const invalidate = queryClient.invalidateQueries as unknown as Mock;
+    h.getSessionResult = { data: { session: null } };
+    h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
+    h.rpcResponder = () => Promise.resolve({ data: { claimed: 2 }, error: null });
+
+    renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
+
+    await emit("SIGNED_IN", { ...makeSession("u1"), access_token: "tok-1" } as Session);
+
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ["enrolled-offering-ids"] })
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["enrolled-progress"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["my-courses"] });
+
+    // A no-op claim (the common case) must not churn the caches.
+    invalidate.mockClear();
+    h.rpcResponder = () => Promise.resolve({ data: { claimed: 0 }, error: null });
+    await emit("SIGNED_OUT", null);
+    await emit("SIGNED_IN", { ...makeSession("u2"), access_token: "tok-9" } as Session);
+    await waitFor(() => expect(supabase.rpc as unknown as Mock).toHaveBeenCalledTimes(2));
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it("never blocks or breaks sign-in when the claim fails", async () => {
+    const rpc = supabase.rpc as unknown as Mock;
+    h.getSessionResult = { data: { session: null } };
+    h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
+    h.rpcResponder = () => Promise.resolve({ data: null, error: { message: "boom" } });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
+
+    await emit("SIGNED_IN", { ...makeSession("u1"), access_token: "tok-1" } as Session);
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+    // Session + profile resolve exactly as they would with no claim at all.
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.session).not.toBeNull();
+    expect(result.current.profile?.id).toBe("u1");
   });
 });
 

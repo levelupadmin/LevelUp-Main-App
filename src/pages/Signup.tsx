@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -44,6 +44,13 @@ const syntheticEmail = (phone: string) =>
   `${phone.replace(/\D/g, "")}@phone.leveluplearning.in`;
 const PLACEHOLDER_NAME = "LevelUp Student";
 
+// SC-3: someone who already bought from us should never be filling in a signup
+// form. Before anything is created we ask the server whether this phone/email
+// already has an account, or a purchase we already hold, and send them to sign
+// in instead, where the OTP proves the number is theirs.
+const EXISTING_ACCOUNT_TITLE = "You already have an account with us";
+const EXISTING_ACCOUNT_BODY = "Sign in instead, we've carried your details over.";
+
 const Signup = () => {
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
@@ -61,6 +68,14 @@ const Signup = () => {
     setStep(next);
     setStepKey((k) => k + 1);
   }, []);
+
+  // The exact phone string the server already cleared. The non-+91 path submits
+  // twice (phone step, then email step) for the SAME person, and re-asking about
+  // an unchanged number would burn two of the ten per-IP rate-limit slots per
+  // signup. On a shared carrier NAT that exhausts the window, and every check
+  // then fails open, which turns the gate off for everyone behind that IP.
+  // Cleared implicitly by comparison: edit the number and it is checked again.
+  const clearedPhoneRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && user) navigate("/home", { replace: true });
@@ -101,6 +116,44 @@ const Signup = () => {
     }
   };
 
+  // Server-side existence gate. Returns true only when the server says this
+  // person already has an account or a purchase on file; the endpoint answers
+  // with a boolean and nothing else. Fails OPEN on any error so a flaky check
+  // can never brick signup for everyone.
+  const alreadyRegistered = async (
+    check: { phone?: string; email?: string }
+  ): Promise<boolean> => {
+    const payload: { mode: "signup"; phone?: string; email?: string } = { mode: "signup" };
+    if (check.phone) payload.phone = check.phone;
+    if (check.email) payload.email = check.email;
+    if (!payload.phone && !payload.email) return false;
+    try {
+      const { data, error } = await supabase.functions.invoke<{ exists?: boolean }>(
+        "check-user-exists",
+        { body: payload }
+      );
+      if (error) return false;
+      return data?.exists === true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Never a dead end: hand over everything they already typed so the sign-in
+  // screen can pick up mid-stride, and say why they landed there. The email
+  // matters for the non-+91 path, whose sign-in door is an email link, not an
+  // SMS: without it they would retype the address one screen after entering it.
+  const routeToSignIn = () => {
+    toast({ title: EXISTING_ACCOUNT_TITLE, description: EXISTING_ACCOUNT_BODY });
+    navigate("/login", {
+      state: {
+        prefillPhone: phone,
+        prefillEmail: emailValid ? email.trim() : undefined,
+        reason: "existing_account",
+      },
+    });
+  };
+
   const sendEmailLink = async (): Promise<{ ok: boolean; error?: string }> => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -122,11 +175,19 @@ const Signup = () => {
       toast({ title: "Enter your phone number", variant: "destructive" });
       return;
     }
+    setLoading(true);
+    // Gate BEFORE any OTP is sent: an existing buyer belongs on /login.
+    if (await alreadyRegistered({ phone })) {
+      setLoading(false);
+      routeToSignIn();
+      return;
+    }
+    clearedPhoneRef.current = phone;
     if (EMAIL_ONLY_AUTH || !isIndianPhone) {
+      setLoading(false);
       goToStep("email_form");
       return;
     }
-    setLoading(true);
     const res = await sendSmsOtp(false);
     setLoading(false);
     if (!res.ok) {
@@ -145,6 +206,17 @@ const Signup = () => {
       return;
     }
     setLoading(true);
+    // signInWithOtp({ shouldCreateUser: true }) mints an auth row carrying the
+    // phone from options.data, so this path must be gated too, not just the
+    // MSG91 one. The number is only re-sent if it changed since the phone step
+    // cleared it, so one signup costs one rate-limit slot, not two.
+    const recheckPhone = clearedPhoneRef.current !== phone;
+    if (await alreadyRegistered({ phone: recheckPhone ? phone : undefined, email })) {
+      setLoading(false);
+      routeToSignIn();
+      return;
+    }
+    if (recheckPhone) clearedPhoneRef.current = phone;
     const res = await sendEmailLink();
     setLoading(false);
     if (!res.ok) {
