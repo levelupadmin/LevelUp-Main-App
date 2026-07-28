@@ -115,3 +115,24 @@ project_id = "twqagwleffjggoemzfqs"
   # refuses to bind rather than risk the wrong applicant's row).
   [functions.calendly-webhook]
     verify_jwt = false
+
+  # calendly-slots: the availability reader behind the three-soonest-slot buttons
+  # (PHASE IV Q-1, REQ-INT-0 reinstated 2026-07-28 — see 04-INTEGRATION-CONTRACTS
+  # §6.4). verify_jwt = false because the caller is frequently a GUEST: an
+  # applicant who paid the ₹400 through the hosted intake chain often has no app
+  # session at all yet, and that person is the exact reason this surface exists
+  # (see the `useInterviewSlots.ts` header). With verify_jwt = true the gateway
+  # would 401 them before the function ran, and the CRO surface at peak intent
+  # would be dark for the population it was built for.
+  #
+  # THE OPEN POSTURE COSTS NOTHING IT NEED NOT. The request carries one public
+  # offering id and the response carries public booking availability — no session,
+  # no personal data, and nothing an unauthenticated caller could not already read
+  # off the offering's own hosted Calendly page. CALENDLY_TOKEN never appears in a
+  # response; it is used only on outbound calls to api.calendly.com.
+  #
+  # What the open posture DOES cost is call volume, and that is bounded inside the
+  # function rather than at the gateway: a per-offering cache (90s), a floor under
+  # the on-tap `fresh` re-check (8s), and a token-wide backoff on a Calendly 429.
+  [functions.calendly-slots]
+    verify_jwt = false

@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { isIOS } from "@/lib/platform";
 import { COHORT_INTERVIEW, flag } from "@/lib/flags";
 import { useFunnelStage } from "@/hooks/useFunnelStage";
-import { InterviewEmbed } from "@/components/interview/SlotButtons";
+import { InterviewSlots } from "@/components/interview/SlotButtons";
 import { InterviewerCard } from "@/components/interview/InterviewerCard";
 import {
   RescheduleControl,
@@ -631,11 +631,21 @@ const ApplicationStatus = () => {
             at all. */}
         {showRebookPrompt && <RebookPrompt className="mb-4" />}
 
-        {/* Book the interview, in place. The embed is Calendly's own booking
-            page, so it inherits Calendly's availability truth and this page
-            never holds a slot list of its own. */}
+        {/* Book the interview, in place — the three soonest slots as one-tap
+            buttons (REQ-INT-0, reinstated by Rahul 2026-07-28; see
+            `04-INTEGRATION-CONTRACTS.md` §6.4).
+
+            THIS PAGE STILL HOLDS NO BOOKING. The slot list it renders is read
+            server-side and is only ever an OFFER: Calendly's API cannot create a
+            booking, so each button opens Calendly's own deep link to that slot and
+            Calendly confirms it. The calendar keeps exactly one writer, which is
+            what the earlier "the embed inherits availability truth" note was
+            really protecting. What a rendered list CAN be is stale, and the
+            component re-checks availability on every tap for precisely that
+            reason. When availability cannot be read at all it falls back to the
+            hosted calendar this page shipped with. */}
         {showInterviewEmbed && (
-          <InterviewEmbed
+          <InterviewSlots
             offeringId={application.offering_id}
             name={profile?.full_name}
             email={profile?.email ?? user?.email}

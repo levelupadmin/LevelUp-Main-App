@@ -1,31 +1,41 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 /**
- * useInterviewSlots.ts — the reader behind the in-app Calendly booking embed.
+ * useInterviewSlots.ts — the reader behind the interview booking surface: the
+ * three soonest slots, and the hosted Calendly link they fall back to.
  *
- * The FILE NAME is a leftover and is kept only so this task touches no path it
- * does not own; nothing here reads slots. INTEG-CAL-1 (04-INTEGRATION-CONTRACTS
- * §6.4) rules that the interview is booked through the EXISTING hosted Calendly
- * link in the intake chain, with an OPTIONAL in-app inline embed as the only
- * app-side surface. App-native buttons over Calendly's availability API are
- * PARKED (fast-follow, with CRO-1) — and they were also the double-booking risk
- * the ruling names, because a slot list we construct ourselves is a second,
- * staler opinion about a calendar Calendly alone writes.
+ * RULED — REQ-INT-0 IS BACK ON (Rahul, 2026-07-28). An earlier revision of this
+ * file recorded INTEG-CAL-1 / `04-INTEGRATION-CONTRACTS.md` §6.4 as having PARKED
+ * app-native slot buttons in favour of an inline hosted embed. Rahul reversed
+ * that: he wants a native surface, not an embed. §6.4 and `design/briefs/
+ * cohort-iv.md` V-2 are superseded in place with the same date, and this module
+ * now reads TWO things instead of one.
  *
- * So this module reads exactly one thing: whether THIS offering has a booking
- * surface at all, and which Calendly URL it is. Availability is never read here
- * or on the server; it is inherited, in the strongest sense, by handing the
- * applicant Calendly's own booking page inside an iframe. Calendly stays the
- * sole reader AND writer of its own availability, so double-booking is
- * impossible by construction rather than by care.
+ * THE REVERSAL DOES NOT REOPEN THE DOUBLE-BOOKING HAZARD, because the surface
+ * still cannot book. Calendly's API has no create-a-booking call, so every slot
+ * button opens `scheduling_url` — Calendly's own deep link to THAT EXACT SLOT —
+ * and Calendly confirms it on its own page. Our list is only ever an OFFER; the
+ * calendar has exactly one writer, as before. What the park was really protecting
+ * against is a stale offer, and that is handled where it actually happens: the
+ * list is re-checked on tap (`useInterviewSlots().recheck`) so a slot taken
+ * between render and tap re-offers rather than dead-ends.
  *
- * The read is a plain client select on `offerings`, which carries a public
- * SELECT policy (`offerings_public_read`, migration 20260407182236) — no edge
- * function, no `CALENDLY_TOKEN` anywhere in the stack, and it works signed-in
- * AND guest. Someone who paid the ₹400 through the hosted intake chain may have
- * no app session yet, and that is the exact person this surface exists for.
+ *   1. `useInterviewBooking` — does THIS offering have a booking surface at all,
+ *      and which Calendly URL is it? A plain client select on `offerings`, which
+ *      carries a public SELECT policy (`offerings_public_read`, migration
+ *      20260407182236). No edge function, works signed-in AND guest.
+ *   2. `useInterviewSlots` — the three soonest openings, read through the
+ *      `calendly-slots` edge function. Availability needs the Calendly API
+ *      token, which is read SERVER-SIDE ONLY; nothing in this file, or anywhere
+ *      under `src/`, so much as names that secret. The function is `verify_jwt = false` for the same
+ *      reason the select above is unauthenticated: someone who paid the ₹400
+ *      through the hosted intake chain may have no app session yet, and that is
+ *      the exact person this surface exists for.
+ *
+ * Both degrade to the hosted Calendly link rather than to an error. The student
+ * must always be able to book.
  */
 
 /**
@@ -157,6 +167,15 @@ export function isCalendlyUrl(url: string | null | undefined): boolean {
  * double-booking hazard, arriving through the front door.
  */
 export const CALENDLY_EMBED_TYPE = "Inline";
+
+/**
+ * SINCE THE 2026-07-28 REVERSAL the embed is the FALLBACK, not the primary path:
+ * it renders when the availability API has nothing to offer, errors, or is
+ * throttled. Everything about it below is unchanged and still load-bearing — the
+ * fallback has to work exactly as well as it did when it was the only surface,
+ * because the student who reaches it is by definition the one the fast path could
+ * not serve.
+ */
 
 /** The prefill fields, and deliberately only these. See `applyPrefill`. */
 export interface CalendlyPrefill {
@@ -642,9 +661,24 @@ export interface CalendlyBookedSignal {
 export function useCalendlyBookedSignal(
   offeringId: string | undefined,
   identity: string | null | undefined,
-  options: { listen?: boolean } = {},
+  options: { listen?: boolean; selfReportReady?: boolean } = {},
 ): CalendlyBookedSignal {
   const listen = options.listen ?? true;
+  /**
+   * The SLOT path's version of the dwell timer, and the reason the timer alone is
+   * no longer sufficient.
+   *
+   * A slot button opens Calendly as a TOP-LEVEL page in another tab, so there is
+   * no frame in this document and no `calendly.event_scheduled` will ever arrive
+   * — `listen` is false and the dwell clock never runs. But we know something the
+   * embed case never did: the student tapped a specific time and left to confirm
+   * it. Offering them "I already picked my time" at that exact moment is the only
+   * way this document can learn a booking happened, and it is the same guarded,
+   * self-reported control the embed's silent-channel fallback uses — same copy,
+   * same confirmation, same marker. The caller raises this only AFTER a tap, so
+   * it is never on screen for somebody who has done nothing.
+   */
+  const selfReportReady = options.selfReportReady ?? false;
   const [booked, setBooked] = useState(() => readCalendlyBooked(offeringId, identity));
   const [announceBooked, setAnnounceBooked] = useState(false);
   const [reopenPending, setReopenPending] = useState(false);
@@ -750,7 +784,10 @@ export function useCalendlyBookedSignal(
     requestReopen,
     cancelReopen,
     confirmReopen,
-    canSelfReport: !!offeringId && listen && !booked && !handshake && dwellElapsed,
+    canSelfReport:
+      !!offeringId &&
+      !booked &&
+      (selfReportReady || (listen && !handshake && dwellElapsed)),
     selfReportPending,
     requestSelfReport,
     cancelSelfReport,
@@ -847,3 +884,319 @@ export function useInterviewBooking(
     },
   };
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   THE SLOTS — the reinstated REQ-INT-0 surface (Rahul, 2026-07-28)
+
+   Three soonest openings, read through the `calendly-slots` edge function.
+
+   WHY AN EDGE FUNCTION AND NOT A CLIENT FETCH: availability needs
+   the Calendly API token, and a token in the bundle is a token in every student's
+   devtools — one that can read and cancel bookings across the whole org account.
+   The function reads it from `Deno.env` and nothing else; no symbol in this file
+   names it, so the "token in no bundle" grep holds by construction.
+
+   WHAT THIS LIST IS: an OFFER, never a hold. Calendly's API cannot create a
+   booking, so the confirm always happens on Calendly's own page via the per-slot
+   `scheduling_url`. That is what keeps Calendly the single writer of its calendar
+   even though we now render times ourselves.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/** One offered opening. `bookingUrl` is Calendly's deep link to THAT slot. */
+export interface InterviewSlot {
+  /** ISO-8601 start instant, as Calendly sent it. Rendered in IST at the leaf. */
+  startTime: string;
+  bookingUrl: string;
+}
+
+/**
+ * Why there is nothing to offer. EVERY value falls back to the hosted Calendly
+ * link — none of them is an error state the student is asked to do anything
+ * about.
+ *
+ *   • `no_slots`       — the calendar is genuinely empty for the next fortnight.
+ *   • `not_configured` — this offering has no availability we can read (booking
+ *                        switched off, or a link on the second Calendly account
+ *                        this token cannot see — INTEG-CAL-1's fast-follow).
+ *   • `rate_limited`   — Calendly throttled us. Transient by definition.
+ *   • `unavailable`    — the function, the network, or Calendly's availability
+ *                        call itself failed. THE SERVER OWES US THIS
+ *                        DISTINCTION: a Calendly 5xx answers `unavailable` and
+ *                        is not cached, precisely so the empty list above keeps
+ *                        meaning an empty calendar. Both land the student on the
+ *                        hosted calendar, so the fallback does not care — but
+ *                        this field is what any diagnosis reads, and a `reason`
+ *                        that lies about which of the two happened is worse than
+ *                        no field at all.
+ */
+export type InterviewSlotsReason =
+  | "no_slots"
+  | "not_configured"
+  | "rate_limited"
+  | "unavailable";
+
+export interface InterviewSlotsPayload {
+  slots: InterviewSlot[];
+  reason: InterviewSlotsReason | null;
+}
+
+/** The fail-soft payload. Empty list, fallback reason, never a thrown query. */
+const SLOTS_UNAVAILABLE: InterviewSlotsPayload = { slots: [], reason: "unavailable" };
+
+/**
+ * The reasons that mean "we did not get a straight answer", as opposed to "we got
+ * one and it is empty". Only the second kind may overwrite a good list: a
+ * re-check that fails must not blank three perfectly valid buttons in front of
+ * somebody who is mid-tap.
+ */
+function isTrustworthySlotsAnswer(payload: InterviewSlotsPayload): boolean {
+  return payload.reason !== "unavailable" && payload.reason !== "rate_limited";
+}
+
+/**
+ * The slots in a payload that have NOT already started.
+ *
+ * Only used when a list is being carried through an answer we could not trust
+ * (see the queryFn). Holding a list is a claim that it is still bookable, and a
+ * start time in the past is not: if an outage outlives the openings it was
+ * covering, the surface must let go and fall back to the hosted calendar rather
+ * than offer a button whose Calendly page will refuse it.
+ */
+function futureSlots(payload: InterviewSlotsPayload, now: number): InterviewSlot[] {
+  return payload.slots.filter((slot) => {
+    const at = Date.parse(slot.startTime);
+    return Number.isFinite(at) && at > now;
+  });
+}
+
+/**
+ * Narrow the function's response, and PIN EVERY LINK TO calendly.com on the way
+ * through.
+ *
+ * The pin is not redundant with the server's. These URLs are opened in a browser
+ * carrying the applicant's name and email as query parameters, and this is the
+ * last place before that happens; a client that trusts whatever an edge function
+ * hands it is one compromised dependency away from a prefilled phishing hop. Same
+ * rule, same reason, as `isCalendlyUrl` on the admin-authored link.
+ */
+export function parseSlotsResponse(data: unknown): InterviewSlotsPayload {
+  if (!data || typeof data !== "object") return SLOTS_UNAVAILABLE;
+  const raw = (data as { slots?: unknown; reason?: unknown });
+
+  const slots: InterviewSlot[] = [];
+  if (Array.isArray(raw.slots)) {
+    for (const item of raw.slots) {
+      if (!item || typeof item !== "object") continue;
+      const { startTime, bookingUrl } = item as { startTime?: unknown; bookingUrl?: unknown };
+      if (typeof startTime !== "string" || !startTime.trim()) continue;
+      if (typeof bookingUrl !== "string" || !isCalendlyUrl(bookingUrl)) continue;
+      slots.push({ startTime, bookingUrl });
+    }
+  }
+
+  const reason = raw.reason;
+  const known: InterviewSlotsReason[] = [
+    "no_slots",
+    "not_configured",
+    "rate_limited",
+    "unavailable",
+  ];
+  const parsedReason =
+    typeof reason === "string" && (known as string[]).includes(reason)
+      ? (reason as InterviewSlotsReason)
+      : null;
+
+  // A response that carried neither slots nor a reason we understand is not an
+  // empty calendar, it is a response we could not read.
+  if (slots.length === 0 && parsedReason === null) return SLOTS_UNAVAILABLE;
+  return { slots, reason: slots.length > 0 ? null : parsedReason };
+}
+
+/**
+ * How long a slot list is treated as current.
+ *
+ * Short, because it is a claim about a calendar other people are booking into;
+ * long enough that mounting the surface twice in one session is not two calls.
+ * The tap path does not rely on it at all — see `recheck`.
+ */
+export const INTERVIEW_SLOTS_STALE_MS = 60_000;
+
+const slotsQueryKey = (offeringId: string | undefined) =>
+  ["interview", "slots", offeringId] as const;
+
+/** One call to the function. Resolves on every failure; never throws. */
+async function readSlots(
+  offeringId: string,
+  fresh: boolean,
+): Promise<InterviewSlotsPayload> {
+  const { data, error } = await supabase.functions.invoke("calendly-slots", {
+    body: { offeringId, fresh },
+  });
+  if (error) return SLOTS_UNAVAILABLE;
+  return parseSlotsResponse(data);
+}
+
+export interface UseInterviewSlotsResult {
+  slots: InterviewSlot[];
+  reason: InterviewSlotsReason | null;
+  /** A request is out. Gates the skeleton, and nothing else. */
+  isWaiting: boolean;
+  isFetching: boolean;
+  refetch: () => void;
+  /**
+   * Re-read availability RIGHT NOW, bypassing both caches, and answer with what
+   * Calendly says at this instant.
+   *
+   * This is the tap path. A slot can be taken between the render and the tap —
+   * by another applicant, or by the interviewer blocking their own calendar — and
+   * sending somebody to a dead slot at the exact moment they finally decided to
+   * book is the worst available outcome on this surface.
+   *
+   * A FAILED re-check does not block the tap and does not overwrite the list. The
+   * student proceeds to the slot they chose: Calendly's own page is then the
+   * authority, and it says so gracefully. Refusing to open on a network hiccup
+   * would invent a dead end out of a working booking.
+   */
+  recheck: () => Promise<InterviewSlotsPayload>;
+}
+
+/**
+ * Read the three soonest openings for an offering.
+ *
+ * Fail-soft by contract, exactly like `useInterviewBooking`: the queryFn RESOLVES
+ * on every error so the caller falls back to the hosted link instead of
+ * spinner-locking or retry-storming.
+ */
+export function useInterviewSlots(
+  offeringId: string | undefined,
+  options: { enabled?: boolean } = {},
+): UseInterviewSlotsResult {
+  const enabled = !!offeringId && (options.enabled ?? true);
+  const queryClient = useQueryClient();
+
+  const query = useQuery<InterviewSlotsPayload>({
+    queryKey: slotsQueryKey(offeringId),
+    enabled,
+    staleTime: INTERVIEW_SLOTS_STALE_MS,
+    // Availability moves, so a student returning to the tab should not be shown
+    // a list from ten minutes ago — but `staleTime` already bounds how often
+    // that costs a call.
+    refetchOnWindowFocus: true,
+    retry: false,
+    /**
+     * AN ANSWER WE DID NOT GET STRAIGHT MAY NOT BLANK A LIST WE DID.
+     *
+     * `isTrustworthySlotsAnswer` was applied only inside `recheck`, which left the
+     * ORDINARY refetch — the one `refetchOnWindowFocus` fires the instant a
+     * student returns from Calendly — free to overwrite three good buttons with
+     * `SLOTS_UNAVAILABLE` on a mobile-network blip, an edge cold start or a
+     * Calendly 429. That is not a cosmetic flicker: the caller's whole slot branch
+     * disappears with the list, and with it the post-tap panel used to disappear
+     * too (`components/interview/SlotButtons.tsx` now builds that panel outside
+     * the branch, which is the other half of this fix). The student who had just
+     * booked was handed a fresh open calendar — the §6.4 double-booking hazard,
+     * manufactured by a failed background call.
+     *
+     * So a failed or throttled answer KEEPS the previous list, minus any opening
+     * that has since started (`futureSlots`), and only surrenders it when there is
+     * nothing still bookable to keep. An empty answer we DO trust (`no_slots`,
+     * `not_configured`) overwrites normally: that is the calendar telling us the
+     * truth, and the fallback below it is the hosted calendar, never a dead end.
+     */
+    queryFn: async () => {
+      const answer = await readSlots(offeringId as string, false);
+      if (isTrustworthySlotsAnswer(answer)) return answer;
+      const previous = queryClient.getQueryData<InterviewSlotsPayload>(
+        slotsQueryKey(offeringId),
+      );
+      if (!previous) return answer;
+      const kept = futureSlots(previous, Date.now());
+      return kept.length > 0 ? { slots: kept, reason: null } : answer;
+    },
+  });
+
+  const recheck = useCallback(async (): Promise<InterviewSlotsPayload> => {
+    if (!offeringId) return SLOTS_UNAVAILABLE;
+    const payload = await readSlots(offeringId, true);
+    if (isTrustworthySlotsAnswer(payload)) {
+      queryClient.setQueryData(slotsQueryKey(offeringId), payload);
+    }
+    return payload;
+  }, [offeringId, queryClient]);
+
+  return {
+    slots: query.data?.slots ?? [],
+    reason: query.data?.reason ?? null,
+    // A disabled query is pending forever; that is a wait on the PARENT and must
+    // never shimmer. Same rule as `useInterviewBooking.isWaiting`.
+    isWaiting: enabled && query.isPending,
+    isFetching: query.isFetching,
+    refetch: () => {
+      void query.refetch();
+    },
+    recheck,
+  };
+}
+
+/**
+ * The slot surface's copy, in one place for the same reason
+ * `CALENDLY_BOOKED_COPY` is: two entry points render it, and NFR-COPY-4's grep
+ * for "free" / "mentor" / "counselor" is only worth something if there is one
+ * place to grep.
+ */
+export const INTERVIEW_SLOTS_COPY = {
+  heading: "Book your interview",
+  subheading: "This is the last step before your application is reviewed.",
+  slotsLead: "Pick a time. Calendly confirms it with your details already filled in.",
+  moreTimes: "See all available times",
+  /**
+   * Shown when a re-check finds the tapped slot gone AND there are replacements.
+   * It states the fact and hands over the replacement in the same breath — no
+   * apology, no dead end.
+   */
+  slotTaken: "That time was just taken. Here are the three soonest now.",
+  /**
+   * The same moment, with NOTHING left to re-offer: the last opening went, or the
+   * interviewer cleared the fortnight between the render and the tap. It needs its
+   * own line because the surface underneath has just swapped from three buttons to
+   * the full calendar, and the sentence above ("here are the three soonest") would
+   * then point at buttons that are no longer there. Without it the swap happens in
+   * silence, which is the one thing a list changing under somebody's thumb may
+   * never do.
+   */
+  slotTakenEmpty:
+    "That time was just taken, and nothing else is open right now. The full calendar below has every time we have.",
+  /**
+   * After a tap that handed off. Deliberately does NOT claim the booking happened:
+   * the confirm is on Calendly's page and this document cannot see it.
+   */
+  openedHeading: "Finish on Calendly",
+  openedBody:
+    "Your time opens on Calendly with your details already filled in. Confirm it there, then come back and tell us below.",
+  /**
+   * The way back to the same slot, always rendered beside the copy above. It is a
+   * real link on a real tap, which is the ONE hand-off mechanism that works on
+   * every surface this ships to — the web tab, the Android WebView and the iOS
+   * WKWebView. If anything swallowed the first hand-off, this is the recovery,
+   * and it is why the panel above can describe what happened without gambling on
+   * it.
+   */
+  openedReopen: "Open that time again",
+  openedConfirm: "I confirmed my time",
+  openedDismiss: "Pick a different time",
+  /**
+   * The tap did NOT hand off: a desktop browser with popups blocked refused the
+   * tab, and `window.open` said so by answering null.
+   *
+   * This is its own state and not a variant of the one above for one reason: the
+   * panel above ends in "I confirmed my time", a control that withdraws the
+   * calendar for two hours, and offering it to somebody whose Calendly never
+   * opened is how an applicant marks themselves booked for an interview that does
+   * not exist. So the blocked state says what happened, gives the link that is
+   * never blocked, and shows no confirmation control until it is used.
+   */
+  blockedHeading: "Your browser blocked the new tab",
+  blockedBody:
+    "Nothing opened, so nothing is booked yet. Use the link below and your time is still waiting with your details filled in.",
+  blockedOpen: "Open your time on Calendly",
+} as const;

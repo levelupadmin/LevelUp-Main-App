@@ -783,3 +783,346 @@ export function bookingFromEvent(payload: unknown): CalendlyBooking | null {
     bookedAt: asString(invitee.created_at) ?? asString(invitee.updated_at),
   };
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   AVAILABILITY — the pure core of `calendly-slots` (PHASE IV Q-1)
+
+   RULED — REQ-INT-0 is BACK ON (Rahul, 2026-07-28), reversing the §6.4 park.
+   The app offers the three soonest slots as one-tap buttons; Calendly still
+   CONFIRMS every one of them on its own surface, because the availability API
+   cannot create a booking. That constraint is the safety property, not a
+   limitation: we never hold a booking, so we can never double-book, and
+   `calendly-webhook` above still records the fact.
+
+   Everything the slots function DECIDES lives here — which window is legal,
+   which event type an offering's link names, which returned items are real
+   slots, and how a UTC instant reads to a student in India. The handler
+   (`calendly-slots/index.ts`) is then only I/O: fetch, cache, respond. Same
+   split, and same reason, as the receiver above: this is provable by unit test
+   with zero network and no mocking (`src/lib/__tests__/calendly.test.ts`).
+
+   STILL DEPENDENCY-FREE. No imports, and no Deno/Node/DOM-only globals — `URL`
+   is deliberately NOT used (it is universal in practice, but the file's contract
+   is stricter than "in practice"), so link parsing below is a small regex.
+   `Intl` and `Date` are ECMA-402/262 core and are available in all three
+   runtimes this file is compiled by.
+
+   SOR-1 still holds: nothing here names a funnel stage. A slot is an offer,
+   not a state.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/** How many slots the surface offers. Three: the brief's "three soonest". */
+export const CALENDLY_SLOT_COUNT = 3;
+
+/**
+ * Calendly's own ceiling on `event_type_available_times`: the window must be at
+ * most SEVEN DAYS and must START IN THE FUTURE, or the call is rejected outright
+ * (verified against the live account, 2026-07-28). Both are encoded in
+ * `availabilityWindow` rather than trusted to a caller's arithmetic, because
+ * getting either wrong turns the whole surface into its fallback with no
+ * user-visible symptom beyond "no slots".
+ */
+export const CALENDLY_MAX_WINDOW_DAYS = 7;
+
+/**
+ * How far ahead of "now" a window starts. Guards the FUTURE constraint against
+ * clock skew between our isolate and Calendly, and it is also honest product
+ * behaviour: a slot 30 seconds away is not bookable by a human.
+ */
+export const CALENDLY_WINDOW_LEAD_MS = 2 * 60_000;
+
+const DAY_MS = 24 * 60 * 60_000;
+
+/** One legal availability window, in the ISO shape the query string wants. */
+export interface CalendlyWindow {
+  startTime: string;
+  endTime: string;
+}
+
+/**
+ * A single bookable slot, as the surface consumes it.
+ *
+ * `bookingUrl` is Calendly's own `scheduling_url` for THAT EXACT SLOT — a deep
+ * link that lands on the confirmation step with the time already chosen. It is
+ * what makes a one-tap button possible without the app ever holding a booking.
+ */
+export interface CalendlySlot {
+  /** ISO-8601 start instant, exactly as Calendly sent it. */
+  startTime: string;
+  /** Calendly's per-slot deep link. Always on calendly.com; see `parseHttpsUrl`. */
+  bookingUrl: string;
+}
+
+/**
+ * Build a legal window from `now`.
+ *
+ * `offsetDays` walks the window forward for the second look — an interviewer
+ * whose next opening is nine days out has NO slots in the first seven, which is
+ * a perfectly normal calendar and not an outage. `days` is clamped to Calendly's
+ * ceiling so a caller cannot ask for a window the API will refuse.
+ */
+export function availabilityWindow(
+  now: number | Date,
+  options: { offsetDays?: number; days?: number } = {},
+): CalendlyWindow {
+  const base = typeof now === "number" ? now : now.getTime();
+  const days = Math.min(
+    CALENDLY_MAX_WINDOW_DAYS,
+    Math.max(1, Math.floor(options.days ?? CALENDLY_MAX_WINDOW_DAYS)),
+  );
+  const offset = Math.max(0, Math.floor(options.offsetDays ?? 0));
+  const start = base + CALENDLY_WINDOW_LEAD_MS + offset * DAY_MS;
+  return {
+    startTime: new Date(start).toISOString(),
+    endTime: new Date(start + days * DAY_MS).toISOString(),
+  };
+}
+
+/** The two halves of an https link, without reaching for `URL`. */
+interface ParsedHttpsUrl {
+  /** Lowercased hostname, no port. */
+  host: string;
+  /** Path with a single leading slash and no trailing one. May be "". */
+  path: string;
+}
+
+/**
+ * Parse an https link into host + path, or null.
+ *
+ * Deliberately refuses anything that is not `https:` — every Calendly link this
+ * codebase hands a browser is pinned to https on calendly.com, for the same
+ * reason `isCalendlyUrl` on the client is: an admin-authored or tampered link
+ * arrives PREFILLED with the applicant's name and email, so a lookalike host is
+ * a phishing hop rather than a cosmetic error.
+ */
+function parseHttpsUrl(raw: unknown): ParsedHttpsUrl | null {
+  const value = asString(raw);
+  if (!value) return null;
+  const match = /^https:\/\/([^/?#\s]+)([^?#\s]*)/i.exec(value);
+  if (!match) return null;
+  const host = match[1].toLowerCase().split("@").pop() ?? "";
+  const bare = host.split(":")[0];
+  if (!bare) return null;
+  let path = match[2] ?? "";
+  if (!path.startsWith("/")) path = `/${path}`;
+  while (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+  return { host: bare, path: path === "/" ? "" : path };
+}
+
+/** Is this a link on calendly.com (or a subdomain of it) over https? */
+export function isCalendlySchedulingUrl(raw: unknown): boolean {
+  const parsed = parseHttpsUrl(raw);
+  if (!parsed) return false;
+  return parsed.host === "calendly.com" || parsed.host.endsWith(".calendly.com");
+}
+
+/**
+ * The comparable identity of a Calendly scheduling link: host + path, lowercased,
+ * query and fragment discarded.
+ *
+ * Query is discarded ON PURPOSE. `offerings.calendly_url` routinely carries
+ * `?utm_source=…` or a prefill an admin pasted, and the event type's own
+ * `scheduling_url` never does; comparing raw strings would fail to match the very
+ * link the offering is configured with.
+ */
+export function normalizeSchedulingUrl(raw: unknown): string | null {
+  const parsed = parseHttpsUrl(raw);
+  if (!parsed) return null;
+  if (!(parsed.host === "calendly.com" || parsed.host.endsWith(".calendly.com"))) {
+    return null;
+  }
+  return `${parsed.host}${parsed.path.toLowerCase()}`;
+}
+
+/**
+ * Does an event type's `scheduling_url` name the same booking page as the
+ * offering's configured link?
+ *
+ * Exact after normalisation, OR the offering link sits UNDER the event type's
+ * path — which is how a slot deep link
+ * (`…/executive-presence-cohort-interview/2026-07-29T09:30:00Z`) and an admin who
+ * pasted one still resolve to their event type. A bare prefix match without the
+ * separator would let `…/interview` claim `…/interview-2`, so the separator is
+ * required.
+ */
+export function matchesSchedulingUrl(eventTypeUrl: unknown, offeringUrl: unknown): boolean {
+  const a = normalizeSchedulingUrl(eventTypeUrl);
+  const b = normalizeSchedulingUrl(offeringUrl);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return b.startsWith(`${a}/`);
+}
+
+/**
+ * Resolve the event-type URI for an offering out of a `GET /event_types`
+ * collection.
+ *
+ * NEVER HARDCODED. The account runs several live interview event types
+ * (`executive-presence-cohort-interview`, `the-forge-ai-residency-interview`,
+ * `the-forge-creators-residency-interview`), one cohort each, and the offering
+ * row already says which one it is. A pinned URI would silently offer one
+ * cohort's calendar to another's applicants — the same class of error as
+ * mirroring a stranger's booking onto an applicant's row.
+ *
+ * Inactive event types are skipped: they still appear in the collection and
+ * still carry a `scheduling_url`, but they have no availability, so matching one
+ * would render "no slots" forever on an offering that is fine.
+ */
+export function eventTypeUriFor(payload: unknown, offeringUrl: unknown): string | null {
+  const collection = asRecord(payload)?.collection;
+  if (!Array.isArray(collection)) return null;
+  let prefixMatch: string | null = null;
+  for (const item of collection) {
+    const row = asRecord(item);
+    if (!row) continue;
+    if (row.active === false) continue;
+    const uri = asString(row.uri);
+    if (!uri) continue;
+    const scheduling = row.scheduling_url;
+    if (normalizeSchedulingUrl(scheduling) === normalizeSchedulingUrl(offeringUrl)) {
+      return uri;
+    }
+    if (!prefixMatch && matchesSchedulingUrl(scheduling, offeringUrl)) prefixMatch = uri;
+  }
+  return prefixMatch;
+}
+
+/**
+ * The bookable slots in a `GET /event_type_available_times` response, soonest
+ * first.
+ *
+ * EVERY FILTER HERE IS A REFUSAL TO GUESS, in the same spirit as
+ * `modalityFromEvent`:
+ *   - `status` must be exactly `available`. Calendly returns other statuses in
+ *     the same collection, and offering one as a button sends a student to a
+ *     confirmation page that cannot confirm.
+ *   - `scheduling_url` must be a real calendly.com link, because it is what the
+ *     tap opens. A slot without one is not tappable, and inventing the link from
+ *     the start time is exactly the kind of construction that goes stale.
+ *   - `start_time` must parse to a finite instant, and (when `now` is given) must
+ *     still be in the future — a cached response outliving its earliest slot is
+ *     the ordinary case, not an edge case.
+ *   - a malformed item is SKIPPED, never fatal. One bad row must not cost the
+ *     other 42.
+ * Duplicate start instants collapse to the first: the surface offers three
+ * distinct TIMES, and a student cannot tell two buttons reading "3:00 pm" apart.
+ */
+export function parseAvailableTimes(
+  payload: unknown,
+  options: { limit?: number; now?: number } = {},
+): CalendlySlot[] {
+  const collection = asRecord(payload)?.collection;
+  if (!Array.isArray(collection)) return [];
+
+  const limit = Math.max(0, Math.floor(options.limit ?? CALENDLY_SLOT_COUNT));
+  const floor = typeof options.now === "number" ? options.now : null;
+
+  const found: Array<{ at: number; slot: CalendlySlot }> = [];
+  for (const item of collection) {
+    const row = asRecord(item);
+    if (!row) continue;
+    if (asString(row.status)?.toLowerCase() !== "available") continue;
+
+    const startTime = asString(row.start_time);
+    if (!startTime) continue;
+    const at = Date.parse(startTime);
+    if (!Number.isFinite(at)) continue;
+    if (floor !== null && at <= floor) continue;
+
+    const bookingUrl = asString(row.scheduling_url);
+    if (!bookingUrl || !isCalendlySchedulingUrl(bookingUrl)) continue;
+
+    found.push({ at, slot: { startTime, bookingUrl } });
+  }
+
+  found.sort((a, b) => a.at - b.at);
+
+  const out: CalendlySlot[] = [];
+  const seen = new Set<number>();
+  for (const entry of found) {
+    if (seen.has(entry.at)) continue;
+    seen.add(entry.at);
+    out.push(entry.slot);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/* ── Rendering a UTC instant to a student in India ───────────────────────────
+   Calendly speaks UTC and every applicant reads IST, so the conversion is not a
+   nicety: "09:30" on a button that means 15:00 is a missed interview. It lives
+   here, beside the parser, so the ONE place that decides what a slot IS also
+   decides what it SAYS, and both are unit-tested against a fixed instant.
+
+   Built from `formatToParts` rather than `format` because the assembled string
+   is not stable across ICU builds (locale-dependent separators, U+202F before
+   the day period, upper vs lower case). Parts are.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/** The one timezone this product renders interview times in. */
+export const INTERVIEW_TIME_ZONE = "Asia/Kolkata";
+
+/** A slot's start, said three ways. */
+export interface CalendlySlotLabel {
+  /** "Today" · "Tomorrow" · "Wed, 29 Jul" */
+  day: string;
+  /** "3:00 pm" */
+  time: string;
+  /** The unabbreviated line for screen readers: "Wednesday, 29 July at 3:00 pm". */
+  aria: string;
+}
+
+function istParts(at: number, options: Intl.DateTimeFormatOptions): Record<string, string> {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: INTERVIEW_TIME_ZONE,
+    ...options,
+  }).formatToParts(new Date(at));
+  const out: Record<string, string> = {};
+  for (const part of parts) out[part.type] = part.value;
+  return out;
+}
+
+/** The IST calendar date of an instant, as `YYYY-MM-DD`. */
+function istDayKey(at: number): string {
+  const p = istParts(at, { year: "numeric", month: "2-digit", day: "2-digit" });
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
+/**
+ * How a slot reads on the button. Returns null for an unparseable instant, so a
+ * bad row renders nothing rather than "Invalid Date".
+ *
+ * "Today" and "Tomorrow" are computed on the IST CALENDAR, not by subtracting
+ * milliseconds: 23:00 UTC is already tomorrow in India, and a slot the student
+ * would call "tomorrow morning" must not read as "today" because 24 hours have
+ * not elapsed.
+ */
+export function formatSlotLabel(
+  startTime: string,
+  now: number | Date = Date.now(),
+): CalendlySlotLabel | null {
+  const at = Date.parse(startTime);
+  if (!Number.isFinite(at)) return null;
+  const base = typeof now === "number" ? now : now.getTime();
+
+  const t = istParts(at, { hour: "numeric", minute: "2-digit", hour12: true });
+  const time = `${t.hour}:${t.minute} ${(t.dayPeriod ?? "").toLowerCase()}`.trim();
+
+  const d = istParts(at, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+  const long = istParts(at, { weekday: "long", day: "numeric", month: "long" });
+
+  const key = istDayKey(at);
+  let day = `${d.weekday}, ${d.day} ${d.month}`;
+  if (key === istDayKey(base)) day = "Today";
+  else if (key === istDayKey(base + DAY_MS)) day = "Tomorrow";
+
+  return {
+    day,
+    time,
+    aria: `${long.weekday}, ${long.day} ${long.month} at ${time}`,
+  };
+}

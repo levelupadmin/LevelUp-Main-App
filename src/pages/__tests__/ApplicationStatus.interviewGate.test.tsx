@@ -22,7 +22,7 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
  *     shared with manual/admin scheduling, so its absence proves nothing;
  *   • a booked-but-not-yet-reconciled student never sees a live calendar AND a
  *     reschedule surface at once (`04-INTEGRATION-CONTRACTS.md` §6.4);
- *   • the way forward is never behind a tap that can reveal nothing: `InterviewEmbed`
+ *   • the way forward is never behind a tap that can reveal nothing: `InterviewSlots`
  *     renders null on three admin-owned states, so the calendar is offered outright
  *     and the note above it carries a human route of its own.
  *
@@ -31,7 +31,7 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
  *
  * useFunnelStage + useAuth + platform + the supabase client are mocked so the page
  * renders without the flag/edge-fn/network, mirroring ApplicationStatus.ambiguous
- * .test.tsx. `InterviewEmbed` is stubbed: this file is about WHICH surface the gate
+ * .test.tsx. `InterviewSlots` is stubbed: this file is about WHICH surface the gate
  * opens, and the embed's own states (native hand-off, retry, booked-in-place) are
  * its component's business.
  */
@@ -81,9 +81,12 @@ vi.mock("@/lib/platform", () => ({
   isNative: () => false,
 }));
 
-// The calendar, stubbed. Its presence IS "a live calendar is on screen".
+// The booking surface, stubbed. Its presence IS "a live way to book is on
+// screen". (It renders three one-tap slots since the 2026-07-28 REQ-INT-0
+// reversal, with the hosted calendar behind every failure — which of those two
+// shapes it takes is asserted in `components/interview/__tests__`, not here.)
 vi.mock("@/components/interview/SlotButtons", () => ({
-  InterviewEmbed: () => <div data-testid="interview-embed" />,
+  InterviewSlots: () => <div data-testid="interview-booking" />,
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -146,7 +149,7 @@ async function renderPage() {
   await screen.findByText("Live Filmmaking Cohort");
 }
 
-const calendar = () => screen.queryByTestId("interview-embed");
+const calendar = () => screen.queryByTestId("interview-booking");
 const rebookNote = () => screen.queryByLabelText("Booking your interview");
 const appointmentCard = () => screen.queryByLabelText("Your interview");
 
@@ -403,7 +406,7 @@ describe("ApplicationStatus — nobody at the interview rung is left without a w
 
   /* ── THE REVIEW'S SECOND FINDING, PINNED ──
      The way forward used to sit behind a one-way tap on a control that destroyed
-     the section rendering it, while `InterviewEmbed` returns null on three
+     the section rendering it, while `InterviewSlots` returns null on three
      admin-owned states (`INTERVIEW_BOOKING_SILENT_REASONS`). The calendar is now
      reachable with no tap at all, so there is no state to get stuck in — and the
      note carries a human route that survives an embed rendering nothing. */

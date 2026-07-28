@@ -12,11 +12,8 @@ import { isNative } from "@/lib/platform";
 import { hapticNotification } from "@/lib/haptics";
 import { useMotionSafe, useFinePointer, durations } from "@/lib/motion";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
-import {
-  calendlyEmbedUrl,
-  isCalendlyUrl,
-  useCalendlyBookedSignal,
-} from "@/hooks/useInterviewSlots";
+import { isCalendlyUrl } from "@/hooks/useInterviewSlots";
+import { InterviewSlots } from "@/components/interview/SlotButtons";
 import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
 import { SuccessCheck, DownloadInvoiceButton } from "@/components/checkout/SuccessMoment";
@@ -44,35 +41,49 @@ function isSafeRedirectUrl(url: string | null | undefined): boolean {
   }
 }
 
-/* CALENDLY — see the `calendlyEmbedUrl` / `isCalendlyUrl` import above.
+/* CALENDLY — ENTRY-PARITY-1, and why this page now renders a COMPONENT rather
+ * than its own iframe.
  *
- * The Calendly gate and the Calendly URL builder both live in
- * `@/hooks/useInterviewSlots` now, and this page imports them rather than
- * carrying its own copies.
+ * This page and `ApplicationStatus` are the two entry points into the same
+ * booking step, off the same `offerings.calendly_url` row. They used to each
+ * build that surface themselves: this one hand-concatenated `?name=&email=`, the
+ * other went through a private helper. That was consolidated to one URL builder,
+ * then one booked-signal hook — and it kept drifting, because two hand-written
+ * surfaces sharing three helpers is not the same thing as one surface.
  *
- * `isCalendlyUrl` was duplicated here verbatim: only embed the iframe if
- * `calendly_url` is actually on Calendly, because admin-authored URLs are
- * trusted in the UI and prefilling the buyer's name+email into a third-party
- * iframe makes a misconfigured or compromised admin account into a trivial
- * phishing vector.
+ * Since the 2026-07-28 reversal that reinstated app-native slot buttons
+ * (REQ-INT-0; `04-INTEGRATION-CONTRACTS.md` §6.4) the step is materially bigger
+ * than an iframe: three soonest slots, a re-check on tap, and a fallback ladder
+ * ending at the hosted calendar. Reimplementing that here is how the two paths
+ * would produce different invitee records and different behaviour off an
+ * identical link, which is exactly what ENTRY-PARITY-1 forbids. So the surface
+ * itself is shared — `components/interview/SlotButtons.tsx` — and this page
+ * supplies only what it uniquely knows: the offering and the buyer's prefill.
  *
- * `calendlyEmbedUrl` replaces the hand-concatenated `?name=&email=` src. Same
- * `offerings.calendly_url` row, same two prefill fields, same `embed_domain` /
- * `embed_type` pair as the in-app embed (`components/interview/SlotButtons.tsx`)
- * — which is what ENTRY-PARITY-1 means in practice: one builder, so the two
- * surfaces cannot produce different invitee records off the identical link, and
- * neither can silently stop signalling that it is embedded.
+ * WHAT STAYS HERE. `isCalendlyUrl` still gates the block: only render the
+ * booking step if `calendly_url` is actually on Calendly, because admin-authored
+ * URLs are trusted in the UI and this step arrives prefilled with the buyer's
+ * name and email, so a mis-pasted link is a phishing hop. The component applies
+ * the identical pin internally; the gate here also keeps this page from mounting
+ * anything at all for the masterclass buyers who have no interview step, which is
+ * the same conjunction (`thankyou_show_calendly && isCalendlyUrl`) the component
+ * re-derives from its own read of the row.
  *
- * `useCalendlyBookedSignal` is the other half of that parity, and it is not
- * optional once the params are set. ENTRY-PARITY-1 is about the same FLOW, not
- * only the same URL: with `embed_domain` present Calendly posts
- * `calendly.event_scheduled` at THIS page too, and a page that asks for the
- * message and then drops it is worse than one that never asked. A guest who
- * books here and reopens `/thank-you/:paymentOrderId` from the payment receipt
- * link would otherwise be served a fresh open calendar under "Book Your
- * Interview" while the webhook is still in flight — and a second booking
- * carries no `old_invitee`, so the receiver cannot reconcile it against the
- * first (04-INTEGRATION-CONTRACTS §6.4).
+ * WHERE THE TWO PATHS MAY LEGITIMATELY DIFFER, and it is one thing: WHERE the
+ * buyer's name and email are read from. This page resolves them from the ORDER
+ * first and the session second (`guest_email ?? session?.user?.email`), while
+ * `ApplicationStatus` resolves them from the profile first and the session second
+ * (`profile?.email ?? user?.email`). Same two prefill fields, same Calendly event
+ * type, same join key for the receiver (INTEG-KEY-1) — different first source for
+ * the same person, because a guest checkout has no profile to read.
+ *
+ * The SESSION HALF of that is not optional on either path, and it is not about
+ * prefill. That value is also the identity the booked marker is scoped to, and a
+ * null one drops the marker into the anonymous, sessionStorage-only scope — so a
+ * signed-in buyer whose order carries a null `guest_email` loses it the moment
+ * they reopen this page in a new tab, and is offered the open calendar again with
+ * a booking already in flight. Both paths therefore fall back to the session, and
+ * neither may quietly stop.
  */
 
 /* ────────────────────────────────────────────────── */
@@ -664,28 +675,6 @@ export default function ThankYou() {
     }
   }, [session, order]);
 
-  /* ── The interview embed's booked signal (ENTRY-PARITY-1) ──
-     Declared with the other hooks, above the early returns, because hooks
-     cannot live inside the conditional Calendly block further down.
-
-     Same hook, same marker and same bounded lifetime as the in-app embed, so
-     both entry points behave identically after the booking and not merely
-     before it. Identity is the invitee email the frame is prefilled with, which
-     is what scopes the marker to this buyer on a shared device. `offering_id`
-     is already selected by the order query above. */
-  const interviewBooked = useCalendlyBookedSignal(
-    order?.offering_id,
-    order?.guest_email ?? session?.user?.email,
-    {
-      // Only the orders that actually render a frame listen. This page is every
-      // masterclass buyer's success screen, and a `message` listener on all of
-      // them to hear from a frame that is not there is cost for nothing.
-      listen:
-        !!order?.offerings?.thankyou_show_calendly &&
-        isCalendlyUrl(order?.offerings?.calendly_url),
-    },
-  );
-
   /* ── Loading / Error states ── */
   if (loading) {
     return (
@@ -834,62 +823,40 @@ export default function ThankYou() {
             </motion.div>
           )}
 
-          {/* Calendly embed for interview booking */}
+          {/* ── The interview booking step ──
+              The SAME component `ApplicationStatus` mounts, off the same
+              `offerings.calendly_url` row: three soonest slots, a re-check on
+              tap, and the hosted calendar behind every failure. Rendering it
+              rather than reimplementing it is ENTRY-PARITY-1 as a property
+              instead of a claim — the booked marker, the copy, the prefill
+              fields and the fallback ladder cannot drift between the two paths
+              because there is only one of each.
+
+              `text-left` because this page's celebration column is centred and
+              the booking step is a form-shaped surface, not a headline. */}
           {order.offerings?.thankyou_show_calendly &&
             isCalendlyUrl(order.offerings?.calendly_url) && (
-            <motion.div variants={arrivalItemFade} className="w-full max-w-2xl mx-auto">
-              {interviewBooked.booked ? (
-                /* Booked in this browser, and it survived the reload. The
-                   calendar is withdrawn rather than re-offered; the marker is
-                   bounded to the webhook-lag window and carries its own way
-                   back out, worded for the buyer whose time was cancelled as
-                   well as the one whose booking never completed. */
-                <>
-                  <h3 className="text-lg font-semibold text-foreground mb-3">
-                    Your interview time is booked
-                  </h3>
-                  <div className="rounded-xl border border-border bg-[hsl(var(--surface))]/60 p-4 space-y-3 text-left">
-                    <div className="flex items-start gap-3">
-                      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[hsl(var(--cream))]" aria-hidden="true" />
-                      <p className="text-sm text-muted-foreground">
-                        Calendly is holding your slot and the confirmation is on its
-                        way to your inbox. Nothing else to do right now.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={interviewBooked.reopen}
-                      className="inline-flex min-h-[44px] items-center rounded-lg px-1 py-2 text-left text-sm text-muted-foreground underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      Booking did not complete, or your time was cancelled? Reopen the calendar
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <h3 className="text-lg font-semibold text-foreground mb-3">Book Your Interview</h3>
-                  <div className="rounded-xl border border-border overflow-hidden bg-white">
-                    {/* `referrerPolicy="no-referrer"` stays, and `embed_domain` is
-                        why it can: this route is `/thank-you/:paymentOrderId`, so a
-                        referrer would hand Calendly a live payment-order id on every
-                        frame load. The embed params state the one thing Calendly
-                        needs — which host to post `calendly.event_scheduled` back
-                        to — without leaking the rest. The listener for that message
-                        is `useCalendlyBookedSignal` above. */}
-                    <iframe
-                      src={calendlyEmbedUrl(order.offerings.calendly_url!, {
-                        name: order.guest_name,
-                        email: order.guest_email,
-                      })}
-                      className="w-full"
-                      style={{ minHeight: 700, border: 0 }}
-                      title="Schedule Interview"
-                      sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
-                </>
-              )}
+            <motion.div
+              variants={arrivalItemFade}
+              className="w-full max-w-2xl mx-auto text-left"
+            >
+              {/* `?? session?.user...` IS LOAD-BEARING and is not tidiness. The
+                  `email` prop is two things at once: Calendly's prefill, and the
+                  identity the booked marker is SCOPED to. A signed-in buyer's
+                  `payment_orders` row is allowed to carry a null `guest_email`
+                  (`isGuest` above branches on exactly that), and with a null
+                  identity the marker falls to the anonymous scope, which lives in
+                  sessionStorage only. Reopening this page from the Razorpay
+                  receipt link in a new tab then finds no marker, serves a fresh
+                  open calendar while the webhook is still in flight, and invites a
+                  SECOND booking that carries no `old_invitee` for the receiver to
+                  reconcile against (§6.4). Same resolution order as the receipt
+                  strip and the invoice payload further down this file. */}
+              <InterviewSlots
+                offeringId={order.offering_id}
+                name={order.guest_name ?? session?.user?.user_metadata?.full_name ?? null}
+                email={order.guest_email ?? session?.user?.email ?? null}
+              />
             </motion.div>
           )}
 

@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { hmacSha256Hex, timingSafeEqual } from "@shared/crypto";
 import {
+  availabilityWindow,
   bookingFromEvent,
+  eventTypeUriFor,
+  formatSlotLabel,
+  matchesSchedulingUrl,
+  parseAvailableTimes,
   eventTypeOf,
   eventTypeTokensOf,
   givenNameOf,
@@ -822,5 +827,292 @@ describe("personNameOf / givenNameOf — a person, or nothing (REQ-INT-2)", () =
     expect(interviewerNameFromEvent(withHost("Admissions Team"))).toBeNull();
     expect(interviewerNameFromEvent(withHost("Dr. Kavya Rao"))).toBe("Kavya Rao");
     expect(interviewerNameFromEvent(withHost("Arundhati"))).toBe("Arundhati");
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Q-1 — the AVAILABILITY core (`@shared/calendly`), driven with zero network.
+
+   RULED — REQ-INT-0 is back on (Rahul, 2026-07-28), reversing §6.4's park of
+   app-native slot buttons. `calendly-slots` reads availability server-side and
+   the surface renders three one-tap buttons; every DECISION in that path is one
+   of the pure functions below, so this is where it is proven.
+
+   Verified against the live account on 2026-07-28, and these tests encode those
+   facts rather than re-deriving them: the window must be ≤7 days and must START
+   IN THE FUTURE, and each returned item carries `start_time`, `status` and
+   `scheduling_url` — the per-slot deep link that makes a one-tap button possible
+   without the app ever holding a booking.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/** A realistic `event_type_available_times` item. */
+function availableTime(overrides: Record<string, unknown> = {}) {
+  return {
+    status: "available",
+    start_time: "2026-07-29T09:30:00.000000Z",
+    invitees_remaining: 1,
+    scheduling_url:
+      "https://calendly.com/leveluplearningindia/executive-presence-cohort-interview/2026-07-29T09:30:00Z",
+    ...overrides,
+  };
+}
+
+describe("availabilityWindow — Calendly's two hard constraints, encoded", () => {
+  const NOW = Date.parse("2026-07-28T12:00:00.000Z");
+
+  it("starts in the FUTURE, because a window starting at `now` is rejected", () => {
+    const w = availabilityWindow(NOW);
+    expect(Date.parse(w.startTime)).toBeGreaterThan(NOW);
+    // And by enough to survive clock skew between our isolate and Calendly.
+    expect(Date.parse(w.startTime) - NOW).toBeGreaterThanOrEqual(60_000);
+  });
+
+  it("never exceeds seven days, however wide a caller asks", () => {
+    const seven = 7 * 24 * 60 * 60_000;
+    expect(Date.parse(availabilityWindow(NOW).endTime) - Date.parse(availabilityWindow(NOW).startTime))
+      .toBe(seven);
+    const greedy = availabilityWindow(NOW, { days: 30 });
+    expect(Date.parse(greedy.endTime) - Date.parse(greedy.startTime)).toBe(seven);
+  });
+
+  it("walks forward for the second look, so a fortnight is two legal windows", () => {
+    // An interviewer whose next opening is nine days out has NO slots in the
+    // first seven — an ordinary calendar, not an empty one.
+    const first = availabilityWindow(NOW);
+    const second = availabilityWindow(NOW, { offsetDays: 7 });
+    expect(Date.parse(second.startTime)).toBe(Date.parse(first.endTime));
+  });
+
+  it("emits ISO instants, which is the only shape the query string accepts", () => {
+    expect(availabilityWindow(NOW).startTime).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
+  });
+});
+
+describe("event-type resolution — never hardcoded, matched off the offering's link", () => {
+  const collection = {
+    collection: [
+      {
+        uri: "https://api.calendly.com/event_types/ET-FORGE-AI",
+        active: true,
+        scheduling_url: "https://calendly.com/leveluplearningindia/the-forge-ai-residency-interview",
+      },
+      {
+        uri: "https://api.calendly.com/event_types/ET-EP",
+        active: true,
+        scheduling_url:
+          "https://calendly.com/leveluplearningindia/executive-presence-cohort-interview",
+      },
+    ],
+  };
+
+  it("resolves the event type the offering's own URL names", () => {
+    // The account runs one interview event type per cohort. A pinned URI would
+    // offer one cohort's calendar to another cohort's applicants.
+    expect(
+      eventTypeUriFor(
+        collection,
+        "https://calendly.com/leveluplearningindia/executive-presence-cohort-interview",
+      ),
+    ).toBe("https://api.calendly.com/event_types/ET-EP");
+  });
+
+  it("ignores the query string an admin pasted onto the link", () => {
+    expect(
+      eventTypeUriFor(
+        collection,
+        "https://calendly.com/leveluplearningindia/executive-presence-cohort-interview?utm_source=app",
+      ),
+    ).toBe("https://api.calendly.com/event_types/ET-EP");
+  });
+
+  it("resolves a link that already points at one slot under the event type", () => {
+    expect(
+      eventTypeUriFor(
+        collection,
+        "https://calendly.com/leveluplearningindia/executive-presence-cohort-interview/2026-07-29T09:30:00Z",
+      ),
+    ).toBe("https://api.calendly.com/event_types/ET-EP");
+  });
+
+  it("does not let one slug claim another that merely starts with it", () => {
+    expect(
+      matchesSchedulingUrl(
+        "https://calendly.com/levelup/interview",
+        "https://calendly.com/levelup/interview-2",
+      ),
+    ).toBe(false);
+  });
+
+  it("matches nothing when the link is not on Calendly at all", () => {
+    expect(eventTypeUriFor(collection, "https://evil.example.com/levelup/interview")).toBeNull();
+    expect(eventTypeUriFor(collection, "http://calendly.com/levelup/interview")).toBeNull();
+    expect(eventTypeUriFor({}, "https://calendly.com/levelup/interview")).toBeNull();
+  });
+
+  it("skips an INACTIVE event type that still carries the same URL", () => {
+    // It still appears in the collection and still has a scheduling_url, but it
+    // has no availability — matching it renders "no slots" forever on an
+    // offering that is fine.
+    expect(
+      eventTypeUriFor(
+        {
+          collection: [
+            {
+              uri: "https://api.calendly.com/event_types/ET-OLD",
+              active: false,
+              scheduling_url: "https://calendly.com/levelup/interview",
+            },
+          ],
+        },
+        "https://calendly.com/levelup/interview",
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("parseAvailableTimes — every filter is a refusal to guess", () => {
+  it("returns the three soonest, soonest first", () => {
+    const slots = parseAvailableTimes({
+      collection: [
+        availableTime({
+          start_time: "2026-07-30T09:30:00.000000Z",
+          scheduling_url: "https://calendly.com/levelup/interview/2026-07-30T09:30:00Z",
+        }),
+        availableTime(),
+        availableTime({
+          start_time: "2026-07-29T11:30:00.000000Z",
+          scheduling_url: "https://calendly.com/levelup/interview/2026-07-29T11:30:00Z",
+        }),
+        availableTime({
+          start_time: "2026-07-31T09:30:00.000000Z",
+          scheduling_url: "https://calendly.com/levelup/interview/2026-07-31T09:30:00Z",
+        }),
+      ],
+    });
+    expect(slots.map((s) => s.startTime)).toEqual([
+      "2026-07-29T09:30:00.000000Z",
+      "2026-07-29T11:30:00.000000Z",
+      "2026-07-30T09:30:00.000000Z",
+    ]);
+    // The deep link is what makes the button one-tap; it is carried through
+    // verbatim rather than reconstructed from the start time.
+    expect(slots[0].bookingUrl).toContain("2026-07-29T09:30:00Z");
+  });
+
+  it("returns nothing for an EMPTY collection", () => {
+    expect(parseAvailableTimes({ collection: [] })).toEqual([]);
+  });
+
+  it("returns nothing for a window that answered with no collection at all", () => {
+    // A legal window over a fortnight the interviewer has blocked out. Not an
+    // outage, and not an error — the caller falls back to the hosted calendar.
+    expect(parseAvailableTimes({})).toEqual([]);
+    expect(parseAvailableTimes(null)).toEqual([]);
+    expect(parseAvailableTimes({ collection: "nope" })).toEqual([]);
+  });
+
+  it("skips a MALFORMED item instead of losing the whole response", () => {
+    // One bad row must not cost the other 42.
+    const slots = parseAvailableTimes({
+      collection: [
+        null,
+        "not an object",
+        { status: "available" },
+        availableTime({ start_time: "not a date" }),
+        availableTime({ scheduling_url: null }),
+        availableTime(),
+      ],
+    });
+    expect(slots).toHaveLength(1);
+    expect(slots[0].startTime).toBe("2026-07-29T09:30:00.000000Z");
+  });
+
+  it("offers ONLY items whose status is available", () => {
+    // Offering any other status as a button sends a student to a confirmation
+    // page that cannot confirm.
+    const slots = parseAvailableTimes({
+      collection: [
+        availableTime({ status: "unavailable" }),
+        availableTime({ status: "booked" }),
+        availableTime({ status: null }),
+      ],
+    });
+    expect(slots).toEqual([]);
+  });
+
+  it("refuses a scheduling_url that is not on calendly.com", () => {
+    // The link is opened in a browser carrying the applicant's name and email.
+    expect(
+      parseAvailableTimes({
+        collection: [
+          availableTime({ scheduling_url: "https://calendly.com.evil.io/levelup/x" }),
+          availableTime({ scheduling_url: "http://calendly.com/levelup/x" }),
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it("drops slots that have gone past while the answer sat in a cache", () => {
+    const now = Date.parse("2026-07-29T10:00:00.000Z");
+    const slots = parseAvailableTimes(
+      {
+        collection: [
+          availableTime(),
+          availableTime({
+            start_time: "2026-07-29T11:30:00.000000Z",
+            scheduling_url: "https://calendly.com/levelup/interview/2026-07-29T11:30:00Z",
+          }),
+        ],
+      },
+      { now },
+    );
+    expect(slots).toHaveLength(1);
+    expect(slots[0].startTime).toBe("2026-07-29T11:30:00.000000Z");
+  });
+
+  it("collapses duplicate start instants — a student cannot tell two apart", () => {
+    const slots = parseAvailableTimes({
+      collection: [availableTime(), availableTime()],
+    });
+    expect(slots).toHaveLength(1);
+  });
+});
+
+describe("formatSlotLabel — a UTC instant as a student in India reads it", () => {
+  it("renders a UTC start_time in IST, not in UTC", () => {
+    // 09:30Z is 15:00 in Kolkata. A button that renders the UTC hour is a missed
+    // interview, not a formatting nit.
+    const label = formatSlotLabel(
+      "2026-07-29T09:30:00.000000Z",
+      Date.parse("2026-07-20T00:00:00.000Z"),
+    );
+    expect(label?.time).toBe("3:00 pm");
+    expect(label?.day).toBe("Wed, 29 Jul");
+    expect(label?.aria).toBe("Wednesday, 29 July at 3:00 pm");
+  });
+
+  it("crosses midnight IST correctly — 20:00Z is already the next morning", () => {
+    const label = formatSlotLabel(
+      "2026-07-29T20:00:00.000000Z",
+      Date.parse("2026-07-20T00:00:00.000Z"),
+    );
+    expect(label?.time).toBe("1:30 am");
+    expect(label?.day).toBe("Thu, 30 Jul");
+  });
+
+  it("says Today and Tomorrow on the IST CALENDAR, not by elapsed hours", () => {
+    // 23:00 UTC is already tomorrow in India; a slot the student would call
+    // "tomorrow morning" must not read as "today" because 24 hours have not
+    // elapsed.
+    const now = Date.parse("2026-07-28T17:00:00.000Z"); // 22:30 IST, 28 Jul
+    expect(formatSlotLabel("2026-07-28T17:30:00.000Z", now)?.day).toBe("Today");
+    expect(formatSlotLabel("2026-07-28T19:00:00.000Z", now)?.day).toBe("Tomorrow");
+    expect(formatSlotLabel("2026-07-30T04:00:00.000Z", now)?.day).toBe("Thu, 30 Jul");
+  });
+
+  it("renders nothing at all for an instant it cannot parse", () => {
+    // A button reading "Invalid Date" is worse than one fewer button.
+    expect(formatSlotLabel("not a date")).toBeNull();
+    expect(formatSlotLabel("")).toBeNull();
   });
 });
