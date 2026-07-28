@@ -61,6 +61,30 @@ interface ApplicationData {
   } | null;
 }
 
+/**
+ * The EXPLICIT column list this page reads. Never `*` — NFR-COPY-1.
+ *
+ * `select("*")` here shipped the WHOLE row to the browser: `bio` (the applicant's
+ * 100-word essay, which no client is ever allowed to receive), `tally_data` (the
+ * raw submission, essay included) and `interview_notes` (internal reviewer prose
+ * ABOUT the applicant). None of the three was ever rendered — which is precisely
+ * why it went unnoticed for so long: the leak was in the network response, legible
+ * to the applicant themselves from their own devtools, not on the screen.
+ *
+ * The list mirrors `ApplicationData` one-to-one, so a field added to the render
+ * has to be added here deliberately. Everything reconciled comes from
+ * `useFunnelStage`, not from this row, so no reconciler mirror column is read.
+ * Contact fields (email, phone) are omitted too: this page prints neither.
+ *
+ * Shaped as a named constant, like `DECISION_COLUMNS` in `src/hooks/useDecision.ts`,
+ * so the list is greppable as a unit — and the repo-wide guard in
+ * `src/lib/__tests__/admissionPublicPolicy.test.ts` §12 fails the suite if any
+ * client surface reverts this table to a wildcard select.
+ */
+const APPLICATION_COLUMNS =
+  "id, user_id, offering_id, status, created_at, rejection_reason, " +
+  "offerings(title, price_inr, app_fee_inr, confirmation_amount_inr)";
+
 /* ── Reconciled funnel stage → home chip + single CTA (RC-T4) ──
    Consumed ONLY under `VITE_FUNNEL_RECON`, from the useFunnelStage/edge-fn
    payload — never off the `reconciled_*` mirror columns. Maps the reconciler's
@@ -158,9 +182,7 @@ const ApplicationStatus = () => {
       setLoading(true);
       const { data, error } = await (supabase as any)
         .from("cohort_applications")
-        .select(
-          "*, offerings(title, price_inr, app_fee_inr, confirmation_amount_inr)"
-        )
+        .select(APPLICATION_COLUMNS)
         .eq("id", applicationId)
         .single();
 

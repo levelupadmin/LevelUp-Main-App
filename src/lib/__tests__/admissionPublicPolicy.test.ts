@@ -38,10 +38,20 @@
  * opens `cohort_applications` to `authenticated`, whose stock table grants are
  * deliberately left in place. That accident can only be caught by looking at
  * every policy ever written for the table, which is what §7 does.
+ *
+ * §12 widens it once more, to every CLIENT read of the table, for the same
+ * reason in the other direction. RLS and the grant layer decide WHICH ROWS a
+ * caller may read; they say nothing about which COLUMNS come back. A student
+ * reading their own row through a lawful policy still receives every column the
+ * select asked for — so `select('*')` hands them `bio` (their essay),
+ * `tally_data` (the raw submission) and `interview_notes` (a reviewer's private
+ * prose about them), none of it rendered, all of it legible in the network tab.
+ * That is exactly what `ApplicationStatus.tsx` did until this phase, and what
+ * two earlier certifications of NFR-COPY-1 missed by grepping only new files.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -823,5 +833,201 @@ describe("the applicant-typed field is clamped, not trusted", () => {
       );
     }
     expect(migrationRaw).toMatch(/ADMIN-authored/);
+  });
+});
+
+// ── 12. No client surface reads this table with a wildcard ───────────────────
+//
+// The scope is `src/**` — every file that ships to a browser. It deliberately
+// does NOT cover `supabase/functions/`: an edge function runs on the service
+// role, server-side, and a wildcard there sends nothing to a client. The leak
+// this section exists to stop is a column arriving in a RESPONSE BODY the
+// applicant can open, which is a property of the client select and nothing else.
+//
+// Two shapes count as explicit: a string literal, and an identifier bound to one
+// in the same file (`DECISION_COLUMNS`, `APPLICATION_COLUMNS`,
+// `APPLICATION_ROW_COLUMNS` — the constant form is preferred, because it makes
+// the column list greppable as a unit). Anything else — a bare `.select()`, a
+// computed argument — fails too: a list that cannot be read off the source
+// cannot be reviewed, and this whole section is a review aid.
+
+/** Every `.ts`/`.tsx` file under `src/`, recursively. */
+function clientSourceFiles(): string[] {
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (/\.tsx?$/.test(entry.name)) found.push(path);
+    }
+  };
+  walk(join(repoRoot(), "src"));
+  return found.sort();
+}
+
+/** Comments stripped, so prose ABOUT a wildcard is never read as one. */
+function strippedSource(raw: string): string {
+  return raw.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/[^\n]*$/gm, " ");
+}
+
+/**
+ * The first argument of a `.select(` call, read off the text that follows it.
+ * Only the first argument matters: it is the column list, and the second (PostgREST
+ * options like `{ count: "exact" }`) never names a column. Parsing the literal to
+ * its closing quote is what keeps an embedded join — `offerings(title)` — from
+ * being mistaken for the end of the call.
+ */
+function firstSelectArgument(after: string): { kind: string; value: string } {
+  const literal = /^\s*(["'`])([\s\S]*?)\1/.exec(after);
+  if (literal) return { kind: "literal", value: literal[2] };
+  const identifier = /^\s*([A-Za-z_$][\w$]*)\s*[,)]/.exec(after);
+  if (identifier) return { kind: "identifier", value: identifier[1] };
+  if (/^\s*\)/.test(after)) return { kind: "none", value: "" };
+  return { kind: "unparsed", value: after.slice(0, 40).trim() };
+}
+
+/** The right-hand side of `const NAME = ...;` in one file's stripped source. */
+function constantValue(code: string, name: string): string | null {
+  const match = new RegExp(`const ${name}\\b[^=]*=([\\s\\S]*?);`).exec(code);
+  return match ? match[1] : null;
+}
+
+/**
+ * Every `.select(...)` a client surface issues against `cohort_applications`,
+ * with its column list resolved to source text. A `.from(...)` with no `.select(`
+ * after it is an update or a delete, and is skipped: this section is about what
+ * comes BACK.
+ */
+function applicationSelects(): {
+  file: string;
+  kind: string;
+  argument: string;
+  columns: string;
+}[] {
+  const found: { file: string; kind: string; argument: string; columns: string }[] = [];
+  for (const path of clientSourceFiles()) {
+    const code = strippedSource(readFileSync(path, "utf8"));
+    const file = relative(repoRoot(), path);
+    for (const from of code.matchAll(/\.from\(\s*["'`]cohort_applications["'`]\s*\)/g)) {
+      // Bounded so a `.select(` further down the file, against another table,
+      // is never attributed to this chain.
+      const tail = code.slice(from.index! + from[0].length, from.index! + from[0].length + 400);
+      const select = /\.select\(/.exec(tail);
+      if (!select) continue;
+      const arg = firstSelectArgument(tail.slice(select.index + select[0].length));
+      const columns =
+        arg.kind === "identifier" ? (constantValue(code, arg.value) ?? "") : arg.value;
+      found.push({ file, kind: arg.kind, argument: arg.value, columns });
+    }
+  }
+  return found;
+}
+
+/**
+ * The surfaces this sweep is supposed to be guarding. Naming them is what stops
+ * a parser that silently matched nothing from making every check below
+ * vacuously pass — the same trap §7 guards against with its policy count.
+ */
+const KNOWN_APPLICATION_READERS = [
+  "src/hooks/useDecision.ts",
+  "src/pages/ApplicationStatus.tsx",
+  "src/pages/CheckoutPage.tsx",
+  "src/pages/admin/AdminApplications.tsx",
+];
+
+/** Columns no client select of this table may ask for, on any surface. */
+const NEVER_FETCHED_BY_A_CLIENT = ["bio"];
+
+describe("no client surface selects cohort_applications with a wildcard", () => {
+  const selects = applicationSelects();
+
+  it("finds the reads it is supposed to be guarding", () => {
+    const files = [...new Set(selects.map((entry) => entry.file))].sort();
+    for (const reader of KNOWN_APPLICATION_READERS) {
+      expect(files).toContain(reader);
+    }
+    // Admin alone issues seven (six count queries + the paginated table), so a
+    // scan that collapsed to one match per file has broken.
+    expect(selects.length).toBeGreaterThanOrEqual(KNOWN_APPLICATION_READERS.length + 6);
+  });
+
+  it("every select names its columns explicitly", () => {
+    for (const entry of selects) {
+      // "none" = a bare `.select()`, "unparsed" = a computed argument. Both
+      // return a column list nobody can review by reading the file. `at` carries
+      // the call site into the failure diff.
+      expect({ at: `${entry.file}: .select(${entry.argument})`, kind: entry.kind }).toEqual({
+        at: `${entry.file}: .select(${entry.argument})`,
+        kind: expect.stringMatching(/^(literal|identifier)$/),
+      });
+    }
+  });
+
+  it("no select asks for `*`", () => {
+    for (const entry of selects) {
+      // The resolved list, so `select(SOME_CONSTANT)` cannot hide one.
+      expect(`${entry.file}: ${entry.columns}`).not.toContain("*");
+    }
+  });
+
+  it("an identifier argument resolves to a real column list", () => {
+    // Otherwise an unresolvable constant would read as an empty list and sail
+    // past the check above with nothing in it.
+    for (const entry of selects.filter((candidate) => candidate.kind === "identifier")) {
+      expect(`${entry.file}: ${entry.argument}`).toMatch(/\w/);
+      expect(entry.columns.trim()).not.toBe("");
+    }
+  });
+
+  it.each(NEVER_FETCHED_BY_A_CLIENT)("%s reaches no client select", (column) => {
+    // `bio` IS the 100-word essay (FIELD_ALIASES.bio,
+    // supabase/functions/_shared/tally.ts). No client surface renders it, admin
+    // included, so no client surface has any business fetching it.
+    for (const entry of applicationSelects()) {
+      expect(`${entry.file}: ${entry.columns}`).not.toMatch(new RegExp(`\\b${column}\\b`));
+    }
+  });
+
+  it("the student's status page fetches nothing it does not render", () => {
+    const page = selects.filter(
+      (entry) => entry.file === "src/pages/ApplicationStatus.tsx",
+    );
+    expect(page).toHaveLength(1);
+    const columns = page[0].columns;
+    // The whole point of the fix: the three columns the wildcard used to ship.
+    for (const denied of ["bio", "tally_data", "interview_notes", "email", "phone"]) {
+      expect(columns).not.toMatch(new RegExp(`\\b${denied}\\b`));
+    }
+    // And what it does render, so a later trim cannot silently break the page.
+    for (const rendered of ["id", "user_id", "offering_id", "status", "created_at", "rejection_reason"]) {
+      expect(columns).toMatch(new RegExp(`\\b${rendered}\\b`));
+    }
+  });
+
+  it("the admin console keeps the two columns it genuinely renders, and says why", () => {
+    // The asymmetry with the student page is deliberate, not an unexplained
+    // allowlist entry: an admin RENDERS `interview_notes` (the Interview column
+    // and the notes dialog) and `tally_data` (the Tally dialog). Pinning it here
+    // means a future trim of the admin list fails loudly instead of quietly
+    // emptying two dialogs — and the rationale has to stay in the file.
+    const adminRaw = readFileSync(
+      join(repoRoot(), "src/pages/admin/AdminApplications.tsx"),
+      "utf8",
+    );
+    const table = selects.filter(
+      (entry) =>
+        entry.file === "src/pages/admin/AdminApplications.tsx" &&
+        entry.columns.includes("offerings(title)"),
+    );
+    expect(table).toHaveLength(1);
+    // The docblock the column list is declared under IS the rationale.
+    const declaration = adminRaw.indexOf("const APPLICATION_ROW_COLUMNS");
+    expect(declaration).toBeGreaterThan(-1);
+    const rationale = adminRaw.slice(adminRaw.lastIndexOf("/**", declaration), declaration);
+    expect(rationale).toMatch(/renders/i);
+    for (const rendered of ["interview_notes", "tally_data"]) {
+      expect(table[0].columns).toMatch(new RegExp(`\\b${rendered}\\b`));
+      expect(rationale).toContain(rendered);
+    }
   });
 });
