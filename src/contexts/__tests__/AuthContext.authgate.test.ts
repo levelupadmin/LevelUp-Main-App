@@ -358,36 +358,195 @@ describe("SC-2 — claim_my_purchases fires only on a real sign-in", () => {
     expect(rpc).toHaveBeenCalledTimes(1);
   });
 
-  it("never claims for a returning user's cold start, hourly refresh, or app resume", async () => {
-    // The load-bearing case, and the one a literal `event === "SIGNED_IN"` gate
-    // gets WRONG. supabase-js re-emits SIGNED_IN — not TOKEN_REFRESHED — from
-    // `_recoverAndRefresh()` on every visibilitychange → visible for an
-    // already-persisted session (GoTrueClient `_onVisibilityChanged`), i.e. on
-    // every tab focus and every Android/iOS WebView background→foreground
-    // cycle, carrying a freshly rotated access_token. None of that is a sign-in
-    // and none of it may write.
+  it("fires for SIGNED_IN only — INITIAL_SESSION and TOKEN_REFRESHED carrying a real session never claim", async () => {
+    // The brief's load-bearing gate, isolated: the same session object delivered
+    // under three different events. Only the sign-in may write. TOKEN_REFRESHED
+    // alone is ~24 events per user per day; at 60k+ students that is the write
+    // storm the phase explicitly bans.
     const rpc = supabase.rpc as unknown as Mock;
-    const persisted = { ...makeSession("u1"), access_token: "tok-1" } as Session;
-    h.getSessionResult = { data: { session: persisted } };
+    h.getSessionResult = { data: { session: null } };
     h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
 
-    // NOT awaited before the first emit: the real client resolves
-    // `getSession()` only after `initialize()`, which is what emits
-    // INITIAL_SESSION — so INITIAL_SESSION reaches the subscriber while the
-    // provider still holds no session. Only the event check stops it claiming.
-    const { result } = renderHook(() => useAuth(), { wrapper: providerWrapper });
+    renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
 
-    // Cold start with a stored session.
+    const session = { ...makeSession("u1"), access_token: "tok-1" } as Session;
+    await emit("INITIAL_SESSION", session);
+    await emit("TOKEN_REFRESHED", { ...session, access_token: "tok-2" } as Session);
+    expect(rpc).not.toHaveBeenCalled();
+
+    await emit("SIGNED_IN", { ...session, access_token: "tok-3" } as Session);
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+    expect(rpc).toHaveBeenCalledWith("claim_my_purchases");
+  });
+
+  it("never re-claims on a returning user's cold start, hourly refresh, or app resume", async () => {
+    // The load-bearing case, in the REAL GoTrueClient emission order — which is
+    // the opposite of the intuitive one. `_recoverAndRefresh()` emits SIGNED_IN
+    // for the stored session from INSIDE `initialize()`; both `getSession()` and
+    // `_emitInitialSession()` `await this.initializePromise` first, while
+    // `onAuthStateChange` pushes the subscriber into `stateChangeEmitters`
+    // synchronously. So the FIRST thing a subscriber sees on a returning user's
+    // launch is SIGNED_IN, with the provider still holding nothing — which is
+    // why an in-memory "signed-out → signed-in" transition check fails OPEN and
+    // reinstates the write storm once per launch instead of once per hour.
+    // Only the persisted watermark closes it.
+    const rpc = supabase.rpc as unknown as Mock;
+    const persisted = { ...makeSession("u1"), access_token: "tok-1" } as Session;
+    // Their previous visit, minutes ago, already claimed.
+    seedClaimWatermark("u1", 5 * 60 * 1000);
+    const g = deferred<{ data: { session: unknown } }>();
+    h.getSessionResponder = () => g.promise; // cannot resolve until initialize does
+    h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
+
+    // 1. The recovery SIGNED_IN, before anything else can have resolved.
+    await emit("SIGNED_IN", persisted);
+    // 2. initialize() completes: getSession resolves, then INITIAL_SESSION.
+    await act(async () => {
+      g.resolve({ data: { session: persisted } });
+      await Promise.resolve();
+    });
     await emit("INITIAL_SESSION", persisted);
     await waitFor(() => expect(result.current.loading).toBe(false));
-    // ~Hourly rotation.
+    // 3. ~Hourly rotation, then a tab focus / WebView background→foreground.
     const rotated = { ...persisted, access_token: "tok-2" } as Session;
     await emit("TOKEN_REFRESHED", rotated);
-    // App resume / tab focus: SIGNED_IN for the SAME user, new access_token.
     await emit("SIGNED_IN", rotated);
     await emit("SIGNED_IN", { ...persisted, access_token: "tok-3" } as Session);
 
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("persists the watermark, so the launch right after a sign-in does not re-claim", async () => {
+    // The in-memory guard dies with the page. Only the persisted watermark can
+    // stop the recovery SIGNED_IN on the NEXT launch from claiming again — this
+    // drives a real sign-in, throws the provider away, and remounts it the way
+    // a reload or a WebView restart would.
+    const rpc = supabase.rpc as unknown as Mock;
+    h.getSessionResult = { data: { session: null } };
+    h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
+
+    const first = renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
+    const session = { ...makeSession("u1"), access_token: "tok-1" } as Session;
+    await emit("SIGNED_IN", session);
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    // Relaunch minutes later: nothing in memory, the session comes back from
+    // storage, and `_recoverAndRefresh()` announces it as SIGNED_IN.
+    h.authCallbacks.length = 0;
+    const g = deferred<{ data: { session: unknown } }>();
+    h.getSessionResponder = () => g.promise;
+    renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
+
+    await emit("SIGNED_IN", { ...session, access_token: "tok-2" } as Session);
+    await act(async () => {
+      g.resolve({ data: { session } });
+      await Promise.resolve();
+    });
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("claims again when the same user signs out and back in inside the window", async () => {
+    // The deliberate escape hatch: any resolution carrying no user drops the
+    // watermark, so an explicit re-sign-in never waits out a window the
+    // previous session already spent. It is also what makes an account switch
+    // on a shared device claim for the second account immediately.
+    const rpc = supabase.rpc as unknown as Mock;
+    h.getSessionResult = { data: { session: null } };
+    h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
+
+    renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
+
+    const session = { ...makeSession("u1"), access_token: "tok-1" } as Session;
+    await emit("SIGNED_IN", session);
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+
+    await emit("SIGNED_OUT", null);
+    await emit("SIGNED_IN", { ...session, access_token: "tok-2" } as Session);
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+  });
+
+  it("claims again on the returning student's NEXT visit once the window has elapsed", async () => {
+    // The reason the claim is idempotent rather than one-shot: a student who
+    // signed up before their purchase was synced gets claimed on their next
+    // visit. The returning majority never sign out, so a pure signed-out →
+    // signed-in gate would never run for them a second time.
+    const rpc = supabase.rpc as unknown as Mock;
+    const persisted = { ...makeSession("u1"), access_token: "tok-1" } as Session;
+    seedClaimWatermark("u1", CLAIM_MIN_INTERVAL_MS + 60 * 1000);
+    const g = deferred<{ data: { session: unknown } }>();
+    h.getSessionResponder = () => g.promise;
+    h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
+
+    renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
+
+    await emit("SIGNED_IN", persisted);
+    await act(async () => {
+      g.resolve({ data: { session: persisted } });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+
+    // ...and the rest of that visit is still quiet.
+    await emit("INITIAL_SESSION", persisted);
+    await emit("SIGNED_IN", { ...persisted, access_token: "tok-2" } as Session);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("claims on the emailed magic-link sign-in even though getSession resolved for that user first", async () => {
+    // The guest-checkout buyer who just paid and signs in from the emailed
+    // link. On the URL-callback path `initialize()` saves the session and then
+    // DEFERS the notification (`setTimeout(… _notifyAllSubscribers('SIGNED_IN'),
+    // 0)`) past the resolution of `initializePromise` — so the provider can
+    // already be holding this exact user when the event lands. A transition
+    // check reads that as "not a new user" and silently skips the one student
+    // this whole phase exists for.
+    const rpc = supabase.rpc as unknown as Mock;
+    const signedIn = { ...makeSession("u1"), access_token: "tok-1" } as Session;
+    h.getSessionResult = { data: { session: signedIn } };
+    h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: providerWrapper });
+    // getSession lands FIRST, carrying the freshly signed-in user.
+    await waitFor(() => expect(result.current.session).not.toBeNull());
+
+    await emit("SIGNED_IN", signedIn);
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+    expect(rpc).toHaveBeenCalledWith("claim_my_purchases");
+  });
+
+  it("cannot throw out of the auth callback for a session carrying no usable user", async () => {
+    // auth-js hands back sessions whose `user` is absent or a proxy that throws
+    // on access (`userNotAvailableProxy`), and `_isValidSession` does not
+    // require one. Reading `nextSession.user.id` ahead of the null guard throws
+    // SYNCHRONOUSLY inside the subscriber, which drops the event outright and
+    // leaves the provider stuck in `loading`.
+    const rpc = supabase.rpc as unknown as Mock;
+    h.getSessionResult = { data: { session: null } };
+
+    const { result } = renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
+
+    await emit("SIGNED_IN", { access_token: "tok-1" } as unknown as Session);
+
+    expect(rpc).not.toHaveBeenCalled();
+    // The event still reached `syncAuthState`, which resolves it as the clean
+    // signed-out state it is.
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.user).toBeNull();
+    expect(result.current.profile).toBeNull();
   });
 
   it("invalidates the entitlement caches only when the claim actually attached rows", async () => {
