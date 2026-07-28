@@ -35,10 +35,31 @@
 --      funnel columns at all; the only writer is the service-role reconciler.
 --
 -- ── SHAPE OF THE CHANGE ──
--- Additive, idempotent, reversible, no RAISE (an aborting DO block would take
--- every sibling migration in the same `db push` down with it). Nullable with no
--- default, so applying it changes nothing about any existing row and no
--- countdown appears until a reconcile run observes an acceptance.
+-- Additive, idempotent, no RAISE (an aborting DO block would take every sibling
+-- migration in the same `db push` down with it). Nullable with no default, so
+-- applying it changes nothing about any existing row and no countdown appears
+-- until a reconcile run observes an acceptance.
+--
+-- ── ORDERING (this migration and its READERS are NOT independently reversible) ──
+-- The column is reversible on its own, but NOT while anything that selects it is
+-- live — and that is TWO readers, not one: the `reconcile-funnel-stage` function
+-- and the client (`src/hooks/useDecision.ts`, once `VITE_DECISION_FLOW` is on).
+--   • FORWARD: `db push` this migration FIRST, deploy the function SECOND, ship
+--     the client that reads `accepted_at` THIRD.
+--   • BACKWARD: the DROP is safe only once NO live reader remains — the function
+--     AND every shipped client build. Reverting the function is the easy half.
+--     The client is not: `useDecision` selects `accepted_at` inside ONE explicit
+--     column list, so a `42703` fails the WHOLE decision row query rather than
+--     just the countdown, and the decision surface errors out entirely for that
+--     student. Web reverts in one deploy; the Capacitor iOS/Android bundles do
+--     NOT — a shipped build keeps asking for the column for as long as users sit
+--     on it (CLAUDE.md, "Capacitor clients lag for days"). So the reversal is
+--     additionally gated on CLIENT ROLLOUT, not on a function redeploy alone.
+-- FORWARD out of order (function live before the column exists) is bounded: the
+-- anchor pre-read is its own query, a `42703` only skips the stamp and logs
+-- `reconcile.accepted_at.read_failed`, and the terminal floor and the progress
+-- mirror are unaffected — degraded (no held-seat countdown), not dangerous.
+-- BACKWARD out of order carries no such assurance. Do both in order.
 --
 -- RLS: unchanged. The existing `students_read_own_applications` SELECT policy
 -- (`user_id = auth.uid()`) covers the new column for free, and the service-role
@@ -56,5 +77,8 @@ COMMENT ON COLUMN public.cohort_applications.accepted_at IS
   'Reconciler-written held-seat anchor (REQ-DEC-5): stamped ONCE the first time the derived stage is observed as `accepted`, never re-stamped and never cleared. First-observation time, NOT TeleCRM''s decision time; not a source of truth (SOR-1). The seat window is accepted_at + offerings.confirmation_deadline_days + confirmation_grace_hours.';
 
 -- ── Reversal (kept for reference; do not run in the forward migration) ──
+-- Retire BOTH readers first (see ORDERING above) — the reconciler by redeploy,
+-- the client by rollout. This DROP is only safe once no live build, web or
+-- native, reads or writes the column.
 -- ALTER TABLE public.cohort_applications
 --   DROP COLUMN IF EXISTS accepted_at;
