@@ -1,7 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { InterviewerCard, firstNameOf } from "@/components/interview/InterviewerCard";
-import { BatchLedger, isRenderableBatch } from "@/components/interview/BatchLedger";
 import {
   RescheduleControl,
   formatInterviewStart,
@@ -10,13 +9,20 @@ import {
 } from "@/components/interview/RescheduleControl";
 
 /**
- * PHASE IV / V-3 — the three interview surfaces, pinned on the rules that make
- * them honest rather than on their layout.
+ * PHASE IV / V-3 — the interview surfaces, pinned on the rules that make them
+ * honest rather than on their layout.
  *
  * Every assertion here is one of the task's acceptance lines: a fabricated
- * selectivity percentage, an invented batch count, a second reschedule, charge
- * copy near the first one, or a modality the student did not choose are the
- * five ways these components could ship a lie, and each has a test.
+ * selectivity percentage, a second reschedule, charge copy near the first one,
+ * or a modality the student did not choose are the four ways these components
+ * could ship a lie, and each has a test.
+ *
+ * V-3's third surface, `BatchLedger`, was DELETED rather than kept — it had no
+ * data source in this repo and was mounted nowhere, so it could only ever
+ * render nothing while reading to the next person as a shipped feature. Its
+ * requirement (REQ-INT-3) is parked with a stated precondition in
+ * `design/briefs/cohort-iv.md`; the component is recoverable from git history
+ * if that precondition is ever met.
  */
 
 afterEach(() => {
@@ -178,67 +184,6 @@ describe("InterviewerCard — first name, the admissions title, no bio, no inven
   it("renders a mononym as itself", () => {
     render(<InterviewerCard name="Arundhati" />);
     expect(screen.getByLabelText("Your interviewer").textContent).toContain("Arundhati");
-  });
-});
-
-describe("isRenderableBatch — real numbers only", () => {
-  const good = { label: "Batch 12", interviewed: 41, admitted: 11 };
-
-  it("accepts a coherent batch, with or without the optional applications count", () => {
-    expect(isRenderableBatch(good)).toBe(true);
-    expect(isRenderableBatch({ ...good, applications: 180 })).toBe(true);
-  });
-
-  it("rejects an absent source rather than substituting anything", () => {
-    expect(isRenderableBatch(null)).toBe(false);
-    expect(isRenderableBatch(undefined)).toBe(false);
-  });
-
-  it("rejects counts that are not whole, non-negative numbers", () => {
-    expect(isRenderableBatch({ ...good, admitted: -1 })).toBe(false);
-    expect(isRenderableBatch({ ...good, admitted: 1.5 })).toBe(false);
-    expect(isRenderableBatch({ ...good, interviewed: Number.NaN })).toBe(false);
-    expect(
-      isRenderableBatch({ ...good, admitted: "11" as unknown as number }),
-    ).toBe(false);
-  });
-
-  it("rejects a shape that cannot be true, however reachable the source was", () => {
-    expect(isRenderableBatch({ ...good, admitted: 60 })).toBe(false); // admitted > interviewed
-    expect(isRenderableBatch({ ...good, applications: 10 })).toBe(false); // interviewed > applications
-    expect(isRenderableBatch({ ...good, interviewed: 0, admitted: 0 })).toBe(false);
-    expect(isRenderableBatch({ ...good, label: "  " })).toBe(false);
-  });
-});
-
-describe("BatchLedger — REQ-INT-3: real numbers or the row hides", () => {
-  it("renders the real counts when a source supplies them", () => {
-    render(<BatchLedger batch={{ label: "Batch 12", interviewed: 41, admitted: 11 }} />);
-    const row = screen.getByLabelText("Recent review batch");
-    expect(row.textContent).toContain("Batch 12");
-    expect(row.textContent).toContain("41 interviewed");
-    expect(row.textContent).toContain("11 admitted");
-    expectCleanCopy(row.textContent);
-  });
-
-  it("hides entirely when the source is unavailable — never zeroes", () => {
-    // The zeroed row is the specific failure REQ-INT-3 names: "0 interviewed,
-    // 0 admitted" reads as a real and catastrophic batch, not as a gap.
-    const { container } = render(<BatchLedger batch={null} />);
-    expect(container).toBeEmptyDOMElement();
-    expect(container.textContent).not.toMatch(/\d/);
-  });
-
-  it("hides when no batch prop is passed at all (today's only reachable state)", () => {
-    const { container } = render(<BatchLedger />);
-    expect(container).toBeEmptyDOMElement();
-  });
-
-  it("hides an impossible ledger instead of printing it", () => {
-    const { container } = render(
-      <BatchLedger batch={{ label: "Batch 12", interviewed: 41, admitted: 99 }} />,
-    );
-    expect(container).toBeEmptyDOMElement();
   });
 });
 
