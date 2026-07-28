@@ -1399,6 +1399,7 @@ export type Database = {
           balance_payment_id: string | null
           bio: string | null
           calendly_booked_at: string | null
+          calendly_canceled_at: string | null
           calendly_event_uri: string | null
           city: string | null
           confirmation_payment_id: string | null
@@ -1409,7 +1410,6 @@ export type Database = {
           interview_date: string | null
           interview_modality: string | null
           interview_notes: string | null
-          interview_starts_at: string | null
           occupation: string | null
           offering_id: string
           phone: string | null
@@ -1427,6 +1427,7 @@ export type Database = {
           balance_payment_id?: string | null
           bio?: string | null
           calendly_booked_at?: string | null
+          calendly_canceled_at?: string | null
           calendly_event_uri?: string | null
           city?: string | null
           confirmation_payment_id?: string | null
@@ -1437,7 +1438,6 @@ export type Database = {
           interview_date?: string | null
           interview_modality?: string | null
           interview_notes?: string | null
-          interview_starts_at?: string | null
           occupation?: string | null
           offering_id: string
           phone?: string | null
@@ -1455,6 +1455,7 @@ export type Database = {
           balance_payment_id?: string | null
           bio?: string | null
           calendly_booked_at?: string | null
+          calendly_canceled_at?: string | null
           calendly_event_uri?: string | null
           city?: string | null
           confirmation_payment_id?: string | null
@@ -1465,7 +1466,6 @@ export type Database = {
           interview_date?: string | null
           interview_modality?: string | null
           interview_notes?: string | null
-          interview_starts_at?: string | null
           occupation?: string | null
           offering_id?: string
           phone?: string | null

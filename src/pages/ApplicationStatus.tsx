@@ -3,7 +3,9 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { isIOS } from "@/lib/platform";
+import { COHORT_INTERVIEW, flag } from "@/lib/flags";
 import { useFunnelStage } from "@/hooks/useFunnelStage";
+import { InterviewEmbed } from "@/components/interview/SlotButtons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -136,7 +138,7 @@ const RECONCILED_STAGE_STEP: Record<string, number> = {
 
 const ApplicationStatus = () => {
   const { applicationId } = useParams<{ applicationId: string }>();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
 
   const [application, setApplication] = useState<ApplicationData | null>(null);
@@ -286,6 +288,38 @@ const ApplicationStatus = () => {
       ? undefined
       : reconciledCtaCandidate;
 
+  /* ── The optional in-app Calendly embed (INTEG-CAL-1, dark behind
+     VITE_COHORT_INTERVIEW) ──
+     Shown at exactly one point on the ladder: the fee is paid and the interview
+     has not happened, which is the "fee paid, interview not scheduled" loss this
+     phase exists to close. `interview_scheduled` deliberately does NOT qualify —
+     re-offering a calendar to someone who already holds a slot invites a second
+     booking on the same applicant.
+     That invariant has to hold against BOTH stage signals this page carries, not
+     just the slower one. `application.status` is the local mirror; the reconciler
+     exists specifically to run AHEAD of it (see the floors above), and
+     `deriveStage` emits `interview-scheduled` from the external signal without
+     ever reading `cohort_applications.status`. Gating on the mirror alone meant
+     an applicant who had already booked but whose webhook had not yet landed got
+     the chip "Interview scheduled" AND a live calendar underneath it. So the
+     derived stage is a CEILING too: anything above the app-fee rung on the STEPS
+     ladder means the interview is booked or already behind them, and the calendar
+     is withdrawn. `RECONCILED_STAGE_STEP` is read raw here rather than through
+     `reconciledUi` — the v1 money-stage suppression is about payment CTAs and
+     must not hand a booked applicant a calendar back.
+     It renders BESIDE the payment pipeline, never through it: no step branch, no
+     `isIOS()` guard and no checkout route is touched, and an Apple anti-steering
+     guard would be wrong here anyway — booking an interview moves no money.
+     Flag off → `reconciledStep` is undefined, the ceiling is inert, and this is
+     byte-identical to today; the embed's own hook never mounts, so no request is
+     made. */
+  const interviewAheadOfFeePaid =
+    reconciledStep !== undefined && reconciledStep > STATUS_TO_STEP.app_fee_paid;
+  const showInterviewEmbed =
+    flag(COHORT_INTERVIEW) &&
+    application.status === "app_fee_paid" &&
+    !interviewAheadOfFeePaid;
+
   /* Determine which step was "failed" at, for rejected/withdrawn */
   // For rejected, show failure at the step after the last completed step
   const failedAtIndex = isFailed
@@ -372,6 +406,18 @@ const ApplicationStatus = () => {
               </div>
             ))}
         </div>
+
+        {/* Book the interview, in place. The embed is Calendly's own booking
+            page, so it inherits Calendly's availability truth and this page
+            never holds a slot list of its own. */}
+        {showInterviewEmbed && (
+          <InterviewEmbed
+            offeringId={application.offering_id}
+            name={profile?.full_name}
+            email={profile?.email ?? user?.email}
+            className="mb-8"
+          />
+        )}
 
         {/* Rejection reason: neutral surface, no red, to match the
             monochrome timeline. The reason text is still surfaced. */}

@@ -33,6 +33,21 @@
  * or letting its cancellation clear a real interview — is silent corruption the
  * reconciler would then read as truth.
  *
+ * THE START INSTANT HAS EXACTLY ONE HOME: `cohort_applications.interview_date`, the
+ * column that already existed (`20260413100000`). §6.1 scopes this work as the new
+ * `interview_modality` column "plus REUSE of the existing `interview_date` column",
+ * and §6.3 maps `scheduled_event.start_time` straight onto it. A second,
+ * Calendly-owned start column would let the admin surface and the interview UI hold
+ * different instants for the same interview with no rule saying which wins, so this
+ * function writes `interview_date` and nothing beside it.
+ *
+ * REUSING A SHARED COLUMN NEEDS A PRECEDENCE RULE, and this is it: while the booking
+ * this row holds is LIVE, Calendly is authoritative on its start, so a redelivery
+ * re-asserts `start_time`. Once that booking is cancelled this function stops writing
+ * `interview_date` entirely — a human may then schedule into it and nothing here will
+ * take it back. Which is also why the cancellation signal is a column of its own; see
+ * the tombstone below.
+ *
  * IDEMPOTENCY IS KEYED ON THE CALENDLY EVENT URI, which is why
  * `cohort_applications.calendly_event_uri` exists: it is the identity of the LAST
  * booking this row processed. Value equality alone cannot do this job — two
@@ -47,17 +62,27 @@
  *     rather than dragging the row back to a superseded slot.
  *
  * A CANCELLATION LEAVES A TOMBSTONE, NOT A BLANK ROW. Clearing the booking clears
- * the FACT columns (`interview_starts_at`, `interview_modality`, `interview_date`)
- * but KEEPS the identity and the delivery watermark: `calendly_event_uri` = the
- * cancelled event, `calendly_booked_at` = the newest delivery instant seen. So:
+ * the FACT columns (`interview_date`, `interview_modality`), RAISES the cancellation
+ * flag, and KEEPS the identity and the delivery watermark: `calendly_canceled_at` =
+ * when we recorded it, `calendly_event_uri` = the cancelled event,
+ * `calendly_booked_at` = the newest delivery instant seen. So:
  *   - `calendly_event_uri IS NULL`                        → no delivery ever landed
- *   - uri set + `interview_starts_at` set                 → a LIVE booking
- *   - uri set + `interview_starts_at IS NULL`             → that booking was cancelled
+ *   - uri set + `calendly_canceled_at IS NULL`            → a LIVE booking
+ *   - uri set + `calendly_canceled_at` set                → that booking was cancelled
  * Nulling the watermark instead would disarm the ordering guard the moment a
  * booking is cancelled: a late Calendly retry of the create half would look brand
  * new, resurrect the cancelled interview and burn a second reschedule. The
  * tombstone is also what lets an out-of-order cancel (cancel delivered before its
  * own create) refuse the create that follows it.
+ *
+ * THE FLAG IS A COLUMN BECAUSE AN ABSENT START IS NOT PROOF OF ANYTHING. Reading the
+ * tombstone off "`interview_date IS NULL`" would be sound only if this function were
+ * that column's sole writer, and reusing the shared column (above) is precisely the
+ * decision that it is not: an admin or a backfill putting a date back would silently
+ * disarm the refusal, and the next Calendly retry of the cancelled create would
+ * resurrect the interview ON TOP of their date. `calendly_canceled_at` is written by
+ * this function under the service role and by nothing else, so a writer that knows
+ * nothing about Calendly cannot forge or clear it.
  *
  * RESCHEDULE IS NOT CANCELLATION. Calendly has no "rescheduled" event: it fires
  * `invitee.canceled` for the OLD invitee and `invitee.created` for the new one, in
@@ -107,11 +132,13 @@ interface ApplicationRow {
   phone: string | null;
   created_at: string;
   interview_modality: string | null;
-  interview_starts_at: string | null;
+  /** The one start column (§6.1 reuse, §6.3 mapping) — see the header. */
+  interview_date: string | null;
   reschedule_count: number | null;
   /**
    * Identity of the LAST booking this row processed — the idempotency key. Paired
-   * with a NULL `interview_starts_at` it is a tombstone: that booking was cancelled.
+   * with a non-NULL `calendly_canceled_at` it is a tombstone: that booking was
+   * cancelled.
    */
   calendly_event_uri: string | null;
   /**
@@ -119,20 +146,25 @@ interface ApplicationRow {
    * Monotonic: it survives a cancellation so late retries stay orderable.
    */
   calendly_booked_at: string | null;
+  /**
+   * When we recorded the cancellation of the held booking; NULL while it is live.
+   * The tombstone's own signal — see the header for why it is not `interview_date`.
+   */
+  calendly_canceled_at: string | null;
 }
 
 /** The booking-fact columns this receiver writes. `status` is absent BY DESIGN (SOR-1). */
 interface BookingWrite {
   interview_modality: string | null;
-  interview_starts_at: string | null;
   interview_date: string | null;
   calendly_event_uri: string | null;
   calendly_booked_at: string | null;
+  calendly_canceled_at: string | null;
   reschedule_count?: number;
 }
 
 const SELECT_COLUMNS =
-  "id, email, phone, created_at, interview_modality, interview_starts_at, reschedule_count, calendly_event_uri, calendly_booked_at";
+  "id, email, phone, created_at, interview_modality, interview_date, reschedule_count, calendly_event_uri, calendly_booked_at, calendly_canceled_at";
 
 function jsonRes(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -339,9 +371,11 @@ Deno.serve(async (req) => {
   // decision below turns on this, not on value equality (§6.5).
   const heldEventUri = row.calendly_event_uri;
   const sameEvent = heldEventUri !== null && heldEventUri === booking.eventUri;
-  // A create ALWAYS writes a start (a delivery without one is refused below), so a
-  // known event with no start is precisely a cancelled one — the tombstone.
-  const isTombstoned = sameEvent && row.interview_starts_at === null;
+  // The tombstone: the event this row holds, flagged cancelled by a previous
+  // delivery. Read off `calendly_canceled_at` and never off an empty
+  // `interview_date` — that column is shared with manual/admin scheduling, so an
+  // absent start proves nothing about Calendly (see the header).
+  const isTombstoned = sameEvent && row.calendly_canceled_at !== null;
 
   if (booking.canceled) {
     // A RESCHEDULE'S CANCEL HALF IS NOT A CANCELLATION. Calendly cancels the old
@@ -363,25 +397,29 @@ Deno.serve(async (req) => {
     }
 
     // Already cleared — the tombstone for this very event is already on the row, so
-    // a redelivered cancellation writes nothing.
-    if (isTombstoned && row.interview_modality === null) {
+    // a redelivered cancellation writes nothing. Returning here also means a second
+    // delivery cannot re-clear an `interview_date` a human has since scheduled into
+    // the cancelled row: this function is done with that booking.
+    if (isTombstoned) {
       return jsonRes({ ok: true, matched: true, key, idempotent: true });
     }
 
-    // Cancellation clears the booking FACTS but leaves a tombstone: the identity of
-    // the cancelled event plus the delivery watermark (see the header). Nulling
-    // those two as well would let a late retry of this booking's create half look
-    // brand new — resurrecting the interview and burning a reschedule.
-    // `interview_starts_at` going NULL is what the reconciler will see as "no longer
-    // scheduled"; it derives the stage from that, we do not assert one.
+    // Cancellation clears the booking FACTS but leaves a tombstone: the cancellation
+    // flag, the identity of the cancelled event, and the delivery watermark (see the
+    // header). Nulling the latter two as well would let a late retry of this
+    // booking's create half look brand new — resurrecting the interview and burning
+    // a reschedule. `interview_date` going NULL is what the reconciler will see as
+    // "no longer scheduled"; it derives the stage from that, we do not assert one.
     // `reschedule_count` is deliberately untouched — a cancel is not by itself a
     // reschedule, and the replacement booking is what counts.
     update = {
       interview_modality: null,
-      interview_starts_at: null,
       interview_date: null,
       calendly_event_uri: booking.eventUri,
       calendly_booked_at: laterInstant(row.calendly_booked_at, booking.bookedAt),
+      // Our own clock: Calendly's cancel payload carries the invitee's `created_at`,
+      // not a cancellation instant. What this records is when the mirror learned.
+      calendly_canceled_at: new Date().toISOString(),
     };
   } else {
     const modality = modalityFromEvent(payload);
@@ -404,7 +442,7 @@ Deno.serve(async (req) => {
 
     // Redelivery of the very event we hold, carrying the same fact: write nothing.
     if (
-      sameEvent && sameInstant(row.interview_starts_at, startTime) &&
+      sameEvent && sameInstant(row.interview_date, startTime) &&
       row.interview_modality === modality
     ) {
       return jsonRes({ ok: true, matched: true, key, idempotent: true });
@@ -419,11 +457,9 @@ Deno.serve(async (req) => {
 
     update = {
       interview_modality: modality,
-      // interview_starts_at is the Calendly-OWNED fact and the authoritative column
-      // for a Calendly-sourced booking (V-3 reads this one). interview_date is the
-      // pre-existing column §6.1 says to reuse, written in lockstep so anything
-      // built on it later reads the same instant. Nothing reads it today.
-      interview_starts_at: startTime,
+      // The one start column: the pre-existing `interview_date` §6.1 reuses and §6.3
+      // maps `scheduled_event.start_time` onto. One fact, one home — nothing else
+      // here mirrors the start instant (see the header).
       interview_date: startTime,
       calendly_event_uri: booking.eventUri,
       // The watermark only ever moves FORWARD. This delivery is not older than the
@@ -431,13 +467,17 @@ Deno.serve(async (req) => {
       // all — and letting that null out the watermark would disarm the ordering for
       // every delivery after it.
       calendly_booked_at: laterInstant(row.calendly_booked_at, booking.bookedAt),
+      // A live booking is on the row again, so the tombstone comes down. Only a
+      // DIFFERENT event can reach this line — the held event's own tombstone is
+      // refused above — so this never un-cancels the booking it belongs to.
+      calendly_canceled_at: null,
     };
 
     // Calendly says this invitee replaced an earlier one AND it is not the booking
     // we already hold → one reschedule consumed. Both halves of that guard matter:
     // the first keeps a first booking from counting, the second keeps a redelivery
     // (and, with the superseded check above, a late retry) from counting twice.
-    // Storage only; V-3 owns the guardrail's meaning.
+    // Storage only; Task V-3's reschedule control owns what the count MEANS.
     if (booking.rescheduledFrom !== null && !sameEvent) {
       update.reschedule_count = (row.reschedule_count ?? 0) + 1;
     }

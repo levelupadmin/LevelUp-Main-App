@@ -1,506 +1,402 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowUpRight, CalendarClock, RotateCw } from "lucide-react";
+import { ArrowUpRight, CalendarCheck, RotateCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { tapTick } from "@/lib/haptics";
 import { useMotionSafe } from "@/lib/motion";
+import { isNative } from "@/lib/platform";
 import {
-  isInterviewSlotsError,
-  isInterviewSlotsSilent,
-  useInterviewSlots,
-  type InterviewSlot,
+  isCalendlyUrl,
+  isInterviewBookingError,
+  isInterviewBookingSilent,
+  useInterviewBooking,
 } from "@/hooks/useInterviewSlots";
 
-export interface SlotButtonsProps {
+export interface InterviewEmbedProps {
   /**
-   * The `cohort_applications` row this booking belongs to. Used to scope the
-   * slot cache and to identify the applicant to the CALLER's own analytics. It
-   * is deliberately NOT sent to Calendly: INTEG-PAY-1 retired seeding an app id
-   * into the intake chain, and ENTRY-PARITY-1 requires the invitee record
-   * produced here to be identical to the one the marketing path's hosted link
-   * produces (`src/pages/ThankYou.tsx:796`).
-   */
-  applicationId: string | undefined;
-  /**
-   * Resolves the Calendly event type server-side, via `offerings.calendly_url`.
-   * May be `undefined` while the parent still resolves the application row: the
-   * component shows its skeleton rather than the empty state, but only for
-   * `PARENT_RESOLVE_TIMEOUT_MS`, after which it assumes the id is never coming
-   * and degrades to the hosted calendar. A parent whose row query has failed
-   * therefore gets a way forward, not a permanent shimmer.
+   * The offering whose Calendly link this is. `offerings.calendly_url` is the
+   * SAME link the marketing path embeds (`src/pages/ThankYou.tsx:796`) and the
+   * same one the hosted intake chain hands out, which is what makes the two
+   * entry points literally one Calendly event type (ENTRY-PARITY-1).
+   *
+   * May be `undefined` while a parent still resolves its row: nothing renders
+   * and no request is made until it lands.
    */
   offeringId: string | undefined;
   /** Prefill for Calendly's booking form. All optional — guests may have none. */
   email?: string | null;
   name?: string | null;
-  /**
-   * Accepted so callers can pass the applicant they already hold, but
-   * deliberately NOT prefilled into Calendly — see `withPrefill` below. The
-   * marketing path sends only `name` and `email`, and an extra field on one
-   * path alone changes which key the webhook reconciles that booking on
-   * (ENTRY-PARITY-1).
-   */
-  phone?: string | null;
-  /**
-   * The offering's hosted Calendly link, when the parent already has it. Used
-   * as the "see all times" fallback before the server answers, and if the
-   * server can't resolve one. Pinned to calendly.com before it is ever opened.
-   */
-  hostedUrl?: string | null;
-  /** How many soonest slots to offer. Default 3 (the brief's number). */
-  count?: number;
-  /**
-   * Fires when the applicant has been handed off to Calendly for `slot` — i.e.
-   * booking INTENT at peak intent, NOT a confirmed booking. Nothing here can
-   * confirm a booking: Calendly owns the write, and the confirmation arrives
-   * asynchronously through the `calendly-webhook` receiver. Callers must not
-   * render a "booked" state off this callback.
-   */
-  onBooked?: (slot: InterviewSlot) => void;
   className?: string;
 }
 
 /**
- * Same guard `ThankYou.tsx:48` applies before embedding the hosted iframe: pin
- * every Calendly URL to calendly.com before handing it to a browser, so a
- * mis-pasted or tampered admin link can't turn the booking step into a phishing
- * hop. Duplicated rather than imported because that helper is page-local.
+ * The frame's reserved height, in px. ONE constant for the iframe and for the
+ * skeleton that stands in for it, because they were 240 and 700: resolving the
+ * query shoved the rejection note and the whole timeline down by ~460px, two
+ * thirds of a 360×740 viewport. A placeholder that is not the size of the thing
+ * it is holding space for is not holding space.
  */
-function isCalendlyUrl(url: string | null | undefined): boolean {
-  if (!url) return false;
+const EMBED_MIN_HEIGHT = 700;
+
+/**
+ * The reserved height of the NATIVE hand-off panel (copy line + one 44px
+ * control + padding). Native never renders the frame, so reserving 700px there
+ * would be its own layout lie in the opposite direction.
+ */
+const NATIVE_PANEL_HEIGHT = 148;
+
+/** Session-scoped "they booked in the frame" marker, per offering. */
+const bookedKey = (offeringId: string) => `levelup.interview.booked.${offeringId}`;
+
+function readBooked(offeringId: string | undefined): boolean {
+  if (!offeringId) return false;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:") return false;
-    return parsed.hostname === "calendly.com" || parsed.hostname.endsWith(".calendly.com");
+    return sessionStorage.getItem(bookedKey(offeringId)) === "1";
   } catch {
+    // Private mode / storage disabled. The in-memory flag still covers the
+    // mount the booking happened on, which is the common case.
     return false;
+  }
+}
+
+function rememberBooked(offeringId: string): void {
+  try {
+    sessionStorage.setItem(bookedKey(offeringId), "1");
+  } catch {
+    // See readBooked.
   }
 }
 
 /**
  * Calendly's documented prefill query params — `name` and `email`, and nothing
- * else. Applied to EVERY hand-off to Calendly, the slot buttons and the two
- * "full calendar" links alike.
+ * else, exactly the pair the marketing path sends (`ThankYou.tsx:803` builds
+ * its iframe src with `name=` and `email=`).
  *
- * The links matter as much as the buttons. The marketing path prefills every
- * invitee (`ThankYou.tsx:804` builds its iframe src with `name=` and `email=`),
- * so an app-path applicant who leaves through a bare link and types
- * `rahul@gmial.com` produces an invitee `calendly-webhook` cannot match to a
- * `cohort_applications` row (phone-primary, email-fallback, INTEG-KEY-1). They
- * booked, and they reconcile as "fee paid, interview not scheduled" — the loss
- * REQ-INT-0 exists to close, re-created by an unprefilled href.
+ * ENTRY-PARITY-1 is why the list stops there. `_shared/calendly.ts` reads
+ * `invitee.text_reminder_number` as the phone and `calendly-webhook` matches
+ * phone-primary with email as fallback (INTEG-KEY-1), so an app-path booking
+ * prefilled with an extra phone field would reconcile on a DIFFERENT join key
+ * than the identical marketing-path booking. Same fields, same invitee shape,
+ * same join key, both paths.
  *
- * ENTRY-PARITY-1 is why the list stops there. The marketing path builds its
- * iframe src with exactly `name=` and `email=` (`ThankYou.tsx:804`), so adding
- * a field here would make the two paths produce DIFFERENT invitee records:
- * `_shared/calendly.ts` reads `invitee.text_reminder_number` as the phone and
- * `calendly-webhook` matches phone-primary with email as fallback, so an
- * app-path booking prefilled with a phone would reconcile on a different join
- * key than the identical marketing-path booking. Same fields, same invitee
- * shape, same join key, both paths.
- *
- * (If phone-primary matching is wanted for both, the change belongs to the task
- * that owns `ThankYou.tsx` — adding it on one side only is the divergence.)
+ * (If phone-primary prefill is wanted, the change belongs to whoever owns
+ * `ThankYou.tsx` — adding it on one side only IS the divergence.)
  *
  * Prefill is a convenience, never a requirement: an unparseable URL falls back
  * to the raw link rather than blocking the booking.
  */
 function withPrefill(
-  schedulingUrl: string,
+  bookingUrl: string,
   fields: { name?: string | null; email?: string | null },
 ): string {
   try {
-    const url = new URL(schedulingUrl);
+    const url = new URL(bookingUrl);
     if (fields.name) url.searchParams.set("name", fields.name);
     if (fields.email) url.searchParams.set("email", fields.email);
     return url.toString();
   } catch {
-    return schedulingUrl;
+    return bookingUrl;
   }
 }
 
-// Interview times are always quoted in IST — the interviewers sit in India and
-// the applicant must read the same wall clock they will. Formatting in the
-// device timezone while labelling it "IST" would mislead anyone travelling.
-const DAY_FMT = new Intl.DateTimeFormat("en-IN", {
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-  timeZone: "Asia/Kolkata",
-});
-const TIME_FMT = new Intl.DateTimeFormat("en-IN", {
-  hour: "numeric",
-  minute: "2-digit",
-  hour12: true,
-  timeZone: "Asia/Kolkata",
-});
-
 /**
- * How long the skeleton waits on a PARENT that has not supplied `offeringId`
- * yet before it stops shimmering. V-3's `ApplicationStatus` resolves the
- * application row asynchronously and `cohort_applications.offering_id` is
- * non-nullable, so a missing id means the row query is either still in flight
- * or has failed outright — and only one of those ever ends. Generous enough to
- * cover a slow row read on a bad connection, bounded so the failed case
- * degrades to the hosted calendar instead of shimmering forever at the exact
- * moment intent peaks.
+ * InterviewEmbed — the OPTIONAL in-app inline Calendly embed sanctioned by
+ * INTEG-CAL-1 (`04-INTEGRATION-CONTRACTS.md` §6.4), rendered at the step where
+ * the applicant has paid the ₹400 and has yet to book.
+ *
+ * The file name is a leftover; the surface is the embed. App-native buttons
+ * over Calendly's availability API were PARKED with CRO-1 by that same ruling,
+ * and the app inserts nothing into the intake chain: booking still happens on
+ * the existing hosted Calendly link, this is that link rendered in place.
+ *
+ * WHY AN IFRAME IS THE POINT, NOT A SHORTCUT. Because the embed is Calendly's
+ * own booking page, it INHERITS Calendly's availability truth directly — there
+ * is no second, staler list of times anywhere in our stack that could offer a
+ * slot Calendly has already given away. Double-booking is impossible by
+ * construction. The confirmation comes back asynchronously through the
+ * `calendly-webhook` receiver, and this component NEVER renders a funnel state
+ * the webhook has not confirmed. It writes nothing, reads no session, and owns
+ * no route; a parent mounts it behind an off-by-default flag.
+ *
+ * THE FRAME IS WEB-ONLY, AND THAT IS NOT A DEGRADATION — it is the doc's own
+ * primary shape. `ApplicationStatus` is natively reachable (it carries `isIOS()`
+ * guards precisely because it renders there), and `capacitor.config.ts`
+ * `server.allowNavigation` does not list `calendly.com`. On Android that is not
+ * a frame that quietly fails: Capacitor's `BridgeWebViewClient
+ * .shouldOverrideUrlLoading` has no `isForMainFrame()` check, so the iframe's
+ * SUBFRAME navigation reaches `Bridge.launchIntent`, misses the allow-list, and
+ * fires `startActivity(ACTION_VIEW)` — the system browser opens on its own, with
+ * no user gesture, the moment the embed mounts. (iOS diverges: its delegate
+ * computes `toplevelNavigation` from `targetFrame?.isMainFrame` and lets the
+ * subframe load.) So on native we render the HOSTED link instead, behind an
+ * explicit tap — which is exactly what §6.4 calls the v1 path, with the inline
+ * embed as the optional extra. Same URL, same prefill, same Calendly event type,
+ * therefore the same reconcilable booking (ENTRY-PARITY-1). Adding
+ * `calendly.com` to `allowNavigation` is a separate, native-shell decision and
+ * is NOT a precondition for this surface.
+ *
+ * Never a dead end, and never a lie:
+ *   • no booking surface — the admin's switch is off, the URL is not a Calendly
+ *     one, or the offering row is not visible (archived) → renders NOTHING,
+ *     exactly like the marketing path (ENTRY-PARITY-1). A promise ("we'll text
+ *     you") on a misconfiguration or on an archived cohort is the failure mode
+ *     here, and a retry button that can never succeed is the other one;
+ *   • the offering could not be READ (transport failed) → says so, and offers
+ *     the retry that can actually change it;
+ *   • booked in place → the calendar is withdrawn immediately, see `booked`.
  */
-const PARENT_RESOLVE_TIMEOUT_MS = 8_000;
-
-function slotLabel(startTime: string): string | null {
-  const date = new Date(startTime);
-  if (Number.isNaN(date.getTime())) return null;
-  return `${DAY_FMT.format(date)}, ${TIME_FMT.format(date)} IST`;
-}
-
-function durationLabel(minutes: number | null): string | null {
-  if (!minutes || minutes <= 0) return null;
-  return `${minutes} min`;
-}
-
-/**
- * SlotButtons — the three soonest interview times as one-tap buttons, rendered
- * at the step that follows the ₹400 payment (REQ-INT-0 / CRO-2). Booking at
- * peak intent is the whole point: the loss this closes is "fee paid, interview
- * not scheduled", born in the hour between paying and scheduling.
- *
- * WHAT "ONE TAP" HONESTLY MEANS. Calendly exposes availability reads but no
- * public create-invitee API, so a tap cannot write a booking. It launches
- * Calendly's OWN scheduling page deep-linked to the chosen time and prefilled
- * with the applicant's details. That is deliberate, not a shortcut: Calendly
- * stays the sole writer of its calendar, so these buttons inherit Calendly's
- * availability truth and can never double-book. The confirmation comes back
- * asynchronously through the `calendly-webhook` receiver, and this component
- * NEVER renders a booked state the webhook has not confirmed.
- *
- * Self-contained and parent-agnostic: it owns no route, reads no session, and
- * writes nothing. A parent may mount it behind an off-by-default flag.
- *
- * Never a dead end, and never a lie. The empty paths are kept apart:
- *   • the admin's gate says no booking surface — switch off OR no valid
- *     Calendly URL, the same two conjuncts `ThankYou.tsx:797` tests → renders
- *     NOTHING, exactly like the marketing path (ENTRY-PARITY-1). A promise
- *     ("we'll text you") on a pure misconfiguration is the failure mode here;
- *   • availability read, nothing open → "we'll text you the next opening",
- *     plus a check-again control and the hosted calendar when we have it;
- *   • availability NOT read (Calendly down, token unset, event type unreadable)
- *     → says so, and offers a retry;
- *   • throttled → says so, and offers the hosted calendar INSTEAD of a retry,
- *     because the shared counter increments on every call and a retry provably
- *     cannot clear the window it is retrying against;
- *   • the parent never supplies an `offeringId` → the skeleton is bounded, then
- *     falls back to the hosted calendar (or to nothing, if we have no link).
- * Every rendered state carries at least one tappable way forward.
- */
-export const SlotButtons = ({
-  applicationId,
+export const InterviewEmbed = ({
   offeringId,
   email,
   name,
-  hostedUrl,
-  count = 3,
-  onBooked,
   className,
-}: SlotButtonsProps) => {
+}: InterviewEmbedProps) => {
   const m = useMotionSafe();
-  const [handedOffAt, setHandedOffAt] = useState<string | null>(null);
+  const { data, isWaiting, isFetching, refetch } = useInterviewBooking(offeringId);
 
-  const { data, isWaiting, isFetching, refetch } = useInterviewSlots(
-    offeringId,
-    applicationId,
-    { count },
-  );
+  // Web renders Calendly in place; native hands off to the hosted link. See the
+  // docblock — on Android the frame does not fail quietly, it launches a
+  // browser unprompted.
+  const embedInline = !isNative();
 
-  // Prefer the link the parent already holds; fall back to the one the server
-  // resolved. Pinned either way — an unpinned URL is treated as absent, and
-  // prefilled every time, so leaving through the calendar produces the same
-  // invitee record as leaving through a slot button (ENTRY-PARITY-1).
-  const fallbackUrl = useMemo(() => {
-    const candidate = hostedUrl ?? data?.hostedUrl ?? null;
-    if (!isCalendlyUrl(candidate)) return null;
-    return withPrefill(candidate as string, { name, email });
-  }, [hostedUrl, data?.hostedUrl, name, email]);
+  /* ── "They already booked, in this frame, just now" ──
+     The page's `application` row is fetched once and has no realtime channel,
+     so without this the applicant books successfully, comes back to the tab,
+     and is served a fresh open calendar under the heading "Book your interview
+     / This is the last step" — an invitation to take a SECOND slot, which is
+     the §6.4 hazard. Calendly's embed posts `calendly.event_scheduled` on
+     completion; that is the only in-page signal a booking happened.
+     It changes no funnel status and claims none: it withdraws the calendar and
+     says the confirmation is still in flight. Session-scoped so it survives the
+     unmount/remount of a tab switch without outliving the session, by which
+     point the webhook owns the truth. */
+  const [booked, setBooked] = useState(() => readBooked(offeringId));
 
-  // Waiting on the PARENT, not on the server: `offeringId` has not arrived, so
-  // no request has been made and none will be until it does. Bounded, because
-  // "still loading" and "will never arrive" look identical from in here.
-  const awaitingParent = !offeringId;
-  const [parentTimedOut, setParentTimedOut] = useState(false);
+  // `offeringId` can arrive late (parent still resolving its row), so the
+  // initial read may have run against `undefined`.
   useEffect(() => {
-    if (!awaitingParent) {
-      setParentTimedOut(false);
-      return;
-    }
-    const timer = window.setTimeout(
-      () => setParentTimedOut(true),
-      PARENT_RESOLVE_TIMEOUT_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [awaitingParent]);
+    setBooked(readBooked(offeringId));
+  }, [offeringId]);
 
-  // A slot that went past while this screen sat open is not offerable, and a
-  // non-Calendly scheduling URL never gets rendered as a tap target.
-  const slots = useMemo(() => {
-    const now = Date.now();
-    return (data?.slots ?? []).filter(
-      (slot) =>
-        isCalendlyUrl(slot.schedulingUrl) && new Date(slot.startTime).getTime() > now,
-    );
-  }, [data?.slots]);
+  useEffect(() => {
+    if (!offeringId || !embedInline) return;
 
-  const handleTap = useCallback(
-    (slot: InterviewSlot) => {
-      void tapTick();
-      const url = withPrefill(slot.schedulingUrl, { name, email });
-      // Opened SYNCHRONOUSLY on the tap. Awaiting a re-validation first would
-      // trip the browser's popup blocker (the open would no longer be inside
-      // the user gesture) and add latency at the exact moment intent peaks.
-      // We don't need the pre-check: Calendly's own booking page re-validates
-      // the time and refuses a slot taken since render, which is precisely the
-      // "inherit Calendly's availability truth" rule. The refetch below then
-      // re-offers whatever is actually left.
-      window.open(url, "_blank", "noopener,noreferrer");
-      setHandedOffAt(slot.startTime);
-      onBooked?.(slot);
-      refetch();
-    },
-    [name, email, onBooked, refetch],
-  );
+    const onMessage = (event: MessageEvent) => {
+      // Same calendly.com pin the URL itself gets — an arbitrary frame or
+      // extension must not be able to blank this surface by posting at us.
+      if (!isCalendlyUrl(event.origin)) return;
+      const payload = event.data as { event?: unknown } | null;
+      if (!payload || typeof payload !== "object") return;
+      if (payload.event !== "calendly.event_scheduled") return;
+      rememberBooked(offeringId);
+      setBooked(true);
+    };
 
-  const listVariants = {
-    hidden: {},
-    show: { transition: { staggerChildren: m.reduced ? 0 : 0.05 } },
-  };
-  const itemVariants = {
-    hidden: { opacity: 0, y: m.reduced ? 0 : 8 },
-    show: { opacity: 1, y: 0, transition: m.springs.glide },
-  };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [offeringId, embedInline]);
+
+  // Prefilled once, used by the frame, the escape-hatch link AND the native
+  // hand-off, so every route out of this component produces the same invitee
+  // record (ENTRY-PARITY-1).
+  const bookingUrl = useMemo(() => {
+    if (!data?.bookingUrl) return null;
+    return withPrefill(data.bookingUrl, { name, email });
+  }, [data?.bookingUrl, name, email]);
 
   const heading = (
     <div className="space-y-1">
       <h3 className="text-lg font-semibold text-foreground">Book your interview</h3>
       <p className="text-sm text-muted-foreground">
-        {slots.length > 0
-          ? "Pick the soonest time that works for you."
-          : "This is the last step before your application is reviewed."}
+        This is the last step before your application is reviewed.
       </p>
     </div>
   );
 
-  const calendarLink = fallbackUrl && (
-    <a
-      href={fallbackUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex min-h-[44px] items-center gap-1.5 text-sm font-medium text-foreground underline underline-offset-4"
-    >
-      Check the full calendar
-      <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-    </a>
-  );
-
-  const retryButton = (
-    <motion.button
-      type="button"
-      whileTap={m.pressTap}
-      onClick={() => {
-        void tapTick();
-        refetch();
-      }}
-      disabled={isFetching}
-      className={cn(
-        "inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-border px-4 py-2",
-        "bg-surface text-sm font-medium text-foreground transition-colors",
-        "hover:border-border-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        "disabled:opacity-60",
-      )}
-    >
-      <RotateCw className="h-4 w-4" aria-hidden="true" />
-      {isFetching ? "Checking…" : "Check again"}
-    </motion.button>
-  );
-
-  // ── Waiting ── either a request is genuinely in flight, or the parent has
-  // not handed us an `offeringId` yet and its grace window is still open. The
-  // hook reports `isWaiting` only for the first of those, precisely so the
-  // second can be bounded here rather than shimmering forever.
-  if (isWaiting || (awaitingParent && !parentTimedOut)) {
+  // ── Waiting ── a request is genuinely in flight. A parent that has not
+  // supplied `offeringId` is a different state and renders nothing at all,
+  // rather than shimmering on something that may never arrive. The skeleton is
+  // the exact height of what replaces it, so resolving moves nothing below it.
+  if (isWaiting) {
     return (
       <section className={cn("space-y-4", className)} aria-busy="true">
         {heading}
-        <div className="space-y-2">
-          {Array.from({ length: count }).map((_, i) => (
-            <div
-              key={i}
-              className="h-[56px] rounded-lg border border-border bg-surface animate-pulse"
-            />
-          ))}
-        </div>
-        <span className="sr-only">Loading interview times</span>
+        <div
+          className="rounded-xl border border-border bg-surface animate-pulse"
+          style={{ height: embedInline ? EMBED_MIN_HEIGHT : NATIVE_PANEL_HEIGHT }}
+        />
+        <span className="sr-only">Loading your interview calendar</span>
       </section>
     );
   }
 
-  // The parent's grace window closed with no `offeringId`: its application row
-  // failed or is absent, and no request will ever be made. Hand over the hosted
-  // calendar if the parent gave us one, otherwise render nothing. Never a
-  // permanent skeleton, and never a retry that cannot fire.
-  if (awaitingParent) {
-    if (!fallbackUrl) return null;
-    return (
-      <section className={cn("space-y-4", className)}>
-        {heading}
-        <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
-          <p className="text-sm text-foreground">
-            We could not load your interview times just now.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Pick any time on the full calendar and we will hold it for you.
-          </p>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">{calendarLink}</div>
-        </div>
-      </section>
-    );
-  }
-
-  // Inert: the parent switched the path off and no request was ever made.
+  // Inert: no offering id, so no request was ever made.
   if (!data) return null;
 
-  // The admin's own gate, BOTH conjuncts of it: `thankyou_show_calendly` off,
-  // or no usable `offerings.calendly_url`. The marketing path renders nothing
-  // for either (`ThankYou.tsx:797`), so the app path renders nothing too — that
-  // is ENTRY-PARITY-1 as a property rather than a claim. Copy here would be a
-  // promise triggered by a misconfiguration, on the exact axis the rule guards.
-  if (isInterviewSlotsSilent(data.reason)) return null;
+  // Booked in place. A fact we observed, so it outranks every gate below —
+  // withdrawing the calendar is the whole point and it must not be re-offered
+  // because a refetch went sideways afterwards.
+  if (booked) {
+    return (
+      <motion.section
+        initial={{ opacity: 0, y: m.reduced ? 0 : 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={m.springs.glide}
+        className={cn("space-y-4", className)}
+      >
+        <div className="space-y-1">
+          <h3 className="text-lg font-semibold text-foreground">
+            Your interview time is booked
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Calendly is holding your slot and the confirmation is on its way to
+            your inbox.
+          </p>
+        </div>
+        <div className="flex items-start gap-3 rounded-xl border border-border bg-surface p-4">
+          <CalendarCheck
+            className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <p className="text-sm text-muted-foreground">
+            Nothing else to do right now. This page catches up once the booking
+            reaches us.
+          </p>
+        </div>
+      </motion.section>
+    );
+  }
 
-  if (slots.length === 0) {
-    // "We couldn't read availability" and "there is nothing open" are different
-    // facts. Only the second one earns the "we'll text you" sentence.
-    const couldNotRead = isInterviewSlotsError(data.reason);
-    // Throttled is a read failure with one extra property: retrying makes it
-    // worse. The shared counter increments on EVERY call before comparing, and
-    // its window is a fixed wall-clock bucket, so each press adds a write and
-    // pushes the count further past the max. Offer the calendar instead.
-    const throttled = data.reason === "rate_limited";
-    // ...unless we have no calendar to offer, in which case the retry is the
-    // only control left and a card with no control at all is the dead end.
-    const showRetry = !throttled || !calendarLink;
+  // No booking surface at all: the admin's gate is off, the URL is not a
+  // Calendly one, or the offering row is not visible (archived). The marketing
+  // path renders nothing for its two (`ThankYou.tsx:797`), so the app path
+  // renders nothing either — that is ENTRY-PARITY-1 as a property rather than a
+  // claim. Copy here would be a promise triggered by a state the applicant
+  // cannot influence, on the exact axis the rule guards.
+  if (isInterviewBookingSilent(data.reason)) return null;
 
+  if (!bookingUrl) {
+    // We could not read the offering. Say that, and give them the one control
+    // that can actually change it. `isInterviewBookingError` is asserted rather
+    // than assumed so a future reason added to the union cannot silently
+    // inherit this copy — and so a NON-retryable reason can never inherit a
+    // retry button.
+    if (!isInterviewBookingError(data.reason)) return null;
     return (
       <section className={cn("space-y-4", className)}>
         {heading}
-        <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
-          {throttled ? (
-            <>
-              <p className="text-sm text-foreground">
-                We are checking for times a little too often right now.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Fresh times come back in a few minutes. The full calendar stays open in
-                the meantime.
-              </p>
-            </>
-          ) : couldNotRead ? (
-            <>
-              <p className="text-sm text-foreground">
-                We could not load interview times just now.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Check again in a moment. If it still will not load, we will text you to
-                lock your time in.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-foreground">
-                No interview times are open right now.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                We will text you as soon as the next one opens.
-              </p>
-            </>
-          )}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {showRetry && retryButton}
-            {calendarLink}
-          </div>
+        <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
+          <p className="text-sm text-foreground">
+            We could not load your interview calendar just now.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Check again in a moment. If it still will not load, we will text you to
+            lock your time in.
+          </p>
+          <motion.button
+            type="button"
+            whileTap={m.pressTap}
+            onClick={() => {
+              void tapTick();
+              refetch();
+            }}
+            disabled={isFetching}
+            className={cn(
+              "inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-border px-4 py-2",
+              "bg-surface text-sm font-medium text-foreground transition-colors",
+              "hover:border-border-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "disabled:opacity-60",
+            )}
+          >
+            <RotateCw className="h-4 w-4" aria-hidden="true" />
+            {isFetching ? "Checking…" : "Check again"}
+          </motion.button>
         </div>
       </section>
+    );
+  }
+
+  // ── Native ── the hosted link, opened on an explicit tap. See the docblock:
+  // an inline frame here launches the system browser BY ITSELF on Android.
+  if (!embedInline) {
+    return (
+      <motion.section
+        initial={{ opacity: 0, y: m.reduced ? 0 : 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={m.springs.glide}
+        className={cn("space-y-4", className)}
+      >
+        {heading}
+        <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Your calendar opens in your browser with your details already filled
+            in. Pick a time and you are done.
+          </p>
+          <a
+            href={bookingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => void tapTick()}
+            className={cn(
+              "inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-lg px-4",
+              "bg-cream text-sm font-semibold text-cream-text transition-opacity hover:opacity-90",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+          >
+            Open your calendar
+            <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+          </a>
+        </div>
+      </motion.section>
     );
   }
 
   return (
-    <section className={cn("space-y-4", className)}>
+    <motion.section
+      initial={{ opacity: 0, y: m.reduced ? 0 : 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={m.springs.glide}
+      className={cn("space-y-4", className)}
+    >
       {heading}
 
-      <motion.ul
-        variants={listVariants}
-        initial="hidden"
-        animate="show"
-        className="space-y-2"
+      {/* Calendly's own booking page, in place. Same URL, same prefill fields
+          and same sandbox posture as the marketing path's embed
+          (`ThankYou.tsx:799-806`), so both entry points produce one invitee
+          shape. `loading="lazy"` so Calendly's booking bundle is fetched when
+          the applicant actually reaches it rather than on every render of this
+          page. The wrapper carries the height, so lazy costs no layout shift.
+          `bg-white` because Calendly renders its own light UI inside the frame
+          and a transparent surface would show our canvas through its gaps. */}
+      <div
+        className="rounded-xl border border-border overflow-hidden bg-white"
+        style={{ minHeight: EMBED_MIN_HEIGHT }}
       >
-        {slots.map((slot) => {
-          const label = slotLabel(slot.startTime);
-          if (!label) return null;
-          const duration = durationLabel(slot.durationMinutes);
-          const isHandedOff = handedOffAt === slot.startTime;
-          return (
-            <motion.li key={slot.startTime} variants={itemVariants}>
-              <motion.button
-                type="button"
-                whileTap={m.pressTap}
-                onClick={() => handleTap(slot)}
-                className={cn(
-                  "flex w-full min-h-[56px] items-center gap-3 rounded-lg border px-4 py-3 text-left",
-                  "border-border bg-surface transition-colors",
-                  "hover:border-border-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  isHandedOff && "border-border-hover",
-                )}
-              >
-                <CalendarClock
-                  className="h-5 w-5 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-foreground">
-                    {label}
-                  </span>
-                  {duration && (
-                    <span className="block text-xs text-muted-foreground">{duration}</span>
-                  )}
-                </span>
-                <ArrowUpRight
-                  className="h-4 w-4 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-              </motion.button>
-            </motion.li>
-          );
-        })}
-      </motion.ul>
+        <iframe
+          src={bookingUrl}
+          className="w-full"
+          style={{ minHeight: EMBED_MIN_HEIGHT, border: 0 }}
+          title="Schedule your interview"
+          loading="lazy"
+          sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          referrerPolicy="no-referrer"
+        />
+      </div>
 
-      {handedOffAt && (
-        // Honest status only. The tap opened Calendly; nothing is scheduled
-        // until Calendly confirms it and the webhook mirrors it back.
-        <p className="text-sm text-muted-foreground" role="status">
-          Finish confirming the time on the Calendly tab. Your slot is held once
-          Calendly confirms it.
-        </p>
-      )}
-
-      {fallbackUrl && (
-        <a
-          href={fallbackUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] items-center gap-1.5 text-sm text-muted-foreground underline underline-offset-4"
-        >
-          See all available times
-          <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-        </a>
-      )}
-    </section>
+      {/* Escape hatch. A browser that blocks the frame, or a student who would
+          rather finish in a tab, still has a prefilled way through. */}
+      <a
+        href={bookingUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={() => void tapTick()}
+        className="inline-flex min-h-[44px] items-center gap-1.5 text-sm text-muted-foreground underline underline-offset-4"
+      >
+        Open the calendar in a new tab
+        <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+      </a>
+    </motion.section>
   );
 };
 
-export default SlotButtons;
+export default InterviewEmbed;

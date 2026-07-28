@@ -63,7 +63,8 @@ export interface CalendlySignature {
  * the booking the create half just wrote.
  *   - `rescheduledFrom` (`old_invitee`) — set on the NEW invitee: this booking
  *     replaced an earlier one. The one signal that a rebooking is a rebooking, and
- *     what makes `cohort_applications.reschedule_count` live storage for V-3.
+ *     what makes `cohort_applications.reschedule_count` live storage for Task V-3's
+ *     one-reschedule guardrail.
  *   - `rescheduled` / `rescheduledTo` (`rescheduled`, `new_invitee`) — set on the
  *     OLD invitee: this cancellation is HALF A RESCHEDULE, not a cancellation. The
  *     receiver must leave the booking alone when it sees them.
@@ -74,7 +75,10 @@ export interface CalendlySignature {
 export interface CalendlyBooking {
   inviteeEmail: string | null;
   inviteePhone: string | null;
-  /** ISO-8601 start of the scheduled event, as Calendly sent it. */
+  /**
+   * ISO-8601 start of the scheduled event, as Calendly sent it. §6.3 maps it onto
+   * the ONE start column, `cohort_applications.interview_date`.
+   */
   startTime: string | null;
   /**
    * The SCHEDULED-EVENT URI — the idempotency key for a delivery, and never the
@@ -329,7 +333,7 @@ export function parseEventTypeAllowlist(raw: string | null | undefined): string[
  * user and CANNOT be filtered to one event type (INTEG-CAL-1 puts every interviewer
  * on one org-level account), so the filter has to live in the receiver. Without it a
  * sales call, an onboarding call, or the second Calendly account merged in later
- * would overwrite `interview_starts_at` / `interview_modality` for whoever's phone or
+ * would overwrite `interview_date` / `interview_modality` for whoever's phone or
  * email matched — and its `invitee.canceled` would clear a real interview.
  *
  * AN EMPTY ALLOWLIST MATCHES NOTHING — deliberately fail-closed, the same posture as
