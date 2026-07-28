@@ -81,7 +81,7 @@ erDiagram
 
 - **Every content row carries `(offering_id, batch_id)`** FK'd to real containers (`0003_cohort_room_content.sql`). There is no client-writable "scope" string to spoof — scope is a foreign key to a row that already has its own RLS.
 - **`cohort_room_members` is the single indexed table** every room policy consults (`ROOMS-ARCHITECTURE.md` §6.1). One `EXISTS` against one covering index answers every access question. This is the perf doctrine and the audit doctrine at once: **one table to secure, one table to test.**
-- **The application pipeline is untouched.** `cohort_applications`, `enrolments`, staged payments, and the `ApplicationStatus.tsx:319,337` `isIOS()` guard keep their existing RLS byte-for-byte (`COHORT-LOGIC.md` "Standing guard"; PRD NFR-SEC-5). Rooms are a *delivery* layer *on top* of these tables, not a rewrite of them.
+- **The application pipeline is untouched.** `cohort_applications`, `enrolments`, staged payments, and the `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` guard keep their existing RLS byte-for-byte (`COHORT-LOGIC.md` "Standing guard"; PRD NFR-SEC-5). Rooms are a *delivery* layer *on top* of these tables, not a rewrite of them.
 
 ### 3.2 The four membership sources (and who may write each)
 
@@ -357,10 +357,10 @@ These are the highest-blast-radius surfaces the cohort product touches. They are
 
 ### 6.1 The staged-payment guard is do-not-touch
 
-The `ApplicationStatus.tsx:319,337` `isIOS()` staged-payment guard is **sacred** and must never become `isNative()` or otherwise change (`COHORT-LOGIC.md` "Standing guard"; PRD NFR-SEC-5). It is the Apple anti-steering / Android staged-payment revenue guard. Nothing in the rooms layer, the reconciler, or the spine touches the application→staged-payment pipeline (PRD §4.4 do-not-touch).
+The `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` staged-payment guard is **sacred** and must never become `isNative()` or otherwise change (`COHORT-LOGIC.md` "Standing guard"; PRD NFR-SEC-5). It is the Apple anti-steering / Android staged-payment revenue guard. Nothing in the rooms layer, the reconciler, or the spine touches the application→staged-payment pipeline (PRD §4.4 do-not-touch).
 
 > **SEC-PAY-1 — The staged-payment `isIOS()` guard is immutable.** `🔴 Tier 1`
-> - Acceptance: `diff = 0` on `ApplicationStatus.tsx:319,337` and the staged-checkout path across the entire cohort program. Any PR touching it fails review by default.
+> - Acceptance: `diff = 0` on `ApplicationStatus.tsx`'s `isIOS()` guards and the staged-checkout path across the entire cohort program. Any PR touching it fails review by default.
 > - Source: PRD NFR-SEC-5; `COHORT-LOGIC.md` "Standing guard".
 
 ### 6.2 The identity spine — auth provisioning and the collision-defer rule
@@ -504,7 +504,7 @@ RLS protects the *database*. It does **nothing** for the bytes already sitting i
 | SEC-RLS-1 | Zero content policies name `cohort_room_members`; RPCs RAISE for non-members; roster has no phone/email; roster + `roster_count` batch-scoped (ROSTER-SCOPE-1); `zoom_link` NULL before T-60 |
 | SEC-CFG-1 | Non-member can't read config; no RLS reads `modules`/`theme`; config write admin-only |
 | SEC-APPLY-1 | Full Tier-1 gate checklist recorded; `DROP FUNCTION` before RETURNS-TABLE change; link `ivkvluezuiojovpotlyb`; backup first |
-| SEC-PAY-1 | `diff = 0` on `ApplicationStatus.tsx:319,337` staged-payment guard |
+| SEC-PAY-1 | `diff = 0` on `ApplicationStatus.tsx`'s `isIOS()` guards staged-payment guard |
 | SEC-AUTH-1 | No-match provisions both identifiers idempotently; collision defers to in-flow claim, never merges |
 | SEC-AUTH-2 | Phone OTP byte-identical; email OTP mints/rejects; no password field; full Tier-1 gate |
 | SEC-RECON-1 | Read-only externals; name-only secrets; no phone/email in URLs; orphan-rate alert |

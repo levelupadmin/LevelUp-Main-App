@@ -491,7 +491,7 @@ Newest rounds at the bottom (append-only order). `⤴` = superseded, `→` detai
 
 ### DL-046 — NFR-SEC-5: the staged-payment pipeline and isIOS() guard are do-not-touch
 - **Date:** 2026-07-17 · **Status:** ✅ DECIDED · `🔴 Tier 1 (do-not-touch)`
-- **Decision:** The application→staged-payment pipeline (checkout, statuses, webhooks) and specifically the `ApplicationStatus.tsx:319,337` `isIOS()` staged-payment revenue guard are sacred; nothing in this product changes them (never to `isNative()`).
+- **Decision:** The application→staged-payment pipeline (checkout, statuses, webhooks) and specifically the `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` staged-payment revenue guard are sacred; nothing in this product changes them (never to `isNative()`).
 - **Rationale:** The guard is the Android staged-payment revenue guard / Apple anti-steering line; changing it breaks revenue or trips App Store review (PRD §4.4, NFR-SEC-5; `COHORT-LOGIC.md` "Standing guard"; Risk R7).
 - **Alternatives considered:** None — this is a standing guard.
 - **Affects:** PRD §4.4, §6.5 NFR-SEC-5; REQ-APP-2; Risk R7.

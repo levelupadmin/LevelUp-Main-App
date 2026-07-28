@@ -177,7 +177,7 @@ Documented as phase-2 backlog, not v1 scope (`CRO-SUGGESTIONS.md` §"Scope resol
 ### 4.4 OUT — explicitly not in this product
 
 - **The global app-wide commons** — separate program (`design/community-v2/`). (§4.2)
-- **Any change to the application → staged-payment pipeline.** The staged checkout, statuses, webhooks, and — critically — the `ApplicationStatus.tsx:319,337` `isIOS()` staged-payment revenue guard are sacred. Nothing in this product touches them (`COHORT-LOGIC.md` "Standing guard"; `ROOMS-BACKLOG.md` global hard rules). `🔴 Tier 1 (do-not-touch)`
+- **Any change to the application → staged-payment pipeline.** The staged checkout, statuses, webhooks, and — critically — the `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` staged-payment revenue guard are sacred. Nothing in this product touches them (`COHORT-LOGIC.md` "Standing guard"; `ROOMS-BACKLOG.md` global hard rules). `🔴 Tier 1 (do-not-touch)`
 - **Realtime chat, typing indicators, presence dots** in the room commons v1 — async threads only (`ROOMS-ARCHITECTURE.md` §8 R-D1; v2 Stage 09-C).
 - **DMs, follow, member-profile drilldown** inside rooms v1 (`ROOMS-BACKLOG.md` R3-T2).
 - **A public demo-day showcase page** — members + alumni only in v1 (`ROOMS-ARCHITECTURE.md` §8 R-D6).
@@ -293,7 +293,7 @@ Serves P1, P5. Implements v2 Stage 02 (screens 2A/2B/2C). Sources: `FLOW-FEEDBAC
 
 **REQ-APP-2 — Contact captured at step one, pipeline untouched.** `🔴 Tier 1 (do-not-touch)`
 - Behavior: Phone + email land at step one of the existing Tally form; the ₹400 staged checkout (`type=app_fee`), server-side verification, and status advance stay byte-for-byte as shipped.
-- Acceptance: The staged checkout and `ApplicationStatus.tsx:319,337` `isIOS()` guard are unmodified (diff = 0). Contact fields are present before any quiz wall so partials are recoverable.
+- Acceptance: The staged checkout and `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` guard are unmodified (diff = 0). Contact fields are present before any quiz wall so partials are recoverable.
 - Implements: Screens 2A/2C. Source: `COHORT-LOGIC.md` "Standing guard"; `TALLY-UX-ANALYSIS.md` §4.
 
 **REQ-APP-3 — Shorten the form: the single biggest measured lever.** `🟢 Tier 3 (Tally-side)` — **RULED OUT of v1; parked fast-follow (ROUND-F INTEG-PAY-1, 2026-07-18).**
@@ -605,7 +605,7 @@ Sources: `FLOW-FEEDBACK-R1.md`; v2 "The five rules." These are QA-checkable cont
 - **NFR-SEC-2** — Every content SELECT routes through **one access helper** (`cohort_room_can_access()`); zero content policies reference membership tables directly (grep-checkable) (`ROOMS-BACKLOG.md` R0-T2).
 - **NFR-SEC-3** — SECURITY DEFINER RPCs **assert access first** (raise, not empty-set, for non-members); the roster RPC exposes no phone/email (exact-column assertion in the suite) (`ROOMS-BACKLOG.md` R0-T3/R0-T4).
 - **NFR-SEC-4** — The **adversarial access suite** (`qa-harness/cohort-room-access.spec.mjs`) is a blocking QA lens from R0 onward and re-runs every later rooms phase (write-attack matrix + LEAK_CANARY greps) (`ROOMS-BACKLOG.md` R0-T4).
-- **NFR-SEC-5** — The **`ApplicationStatus.tsx:319,337` `isIOS()` staged-payment guard is sacred** and must never be changed to `isNative()` or otherwise touched (Apple anti-steering / Android staged-payment revenue guard) (`COHORT-LOGIC.md` "Standing guard").
+- **NFR-SEC-5** — The **`ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` staged-payment guard is sacred** and must never be changed to `isNative()` or otherwise touched (Apple anti-steering / Android staged-payment revenue guard) (`COHORT-LOGIC.md` "Standing guard").
 
 ---
 

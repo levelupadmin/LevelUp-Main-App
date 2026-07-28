@@ -11,7 +11,7 @@ The PRD writes REQ-IDENT-1 against the **Tally webhook** ("when a `FORM_RESPONSE
 **Therefore:** the provisioning + collision logic lives in a NEW shared module `supabase/functions/_shared/identity.ts`, and is CALLED by the poller (live today) and, optionally and unchanged in behaviour, by the webhook (if a signing secret is ever set). This is host-independent by construction, which is the property that matters — the intake host has already changed once.
 
 ## The inviolable rules (unchanged)
-1. **The payment pipeline and `ApplicationStatus.tsx:319,337` `isIOS()` guard are untouched.**
+1. **The payment pipeline and `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` guard are untouched.**
 2. **Phone-OTP must stay byte-identical to production.** `verify-msg91-otp` is the proven login path for every existing user; email OTP is ADDITIVE. If email OTP is disabled or broken, phone login is unaffected.
 3. **Never a silent merge.** A collision leaves `user_id` NULL + `pending_claim` and creates/merges nothing.
 4. **No user-facing signup screen exists in any flow** (grep must prove it).

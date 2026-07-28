@@ -91,7 +91,7 @@ Severity scale: **S1** breaks trust/task · **S2** visibly undermines premium fe
 | S2 | Strike price renders "₹4, 999" (broken gap — `font-mono` formatting artifact) beside the ₹1,499 hero price; prices are non-tabular everywhere except the checkout receipt. | `shots/offering375_seg0.png` |
 | S2 | ThankYou celebration has confetti but **no haptic on arrival** (`hapticNotification("success")` only fires on invoice-share); its CTA is solid cream, not champagne; "Enhance Your Learning / Special offers just for you" breaks the voice. | code |
 | S3 | Checkout loading is a spinner ("Loading secure checkout…") vs the offering's structured skeleton; coupon-remove target is 24px (`CheckoutPage.tsx:732`); guest phone field is a hand-rolled +91 prefix, not the app's PhoneInput; FAQ accordion cuts open/closed with no height animation (`PublicOffering.tsx:941-945`); TrustPanel stars/checks are raw `yellow-400`/`emerald-500`. | code |
-| S1* | *Guard, not defect:* `ApplicationStatus.tsx:319,337` deliberately uses `isIOS()` (not `isNative()`) so Android staged-cohort payments keep working. Any "normalization" here breaks revenue. Documented in the backlog as a DO-NOT-TOUCH. | code |
+| S1* | *Guard, not defect:* `ApplicationStatus.tsx`'s `isIOS()` guards deliberately uses `isIOS()` (not `isNative()`) so Android staged-cohort payments keep working. Any "normalization" here breaks revenue. Documented in the backlog as a DO-NOT-TOUCH. | code |
 
 ### Community / Events / Profile
 | Sev | Finding | Evidence |
