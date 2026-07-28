@@ -37,12 +37,76 @@ export function phoneVariants(normPhone: string): string[] {
 }
 
 /**
+ * The domain every synthetic placeholder address is minted on. One spelling, so
+ * `syntheticEmail` (which mints them) and `isSyntheticEmail` (which refuses to
+ * treat them as real addresses) can never drift apart.
+ */
+const SYNTHETIC_EMAIL_DOMAIN = "@phone.leveluplearning.in";
+
+/**
  * Deterministic placeholder email for a phone-only (no-email) account. The
  * domain carries no MX record so nothing is delivered; it exists only so
  * GoTrue's email-based magiclink can mint a session for a phone-only user.
  */
 export function syntheticEmail(normPhone: string): string {
-  return `${normPhone.replace(/\D/g, "")}@phone.leveluplearning.in`;
+  return `${normPhone.replace(/\D/g, "")}${SYNTHETIC_EMAIL_DOMAIN}`;
+}
+
+/**
+ * Is this address the placeholder above rather than something a person typed?
+ *
+ * Callers that JOIN on email must ask, because a synthetic address is an artefact
+ * of our own login path: it identifies a phone, so matching on it as "the
+ * applicant's email" is matching on the phone key while pretending otherwise, and
+ * treating it as a real address hides that the phone key is the one that had to
+ * work.
+ */
+export function isSyntheticEmail(email: string): boolean {
+  return (email || "").trim().toLowerCase().endsWith(SYNTHETIC_EMAIL_DOMAIN);
+}
+
+/**
+ * The subscriber digits carried INSIDE a synthetic placeholder address, or null
+ * when the address is a real one. `919788385577@phone.leveluplearning.in` →
+ * `9788385577`.
+ *
+ * It exists so an external system that was handed a phone-only account's
+ * placeholder address (Calendly prefilled from the profile, say) can be resolved
+ * on the PRIMARY key it really carries — the phone — instead of failing an email
+ * join against a mailbox that does not exist.
+ */
+export function phoneFromSyntheticEmail(email: string): string | null {
+  if (!isSyntheticEmail(email)) return null;
+  const trimmed = (email || "").trim();
+  const local = trimmed.slice(0, trimmed.lastIndexOf("@"));
+  return last10(local) || null;
+}
+
+/**
+ * SQL `LIKE` patterns that find a stored phone WHATEVER SEPARATORS IT CARRIES,
+ * ordered tightest first. Empty when the input holds no 10-digit subscriber number.
+ *
+ * WHY THIS EXISTS: the intake chain writes the phone VERBATIM as the applicant
+ * typed it into Tally, so the column legitimately holds "+91 98765 43210",
+ * "+919876543210", "98765 43210" and "9876543210" for the same person. A single
+ * `LIKE '%9876543210'` probe — the obvious one — matches only the last of those,
+ * which is how a phone-PRIMARY join key can be inert against real data while
+ * looking correct in review.
+ *
+ *   1. `%<10 digits>`            — the stored value ends in the clean subscriber run
+ *   2. `%9%8%7%…%0%`             — the ten digits IN ORDER with any separators
+ *                                  (spaces, hyphens, brackets) between them
+ *
+ * Pattern 2 is deliberately WIDE, and that is safe only because it is a candidate
+ * FILTER, never a decision: every caller must re-check each candidate exactly (
+ * `last10(row.phone) === last10(phone)`) before binding anything to it, and refuse
+ * when more than one distinct candidate survives. Widening the SQL net can only add
+ * candidates for that exact check to reject; it can never, on its own, bind a row.
+ */
+export function phoneLikePatterns(phone: string): string[] {
+  const subscriber = last10(phone);
+  if (subscriber === "") return [];
+  return [`%${subscriber}`, `%${subscriber.split("").join("%")}%`];
 }
 
 /**

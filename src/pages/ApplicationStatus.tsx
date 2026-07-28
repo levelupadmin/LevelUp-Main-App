@@ -9,6 +9,7 @@ import { InterviewEmbed } from "@/components/interview/SlotButtons";
 import { InterviewerCard } from "@/components/interview/InterviewerCard";
 import {
   RescheduleControl,
+  RebookPrompt,
   isLiveBooking,
 } from "@/components/interview/RescheduleControl";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,59 @@ const STATUS_TO_STEP: Record<string, number> = {
   withdrawn: -1,
   waitlisted: -1,
 };
+
+/* ── Where the interview sits, per reconciled stage ──
+   The booking gate's ceiling, stated as an explicit TOTAL table over the `Stage`
+   union in `supabase/functions/_shared/reconcile.ts` rather than derived by
+   subtracting from `RECONCILED_STAGE_STEP`.
+   That distinction is the whole point. `RECONCILED_STAGE_STEP` deliberately does
+   not map `accepted` or `unknown` (they open no chip/CTA here — see the comment
+   above it), so a ceiling phrased as "step is defined AND above the fee rung"
+   evaluates to FALSE for both, i.e. the two stages a subtraction cannot see are
+   waved straight through the gate. `accepted` is a real emitted stage sitting
+   between `awaiting-decision` and `confirm-paid-no-balance`, and it is precisely
+   a student whose interview is over and already decided; `unknown` is the
+   reconciler reporting that it resolved this applicant to no source at all, or
+   to a bare NEW/WARM/Lost lead. Neither may be handed an interviewer's slot.
+   Listing every member — including the two the step map omits — is what makes
+   the ceiling total. A stage this table has never heard of falls to
+   "unplaced", the same conservative reading as `unknown`.
+     • "ahead"    — the interview is still to come and nothing says it is booked
+     • "at"       — the funnel says an interview EXISTS. Ambiguous by construction:
+                    `deriveStage` collapses the TeleCRM literals "interview
+                    scheduled" and "need to reschedule interview" into this one
+                    stage, so a booked applicant and one told to rebook are
+                    indistinguishable from here (see the gate below)
+     • "behind"   — the interview has happened, or a decision is already past it
+     • "unplaced" — the reconciler placed this applicant nowhere
+   Keys mirror `RECONCILED_STAGE_UI` / `RECONCILED_STAGE_STEP`; keep in sync. */
+type InterviewPosition = "ahead" | "at" | "behind" | "unplaced";
+const INTERVIEW_POSITION: Record<string, InterviewPosition> = {
+  partial: "ahead",
+  "completed-no-fee": "ahead",
+  "fee-paid-no-interview": "ahead",
+  "interview-scheduled": "at",
+  "awaiting-decision": "behind",
+  accepted: "behind",
+  "confirm-paid-no-balance": "behind",
+  enrolled: "behind",
+  unknown: "unplaced",
+};
+
+/* The stage's position, or `undefined` when there is no stage at all — the flag
+   is off, or the reconciler read has not landed. "No opinion" and "placed
+   nowhere" are different answers and the gate treats them differently. */
+function interviewPositionOf(stage: string | undefined): InterviewPosition | undefined {
+  if (stage == null) return undefined;
+  return INTERVIEW_POSITION[stage] ?? "unplaced";
+}
+
+/* The only two local statuses a rebooking path may be offered on. Both mean the
+   fee is paid and the interview is still ahead of them; `interview_done` and
+   everything past it share step 2 with `interview_scheduled` on the STEPS
+   ladder, so the ladder alone cannot make this distinction and the statuses are
+   named instead. */
+const REBOOKABLE_STATUSES = new Set<string>(["app_fee_paid", "interview_scheduled"]);
 
 function statusLabel(s: string) {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -305,13 +359,16 @@ const ApplicationStatus = () => {
 
   /* ── The optional in-app Calendly embed (INTEG-CAL-1, dark behind
      VITE_COHORT_INTERVIEW) ──
-     Shown at exactly one point on the ladder: the fee is paid and the interview
-     has not happened, which is the "fee paid, interview not scheduled" loss this
-     phase exists to close. `interview_scheduled` deliberately does NOT qualify —
-     re-offering a calendar to someone who already holds a slot invites a second
-     booking on the same applicant.
-     That invariant has to hold against BOTH stage signals this page carries, not
-     just the slower one. `application.status` is the local mirror; the reconciler
+     This is the OUTRIGHT rung: the fee is paid, no signal on the page claims an
+     interview exists, and booking is the one thing left to do — the "fee paid,
+     interview not scheduled" loss this phase exists to close. A stage that says
+     an interview DOES exist does not qualify here; it goes to the pending rung
+     below, which opens the same calendar on the narrower `!hasLiveBooking` test
+     and puts `RebookPrompt`'s warning over it, because re-offering a calendar to
+     someone who already holds a slot invites a second booking on the same
+     applicant.
+     That distinction has to hold against BOTH stage signals this page carries,
+     not just the slower one. `application.status` is the local mirror; the reconciler
      exists specifically to run AHEAD of it (see the floors above), and
      `deriveStage` emits `interview-scheduled` from the external signal without
      ever reading `cohort_applications.status`. Gating on the mirror alone meant
@@ -319,17 +376,29 @@ const ApplicationStatus = () => {
      the chip "Interview scheduled" AND a live calendar underneath it. So the
      derived stage is a CEILING too: anything above the app-fee rung on the STEPS
      ladder means the interview is booked or already behind them, and the calendar
-     is withdrawn. `RECONCILED_STAGE_STEP` is read raw here rather than through
-     `reconciledUi` — the v1 money-stage suppression is about payment CTAs and
-     must not hand a booked applicant a calendar back.
+     is withdrawn. That ceiling is read off `INTERVIEW_POSITION`, the total table
+     at the top of this file, and NOT off `RECONCILED_STAGE_STEP`: the step map
+     leaves `accepted` and `unknown` unmapped by design, so a ceiling phrased as a
+     step comparison silently admits exactly those two (an already-decided
+     applicant would have been handed a calendar). The raw stage is read here
+     rather than `reconciledUi` — the v1 money-stage suppression is about payment
+     CTAs and must not hand a booked applicant a calendar back.
+     `unplaced` (the reconciler's `unknown`) does NOT withdraw this calendar, and
+     that asymmetry with the rebooking path below is deliberate. This branch turns
+     on a fact this app owns outright — the ₹400 is paid and the local status says
+     so — and a reconciler that could not resolve the applicant to any source has
+     not unpaid it. Withdrawing here on `unknown` would mean that turning the
+     reconciler flag ON stops an unresolvable fee-paid student from booking at
+     all, which is the exact loss this phase exists to close.
      It renders BESIDE the payment pipeline, never through it: no step branch, no
      `isIOS()` guard and no checkout route is touched, and an Apple anti-steering
      guard would be wrong here anyway — booking an interview moves no money.
-     Flag off → `reconciledStep` is undefined, the ceiling is inert, and this is
+     Flag off → `interviewPosition` is undefined, the ceiling is inert, and this is
      byte-identical to today; the embed's own hook never mounts, so no request is
      made. */
-  const interviewAheadOfFeePaid =
-    reconciledStep !== undefined && reconciledStep > STATUS_TO_STEP.app_fee_paid;
+  const interviewPosition = interviewPositionOf(reconciledStage);
+  const funnelHoldsInterview =
+    interviewPosition === "at" || interviewPosition === "behind";
   /* THE THIRD SIGNAL, AND THE FASTEST OF THE THREE. `calendly-webhook` writes the
      booking onto this very row the moment Calendly delivers, which is well before
      either stage signal above catches up: `application.status` is only moved by an
@@ -349,11 +418,120 @@ const ApplicationStatus = () => {
     application.interview_date,
     application.calendly_canceled_at,
   );
+  /* ── THE CEILING'S OWN CASUALTY, AND THE WAY OUT (P-1) ──
+     The ceiling above is correct about a booked applicant and catastrophic about
+     one other person. `_shared/reconcile.ts` derives `interview-scheduled` from
+     TWO TeleCRM literals — "interview scheduled" AND "need to reschedule
+     interview" — and collapses them before the client is handed anything, so the
+     ONE status whose literal meaning is "this person must rebook" arrives here as
+     the stage that WITHDRAWS the calendar. After a cancellation in that state the
+     student saw no calendar, no appointment card, and a chip reading "Interview
+     scheduled": stranded, which is the precise failure this phase exists to
+     remove. The same dead end swallows a locally-`interview_scheduled` row whose
+     booking was cancelled, since that status never satisfied the fee-paid branch
+     either.
+     The literal is unrecoverable from this page (`useFunnelStage` exposes
+     `{ stage, resolvedKey, markers, ambiguous }` and nothing else), and it is the
+     reconciler's to own (SOR-1), so this cannot be fixed by branching on which
+     literal produced the stage. It is fixed literal-AGNOSTICALLY instead: this
+     rung joins the one below in opening the calendar whenever `!hasLiveBooking`,
+     so whichever literal produced the stage, a student with no booking has a way
+     to take one. `RebookPrompt` stands over that calendar rather than in front of
+     it, carrying the warning for the applicant who may already hold a slot
+     elsewhere and a human route that does not depend on the calendar rendering.
+     `!hasLiveBooking` gates this rung exactly as it gates the appointment card
+     below, through the single shared `isLiveBooking` predicate, so a live calendar
+     and a reschedule card can never be on screen together. The two branches are
+     disjoint by construction: this rung is only reachable when the fee-paid branch
+     is false (an `app_fee_paid` row at `interview-scheduled` is by definition
+     ahead of the fee-paid rung), so they never double-count a single row.
+     Flag off → both are inert.
+     `interviewRungPending` keeps the rest of the ceiling standing. It carves ONLY
+     the one ambiguous stage out of it, so every stage past the interview —
+     `awaiting-decision` (the interview happened), `accepted` (it was decided), and
+     the two beyond — still withdraws every booking surface, including from a local
+     `interview_scheduled` row the admin has not caught up on. A calendar offered to
+     someone whose interview is behind them is a different lie, not a fix. It is
+     stated as an ALLOWLIST over `INTERVIEW_POSITION` rather than as "not behind",
+     because "not behind" is a subtraction and subtraction is what let `accepted`
+     and `unknown` through: an accepted applicant on a stale local
+     `interview_scheduled` row would have been offered a rebooking prompt for an
+     interview that already happened and was already decided.
+     The three admissible positions, and why each is admissible:
+       • "at" — the funnel itself says an interview exists, which is the ambiguous
+         stage this whole block is about;
+       • undefined — no stage at all (flag off, or the read has not landed), so the
+         page degrades to the status-driven view and the local mirror stands alone,
+         exactly as it did before the reconciler existed;
+       • "ahead" — the funnel says the interview is still to come while the local
+         mirror already reads `interview_scheduled`; nobody holds a booking on
+         either signal, so a way to take one has to exist.
+     `"unplaced"` is admissible on NEITHER, and unlike the fee-paid branch above
+     that is the conservative reading, not a regression: this path is offered off a
+     claim that an INTERVIEW EXISTS, which only the funnel can make, and `unknown`
+     is the funnel affirmatively reporting that it placed this applicant nowhere —
+     including a lead TeleCRM has marked Lost. A local `interview_scheduled` mirror
+     stands on its own where the reconciler has no opinion; it does not outvote the
+     reconciler saying it has none to give. */
+  const interviewRungPending =
+    REBOOKABLE_STATUSES.has(application.status) &&
+    (interviewPosition === "at" ||
+      ((interviewPosition === undefined || interviewPosition === "ahead") &&
+        application.status === "interview_scheduled"));
+  /* The rung where the calendar is offered outright: the fee is paid, nothing
+     says an interview exists, and booking is the one thing left to do. */
+  const interviewRungOpen =
+    application.status === "app_fee_paid" && !funnelHoldsInterview;
+  /* ── ONE SWITCH: IS THERE A BOOKING SURFACE ON THIS PAGE AT ALL? ──
+     `!hasLiveBooking` is the whole of it, over both rungs, and it is the SAME
+     `isLiveBooking` call the appointment card below turns on, read in the
+     opposite direction. So the calendar and the card are two views of one switch
+     and cannot drift: a booked-but-not-yet-reconciled student gets the card and
+     no calendar, and never both (§6.4).
+
+     NOTHING ELSE NARROWS IT, and the two things that used to are the P-1 review's
+     findings:
+
+     • NOT A TAP. The calendar at the pending rung used to be hidden behind an
+       explicit "pick a new time" control on `RebookPrompt`. `InterviewEmbed`
+       renders NULL on three admin-owned states (booking switched off, no Calendly
+       URL, the offering archived — `INTERVIEW_BOOKING_SILENT_REASONS`), and the
+       prompt was defined as this switch MINUS the embed, so the tap destroyed the
+       prompt that rendered it and could leave a blank page with no way back short
+       of a reload. That is the P-1 stranding, one tap later. The calendar is now
+       reachable outright and the prompt stands over it as a note, so no state of
+       the embed can consume the only surface on the page.
+
+     • NOT THE RESCHEDULE BUDGET. `reschedule_count` counts MOVES of a live
+       booking; where `isLiveBooking` is false there is none to move, and
+       `calendly-webhook` states that outright when it cancels one ("`reschedule_
+       count` is deliberately untouched — a cancel is not by itself a reschedule,
+       and the replacement booking is what counts"), nulling `interview_date` and
+       writing the tombstone as it goes. Gating on it closed the calendar on a
+       student who had used their one move and whose replacement slot was then
+       cancelled — a cancellation the interviewer or LevelUp may have initiated —
+       under copy blaming them for a move they did not make. That is a new
+       stranding class, and it also put a budget on the plain fee-paid rung, which
+       has never carried one. The budget belongs to `RescheduleControl`, where a
+       live booking exists to move.
+
+     The §6.4 second-booking hazard those two were reaching for is a hazard of
+     handing a calendar to somebody who ALREADY HOLDS a slot. `!hasLiveBooking`
+     forecloses it on every signal this row carries; the residue — a holder whose
+     booking this row has never heard of, because it was made outside the app or
+     the webhook is still in flight — is answered by `RebookPrompt`'s copy, which
+     leads with the confirmation that holds their slot and says in as many words
+     that booking below makes a second interview rather than moving the first. */
   const showInterviewEmbed =
     flag(COHORT_INTERVIEW) &&
-    application.status === "app_fee_paid" &&
-    !interviewAheadOfFeePaid &&
-    !hasLiveBooking;
+    !hasLiveBooking &&
+    (interviewRungOpen || interviewRungPending);
+  /* The note that stands over the calendar, at the ambiguous rung ONLY. The
+     plain fee-paid rung (`interviewRungOpen`) is not ambiguous — nothing there
+     claims an interview exists — so a note about a booking the student may
+     already hold would be noise, and this page renders exactly what it rendered
+     before at that rung. */
+  const showRebookPrompt = showInterviewEmbed && interviewRungPending;
 
   /* Determine which step was "failed" at, for rejected/withdrawn */
   // For rejected, show failure at the step after the last completed step
@@ -441,6 +619,17 @@ const ApplicationStatus = () => {
               </div>
             ))}
         </div>
+
+        {/* The note for a student the funnel calls scheduled while this row holds
+            no live booking — the "need to reschedule" population, which reaches
+            us wearing the same stage as the booked one (see the gate).
+
+            ABOVE the calendar and not instead of it. It is read before the slot
+            is picked, which is where a warning to somebody who may already hold
+            one belongs, and it carries a human route (reply to the confirmation)
+            that survives every state in which the calendar below renders nothing
+            at all. */}
+        {showRebookPrompt && <RebookPrompt className="mb-4" />}
 
         {/* Book the interview, in place. The embed is Calendly's own booking
             page, so it inherits Calendly's availability truth and this page

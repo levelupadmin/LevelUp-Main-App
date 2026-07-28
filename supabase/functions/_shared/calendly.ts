@@ -178,20 +178,46 @@ function inviteePhoneFromLocation(location: Record<string, unknown> | null): str
 }
 
 /**
- * The identity tokens a single event-type reference yields, lowercased: the value
- * itself, its last URL/path segment, and — when Calendly sent an object rather than
- * a URI — its `uri`, `slug` and `name`.
+ * Normalise ONE identity token so the two sides of the allowlist comparison are
+ * spelled the same way: lowercased, scheme-stripped, `www.`-stripped, no trailing
+ * slash. Both the configured value and the delivered value go through this, so the
+ * normalisation can only make a match MORE forgiving, never narrower — an operator
+ * who pastes `https://api.calendly.com/…` and a payload that carries the same URI
+ * must not miss each other over a scheme.
+ */
+function normalizeToken(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/+$/, "");
+}
+
+/**
+ * The identity tokens a single event-type reference yields: the normalised value
+ * itself, its last URL/path segment, and — when Calendly sent an OBJECT rather than
+ * a bare URI — its `uri`, `slug`, `name` and `scheduling_url`.
  *
- * The last-segment token is what lets an operator configure the allowlist with
- * either the API URI (`https://api.calendly.com/event_types/<uuid>`), the bare uuid,
- * or the hosted scheduling link (`https://calendly.com/levelup/interview-30min`,
- * whose last segment IS the event type's slug).
+ * WHAT A REAL v2 DELIVERY ACTUALLY CARRIES, because this is the trap that made the
+ * receiver drop every booking: `payload.scheduled_event.event_type` is a bare API
+ * URI STRING (`https://api.calendly.com/event_types/<uuid>`). It yields exactly two
+ * tokens — the URI and the uuid — and NO SLUG. So an allowlist configured with the
+ * hosted scheduling link (`https://calendly.com/levelup/interview-30min`, whose last
+ * segment is the slug) matches nothing at all: the delivered side has no `slug` to
+ * compare against, and a uuid cannot be derived from a slug without an API call this
+ * module is not allowed to make. The slug and `scheduling_url` tokens below are still
+ * read because the OBJECT form (legacy envelopes, and the v2 event-type resource when
+ * an integration inlines it) does carry them — but they are a bonus, not the
+ * contract. `config.toml` therefore instructs the operator to configure the API URI,
+ * the bare uuid, or the event type's NAME, and the receiver logs the tokens a
+ * delivery actually offered whenever it drops one.
  */
 function identityTokens(value: unknown): string[] {
   const tokens: string[] = [];
   const push = (raw: string | null) => {
     if (!raw) return;
-    const token = raw.toLowerCase().replace(/\/+$/, "");
+    const token = normalizeToken(raw);
     if (token !== "" && !tokens.includes(token)) tokens.push(token);
     const segment = (token.split("/").pop() ?? "").trim();
     if (segment !== "" && !tokens.includes(segment)) tokens.push(segment);
@@ -205,6 +231,7 @@ function identityTokens(value: unknown): string[] {
     push(asString(record.uri));
     push(asString(record.slug));
     push(asString(record.name));
+    push(asString(record.scheduling_url));
   }
   return tokens;
 }
@@ -223,16 +250,34 @@ function eventTypeRefOf(payload: unknown): unknown {
 }
 
 /**
- * Every identity token this delivery answers to: the event-type reference above,
- * PLUS the scheduled event's name — a name is weaker than a URI (two event types
- * could share one), but it is the only identity an operator can read off the
- * Calendly UI without an API call, so configuring by name has to work even when the
- * payload also carries a URI.
+ * EVERY identity token this delivery answers to, from EVERY place Calendly can name
+ * the event type — `payload.scheduled_event.event_type` (the v2 home),
+ * `payload.event_type` (the legacy invitee-level one) and
+ * `payload.scheduled_event.name`.
+ *
+ * All three are read, not just the first non-null. `eventTypeRefOf` deliberately
+ * stops at the first one it finds because it answers "what do I PRINT for this
+ * delivery"; matching must be the union, or a payload that carries a URI at the
+ * scheduled-event level and an object with a slug at the invitee level would be
+ * matchable by only one of the two forms an operator might reasonably have
+ * configured.
+ *
+ * The NAME is weaker than a URI (two event types could share one), but it is the
+ * only identity an operator can read off the Calendly UI without an API call, so
+ * configuring by name has to work even when the payload also carries a URI.
+ *
+ * Exported because the receiver LOGS these tokens whenever it drops a delivery: a
+ * misconfigured allowlist otherwise looks exactly like an account with no traffic,
+ * and the fix is "copy one of these strings into CALENDLY_INTERVIEW_EVENT_TYPE".
  */
-function deliveredEventTypeTokens(payload: unknown): string[] {
-  const tokens = identityTokens(eventTypeRefOf(payload));
-  for (const token of identityTokens(scheduledEventOf(payload)?.name)) {
-    if (!tokens.includes(token)) tokens.push(token);
+export function eventTypeTokensOf(payload: unknown): string[] {
+  const scheduled = scheduledEventOf(payload);
+  const invitee = inviteeOf(payload);
+  const tokens: string[] = [];
+  for (const ref of [scheduled?.event_type, invitee?.event_type, scheduled?.name]) {
+    for (const token of identityTokens(ref)) {
+      if (!tokens.includes(token)) tokens.push(token);
+    }
   }
   return tokens;
 }
@@ -312,9 +357,15 @@ export function eventTypeOf(payload: unknown): string | null {
 
 /**
  * Split the configured allowlist (`CALENDLY_INTERVIEW_EVENT_TYPE`) into identity
- * tokens. Entries may be API URIs, bare uuids, slugs, hosted scheduling links, or
- * event-type names, separated by commas or newlines — NOT by spaces, because an
- * event type's name legitimately contains them ("LevelUp Cohort Interview").
+ * tokens, separated by commas or newlines — NOT by spaces, because an event type's
+ * name legitimately contains them ("LevelUp Cohort Interview").
+ *
+ * THE FORMS THAT ACTUALLY MATCH a v2 delivery are the API URI
+ * (`https://api.calendly.com/event_types/<uuid>`), the bare uuid, and the event
+ * type's NAME. A hosted scheduling link is accepted here (it yields its slug) but
+ * matches only the legacy/object envelopes that carry a slug of their own — see
+ * `identityTokens` for why, and `config.toml` for the operator-facing version of
+ * the same warning.
  */
 export function parseEventTypeAllowlist(raw: string | null | undefined): string[] {
   if (!raw) return [];
@@ -345,7 +396,7 @@ export function parseEventTypeAllowlist(raw: string | null | undefined): string[
  */
 export function isAllowedEventType(payload: unknown, allowlist: readonly string[]): boolean {
   if (allowlist.length === 0) return false;
-  return deliveredEventTypeTokens(payload).some((token) => allowlist.includes(token));
+  return eventTypeTokensOf(payload).some((token) => allowlist.includes(token));
 }
 
 /**
@@ -376,20 +427,247 @@ export function modalityFromEvent(payload: unknown): InterviewModality | null {
 }
 
 /**
- * Is this string usable as a person's DISPLAY NAME?
+ * Courtesy titles that precede a name. Stripped, never rendered: "Dr. Kavya Rao"
+ * must yield the given name "Kavya", and taking the first whitespace token
+ * unconditionally yields "Dr." — a card reading "Dr. / Admissions Interviewer" is
+ * a fabricated first name attributed to a real colleague.
+ */
+const HONORIFICS = [
+  "dr", "mr", "mrs", "ms", "miss", "mx", "prof", "professor", "sir", "madam",
+  "shri", "sri", "smt", "capt", "rev", "fr", "adv",
+  // "Md." / "Mohd." — the abbreviated prefix a very large share of South Asian
+  // names carry. Without it "Md. Imran" rendered nothing at all (the token fails
+  // every shape check below), and a permanent blank for one of the commonest name
+  // forms in this product's own market is not a safe default, it is a bug.
+  // Neither abbreviation is plausibly a standalone given name, which is the bar
+  // for entry to this list.
+  "md", "mohd",
+];
+
+/**
+ * Nobiliary / patronymic PARTICLES — the connective parts of a surname that are
+ * never what a person is called. "de Souza Silva" rendered the given name "de" and
+ * "Van Der Berg" rendered "Van": both are the same defect as rendering "Dr.", so
+ * they are skipped exactly like an honorific and the next real token is used.
+ *
+ * Curated the same way as the lists above: only particles that are NEVER a
+ * standalone given name in the populations this product serves. "Al", "El", "Le",
+ * "La" and "Abu" are deliberately ABSENT — each is plausibly someone's actual name
+ * or the head of one, and skipping a real name's first token would render the
+ * wrong part of it.
+ */
+const NAME_PARTICLES = [
+  "de", "del", "dela", "della", "di", "da", "dos", "das", "du",
+  "van", "von", "der", "den", "ter", "ten", "bin", "ibn",
+];
+
+/**
+ * Tokens that mean the value names an ORGANISATION, a role inbox or a function
+ * rather than a person. INTEG-CAL-1 puts every interviewer on ONE org-level
+ * Calendly account, which is exactly the configuration most likely to carry the
+ * ORGANISATION'S name on its membership — "LevelUp Learning", "Admissions Team" —
+ * and `user_name` is a free-text field nobody validates.
+ *
+ * Curated to be UNAMBIGUOUS: no entry here is plausibly someone's given name or
+ * surname. Words that are both ("Meet", "Tech", "Co") are deliberately absent —
+ * this list rejects the whole value, and rejecting a real person's name is a
+ * silent, permanent blank on the one surface that names them.
+ */
+const ORGANISATION_WORDS = [
+  "learning", "academy", "institute", "institution", "school", "college",
+  "university", "education", "team", "admissions", "admission", "support",
+  "helpdesk", "careers", "recruitment", "recruiting", "labs", "foundation",
+  "solutions", "technologies", "enterprises", "company", "corp", "corporation",
+  "inc", "llc", "llp", "ltd", "limited", "pvt", "private", "gmbh", "plc",
+  "consulting", "consultants", "associates", "ventures", "holdings",
+  "productions", "office", "department", "dept", "operations", "noreply",
+  "no-reply", "info", "contact", "admin", "booking", "bookings", "scheduling",
+  "cohort", "cohorts", "programme", "batch",
+  // The FUNCTION a shared org-level account is most often named for. INTEG-CAL-1
+  // means one membership serves every interviewer, so "Interview", "Reception",
+  // "Front Desk", "Hiring", "Talent" and "Sales" are as likely a `user_name` as
+  // anyone's actual name — and each of them reaches the card as the person the
+  // applicant is about to meet. None is plausibly a given name or a surname,
+  // which is the bar for entry to this list.
+  "interview", "interviews", "interviewer", "reception", "desk", "hiring",
+  "talent", "sales", "calendly",
+];
+
+/**
+ * The offering/brand names this product ships under, as SINGLE tokens. A
+ * membership named for the BRAND is the single most likely non-person value on a
+ * shared org account, and "LevelUp Learning" rendering as the interviewer
+ * "LevelUp" is the failure this guard exists for. Kept as a constant here — in the
+ * PURE parser — so the guard needs no prop, no page edit and no second copy in the
+ * component.
+ */
+const BRAND_WORDS = ["levelup", "leveluplearning", "forge", "theforge", "millennial"];
+
+/**
+ * The same brands as WHOLE VALUES, whitespace-collapsed and lowercased.
+ *
+ * A per-token list cannot catch a brand that is SPELLED WITH A SPACE: "Level Up"
+ * has the tokens "level" and "up", neither of which is a word this file may
+ * reject on its own (both are ordinary English words and "Up" is not an
+ * organisation), so the token pass let the brand's own spaced spelling through and
+ * rendered the given name "Level". The whole-value pass closes that without
+ * widening the token list, because it only ever rejects a value that IS the brand
+ * end to end — a real person whose name merely contains one of these words is
+ * untouched.
+ *
+ * `personNameOf` also compares the letters-only squash of the whole value against
+ * `BRAND_WORDS`, so "Level Up", "Level-Up" and "LevelUp" collapse to one check and
+ * a new spacing of an existing brand needs no new entry here.
+ */
+const BRAND_PHRASES = [
+  "level up",
+  "level up learning",
+  "levelup learning",
+  "level up edu",
+  "levelup edu",
+  "the forge",
+  "forge by levelup",
+  "forge by level up",
+  "millennial labs",
+];
+
+/** A token with its surrounding punctuation removed — "Dr." → "Dr", "Ravi." → "Ravi". */
+function cleanNameToken(token: string): string {
+  return token.replace(/^[^\p{L}]+/u, "").replace(/[^\p{L}]+$/u, "");
+}
+
+/**
+ * Split a name into its cleaned tokens.
+ *
+ * A DOT THAT RUNS STRAIGHT INTO THE NEXT LETTER IS A SEPARATOR. An SSO- or
+ * directory-derived `user_name` legitimately arrives as "Ravi.Kumar", and as one
+ * unsplit token it fails every shape check below — i.e. a real person renders as a
+ * permanent blank. Splitting there costs nothing: no name form spells a single
+ * given name with an internal dot.
+ */
+function splitNameTokens(raw: string): string[] {
+  return raw
+    .replace(/\.(?=\p{L})/gu, ". ")
+    .split(/\s+/)
+    .map(cleanNameToken)
+    .filter((token) => token !== "");
+}
+
+/**
+ * The GIVEN NAME among a person's cleaned tokens — the first token that is a name
+ * rather than a piece of scaffolding around one — or `null`.
+ *
+ * THREE THINGS ARE SKIPPED RATHER THAN RENDERED, all for the same reason: none of
+ * them is what anybody is called, and rendering one attributes an invented given
+ * name to a real colleague.
+ *   - a BARE INITIAL — "S. Kumar" is called Kumar, "Prof. R Iyer" is called Iyer.
+ *     (Initial-plus-name is the standard South Indian form, so rejecting it
+ *     outright — which is what the ≥2-letter rule used to do — blanks the card for
+ *     a whole naming convention.)
+ *   - a PARTICLE — "de", "Van Der" (see `NAME_PARTICLES`).
+ *   - a token that is not name-SHAPED at all: letters plus the marks, apostrophes
+ *     and hyphens real names carry, and nothing else. A handle like "ravi_kumar"
+ *     is not a name.
+ * If nothing qualifies, the answer is `null` and no card renders — the honest
+ * outcome, and the one this whole guard exists to reach instead of a guess.
+ */
+function givenTokenOf(tokens: readonly string[]): string | null {
+  for (const token of tokens) {
+    if ((token.match(/\p{L}/gu) ?? []).length < 2) continue;
+    if (NAME_PARTICLES.includes(token.toLowerCase())) continue;
+    if (!/^\p{L}[\p{L}\p{M}'’-]*$/u.test(token)) continue;
+    return token;
+  }
+  return null;
+}
+
+/**
+ * The cleaned, honorific-stripped tokens of a value that is confidently ONE
+ * PERSON'S NAME, or `null`. The shared core of `personNameOf` and `givenNameOf`, so
+ * the two can never disagree about whether a value names a person.
  *
  * Deliberately narrow, because the value ends up on a card that tells an applicant
- * who they are about to meet: an address is not a name, a URL is not a name, and a
- * token carrying no letter at all is not a name. Anything rejected here degrades to
- * `null` — no card — rather than to a stand-in.
+ * who they are about to meet. An address is not a name, a URL is not a name, a token
+ * carrying no letter is not a name — and, the reason this guard was widened, NEITHER
+ * IS AN ORGANISATION. `user_name` is free text on an org-level account, so
+ * "LevelUp Learning" and "Admissions Team" arrive here as readily as "Kavya Rao";
+ * rendering their first token invents a colleague who does not exist.
+ *
+ * Anything rejected degrades to `null` — no stored name, no card — rather than to a
+ * stand-in. Showing nothing is the honest outcome; showing a guess is the one
+ * failure `InterviewerCard` exists to prevent, the same class as the selectivity
+ * rate we refused to render.
+ *
+ * REJECTION IS BOTH PER-TOKEN AND WHOLE-VALUE. The token pass catches "Admissions
+ * Team" and "LevelUp Learning"; the whole-value pass catches the brand spelled with
+ * a space ("Level Up"), whose individual tokens are ordinary words no list may
+ * reject on their own. Whole-value equality is deliberately the narrower of the two
+ * tests, so widening it cannot start rejecting real people.
  */
-function asDisplayName(value: unknown): string | null {
-  const name = asString(value);
-  if (!name) return null;
-  if (name.includes("@")) return null;
-  if (/https?:\/\//i.test(name)) return null;
-  if (!/\p{L}/u.test(name)) return null;
-  return name;
+function personTokensOf(value: unknown): string[] | null {
+  const raw = asString(value);
+  if (!raw) return null;
+  if (raw.includes("@")) return null;
+  if (/https?:\/\//i.test(raw)) return null;
+  if (!/\p{L}/u.test(raw)) return null;
+  // Digits belong to a room name, an address or a handle, never to a given name.
+  if (/\d/.test(raw)) return null;
+  // A list of people is not "your interviewer" — the same ambiguity two named hosts
+  // are refused for, arriving inside one string instead of two memberships.
+  if (/[&/+,;|]/.test(raw) || /\s(and|und|y)\s/i.test(raw)) return null;
+
+  const tokens = splitNameTokens(raw);
+  while (tokens.length > 0 && HONORIFICS.includes(tokens[0].toLowerCase())) tokens.shift();
+  if (tokens.length === 0) return null;
+
+  for (const token of tokens) {
+    const key = token.toLowerCase();
+    if (ORGANISATION_WORDS.includes(key)) return null;
+    if (BRAND_WORDS.includes(key)) return null;
+  }
+
+  // THE WHOLE VALUE, not just its tokens. A brand spelled with a space ("Level
+  // Up") has no token this file may reject on its own, so the token pass above
+  // passed it and the card rendered the invented interviewer "Level". Both checks
+  // are whole-value equality, so they can only reject a value that IS the brand —
+  // never a person whose name happens to contain one of these words.
+  const collapsed = tokens.map((token) => token.toLowerCase()).join(" ");
+  if (BRAND_PHRASES.includes(collapsed)) return null;
+  if (BRAND_WORDS.includes(collapsed.replace(/[^\p{L}]/gu, ""))) return null;
+
+  // A value none of whose tokens is a renderable given name names nobody — an
+  // all-initials value ("A. B."), a bare particle, a handle. Deciding it HERE keeps
+  // `personNameOf` and `givenNameOf` on one answer: there is never a stored full
+  // name whose given name the card then refuses to show.
+  if (givenTokenOf(tokens) === null) return null;
+
+  return tokens;
+}
+
+/**
+ * Is this string confidently ONE PERSON'S NAME? Returns it with honorifics stripped
+ * and whitespace collapsed, or `null`. See `personTokensOf` for the rules.
+ */
+export function personNameOf(value: unknown): string | null {
+  return personTokensOf(value)?.join(" ") ?? null;
+}
+
+/**
+ * The GIVEN NAME alone — the only part REQ-INT-2 ever renders — or `null` when the
+ * value is not confidently a person's name.
+ *
+ * Exported so the ONE rule has ONE implementation: the parser applies it before a
+ * name is ever stored, and `InterviewerCard` applies it again at the render boundary
+ * as the defensive gate for rows written before the guard existed.
+ *
+ * It is NOT `personNameOf(value).split(" ")[0]`. The first token of a real name is
+ * routinely not the given name — an initial ("S. Kumar"), a particle ("de Souza
+ * Silva") — and rendering it is the same fabrication as rendering "Dr.".
+ * `givenTokenOf` picks the first token that is actually a name.
+ */
+export function givenNameOf(value: unknown): string | null {
+  const tokens = personTokensOf(value);
+  return tokens === null ? null : givenTokenOf(tokens);
 }
 
 /**
@@ -408,6 +686,13 @@ function asDisplayName(value: unknown): string | null {
  * the only thing any surface renders, so the address would be colleague PII stored
  * for nothing; and deriving a name from an address ("admissions@…", "r.s@…") is a
  * guess wearing a fact's clothes, which is the one move this module never makes.
+ *
+ * A NON-PERSON `user_name` IS TREATED AS NO NAME AT ALL (`personNameOf`). The one
+ * org-level account INTEG-CAL-1 mandates is precisely the setup whose membership is
+ * most likely to be named for the ORGANISATION — "LevelUp Learning", "Admissions
+ * Team" — and storing that would put the fabricated first name "LevelUp" on a card
+ * that says an applicant is about to meet him. Honorifics are stripped for the same
+ * reason: "Dr. Kavya Rao" must render "Kavya", never "Dr.".
  *
  * `user_name` IS NOT GUARANTEED TO BE THERE. Calendly's older published webhook
  * schema documents a membership as `user` + `user_email` only, while the live
@@ -433,7 +718,7 @@ export function interviewerNameFromEvent(payload: unknown): string | null {
   const names: string[] = [];
   const seen: string[] = [];
   for (const entry of memberships) {
-    const name = asDisplayName(asRecord(entry)?.user_name);
+    const name = personNameOf(asRecord(entry)?.user_name);
     if (!name) continue;
     // Case- and whitespace-insensitive identity, so "Arundhati  Menon" delivered
     // twice is one host rather than two and does not read as ambiguity.

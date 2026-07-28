@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { givenNameOf } from "@shared/calendly";
 import { cn } from "@/lib/utils";
 import { useMotionSafe } from "@/lib/motion";
 
@@ -22,20 +23,41 @@ const INTERVIEWER_TITLE = "Admissions Interviewer";
  * quietly reintroduce the identity detail "no bio" exists to withhold. Pure and
  * exported so the rule is unit-testable on its own.
  *
- * Returns `null` for anything that is not a usable name — the card's own signal
- * that it has nothing real to show.
+ * IT IS A GIVEN-NAME SHAPE GUARD, NOT A `split(" ")[0]`. Taking the first
+ * whitespace token unconditionally renders "Dr. Kavya Rao" as "Dr." and the
+ * organisation "LevelUp Learning" as the person "LevelUp" — and INTEG-CAL-1's ONE
+ * shared org-level Calendly account is exactly the configuration whose free-text
+ * `user_name` is most likely to be the organisation rather than a person. A
+ * fabricated first name attributed to a real colleague, shown to the applicant
+ * about to meet him, is the single failure this card exists to prevent: the same
+ * class as the selectivity rate it deliberately refuses to render.
+ *
+ * IT IS ALSO NOT THE FIRST TOKEN OF A REAL NAME. "S. Kumar", "Prof. R Iyer",
+ * "Md. Imran", "Ravi.Kumar" and "de Souza Silva" are all real people whose first
+ * whitespace token is an initial, a prefix or a particle — never what they are
+ * called. `givenNameOf` skips those and renders the first token that is actually a
+ * name, because the alternative is a permanent blank (or "de") for whole naming
+ * conventions, and a blank card is not a free action either.
+ *
+ * The rule itself lives in the PURE parser (`@shared/calendly` `givenNameOf`), so
+ * a non-person name is rejected before it is ever written to
+ * `interview_interviewer_name`; this boundary is the SECOND gate, for rows written
+ * before that guard existed and for any future writer of the column. One rule, one
+ * implementation, two places it is enforced.
+ *
+ * Returns `null` for anything that is not confidently a person's given name — the
+ * card's own signal that it has nothing real to show.
  */
 export function firstNameOf(name: string | null | undefined): string | null {
-  if (typeof name !== "string") return null;
-  const [first = ""] = name.trim().split(/\s+/);
-  return first.length > 0 ? first : null;
+  return givenNameOf(name);
 }
 
 export interface InterviewerCardProps {
   /**
    * The interviewer's REAL name — in this repo, `cohort_applications.
    * interview_interviewer_name`, the host Calendly named on the booking. May be
-   * a full name; only the first token is ever rendered (see `firstNameOf`).
+   * a full name; only the given name is ever rendered, and only when the value is
+   * confidently a person's rather than the organisation's (see `firstNameOf`).
    *
    * There is deliberately NO default and no placeholder. A caller that cannot
    * name the interviewer passes nothing and the card renders nothing, which is

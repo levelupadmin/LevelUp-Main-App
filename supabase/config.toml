@@ -70,12 +70,48 @@ project_id = "twqagwleffjggoemzfqs"
   # CALENDLY_SIGNING_KEY is unset.
   # DEPLOY REQUIREMENT — it needs a SECOND env value, CALENDLY_INTERVIEW_EVENT_TYPE
   # (config, not a credential): the interview event type on the one org-level
-  # Calendly account (INTEG-CAL-1), as an API URI, a bare uuid, the hosted
-  # scheduling link or the event type's name; comma-separated for more than one. A
-  # Calendly subscription is org/user-scoped and cannot be narrowed to one event
-  # type, so every OTHER booking on that account is delivered here too and this
-  # allowlist is the only thing keeping a sales call from overwriting an
-  # applicant's interview. It is fail-closed: unset → the receiver mirrors nothing
-  # and says so at error level on every delivery.
+  # Calendly account (INTEG-CAL-1); comma-separated for more than one. A Calendly
+  # subscription is org/user-scoped and cannot be narrowed to one event type, so
+  # every OTHER booking on that account is delivered here too and this allowlist is
+  # the only thing keeping a sales call from overwriting an applicant's interview.
+  # It is fail-closed: unset → the receiver mirrors nothing and says so at error
+  # level on every delivery.
+  #
+  # SET IT TO ONE OF THESE THREE FORMS — they are what a v2 delivery actually
+  # carries, and nothing else is reliable:
+  #   1. the API URI      https://api.calendly.com/event_types/<uuid>
+  #   2. the bare uuid    <uuid>
+  #   3. the event type's NAME, exactly as Calendly spells it
+  #      ("LevelUp Cohort Interview")
+  #
+  # DO NOT USE THE HOSTED SCHEDULING LINK (https://calendly.com/levelup/
+  # interview-30min). It reads like the obvious value — it is the link the app
+  # embeds — but a v2 webhook payload names the event type as an API URI
+  # (`payload.scheduled_event.event_type`) and carries NO SLUG anywhere, so a
+  # link-shaped allowlist matches nothing and EVERY booking is silently dropped
+  # with a 200. That is a total no-op that looks healthy from the outside, which is
+  # precisely why this warning is here rather than in a commit message.
+  #
+  # IF IT IS WRONG, THE RECEIVER TELLS YOU. Every dropped delivery logs, at WARN,
+  # the identity tokens it answered to alongside the tokens configured, and echoes
+  # the delivered ones in the 200 body — so Calendly's own webhook delivery log
+  # shows the exact string to paste here. Fix by copying one of them.
+  #
+  # READ THE CONTENT OF THOSE LINES, NOT THEIR LEVEL. A drop is NOT by itself a
+  # fault: the subscription is org-wide, so sales and onboarding bookings arrive
+  # here too and are turned away by design, and there is no log level that can tell
+  # those apart from a wrong allowlist — both are "a delivery arrived and was not
+  # mirrored". What tells them apart is the `delivered=[…] configured=[…]` pair
+  # printed on every drop. So the check after deploying is: book ONE real interview
+  # and look for the `mirrored` line. If instead you see a DROPPED line whose
+  # `delivered` tokens describe that interview, the allowlist is wrong — paste one
+  # of them in. (An earlier revision tried to escalate "this instance has matched
+  # nothing yet" to ERROR. It could not work: that state is per-isolate and resets
+  # on every cold start, so a perfectly configured deployment raised it too.)
+  #
+  # ERROR from this function is reserved for what IS unambiguous whatever the
+  # traffic: CALENDLY_INTERVIEW_EVENT_TYPE unset (nothing is mirrored at all), and
+  # an ambiguous identity (several applications answer to one booking, so it
+  # refuses to bind rather than risk the wrong applicant's row).
   [functions.calendly-webhook]
     verify_jwt = false

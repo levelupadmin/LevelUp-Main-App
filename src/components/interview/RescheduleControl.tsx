@@ -13,6 +13,35 @@ import type { InterviewModality } from "@shared/calendly";
 const RESCHEDULE_BUDGET = 1;
 
 /**
+ * Has the applicant spent their one move? The single definition of REQ-INT-3's
+ * budget, named once so the number and its meaning cannot drift apart.
+ *
+ * ── IT IS SCOPED TO A LIVE BOOKING, AND ONLY TO A LIVE BOOKING ──
+ * This predicate answers "may this interview be MOVED again", which is a question
+ * about a slot the applicant currently holds. It deliberately does not gate the
+ * booking calendar `ApplicationStatus` opens when `isLiveBooking` is false: there
+ * is no booking to move there, so a slot taken is a first booking rather than a
+ * second move, and `calendly-webhook` says exactly that when it cancels one
+ * ("`reschedule_count` is deliberately untouched — a cancel is not by itself a
+ * reschedule, and the replacement booking is what counts"). Read as a gate on
+ * that calendar it strands the student whose one move was spent and whose
+ * replacement slot was then cancelled, possibly by us — a student with a
+ * cancellation tombstone on their row and nowhere to go.
+ *
+ * The §6.4 second-booking hazard it used to be pressed into service against
+ * (a creation with no `old_invitee` is never counted, so the budget stops binding
+ * rather than binds at one) is a hazard of handing a calendar to somebody who
+ * ALREADY HOLDS a slot. `isLiveBooking` is the predicate for that, on every
+ * signal the row carries, and `RebookPrompt` covers the residue in copy.
+ *
+ * `null`/`undefined` reads as zero: the column is nullable and a row that predates
+ * the migration has moved nothing.
+ */
+export function rescheduleBudgetSpent(count: number | null | undefined): boolean {
+  return (count ?? 0) >= RESCHEDULE_BUDGET;
+}
+
+/**
  * The modality enum, mirrored from the CHECK on
  * `cohort_applications.interview_modality` (migration `20260728100000`) and
  * `04-INTEGRATION-CONTRACTS.md` §6.3.
@@ -175,7 +204,7 @@ export const RescheduleControl = ({
   if (!isLiveBooking(interviewDate, canceledAt) || startsAt === null) return null;
 
   const modality = modalityOf(interviewModality);
-  const budgetSpent = (rescheduleCount ?? 0) >= RESCHEDULE_BUDGET;
+  const budgetSpent = rescheduleBudgetSpent(rescheduleCount);
 
   // One line per modality, and a third that names no platform. The joining
   // details live on Calendly's own confirmation in every case, which is a thing
@@ -204,6 +233,102 @@ export const RescheduleControl = ({
         {budgetSpent
           ? "You have already moved this once, so this time is now fixed. If something has changed, reply to your confirmation and we will find a time with you."
           : "One reschedule is available if plans change. The reschedule link is on your Calendly confirmation, and this page follows the change once it reaches us."}
+      </p>
+    </motion.section>
+  );
+};
+
+export interface RebookPromptProps {
+  className?: string;
+}
+
+/**
+ * RebookPrompt — the standing note above the booking calendar for a student the
+ * funnel says holds an interview while this row holds no live booking (P-1).
+ *
+ * ── WHY THIS EXISTS ──
+ * `_shared/reconcile.ts` derives the SAME `interview-scheduled` stage from two
+ * different TeleCRM literals: "interview scheduled" AND "need to reschedule
+ * interview". The client is handed the derived stage only — the literal never
+ * reaches it — so the one status whose literal meaning is "this person must
+ * rebook" arrives at `ApplicationStatus` indistinguishable from the one that
+ * means "this person is booked". That stage used to withdraw the booking
+ * calendar outright: a student told to rebook, or one whose slot was cancelled,
+ * was shown no calendar and no appointment card under a chip reading "Interview
+ * scheduled" — stranded, with no way forward. The calendar is now reachable at
+ * that rung, and this section is what stands over it.
+ *
+ * ── IT IS A NOTE, NOT A GATE, AND THAT IS THE CORRECTION ──
+ * This began as a gate: the calendar stayed hidden until an explicit tap here
+ * revealed it. Two things were wrong with that, and both of them recreated the
+ * stranding it was written to remove.
+ *
+ * The tap was IRREVERSIBLE and could reveal NOTHING. `InterviewEmbed` renders
+ * null on three admin-owned states (booking switched off, no Calendly URL, the
+ * offering archived — `INTERVIEW_BOOKING_SILENT_REASONS`), and this section was
+ * defined as the open switch minus the calendar, so the control destroyed the
+ * only surface on the page and left a blank one behind with no way back short of
+ * a reload. A gate whose far side may be empty is not a way forward.
+ *
+ * And the gate stood on a BUDGET it had no business reading. `reschedule_count`
+ * counts MOVES of a live booking; where `isLiveBooking` is false there is no
+ * booking to move, and `calendly-webhook` says so in as many words when it
+ * cancels ("`reschedule_count` is deliberately untouched — a cancel is not by
+ * itself a reschedule, and the replacement booking is what counts"). Reading it
+ * here closed the calendar on a student whose one move had been spent and whose
+ * replacement slot was then cancelled — including by us — which is a fresh
+ * stranding class, not a guardrail. The budget belongs to the card above, where
+ * a live booking exists to move.
+ *
+ * ── SO THE §6.4 HAZARD IS ANSWERED WHERE IT ACTUALLY LIVES ──
+ * The real hazard is a student who DOES hold a slot (booked outside the app, or
+ * booked with the webhook still in flight) taking a SECOND one: Calendly reports
+ * that as a creation with no `old_invitee`, so the receiver never counts it and
+ * the one-reschedule budget stops binding rather than binding at one. The page's
+ * `isLiveBooking` gate forecloses it on every signal the row carries, and what
+ * remains — a holder whose booking this row has never heard of — is answered
+ * here, by telling that student, FIRST and in the heading, that their time and
+ * its reschedule link are on their Calendly confirmation and that booking again
+ * sets up a second interview. The previous copy did the opposite: it led with
+ * "Need a different interview time?" over a button reading "Pick a new time",
+ * which is an invitation addressed to precisely the population it had to deter.
+ *
+ * ── AND IT NEVER LEAVES A BLANK PAGE ──
+ * Every branch of the calendar below can render nothing, so this section carries
+ * a route out that does not depend on it: replying to the Calendly confirmation
+ * reaches the admissions team. It claims nothing about whether a calendar
+ * follows, which is what lets it stand honestly over all three of the embed's
+ * silent states without promising a surface that is not there.
+ *
+ * The counterpart of `RescheduleControl` above, and mutually exclusive with it
+ * by construction: that card renders on `isLiveBooking`, this note only where
+ * `isLiveBooking` is false. It renders no interactive element and adds no tap
+ * target. Motion is opacity + translate only and collapses to an instant cut
+ * under `prefers-reduced-motion`.
+ */
+export const RebookPrompt = ({ className }: RebookPromptProps) => {
+  const m = useMotionSafe();
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: m.reduced ? 0 : 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={m.springs.glide}
+      aria-label="Booking your interview"
+      className={cn("rounded-xl border border-border bg-surface p-4", className)}
+    >
+      <h3 className="text-sm font-semibold text-foreground">
+        Already have a time? It is on your Calendly confirmation
+      </h3>
+      <p className="mt-1 text-sm text-muted-foreground">
+        That confirmation carries your slot and the link that moves it. Taking a
+        time below would set up a second interview rather than move the one you
+        hold.
+      </p>
+      <p className="mt-2 text-sm text-muted-foreground">
+        If your time was cancelled, or you have been asked to pick again, take a
+        new one below. Either way, replying to your confirmation reaches the
+        admissions team.
       </p>
     </motion.section>
   );

@@ -12,6 +12,11 @@ import { isNative } from "@/lib/platform";
 import { hapticNotification } from "@/lib/haptics";
 import { useMotionSafe, useFinePointer, durations } from "@/lib/motion";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
+import {
+  calendlyEmbedUrl,
+  isCalendlyUrl,
+  useCalendlyBookedSignal,
+} from "@/hooks/useInterviewSlots";
 import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
 import { SuccessCheck, DownloadInvoiceButton } from "@/components/checkout/SuccessMoment";
@@ -39,22 +44,36 @@ function isSafeRedirectUrl(url: string | null | undefined): boolean {
   }
 }
 
-/**
- * Only embed the Calendly iframe if `calendly_url` is actually on Calendly.
- * Admin-authored URLs are trusted in the UI, but prefilling the user's
- * name+email into a third-party iframe makes a misconfigured or compromised
- * admin account into a trivial phishing vector. Pin to calendly.com only.
+/* CALENDLY — see the `calendlyEmbedUrl` / `isCalendlyUrl` import above.
+ *
+ * The Calendly gate and the Calendly URL builder both live in
+ * `@/hooks/useInterviewSlots` now, and this page imports them rather than
+ * carrying its own copies.
+ *
+ * `isCalendlyUrl` was duplicated here verbatim: only embed the iframe if
+ * `calendly_url` is actually on Calendly, because admin-authored URLs are
+ * trusted in the UI and prefilling the buyer's name+email into a third-party
+ * iframe makes a misconfigured or compromised admin account into a trivial
+ * phishing vector.
+ *
+ * `calendlyEmbedUrl` replaces the hand-concatenated `?name=&email=` src. Same
+ * `offerings.calendly_url` row, same two prefill fields, same `embed_domain` /
+ * `embed_type` pair as the in-app embed (`components/interview/SlotButtons.tsx`)
+ * — which is what ENTRY-PARITY-1 means in practice: one builder, so the two
+ * surfaces cannot produce different invitee records off the identical link, and
+ * neither can silently stop signalling that it is embedded.
+ *
+ * `useCalendlyBookedSignal` is the other half of that parity, and it is not
+ * optional once the params are set. ENTRY-PARITY-1 is about the same FLOW, not
+ * only the same URL: with `embed_domain` present Calendly posts
+ * `calendly.event_scheduled` at THIS page too, and a page that asks for the
+ * message and then drops it is worse than one that never asked. A guest who
+ * books here and reopens `/thank-you/:paymentOrderId` from the payment receipt
+ * link would otherwise be served a fresh open calendar under "Book Your
+ * Interview" while the webhook is still in flight — and a second booking
+ * carries no `old_invitee`, so the receiver cannot reconcile it against the
+ * first (04-INTEGRATION-CONTRACTS §6.4).
  */
-function isCalendlyUrl(url: string | null | undefined): boolean {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:") return false;
-    return parsed.hostname === "calendly.com" || parsed.hostname.endsWith(".calendly.com");
-  } catch {
-    return false;
-  }
-}
 
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
@@ -645,6 +664,28 @@ export default function ThankYou() {
     }
   }, [session, order]);
 
+  /* ── The interview embed's booked signal (ENTRY-PARITY-1) ──
+     Declared with the other hooks, above the early returns, because hooks
+     cannot live inside the conditional Calendly block further down.
+
+     Same hook, same marker and same bounded lifetime as the in-app embed, so
+     both entry points behave identically after the booking and not merely
+     before it. Identity is the invitee email the frame is prefilled with, which
+     is what scopes the marker to this buyer on a shared device. `offering_id`
+     is already selected by the order query above. */
+  const interviewBooked = useCalendlyBookedSignal(
+    order?.offering_id,
+    order?.guest_email ?? session?.user?.email,
+    {
+      // Only the orders that actually render a frame listen. This page is every
+      // masterclass buyer's success screen, and a `message` listener on all of
+      // them to hear from a frame that is not there is cost for nothing.
+      listen:
+        !!order?.offerings?.thankyou_show_calendly &&
+        isCalendlyUrl(order?.offerings?.calendly_url),
+    },
+  );
+
   /* ── Loading / Error states ── */
   if (loading) {
     return (
@@ -797,17 +838,58 @@ export default function ThankYou() {
           {order.offerings?.thankyou_show_calendly &&
             isCalendlyUrl(order.offerings?.calendly_url) && (
             <motion.div variants={arrivalItemFade} className="w-full max-w-2xl mx-auto">
-              <h3 className="text-lg font-semibold text-foreground mb-3">Book Your Interview</h3>
-              <div className="rounded-xl border border-border overflow-hidden bg-white">
-                <iframe
-                  src={`${order.offerings.calendly_url}${order.offerings.calendly_url!.includes("?") ? "&" : "?"}name=${encodeURIComponent(order.guest_name || "")}&email=${encodeURIComponent(order.guest_email || "")}`}
-                  className="w-full"
-                  style={{ minHeight: 700, border: 0 }}
-                  title="Schedule Interview"
-                  sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
+              {interviewBooked.booked ? (
+                /* Booked in this browser, and it survived the reload. The
+                   calendar is withdrawn rather than re-offered; the marker is
+                   bounded to the webhook-lag window and carries its own way
+                   back out, worded for the buyer whose time was cancelled as
+                   well as the one whose booking never completed. */
+                <>
+                  <h3 className="text-lg font-semibold text-foreground mb-3">
+                    Your interview time is booked
+                  </h3>
+                  <div className="rounded-xl border border-border bg-[hsl(var(--surface))]/60 p-4 space-y-3 text-left">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[hsl(var(--cream))]" aria-hidden="true" />
+                      <p className="text-sm text-muted-foreground">
+                        Calendly is holding your slot and the confirmation is on its
+                        way to your inbox. Nothing else to do right now.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={interviewBooked.reopen}
+                      className="inline-flex min-h-[44px] items-center rounded-lg px-1 py-2 text-left text-sm text-muted-foreground underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      Booking did not complete, or your time was cancelled? Reopen the calendar
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-semibold text-foreground mb-3">Book Your Interview</h3>
+                  <div className="rounded-xl border border-border overflow-hidden bg-white">
+                    {/* `referrerPolicy="no-referrer"` stays, and `embed_domain` is
+                        why it can: this route is `/thank-you/:paymentOrderId`, so a
+                        referrer would hand Calendly a live payment-order id on every
+                        frame load. The embed params state the one thing Calendly
+                        needs — which host to post `calendly.event_scheduled` back
+                        to — without leaking the rest. The listener for that message
+                        is `useCalendlyBookedSignal` above. */}
+                    <iframe
+                      src={calendlyEmbedUrl(order.offerings.calendly_url!, {
+                        name: order.guest_name,
+                        email: order.guest_email,
+                      })}
+                      className="w-full"
+                      style={{ minHeight: 700, border: 0 }}
+                      title="Schedule Interview"
+                      sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                </>
+              )}
             </motion.div>
           )}
 

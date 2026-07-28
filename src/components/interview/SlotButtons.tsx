@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import { ArrowUpRight, CalendarCheck, RotateCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -6,16 +6,19 @@ import { tapTick } from "@/lib/haptics";
 import { useMotionSafe } from "@/lib/motion";
 import { isNative } from "@/lib/platform";
 import {
-  isCalendlyUrl,
+  CALENDLY_BOOKED_COPY,
+  calendlyBookingUrl,
+  calendlyEmbedUrl,
   isInterviewBookingError,
   isInterviewBookingSilent,
+  useCalendlyBookedSignal,
   useInterviewBooking,
 } from "@/hooks/useInterviewSlots";
 
 export interface InterviewEmbedProps {
   /**
    * The offering whose Calendly link this is. `offerings.calendly_url` is the
-   * SAME link the marketing path embeds (`src/pages/ThankYou.tsx:796`) and the
+   * SAME link the marketing path embeds (`src/pages/ThankYou.tsx`) and the
    * same one the hosted intake chain hands out, which is what makes the two
    * entry points literally one Calendly event type (ENTRY-PARITY-1).
    *
@@ -44,60 +47,6 @@ const EMBED_MIN_HEIGHT = 700;
  * would be its own layout lie in the opposite direction.
  */
 const NATIVE_PANEL_HEIGHT = 148;
-
-/** Session-scoped "they booked in the frame" marker, per offering. */
-const bookedKey = (offeringId: string) => `levelup.interview.booked.${offeringId}`;
-
-function readBooked(offeringId: string | undefined): boolean {
-  if (!offeringId) return false;
-  try {
-    return sessionStorage.getItem(bookedKey(offeringId)) === "1";
-  } catch {
-    // Private mode / storage disabled. The in-memory flag still covers the
-    // mount the booking happened on, which is the common case.
-    return false;
-  }
-}
-
-function rememberBooked(offeringId: string): void {
-  try {
-    sessionStorage.setItem(bookedKey(offeringId), "1");
-  } catch {
-    // See readBooked.
-  }
-}
-
-/**
- * Calendly's documented prefill query params — `name` and `email`, and nothing
- * else, exactly the pair the marketing path sends (`ThankYou.tsx:803` builds
- * its iframe src with `name=` and `email=`).
- *
- * ENTRY-PARITY-1 is why the list stops there. `_shared/calendly.ts` reads
- * `invitee.text_reminder_number` as the phone and `calendly-webhook` matches
- * phone-primary with email as fallback (INTEG-KEY-1), so an app-path booking
- * prefilled with an extra phone field would reconcile on a DIFFERENT join key
- * than the identical marketing-path booking. Same fields, same invitee shape,
- * same join key, both paths.
- *
- * (If phone-primary prefill is wanted, the change belongs to whoever owns
- * `ThankYou.tsx` — adding it on one side only IS the divergence.)
- *
- * Prefill is a convenience, never a requirement: an unparseable URL falls back
- * to the raw link rather than blocking the booking.
- */
-function withPrefill(
-  bookingUrl: string,
-  fields: { name?: string | null; email?: string | null },
-): string {
-  try {
-    const url = new URL(bookingUrl);
-    if (fields.name) url.searchParams.set("name", fields.name);
-    if (fields.email) url.searchParams.set("email", fields.email);
-    return url.toString();
-  } catch {
-    return bookingUrl;
-  }
-}
 
 /**
  * InterviewEmbed — the OPTIONAL in-app inline Calendly embed sanctioned by
@@ -159,49 +108,56 @@ export const InterviewEmbed = ({
   // browser unprompted.
   const embedInline = !isNative();
 
-  /* ── "They already booked, in this frame, just now" ──
+  /* ── "They already booked" ──
      The page's `application` row is fetched once and has no realtime channel,
-     so without this the applicant books successfully, comes back to the tab,
-     and is served a fresh open calendar under the heading "Book your interview
-     / This is the last step" — an invitation to take a SECOND slot, which is
-     the §6.4 hazard. Calendly's embed posts `calendly.event_scheduled` on
-     completion; that is the only in-page signal a booking happened.
+     so without this the applicant books successfully, comes back, and is served
+     a fresh open calendar under the heading "Book your interview / This is the
+     last step" — an invitation to take a SECOND slot, which is the §6.4 hazard.
+
+     Calendly's embed posts `calendly.event_scheduled` on completion (it only
+     does so because the frame src carries `embed_domain`/`embed_type`; see
+     `calendlyEmbedUrl`), and that is the only in-page signal a booking
+     happened. It arrives once, in one document, and a signal that exists only
+     until refresh is not a booking record — so it is written down, in the same
+     hook the marketing path uses (ENTRY-PARITY-1: same flow, not just the same
+     URL). The webhook is the DURABLE record, but it is asynchronous and can
+     lag, and this marker covers exactly that gap and is bounded to it.
+
+     `email` is the identity the marker is scoped to — the same value the frame
+     is prefilled with, so the marker belongs to the person whose booking it
+     records and cannot withdraw the calendar from the next person to open this
+     page on a shared handset.
+
+     WHAT THIS DOES NOT COVER, deliberately: a booking completed OUTSIDE this
+     document — the native hand-off below, and the "open in a new tab" escape
+     hatch — sends no `postMessage` by design, so nothing is written and the
+     calendar stays offered until the webhook lands and the parent's own gate
+     closes this surface. That residual webhook-lag window belongs to the
+     receiver and to the parent gate; this component cannot observe it, and
+     inventing a self-reported "I booked" control here would let a mis-tap
+     withdraw a calendar with no booking behind it at all.
+
      It changes no funnel status and claims none: it withdraws the calendar and
-     says the confirmation is still in flight. Session-scoped so it survives the
-     unmount/remount of a tab switch without outliving the session, by which
-     point the webhook owns the truth. */
-  const [booked, setBooked] = useState(() => readBooked(offeringId));
+     says the confirmation is still in flight. */
+  const { booked, reopen: reopenCalendar } = useCalendlyBookedSignal(offeringId, email, {
+    listen: embedInline,
+  });
 
-  // `offeringId` can arrive late (parent still resolving its row), so the
-  // initial read may have run against `undefined`.
-  useEffect(() => {
-    setBooked(readBooked(offeringId));
-  }, [offeringId]);
-
-  useEffect(() => {
-    if (!offeringId || !embedInline) return;
-
-    const onMessage = (event: MessageEvent) => {
-      // Same calendly.com pin the URL itself gets — an arbitrary frame or
-      // extension must not be able to blank this surface by posting at us.
-      if (!isCalendlyUrl(event.origin)) return;
-      const payload = event.data as { event?: unknown } | null;
-      if (!payload || typeof payload !== "object") return;
-      if (payload.event !== "calendly.event_scheduled") return;
-      rememberBooked(offeringId);
-      setBooked(true);
-    };
-
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [offeringId, embedInline]);
-
-  // Prefilled once, used by the frame, the escape-hatch link AND the native
-  // hand-off, so every route out of this component produces the same invitee
-  // record (ENTRY-PARITY-1).
-  const bookingUrl = useMemo(() => {
+  /* Two builds of the same link, from the same builder, so every route out of
+     this component produces the same invitee record (ENTRY-PARITY-1):
+       • `embedUrl` — the iframe src, carrying `embed_domain`/`embed_type` so
+         Calendly knows it is embedded and posts its completion message back;
+       • `hostedUrl` — the escape hatch and the native hand-off, which open
+         Calendly as a TOP-LEVEL page where those params would be a lie.
+     Same event type, same prefill fields, same reconcilable booking either way. */
+  const hostedUrl = useMemo(() => {
     if (!data?.bookingUrl) return null;
-    return withPrefill(data.bookingUrl, { name, email });
+    return calendlyBookingUrl(data.bookingUrl, { name, email });
+  }, [data?.bookingUrl, name, email]);
+
+  const embedUrl = useMemo(() => {
+    if (!data?.bookingUrl) return null;
+    return calendlyEmbedUrl(data.bookingUrl, { name, email });
   }, [data?.bookingUrl, name, email]);
 
   const heading = (
@@ -213,29 +169,18 @@ export const InterviewEmbed = ({
     </div>
   );
 
-  // ── Waiting ── a request is genuinely in flight. A parent that has not
-  // supplied `offeringId` is a different state and renders nothing at all,
-  // rather than shimmering on something that may never arrive. The skeleton is
-  // the exact height of what replaces it, so resolving moves nothing below it.
-  if (isWaiting) {
-    return (
-      <section className={cn("space-y-4", className)} aria-busy="true">
-        {heading}
-        <div
-          className="rounded-xl border border-border bg-surface animate-pulse"
-          style={{ height: embedInline ? EMBED_MIN_HEIGHT : NATIVE_PANEL_HEIGHT }}
-        />
-        <span className="sr-only">Loading your interview calendar</span>
-      </section>
-    );
-  }
-
-  // Inert: no offering id, so no request was ever made.
-  if (!data) return null;
-
-  // Booked in place. A fact we observed, so it outranks every gate below —
-  // withdrawing the calendar is the whole point and it must not be re-offered
-  // because a refetch went sideways afterwards.
+  // ── Booked in place ── FIRST, above every other branch including the
+  // skeleton. `booked` is seeded synchronously from storage and needs no
+  // network, whereas `isWaiting` is true for the whole `offerings` round trip on
+  // every cold reload — so checking the skeleton first paints a 700px
+  // placeholder for a frame that is never going to render, then collapses to
+  // this ~200px panel when the query lands, shoving the reschedule card and the
+  // entire timeline up by ~500px on a 360×740 screen. That is the exact layout
+  // lie `EMBED_MIN_HEIGHT` exists to prevent, arriving through the back door.
+  //
+  // It also outranks the gates below on their own merits: withdrawing the
+  // calendar is the whole point, and it must not be re-offered because a
+  // refetch went sideways afterwards.
   if (booked) {
     return (
       <motion.section
@@ -263,19 +208,75 @@ export const InterviewEmbed = ({
             reaches us.
           </p>
         </div>
+        {/* The way back out, and it must name BOTH reasons somebody standing
+            here needs it.
+
+            The parent mounts this component for the REBOOK path as well as the
+            never-booked one, so a student whose slot was cancelled can land on
+            this panel. Copy reading "my booking did not go through" is factually
+            false for that student — theirs went through and was then cancelled —
+            and false copy on the only exit argues them out of the tap they need
+            to make, which is the stranding this phase exists to remove. Naming
+            the cancellation explicitly is what makes this a door rather than a
+            wall. (`CALENDLY_BOOKED_TTL_MS` is the other half of that fix: the
+            marker no longer outlives a same-day cancellation at all.)
+
+            Still worded as a correction rather than an offer — it costs a
+            deliberate tap after reading that the slot is held, which is the
+            opposite of the open calendar this state exists to prevent, and it is
+            not a reschedule route (`RescheduleControl` owns that budget). */}
+        <motion.button
+          type="button"
+          whileTap={m.pressTap}
+          onClick={() => {
+            void tapTick();
+            reopenCalendar();
+          }}
+          className={cn(
+            // `items-start` because this line wraps to two or three rows at
+            // 360px; a vertically-centred icon against wrapped text reads as
+            // misaligned. `py-2` keeps the 44px target on the single-row case.
+            "inline-flex min-h-[44px] items-start gap-2 rounded-lg px-1 py-2 text-left text-sm",
+            "text-muted-foreground underline underline-offset-4",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          <RotateCw className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          Booking did not complete, or your time was cancelled? Reopen the calendar
+        </motion.button>
       </motion.section>
     );
   }
 
+  // ── Waiting ── a request is genuinely in flight. A parent that has not
+  // supplied `offeringId` is a different state and renders nothing at all,
+  // rather than shimmering on something that may never arrive. The skeleton is
+  // the exact height of what replaces it, so resolving moves nothing below it.
+  if (isWaiting) {
+    return (
+      <section className={cn("space-y-4", className)} aria-busy="true">
+        {heading}
+        <div
+          className="rounded-xl border border-border bg-surface animate-pulse"
+          style={{ height: embedInline ? EMBED_MIN_HEIGHT : NATIVE_PANEL_HEIGHT }}
+        />
+        <span className="sr-only">Loading your interview calendar</span>
+      </section>
+    );
+  }
+
+  // Inert: no offering id, so no request was ever made.
+  if (!data) return null;
+
   // No booking surface at all: the admin's gate is off, the URL is not a
   // Calendly one, or the offering row is not visible (archived). The marketing
-  // path renders nothing for its two (`ThankYou.tsx:797`), so the app path
+  // path renders nothing for its two (the same gate in `ThankYou.tsx`), so the app path
   // renders nothing either — that is ENTRY-PARITY-1 as a property rather than a
   // claim. Copy here would be a promise triggered by a state the applicant
   // cannot influence, on the exact axis the rule guards.
   if (isInterviewBookingSilent(data.reason)) return null;
 
-  if (!bookingUrl) {
+  if (!hostedUrl || !embedUrl) {
     // We could not read the offering. Say that, and give them the one control
     // that can actually change it. `isInterviewBookingError` is asserted rather
     // than assumed so a future reason added to the union cannot silently
@@ -333,7 +334,7 @@ export const InterviewEmbed = ({
             in. Pick a time and you are done.
           </p>
           <a
-            href={bookingUrl}
+            href={hostedUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => void tapTick()}
@@ -360,20 +361,26 @@ export const InterviewEmbed = ({
     >
       {heading}
 
-      {/* Calendly's own booking page, in place. Same URL, same prefill fields
-          and same sandbox posture as the marketing path's embed
-          (`ThankYou.tsx:799-806`), so both entry points produce one invitee
-          shape. `loading="lazy"` so Calendly's booking bundle is fetched when
-          the applicant actually reaches it rather than on every render of this
-          page. The wrapper carries the height, so lazy costs no layout shift.
+      {/* Calendly's own booking page, in place. Same builder, same prefill
+          fields and same sandbox posture as the marketing path's embed
+          (`ThankYou.tsx`), so both entry points produce one invitee shape.
+          `loading="lazy"` so Calendly's booking bundle is fetched when the
+          applicant actually reaches it rather than on every render of this page.
+          The wrapper carries the height, so lazy costs no layout shift.
           `bg-white` because Calendly renders its own light UI inside the frame
-          and a transparent surface would show our canvas through its gaps. */}
+          and a transparent surface would show our canvas through its gaps.
+
+          `referrerPolicy="no-referrer"` STAYS, and it is why `embed_domain` is
+          not optional: the referrer is the implicit "I am embedded" signal, and
+          this route's URL carries the applicant's identifiers, so leaking it to
+          a third party on every frame load buys nothing that `embed_domain`
+          does not state outright. See `calendlyEmbedUrl`. */}
       <div
         className="rounded-xl border border-border overflow-hidden bg-white"
         style={{ minHeight: EMBED_MIN_HEIGHT }}
       >
         <iframe
-          src={bookingUrl}
+          src={embedUrl}
           className="w-full"
           style={{ minHeight: EMBED_MIN_HEIGHT, border: 0 }}
           title="Schedule your interview"
@@ -384,9 +391,15 @@ export const InterviewEmbed = ({
       </div>
 
       {/* Escape hatch. A browser that blocks the frame, or a student who would
-          rather finish in a tab, still has a prefilled way through. */}
+          rather finish in a tab, still has a prefilled way through.
+
+          A booking made HERE is invisible to this document — a top-level
+          Calendly page posts to no parent — so it writes no marker and this
+          surface keeps offering the calendar until the webhook lands. Same for
+          the native hand-off above. That window belongs to the receiver and the
+          parent's gate, not to this component; see the `booked` comment. */}
       <a
-        href={bookingUrl}
+        href={hostedUrl}
         target="_blank"
         rel="noopener noreferrer"
         onClick={() => void tapTick()}

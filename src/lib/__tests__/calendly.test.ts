@@ -3,12 +3,15 @@ import { hmacSha256Hex, timingSafeEqual } from "@shared/crypto";
 import {
   bookingFromEvent,
   eventTypeOf,
+  eventTypeTokensOf,
+  givenNameOf,
   interviewerNameFromEvent,
   isAllowedEventType,
   isFreshSignature,
   modalityFromEvent,
   parseEventTypeAllowlist,
   parseSignatureHeader,
+  personNameOf,
   signingPayload,
   SIGNATURE_TOLERANCE_SECONDS,
 } from "@shared/calendly";
@@ -585,5 +588,239 @@ describe("event-type scoping — one org-wide subscription, one interview event 
         two,
       ),
     ).toBe(true);
+  });
+
+  it("matches a REAL v2 delivery by API URI, by uuid and by name", () => {
+    // The shape Calendly actually sends: `scheduled_event.event_type` is a bare API
+    // URI string. These three are the only forms that can match it, which is what
+    // config.toml now tells the operator to configure.
+    for (const configured of [
+      "https://api.calendly.com/event_types/ET-INTERVIEW",
+      "ET-INTERVIEW",
+      "LevelUp Cohort Interview",
+    ]) {
+      expect(
+        isAllowedEventType(meetEvent(), parseEventTypeAllowlist(configured)),
+        `configured as ${configured}`,
+      ).toBe(true);
+    }
+  });
+
+  it("is scheme- and trailing-slash-insensitive on BOTH sides", () => {
+    // Both sides normalise identically, so pasting the URI with or without the
+    // scheme (or with a trailing slash) is the same configuration, never a silent
+    // total drop.
+    for (const configured of [
+      "api.calendly.com/event_types/ET-INTERVIEW",
+      "https://api.calendly.com/event_types/ET-INTERVIEW/",
+      "HTTPS://API.CALENDLY.COM/EVENT_TYPES/ET-INTERVIEW",
+    ]) {
+      expect(isAllowedEventType(meetEvent(), parseEventTypeAllowlist(configured)), configured)
+        .toBe(true);
+    }
+  });
+
+  it("does NOT match a v2 delivery from the hosted scheduling link alone — the drop this receiver was built on", () => {
+    // THE OUTAGE, pinned. `https://calendly.com/levelup/interview-30min` yields the
+    // slug `interview-30min`; a v2 payload names the event type as an API URI and
+    // carries no slug ANYWHERE, so the two can never meet and every real delivery
+    // is dropped with a healthy-looking 200. The honest answer is false — and the
+    // receiver logs `eventTypeTokensOf` so the operator can see what to paste
+    // instead. (The object form below still works, which is why the slug token is
+    // read at all.)
+    const hostedLink = parseEventTypeAllowlist("https://calendly.com/levelup/interview-30min");
+    expect(isAllowedEventType(meetEvent(), hostedLink)).toBe(false);
+    expect(eventTypeTokensOf(meetEvent())).toContain(
+      "api.calendly.com/event_types/et-interview",
+    );
+    expect(eventTypeTokensOf(meetEvent())).toContain("et-interview");
+    expect(eventTypeTokensOf(meetEvent())).toContain("levelup cohort interview");
+    expect(eventTypeTokensOf(meetEvent())).not.toContain("interview-30min");
+  });
+
+  it("reads EVERY place the event type can be named, not just the first", () => {
+    // A URI at the scheduled-event level and an object at the invitee level are both
+    // identities of the same delivery. Matching only the first found would make one
+    // of two reasonable configurations dead.
+    const both = {
+      ...meetEvent(),
+      payload: {
+        ...meetEvent().payload,
+        event_type: { uri: "https://api.calendly.com/event_types/ET-LEGACY", slug: "interview-30min" },
+      },
+    };
+    expect(eventTypeTokensOf(both)).toContain("et-interview");
+    expect(eventTypeTokensOf(both)).toContain("et-legacy");
+    expect(eventTypeTokensOf(both)).toContain("interview-30min");
+    expect(isAllowedEventType(both, allowlist)).toBe(true);
+    expect(
+      isAllowedEventType(both, parseEventTypeAllowlist("https://calendly.com/levelup/interview-30min")),
+    ).toBe(true);
+  });
+
+  it("yields no tokens at all for a payload that names nothing", () => {
+    expect(eventTypeTokensOf(null)).toEqual([]);
+    expect(eventTypeTokensOf({})).toEqual([]);
+    expect(eventTypeTokensOf({ payload: { scheduled_event: {} } })).toEqual([]);
+  });
+});
+
+describe("personNameOf / givenNameOf — a person, or nothing (REQ-INT-2)", () => {
+  it("strips an honorific instead of rendering it as the first name", () => {
+    // "Dr. Kavya Rao" → "Dr." is a fabricated first name for a real colleague, and
+    // it is what an unguarded first-whitespace-token rule produces.
+    expect(personNameOf("Dr. Kavya Rao")).toBe("Kavya Rao");
+    expect(givenNameOf("Dr. Kavya Rao")).toBe("Kavya");
+    expect(givenNameOf("Prof Arundhati Menon")).toBe("Arundhati");
+    expect(givenNameOf("Ms. Meera")).toBe("Meera");
+    // An honorific with nothing behind it names nobody.
+    expect(givenNameOf("Dr.")).toBeNull();
+  });
+
+  it("refuses the ORGANISATION, which is what a shared org account is likeliest to be called", () => {
+    // INTEG-CAL-1 puts every interviewer on ONE org-level Calendly account, whose
+    // membership `user_name` is free text. "LevelUp Learning" rendering as the
+    // person "LevelUp" is the exact failure the card exists to prevent.
+    expect(personNameOf("LevelUp Learning")).toBeNull();
+    expect(givenNameOf("LevelUp Learning")).toBeNull();
+    expect(givenNameOf("LevelUp Learning Pvt Ltd")).toBeNull();
+    expect(givenNameOf("Admissions Team")).toBeNull();
+    expect(givenNameOf("The Forge Admissions")).toBeNull();
+    expect(givenNameOf("Cohort Bookings")).toBeNull();
+    expect(givenNameOf("LevelUp")).toBeNull();
+  });
+
+  it("refuses the brand however it is SPACED, not only when it is concatenated", () => {
+    // A per-token list cannot reject "Level Up": neither "level" nor "up" is a word
+    // this guard may reject on its own, so the token pass let the brand's own spaced
+    // spelling through and the card rendered the invented interviewer "Level". The
+    // whole-value check is what closes it, and it is deliberately equality — a real
+    // person is untouched.
+    for (const brand of [
+      "Level Up",
+      "level up",
+      "Level-Up",
+      "Level Up Learning",
+      "The Forge",
+      "Millennial Labs",
+    ]) {
+      expect(givenNameOf(brand), `rendered a name for ${brand}`).toBeNull();
+    }
+  });
+
+  it("refuses the FUNCTION a shared account is named for, not just the company", () => {
+    // INTEG-CAL-1's one org-level account is as likely to be called after the job it
+    // does as after the company doing it, and each of these otherwise reaches the
+    // card as the person the applicant is about to meet.
+    for (const role of [
+      "Interview",
+      "Interviews",
+      "Front Desk",
+      "Reception",
+      "Hiring",
+      "Talent",
+      "Sales",
+      "Calendly",
+      "Interview Team",
+    ]) {
+      expect(givenNameOf(role), `rendered a name for ${role}`).toBeNull();
+    }
+  });
+
+  it("still keeps real names that merely sit near those words", () => {
+    // The cost of a wrong rejection is a permanent blank on the one surface that
+    // names a colleague, so the guard must not creep into ordinary names.
+    expect(givenNameOf("Kavya Rao")).toBe("Kavya");
+    expect(givenNameOf("Arundhati Menon")).toBe("Arundhati");
+    expect(givenNameOf("Aditi Upadhyay")).toBe("Aditi");
+    expect(givenNameOf("Salil Deshpande")).toBe("Salil");
+  });
+
+  it("keeps a single-word personal name — a mononym is a real name", () => {
+    expect(personNameOf("Arundhati")).toBe("Arundhati");
+    expect(givenNameOf("Arundhati")).toBe("Arundhati");
+    expect(givenNameOf("  Kavya   Rao  ")).toBe("Kavya");
+  });
+
+  it("keeps the punctuation real names carry", () => {
+    expect(givenNameOf("D'Souza Fernandes")).toBe("D'Souza");
+    expect(givenNameOf("Jean-Pierre Aravind")).toBe("Jean-Pierre");
+  });
+
+  it("refuses anything that is not a name at all", () => {
+    expect(givenNameOf(null)).toBeNull();
+    expect(givenNameOf(undefined)).toBeNull();
+    expect(givenNameOf("   ")).toBeNull();
+    expect(givenNameOf(42)).toBeNull();
+    expect(givenNameOf("arundhati@leveluplearning.in")).toBeNull();
+    expect(givenNameOf("https://calendly.com/levelup")).toBeNull();
+    expect(givenNameOf("98765")).toBeNull();
+    expect(givenNameOf("Room 4")).toBeNull();
+    // Two people in one string is the same ambiguity two memberships are refused for.
+    expect(givenNameOf("Kavya & Arjun")).toBeNull();
+    expect(givenNameOf("Kavya and Arjun")).toBeNull();
+    // A bare initial is not a given name — but "K. Rao" is still a PERSON, so the
+    // initial is skipped rather than the whole value rejected (see below).
+    expect(givenNameOf("K.")).toBeNull();
+    expect(givenNameOf("A. B.")).toBeNull();
+    // A handle is not a name, and no token of it is one either.
+    expect(givenNameOf("ravi_kumar")).toBeNull();
+  });
+
+  it("skips an INITIAL instead of blanking the card — initial-plus-name is a whole naming convention", () => {
+    // "S. Kumar" is called Kumar and "Prof. R Iyer" is called Iyer. The old rule
+    // (first token must carry ≥2 letters) rejected the value outright, which is a
+    // permanent blank on the one surface that names a colleague — for one of the
+    // commonest name forms in this product's own market. Rendering the next real
+    // token is not a fabrication: every character of it is the person's own name.
+    expect(givenNameOf("S. Kumar")).toBe("Kumar");
+    expect(givenNameOf("K. Rao")).toBe("Rao");
+    expect(givenNameOf("Prof. R Iyer")).toBe("Iyer");
+    expect(personNameOf("S. Kumar")).toBe("S Kumar");
+  });
+
+  it("strips the abbreviated prefix 'Md.' the way it strips 'Dr.'", () => {
+    // Not in the honorific list, "Md. Imran" rendered nothing at all.
+    expect(givenNameOf("Md. Imran")).toBe("Imran");
+    expect(givenNameOf("Mohd Rizwan")).toBe("Rizwan");
+    expect(givenNameOf("Md.")).toBeNull();
+  });
+
+  it("splits a dot-joined SSO name instead of rejecting it", () => {
+    // "Ravi.Kumar" is one token to a whitespace split, and one token that shape
+    // check can never pass — another silent blank for a real person.
+    expect(givenNameOf("Ravi.Kumar")).toBe("Ravi");
+    expect(personNameOf("Ravi.Kumar")).toBe("Ravi Kumar");
+    expect(givenNameOf("Dr.Kavya Rao")).toBe("Kavya");
+  });
+
+  it("never renders a nobiliary PARTICLE as the person's first name", () => {
+    // "de" and "Van" are not what anyone is called — the same defect as "Dr.".
+    expect(givenNameOf("de Souza Silva")).toBe("Souza");
+    expect(givenNameOf("Van Der Berg")).toBe("Berg");
+    expect(givenNameOf("von Neumann")).toBe("Neumann");
+    // …but a particle is only ever SKIPPED, never used to reject a real name that
+    // merely contains one.
+    expect(givenNameOf("Kavya de Souza")).toBe("Kavya");
+    // A value that is nothing but particles names nobody.
+    expect(givenNameOf("Van Der")).toBeNull();
+  });
+
+  it("is the SAME guard the host parser applies, so nothing non-person is ever stored", () => {
+    const withHost = (user_name: unknown) => ({
+      event: "invitee.created",
+      payload: {
+        scheduled_event: {
+          uri: "https://api.calendly.com/scheduled_events/EVT1",
+          start_time: "2026-07-30T13:00:00.000000Z",
+          location: { type: "google_conference" },
+          event_memberships: [{ user_name }],
+        },
+      },
+    });
+    expect(interviewerNameFromEvent(withHost("LevelUp Learning"))).toBeNull();
+    expect(interviewerNameFromEvent(withHost("Admissions Team"))).toBeNull();
+    expect(interviewerNameFromEvent(withHost("Dr. Kavya Rao"))).toBe("Kavya Rao");
+    expect(interviewerNameFromEvent(withHost("Arundhati"))).toBe("Arundhati");
   });
 });

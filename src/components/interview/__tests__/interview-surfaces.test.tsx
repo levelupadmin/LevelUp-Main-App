@@ -43,6 +43,71 @@ describe("firstNameOf — REQ-INT-2's first-name-only rule, at the boundary", ()
     expect(firstNameOf(undefined)).toBeNull();
     expect(firstNameOf("   ")).toBeNull();
   });
+
+  it("strips an honorific instead of rendering it as the first name", () => {
+    // The unguarded rule — first whitespace token — renders "Dr. Kavya Rao" as
+    // "Dr.", a fabricated given name attributed to a real colleague.
+    expect(firstNameOf("Dr. Kavya Rao")).toBe("Kavya");
+    expect(firstNameOf("Prof Arundhati Menon")).toBe("Arundhati");
+    expect(firstNameOf("Dr.")).toBeNull();
+  });
+
+  it("refuses an ORGANISATION rather than inventing a person from it", () => {
+    // INTEG-CAL-1 puts every interviewer on ONE shared org-level Calendly account,
+    // whose free-text `user_name` is likeliest of all to be the organisation. The
+    // second gate holds for rows written before the parser's guard existed.
+    expect(firstNameOf("LevelUp Learning")).toBeNull();
+    expect(firstNameOf("LevelUp Learning Pvt Ltd")).toBeNull();
+    expect(firstNameOf("Admissions Team")).toBeNull();
+    expect(firstNameOf("Cohort Bookings")).toBeNull();
+  });
+
+  it("refuses the brand SPACED and the function a shared account is named for", () => {
+    // "Level Up" has no token a name guard may reject on its own, so a per-token
+    // list rendered the invented interviewer "Level"; and a shared org-level account
+    // is as likely to be called after the job it does ("Interview", "Front Desk") as
+    // after the company. Each of these otherwise reaches the applicant as a person.
+    for (const stored of [
+      "Level Up",
+      "Level-Up",
+      "The Forge",
+      "Interview",
+      "Interviews",
+      "Front Desk",
+      "Reception",
+      "Hiring",
+      "Talent",
+      "Sales",
+      "Calendly",
+    ]) {
+      expect(firstNameOf(stored), `named a person from ${stored}`).toBeNull();
+    }
+  });
+
+  it("still keeps ordinary real names — a wrong rejection is a permanent blank", () => {
+    expect(firstNameOf("Kavya Rao")).toBe("Kavya");
+    expect(firstNameOf("Aditi Upadhyay")).toBe("Aditi");
+  });
+
+  it("keeps a single-word personal name — a mononym is a real name", () => {
+    expect(firstNameOf("Arundhati")).toBe("Arundhati");
+  });
+
+  it("renders the NAME beside an initial, a prefix or a particle rather than the scaffolding", () => {
+    // Each of these is a real person whose stored name the first version of this
+    // guard rejected outright (a permanent blank) or, worse, rendered the wrong
+    // part of ("de", "Van"). Nothing here is invented — every rendered value is a
+    // token of the person's own name.
+    expect(firstNameOf("S. Kumar")).toBe("Kumar");
+    expect(firstNameOf("Prof. R Iyer")).toBe("Iyer");
+    expect(firstNameOf("Md. Imran")).toBe("Imran");
+    expect(firstNameOf("Ravi.Kumar")).toBe("Ravi");
+    expect(firstNameOf("de Souza Silva")).toBe("Souza");
+    expect(firstNameOf("Van Der Berg")).toBe("Berg");
+    // …and a value with no name in it at all still renders nothing.
+    expect(firstNameOf("A. B.")).toBeNull();
+    expect(firstNameOf("Van Der")).toBeNull();
+  });
 });
 
 describe("InterviewerCard — first name, the admissions title, no bio, no invented figure", () => {
@@ -78,6 +143,41 @@ describe("InterviewerCard — first name, the admissions title, no bio, no inven
   it("renders nothing for a blank name rather than an empty card", () => {
     const { container } = render(<InterviewerCard name="   " />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders NOTHING when the stored name is the organisation, not a person", () => {
+    // The worst thing this card can do is name a colleague who does not exist.
+    // "LevelUp Learning" → "LevelUp" is exactly that, and the ONE shared org-level
+    // Calendly account (INTEG-CAL-1) is the configuration most likely to produce it.
+    for (const stored of [
+      "LevelUp Learning",
+      "LevelUp Learning Pvt Ltd",
+      "Level Up",
+      "The Forge",
+      "Admissions Team",
+      "The Forge Admissions",
+      "Interview",
+      "Front Desk",
+      "Kavya & Arjun",
+    ]) {
+      const { container } = render(<InterviewerCard name={stored} />);
+      expect(container, `rendered a card for ${stored}`).toBeEmptyDOMElement();
+      cleanup();
+    }
+  });
+
+  it("renders the given name for an honorific-prefixed real name, never the honorific", () => {
+    render(<InterviewerCard name="Dr. Kavya Rao" />);
+    const card = screen.getByLabelText("Your interviewer");
+    expect(card.textContent).toContain("Kavya");
+    expect(card.textContent).not.toContain("Dr.");
+    expect(card.textContent).not.toContain("Rao");
+    expectCleanCopy(card.textContent);
+  });
+
+  it("renders a mononym as itself", () => {
+    render(<InterviewerCard name="Arundhati" />);
+    expect(screen.getByLabelText("Your interviewer").textContent).toContain("Arundhati");
   });
 });
 

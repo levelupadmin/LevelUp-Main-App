@@ -101,6 +101,34 @@
  * delivery does not name exactly one host. The host's EMAIL is never read or stored;
  * nothing renders it, and deriving a name from an address would be a guess.
  *
+ * IDENTITY IS PHONE-PRIMARY AND BOTH SIDES ARE NORMALISED (INTEG-KEY-1). The intake
+ * chain stores the phone verbatim as the applicant typed it into Tally, so the
+ * column holds "+91 98765 43210" as readily as "9876543210"; a raw-text suffix probe
+ * against it matches only the clean spelling, which made phone-primary INERT against
+ * most real rows while looking correct. `_shared/phone.ts` `phoneLikePatterns`
+ * supplies separator-tolerant probes and `last10` re-checks each candidate exactly,
+ * on both sides. EVERY probe runs and their exact matches are UNIONED (deduped by
+ * row id): stopping at the first probe that hit would show the ambiguity guard only
+ * the tidily-spelled row when one applicant holds two differently-spelled ones, and
+ * a candidate set of one binds without argument. The email fallback cannot carry this
+ * on its own: a phone-only account's stored address is the synthetic
+ * `<digits>@phone.leveluplearning.in` placeholder, which no invitee will ever type —
+ * so when a delivery DOES carry that placeholder it is read back as a phone, never
+ * joined as an address.
+ *
+ * AND AMBIGUITY REFUSES. When more than one application answers to the delivered
+ * identity, the receiver binds only on EVIDENCE — one candidate already holding this
+ * `calendly_event_uri`, or exactly one carrying the invitee's own email — and
+ * otherwise writes nothing and logs at error level. "Newest application first" reads
+ * like a tie-break but is a guess: a Calendly delivery names no cohort, so nothing in
+ * it says which of a repeat applicant's interviews this is. A missed mirror is
+ * recoverable and loud; an interview written onto a stranger's row is neither.
+ * An ambiguous PHONE probe does not short-circuit the email fallback, though — it is
+ * remembered while the fallback runs, because the delivered number is a reminder
+ * number the invitee may have set to someone else's, and refusing before trying the
+ * key the contract calls the fallback would make phone-primary/email-fallback into
+ * phone-only. Only if the fallback also fails does the ambiguity stand.
+ *
  * `reschedule_count` is the only counter here. It advances when Calendly says this
  * booking replaced a previous invitee (`old_invitee`) AND the delivered event is
  * not the one already held, so neither a redelivery nor a late retry can
@@ -109,10 +137,16 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { hmacSha256Hex, timingSafeEqual } from "../_shared/crypto.ts";
-import { last10 } from "../_shared/phone.ts";
+import {
+  isSyntheticEmail,
+  last10,
+  phoneFromSyntheticEmail,
+  phoneLikePatterns,
+} from "../_shared/phone.ts";
 import {
   bookingFromEvent,
   eventTypeOf,
+  eventTypeTokensOf,
   interviewerNameFromEvent,
   isAllowedEventType,
   isFreshSignature,
@@ -128,10 +162,14 @@ const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 // orchestrator maps it to this name at deploy time.
 const signingKey = Deno.env.get("CALENDLY_SIGNING_KEY") ?? "";
 // The interview event type(s) on the one org-level account (INTEG-CAL-1). Config,
-// not a credential: an API URI, a bare uuid, a hosted scheduling link or the event
-// type's name, comma-separated. Unset → this receiver mirrors NOTHING (see the
-// header): every other booking on that account reaches this function too, and
-// attributing one of them to an applicant is unrecoverable.
+// not a credential: the API URI `https://api.calendly.com/event_types/<uuid>`, the
+// bare uuid, or the event type's NAME exactly as Calendly spells it,
+// comma-separated. NOT the hosted scheduling link — a v2 delivery carries the event
+// type as an API URI and no slug, so a link-shaped value matches nothing and every
+// booking is dropped (see `_shared/calendly.ts` `identityTokens`, and config.toml).
+// Unset → this receiver mirrors NOTHING (see the header): every other booking on
+// that account reaches this function too, and attributing one of them to an
+// applicant is unrecoverable.
 const interviewEventTypes = parseEventTypeAllowlist(
   Deno.env.get("CALENDLY_INTERVIEW_EVENT_TYPE"),
 );
@@ -266,54 +304,238 @@ async function verifySignature(rawBody: string, header: string | null): Promise<
   return timingSafeEqual(expected, parsed.v1.toLowerCase());
 }
 
+/** How many rows a single identity probe may consider before it is truncated. */
+const CANDIDATE_LIMIT = 25;
+
+/**
+ * The outcome of resolving one delivery to one application row.
+ *
+ * `ambiguous` is a THIRD state, distinct from "matched" and "orphan", and it exists
+ * because the two are not the only answers: a probe can find several applications
+ * and have no evidence which one this booking belongs to. Binding to any of them is
+ * a misbinding — the worst failure available here, since it writes an interview onto
+ * a stranger's row and the reconciler then reads it as truth.
+ */
+interface Resolution {
+  row: ApplicationRow | null;
+  key: "phone" | "email" | null;
+  ambiguous: boolean;
+  /** How many candidates the deciding probe saw. For the log only. */
+  candidates: number;
+  /** Did the deciding probe hit the page limit, i.e. could it have hidden a rival? */
+  truncated: boolean;
+}
+
+/**
+ * Pick THE ONE application among candidates that all match the delivered identity,
+ * or refuse.
+ *
+ * Two disambiguators, both EVIDENCE rather than preference:
+ *   1. Exactly one candidate already holds this very `calendly_event_uri`. That is
+ *      identity, not a guess — it is the row this booking was previously mirrored
+ *      onto, so a reschedule or a cancellation lands where its create half did.
+ *   2. Exactly one candidate carries the invitee's own email address. The delivery
+ *      names that address; a row carrying it is the applicant who booked.
+ *
+ * Anything else REFUSES. Note what this replaces: "newest application first" reads
+ * like a tie-break but is a guess — a Calendly delivery names no cohort and no
+ * offering, so when one person holds two live applications nothing in the payload
+ * says which interview this is. Refusing costs a mirrored booking (recoverable, and
+ * logged); guessing costs a correct row (not recoverable, and silent).
+ *
+ * `requireEvidence` IS THE TRUNCATED-PAGE CASE. "Exactly one candidate" is only a
+ * safe reason to bind when the probe could SEE every candidate; a page that came
+ * back full may have left a rival application on the next page, so uniqueness is
+ * then an artefact of the limit rather than a fact about the data. Under truncation
+ * the two evidence tests still bind (they name a specific row), and bare uniqueness
+ * refuses.
+ */
+function chooseOne(
+  candidates: ApplicationRow[],
+  eventUri: string,
+  email: string | null,
+  requireEvidence = false,
+): { row: ApplicationRow | null; ambiguous: boolean } {
+  if (candidates.length === 0) return { row: null, ambiguous: false };
+
+  const holdingThisBooking = candidates.filter((r) => r.calendly_event_uri === eventUri);
+  if (holdingThisBooking.length === 1) return { row: holdingThisBooking[0], ambiguous: false };
+
+  const wanted = (email ?? "").trim().toLowerCase();
+  if (wanted !== "" && !isSyntheticEmail(wanted)) {
+    const byEmail = candidates.filter((r) => (r.email ?? "").trim().toLowerCase() === wanted);
+    if (byEmail.length === 1) return { row: byEmail[0], ambiguous: false };
+  }
+
+  if (candidates.length === 1 && !requireEvidence) return { row: candidates[0], ambiguous: false };
+
+  return { row: null, ambiguous: true };
+}
+
+/**
+ * Every application whose stored phone IS this subscriber number, however the
+ * intake chain happened to spell it.
+ *
+ * BOTH SIDES OF THE COMPARISON ARE NORMALISED, which is the whole point. The stored
+ * column is dirty by design — `tally-application-webhook` writes the phone verbatim
+ * as the applicant typed it, so "+91 98765 43210" is what a row really holds — and
+ * the previous probe was a raw-text suffix `LIKE '%9876543210'` against it. That
+ * matches only the unseparated spelling, so phone-PRIMARY (INTEG-KEY-1) was inert
+ * against the majority of real rows while looking correct: every delivery fell
+ * through to the email fallback, which is itself broken for phone-only accounts
+ * whose stored address is the synthetic `<digits>@phone.leveluplearning.in`
+ * placeholder. The two failures together are a receiver that resolves almost
+ * nothing.
+ *
+ * `phoneLikePatterns` (the SHARED `_shared/phone.ts` helper — there is no second
+ * normaliser in this file) supplies a tight probe and a separator-tolerant one; each
+ * candidate is then re-checked EXACTLY with `last10` on both sides, so the wide SQL
+ * net can only offer candidates for that check to reject.
+ *
+ * EVERY PATTERN RUNS AND THE EXACT MATCHES ARE UNIONED — the probe does NOT stop at
+ * the first pattern that hits, and that is the whole reason this dedupes by row id.
+ * The tight pattern (`%9876543210`) matches a strict SUBSET of the tolerant one
+ * (`%9%8%7%…%0%`): a row storing "9876543210" satisfies both, while the SAME
+ * subscriber number stored as "+91 98765 43210" satisfies only the tolerant one. So
+ * returning early on the tight pattern would hand the ambiguity guard a candidate
+ * set of one whenever a repeat applicant's two rows are spelled differently — the
+ * exact dirty-column case this probe exists for — and `chooseOne` would bind
+ * unconditionally, silently selecting an application by phone-FORMATTING tidiness.
+ * That is the same class of guess as the "newest application first" rule this
+ * receiver removed, and it lands the interview on the wrong row. The union puts both
+ * spellings in front of the guard, where a genuine ambiguity refuses.
+ *
+ * Running the tight probe as well as the tolerant one is not redundant even though
+ * its matches are a subset: the two pages are drawn separately, so the tight probe
+ * still surfaces a row that a truncated tolerant page would have cut off.
+ *
+ * `truncated` reports that some page came back FULL, i.e. a rival candidate may sit
+ * unseen on the next page. It is what makes bare uniqueness insufficient in
+ * `chooseOne` — see `requireEvidence` there.
+ */
+async function candidatesByPhone(
+  // deno-lint-ignore no-explicit-any
+  admin: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  phone: string,
+): Promise<{ rows: ApplicationRow[]; truncated: boolean }> {
+  const subscriber = last10(phone);
+  if (subscriber === "") return { rows: [], truncated: false };
+
+  // Keyed by row id so a row matched by BOTH patterns is one candidate, not two —
+  // duplicates would otherwise read as ambiguity and refuse a perfectly good bind.
+  const byId = new Map<string, ApplicationRow>();
+  let truncated = false;
+
+  for (const pattern of phoneLikePatterns(phone)) {
+    const { data, error } = await admin
+      .from("cohort_applications")
+      .select(SELECT_COLUMNS)
+      .like("phone", pattern)
+      .order("created_at", { ascending: false })
+      .limit(CANDIDATE_LIMIT);
+    if (error) {
+      console.error("[calendly-webhook] phone lookup failed:", error.message);
+      continue;
+    }
+    const rows = (data ?? []) as ApplicationRow[];
+    if (rows.length >= CANDIDATE_LIMIT) {
+      // The wide pattern can out-run the page. Say so, and remember it: a truncated
+      // probe could hide the true row, and that must neither look like "no such
+      // applicant" nor let a lone survivor be treated as the only candidate.
+      truncated = true;
+      console.warn(
+        `[calendly-webhook] phone probe hit the ${CANDIDATE_LIMIT}-row candidate limit; a match may have been truncated`,
+      );
+    }
+    for (const candidate of rows) {
+      if (last10(candidate.phone ?? "") !== subscriber) continue;
+      if (!byId.has(candidate.id)) byId.set(candidate.id, candidate);
+    }
+  }
+
+  return { rows: [...byId.values()], truncated };
+}
+
 /**
  * Resolve the application row by phone (primary) → email (fallback) — INTEG-KEY-1.
  *
- * The phone probe is a SUFFIX match on the 10-digit subscriber number, because the
- * same person is stored as "+919788385577", "919788385577" or "9788385577" across
- * the four systems; the suffix is narrowed again in code so a `LIKE` can't widen the
- * match. Newest application first: a person who applied to several cohorts is being
- * interviewed for the one they most recently applied to.
+ * A synthetic placeholder address is fed back into the PHONE probe rather than used
+ * as an email: `919788385577@phone.leveluplearning.in` is a phone wearing an
+ * address's clothes (our own login path mints it for phone-only accounts), so
+ * joining on it as an email can only ever fail while looking like a real attempt.
+ *
+ * AN AMBIGUOUS PHONE PROBE DOES NOT END THE RESOLUTION — it is REMEMBERED, and the
+ * email fallback still runs. INTEG-KEY-1 says phone-primary/email-FALLBACK, and
+ * returning on phone ambiguity quietly turned that into phone-only in exactly the
+ * case the fallback exists for. It is reachable: the delivered phone comes from
+ * Calendly's `text_reminder_number`, which an invitee may legitimately set to a
+ * parent's or a colleague's number — if THAT number matches two unrelated
+ * applications, the old code refused even though the invitee's own email named a
+ * third row exactly and uniquely. `chooseOne` could not rescue it either, because
+ * its email test filters only the phone candidates and never the table.
+ *
+ * The fallback binds on the SAME evidence it always did — one row whose stored
+ * address exactly equals the address the invitee themselves typed — so this widens
+ * what resolves, never how confidently. If the email probe is itself ambiguous or
+ * finds nothing, the remembered phone ambiguity is what the caller sees, and the
+ * receiver still refuses. Ambiguity is never resolved by preference here.
  */
 async function resolveApplication(
   // deno-lint-ignore no-explicit-any
   admin: any, // eslint-disable-line @typescript-eslint/no-explicit-any
   phone: string | null,
   email: string | null,
-): Promise<{ row: ApplicationRow | null; key: "phone" | "email" | null }> {
-  const subscriber = phone ? last10(phone) : "";
-  if (subscriber !== "") {
-    const { data, error } = await admin
-      .from("cohort_applications")
-      .select(SELECT_COLUMNS)
-      .like("phone", `%${subscriber}`)
-      .order("created_at", { ascending: false })
-      .limit(10);
-    if (error) console.error("[calendly-webhook] phone lookup failed:", error.message);
-    const match = ((data ?? []) as ApplicationRow[]).find(
-      (r) => last10(r.phone ?? "") === subscriber,
-    );
-    if (match) return { row: match, key: "phone" };
+  eventUri: string,
+): Promise<Resolution> {
+  const syntheticPhone = email ? phoneFromSyntheticEmail(email) : null;
+  const phoneKey = phone ?? syntheticPhone;
+  const emailKey = email && !isSyntheticEmail(email) ? email : null;
+
+  /** A phone ambiguity the email fallback did not manage to resolve. */
+  let phoneAmbiguity: Resolution | null = null;
+
+  if (phoneKey) {
+    const { rows, truncated } = await candidatesByPhone(admin, phoneKey);
+    const { row, ambiguous } = chooseOne(rows, eventUri, emailKey, truncated);
+    if (row) return { row, key: "phone", ambiguous: false, candidates: rows.length, truncated };
+    if (ambiguous) {
+      phoneAmbiguity = { row: null, key: "phone", ambiguous: true, candidates: rows.length, truncated };
+    }
   }
 
-  if (email) {
+  if (emailKey) {
     // .eq (not .ilike) on purpose: `_` is legal and common in an address but is a
     // single-character wildcard to LIKE, so an ilike probe could resolve a DIFFERENT
     // person's application. Two exact probes instead — as sent, then lowercased.
-    for (const candidate of [email, email.toLowerCase()]) {
+    for (const candidate of [...new Set([emailKey, emailKey.toLowerCase()])]) {
       const { data, error } = await admin
         .from("cohort_applications")
         .select(SELECT_COLUMNS)
         .eq("email", candidate)
         .order("created_at", { ascending: false })
-        .limit(1);
-      if (error) console.error("[calendly-webhook] email lookup failed:", error.message);
-      const row = ((data ?? []) as ApplicationRow[])[0];
-      if (row) return { row, key: "email" };
+        .limit(CANDIDATE_LIMIT);
+      if (error) {
+        console.error("[calendly-webhook] email lookup failed:", error.message);
+        continue;
+      }
+      const rows = (data ?? []) as ApplicationRow[];
+      if (rows.length === 0) continue;
+      // Same rule as the phone probe: a full page may hide a rival, so uniqueness
+      // alone stops being evidence and only a named row binds.
+      const truncated = rows.length >= CANDIDATE_LIMIT;
+      const { row, ambiguous } = chooseOne(rows, eventUri, emailKey, truncated);
+      if (row) return { row, key: "email", ambiguous: false, candidates: rows.length, truncated };
+      if (ambiguous) {
+        return { row: null, key: "email", ambiguous: true, candidates: rows.length, truncated };
+      }
     }
   }
 
-  return { row: null, key: null };
+  // The phone probe found several candidates and the email fallback named none of
+  // them. REFUSE — this is the ambiguity the caller logs and declines to bind.
+  if (phoneAmbiguity) return phoneAmbiguity;
+
+  return { row: null, key: null, ambiguous: false, candidates: 0, truncated: false };
 }
 
 Deno.serve(async (req) => {
@@ -350,10 +572,42 @@ Deno.serve(async (req) => {
     return jsonRes({ ok: true, skipped: "event_type_not_configured" });
   }
   if (!isAllowedEventType(payload, interviewEventTypes)) {
-    console.log(
-      `[calendly-webhook] not the interview event type, skipping: ${eventTypeOf(payload) ?? "unnamed"}`,
+    // A DROP IS LOUD, AND IT NAMES ITS OWN FIX. A misconfigured allowlist drops
+    // every real booking with a healthy-looking 200, so at `log` level a receiver
+    // that mirrors nothing is indistinguishable from an account with no traffic —
+    // which is exactly how a total no-op survives review. Printing BOTH the tokens
+    // this delivery answers to and the tokens configured turns the fix into
+    // copy-and-paste. The delivered tokens are also echoed in the 200 body, where
+    // Calendly's own webhook delivery log shows them without anyone opening
+    // Supabase. No PII: these are event-type identities, never the invitee.
+    //
+    // EVERY DROP IS ONE WARN, AND THERE IS NO ERROR TIER HERE — deliberately, and
+    // this is the second attempt at it. The first tried to spend ERROR on "this
+    // instance has dropped a delivery and matched nothing", which cannot work: the
+    // flag backing it is per-ISOLATE state that resets on every cold start, the
+    // subscription is org-wide so most drops are CORRECT, and therefore a healthy
+    // deployment raises that same ERROR on most cold isolates' first delivery. A
+    // signal a correct deployment emits as readily as a broken one is not a signal,
+    // and shipping it in the runbook as "an ERROR here is worth reading" would
+    // teach the next operator to ignore the feed. What actually distinguishes a
+    // wrong allowlist is the CONTENT of these lines — delivered-vs-configured, on
+    // every drop — not their level. ERROR stays reserved for the two conditions
+    // that are unambiguous whatever the traffic: an unset allowlist, and an
+    // ambiguous identity.
+    const delivered = eventTypeTokensOf(payload);
+    console.warn(
+      `[calendly-webhook] DROPPED ${String(eventName)} — event type not in ` +
+        `CALENDLY_INTERVIEW_EVENT_TYPE. delivered=[${delivered.join(" | ")}] ` +
+        `configured=[${interviewEventTypes.join(" | ")}]. If this IS the interview ` +
+        `event type, set CALENDLY_INTERVIEW_EVENT_TYPE to one of the delivered values; ` +
+        `if it is not, this drop is the allowlist working.`,
     );
-    return jsonRes({ ok: true, skipped: "not_the_interview_event_type" });
+    return jsonRes({
+      ok: true,
+      skipped: "not_the_interview_event_type",
+      eventType: eventTypeOf(payload),
+      delivered,
+    });
   }
 
   const booking = bookingFromEvent(payload);
@@ -371,13 +625,35 @@ Deno.serve(async (req) => {
   }
   const admin = createClient(supabaseUrl, serviceKey);
 
-  const { row, key } = await resolveApplication(admin, booking.inviteePhone, booking.inviteeEmail);
+  const { row, key, ambiguous, candidates, truncated } = await resolveApplication(
+    admin,
+    booking.inviteePhone,
+    booking.inviteeEmail,
+    booking.eventUri,
+  );
+  if (ambiguous) {
+    // REFUSE, DO NOT GUESS. Several applications answer to this identity and nothing
+    // in the delivery says which one booked. Writing the interview onto the wrong
+    // applicant's row is the worst outcome available to this receiver — silent,
+    // cross-applicant, and read back by the reconciler as truth — so the booking
+    // stays unmirrored and a human resolves it from this line. 200, because a retry
+    // cannot disambiguate what a retry will carry identically.
+    console.error(
+      `[calendly-webhook] AMBIGUOUS identity: ${candidates} candidate applications matched by ${key}, ` +
+        `and no evidence chooses between them — refusing to bind (canceled=${booking.canceled}, ` +
+        `truncatedProbe=${truncated})`,
+    );
+    return jsonRes({ ok: true, matched: false, ambiguous: true });
+  }
   if (!row) {
     // Park the orphan LOUDLY but without PII, and still answer 200: a retry cannot
     // conjure the missing application, and a 5xx would only make Calendly redeliver
     // forever. The orphan rate is the health metric that surfaces this (§7).
     console.warn(
-      `[calendly-webhook] orphan booking: no cohort_applications row resolved by phone or email (canceled=${booking.canceled})`,
+      `[calendly-webhook] orphan booking: no cohort_applications row resolved (canceled=${booking.canceled}, ` +
+        `hadPhone=${booking.inviteePhone !== null}, hadEmail=${booking.inviteeEmail !== null}, ` +
+        `truncatedProbe=${truncated}) — ` +
+        `identity keys are logged as presence only, never as values`,
     );
     return jsonRes({ ok: true, matched: false });
   }
