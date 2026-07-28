@@ -69,7 +69,7 @@ $fn$;
 
 DO $do$
 DECLARE
-  arch uuid; n_ch int; n int; m int; owner_can int; other_can int;
+  arch uuid; draft_off uuid; n_ch int; n int; m int; owner_can int; other_can int;
 BEGIN
   SELECT archived_id, n_chapters INTO arch, n_ch FROM t_pick;
 
@@ -167,6 +167,28 @@ BEGIN
   SELECT count(*) INTO n FROM public.legacy_program_mapping;
   RESET ROLE;
   INSERT INTO results VALUES ('A9 mapping table stays invisible', n::text, '0');
+
+  -- ══ A11: a DRAFT offering is NOT unlocked, even for an owner ═══════════
+  -- The policy was status-blind at first, which also exposed the 1 draft
+  -- offering on prod to anyone holding an enrolment for it. Draft means
+  -- unreleased, not "something you bought", and CheckoutPage's guard redirects
+  -- only on 'archived', so an owned draft would have rendered its price and
+  -- copy. Scoped to status='archived' instead; this pins that.
+  SELECT id INTO draft_off FROM public.offerings WHERE status = 'draft' LIMIT 1;
+  IF draft_off IS NULL THEN
+    INSERT INTO results VALUES ('A11 draft offering stays hidden from its owner',
+      'no draft offering on prod to test', 'no draft offering on prod to test');
+  ELSE
+    PERFORM pg_temp.mk_user('${U(5)}');
+    INSERT INTO public.enrolments (user_id, offering_id, status, source)
+    VALUES ('${U(5)}', draft_off, 'active', 'migration');
+    SET LOCAL ROLE authenticated;
+    PERFORM set_config('request.jwt.claims', '{"sub":"${U(5)}","role":"authenticated"}', true);
+    SELECT count(*) INTO n FROM public.offerings WHERE id = draft_off;
+    RESET ROLE;
+    INSERT INTO results VALUES ('A11 draft offering stays hidden from its owner',
+      n::text, '0');
+  END IF;
 
   -- ══ A10: the owner CANNOT see other archived offerings they did not buy ═
   SET LOCAL ROLE authenticated;

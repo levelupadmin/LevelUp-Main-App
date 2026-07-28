@@ -215,6 +215,45 @@ BEGIN
       v_phone_norm := v_auth_phone;   -- non-Indian numbers pass through
     END IF;
 
+    -- BLOCKED: purchases that match this caller's phone and carry an offering,
+    -- but which the guard below will refuse because an existing enrolment
+    -- (refunded / revoked / expired) says they are not entitled. Without this
+    -- counter such a caller returns {claimed: 0, stamped: 0} — byte-identical to
+    -- "you had nothing to claim" — and with 73,865 rows draining there would be
+    -- no way to tell a correct refusal from a silently broken claim. These rows
+    -- are deliberately left unstamped and stay claimable, so a non-zero value
+    -- here is the ONLY signal that a real purchase is withheld on purpose.
+    --
+    -- Counted BEFORE any write, deliberately. Sitting after the INSERT/UPDATE it
+    -- shared their exception block, so a failure in this diagnostic — including
+    -- the statement_timeout trapped below — would roll back a SUCCESSFUL grant
+    -- and report it as a no-op. A read that runs first can only ever cost the
+    -- read. The predicate is the exact negation of the INSERT guard, so it is
+    -- unaffected by rows the INSERT is about to add.
+    SELECT count(*) INTO v_blocked
+      FROM public.legacy_enrolments le
+     WHERE le.claimed_by_user_id IS NULL
+       AND le.offering_id IS NOT NULL
+       AND le.phone = v_phone_norm
+       -- An existing enrolment only BLOCKS if it is not a live one. A caller who
+       -- already holds a live enrolment (e.g. they re-bought through checkout)
+       -- has the INSERT suppressed but IS entitled and IS stamped below: that is
+       -- reconciliation, not refusal, and counting it here would raise a false
+       -- alarm on a perfectly normal path. Blocked = "an enrolment exists AND
+       -- none of them entitle you", i.e. refunded / revoked / lapsed only.
+       AND EXISTS (
+         SELECT 1 FROM public.enrolments e
+          WHERE e.user_id = v_user_id
+            AND e.offering_id = le.offering_id
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM public.enrolments e
+          WHERE e.user_id = v_user_id
+            AND e.offering_id = le.offering_id
+            AND e.status = 'active'
+            AND (e.expires_at IS NULL OR e.expires_at > now())
+       );
+
     -- source='migration': enrolments_source_check allows checkout /
     -- admin_grant / admin_manual / bulk_import / migration / manual / import /
     -- free. It REJECTS 'tagmango_migration' (verified — that 23514 was the
@@ -301,6 +340,10 @@ BEGIN
           WHERE e.user_id = v_user_id
             AND e.offering_id = le.offering_id
             AND e.status = 'active'
+            -- expires_at too, or a lapsed enrolment would stamp the purchase
+            -- claimed forever while has_offering_access (20260728010000) still
+            -- refuses to show it — permanently claimed, permanently invisible.
+            AND (e.expires_at IS NULL OR e.expires_at > now())
        );
 
     -- Counted separately from the INSERT: the UPDATE's guard is EXISTS(ACTIVE)
@@ -309,24 +352,6 @@ BEGIN
     -- claimed = 0 is the "already entitled, now reconciled" case, not a no-op.
     GET DIAGNOSTICS v_stamped = ROW_COUNT;
 
-    -- BLOCKED: rows that matched this caller's phone and carry an offering, but
-    -- were refused because an existing enrolment (refunded / revoked / expired)
-    -- says they are not entitled. Without this counter such a caller returns
-    -- {claimed: 0, stamped: 0} — byte-identical to "you had nothing to claim" —
-    -- and with 73,865 rows draining there would be no way to tell a correct
-    -- refusal from a silently broken claim. These rows are deliberately left
-    -- unstamped and therefore still claimable, so a non-zero value here is the
-    -- ONLY signal that a real purchase is being withheld on purpose.
-    SELECT count(*) INTO v_blocked
-      FROM public.legacy_enrolments le
-     WHERE le.claimed_by_user_id IS NULL
-       AND le.offering_id IS NOT NULL
-       AND le.phone = v_phone_norm
-       AND EXISTS (
-         SELECT 1 FROM public.enrolments e
-          WHERE e.user_id = v_user_id
-            AND e.offering_id = le.offering_id
-       );
 
   EXCEPTION
     -- Plain WHEN OTHERS does NOT catch query_canceled (57014), so a
@@ -373,6 +398,11 @@ AS $$
 DECLARE
   v_user_id uuid;
 BEGIN
+  -- Best effort, exactly like claim_my_purchases. This is a BEFORE UPDATE
+  -- trigger on legacy_enrolments: anything it raises aborts the admin's mapping
+  -- resolution, which is how 67,129 students get their offering_id in the first
+  -- place. A granter that cannot grant must still let the mapping land.
+  BEGIN
   IF OLD.offering_id IS NULL
      AND NEW.offering_id IS NOT NULL
      AND NEW.claimed_by_user_id IS NULL THEN
@@ -438,8 +468,14 @@ BEGIN
          WHERE e.user_id = v_user_id
            AND e.offering_id = NEW.offering_id
       ) THEN
+        -- ON CONFLICT DO NOTHING: claim_my_purchases() can insert the very same
+        -- (user, offering) concurrently, and this runs inside an admin's bulk
+        -- mapping UPDATE across 1,067 mappings. A bare INSERT losing that race
+        -- raises 23505 and aborts the whole UPDATE — the same shape as the
+        -- outage this file exists to end, on a different path.
         INSERT INTO public.enrolments (user_id, offering_id, payment_order_id, status, source)
-        VALUES (v_user_id, NEW.offering_id, NULL, 'active', 'migration');
+        VALUES (v_user_id, NEW.offering_id, NULL, 'active', 'migration')
+        ON CONFLICT DO NOTHING;
       END IF;
 
       -- Stamp only if they now hold an ACTIVE enrolment — i.e. the row we just
@@ -451,12 +487,21 @@ BEGIN
          WHERE e.user_id = v_user_id
            AND e.offering_id = NEW.offering_id
            AND e.status = 'active'
+           AND (e.expires_at IS NULL OR e.expires_at > now())
       ) THEN
         NEW.claimed_by_user_id := v_user_id;
         NEW.claimed_at := now();
       END IF;
     END IF;
   END IF;
+  EXCEPTION
+    -- Plain WHEN OTHERS does not catch query_canceled (57014).
+    WHEN query_canceled THEN
+      RAISE WARNING 'grant_enrolment_after_offering_resolved timed out for legacy_enrolments %', NEW.id;
+    WHEN OTHERS THEN
+      RAISE WARNING 'grant_enrolment_after_offering_resolved failed for legacy_enrolments %: % %',
+        NEW.id, SQLSTATE, SQLERRM;
+  END;
 
   RETURN NEW;
 END;

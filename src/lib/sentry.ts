@@ -204,6 +204,35 @@ export function captureException(error: unknown, context?: Record<string, unknow
 }
 
 /**
+ * Report a noteworthy NON-error condition — something a human may need to act
+ * on, where nothing has actually gone wrong. Routes through the same facade and
+ * the same pending queue as captureException, and never throws.
+ *
+ * Added for the purchase claim: a status-blind guard deliberately withholds
+ * real, paid entitlements from anyone carrying a refunded or lapsed enrolment,
+ * and that is only defensible if a refusal is observable in production. Sending
+ * it as an exception would file a bug for correct behaviour.
+ */
+export function captureMessage(message: string, context?: Record<string, unknown>) {
+  try {
+    if (sentry) {
+      sentry.captureMessage(message, {
+        level: "info",
+        ...(context ? { extra: context } : {}),
+      });
+      return;
+    }
+    if (initStarted && pendingErrors.length < MAX_PENDING_ERRORS) {
+      // Queued as an Error so the single flush path stays one shape; the
+      // message text is preserved either way.
+      pendingErrors.push({ error: new Error(message), context });
+    }
+  } catch {
+    // Reporting must never itself throw.
+  }
+}
+
+/**
  * Attach the current user identity so error reports can be filtered by
  * who hit them. Called from AuthContext when a session loads. If the SDK
  * hasn't loaded yet the latest identity is remembered and applied on init.

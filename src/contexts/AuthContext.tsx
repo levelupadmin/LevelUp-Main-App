@@ -121,37 +121,45 @@ const clearCachedProfile = (): void => {
 // Claim watermark (SC-2) — one claim per user per visit, not per event
 // ────────────────────────────────────────────────────────────────────
 // `claim_my_purchases()` is a SECURITY DEFINER write, so how OFTEN it runs is a
-// production concern at 60k+ students. supabase-js emits `SIGNED_IN` far more
-// often than anyone actually signs in: `_recoverAndRefresh()` re-emits it for
-// the stored session from INSIDE `initialize()` on every cold start, and again
-// on every tab focus and every Capacitor background→foreground resume.
+// production concern at 60k+ students. The claim must therefore be rate-limited
+// — but NOT by the auth event name, which is the trap two earlier designs fell
+// into.
 //
-// An in-memory "were we signed out a moment ago?" transition check cannot
-// filter those, and fails in both directions:
-//   • On a cold start it fails OPEN. `getSession()` and `INITIAL_SESSION` both
-//     await `initializePromise`, while `onAuthStateChange` inserts the
-//     subscriber synchronously — so the recovery `SIGNED_IN` arrives while the
-//     provider is still holding nothing, reading as signed-out → signed-in on
-//     every single launch.
-//   • On the emailed magic-link callback it fails CLOSED. That path saves the
-//     session and defers its `SIGNED_IN` past `initializePromise`, so the
-//     provider can already be holding this exact user when the event lands —
-//     and the guest-checkout buyer who just paid claims nothing.
+// Why not gate on the event (verified against @supabase/auth-js 2.102.1 in
+// node_modules, not assumed):
+//   • Gating on SIGNED_IN fails CLOSED for the exact population this exists for.
+//     `_recoverAndRefresh` computes `expiresWithMargin` (GoTrueClient.js:3508)
+//     against EXPIRY_MARGIN_MS = 3 x 30s = 90s (lib/constants.js:13); when true
+//     it calls `_callRefreshToken` (:3512), which emits ONLY TOKEN_REFRESHED.
+//     The two SIGNED_IN emissions (:3530, :3545) sit in the not-expired branches
+//     and are skipped. Access tokens live 3600s and `_onVisibilityChanged`
+//     re-enters the same path on every Capacitor resume, so ANY cold start or
+//     resume later than ~58.5 minutes after the last token issuance never
+//     produces SIGNED_IN at all. A fresh OTP sign-in claims; a returning student
+//     never does — silently, since the counters then read zero and it is
+//     indistinguishable from success.
+//   • Gating on a signed-out → signed-in TRANSITION fails in both directions.
+//     On a cold start it fails OPEN: `getSession()` and `INITIAL_SESSION` both
+//     await `initializePromise` while `onAuthStateChange` inserts the subscriber
+//     synchronously, so the recovery event arrives while the provider still
+//     holds nothing and reads as a fresh sign-in on every launch. On the emailed
+//     magic-link callback it fails CLOSED: that path defers its event past
+//     `initializePromise`, so the provider can already hold this exact user, and
+//     the guest-checkout buyer who just paid claims nothing.
 //
-// So the rate limit is a persisted watermark instead: at most one claim per
-// user per `CLAIM_MIN_INTERVAL_MS`, surviving reloads and WebView restarts.
-// That keeps both halves of the brief — no write storm (launches and resumes
-// inside the window are free, and a token refresh never gets this far), and
-// still repeatable, because "a student who signed up before their purchase was
-// synced gets claimed on their next visit" is the entire point and a strict
-// signed-out → signed-in gate would never run again for the returning majority
-// who never sign out at all.
+// So the rate limit is a persisted watermark, independent of event shape: at
+// most one claim per user per `CLAIM_MIN_INTERVAL_MS`, surviving reloads and
+// WebView restarts, plus an in-memory per-visit guard for storage-less clients.
+// The real condition is "we are holding a session for this user and have not
+// claimed for them recently", which is exactly what the watermark encodes.
+// Repeatability is the point: "a student who signed up before their purchase
+// was synced gets claimed on their next visit" is the whole feature.
 //
-// Six hours is chosen to bound both sides: at most ~4 attempts per user per day
-// even for someone who relaunches constantly, while a purchase that syncs today
-// is still claimed today. The watermark is dropped whenever a resolution
-// carries no user (sign-out, expiry, account switch), so an explicit sign-in
-// always claims immediately.
+// Six hours bounds both sides: at most ~4 index-scan RPCs per user per day even
+// for someone who relaunches constantly, while a purchase that syncs today is
+// still claimed today. The watermark is dropped whenever a resolution carries no
+// user (sign-out, expiry, account switch), so an explicit sign-in always claims
+// immediately.
 const CLAIM_WATERMARK_KEY = "lu_claim_v1";
 const CLAIM_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
@@ -526,16 +534,40 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           // deliberately withheld because an existing enrolment says the student
           // is not entitled (refunded / revoked / expired) — without it that case
           // is indistinguishable from "nothing to claim".
-          const result = (data ?? {}) as { claimed?: number; blocked?: number };
+          const result = (data ?? {}) as {
+            claimed?: number;
+            stamped?: number;
+            blocked?: number;
+          };
           const claimed = Number(result.claimed ?? 0);
+          const stamped = Number(result.stamped ?? 0);
           const blocked = Number(result.blocked ?? 0);
           if (import.meta.env.DEV) {
-            console.info("[AuthContext] claim_my_purchases:", { claimed, blocked });
+            console.info("[AuthContext] claim_my_purchases:", { claimed, stamped, blocked });
           }
           if (claimed > 0) {
             CLAIM_INVALIDATED_QUERY_ROOTS.forEach((root) => {
               void queryClient.invalidateQueries({ queryKey: [root] });
             });
+          }
+          // PRODUCTION signal, not DEV console noise. A status-blind guard
+          // deliberately withholds real, paid purchases from anyone carrying a
+          // refunded / revoked / lapsed enrolment; that is only defensible if a
+          // refusal is observable. Logging it under import.meta.env.DEV alone
+          // made a correct refusal and a silently broken claim identical in
+          // prod, which is the whole reason the counter was added. Reported as
+          // a message rather than an exception: nothing has gone wrong, it is a
+          // deliberate refusal someone may need to act on. The rows stay
+          // unstamped and claimable, so this is recoverable by design.
+          if (blocked > 0) {
+            void import("@/lib/sentry").then((m) =>
+              m.captureMessage("claim_my_purchases withheld entitled rows", {
+                scope: "claim_my_purchases",
+                claimed,
+                stamped,
+                blocked,
+              })
+            );
           }
         } catch (err) {
           if (import.meta.env.DEV) console.error("[AuthContext] claim_my_purchases failed:", err);
@@ -573,7 +605,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           clearClaimWatermark();
           return;
         }
-        if (event !== "SIGNED_IN") return;
+        // DELIBERATELY NOT GATED ON THE EVENT NAME. Gating on "SIGNED_IN"
+        // silently excluded the exact population this feature exists for.
+        // Verified in node_modules/@supabase/auth-js 2.102.1: on a stored
+        // session `_recoverAndRefresh` computes `expiresWithMargin`
+        // (GoTrueClient.js:3508) against EXPIRY_MARGIN_MS = 3 x 30s = 90s
+        // (lib/constants.js:13), and when true it calls `_callRefreshToken`
+        // (:3512), which emits ONLY `TOKEN_REFRESHED`. The two `SIGNED_IN`
+        // emissions (:3530, :3545) are in the not-expired branches and are
+        // skipped. Supabase access tokens live 3600s and
+        // `_onVisibilityChanged` re-enters the same path on every Capacitor
+        // resume, so ANY cold start or resume more than ~58.5 minutes after the
+        // last token issuance emits TOKEN_REFRESHED and never SIGNED_IN. A
+        // fresh OTP sign-in still claimed; an already-signed-in returning
+        // student never did — and it fails silently, because the migrations
+        // land, the counters read zero, and it looks exactly like success.
+        //
+        // So the rate limit is the WATERMARK, which is what it was built to be:
+        // at most one claim per user per CLAIM_MIN_INTERVAL_MS regardless of how
+        // the session was resolved, plus the in-memory per-visit guard. Event
+        // shape is an auth-js implementation detail; "we are holding a session
+        // for this user and have not claimed for them recently" is the actual
+        // condition. Worst case is unchanged at ~4 index-scan RPCs per user per
+        // day; a TOKEN_REFRESHED storm cannot get past the watermark.
         if (claimedThisVisitFor === userId || claimedRecently(userId)) return;
         claimPurchases(userId);
       }

@@ -44,13 +44,6 @@ const syntheticEmail = (phone: string) =>
   `${phone.replace(/\D/g, "")}@phone.leveluplearning.in`;
 const PLACEHOLDER_NAME = "LevelUp Student";
 
-// SC-3: someone who already bought from us should never be filling in a signup
-// form. Before anything is created we ask the server whether this phone/email
-// already has a way in, and send them to sign in instead, where the OTP or the
-// email link proves the identifier is theirs.
-const EXISTING_ACCOUNT_TITLE = "You already have an account with us";
-const EXISTING_ACCOUNT_BODY = "Sign in instead, we've carried your details over.";
-
 const Signup = () => {
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
@@ -108,45 +101,6 @@ const Signup = () => {
     }
   };
 
-  // Server-side existence gate. Returns true only when the server says this
-  // identifier already has a sign-in door that will open; the endpoint answers
-  // with a boolean and nothing else. Fails OPEN on any error so a flaky check
-  // can never brick signup for everyone: the check is UX, and the account
-  // creation itself is still guarded server-side downstream.
-  const alreadyRegistered = async (
-    check: { phone?: string; email?: string }
-  ): Promise<boolean> => {
-    const payload: { mode: "signup"; phone?: string; email?: string } = { mode: "signup" };
-    if (check.phone) payload.phone = check.phone;
-    if (check.email) payload.email = check.email;
-    if (!payload.phone && !payload.email) return false;
-    try {
-      const { data, error } = await supabase.functions.invoke<{ exists?: boolean }>(
-        "check-user-exists",
-        { body: payload }
-      );
-      if (error) return false;
-      return data?.exists === true;
-    } catch {
-      return false;
-    }
-  };
-
-  // Never a dead end: hand over the identifier that MATCHED, so the sign-in
-  // screen opens the door we already know is theirs and they never retype what
-  // they just typed. Handing over both would be worse than handing over one:
-  // Login routes a +91 number to the SMS OTP, so a number prefilled alongside an
-  // email-only match would steer them into the one door that refuses them.
-  const routeToSignIn = (door: "phone" | "email") => {
-    toast({ title: EXISTING_ACCOUNT_TITLE, description: EXISTING_ACCOUNT_BODY });
-    navigate("/login", {
-      state:
-        door === "phone"
-          ? { prefillPhone: phone, reason: "existing_account" }
-          : { prefillEmail: email.trim(), reason: "existing_account" },
-    });
-  };
-
   const sendEmailLink = async (): Promise<{ ok: boolean; error?: string }> => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -168,21 +122,11 @@ const Signup = () => {
       toast({ title: "Enter your phone number", variant: "destructive" });
       return;
     }
-    // A non-+91 number is gated one step later, on the email step: the MSG91 OTP
-    // below is the only door a phone opens, so a number we cannot dial is never
-    // a reason to stop a signup. Their door is the email link, and that is the
-    // identifier we ask about.
     if (EMAIL_ONLY_AUTH || !isIndianPhone) {
       goToStep("email_form");
       return;
     }
     setLoading(true);
-    // Gate BEFORE any OTP is sent: an existing buyer belongs on /login.
-    if (await alreadyRegistered({ phone })) {
-      setLoading(false);
-      routeToSignIn("phone");
-      return;
-    }
     const res = await sendSmsOtp(false);
     setLoading(false);
     if (!res.ok) {
@@ -201,18 +145,6 @@ const Signup = () => {
       return;
     }
     setLoading(true);
-    // signInWithOtp({ shouldCreateUser: true }) mints an auth row carrying the
-    // phone from options.data, so this path is gated too, not just the MSG91
-    // one. The identifier that matters here is the ADDRESS: this step's sign-in
-    // door is the email link, and the number that reached it was either already
-    // cleared on the phone step (+91) or has no phone door at all. One signup
-    // therefore costs one check, which is what keeps the per-IP rate limit off
-    // legitimate users sharing a carrier NAT.
-    if (await alreadyRegistered({ email })) {
-      setLoading(false);
-      routeToSignIn("email");
-      return;
-    }
     const res = await sendEmailLink();
     setLoading(false);
     if (!res.ok) {

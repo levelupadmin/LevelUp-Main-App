@@ -358,11 +358,23 @@ describe("SC-2 — claim_my_purchases fires only on a real sign-in", () => {
     expect(rpc).toHaveBeenCalledTimes(1);
   });
 
-  it("fires for SIGNED_IN only — INITIAL_SESSION and TOKEN_REFRESHED carrying a real session never claim", async () => {
-    // The brief's load-bearing gate, isolated: the same session object delivered
-    // under three different events. Only the sign-in may write. TOKEN_REFRESHED
-    // alone is ~24 events per user per day; at 60k+ students that is the write
-    // storm the phase explicitly bans.
+  it("claims on ANY event that resolves a user — a returning student's TOKEN_REFRESHED must not be dropped", async () => {
+    // THIS TEST WAS INVERTED. It previously asserted "SIGNED_IN only", which
+    // locked in a silent failure for the exact population the feature exists
+    // for. Verified against @supabase/auth-js 2.102.1 in node_modules:
+    // `_recoverAndRefresh` computes `expiresWithMargin` (GoTrueClient.js:3508)
+    // against EXPIRY_MARGIN_MS = 3 x 30s (lib/constants.js:13) and, when the
+    // stored token is inside that margin, calls `_callRefreshToken` (:3512),
+    // which emits ONLY TOKEN_REFRESHED — the SIGNED_IN emissions at :3530 and
+    // :3545 are in the not-expired branches. Access tokens live 3600s, so every
+    // cold start or Capacitor resume more than ~58.5 minutes after the last
+    // issuance emits TOKEN_REFRESHED and never SIGNED_IN. Under the old gate
+    // an already-signed-in student never claimed, the counters read zero, and
+    // it was indistinguishable from success.
+    //
+    // The rate limit is the WATERMARK, not the event name, so the correct
+    // assertion is: the first resolution carrying this user claims exactly
+    // once, and further events in the same visit do not.
     const rpc = supabase.rpc as unknown as Mock;
     h.getSessionResult = { data: { session: null } };
     h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
@@ -371,13 +383,16 @@ describe("SC-2 — claim_my_purchases fires only on a real sign-in", () => {
     await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
 
     const session = { ...makeSession("u1"), access_token: "tok-1" } as Session;
-    await emit("INITIAL_SESSION", session);
-    await emit("TOKEN_REFRESHED", { ...session, access_token: "tok-2" } as Session);
-    expect(rpc).not.toHaveBeenCalled();
-
-    await emit("SIGNED_IN", { ...session, access_token: "tok-3" } as Session);
+    await emit("TOKEN_REFRESHED", session);
     await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
     expect(rpc).toHaveBeenCalledWith("claim_my_purchases");
+
+    // Same visit, more events for the same user: the per-visit guard and the
+    // watermark both hold, so no second write.
+    await emit("INITIAL_SESSION", { ...session, access_token: "tok-2" } as Session);
+    await emit("SIGNED_IN", { ...session, access_token: "tok-3" } as Session);
+    await emit("TOKEN_REFRESHED", { ...session, access_token: "tok-4" } as Session);
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
 
   it("never re-claims on a returning user's cold start, hourly refresh, or app resume", async () => {
