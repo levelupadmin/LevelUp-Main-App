@@ -234,6 +234,13 @@ interface FormSummary {
   /** Provisioning threw: the application was still inserted, `user_id` NULL. */
   provisionFailed?: number;
   /**
+   * Rows inserted with provisioning deliberately OFF — either
+   * `PROVISION_APPLICANTS` is not "true" or the gate migration is not applied.
+   * Surfaced so "intake is healthy but nothing is linking" is legible at a
+   * glance instead of looking like a silent provisioning failure.
+   */
+  provisionSkipped?: number;
+  /**
    * Inserts that FAILED (anything that is not a 23505). Never folded into
    * `skipped`: a skip means "already ingested, nothing to do", so counting a
    * failure there makes a total insert outage read exactly like a healthy
@@ -434,6 +441,63 @@ const INTAKE_APP_METADATA = {
   provisioned_by: "tally_intake",
 } as const;
 
+/**
+ * THE KILL SWITCH. Provisioning is OFF unless `PROVISION_APPLICANTS` is
+ * explicitly "true".
+ *
+ * This function is a cron job that has been LIVE and ticking every 15 minutes
+ * since 2026-07-27, and intake is the one thing that must not stop: a lost
+ * application is a lost applicant, and nobody is watching at 03:00. Every other
+ * moving part of phase SP is additive and reversible by a flag; provisioning is
+ * the one surface that mutates `auth.users` from unauthenticated input, and
+ * before this switch its only rollback was a redeploy. So it ships INERT: the
+ * deploy is proven safe with provisioning off, then the secret is set and ONE
+ * tick is watched deliberately.
+ *
+ * Absent env → off. The default is the safe direction, so a typo, an unset
+ * secret, or a fresh project all disable provisioning rather than enable it.
+ */
+const PROVISION_APPLICANTS = (Deno.env.get("PROVISION_APPLICANTS") ?? "").trim().toLowerCase() === "true";
+
+/**
+ * Is the migration that gates an unproven intake identity actually applied?
+ *
+ * THE HAZARD THIS CLOSES is deploy ORDER, and it is the one irreversible step
+ * in the sequence. If this function ships before
+ * 20260727120000_cohort_applications_pending_claim.sql, ordinary rows still
+ * mint intake-tagged auth users while the gate in
+ * `claim_legacy_enrolments_for_user` does not yet exist — so the email-keyed
+ * legacy claim runs on an address nobody proved and stamps
+ * `claimed_by_user_id` permanently. One 15-minute tick in the wrong order
+ * cannot be undone. Ordering is a runbook instruction, and a runbook is not a
+ * control; this is.
+ *
+ * FAILS CLOSED BY CONSTRUCTION: the probe is an RPC that only exists once the
+ * migration has run, so "not applied" and "cannot tell" are the same answer —
+ * a missing function returns PGRST202, which lands in the same `false` as an
+ * outright error. Checked once per invocation, not per row.
+ */
+async function intakeGateInstalled(admin: AdminClient): Promise<boolean> {
+  try {
+    const { data, error } = await admin.rpc("intake_provisioning_gate_ok");
+    if (error) {
+      log("error", "provision_gate_absent", {
+        code: (error as { code?: string }).code ?? null,
+        message: error.message,
+        note: "the pending_claim migration is not applied, so minting an identity here would let the email-keyed legacy claim run unproven and stamp claimed_by_user_id permanently; provisioning is SKIPPED this tick and applications still insert unlinked",
+      });
+      return false;
+    }
+    return data === true;
+  } catch (err) {
+    log("error", "provision_gate_probe_failed", {
+      message: err instanceof Error ? err.message : String(err),
+      note: "could not prove the gate is installed; treating as absent and skipping provisioning",
+    });
+    return false;
+  }
+}
+
 /** What provisioning decided for one application, in the shape the row needs. */
 interface ProvisionResult {
   /** The auth uid to stamp, or null (no identity, collision, or failure). */
@@ -525,9 +589,15 @@ async function provisionApplicant(
   admin: AdminClient,
   applicant: { email: string; phone: string | null; fullName: string },
 ): Promise<ProvisionResult> {
-  const keys = identityKeys({ email: applicant.email, phone: applicant.phone });
-
   try {
+    // INSIDE the try on purpose. `identityKeys` is pure but not total — it
+    // reads .trim()/.toLowerCase() off fields that arrive as untyped JSON, so a
+    // non-string (a Tally field that came back as a number, an object, null
+    // where a string was assumed) throws a TypeError. Outside the try that
+    // escapes the mandated fail-soft and takes down the WHOLE form's batch;
+    // inside it, one malformed application is parked and the rest still land.
+    const keys = identityKeys({ email: applicant.email, phone: applicant.phone });
+
     const byEmail = keys.email ? await findIdentityByEmail(admin, keys.email) : null;
     const byPhone = keys.phone ? await findAuthIdentity(admin, { phone: keys.phone }) : null;
     const outcome = decideProvision(keys, { byEmail, byPhone });
@@ -557,23 +627,62 @@ async function provisionApplicant(
           });
           return { userId: null, pendingClaim: false, status: "skipped" };
         }
-        // BOTH identifiers, both unconfirmed — the phase requirement. A phone
-        // we cannot render as a real +91 number is dropped rather than guessed
-        // at; the account is then email-only and the applicant's phone tab
-        // falls back to today's signup, which is the pre-phase behaviour.
-        const phone = mintablePhone(applicant.phone);
-        if (keys.phone && !phone) {
+        // EMAIL-ONLY. The phone is stashed in `app_metadata`, NEVER written to
+        // `auth.users.phone`.
+        //
+        // WHY — this is the one line the SP council blocked on, and it was
+        // right. `auth.users.phone` is not a contact detail, it is the
+        // PHONE-OTP LOGIN KEY: `find_login_identity` (20260603120000:78-92)
+        // matches it on the last 10 digits with NO `phone_confirmed_at`
+        // predicate. Writing unauthenticated public-form text there binds a
+        // login key to digits nobody has proven. The attack is one form
+        // submission: POST {an email you own, a stranger's unregistered
+        // number}; fifteen minutes later this cron mints the row; the
+        // stranger's first genuine MSG91 OTP then resolves into an account
+        // whose email — and therefore whose magic-link sign-in at
+        // Login.tsx:390 (`shouldCreateUser:false`, already shipped) — the
+        // submitter controls. Silent, permanent, invisible to the victim.
+        //
+        // NO FLAG CONTAINS THIS. `VITE_EMAIL_OTP_TAB` gates the new Email tab,
+        // which is the harmless surface; the magic-link path it would have
+        // gated has been in production for months.
+        //
+        // The number is not lost. `sync_intake_phone_on_confirm` (part 4a of
+        // 20260727120000) promotes it onto `auth.users.phone` the moment a
+        // `phone_confirmed_at` lands on THIS row by any route — i.e. once the
+        // applicant has actually proven the number. Unproven, it is inert
+        // metadata that no lookup keys on.
+        //
+        // COST, stated honestly, both halves:
+        //  1. Until they prove it, the applicant's phone tab does not resolve
+        //     to this account. That is exactly today's production behaviour for
+        //     an applicant, so it is an unmet stretch goal, not a regression —
+        //     and the email route is the CTA in their confirmation mail.
+        //  2. A second application from the SAME phone under a DIFFERENT email
+        //     no longer lands as `collision/phone_taken` (nothing keys on the
+        //     phone any more), so it mints a second identity instead of parking
+        //     a row. One human, two email-keyed accounts. That is a data-quality
+        //     problem an operator can merge; the alternative it replaces is an
+        //     account takeover, which cannot be undone. Deliberate trade.
+        //
+        // `byPhone` is still looked up and still forces a collision when an
+        // existing account ALREADY owns the number — that check reads a proven
+        // value written by GoTrue, which is safe. Only the WRITE is removed.
+        const intakePhone = mintablePhone(applicant.phone);
+        if (keys.phone && !intakePhone) {
           log("warn", "provision_phone_unmintable", {
-            note: "the application's phone is not a 10-digit or 91-prefixed 12-digit number, so the auth identity is minted email-only and a later phone OTP will not resolve to it",
+            note: "the application's phone is not a 10-digit or 91-prefixed 12-digit number, so nothing is stashed for later promotion",
           });
         }
         const { data: created, error: createErr } = await admin.auth.admin.createUser({
           email: keys.email,
-          ...(phone ? { phone } : {}),
           email_confirm: false,
           phone_confirm: false,
           user_metadata: { full_name: applicant.fullName },
-          app_metadata: { ...INTAKE_APP_METADATA },
+          app_metadata: {
+            ...INTAKE_APP_METADATA,
+            ...(intakePhone ? { levelup_intake_phone: intakePhone } : {}),
+          },
         });
         if (createErr || !created?.user?.id) {
           throw new Error(createErr?.message ?? "createUser returned no user");
@@ -591,9 +700,19 @@ async function provisionApplicant(
   } catch (err) {
     log("error", "provision_failed", {
       message: err instanceof Error ? err.message : String(err),
-      note: "the application is still inserted, with user_id NULL; the poller never updates, so it stays unlinked until fixed by hand",
+      note: "the application is still inserted, with user_id NULL and pending_claim TRUE so it stays reachable; the poller never updates, so it is resolved by the interactive claim or by hand",
     });
-    return { userId: null, pendingClaim: false, status: "error" };
+    // pendingClaim TRUE, not false. A failure here can land AFTER createUser
+    // succeeded (the mirror read, or anything downstream of it), so the row may
+    // have a real auth identity and no `user_id` to show for it. With
+    // pending_claim false such a row matches NEITHER RLS policy — not
+    // `students_read_own_applications` (user_id is NULL) nor
+    // `claimants_read_pending_applications` (pending_claim is false) — so it is
+    // invisible to the applicant AND never revisited, because `loadExistingKeys`
+    // puts its email in the existing set and the next tick skips it. Parking it
+    // is strictly better: the worst case is an applicant offered a claim that
+    // resolves to an identity already theirs, which the claim path handles.
+    return { userId: null, pendingClaim: true, status: "error" };
   }
 }
 
@@ -1017,8 +1136,20 @@ Deno.serve(async (req) => {
       }
 
       let insertFailed = 0;
+      // BOTH gates, resolved ONCE per form rather than per row: the operator's
+      // deliberate switch, and proof that the migration this depends on is
+      // actually applied. Either one false means every row this tick inserts
+      // exactly as it did before phase SP — unlinked, never lost.
+      const provisioningEnabled = PROVISION_APPLICANTS && (await intakeGateInstalled(admin));
+      if (!PROVISION_APPLICANTS) {
+        log("info", "provisioning_disabled", {
+          note: "PROVISION_APPLICANTS is not 'true'; applications insert with user_id NULL exactly as they did before phase SP",
+        });
+      }
+
       let lastInsertError = "";
       let provisionCreated = 0;
+      let provisionSkipped = 0;
       let provisionCollisions = 0;
       let provisionFailed = 0;
 
@@ -1030,11 +1161,14 @@ Deno.serve(async (req) => {
         // single key could only ever LINK an account that happened to exist,
         // whereas this also creates the missing one and refuses to guess when
         // the two keys disagree.
-        const provisioned = await provisionApplicant(admin, {
-          email: row.email,
-          phone: row.phone,
-          fullName: row.full_name,
-        });
+        const provisioned = provisioningEnabled
+          ? await provisionApplicant(admin, {
+              email: row.email,
+              phone: row.phone,
+              fullName: row.full_name,
+            })
+          : ({ userId: null, pendingClaim: false, status: "skipped" } as ProvisionResult);
+        if (!provisioningEnabled) provisionSkipped++;
         row.user_id = provisioned.userId;
         // Only ever SET, never cleared: the column defaults to false, so an
         // ordinary row is left alone rather than carrying a redundant field.
@@ -1102,6 +1236,7 @@ Deno.serve(async (req) => {
       if (provisionCreated > 0) summary.provisionCreated = provisionCreated;
       if (provisionCollisions > 0) summary.provisionCollisions = provisionCollisions;
       if (provisionFailed > 0) summary.provisionFailed = provisionFailed;
+      if (provisionSkipped > 0) summary.provisionSkipped = provisionSkipped;
 
       // The recoverable pool, finally visible as a number.
       log("info", "form_polled", {
@@ -1121,6 +1256,7 @@ Deno.serve(async (req) => {
         provisionCreated: summary.provisionCreated ?? 0,
         provisionCollisions: summary.provisionCollisions ?? 0,
         provisionFailed: summary.provisionFailed ?? 0,
+        provisionSkipped: summary.provisionSkipped ?? 0,
         undatedSkipped: summary.undatedSkipped ?? 0,
         crossOfferingCollisions: summary.crossOfferingCollisions ?? 0,
         partialCount: summary.partialCount,
