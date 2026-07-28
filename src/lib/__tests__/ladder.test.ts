@@ -389,10 +389,11 @@ describe("no channel double-fire for the same step", () => {
     expect(decision).toMatchObject({ send: true, templateKey: "reentry_fee_nudge_2" });
   });
 
-  it("keys the ledger on exactly the columns the UNIQUE covers", () => {
-    expect(ledgerKey("app-1", "reentry_fee_nudge_1")).toEqual({
+  it("keys the ledger on exactly the columns the two UNIQUEs cover", () => {
+    expect(ledgerKey("app-1", "reentry_fee_nudge_1", NOW)).toEqual({
       application_id: "app-1",
       template_key: "reentry_fee_nudge_1",
+      ist_day: "2026-07-28",
     });
   });
 
@@ -405,7 +406,7 @@ describe("no channel double-fire for the same step", () => {
     const b = decide(feeInput());
     expect(a).toEqual(b);
     if (!a.send || !b.send) throw new Error("fixture should be sendable");
-    expect(ledgerKey("app-1", a.templateKey)).toEqual(ledgerKey("app-1", b.templateKey));
+    expect(ledgerKey("app-1", a.templateKey, NOW)).toEqual(ledgerKey("app-1", b.templateKey, NOW));
   });
 
   it("gives every rung its own key, so the ledger's UNIQUE is per-step not per-pool", () => {
@@ -445,6 +446,90 @@ describe("the ≤1 per day cap", () => {
     const history = [send("reentry_fee_nudge_1", ist("2026-07-27", 21, 0))];
     const input = feeInput({ createdAt: new Date(NOW.getTime() - 30 * HOUR).toISOString(), history });
     expect(decide(input)).toMatchObject({ send: true, templateKey: "reentry_fee_nudge_2" });
+  });
+});
+
+/**
+ * The cap above is enforced against a `history` the handler read ONCE per page,
+ * before anything was written, so on its own it is a read-then-write race. These
+ * cover the `ist_day` column that moves it into `reentry_notif_daily_unique`,
+ * where Postgres settles it instead.
+ */
+describe("the ≤1/day cap as a database key — `ist_day`", () => {
+  it("stamps the claim with the IST day of the decision's own clock, not the UTC day", () => {
+    // 00:01 IST on the 29th is 18:31 UTC on the 28th. A UTC-derived column would
+    // file this claim against the 28th, leaving the 29th free for a second one.
+    const justAfterMidnight = ist("2026-07-29", 0, 1);
+    expect(justAfterMidnight.toISOString().slice(0, 10)).toBe("2026-07-28");
+    expect(ledgerKey("app-1", "reentry_fee_nudge_2", justAfterMidnight).ist_day).toBe("2026-07-29");
+  });
+
+  it("rolls at IST midnight in both directions — 23:59 IST and 00:01 IST", () => {
+    // The two minutes either side of the boundary, asserted in both directions
+    // because an off-by-one here is either a message that never sends or a
+    // second one in the same evening.
+    const lastMinute = ist("2026-07-28", 23, 59);
+    const firstMinute = ist("2026-07-29", 0, 1);
+    expect(firstMinute.getTime() - lastMinute.getTime()).toBe(2 * 60_000);
+
+    const before = ledgerKey("app-1", "reentry_fee_nudge_1", lastMinute).ist_day;
+    const after = ledgerKey("app-1", "reentry_fee_nudge_2", firstMinute).ist_day;
+    expect(before).toBe("2026-07-28");
+    expect(after).toBe("2026-07-29");
+    // Two minutes apart and deliberately NOT the same key: the constraint admits
+    // both, which is right — to the person receiving them they are two days.
+    expect(before).not.toBe(after);
+  });
+
+  it("holds one key across a whole IST day, 00:01 to 23:59", () => {
+    // The complement of the test above: nearly 24h apart, same day, so the
+    // second claim is the one `reentry_notif_daily_unique` refuses.
+    expect(ledgerKey("app-1", "reentry_fee_nudge_1", ist("2026-07-29", 0, 1)).ist_day).toBe(
+      ledgerKey("app-1", "reentry_fee_nudge_2", ist("2026-07-29", 23, 59)).ist_day,
+    );
+  });
+
+  it("collides two DIFFERENT rungs the rung key would let through", () => {
+    // THE RACE THE RUNG KEY CANNOT CATCH. Invocation A read this application as
+    // `completed-no-fee`; invocation B read it moments later, after the
+    // reconciler moved it to `fee-paid-no-interview`. Neither has written, so
+    // both see an empty history, both clear the ≤1/day cap, and they pick keys
+    // from DIFFERENT pools — so `reentry_notif_unique` never fires and both send.
+    const a = decide(feeInput());
+    const b = decide(interviewInput({ appFeePaidAt: null }));
+    if (!a.send || !b.send) throw new Error("both fixtures should be sendable");
+    expect(a.templateKey).not.toBe(b.templateKey);
+
+    const ka = ledgerKey("app-1", a.templateKey, NOW);
+    const kb = ledgerKey("app-1", b.templateKey, NOW);
+    // What the rung UNIQUE sees: two different rows.
+    expect([ka.application_id, ka.template_key]).not.toEqual([kb.application_id, kb.template_key]);
+    // What the daily UNIQUE sees: the same row twice. One of these INSERTs gets
+    // 23505 and sends nothing.
+    expect([ka.application_id, ka.ist_day]).toEqual([kb.application_id, kb.ist_day]);
+  });
+
+  it("is reachable because the interview anchor falls back to `created_at`", () => {
+    // Why the race above is not theoretical. `app_fee_paid_at` has only two
+    // writers, both in-app Razorpay flows, and the reconciler is not one of them
+    // — so a row can acquire `fee-paid-no-interview` with that column still
+    // NULL. `anchorFor` then falls back to the OLD `created_at`, which makes
+    // interview rung 1 due the instant the stage flips.
+    const flipped = interviewInput({ appFeePaidAt: null });
+    expect(flipped.appFeePaidAt).toBeNull();
+    expect(anchorFor("interview", flipped)).toEqual(new Date(flipped.createdAt as string));
+    expect(decide(flipped)).toMatchObject({ send: true, rung: 1, templateKey: "reentry_interview_nudge_1" });
+  });
+
+  it("derives the day from the clock it is handed, never from the wall clock", () => {
+    // The same claim, judged on two different days, is two different keys — which
+    // is only true because the clock is an argument. A `now()` in SQL or a
+    // `new Date()` here would file the claim against whatever day the INSERT
+    // landed on, and the cap and the constraint could then disagree about which
+    // day a boundary-minute message belongs to.
+    const key = "reentry_interview_nudge_1";
+    expect(ledgerKey("app-1", key, ist("2026-07-28", 12, 0)).ist_day).toBe("2026-07-28");
+    expect(ledgerKey("app-1", key, ist("2026-07-29", 12, 0)).ist_day).toBe("2026-07-29");
   });
 });
 

@@ -25,10 +25,12 @@
  *
  * WHAT THE CALLER STILL OWNS: the ledger write. `decide` returning
  * `{ send: true }` is permission to ATTEMPT a rung, not proof that no other
- * invocation is attempting the same one. The UNIQUE `(application_id,
- * template_key)` in `20260730100000_reentry_ledger.sql` is the only thing that
- * makes a double-send impossible, and `ledgerKey()` below exists so the columns
- * that constraint covers are derived in exactly one place.
+ * invocation is attempting the same one. The two UNIQUEs in
+ * `20260730100000_reentry_ledger.sql` — `(application_id, template_key)` for
+ * the rung and `(application_id, ist_day)` for the ≤1/day cap — are the only
+ * things that make a double-send impossible, and `ledgerKey()` below exists so
+ * the columns they cover are derived in exactly one place, off the same
+ * explicit clock `decide` was handed.
  */
 
 /** The channels the engine can address. Email is the only one wired in v1 (Δ2). */
@@ -94,7 +96,14 @@ export const IST_OFFSET_MS = 5.5 * HOUR_MS;
 export const QUIET_START_MIN = 21 * 60 + 30; // 21:30 IST — first suppressed minute
 export const QUIET_END_MIN = 9 * 60; //          09:00 IST — first allowed minute
 
-/** ≤1 message per application per IST calendar day. */
+/**
+ * ≤1 message per application per IST calendar day. Enforced twice on purpose:
+ * here, so a tick that can already see the day's send skips cheaply and reports
+ * `cap-day`, and in the database, by `reentry_notif_daily_unique` over the
+ * `ist_day` column `ledgerKey()` derives. The second is not belt-and-braces —
+ * this check reads a `history` fetched once per page, so on its own it is a
+ * read-then-write race between two invocations that see different state.
+ */
 export const MAX_PER_DAY = 1;
 /** ≤4 messages per application, ever, across every pool and channel. */
 export const MAX_PER_APPLICATION = 4;
@@ -564,14 +573,54 @@ export function pickChannel(
   return resolveChannel(templateKey, contact, { channelTemplates }).channel;
 }
 
+/** The ledger columns every claim is identified by. Both UNIQUEs read from here. */
+export interface LedgerKey {
+  application_id: string;
+  template_key: string;
+  /** The IST calendar day the claim is spent on — the ≤1/day cap's unit, as a column. */
+  ist_day: string;
+}
+
 /**
- * The ledger's identity for a decision — the exact columns the UNIQUE covers.
- * Derived here, in the pure layer, so two invocations that decide the same rung
- * for the same application CANNOT produce different keys and slip past the
- * constraint. The handler must build its INSERT from this and nothing else.
+ * The ledger's identity for a decision — the exact columns the two UNIQUEs
+ * cover. Derived here, in the pure layer, so two invocations that decide the
+ * same rung for the same application CANNOT produce different keys and slip
+ * past a constraint. The handler must build its INSERT from this and nothing
+ * else.
+ *
+ * WHY `ist_day` IS A COLUMN AND NOT JUST A CAP IN `decide`. The rung key alone
+ * secures only the case everybody tests: two invocations that see the SAME
+ * state pick the same `template_key`, collide on `reentry_notif_unique`, and
+ * exactly one sends. Two invocations that see DIFFERENT state do not.
+ * `resolvePool` can move an application from the fee pool to the interview pool
+ * between two reads, and `anchorFor("interview", …)` falls back to `created_at`
+ * whenever `app_fee_paid_at` is NULL — which is the norm, since the reconciler
+ * never writes that column (see the note on `anchorFor`). So a row that flips
+ * to `fee-paid-no-interview` has `reentry_interview_nudge_1` immediately due
+ * while another in-flight invocation is still holding the fee pool's decision.
+ * Different pools, different key pools, no collision, and BOTH SEND — on the
+ * same day, to the same person.
+ *
+ * `MAX_PER_DAY` cannot stop that on its own: it is evaluated against a
+ * `history` each invocation read once, before either wrote, so it is a
+ * read-then-write race by construction. Putting the day in the row moves the
+ * cap into `reentry_notif_daily_unique`, where Postgres serialises the two
+ * INSERTs and the loser gets 23505 and sends nothing — the same proof the rung
+ * key already gives, extended to the cap that protects a real person from being
+ * mailed twice in a day.
+ *
+ * The day comes from the SAME explicit clock the decision was made on, never
+ * from a database `now()` or a wall-clock read: a claim must be filed on the day
+ * `decide` judged it against, or the cap and the constraint could disagree about
+ * which day a message belongs to at exactly the moment they must not — the
+ * boundary minute.
  */
-export function ledgerKey(applicationId: string, templateKey: string): { application_id: string; template_key: string } {
-  return { application_id: applicationId, template_key: templateKey };
+export function ledgerKey(applicationId: string, templateKey: string, at: Date): LedgerKey {
+  return {
+    application_id: applicationId,
+    template_key: templateKey,
+    ist_day: istDayKey(at),
+  };
 }
 
 // ── The decision ─────────────────────────────────────────────────────────────

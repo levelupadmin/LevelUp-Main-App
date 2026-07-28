@@ -80,6 +80,33 @@
 -- claimed message actually left, so a claim that failed to send is visible
 -- rather than indistinguishable from a delivered one.
 --
+-- AND THE ≤1/DAY CAP GETS ITS OWN UNIQUE, BECAUSE THE RUNG KEY DOES NOT COVER
+-- IT. The paragraph above holds only while both invocations see the SAME state
+-- and therefore pick the SAME key. Two that see DIFFERENT state pick keys from
+-- DIFFERENT pools and never collide. That is reachable, not theoretical: the
+-- interview ladder's anchor is `app_fee_paid_at ?? created_at`, and the
+-- reconciler — the only writer that can move a row into
+-- `fee-paid-no-interview` — does NOT write `app_fee_paid_at`. So the instant a
+-- row acquires that stage with the timestamp still NULL, its rung 1 is due
+-- against the OLD `created_at` anchor, while an invocation already in flight is
+-- still holding the fee pool's decision for the same application. Different
+-- pools, different keys, no collision, and BOTH SEND — on the same day, to the
+-- same person. The ≤1/day cap cannot stop it in the engine: it is evaluated
+-- against a send history each invocation read once, BEFORE either wrote, which
+-- is a read-then-write race by construction.
+--
+-- So the day is a COLUMN. `ist_day` is derived in the pure layer by
+-- `ledgerKey()` (`_shared/ladder.ts`) from the same explicit clock the decision
+-- was made on — never from `now()` here, which would be a second, disagreeing
+-- clock at exactly the boundary minute where the two must agree — and
+-- `reentry_notif_daily_unique` makes Postgres serialise the two INSERTs. The
+-- loser gets 23505 and sends nothing, whichever pool it thought it was in.
+--
+-- IST, not UTC, and stored as `YYYY-MM-DD` text rather than a `date`: the unit
+-- the cap counts in is the applicant's calendar day, IST is UTC+05:30 with no
+-- DST, and text keeps the column byte-identical to what the pure layer produced
+-- with no server `TimeZone` setting anywhere in the path to disagree with it.
+--
 -- Additive, idempotent, re-runnable and reversible (reversal at the foot). It
 -- contains NO `RAISE EXCEPTION`: a shared `db push` runs every pending
 -- migration, and this one must never be the reason another branch's migration
@@ -90,6 +117,16 @@ CREATE TABLE IF NOT EXISTS public.reentry_notifications_log (
   application_id uuid NOT NULL REFERENCES public.cohort_applications(id) ON DELETE CASCADE,
   template_key text NOT NULL,
   channel text NOT NULL,
+  -- The IST calendar day this claim spends, as `YYYY-MM-DD`, written by
+  -- `ledgerKey()` off the decision's own clock. NULLABLE ON PURPOSE — see the
+  -- guarded ALTER below: this file's CREATE is `IF NOT EXISTS`, so a table an
+  -- earlier run already created reaches the column through that ALTER instead,
+  -- and `ADD COLUMN … NOT NULL` against rows that exist would abort a shared
+  -- `db push`. Nullability is not a loophole: `reentry_notif_ist_day_check`
+  -- below requires it on every new write, and a NULL never collides in a
+  -- UNIQUE, so pre-existing rows sit outside the daily constraint rather than
+  -- blocking its creation.
+  ist_day text,
   -- When the rung was CLAIMED (insert time). The ≤1/day and ≤4/application caps
   -- count these, so a claim consumes budget whether or not delivery succeeded —
   -- deliberately, since the alternative is a failing sender retrying its way
@@ -108,16 +145,30 @@ CREATE TABLE IF NOT EXISTS public.reentry_notifications_log (
   -- stays claimed, undelivered and visible instead.
   attempts integer NOT NULL DEFAULT 0,
   last_error text,
-  CONSTRAINT reentry_notif_unique UNIQUE (application_id, template_key)
+  CONSTRAINT reentry_notif_unique UNIQUE (application_id, template_key),
+  CONSTRAINT reentry_notif_daily_unique UNIQUE (application_id, ist_day)
 );
 
 -- The `IF NOT EXISTS` above means a table created by an earlier run keeps its
 -- original definition, so every constraint/column added later needs its own
 -- idempotent guard. Same pattern as 20260722120000_reconciled_stage_columns.sql.
+--
+-- `ist_day` is added WITHOUT `NOT NULL` and WITHOUT a DEFAULT, unlike `attempts`
+-- beside it, and both omissions are deliberate. `NOT NULL` with no default
+-- against a table that already holds rows raises 23502 and aborts the whole
+-- `db push`, taking every other branch's pending migration with it. A DEFAULT
+-- would fill every existing row with the SAME literal, which is worse than
+-- useless here: `reentry_notif_daily_unique` would then find that literal
+-- repeated for any application with two historical claims and the ADD
+-- CONSTRAINT would fail instead. Backfilling from `claimed_at` has the same
+-- failure mode wherever the very race this migration closes has already
+-- happened. NULL is the one value that can never collide, so old rows keep it,
+-- stay outside the daily constraint, and the constraint always adds cleanly.
 ALTER TABLE public.reentry_notifications_log
   ADD COLUMN IF NOT EXISTS dispatched_at timestamptz,
   ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS last_error text;
+  ADD COLUMN IF NOT EXISTS last_error text,
+  ADD COLUMN IF NOT EXISTS ist_day text;
 
 DO $$
 BEGIN
@@ -128,6 +179,46 @@ BEGIN
   ) THEN
     ALTER TABLE public.reentry_notifications_log
       ADD CONSTRAINT reentry_notif_unique UNIQUE (application_id, template_key);
+  END IF;
+
+  -- The ≤1/day cap, as a constraint rather than as a hope about timing. See the
+  -- header: the rung UNIQUE above only catches invocations that agreed on the
+  -- rung, and two that disagree about the POOL do not. Adding it here rather
+  -- than only in the CREATE is what makes this file re-runnable against a table
+  -- an earlier `db push` already created.
+  --
+  -- It can never abort: `ist_day` is NULL on every row that predates it, and
+  -- NULLs are distinct in a UNIQUE (the default, `NULLS DISTINCT`), so there is
+  -- nothing for the index build to find a duplicate of.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'reentry_notif_daily_unique'
+      AND conrelid = 'public.reentry_notifications_log'::regclass
+  ) THEN
+    ALTER TABLE public.reentry_notifications_log
+      ADD CONSTRAINT reentry_notif_daily_unique UNIQUE (application_id, ist_day);
+  END IF;
+
+  -- What keeps the nullable column honest. NOT VALID skips the existing rows —
+  -- which is the entire point, since they are the ones that legitimately hold
+  -- NULL — while every INSERT and UPDATE from here on is checked in full. So a
+  -- writer that forgets `ist_day`, or writes it in some other shape, is refused
+  -- rather than quietly landing a row that the daily UNIQUE cannot see. The
+  -- pattern is `YYYY-MM-DD` because that is exactly what `istDayKey()` emits.
+  --
+  -- The one thing to know before hand-editing history: NOT VALID exempts old
+  -- rows from the SCAN, not from later writes, so an UPDATE of a legacy
+  -- NULL-`ist_day` row must set the column too. The handler never does that —
+  -- `settleClaim` only ever updates a row it just inserted — so this bites
+  -- nothing in the running system.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'reentry_notif_ist_day_check'
+      AND conrelid = 'public.reentry_notifications_log'::regclass
+  ) THEN
+    ALTER TABLE public.reentry_notifications_log
+      ADD CONSTRAINT reentry_notif_ist_day_check
+      CHECK (ist_day IS NOT NULL AND ist_day ~ '^\d{4}-\d{2}-\d{2}$') NOT VALID;
   END IF;
 
   -- Channel vocabulary. NOT VALID so the add is instant and never scans; new
@@ -175,9 +266,11 @@ CREATE INDEX IF NOT EXISTS reentry_notif_undelivered_idx
   WHERE dispatched_at IS NULL;
 
 COMMENT ON TABLE public.reentry_notifications_log IS
-  'Re-entry reminder ladder idempotency ledger (PHASE RE E-1). Keyed on the APPLICATION, not the user: a recoverable applicant may have no public.users row. The UNIQUE (application_id, template_key) is what makes a double-send impossible across overlapping cron runs.';
+  'Re-entry reminder ladder idempotency ledger (PHASE RE E-1). Keyed on the APPLICATION, not the user: a recoverable applicant may have no public.users row. Two UNIQUEs make a double-send impossible across overlapping cron runs: (application_id, template_key) for the rung, and (application_id, ist_day) for the one-message-per-IST-day cap, which the engine alone cannot enforce because two invocations in different states pick keys from different pools and never collide.';
 COMMENT ON COLUMN public.reentry_notifications_log.claimed_at IS
   'Insert time. The ≤1/day and ≤4/application caps count claims, not deliveries.';
+COMMENT ON COLUMN public.reentry_notifications_log.ist_day IS
+  'The IST calendar day (YYYY-MM-DD) this claim spends, derived by ledgerKey() in _shared/ladder.ts from the decision''s own clock — never from now(). NULL only on rows written before this column existed; reentry_notif_ist_day_check requires it on every new write.';
 COMMENT ON COLUMN public.reentry_notifications_log.dispatched_at IS
   'Set when the sender reported success. NULL = claimed but never delivered.';
 COMMENT ON COLUMN public.reentry_notifications_log.attempts IS
@@ -194,6 +287,12 @@ CREATE POLICY reentry_notif_admin_read ON public.reentry_notifications_log
   FOR SELECT USING (is_admin());
 
 -- ── Reversal (kept for reference; do not run in the forward migration) ──
+-- Dropping the table takes its constraints with it. To reverse ONLY the daily
+-- cap on a live ledger, without touching the rest:
+--   ALTER TABLE public.reentry_notifications_log
+--     DROP CONSTRAINT IF EXISTS reentry_notif_ist_day_check,
+--     DROP CONSTRAINT IF EXISTS reentry_notif_daily_unique;
+--   ALTER TABLE public.reentry_notifications_log DROP COLUMN IF EXISTS ist_day;
 -- DROP INDEX IF EXISTS public.reentry_notif_undelivered_idx;
 -- DROP INDEX IF EXISTS public.reentry_notif_app_idx;
 -- DROP POLICY IF EXISTS reentry_notif_admin_read ON public.reentry_notifications_log;

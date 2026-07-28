@@ -203,8 +203,8 @@
  * charge, so a transient ledger outage or one overlapping tick would turn a
  * single pass into up to 1000 sequential INSERTs and blow straight through the
  * timeout. `claimAttempts()` therefore counts `dispatched + dispatchFailed +
- * raced + claimFailed`: every path that touched the ledger, which is every path
- * that cost time. Anything past the ceiling is left for the next tick 15
+ * suppressedAtDispatch + raced + racedDailyCap + claimFailed`: every path that
+ * touched the ledger, which is every path that cost time. Anything past the ceiling is left for the next tick 15
  * minutes later, and because the engine allows at most one message per
  * application per day, a backlog can never grow faster than the chunk drains it.
  *
@@ -449,8 +449,19 @@ interface RunSummary {
   eligible: number;
   claimed: number;
   dispatched: number;
-  /** Rungs another overlapping invocation had already claimed (23505). */
+  /** Rungs another overlapping invocation had already claimed (23505 on `reentry_notif_unique`). */
   raced: number;
+  /**
+   * Claims the DAILY cap refused (23505 on `reentry_notif_daily_unique`): this
+   * application already has a message on this IST day, filed under a different
+   * rung. Kept apart from `raced` because it is not a scheduling artefact — it
+   * is the ≤1/day cap catching a cross-pool race the engine cannot see, since
+   * both invocations evaluated the cap against a history read before either
+   * wrote. Non-zero here is the daily cap working, not a fault; persistently
+   * non-zero means invocations are overlapping far more than the 15-minute
+   * period implies.
+   */
+  racedDailyCap: number;
   /** Claims whose dispatch failed. The rung is burned; see the ledger comment. */
   dispatchFailed: number;
   /**
@@ -496,16 +507,16 @@ function bump(counters: SkipCounters, key: LadderSkipReason) {
 
 /**
  * Ledger round trips this run has already spent. EVERY outcome of a claim
- * counts: a won claim (dispatched / dispatchFailed), a lost race (raced) and an
- * errored INSERT (claimFailed) all cost one INSERT against the same database.
- * Counting only the ones that produced a message would leave the two failure
- * paths unbounded — which is exactly how one overlapping invocation, or a
- * minute of ledger unavailability, becomes a thousand sequential INSERTs and a
- * pg_net timeout.
+ * counts: a won claim (dispatched / dispatchFailed), a lost race on either
+ * UNIQUE (raced / racedDailyCap) and an errored INSERT (claimFailed) all cost
+ * one INSERT against the same database. Counting only the ones that produced a
+ * message would leave the failure paths unbounded — which is exactly how one
+ * overlapping invocation, or a minute of ledger unavailability, becomes a
+ * thousand sequential INSERTs and a pg_net timeout.
  */
 function claimAttempts(summary: RunSummary): number {
   return summary.dispatched + summary.dispatchFailed + summary.suppressedAtDispatch + summary.raced +
-    summary.claimFailed;
+    summary.racedDailyCap + summary.claimFailed;
 }
 
 function createAdminClient() {
@@ -908,12 +919,57 @@ export async function ensureUnsubscribeCredential(
 }
 
 /**
+ * The ledger's daily-cap UNIQUE, by name. A 23505 quoting it means "this
+ * application already spent today", which is a DIFFERENT event from losing the
+ * race for one rung, and the two are told apart so the counters do not lie.
+ */
+const DAILY_CAP_CONSTRAINT = "reentry_notif_daily_unique";
+
+/** Which of the ledger's two UNIQUEs a 23505 came from. */
+type ClaimRace = "rung" | "day";
+
+/**
+ * Read the losing constraint out of a unique violation. PostgREST passes
+ * Postgres's own message and detail through, so both carry the constraint name
+ * or the column list; the column list is checked too because `details` is the
+ * field that survives when the message is truncated.
+ *
+ * An unattributable 23505 is reported as a rung race — the historical meaning,
+ * and the safe default: BOTH races end in the same behaviour (skip without
+ * sending, which is correct for either), so only the label is at stake.
+ */
+function claimRaceKind(error: { message?: string | null; details?: string | null }): ClaimRace {
+  const blob = `${error.message ?? ""} ${error.details ?? ""}`;
+  return blob.includes(DAILY_CAP_CONSTRAINT) || blob.includes("application_id, ist_day") ? "day" : "rung";
+}
+
+/** A won claim, or the constraint that refused it. */
+type ClaimOutcome =
+  | { claimed: true; id: string }
+  | { claimed: false; race: ClaimRace };
+
+/**
  * Claim a rung. The INSERT is built from `ledgerKey()` and nothing else, so two
  * invocations deciding the same rung produce byte-identical key columns and
  * Postgres serialises them on `reentry_notif_unique`. Returns the claim's id,
- * or null when another invocation got there first (23505) — in which case this
- * one skips WITHOUT sending. That is the whole double-send proof: it rests on
- * the constraint, not on how long a run happens to take.
+ * or the race that refused it (23505) — in which case this one skips WITHOUT
+ * sending. That is the whole double-send proof: it rests on the constraint, not
+ * on how long a run happens to take.
+ *
+ * `now` is the SAME clock `decide` judged this row against, and it is an
+ * argument rather than a wall-clock read here for that reason: `ledgerKey()`
+ * derives the `ist_day` column from it, and a claim filed under a different day
+ * from the one the cap was evaluated against is exactly the disagreement the
+ * daily UNIQUE exists to prevent.
+ *
+ * TWO CONSTRAINTS CAN NOW REFUSE THE SAME INSERT, and they mean different
+ * things. `reentry_notif_unique` means another invocation is already sending
+ * THIS rung. `reentry_notif_daily_unique` means the application's one message
+ * for today has been claimed by a different rung — the cross-pool race the ≤1/day
+ * cap cannot catch in the engine, because each invocation evaluated it against a
+ * history it read before either wrote. Skipping is right for both; conflating
+ * them in the summary would file a cap enforcement under "overlapping run" and
+ * send an operator looking for a scheduling problem that is not there.
  *
  * `attempts` is left at its DEFAULT 0. A claim is a reservation, not a delivery
  * attempt; `settleClaim` sets it to 1 once the sender has actually been called.
@@ -926,18 +982,19 @@ async function claimRung(
   applicationId: string,
   templateKey: string,
   channel: LadderChannel,
-): Promise<{ id: string } | null> {
+  now: Date,
+): Promise<ClaimOutcome> {
   const { data, error } = await admin
     .from("reentry_notifications_log")
-    .insert({ ...ledgerKey(applicationId, templateKey), channel })
+    .insert({ ...ledgerKey(applicationId, templateKey, now), channel })
     .select("id")
     .single();
 
   if (error) {
-    if (error.code === "23505") return null;
+    if (error.code === "23505") return { claimed: false, race: claimRaceKind(error) };
     throw new Error(`ledger claim failed: ${error.message}`);
   }
-  return data as { id: string };
+  return { claimed: true, id: (data as { id: string }).id };
 }
 
 /**
@@ -1367,6 +1424,7 @@ Deno.serve(async (req) => {
     claimed: 0,
     dispatched: 0,
     raced: 0,
+    racedDailyCap: 0,
     dispatchFailed: 0,
     claimFailed: 0,
     suppressedAtDispatch: 0,
@@ -1496,18 +1554,21 @@ Deno.serve(async (req) => {
         // CLAIM FIRST, THEN SEND. The reverse order would make the ledger a
         // record of past sends instead of a mutex, and two overlapping ticks
         // would both send before either wrote a row.
-        let claim: { id: string } | null;
+        let claim: ClaimOutcome;
         try {
-          claim = await claimRung(admin, row.id, decision.templateKey, decision.channel);
+          claim = await claimRung(admin, row.id, decision.templateKey, decision.channel, now);
         } catch (err) {
           log("error", "claim_failed", { applicationId: row.id, message: (err as Error).message });
           summary.claimFailed++;
           continue;
         }
-        if (!claim) {
-          // Another invocation owns this rung. Not an error — this is the
-          // constraint doing its job.
-          summary.raced++;
+        if (!claim.claimed) {
+          // Not an error — this is a constraint doing its job. WHICH constraint
+          // is the whole difference between "another invocation owns this rung"
+          // and "this applicant's one message for today is already claimed by a
+          // different rung", so the two are counted apart.
+          if (claim.race === "day") summary.racedDailyCap++;
+          else summary.raced++;
           continue;
         }
         summary.claimed++;
