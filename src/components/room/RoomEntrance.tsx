@@ -35,10 +35,31 @@ export const ROOM_ENTRANCE_STORAGE_PREFIX = "lu_room_entered_";
  * short: the plate carries the room's name, and a name you wait for is a name
  * you notice missing.
  */
-export const ROOM_ENTRANCE_PLATE_DELAY_S = 0.1;
+export const ROOM_ENTRANCE_PLATE_DELAY_S = 0.08;
+
+/** How far the nameplate travels (px). Transform-only — it never moves layout. */
+export const ROOM_ENTRANCE_PLATE_RISE_PX = 12;
 
 /** The hard ceiling for the whole sequence (R1-T3 acceptance: ≤600ms total). */
 export const ROOM_ENTRANCE_BUDGET_MS = 600;
+
+/** How far the art settles in, as a scale. Sub-2%: a settle, not a zoom. */
+const ART_SETTLE_SCALE = 1.015;
+
+/**
+ * Rest thresholds — WHEN the spring is allowed to declare itself finished, not
+ * how it moves. `springs.glide` is only just overdamped, and framer's defaults
+ * (restDelta 0.01, restSpeed 0.01/s) hold it "running" for ~200ms after the
+ * motion stops being visible: measured, the untuned sequence settles at ~630ms,
+ * i.e. a third of the budget spent travelling distances no eye can resolve.
+ * The physics are untouched; only the stop condition moves.
+ *
+ * They are split by unit because the two scales are not comparable:
+ *  - `UNIT` for opacity/scale (0–1): 1/100th of an opacity step, invisible.
+ *  - `PX` for the translate: 0.4px is under half a device pixel at 2× DPR.
+ */
+const REST_UNIT = { restDelta: 0.1, restSpeed: 20 } as const;
+const REST_PX = { restDelta: 0.4, restSpeed: 8 } as const;
 
 /** Ready to spread onto a `motion.*` element: `<motion.div {...stage} />`. */
 export interface RoomEntranceStage {
@@ -146,14 +167,25 @@ export function useRoomEntrance(
       art: {
         // A 1.5% settle reads as the art "arriving" rather than blinking on.
         // Transform-only, on a layer that is absolutely positioned — no reflow.
-        initial: { opacity: 0, scale: 1.015 },
+        initial: { opacity: 0, scale: ART_SETTLE_SCALE },
         animate: { opacity: 1, scale: 1 },
-        transition: springs.glide,
+        transition: {
+          ...springs.glide,
+          opacity: { ...springs.glide, ...REST_UNIT },
+          scale: { ...springs.glide, ...REST_UNIT },
+        },
       },
       plate: {
-        initial: { opacity: 0, y: 14 },
+        initial: { opacity: 0, y: ROOM_ENTRANCE_PLATE_RISE_PX },
         animate: { opacity: 1, y: 0 },
-        transition: { ...springs.glide, delay: ROOM_ENTRANCE_PLATE_DELAY_S },
+        // A per-value transition REPLACES the parent for that value, so the
+        // delay is restated inside each one on purpose.
+        transition: {
+          ...springs.glide,
+          delay: ROOM_ENTRANCE_PLATE_DELAY_S,
+          opacity: { ...springs.glide, ...REST_UNIT, delay: ROOM_ENTRANCE_PLATE_DELAY_S },
+          y: { ...springs.glide, ...REST_PX, delay: ROOM_ENTRANCE_PLATE_DELAY_S },
+        },
       },
     };
   }, [play, springs]);

@@ -29,7 +29,7 @@
         var last = performance.now();
         var start = last;
         function tick(now) {
-          window.__frames.push(now - last);
+          window.__frames.push({ t: now, d: now - last });
           last = now;
           if (now - start < 5000) requestAnimationFrame(tick);
         }

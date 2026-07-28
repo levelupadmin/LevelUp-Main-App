@@ -10,11 +10,22 @@
  *
  * THE ONE RULE THIS FILE ENFORCES
  * ------------------------------
- * `error.code === '42501'` is the ONLY signal of a denial. An empty array, a
- * null envelope or a zero-length roster is a legitimate EMPTY — a pre_start
- * member whose batch is not assigned yet gets `sessions: []` from a fully
- * successful call (rpcs.sql:585-589). Code that treats empty as denied strands
- * exactly the students the room is for.
+ * `error.code === '42501'` is the ONLY signal of a denial, and every hook here
+ * hands it back as a plain `denied` boolean so no consumer re-derives it. An
+ * empty array, an empty session list or a zero roster count is a legitimate
+ * EMPTY — a pre_start member whose batch is not assigned yet gets `sessions: []`
+ * from a fully successful call (rpcs.sql:585-589). Code that reads empty as
+ * denied strands exactly the students the room is for.
+ *
+ * SHAPES ARE THE WIRE SHAPES
+ * --------------------------
+ * Rows come back in the RPC's own snake_case, unrenamed. The room components
+ * are written against the migration's `RETURNS TABLE` column list, and a
+ * camelCase layer in between would be one more place for a column to be
+ * silently dropped. What this module DOES add is coercion: counts that are
+ * really numbers, phases narrowed to the four the CHECK allows, and jsonb left
+ * `unknown` so it has to pass through `resolveTheme` / `moduleEnabled` before
+ * anything renders it.
  *
  * WHAT IS NOT IN HERE
  * -------------------
@@ -35,7 +46,7 @@ import { useOutletContext } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import type { RoomTheme } from "@/lib/room";
+import type { RoomConfigInput, RoomTheme } from "@/lib/room";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Denial
@@ -58,11 +69,25 @@ export function isRoomAccessDenied(error: unknown): boolean {
 }
 
 /** Denials are terminal: retrying a 42501 just spends the user's battery. */
-const retryUnlessDenied = (failureCount: number, error: unknown) =>
+const retryUnlessDenied = (failureCount: number, error: Error) =>
   !isRoomAccessDenied(error) && failureCount < 2;
 
+/**
+ * A room query, plus the one derived fact every room surface needs.
+ *
+ * `denied` is true only for a `42501`. It is deliberately NOT `isError`: a
+ * network flake is an error the user can retry, a denial is an answer.
+ */
+export type RoomQueryResult<T> = UseQueryResult<T, Error> & { denied: boolean };
+
+function withDenied<T>(query: UseQueryResult<T, Error>): RoomQueryResult<T> {
+  // Assign rather than spread: react-query tracks which result properties a
+  // component actually read, and spreading would touch every one of them.
+  return Object.assign(query, { denied: query.isError && isRoomAccessDenied(query.error) });
+}
+
 /* ────────────────────────────────────────────────────────────────────────────
- * Shapes
+ * Shapes — the RPC row lists, verbatim
  * ──────────────────────────────────────────────────────────────────────────── */
 
 /** `cohort_room_configs.phase` — the CHECK constraint, verbatim (backbone.sql:453). */
@@ -88,43 +113,41 @@ export function asRoomPhase(value: unknown): RoomPhase {
 export type RoomAccess = "member" | "pre_member";
 
 /**
- * One row of `get_my_cohort_rooms()`, camel-cased once so no consumer has to.
+ * One row of `get_my_cohort_rooms()`.
  *
  * `theme` and `modules` stay `unknown`: they are jsonb an admin typed into a
- * form. The shape is structurally a `RoomConfigInput`, so this object can be
- * handed straight to `resolveTheme(room)` / `moduleEnabled(room, key)` from
+ * form. The row is structurally a `RoomConfigInput`, so it can be handed
+ * straight to `resolveTheme(room)` / `moduleEnabled(room, key)` from
  * `@/lib/room` without building an intermediate.
  */
-export interface CohortRoomSummary {
-  offeringId: string;
-  offeringTitle: string;
+export interface CohortRoomSummary extends RoomConfigInput {
+  offering_id: string;
+  offering_title: string;
   /**
    * `/room/:slug`. NULL when the offering has a membership but no config row —
-   * such a room has no address, so link it as `/cohort/:offeringId` instead of
+   * such a room has no address, so link it as `/cohort/:offering_id` instead of
    * inventing one.
    */
-  roomSlug: string | null;
-  batchId: string | null;
-  batchName: string | null;
+  room_slug: string | null;
+  batch_id: string | null;
+  batch_name: string | null;
   /** `cohort_room_members.role` — member | alumni | mentor | host | pre_member. */
   role: string | null;
   phase: RoomPhase;
-  /** True when a `cohort_room_configs` row resolved for this membership. */
-  hasConfig: boolean;
   /** jsonb — feed to `resolveTheme`. Untrusted. */
   theme: unknown;
   /** jsonb — feed to `moduleEnabled`. Untrusted. */
   modules: unknown;
-  totalWeeks: number;
-  currentWeek: number | null;
-  nextSessionAt: string | null;
+  total_weeks: number;
+  current_week: number | null;
+  next_session_at: string | null;
   /** Always null for a `pre_member` — the RPC redacts it (rpcs.sql:320-327). */
-  nextDueAt: string | null;
-  unseenAnnouncements: number;
+  next_due_at: string | null;
+  unseen_announcements: number;
 }
 
 /** A `cohort_room_configs` row as `to_jsonb(c)` hands it over. */
-export interface RoomConfigRow {
+export interface RoomConfigRow extends RoomConfigInput {
   id?: string;
   offering_id?: string;
   batch_id?: string | null;
@@ -170,39 +193,53 @@ export interface RoomSession {
   my_position?: number | null;
 }
 
-/** The `get_cohort_room()` envelope, normalised. */
+/**
+ * The `get_cohort_room()` envelope.
+ *
+ * `access` carries the THIRD tier no other task accounts for: a `pre_member` is
+ * a LOBBY visitor, neither a full member nor a denied one. The server already
+ * stripped everything outside the whitelist (rpcs.sql:506-527), so a lobby
+ * envelope is a real, successful room — smaller. Render the chrome on it and
+ * omit the modules the redaction emptied; never show an error.
+ */
 export interface CohortRoomEnvelope {
-  offeringId: string;
-  batchId: string | null;
+  offering_id: string;
+  batch_id: string | null;
   role: string | null;
   access: RoomAccess;
-  /**
-   * `access === 'pre_member'`. A LOBBY visitor is neither a full member nor a
-   * denied one: the server already stripped everything outside the whitelist
-   * (rpcs.sql:506-527), so the shell renders the room chrome on the redacted
-   * payload and shows NO error state. Modules the redaction emptied simply do
-   * not render.
-   */
-  isLobby: boolean;
   config: RoomConfigRow | null;
-  phase: RoomPhase;
-  slug: string | null;
-  rosterCount: number;
+  roster_count: number;
   announcements: RoomAnnouncement[];
   sessions: RoomSession[];
   /** Member-only. Null in the lobby — the field is absent there, not zero. */
-  attendancePct: number | null;
+  attendance_pct: number | null;
 }
 
 /** One row of `get_room_roster()`. The six permitted columns, and no others. */
 export interface RoomRosterEntry {
-  userId: string;
-  fullName: string | null;
-  avatarUrl: string | null;
+  user_id: string;
+  full_name: string | null;
+  avatar_url: string | null;
   occupation: string | null;
   city: string | null;
   role: string;
 }
+
+/** The two `offerings` columns the room needs that no room RPC returns. */
+export interface RoomOfferingMeta {
+  /** `offerings.cohort_start_date` — the "doors open" date. */
+  cohort_start_date: string | null;
+  /** `offerings.whatsapp_group_link` — R-D5 coexistence. */
+  whatsapp_group_link: string | null;
+}
+
+/** True when the envelope is a lobby (`pre_member`) one. */
+export const isLobbyEnvelope = (envelope: CohortRoomEnvelope | null | undefined) =>
+  envelope?.access === "pre_member";
+
+/** The room's phase from its config row, narrowed and defaulted. */
+export const envelopePhase = (envelope: CohortRoomEnvelope | null | undefined): RoomPhase =>
+  asRoomPhase(envelope?.config?.phase);
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Query keys
@@ -220,8 +257,11 @@ export const cohortRoomKey = (offeringId: string | null | undefined) =>
 export const roomRosterKey = (offeringId: string | null | undefined) =>
   [COHORT_ROOMS_QUERY_ROOT, "roster", offeringId ?? "none"] as const;
 
+export const roomOfferingMetaKey = (offeringId: string | null | undefined) =>
+  [COHORT_ROOMS_QUERY_ROOT, "offering", offeringId ?? "none"] as const;
+
 /* ────────────────────────────────────────────────────────────────────────────
- * Normalisers — untrusted jsonb in, render-safe values out
+ * Coercion — untrusted jsonb in, render-safe values out
  * ──────────────────────────────────────────────────────────────────────────── */
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -253,21 +293,20 @@ async function fetchMyCohortRooms(): Promise<CohortRoomSummary[]> {
   if (error) throw error;
 
   return (data ?? []).map((row) => ({
-    offeringId: row.offering_id,
-    offeringTitle: row.offering_title ?? "",
-    roomSlug: asString(row.room_slug),
-    batchId: row.batch_id ?? null,
-    batchName: asString(row.batch_name),
+    offering_id: row.offering_id,
+    offering_title: row.offering_title ?? "",
+    room_slug: asString(row.room_slug),
+    batch_id: row.batch_id ?? null,
+    batch_name: asString(row.batch_name),
     role: asString(row.role),
     phase: asRoomPhase(row.phase),
-    hasConfig: asString(row.room_slug) !== null,
     theme: row.theme ?? null,
     modules: row.modules ?? null,
-    totalWeeks: asCount(row.total_weeks),
-    currentWeek: asNullableNumber(row.current_week),
-    nextSessionAt: asString(row.next_session_at),
-    nextDueAt: asString(row.next_due_at),
-    unseenAnnouncements: asCount(row.unseen_announcements),
+    total_weeks: asCount(row.total_weeks),
+    current_week: asNullableNumber(row.current_week),
+    next_session_at: asString(row.next_session_at),
+    next_due_at: asString(row.next_due_at),
+    unseen_announcements: asCount(row.unseen_announcements),
   }));
 }
 
@@ -278,24 +317,20 @@ async function fetchCohortRoom(offeringId: string): Promise<CohortRoomEnvelope> 
   if (error) throw error;
 
   const payload = asRecord(data);
-  const config = payload.config ? (asRecord(payload.config) as RoomConfigRow) : null;
-  const access: RoomAccess = payload.access === "pre_member" ? "pre_member" : "member";
-
   return {
-    offeringId: asString(payload.offering_id) ?? offeringId,
-    batchId: asString(payload.batch_id),
+    offering_id: asString(payload.offering_id) ?? offeringId,
+    batch_id: asString(payload.batch_id),
     role: asString(payload.role),
-    access,
-    isLobby: access === "pre_member",
-    config,
-    phase: asRoomPhase(config?.phase),
-    slug: asString(config?.slug),
-    rosterCount: asCount(payload.roster_count),
+    // Anything that is not the literal 'pre_member' is a full member envelope.
+    // Erring the other way would redact a real member's own room.
+    access: payload.access === "pre_member" ? "pre_member" : "member",
+    config: payload.config ? (asRecord(payload.config) as RoomConfigRow) : null,
+    roster_count: asCount(payload.roster_count),
     announcements: Array.isArray(payload.announcements)
       ? (payload.announcements as RoomAnnouncement[])
       : [],
     sessions: Array.isArray(payload.sessions) ? (payload.sessions as RoomSession[]) : [],
-    attendancePct: asNullableNumber(payload.attendance_pct),
+    attendance_pct: asNullableNumber(payload.attendance_pct),
   };
 }
 
@@ -304,15 +339,20 @@ async function fetchRoomRoster(offeringId: string): Promise<RoomRosterEntry[]> {
     p_offering: offeringId,
   });
   if (error) throw error;
+  return (data ?? []) as RoomRosterEntry[];
+}
 
-  return (data ?? []).map((row) => ({
-    userId: row.user_id,
-    fullName: asString(row.full_name),
-    avatarUrl: asString(row.avatar_url),
-    occupation: asString(row.occupation),
-    city: asString(row.city),
-    role: row.role,
-  }));
+async function fetchRoomOfferingMeta(offeringId: string): Promise<RoomOfferingMeta> {
+  const { data, error } = await supabase
+    .from("offerings")
+    .select("cohort_start_date, whatsapp_group_link")
+    .eq("id", offeringId)
+    .maybeSingle();
+  if (error) throw error;
+  return {
+    cohort_start_date: asString(data?.cohort_start_date),
+    whatsapp_group_link: asString(data?.whatsapp_group_link),
+  };
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -333,50 +373,74 @@ const ENVELOPE_STALE_MS = 60_000;
  * (the RPC's own ORDER BY). An authenticated user with no rooms returns `[]`;
  * an anonymous one never fires the query at all.
  */
-export function useMyCohortRooms(): UseQueryResult<CohortRoomSummary[], Error> {
+export function useMyCohortRooms(): RoomQueryResult<CohortRoomSummary[]> {
   const { user } = useAuth();
-  return useQuery({
-    queryKey: cohortRoomsKey(user?.id),
-    queryFn: fetchMyCohortRooms,
-    enabled: !!user?.id,
-    staleTime: MEMBERSHIPS_STALE_MS,
-    retry: retryUnlessDenied,
-  });
+  return withDenied(
+    useQuery({
+      queryKey: cohortRoomsKey(user?.id),
+      queryFn: fetchMyCohortRooms,
+      enabled: !!user?.id,
+      staleTime: MEMBERSHIPS_STALE_MS,
+      retry: retryUnlessDenied,
+    }),
+  );
 }
 
 /**
  * The room-open envelope for one offering. Pass `null` to keep it idle.
  *
- * A denial arrives as an error with `code === '42501'` — check it with
- * `isRoomAccessDenied`, never by looking at the data.
+ * A `pre_member` gets a successful, REDACTED envelope — check `access`, not
+ * `denied`, to decide what to render.
  */
 export function useCohortRoom(
   offeringId: string | null | undefined,
-): UseQueryResult<CohortRoomEnvelope, Error> {
-  return useQuery({
-    queryKey: cohortRoomKey(offeringId),
-    queryFn: () => fetchCohortRoom(offeringId as string),
-    enabled: !!offeringId,
-    staleTime: ENVELOPE_STALE_MS,
-    retry: retryUnlessDenied,
-  });
+): RoomQueryResult<CohortRoomEnvelope> {
+  return withDenied(
+    useQuery({
+      queryKey: cohortRoomKey(offeringId),
+      queryFn: () => fetchCohortRoom(offeringId as string),
+      enabled: !!offeringId,
+      staleTime: ENVELOPE_STALE_MS,
+      retry: retryUnlessDenied,
+    }),
+  );
 }
 
 /**
  * The roster. `pre_member` is DENIED here by design (the lobby gets a COUNT via
- * the envelope's `rosterCount`, not identities), so pass `enabled: false` — or
- * simply do not mount the module — when `envelope.isLobby`.
+ * the envelope's `roster_count`, not identities), so pass `enabled: false` when
+ * the envelope is a lobby one — that is a NETWORK decision, not a security one.
+ * Callers that ask anyway get `denied: true` and no rows, never a crash.
  */
 export function useRoomRoster(
   offeringId: string | null | undefined,
   options?: { enabled?: boolean },
-): UseQueryResult<RoomRosterEntry[], Error> {
+): RoomQueryResult<RoomRosterEntry[]> {
+  return withDenied(
+    useQuery({
+      queryKey: roomRosterKey(offeringId),
+      queryFn: () => fetchRoomRoster(offeringId as string),
+      enabled: !!offeringId && options?.enabled !== false,
+      staleTime: MEMBERSHIPS_STALE_MS,
+      retry: retryUnlessDenied,
+    }),
+  );
+}
+
+/**
+ * `offerings.cohort_start_date` + `offerings.whatsapp_group_link` — the two
+ * fields the pre-start induction needs that no room RPC returns. A plain table
+ * read (offerings is world-readable for active rows), so it carries no denial
+ * semantics of its own.
+ */
+export function useRoomOfferingMeta(
+  offeringId: string | null | undefined,
+): UseQueryResult<RoomOfferingMeta, Error> {
   return useQuery({
-    queryKey: roomRosterKey(offeringId),
-    queryFn: () => fetchRoomRoster(offeringId as string),
-    enabled: !!offeringId && options?.enabled !== false,
+    queryKey: roomOfferingMetaKey(offeringId),
+    queryFn: () => fetchRoomOfferingMeta(offeringId as string),
+    enabled: !!offeringId,
     staleTime: MEMBERSHIPS_STALE_MS,
-    retry: retryUnlessDenied,
   });
 }
 
@@ -401,7 +465,7 @@ export function resolveRoomSlug(
   slug: string | null | undefined,
 ): CohortRoomSummary | null {
   if (!slug) return null;
-  return (rooms ?? []).find((room) => room.roomSlug === slug) ?? null;
+  return (rooms ?? []).find((room) => room.room_slug === slug) ?? null;
 }
 
 /** Find a membership by offering id. Pure — this is what `/cohort/:id` uses. */
@@ -410,7 +474,7 @@ export function resolveRoomOffering(
   offeringId: string | null | undefined,
 ): CohortRoomSummary | null {
   if (!offeringId) return null;
-  return (rooms ?? []).find((room) => room.offeringId === offeringId) ?? null;
+  return (rooms ?? []).find((room) => room.offering_id === offeringId) ?? null;
 }
 
 /**
@@ -422,7 +486,7 @@ export function resolveRoomOffering(
  *                    deliberately one state (anti-enumeration).
  * - `denied`       — the server said `42501` for a room we DID resolve.
  * - `ready`        — `room` and `envelope` are both populated. Includes the
- *                    LOBBY (`envelope.isLobby`), which is a real room, redacted.
+ *                    LOBBY (`access === 'pre_member'`), a real room, redacted.
  */
 export type RoomViewStatus = "loading" | "unavailable" | "denied" | "ready";
 
@@ -433,6 +497,8 @@ export interface RoomView {
   /** Every membership — the room switcher and the nav slot read this. */
   rooms: CohortRoomSummary[];
   error: Error | null;
+  /** Re-open the room from the server (used when the doors-open day arrives). */
+  refetch: () => void;
 }
 
 /**
@@ -445,7 +511,7 @@ export function useRoomView(slug: string | null | undefined): RoomView {
   const memberships = useMyCohortRooms();
   const rooms = useMemo(() => memberships.data ?? [], [memberships.data]);
   const room = useMemo(() => resolveRoomSlug(rooms, slug), [rooms, slug]);
-  const envelope = useCohortRoom(room?.offeringId ?? null);
+  const envelope = useCohortRoom(room?.offering_id ?? null);
 
   let status: RoomViewStatus;
   if (memberships.isPending && memberships.isFetching) {
@@ -458,7 +524,7 @@ export function useRoomView(slug: string | null | undefined): RoomView {
   } else if (!room) {
     status = "unavailable";
   } else if (envelope.isError) {
-    status = isRoomAccessDenied(envelope.error) ? "denied" : "unavailable";
+    status = envelope.denied ? "denied" : "unavailable";
   } else if (!envelope.data) {
     status = "loading";
   } else {
@@ -471,6 +537,10 @@ export function useRoomView(slug: string | null | undefined): RoomView {
     envelope: envelope.data ?? null,
     rooms,
     error: (memberships.error ?? envelope.error) as Error | null,
+    refetch: () => {
+      void envelope.refetch();
+      void memberships.refetch();
+    },
   };
 }
 
@@ -492,6 +562,8 @@ export interface RoomOutletContext {
   theme: RoomTheme;
   /** Every membership, for the switcher and cross-room links. */
   rooms: CohortRoomSummary[];
+  /** Re-open the room from the server. */
+  refetch: () => void;
 }
 
 /** Read the shell's context from any route nested under `/room/:slug`. */

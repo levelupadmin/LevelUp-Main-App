@@ -9,9 +9,11 @@ import { useMotionSafe } from "@/lib/motion";
 import { moduleEnabled } from "@/lib/room";
 import { cn } from "@/lib/utils";
 import {
+  isLobbyEnvelope,
   useRoomRoster,
   type CohortRoomEnvelope,
   type RoomRosterEntry,
+  type RoomSession,
 } from "@/hooks/useCohortRooms";
 
 /**
@@ -24,26 +26,25 @@ import {
  *
  * ── Two axes, never conflated ─────────────────────────────────────────────
  * `phase` (pre_start | live | wrap | alumni) and `access` (member | pre_member)
- * are independent. A LOBBY visitor (`access === 'pre_member'`) is the likeliest
- * person to land here, and the server REDACTS their envelope: `sessions` and
- * `roster_count` resolve empty because a lobby row carries no batch
- * (`get_cohort_room`, rpcs.sql:476/:506), and `get_room_roster` RAISES for them
- * outright (rpcs.sql:639). None of that is a denial and none of it is an error.
- * It is a smaller room, so the modules that have nothing to say are NOT
- * rendered as empty shells: every block below is pushed into `blocks` only once
- * it has real content, which is what makes "no dead modules" structural rather
- * than a thing to remember.
+ * are independent, and a LOBBY visitor is the likeliest person to land here.
+ * The server REDACTS their envelope: `sessions` and `rosterCount` resolve empty
+ * because a lobby row carries no batch (`get_cohort_room`, rpcs.sql:476/:506),
+ * and `get_room_roster` RAISES for them outright (rpcs.sql:639). None of that
+ * is a denial and none of it is an error. It is a smaller room, so the modules
+ * that have nothing to say are NOT rendered as empty shells: every block below
+ * is pushed into `blocks` only once it has real content, which is what makes
+ * "no dead modules" structural rather than a thing to remember.
  *
  * ── Data ownership ────────────────────────────────────────────────────────
- * The envelope and the roster come from `useCohortRooms` (R1-T1). This file
- * never calls `supabase.rpc('get_room_roster')` itself: the hook owns the
- * denied-vs-empty mapping, and re-deriving it here would give the app two
- * answers to the one question R0 was careful to keep single.
+ * The envelope arrives from the shell's outlet context; the roster comes from
+ * `useRoomRoster` (R1-T1). This file never calls
+ * `supabase.rpc('get_room_roster')` itself: the hook owns the denied-vs-empty
+ * mapping, and re-deriving it here would give the app two answers to the one
+ * question R0 was careful to keep single.
  *
- * `startsAt`, `whatsappGroupLink` and `totalWeeks` are props because they are
- * NOT in the room envelope: the first two live on `offerings`
- * (`cohort_start_date`, `whatsapp_group_link`) and the third on
- * `get_my_cohort_rooms.total_weeks`. RoomHome (R1-T1) supplies them.
+ * The masthead is NOT rendered here. `RoomShell` mounts `RoomMasthead` above
+ * the `<Outlet/>` for every phase, so a title card in this file would be the
+ * second one on the page.
  *
  * ── Time ──────────────────────────────────────────────────────────────────
  * The countdown is DAY granularity on the IST calendar members actually live
@@ -71,14 +72,13 @@ function istDayIndex(ms: number): number {
 }
 
 /**
- * Whole IST days from `nowMs` until `startMs`, or null when the start is
- * unknown/unparseable.
+ * Whole IST days from `nowMs` until `startMs`.
  *
  * DAY granularity means the answer changes at IST MIDNIGHT, not at the hour the
  * cohort happens to begin: at 23:59 IST the day before, this is 1 ("Tomorrow");
  * two minutes later, at 00:01 IST, it is 0 ("Today"). `offerings.cohort_start_date`
- * is a `date` column (20260610090000:29) so it arrives as "YYYY-MM-DD" and
- * parses to UTC midnight, which lands inside the same IST day it names.
+ * is a `date` column (20260610090000:29), so it arrives as "YYYY-MM-DD" and
+ * parses to UTC midnight, which lands inside the very IST day it names.
  */
 function istDaysUntil(startMs: number, nowMs: number): number {
   return istDayIndex(startMs) - istDayIndex(nowMs);
@@ -112,9 +112,39 @@ const clockFormat = new Intl.DateTimeFormat("en-IN", {
   hour12: true,
 });
 
+/**
+ * Clock time in IST, with the meridiem uppercased to match the rest of the app
+ * (`eventDateTimeLabel` formats "h:mm a", which yields "8:00 PM"). `en-IN`
+ * hands back a lowercase "pm", and the two would otherwise disagree on the same
+ * screen.
+ */
+function istClockLabel(ms: number): string {
+  return clockFormat.format(ms).replace(/\b([ap])\.?m\.?\b/gi, (match) => match.toUpperCase());
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
  * Small pure helpers
  * ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The earliest scheduled airing in the envelope, or null.
+ *
+ * `get_cohort_room` already orders `sessions` by `scheduled_at`, but the first
+ * row is only the earliest if every row has a date, so this scans rather than
+ * trusting position.
+ */
+function firstScheduledAt(sessions: RoomSession[] | null | undefined): string | null {
+  let bestValue: string | null = null;
+  let bestMs = Number.POSITIVE_INFINITY;
+  for (const session of sessions ?? []) {
+    const ms = parseMs(session.scheduled_at);
+    if (Number.isFinite(ms) && ms < bestMs) {
+      bestMs = ms;
+      bestValue = session.scheduled_at ?? null;
+    }
+  }
+  return bestValue;
+}
 
 /** Epoch ms for a nullable ISO/date string, or NaN. */
 function parseMs(value: string | null | undefined): number {
@@ -150,7 +180,11 @@ function initials(fullName: string | null): string {
   return (first + last).toUpperCase();
 }
 
+/** Roster roles that are staff rather than cohort-mates (rpcs.sql:658 orders them first). */
 const STAFF_ROLES = new Set(["mentor", "host"]);
+
+/** How many faces the grid shows before it summarises the rest. */
+const ROSTER_FACES_SHOWN = 8;
 
 /** Modal (most frequent) value of a list, with the count that won. */
 function modal(values: string[]): { value: string; count: number } | null {
@@ -176,15 +210,15 @@ interface Expectation {
 }
 
 /**
- * Shape of the season from whatever the room actually has authored.
+ * The shape of the season, from whatever the room actually has authored.
  *
  * Nothing is invented: with no weeks authored and no sessions scheduled this
  * returns all-empty and the caller drops the block instead of rendering a shell
  * of dashes. A lobby envelope lands here too (its sessions array is empty by
- * construction), and takes the same exit.
+ * construction) and takes the same exit.
  */
 function summariseExpectation(
-  sessions: CohortRoomEnvelope["sessions"],
+  sessions: RoomSession[] | null | undefined,
   totalWeeks: number | null | undefined,
 ): Expectation {
   const list = sessions ?? [];
@@ -208,7 +242,7 @@ function summariseExpectation(
   let cadence: string | null = null;
   if (dominantDay && dominantDay.count >= 2) {
     const onThatDay = dated.filter((ms) => weekdayFormat.format(ms) === dominantDay.value);
-    const dominantTime = modal(onThatDay.map((ms) => clockFormat.format(ms)));
+    const dominantTime = modal(onThatDay.map((ms) => istClockLabel(ms)));
     cadence =
       dominantTime && dominantTime.count >= 2
         ? `${dominantDay.value}s at ${dominantTime.value} IST`
@@ -223,25 +257,32 @@ function summariseExpectation(
  * ────────────────────────────────────────────────────────────────────────── */
 
 export interface PreStartCardProps {
-  /** The `get_cohort_room` envelope for this room, from R1-T1's hook. */
+  /** The `get_cohort_room` envelope from the shell's outlet context. */
   room: CohortRoomEnvelope;
   /**
-   * `offerings.cohort_start_date` ("YYYY-MM-DD"), the day the doors open.
-   * Null hides the countdown rather than inventing a date.
+   * `offerings.cohort_start_date` ("YYYY-MM-DD"), via `useRoomOfferingMeta`. It
+   * is NOT in either RPC, so without it the countdown falls back to the first
+   * scheduled airing, which is when the doors open in practice. With neither,
+   * the countdown block does not render at all.
    */
   startsAt?: string | null;
-  /** `offerings.whatsapp_group_link`. Null hides the WhatsApp card entirely. */
+  /**
+   * `offerings.whatsapp_group_link`, via `useRoomOfferingMeta`. Null (or
+   * absent) hides the WhatsApp card entirely.
+   */
   whatsappGroupLink?: string | null;
-  /** `get_my_cohort_rooms.total_weeks` for this room, when the caller has it. */
+  /**
+   * `get_my_cohort_rooms.total_weeks` for this room. The envelope does not
+   * carry a week count, so an absent value falls back to the distinct weeks the
+   * scheduled sessions name.
+   */
   totalWeeks?: number | null;
   /**
    * Fired ONCE when the doors-open day has arrived while the page is open (and
-   * on mount if it already had). The slot refetches the room on this, so the
-   * server's own phase flip is what swaps the layout, not a client guess.
+   * on mount if it already had). Refetch the room on this: the server's own
+   * phase flip is what swaps the layout, never a client guess.
    */
   onDoorsOpen?: () => void;
-  /** The R1-T3 title card, rendered above the induction stack. */
-  masthead?: ReactNode;
   className?: string;
 }
 
@@ -251,14 +292,18 @@ export function PreStartCard({
   whatsappGroupLink,
   totalWeeks,
   onDoorsOpen,
-  masthead,
   className,
 }: PreStartCardProps) {
   const motionSafe = useMotionSafe();
-  const isLobby = room.access === "pre_member";
+  const isLobby = isLobbyEnvelope(room);
 
-  /* ── The clock ── */
-  const startMs = parseMs(startsAt);
+  /* ── The clock ──
+   * `cohort_start_date` when the caller supplies it, else the first scheduled
+   * airing — the same fallback RoomShell hands the masthead's "Starts {date}"
+   * line. A lobby caller has neither unless `startsAt` is passed: their
+   * envelope carries no sessions at all (rpcs.sql:506). */
+  const doorsAtRaw = startsAt ?? firstScheduledAt(room.sessions);
+  const startMs = parseMs(doorsAtRaw);
   const hasStart = Number.isFinite(startMs);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -271,8 +316,8 @@ export function PreStartCard({
   const daysUntil = hasStart ? istDaysUntil(startMs, nowMs) : null;
 
   // Tell the slot to refetch the moment the IST day arrives. Kept in a ref so a
-  // parent that passes an inline callback does not re-arm the effect, and fired
-  // at most once so a server still reporting `pre_start` cannot loop us.
+  // parent passing an inline callback does not re-arm the effect, and fired at
+  // most once so a server still reporting `pre_start` cannot loop us.
   const doorsOpenRef = useRef(onDoorsOpen);
   useEffect(() => {
     doorsOpenRef.current = onDoorsOpen;
@@ -288,7 +333,9 @@ export function PreStartCard({
   /* ── The roster ──
    * `enabled` is a NETWORK decision, not a security one: RLS and the RPC's own
    * assert are what keep a lobby visitor out of the roster. This just declines
-   * to fire a call whose only possible answer is a 42501. */
+   * to fire a call whose only possible answer is a 42501. A denial that arrives
+   * anyway (a membership revoked between renders) collapses the module rather
+   * than raising an error state over a room the visitor is legitimately in. */
   const rosterModuleOn = moduleEnabled(room.config, "roster");
   const rosterWanted = rosterModuleOn && !isLobby;
   const roster = useRoomRoster(room.offering_id, { enabled: rosterWanted });
@@ -296,8 +343,9 @@ export function PreStartCard({
   const rosterLoading = rosterWanted && !roster.denied && roster.isLoading;
 
   /* ── The first notice ── */
-  const announcement =
-    moduleEnabled(room.config, "announcements") ? (room.announcements ?? [])[0] ?? null : null;
+  const announcement = moduleEnabled(room.config, "announcements")
+    ? (room.announcements ?? [])[0] ?? null
+    : null;
 
   /* ── The season shape ── */
   const expectation = useMemo(
@@ -326,7 +374,7 @@ export function PreStartCard({
       key: "countdown",
       node: (
         <div className="rounded-xl border border-border bg-surface p-5">
-          <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+          <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
             {openNow ? "Doors are open" : "Doors open"}
           </p>
           <p className="mt-2 font-serif text-2xl leading-none text-foreground sm:text-3xl">
@@ -340,7 +388,7 @@ export function PreStartCard({
             )}
           </p>
           <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-            <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <CalendarDays size={14} strokeWidth={1.5} className="shrink-0" aria-hidden="true" />
             <span>{doorsDateFormat.format(startMs)}</span>
           </p>
         </div>
@@ -355,8 +403,8 @@ export function PreStartCard({
         <div className="rounded-xl border border-border bg-surface p-5">
           <BlockHeading icon={Users} eyebrow="Your cohort" />
           <div className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-6">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="flex flex-col items-center gap-2">
+            {[0, 1, 2, 3].map((slot) => (
+              <div key={slot} className="flex flex-col items-center gap-2">
                 <SkeletonLine className="rounded-full" width={48} height={48} />
                 <SkeletonLine width="70%" height="10px" />
               </div>
@@ -366,21 +414,17 @@ export function PreStartCard({
       ),
     });
   } else if (people.length > 0) {
-    const shown = people.slice(0, 8);
+    const shown = people.slice(0, ROSTER_FACES_SHOWN);
     const overflow = people.length - shown.length;
 
     blocks.push({
       key: "roster",
       node: (
         <div className="rounded-xl border border-border bg-surface p-5">
-          <BlockHeading
-            icon={Users}
-            eyebrow="Your cohort"
-            aside={`${people.length} in the room`}
-          />
+          <BlockHeading icon={Users} eyebrow="Your cohort" aside={`${people.length} in the room`} />
           <ul className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-6">
             {shown.map((person) => {
-              const staff = STAFF_ROLES.has(person.role ?? "");
+              const staff = STAFF_ROLES.has(person.role);
               return (
                 <li key={person.user_id} className="flex flex-col items-center gap-2 text-center">
                   <Avatar
@@ -389,9 +433,7 @@ export function PreStartCard({
                       staff && "ring-2 ring-room-accent ring-offset-2 ring-offset-surface",
                     )}
                   >
-                    {person.avatar_url ? (
-                      <AvatarImage src={person.avatar_url} alt="" />
-                    ) : null}
+                    {person.avatar_url ? <AvatarImage src={person.avatar_url} alt="" /> : null}
                     <AvatarFallback className="bg-surface-2 text-xs text-muted-foreground">
                       {initials(person.full_name)}
                     </AvatarFallback>
@@ -399,14 +441,20 @@ export function PreStartCard({
                   <span className="w-full truncate text-xs text-muted-foreground">
                     {firstName(person.full_name) ?? "Member"}
                   </span>
+                  {/* The accent ring is decoration until it is named. Staff get
+                      the word too, so the difference is legible and never a
+                      colour-only signal. */}
+                  {staff && (
+                    <span className="-mt-1 font-mono text-[10px] uppercase tracking-[0.24em] text-room-accent">
+                      {person.role === "host" ? "Host" : "Mentor"}
+                    </span>
+                  )}
                 </li>
               );
             })}
           </ul>
           {overflow > 0 && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              and {overflow} more already inside.
-            </p>
+            <p className="body-muted mt-3 text-xs">and {overflow} more already inside.</p>
           )}
         </div>
       ),
@@ -420,7 +468,7 @@ export function PreStartCard({
       node: (
         <div className="rounded-xl border border-border bg-surface p-5">
           <BlockHeading icon={Users} eyebrow="Your seat" />
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="body-muted mt-2 text-sm">
             You are in the lobby. The full room, cohort-mates included, opens as soon as your
             seat is confirmed.
           </p>
@@ -445,7 +493,7 @@ export function PreStartCard({
               {announcement.title}
             </h3>
           )}
-          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted-foreground line-clamp-6">
+          <p className="body-muted mt-2 whitespace-pre-line text-sm leading-relaxed line-clamp-6">
             {announcement.body}
           </p>
         </div>
@@ -464,16 +512,26 @@ export function PreStartCard({
           onClick={tapTick}
           className="focus-ring flex min-h-[44px] items-center gap-3 rounded-xl border border-border bg-surface p-5 transition-colors hover:border-border-hover"
         >
-          <MessageCircle className="h-5 w-5 shrink-0 text-room-accent" aria-hidden="true" />
+          <MessageCircle
+            size={20}
+            strokeWidth={1.5}
+            className="shrink-0 text-room-accent"
+            aria-hidden="true"
+          />
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium text-foreground">
               Join the WhatsApp group
             </span>
-            <span className="block text-xs text-muted-foreground">
+            <span className="body-muted block text-xs">
               Day to day chatter lives there until the room takes over.
             </span>
           </span>
-          <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <ExternalLink
+            size={16}
+            strokeWidth={1.5}
+            className="shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
         </a>
       ),
     });
@@ -488,10 +546,7 @@ export function PreStartCard({
       });
     }
     if (expectation.sessionCount > 0) {
-      rows.push({
-        label: "Live sessions",
-        value: `${expectation.sessionCount} scheduled`,
-      });
+      rows.push({ label: "Live sessions", value: `${expectation.sessionCount} scheduled` });
     }
     if (expectation.cadence) {
       rows.push({ label: "Cadence", value: expectation.cadence });
@@ -505,7 +560,7 @@ export function PreStartCard({
           <dl className="mt-3 space-y-2">
             {rows.map((row) => (
               <div key={row.label} className="flex items-baseline justify-between gap-4">
-                <dt className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+                <dt className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
                   {row.label}
                 </dt>
                 <dd className="text-right text-sm text-foreground">{row.value}</dd>
@@ -518,8 +573,7 @@ export function PreStartCard({
   }
 
   return (
-    <section className={cn("space-y-3", className)}>
-      {masthead}
+    <section className={cn("space-y-4", className)}>
       {blocks.map((block, index) => (
         <motion.div
           key={block.key}
@@ -549,12 +603,12 @@ function BlockHeading({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+      <Icon size={14} strokeWidth={1.5} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+      <h2 className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
         {eyebrow}
       </h2>
       {aside && (
-        <span className="ml-auto font-mono text-xs uppercase tracking-widest text-muted-foreground">
+        <span className="ml-auto font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
           {aside}
         </span>
       )}

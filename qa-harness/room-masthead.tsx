@@ -113,14 +113,28 @@ const params = new URLSearchParams(location.search);
 const fixture = FIXTURES[params.get("room") ?? "a"] ?? FIXTURES.a;
 const theme = resolveTheme(fixture.config);
 
+/** Vertical translate (px) out of a computed transform, matrix or matrix3d. */
+function translateY(transform: string): number {
+  if (!transform || transform === "none") return 0;
+  const nums = transform
+    .slice(transform.indexOf("(") + 1, -1)
+    .split(",")
+    .map((n) => parseFloat(n));
+  if (transform.startsWith("matrix3d")) return nums[13] ?? 0;
+  return nums[5] ?? 0;
+}
+
 /**
- * Watches the plate's computed opacity/transform and records the moment the
- * entrance is visually at rest — the honest "total", not a guessed sum.
+ * Two honest numbers, both measured rather than assumed:
+ *  - `visualDoneMs` — the frame after which nothing on screen changes to the
+ *    eye (opacity within 1%, translate within half a CSS px).
+ *  - `totalMs` — the frame framer actually hands the element back to CSS.
  */
 function useSettleProbe() {
   const [, force] = useState(0);
   useEffect(() => {
     const startedAt = performance.now();
+    const w = window as unknown as Record<string, unknown>;
     let stable = 0;
     let raf = 0;
     const probe = () => {
@@ -129,14 +143,21 @@ function useSettleProbe() {
       if (plate && art) {
         const p = getComputedStyle(plate);
         const a = getComputedStyle(art);
+        const visuallyDone =
+          Number(p.opacity) >= 0.99 &&
+          Number(a.opacity) >= 0.99 &&
+          Math.abs(translateY(p.transform)) <= 0.5;
+        if (visuallyDone && w.__entranceVisualDoneMs === undefined) {
+          w.__entranceVisualDoneMs = Math.round(performance.now() - startedAt);
+        }
         const atRest =
           Number(p.opacity) >= 0.999 &&
           Number(a.opacity) >= 0.999 &&
-          (p.transform === "none" || /matrix\(1,\s*0,\s*0,\s*1,\s*0,\s*0\)/.test(p.transform)) &&
-          (a.transform === "none" || /matrix\(1,\s*0,\s*0,\s*1,\s*0,\s*0\)/.test(a.transform));
+          Math.abs(translateY(p.transform)) < 0.01;
         stable = atRest ? stable + 1 : 0;
         if (stable >= 2) {
-          const w = window as unknown as Record<string, unknown>;
+          w.__entranceStartedAt = startedAt;
+          w.__entranceSettledAt = performance.now();
           w.__entranceTotalMs = Math.round(performance.now() - startedAt);
           w.__entranceSettled = true;
           force((n) => n + 1);

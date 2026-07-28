@@ -115,6 +115,13 @@ const CohortRoomRedirect = lazy(() =>
 // sign-out path can purge the persisted cache without importing this app root.
 
 const App = () => {
+  // The cohort-rooms SURFACE flag (VITE_COHORT_ROOMS, default off). Read once
+  // per render so the route table is decided in one place: with it off, /rooms
+  // and /room/* are not registered at all — they fall through to the existing
+  // catch-all 404 — and /cohort/:offeringId keeps its original element. The flag
+  // gates which ROUTES exist and nothing else; R0's RLS is what gates the data.
+  const roomsEnabled = flag(COHORT_ROOMS);
+
   // Fire-and-forget analytics boot. Reads analytics_settings from the
   // DB and injects whichever platform scripts are enabled. Skips on
   // localhost so dev work doesn't pollute production funnels (the
@@ -234,7 +241,47 @@ const App = () => {
                 <Route path="/events" element={<Navigate to="/learn?seg=calendar" replace />} />
                 <Route path="/events/:eventId" element={<EventDetail />} />
                 <Route path="/my-application/:applicationId" element={<ApplicationStatus />} />
-                <Route path="/cohort/:offeringId" element={<CohortDashboard />} />
+                {/*
+                  /cohort/:offeringId is LINKED FROM ALREADY-SENT NOTIFICATION
+                  EMAILS (R-D9). With the flag off this element expression is
+                  literally <CohortDashboard />, exactly as it has always been.
+                  With the flag on, the shim tries to resolve a room slug and
+                  <Navigate replace/>s to it — and falls back to this very page
+                  whenever it cannot, so the link never dead-ends.
+                */}
+                <Route
+                  path="/cohort/:offeringId"
+                  element={
+                    roomsEnabled
+                      ? <CohortRoomRedirect fallback={<CohortDashboard />} />
+                      : <CohortDashboard />
+                  }
+                />
+                {roomsEnabled && (
+                  <>
+                    <Route path="/rooms" element={<MyCohortsPage />} />
+                    <Route path="/room/:slug" element={<RoomShell />}>
+                      <Route index element={<RoomHome />} />
+                      <Route
+                        path="weeks/:n"
+                        element={<RoomModuleRoute module="weeks" title="Weeks" />}
+                      />
+                      <Route
+                        path="screenings"
+                        element={<RoomModuleRoute module="recordings" title="Screenings" />}
+                      />
+                      <Route path="feed" element={<RoomModuleRoute module="feed" title="Feed" />} />
+                      <Route
+                        path="people"
+                        element={<RoomModuleRoute module="roster" title="People" />}
+                      />
+                      <Route
+                        path="resources"
+                        element={<RoomModuleRoute module="resources" title="Resources" />}
+                      />
+                    </Route>
+                  </>
+                )}
               </Route>
 
               {/* ChapterViewer runs full-bleed (no student nav) but stays auth-guarded */}
