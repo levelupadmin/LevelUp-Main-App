@@ -27,6 +27,12 @@
  *                            not appear in the fenced SELECT list, in any GRANT,
  *                            or in any view/function output shape.
  *
+ * §11 pins the length CLAMP on the one applicant-typed field, on both the SQL
+ * side and the client side. A whitelist over column NAMES does not by itself
+ * hold the property the whitelist exists for — no applicant free text on a
+ * public page — because `full_name` IS free text and an alias matcher decides
+ * what lands in it. Two enforcements, so one edit cannot drop the invariant.
+ *
  * §7 widens the lens to EVERY migration in the repo, because the anon REVOKE in
  * this one protects the anon role only: it is powerless against a policy that
  * opens `cohort_applications` to `authenticated`, whose stock table grants are
@@ -105,9 +111,28 @@ function returnsTableColumns(): string[] {
     .filter(Boolean);
 }
 
+/**
+ * The source of `pickWhitelist` in AdmissionPublic.tsx, comments included. Every
+ * function in that file is top-level, so the first `\n}` after the declaration
+ * closes it.
+ */
+function pickWhitelistSource(): string {
+  const start = pageRaw.indexOf("function pickWhitelist");
+  if (start === -1) return "";
+  const end = pageRaw.indexOf("\n}", start);
+  return end === -1 ? pageRaw.slice(start) : pageRaw.slice(start, end + 2);
+}
+
 /** The `ADMISSION_PUBLIC_FIELDS` literal as written in AdmissionPublic.tsx. */
 function clientWhitelistFields(): string[] {
   const match = /const ADMISSION_PUBLIC_FIELDS\s*=\s*\[([^\]]*)\]/.exec(pageRaw);
+  if (!match) return [];
+  return Array.from(match[1].matchAll(/["']([^"']+)["']/g)).map((m) => m[1]);
+}
+
+/** The `CLAMPED_PUBLIC_FIELDS` literal as written in AdmissionPublic.tsx. */
+function clientClampedFields(): string[] {
+  const match = /const CLAMPED_PUBLIC_FIELDS[^=]*=\s*\[([^\]]*)\]/.exec(pageRaw);
   if (!match) return [];
   return Array.from(match[1].matchAll(/["']([^"']+)["']/g)).map((m) => m[1]);
 }
@@ -160,6 +185,25 @@ function policiesOnApplications(): { file: string; statement: string }[] {
 
 /** What `anon` receives. Two fields. Anything else is a leak. */
 const PERMITTED_PUBLIC_FIELDS = ["admitted_name", "program_title"];
+
+/**
+ * The character cap the one applicant-typed field is held to, on BOTH sides.
+ * `full_name` is unbounded free text whose contents are decided by the Tally
+ * alias matcher, so the whitelist's invariant — no applicant free text on a
+ * public page — is only structural if the length is capped rather than assumed.
+ * 80 is longer than any real name and far shorter than a paragraph.
+ */
+const PUBLIC_FIELD_CHAR_CAP = 80;
+
+/**
+ * Which of the permitted fields the cap applies to. Exactly the applicant-typed
+ * one: `offerings.title` is admin-authored, the same string the public offering
+ * page already prints, so clamping it would buy no invariant and would cut a
+ * long cohort name mid-word with no ellipsis on a public credential card. The
+ * asymmetry is pinned in both directions below, so neither half can drift into
+ * clamping what it should not, or dropping the clamp where it matters.
+ */
+const CLAMPED_PUBLIC_FIELDS = ["admitted_name"];
 
 /** The source columns those two are allowed to be read from. */
 const PERMITTED_SOURCE_COLUMNS = [
@@ -654,6 +698,36 @@ describe("the public page's copy is honest", () => {
     expect(heading![0]).toMatch(/break-words/);
   });
 
+  it("says plainly that the feature flag is not the boundary", () => {
+    // The bundle is behind VITE_DECISION_FLOW; the database half is not. §4
+    // grants anon EXECUTE the moment the migration applies, and `flag()`
+    // resolves a per-device localStorage override ahead of the compiled
+    // default. Neither is weakened — but the docs must not sell either as
+    // containment, because a reader who believes it stops checking the three
+    // properties that ARE the boundary.
+    expect(pageRaw).toMatch(/THE FLAG IS NOT THE BOUNDARY/);
+    expect(pageRaw).toMatch(/localStorage/);
+    expect(migrationRaw).toMatch(/IS NOT, A BOUNDARY/);
+    expect(migrationRaw).toMatch(/localStorage/);
+    // The three real properties, named on the migration side: the clamped
+    // two-column projection, the share token, and an empty published set.
+    expect(migrationRaw).toMatch(/~244-bit token/);
+    expect(migrationRaw).toMatch(/admission_page_published_at` is NULL on every existing row/);
+  });
+
+  it("states the token's entropy as measured, not as its string length", () => {
+    // Two `gen_random_uuid()` draws are two v4 uuids, and a v4 uuid carries 122
+    // random bits, not 128: the version and variant nibbles are fixed. 244 bits
+    // is unguessable by any margin that matters, so this is not a hole — but a
+    // section whose stated purpose is that the docs must not sell the flag or
+    // the URL as containment cannot carry an inflated figure of its own.
+    expect(migrationRaw).toMatch(/244 bits of entropy/);
+    expect(migrationRaw).toMatch(/122 random/);
+    // Neither half may describe the token by its string length again.
+    expect(migrationRaw).not.toMatch(/\b256[- ]bits?\b/i);
+    expect(pageRaw).not.toMatch(/\b256[- ]bits?\b/i);
+  });
+
   it("attributes the private screen to nobody, since the record may not exist", () => {
     const privateScreen = /kind="404"[\s\S]*?\/>/.exec(pageCode);
     expect(privateScreen).not.toBeNull();
@@ -661,5 +735,93 @@ describe("the public page's copy is honest", () => {
     // speak for, and unpublishing is an admin write the applicant cannot make.
     expect(privateScreen![0]).not.toMatch(/\bwanted\b|\bchose\b|\btheir wish/i);
     expect(privateScreen![0]).toMatch(/character|address|link/i);
+  });
+});
+
+// ── 11. The clamp on the one applicant-typed field, on BOTH sides ────────────
+//
+// The whitelist is a list of column NAMES; the property it exists to hold is
+// "no applicant free text reaches a public page". `full_name` is applicant free
+// text — unbounded, and which answer lands in it is decided by the Tally alias
+// matcher, which is documented to be fallible (an INPUT_TEXT question worded
+// "Full name of my mentor" outscoring a DROPDOWN titled "Name", and one
+// tie-break away from filing an occupation answer). A question worded "tell us
+// your name and a bit about what you make" therefore files three sentences of
+// prose into it, which an anonymous stranger reads verbatim. So the cap is
+// asserted on the SQL side AND the client side: two independent enforcements,
+// so a later edit cannot quietly drop the invariant by touching one of them,
+// and the client's cap still holds when an older function body is live.
+//
+// Two things this section pins beyond the cap's existence. The UNIT: `left()`
+// counts code points and `.slice()` counts UTF-16 units, so a client cutting
+// with a bare slice would halve an emoji's surrogate pair into a U+FFFD while
+// the server cut cleanly. And the SCOPE: the clamp covers the applicant-typed
+// field only, on both sides, because `offerings.title` is admin-authored and
+// truncating it silently is a regression rather than a guard.
+
+describe("the applicant-typed field is clamped, not trusted", () => {
+  it("the SQL projection clamps the name to the enumerated cap", () => {
+    const projection = whitelistProjection();
+    const clamp = /left\(\s*a\.full_name\s*,\s*(\d+)\s*\)\s+AS\s+admitted_name/i.exec(projection);
+    expect(clamp).not.toBeNull();
+    expect(Number(clamp![1])).toBe(PUBLIC_FIELD_CHAR_CAP);
+  });
+
+  it("the SQL projection never hands the raw column over", () => {
+    // i.e. no `a.full_name AS admitted_name` alongside or instead of the clamp.
+    expect(whitelistProjection()).not.toMatch(/a\.full_name\s+AS/i);
+  });
+
+  it("the client declares the same cap, so the two halves cannot drift", () => {
+    const declared = /const MAX_PUBLIC_FIELD_CHARS\s*=\s*(\d+)/.exec(pageCode);
+    expect(declared).not.toBeNull();
+    expect(Number(declared![1])).toBe(PUBLIC_FIELD_CHAR_CAP);
+  });
+
+  it("pickWhitelist clamps inside the same loop that trims and null-guards", () => {
+    const picker = pickWhitelistSource();
+    expect(picker).not.toBe("");
+    // One loop over the whitelist, so no field can be picked past the guard.
+    expect(picker).toMatch(/for \(const key of ADMISSION_PUBLIC_FIELDS\)/);
+    expect(picker).toMatch(/CLAMPED_PUBLIC_FIELDS\.includes\(key\)/);
+    expect(picker).toMatch(/\.slice\(0, MAX_PUBLIC_FIELD_CHARS\)/);
+    // A clamped-to-empty value must read as absent, not as a blank name.
+    expect(picker).toMatch(/=== ""/);
+  });
+
+  it("the client cuts on code points, the unit Postgres left() counts", () => {
+    // `left(text, 80)` counts code points; `.slice(0, 80)` on a string counts
+    // UTF-16 units. On an emoji straddling the boundary — free text, and
+    // exactly the input this clamp exists for — a bare slice halves the
+    // surrogate pair and paints U+FFFD into the page's h1. Spreading a string
+    // iterates code points, so the two halves cut in the same place.
+    // (Spread rather than `Array.from`, which would trip §1's `.from(` guard.)
+    const picker = pickWhitelistSource();
+    expect(picker).toMatch(/\[\.\.\.\w+\]\.slice\(0, MAX_PUBLIC_FIELD_CHARS\)/);
+    expect(picker).not.toMatch(/\w+\.slice\(0, MAX_PUBLIC_FIELD_CHARS\)/);
+  });
+
+  it("clamps the applicant-typed field only, on both sides, and says so", () => {
+    // The asymmetry is deliberate and has to be pinned in BOTH directions, or
+    // the halves drift the other way: `offerings.title` is admin-authored, so
+    // capping it buys no invariant and costs a real one — a long cohort name
+    // cut mid-word, with no ellipsis, on the most screenshotted surface in the
+    // funnel. The page's own h1 argues exactly that about truncation.
+    expect(clientClampedFields()).toEqual(CLAMPED_PUBLIC_FIELDS);
+    // Every clamped client field is a field the SQL projection clamps too.
+    for (const field of clientClampedFields()) {
+      expect(whitelistProjection()).toMatch(
+        new RegExp(`left\\([^)]*\\)\\s+AS\\s+${field}\\b`, "i"),
+      );
+    }
+    // And the unclamped one is unclamped on both sides.
+    for (const field of PERMITTED_PUBLIC_FIELDS.filter(
+      (name) => !CLAMPED_PUBLIC_FIELDS.includes(name),
+    )) {
+      expect(whitelistProjection()).not.toMatch(
+        new RegExp(`left\\([^)]*\\)\\s+AS\\s+${field}\\b`, "i"),
+      );
+    }
+    expect(migrationRaw).toMatch(/ADMIN-authored/);
   });
 });

@@ -30,8 +30,8 @@
 -- ── THE PERMITTED LIST (literal, exhaustive; anything not on it is denied) ──
 --   source column                                    → returned as
 --   ─────────────────────────────────────────────────────────────────────
---   cohort_applications.full_name                    → admitted_name
---   offerings.title           (join, public-only)    → program_title
+--   cohort_applications.full_name  (clamped, 80 ch)  → admitted_name
+--   offerings.title   (join, public-only, verbatim)  → program_title
 --
 --   Two fields. That is the whole public surface. The copy deck's accept-ratio
 --   line, faculty names, the applicant's location and the date of decision are
@@ -44,6 +44,37 @@
 --   the SHARE PAGE was published, not when the person was admitted. Projecting
 --   it and captioning it "Admitted …" would print a date the data does not
 --   support, on a card styled as a credential. It stays a FILTER, like `status`.
+--
+-- ── WHY THE ONE APPLICANT-TYPED COLUMN IS CLAMPED RATHER THAN TRUSTED ──
+-- The invariant this whitelist exists to hold is not "these column NAMES are
+-- safe"; it is "no applicant free text reaches a public page". `full_name` is
+-- applicant free text. It is unbounded, and which answer lands in it is decided
+-- by the Tally alias matcher, which is documented to be fallible: an INPUT_TEXT
+-- question worded "Full name of my mentor" can outscore a DROPDOWN literally
+-- titled "Name" (`supabase/functions/_shared/tally.ts`), and a single tie-break
+-- separates that matcher from filing an occupation answer here. A question
+-- worded "tell us your name and a bit about what you make" matches the bare
+-- alias `name` and files three sentences of prose into the column — which an
+-- anonymous stranger with the link then reads verbatim. That is the same class
+-- as the essay catch, one column over.
+-- So the projection CLAMPS: `left(a.full_name, 80)`. Eighty characters is longer
+-- than any real name and far shorter than a paragraph, and the client applies
+-- the identical cap to the identical field in `pickWhitelist` (both halves
+-- pinned by `src/lib/__tests__/admissionPublicPolicy.test.ts`). The point of
+-- doing it in BOTH places is that the invariant then holds structurally, rather
+-- than depending on an upstream heuristic staying correct, and it survives an
+-- older function body still being live when a new bundle ships. The client cuts
+-- on CODE POINTS (`Array.from(...).slice`), not UTF-16 units, because that is
+-- what `left()` counts: a plain `.slice(80)` would halve the surrogate pair of
+-- an emoji sitting on the boundary and render U+FFFD on the card.
+--
+-- The clamp stops at that one column, deliberately. `offerings.title` is
+-- ADMIN-authored — the same string the public offering page already prints, and
+-- the thing an admin proof-reads before publishing — so it is handed over
+-- verbatim. Capping it would buy no invariant (it is not applicant text) and
+-- would cost a real one: an overlong title would be cut mid-word, with no
+-- ellipsis, on the most screenshotted surface in the funnel. The card wraps
+-- instead, which is the same choice its `<h1>` makes for the name.
 --
 -- ── THE DENY LIST (never projected, never granted, not negotiable) ──
 --   bio                  ← this IS the 100-word essay (FIELD_ALIASES.bio,
@@ -65,7 +96,8 @@
 --   completed_no_fee, contactable_partial   ← the reconciler mirror set.
 --
 -- ── WHAT THE SHARE TOKEN IS, AND WHAT IT IS NOT ──
--- `admission_page_slug` is UNGUESSABLE (256 bits), not SECRET. It travels in a
+-- `admission_page_slug` is UNGUESSABLE (~244 bits of entropy — see §2 for why
+-- 64 hex characters carry fewer than 256), not SECRET. It travels in a
 -- URL, and URLs end up in browser history, in the OS share sheet, in whatever
 -- chat app the link was pasted into, and in any analytics vendor the app root
 -- has enabled on the page. The page suppresses the third-party pixel loaders
@@ -76,6 +108,33 @@
 -- Revocation is therefore the real lever: `unpublish_admission_page()` (§5)
 -- clears both the stamp and the token, so every link already shared 404s and a
 -- later republish mints a different one.
+--
+-- ── WHAT IS, AND IS NOT, A BOUNDARY (the client flag is NOT one) ──
+-- "It is all behind VITE_DECISION_FLOW, default OFF" is true of the BUNDLE and
+-- false of this half of the feature. Two independent reasons, written down here
+-- so the flag is never quoted as containment:
+--   • §4 GRANTs EXECUTE on `get_admission_page` to `anon` the moment this file
+--     lands in a `db push`. The publishable key is public by design, so from
+--     that moment the function is callable directly — curl, no SPA, no bundle.
+--     No client-side flag can gate a Postgres GRANT.
+--   • `flag()` (`src/lib/flags.ts`) resolves a per-device `localStorage` entry
+--     BEFORE the compiled env default. That is deliberate and useful — it is how
+--     an internal tester previews a dark feature — and it means any visitor who
+--     sets the key flips the client half for themselves.
+-- Neither is weakened here. A localStorage override is a shipped, wanted
+-- affordance, and an RPC nobody may execute is not a feature. The honest
+-- statement is that the boundary is the three properties BELOW, which this
+-- migration does enforce, and which are what a reviewer should be checking:
+--   1. the projection is TWO columns and clamped, and a caller cannot ask a
+--      SECURITY DEFINER function for a third;
+--   2. reaching even those two needs the ~244-bit token from §2, which is not
+--      derivable from the row's uuid and not worth guessing. The figure is
+--      stated as measured rather than rounded up to the string length: a
+--      section whose whole point is that neither the flag nor the URL is
+--      containment cannot afford an inflated number of its own;
+--   3. `admission_page_published_at` is NULL on every existing row (§1 adds it
+--      with no default), so on the day this applies the set of readable records
+--      is EMPTY and stays empty until an admin publishes one deliberately.
 --
 -- ── SHAPE OF THE CHANGE ──
 -- Additive, idempotent, reversible, and **free of any aborting RAISE**: a DO
@@ -135,8 +194,15 @@ BEGIN
 END $$;
 
 -- ── 2. Token minter ──────────────────────────────────────────────────────
--- 64 hex characters / 256 bits from two `gen_random_uuid()` draws. Built on the
--- core uuid generator on purpose so the migration needs no pgcrypto extension.
+-- 64 hex characters from two `gen_random_uuid()` draws, built on the core uuid
+-- generator on purpose so the migration needs no pgcrypto extension.
+--
+-- That is ~244 bits of entropy, NOT 256: `gen_random_uuid()` returns a v4 uuid,
+-- whose version and variant nibbles are fixed, so each draw carries 122 random
+-- bits and not 128. The distinction changes nothing about guessability (244
+-- bits is unreachable by any margin that matters) and is written down anyway,
+-- because the docs above lean on this number and a number nobody checked is
+-- exactly the kind of claim this file exists to stop making.
 --
 -- Granted to `authenticated` as well as `service_role` because §5's publisher
 -- runs SECURITY INVOKER (the caller's own RLS decides whether the write lands),
@@ -195,6 +261,14 @@ REVOKE ALL ON TABLE public.cohort_applications FROM anon;
 -- DROP before CREATE because Postgres cannot change a `RETURNS TABLE` shape in
 -- place (the `reference_ml_db_apply` lesson), and because it makes re-running
 -- this migration idempotent regardless of what shape a prior run left behind.
+--
+-- The projection is fenced, and `full_name` — the one applicant-typed column —
+-- goes through `left(…, 80)` inside the fence rather than being handed over
+-- raw. `offerings.title` is admin-authored and is projected verbatim, on
+-- purpose: see "WHY THE ONE APPLICANT-TYPED COLUMN IS CLAMPED RATHER THAN
+-- TRUSTED" in the header for both halves of that asymmetry. Keep the fenced
+-- block free of comments — the test that counts its `AS` aliases reads it
+-- verbatim.
 DROP FUNCTION IF EXISTS public.get_admission_page(text);
 
 CREATE FUNCTION public.get_admission_page(p_slug text)
@@ -209,8 +283,8 @@ SET search_path = public, pg_temp
 AS $$
   -- >>> WHITELIST PROJECTION — the only columns anon can ever receive >>>
   SELECT
-    a.full_name AS admitted_name,
-    o.title     AS program_title
+    left(a.full_name, 80) AS admitted_name,
+    o.title               AS program_title
   -- <<< WHITELIST PROJECTION <<<
   FROM public.cohort_applications a
   -- The offering is joined under the SAME predicate as the existing
@@ -247,7 +321,7 @@ REVOKE ALL ON FUNCTION public.get_admission_page(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_admission_page(text) TO anon, authenticated;
 
 COMMENT ON FUNCTION public.get_admission_page(text) IS
-  'SEC-PUBLIC-1: the ONLY anon read path for an admission. Returns at most one row of {admitted_name, program_title} for a published application whose status is accepted or beyond. No dates, no contact details, no essay, no funnel state, no other row.';
+  'SEC-PUBLIC-1: the ONLY anon read path for an admission. Returns at most one row of {admitted_name, program_title} for a published application whose status is accepted or beyond, with the applicant-typed name clamped to 80 characters so unbounded free text cannot reach a public page. No dates, no contact details, no essay, no funnel state, no other row.';
 
 -- ── 5. The publish / unpublish path ──────────────────────────────────────
 -- Without these two writers nothing could ever set the marker, the feature

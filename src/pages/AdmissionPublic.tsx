@@ -26,6 +26,43 @@
  * is rendered differently: telling an offline recipient that someone's admission
  * was unpublished is a lie, and one they cannot recover from without a retry.
  *
+ * ── THE FLAG IS NOT THE BOUNDARY ──
+ * `VITE_DECISION_FLOW` gates this ROUTE and nothing else, so "it is all behind a
+ * flag, default OFF" is true of the bundle and false of the feature. `flag()`
+ * resolves a per-device `localStorage` override AHEAD of the compiled default —
+ * deliberately, so an internal tester can preview a dark feature, and therefore
+ * flippable by any visitor who sets the key. And the RPC is granted to `anon` in
+ * the database the moment the migration applies: it is callable with the
+ * publishable key without this bundle ever loading. Neither is a bug and neither
+ * is weakened; they simply are not the boundary. The boundary is the three
+ * properties the migration enforces: the RPC projects two columns, one of them
+ * clamped, and no caller can ask a SECURITY DEFINER function for a third;
+ * reaching even those two needs the share token, which is ~244 bits of entropy
+ * (two v4 uuids at 122 bits each, not the 256 its 64 hex characters suggest);
+ * and the publish marker is NULL on every row until an admin publishes one
+ * deliberately, so the readable set starts empty.
+ *
+ * ── WHY `pickWhitelist` CLAMPS AS WELL AS PICKS, AND ONLY ONE FIELD ──
+ * The invariant is "no applicant free text on a public page", not "these column
+ * names are safe". `admitted_name` IS applicant free text: unbounded, and
+ * assigned by a form alias matcher that is documented to be fallible, so a
+ * question worded "tell us your name and a bit about what you make" can file
+ * three sentences of prose into it — which a stranger with the link then reads
+ * verbatim. The SQL projection clamps it to 80 characters and `pickWhitelist`
+ * applies the identical cap to the identical field, so the invariant holds
+ * structurally on both sides rather than resting on an upstream heuristic
+ * staying correct, and it still holds if an older function body is live when a
+ * new bundle ships. The cut counts CODE POINTS rather than UTF-16 units (hence
+ * the spread before the slice), matching what Postgres `left()` counts: a bare
+ * `.slice(80)` on the string would split the surrogate pair of an emoji landing
+ * on the boundary and paint a U+FFFD into the one line this page exists to
+ * show.
+ *
+ * `program_title` is NOT clamped, here or in SQL. It is admin-authored — the
+ * same string the public offering page already prints — so a cap would buy no
+ * invariant and would silently cut a long cohort name mid-word with no
+ * ellipsis. It wraps instead, exactly as the name does.
+ *
  * ── WHAT THIS PAGE HANDS TO THIRD PARTIES (and what it cannot control) ──
  * The app root boots analytics for EVERY route with no allow-list, so "this
  * component makes no analytics call" would be a meaningless claim: the pixels
@@ -68,8 +105,24 @@ import { durations, easings, useMotionSafe } from "@/lib/motion";
 // client and the policy can never drift. Keep it a flat array literal.
 const ADMISSION_PUBLIC_FIELDS = ["admitted_name", "program_title"] as const;
 
+/**
+ * The character cap the applicant-typed field is held to, mirrored from the
+ * migration's `left(a.full_name, 80)`. Longer than any real name, far shorter
+ * than a paragraph. Both halves are pinned by the policy test, so neither can be
+ * dropped on its own.
+ */
+const MAX_PUBLIC_FIELD_CHARS = 80;
+
 type AdmissionField = (typeof ADMISSION_PUBLIC_FIELDS)[number];
 type AdmissionRow = Record<AdmissionField, string | null>;
+
+/**
+ * The whitelisted fields carrying APPLICANT-typed text, and therefore the ones
+ * the cap applies to — mirroring which columns the SQL projection wraps in
+ * `left(…, 80)`. `program_title` is admin-authored and stays off this list on
+ * purpose: see the header. Pinned against the migration by the policy test.
+ */
+const CLAMPED_PUBLIC_FIELDS: readonly AdmissionField[] = ["admitted_name"];
 
 /**
  * The document title, deliberately constant and deliberately impersonal. GA4's
@@ -130,10 +183,12 @@ function suppressPixelLoaders(): () => void {
 }
 
 /**
- * Reduce an RPC row to exactly the whitelisted keys. Anything else the response
- * happens to carry is dropped here, before it can reach the render tree.
- * Returns null when the row cannot name an admitted person, which is the same
- * outcome as no row at all: private.
+ * Reduce an RPC row to exactly the whitelisted keys, with the applicant-typed
+ * ones clamped to `MAX_PUBLIC_FIELD_CHARS`. Anything else the response happens
+ * to carry is dropped here, before it can reach the render tree, and free text
+ * longer than the cap is cut here even if the function body that served it was
+ * not the one in this repo's migration. Returns null when the row cannot name an
+ * admitted person, which is the same outcome as no row at all: private.
  */
 function pickWhitelist(row: unknown): AdmissionRow | null {
   if (!row || typeof row !== "object") return null;
@@ -141,7 +196,16 @@ function pickWhitelist(row: unknown): AdmissionRow | null {
   const picked = {} as AdmissionRow;
   for (const key of ADMISSION_PUBLIC_FIELDS) {
     const value = source[key];
-    picked[key] = typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    // Spread, not `.slice` on the string: spreading iterates CODE POINTS, the
+    // unit Postgres `left()` counts, so the two halves cut in the same place
+    // and an emoji sitting on the boundary cannot be halved into a U+FFFD.
+    // Trim again afterwards so a cut landing mid-space leaves no trailing gap.
+    // Admin-authored fields are passed through as authored.
+    const clamped = CLAMPED_PUBLIC_FIELDS.includes(key)
+      ? [...trimmed].slice(0, MAX_PUBLIC_FIELD_CHARS).join("").trim()
+      : trimmed;
+    picked[key] = clamped === "" ? null : clamped;
   }
   return picked.admitted_name ? picked : null;
 }
