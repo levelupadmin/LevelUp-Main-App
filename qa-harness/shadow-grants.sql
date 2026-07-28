@@ -18,10 +18,30 @@
 --
 -- ═══ ORDERING — RUN THIS FILE TWICE, AND THE FIRST PASS IS THE ONE PEOPLE MISS ═══
 --
---   1. psql "$SHADOW_DB_URL" -f qa-harness/shadow-grants.sql   # BEFORE db push
---   2. supabase db push --db-url "$SHADOW_DB_URL"              # build the schema
---   3. psql "$SHADOW_DB_URL" -f qa-harness/shadow-grants.sql   # AFTER db push
+--   0. If `db push` has EVER run against this shadow: REBUILD IT FIRST.
+--        supabase db reset --db-url "$SHADOW_DB_URL"   # or re-create the project
+--   1. psql "$SHADOW_DB_URL" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql  # BEFORE db push
+--   2. supabase db push --db-url "$SHADOW_DB_URL"                                 # build the schema
+--   3. psql "$SHADOW_DB_URL" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql  # AFTER db push
 --   4. …then, and only then, the adversarial suites.
+--
+-- ⚠️ STEP 0 IS NOT OPTIONAL, AND OMITTING IT IS WHY THE THREE-STEP RECIPE SILENTLY
+-- FAILED. SECTION A arms `ALTER DEFAULT PRIVILEGES`, which PostgreSQL consults at
+-- CREATE TABLE time and never again. On a shadow whose migrations are ALREADY
+-- applied — the normal case for every gate run after the first — `db push` is a
+-- no-op, the nine tables R0 creates already exist, and pass 1 has nothing left to
+-- affect. All three steps then succeed, print their NOTICEs, change nothing that
+-- matters, and leave exactly the state cohort-room-access.spec.mjs's PRECONDITION
+-- aborts on. There is no in-place remedy: the tables have to be created again.
+--
+-- ⚠️ $SHADOW_DB_URL IS THE SHADOW DATABASE, NEVER PRODUCTION (ivkvluezuiojovpotlyb).
+-- SECTION A permanently alters a database's grant model — it is the one statement
+-- in this file that does not merely re-state a grant production already has — and
+-- `db push` in step 2 writes schema. Both are irreversible against the wrong
+-- target. The `-v ROOM_QA_SHADOW=1` marker is therefore MANDATORY: the guard block
+-- below refuses to run without it, so this file cannot be executed by reflex or by
+-- a copy-pasted line that lost its target. The guard also refuses outright on any
+-- connection that identifies as the production project.
 --
 -- WHY BOTH PASSES ARE REQUIRED, AND WHY NEITHER ONE SUBSUMES THE OTHER.
 -- This file does two different things with opposite timing requirements:
@@ -60,6 +80,72 @@
 -- earlier revision of this file opened a transaction the DO block never closed —
 -- so psql rolled everything back on exit while still printing "305 applied".
 -- A success message is not evidence; the grant query afterwards is.
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- GUARD — HAND-MAINTAINED. NOT GENERATED. A REGENERATION MUST PRESERVE IT.
+--
+-- This file is handed to an agent by .claude/workflows/design-qa-gate.js, with a
+-- connection string the agent did not choose. Everything below writes: SECTION A
+-- creates a pg_default_acl entry that every future migration inherits, SECTION B
+-- issues ~300 GRANTs. Neither is undone by re-running anything, and the step this
+-- file sits between (`supabase db push`) writes schema. So the target is checked
+-- twice before a single statement runs:
+--
+--   1. AN EXPLICIT MARKER. `-v ROOM_QA_SHADOW=1` has to be passed on the psql
+--      command line. It is an affirmation, not a value — its presence is what is
+--      tested. A pasted command that lost its `-f` target, a stale $SHADOW_DB_URL
+--      or a half-remembered one-liner will not carry it.
+--   2. A PRODUCTION DENY-LIST. Supabase's pooled connections carry the project ref
+--      in the role name (`postgres.<ref>`), so a prod pooler string identifies
+--      itself. Any connection whose role, database or application_name mentions the
+--      production ref is refused outright, marker or no marker.
+--
+-- ON_ERROR_STOP makes both of these terminal rather than advisory: psql exits
+-- non-zero at the first failure and never reaches SECTION A.
+-- ════════════════════════════════════════════════════════════════════════════
+\set ON_ERROR_STOP on
+
+\if :{?ROOM_QA_SHADOW}
+\else
+DO $marker$
+BEGIN
+  RAISE EXCEPTION USING MESSAGE =
+    'shadow-grants: REFUSING TO RUN — the shadow marker is missing.
+
+This file permanently alters a database''s grant model (SECTION A writes a
+pg_default_acl entry that every future migration inherits) and is meant to be run
+only against a disposable SHADOW project, never against production
+(ivkvluezuiojovpotlyb). Re-run it naming the target deliberately:
+
+  psql "$SHADOW_DB_URL" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql
+
+If you were about to run this against production: do not. Nothing here is needed
+there — production already has these grants, which is where they were copied from.';
+END
+$marker$;
+\endif
+
+DO $prodguard$
+DECLARE prod_ref CONSTANT text := 'ivkvluezuiojovpotlyb';
+        ident text;
+BEGIN
+  ident := concat_ws(' ',
+    current_user, session_user, current_database(),
+    current_setting('application_name', true));
+  IF ident ILIKE '%' || prod_ref || '%' THEN
+    RAISE EXCEPTION USING MESSAGE =
+      'shadow-grants: REFUSING TO RUN — this connection identifies as PRODUCTION ('
+      || prod_ref || ').
+
+Connection identity: ' || ident || '
+
+SECTION A would write a pg_default_acl entry under a second granting role that
+every future migration on this database would inherit, and the `supabase db push`
+this file is meant to bracket would write schema. Point $SHADOW_DB_URL at the
+shadow project and re-run.';
+  END IF;
+END
+$prodguard$;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- SECTION A — HAND-MAINTAINED. NOT GENERATED. A REGENERATION MUST PRESERVE IT.

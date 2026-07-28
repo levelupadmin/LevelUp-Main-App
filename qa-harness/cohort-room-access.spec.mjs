@@ -30,20 +30,32 @@
  *   optional: ROOM_QA_KEEP=1 to leave the fixture world in place for inspection
  *   optional: ROOM_QA_DIFF_BASE (default "main") for the Delta-6 copy grep
  *
- * A SHADOW RUN, EXACTLY
- *   1. If the shadow was REBUILT from supabase/migrations/ (rather than cloned
- *      from prod), arm the default privileges FIRST:
- *        psql "$SHADOW_DB_URL" -f qa-harness/shadow-grants.sql
- *      That file's hand-maintained bootstrap block reproduces the platform's
+ * A SHADOW RUN, EXACTLY — FOUR SETUP STEPS, AND THE FIRST TWO ARE THE ONES THAT
+ * GET SKIPPED. Every command below targets the SHADOW database and never
+ * production (ivkvluezuiojovpotlyb); two of them write schema and grants.
+ *   0. If `supabase db push` has EVER run against this shadow, rebuild it before
+ *      going any further:
+ *        supabase db reset --db-url "$SHADOW_DB_URL"   # or re-create the project
+ *      Step 1 arms `ALTER DEFAULT PRIVILEGES`, which Postgres consults at CREATE
+ *      TABLE time and never again. It cannot retrofit tables that already exist,
+ *      so on an already-pushed shadow the three steps below all succeed, change
+ *      nothing, and leave exactly the state the PRECONDITION aborts on. This is
+ *      the step the recipe used to omit.
+ *   1. Arm the default privileges, BEFORE the schema exists:
+ *        psql "$SHADOW_DB_URL" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql
+ *      That file's hand-maintained SECTION A reproduces the platform's
  *      `ALTER DEFAULT PRIVILEGES … GRANT ALL ON TABLES`, which only affects
- *      tables created AFTER it runs — so it has to precede `db push`.
- *   2. The three R0 migrations (20260729100000 / 100100 / 100200) must already
- *      be applied to the shadow project. Nothing here applies them, and the
- *      fixture failure message decodes the SQLSTATE if they are missing.
- *   3. Run shadow-grants.sql AGAIN, after `db push`: its generated grant loop
- *      skips every table that did not exist on the first pass, and the
- *      pre-existing tables are created BY the migrations. Both passes are
- *      idempotent; the file is written to be run exactly this way.
+ *      tables created AFTER it runs — so it has to precede `db push`. The
+ *      -v ROOM_QA_SHADOW=1 marker is not decoration: the file refuses to run
+ *      without it, because it permanently alters a database's grant model.
+ *   2. Apply the three R0 migrations (20260729100000 / 100100 / 100200):
+ *        supabase db push --db-url "$SHADOW_DB_URL"
+ *      Nothing here applies them, and the fixture failure message decodes the
+ *      SQLSTATE if they are missing.
+ *   3. Run shadow-grants.sql AGAIN, after `db push`: its generated SECTION B
+ *      grant loop skips every table that did not exist on the first pass, and
+ *      those tables are created BY the migrations. Both passes are idempotent;
+ *      the file is written to be run exactly this way.
  *   4. Export the five names above (values live in the vault, never here, never
  *      in a log line, and never in this file's output).
  *   5. `npm run test:room-access`. Exit 0 = the wall holds; exit 1 = a leak;
@@ -52,12 +64,16 @@
  *   and re-grants an enrolment, and briefly arms a forced trigger failure. It
  *   is destructive by design and refuses the prod ref for exactly that reason.
  *
- *   STEPS 1 AND 3 ARE NOT OPTIONAL HOUSEKEEPING. A database built purely from
+ *   STEPS 0, 1 AND 3 ARE NOT OPTIONAL HOUSEKEEPING. A database built purely from
  *   this repo's migrations grants the client roles almost nothing, and PostgreSQL
  *   checks the GRANT before it ever consults RLS — so every read attack in this
  *   file would be refused for the wrong reason and print the same word it prints
- *   when the wall holds. The PRECONDITION section below refuses to run the suite
- *   in that state rather than hand back a green summary that means nothing.
+ *   when the wall holds. Worse, a shadow provisioned in the WRONG ORDER — step 3
+ *   run without step 1 — looks fully granted while the nine tables R0 creates
+ *   never received a destructive verb anybody could revoke, which makes the whole
+ *   GRANT section and both §7 REVOKE blocks vacuous. The PRECONDITION section
+ *   below refuses to run the suite in either state rather than hand back a green
+ *   summary that means nothing.
  *
  * A NOTE FOR R1–R4 — live_sessions HAS NO BATCH DIMENSION
  *   The table hangs off course_id and reaches a batch only through
@@ -533,6 +549,22 @@ async function sql(query) {
 const sqlOne = async (q) => (await sql(q))[0] ?? null;
 const lit = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
+/**
+ * ONE COERCION FOR EVERY BOOLEAN THAT COMES BACK THROUGH THE SQL CHANNEL.
+ *
+ * The Management API round-trips results as JSON, and this file already
+ * compares against text CASE outputs elsewhere — so a Postgres `boolean` can
+ * plausibly arrive as `true` or as the string "true"/"t". Two call sites used
+ * to disagree about which: the precondition tested truthiness (making the
+ * string "false" read as GRANTED, which would let an ungranted shadow through
+ * — fail-open, in the one check whose whole job is to fail closed) while the
+ * GRANT section tested `=== true` (making "true" read as NOT HELD, failing
+ * everything). Neither form is right on its own. This one is right on both
+ * serialisations, and nothing in this file should compare a pg boolean without
+ * it.
+ */
+const pgBool = (v) => v === true || v === "true" || v === "t";
+
 // ── Transport 2: real user sessions against the real API surface ────────────
 let ANON_KEY = process.env.ROOM_QA_ANON_KEY || "";
 let SERVICE_KEY = process.env.ROOM_QA_SERVICE_KEY || "";
@@ -885,6 +917,9 @@ async function teardown() {
     DROP FUNCTION IF EXISTS public._room_qa_cancel(uuid);
     DROP FUNCTION IF EXISTS public._room_qa_boom();
     DROP SEQUENCE IF EXISTS public._room_qa_cancel_seq;
+    -- GRANT.0b's throwaway create-time witness. It drops itself in a finally;
+    -- this is the second lock, for a process killed between CREATE and DROP.
+    DROP TABLE IF EXISTS public._room_qa_default_acl_probe;
     SELECT 1;
   `).catch(() => {});
   const emails = Object.values(ACTORS).map(lit).join(",");
@@ -1025,25 +1060,67 @@ section(
 // run in that state is worth precisely zero, and it is the most expensive kind
 // of zero because it looks like a sign-off artifact.
 //
-// TWO SAMPLES, AND THE SECOND IS THE ONE THAT WAS ALMOST MISSED:
-//   · PRE-EXISTING tables, probed as `anon`. Nothing in this repo's migrations
-//     grants these — only the hosted platform's bootstrap, or
-//     qa-harness/shadow-grants.sql, does — so `anon` holding SELECT here is the
-//     single reliable signal that this shadow gates on RLS the way prod does.
-//   · R0-CREATED tables, probed as `authenticated`. shadow-grants.sql was
-//     generated from prod on 2026-07-28 and therefore CANNOT contain the nine
-//     tables R0 adds; a sample drawn only from pre-existing tables would pass
-//     while the nine tables this entire suite is about were unreachable. `anon`
-//     is deliberately NOT the probe role for these: 20260729100000 §7 and
-//     20260729100100 §7 REVOKE ALL on them FROM anon on purpose, so demanding
-//     anon SELECT there would abort a CORRECTLY provisioned shadow. What must
-//     hold for the room cases to mean anything is that `authenticated` — the
-//     role every room policy is written `TO` — can reach them at all.
+// THREE SAMPLES, AND THE THIRD IS THE ONLY ONE THAT CAN SEE THE ORDERING BUG:
+//   · PRE-EXISTING tables, probed as `anon` for SELECT. Nothing in this repo's
+//     migrations grants these — only the hosted platform's bootstrap, or
+//     qa-harness/shadow-grants.sql SECTION B, does — so `anon` holding SELECT
+//     here is the reliable signal that this shadow gates on RLS the way prod
+//     does for the 103 tables that predate R0.
+//   · R0-CREATED tables, probed as `authenticated` for SELECT. REACHABILITY,
+//     and the claim is no larger than that word: 20260729100000 §7 and
+//     20260729100100 §7 GRANT this SELECT themselves, so it is satisfied by any
+//     shadow where `db push` ran, with or without production's grant model. It
+//     detects a half-applied migration set — it is NOT evidence about grants,
+//     and it used to be described as though it were. `anon` is deliberately not
+//     the probe role here: both §7s REVOKE ALL on these tables FROM anon on
+//     purpose, so demanding anon SELECT would abort a CORRECTLY provisioned
+//     shadow.
+//   · R0-CREATED tables, probed as `authenticated` for REFERENCES/TRIGGER —
+//     A TABLE+VERB PAIR ONLY THE BOOTSTRAP CAN PRODUCE, and the reason this
+//     block is not decorative. shadow-grants.sql SECTION B was generated from
+//     prod on 2026-07-28 and therefore CANNOT name the nine tables R0 adds;
+//     the only thing that can arm those nine is SECTION A's `ALTER DEFAULT
+//     PRIVILEGES … GRANT ALL ON TABLES`, and default privileges apply ONLY to
+//     tables created AFTER the statement runs. So an operator who ran the file
+//     once, after `db push` — which is the natural thing to do, and what an
+//     operator returning to an already-pushed shadow will do — gets a shadow
+//     where every pre-existing table is granted, every R0 table is readable
+//     because the migrations said so, and NOTHING ever held a destructive verb
+//     on a room table. In that state "authenticated holds no TRUNCATE here" is
+//     printed by a database in which nobody ever held TRUNCATE on anything, and
+//     the whole GRANT section, plus 20260729100000 §7's REVOKEs, is vacuous.
+//     `GRANT ALL` is seven verbs; the R0 migrations grant, revoke and mention
+//     five of them (SELECT/INSERT/UPDATE/DELETE/TRUNCATE) and never touch
+//     REFERENCES or TRIGGER. Those two therefore exist on an R0 table if and
+//     only if the create-time bootstrap was armed when that table was created.
 //
-// This does NOT prove the bootstrap default-privilege grant ran; that is a
-// different claim, it is what makes section 7's REVOKEs load-bearing rather
-// than decorative, and the GRANT section proves it separately with its own
-// arming control (GRANT.0).
+//     ⚠️ THE COUPLING, STATED SO IT CANNOT ROT SILENTLY: if a future revision of
+//     20260729100000 §7 or 20260729100100 §7 ever issues `REVOKE ALL … FROM
+//     authenticated` on these tables, this witness disappears and a correctly
+//     provisioned shadow will abort here. The fix then is to move the witness to
+//     another verb the migrations do not touch — not to delete it, because
+//     without it nothing in this suite can tell the two shadows apart.
+//
+// THE REMEDY IS PRINTED ONCE, HERE, BECAUSE THE OBVIOUS ONE DOES NOT WORK. Every
+// abort below hands back PROVISION_RECIPE, and its first line is the line the
+// three-step recipe used to omit: on a shadow where `db push` has ALREADY run,
+// SECTION A cannot retrofit anything. Default privileges are consulted at CREATE
+// TABLE time and never again, `db push` is a no-op the second time, and the nine
+// tables keep whatever they were created with. Re-running the recipe in place
+// changes nothing and reports success. The shadow has to be rebuilt.
+const PROVISION_RECIPE =
+  "FIX — AND IF `db push` HAS ALREADY RUN AGAINST THIS SHADOW, START BY REBUILDING IT:\n" +
+  "SECTION A of shadow-grants.sql arms `ALTER DEFAULT PRIVILEGES`, which applies only to tables\n" +
+  "created AFTER it runs. It cannot retrofit tables that already exist, so re-running it in place\n" +
+  "on an already-pushed shadow succeeds and fixes nothing.\n\n" +
+  "  supabase db reset --db-url \"$SHADOW_DB_URL\"     # or rebuild/re-create the shadow project\n" +
+  "  psql \"$SHADOW_DB_URL\" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql   # pass 1: BEFORE db push\n" +
+  "  supabase db push --db-url \"$SHADOW_DB_URL\"                                  # build the schema\n" +
+  "  psql \"$SHADOW_DB_URL\" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql   # pass 3: AFTER db push\n\n" +
+  "$SHADOW_DB_URL is the SHADOW database, never production (ivkvluezuiojovpotlyb). The\n" +
+  "-v ROOM_QA_SHADOW=1 marker is required: shadow-grants.sql refuses to run without it, because\n" +
+  "SECTION A permanently alters a database's grant model and `db push` writes schema.\n" +
+  "The ORDERING block at the top of qa-harness/shadow-grants.sql is the authority.";
 {
   const GRANT_SAMPLE = [
     ["offerings", "anon"], ["courses", "anon"], ["users", "anon"],
@@ -1062,7 +1139,10 @@ section(
   ]);
   // has_table_privilege() ERRORS on a missing table or role, so both are
   // resolved through LEFT JOINs and the call is guarded by a CASE that can only
-  // reach it with two live oids.
+  // reach it with two live oids. relkind is filtered for the same reason and it
+  // is not belt-and-braces: has_table_privilege() raises on an index oid, so a
+  // public index sharing a name with a sampled table would abort the run with a
+  // raw SQL-channel error instead of a decoded message.
   const values = GRANT_SAMPLE.map(([t, g]) => `(${lit(t)}, ${lit(g)})`).join(", ");
   let grants;
   try {
@@ -1071,20 +1151,28 @@ section(
              (c.oid IS NOT NULL) AS present,
              (r.oid IS NOT NULL) AS role_exists,
              CASE WHEN c.oid IS NULL OR r.oid IS NULL THEN false
-                  ELSE has_table_privilege(r.oid, c.oid, 'SELECT') END AS can_select
+                  ELSE has_table_privilege(r.oid, c.oid, 'SELECT') END AS can_select,
+             CASE WHEN c.oid IS NULL OR r.oid IS NULL THEN false
+                  ELSE has_table_privilege(r.oid, c.oid, 'REFERENCES')
+                    OR has_table_privilege(r.oid, c.oid, 'TRIGGER') END AS bootstrap_verb
         FROM (VALUES ${values}) AS t(tbl, grantee)
         LEFT JOIN pg_class c
           ON c.relname = t.tbl AND c.relnamespace = 'public'::regnamespace
+         AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
         LEFT JOIN pg_roles r ON r.rolname = t.grantee
        ORDER BY 1`);
   } catch (e) {
     die(`Could not read table privileges through the SQL channel: ${e.message}`);
   }
 
-  const missingRole = grants.filter((g) => !g.role_exists);
-  const missingTable = grants.filter((g) => g.role_exists && !g.present);
-  const ungranted = grants.filter((g) => g.role_exists && g.present && !g.can_select);
+  const missingRole = grants.filter((g) => !pgBool(g.role_exists));
+  const missingTable = grants.filter((g) => pgBool(g.role_exists) && !pgBool(g.present));
+  const ungranted = grants.filter(
+    (g) => pgBool(g.role_exists) && pgBool(g.present) && !pgBool(g.can_select));
   const missingR0 = missingTable.filter((g) => R0_CREATED.has(g.tbl));
+  const unbootstrapped = grants.filter(
+    (g) => R0_CREATED.has(g.tbl) && pgBool(g.role_exists) && pgBool(g.present) &&
+      !pgBool(g.bootstrap_verb));
   const show = (rows) => rows.map((g) => `${g.tbl}→${g.grantee}`).join(", ");
 
   if (missingRole.length) {
@@ -1098,8 +1186,11 @@ section(
     die(
       "THE R0 MIGRATIONS ARE NOT ON THIS PROJECT — NOT ONE ASSERTION RAN.\n" +
         `  missing: ${show(missingR0)}\n\n` +
-        "Apply 20260729100000 / 20260729100100 / 20260729100200 to the shadow first " +
-        "(`supabase db push` against the shadow ref), then re-run."
+        "20260729100000 / 20260729100100 / 20260729100200 have to be applied to the shadow. Do NOT " +
+        "just run `db push`:\nthe pass that arms the create-time grants has to precede it, or the " +
+        "tables it creates arrive ungranted and\nthe next abort in this block is the one you will " +
+        "hit instead.\n\n" +
+        PROVISION_RECIPE
     );
   }
   if (ungranted.length || missingTable.length) {
@@ -1117,17 +1208,33 @@ section(
         "tables grant SELECT to anon. Production grants anon/authenticated/service_role full DML and\n" +
         "relies on RLS as the gate, applied by the hosted platform's bootstrap rather than by any\n" +
         "migration in this repo.\n\n" +
-        "FIX (both passes — see the header's A SHADOW RUN, EXACTLY):\n" +
-        "  psql \"$SHADOW_DB_URL\" -f qa-harness/shadow-grants.sql   # BEFORE db push (arms default privileges)\n" +
-        "  supabase db push --db-url \"$SHADOW_DB_URL\"\n" +
-        "  psql \"$SHADOW_DB_URL\" -f qa-harness/shadow-grants.sql   # AFTER db push (the generated grant loop)"
+        PROVISION_RECIPE
+    );
+  }
+  if (unbootstrapped.length) {
+    die(
+      "THE SHADOW WAS BUILT IN THE WRONG ORDER — REFUSING TO RUN. THE R0 TABLES EXIST AND ARE\n" +
+        "READABLE, BUT THEY WERE CREATED WITHOUT PRODUCTION'S CREATE-TIME GRANT, SO EVERY \"THE\n" +
+        "CLIENT ROLE DOES NOT HOLD VERB X ON A ROOM TABLE\" ASSERTION BELOW WOULD BE VACUOUS.\n\n" +
+        `  no REFERENCES and no TRIGGER: ${show(unbootstrapped)}\n\n` +
+        "WHAT THAT MEASURES. `GRANT ALL ON TABLES` is seven verbs. The R0 migrations grant, revoke\n" +
+        "or mention five of them and never touch REFERENCES or TRIGGER — so those two are present on\n" +
+        "an R0 table if and only if shadow-grants.sql's SECTION A was armed BEFORE that table was\n" +
+        "created. Their absence means SECTION A ran late or never. The consequence is not cosmetic:\n" +
+        "20260729100000 §7's `REVOKE INSERT, UPDATE, DELETE, TRUNCATE … FROM authenticated` and\n" +
+        "20260729100100 §7's `REVOKE TRUNCATE … FROM authenticated` are the statements this suite's\n" +
+        "GRANT section exists to verify, and on this shadow they took back nothing, because nothing\n" +
+        "was ever handed out. A REVOKE that was never needed prints the same word as a REVOKE that\n" +
+        "worked.\n\n" +
+        PROVISION_RECIPE
     );
   }
   console.log(
     `${C.d}precondition: ${grants.length} representative grants verified ` +
-      `(${GRANT_SAMPLE.filter(([t]) => !R0_CREATED.has(t)).length} pre-existing tables readable by anon, ` +
-      `${GRANT_SAMPLE.filter(([t]) => R0_CREATED.has(t)).length} R0-created tables readable by authenticated) — ` +
-      `this shadow gates on RLS, not on a missing GRANT${C.x}`
+      `(${GRANT_SAMPLE.filter(([t]) => !R0_CREATED.has(t)).length} pre-existing tables readable by anon; ` +
+      `${GRANT_SAMPLE.filter(([t]) => R0_CREATED.has(t)).length} R0-created tables readable by authenticated ` +
+      "AND carrying the bootstrap-only REFERENCES/TRIGGER pair, so they were created under " +
+      `production's create-time grant) — this shadow gates on RLS, not on a missing GRANT${C.x}`
   );
 }
 
@@ -2535,13 +2642,33 @@ section("W3 / W4 — membership and config are server-derived", "inviolable rule
 // WHAT THIS PROVES ON A SHADOW, HONESTLY. The whole section is only meaningful
 // if something ever GRANTED the verbs it claims are absent — which on a
 // migrations-built shadow is exactly what shadow-grants.sql's hand-maintained
-// default-privileges block does, and what nothing else does. GRANT.0 is that
-// arming control, asserted rather than assumed: without it, "authenticated
-// holds no TRUNCATE on the room tables" is printed by a database where nothing
-// ever held TRUNCATE on anything, and a REVOKE that was never needed reads
-// exactly like a REVOKE that worked. It is therefore a hard assertion, not a
-// note: if the bootstrap grant is missing this section FAILS and names itself
-// vacuous instead of printing three green lines.
+// SECTION A does, and what nothing else does. That premise is measured, in two
+// places, and neither of them is a pre-existing table:
+//
+//   · THE PRECONDITION carries the CREATION-TIME half. It demands the
+//     bootstrap-only REFERENCES/TRIGGER pair on the R0 tables themselves, which
+//     is the only observable that distinguishes "SECTION A ran before db push"
+//     from "SECTION A ran after it, or never". A shadow that fails it never
+//     reaches this section — the run aborts with exit 2 rather than printing a
+//     green line here.
+//   · GRANT.0a/GRANT.0b below carry the CURRENT-STATE half, by measuring the
+//     statement SECTION A issues rather than any table's grants: 0a reads
+//     pg_default_acl for schema public directly, and 0b creates a throwaway
+//     table through the same channel `db push` uses and asserts it ARRIVES with
+//     the client roles holding the full verb list. A shadow whose default
+//     privileges were armed once and then revoked passes the precondition and
+//     fails here, which is the state neither check sees alone.
+//
+// AN EARLIER REVISION ARMED THIS SECTION OFF `authenticated` HOLDING TRUNCATE ON
+// public.offerings, AND THAT CONTROL COULD NOT FAIL. shadow-grants.sql SECTION B
+// grants exactly that (offerings → authenticated → the full seven verbs) and
+// SECTION B is the pass that runs AFTER `db push` — the pass that does NOT arm
+// the nine R0 tables. A prod clone grants it too. So the control was satisfied by
+// a statement orthogonal to the one it claimed to control for, and GRANT.1/
+// GRANT.2 printed green on a database where nothing had ever held TRUNCATE on a
+// room table. The rule the replacement follows: an arming control must measure
+// the statement whose effect it is arming, not a table that statement happens to
+// share a database with.
 //
 // Asserted through the SQL channel on purpose — has_table_privilege() is the
 // only way to ask this question, and PostgREST exposes no TRUNCATE verb to ask
@@ -2555,13 +2682,14 @@ section("GRANT — the verb list underneath the wall",
     "cohort_room_post_replies", "cohort_recording_progress",
     "cohort_demo_entries", "cohort_room_seen",
   ];
-  // A pre-existing table R0 never touches, whose grants can only have come from
-  // the platform bootstrap or shadow-grants.sql. It is the arming control.
-  const CONTROL_TABLE = "offerings";
   const VERBS = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"];
   const DESTRUCTIVE = ["INSERT", "UPDATE", "DELETE", "TRUNCATE"];
+  const CLIENT_ROLES = ["anon", "authenticated"];
+  // The throwaway witness for GRANT.0b. Created and dropped inside this section;
+  // teardown() drops it again in case the process dies between the two.
+  const PROBE_TABLE = "_room_qa_default_acl_probe";
 
-  const tblValues = [...ROOM_TABLES, ...CONTENT_TABLES, CONTROL_TABLE].map((t) => `(${lit(t)})`).join(", ");
+  const tblValues = [...ROOM_TABLES, ...CONTENT_TABLES].map((t) => `(${lit(t)})`).join(", ");
   const verbValues = VERBS.map((v) => `(${lit(v)})`).join(", ");
   const rows = await sql(`
     SELECT t.tbl, r.rolname AS grantee, v.verb,
@@ -2570,21 +2698,100 @@ section("GRANT — the verb list underneath the wall",
       CROSS JOIN (VALUES ${verbValues}) AS v(verb)
       CROSS JOIN pg_roles r
       JOIN pg_class c ON c.relname = t.tbl AND c.relnamespace = 'public'::regnamespace
-     WHERE r.rolname IN ('anon', 'authenticated')
+       AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+     WHERE r.rolname IN (${CLIENT_ROLES.map(lit).join(", ")})
      ORDER BY 1, 2, 3`);
-  const held = new Map(rows.map((r) => [`${r.tbl}|${r.grantee}|${r.verb}`, r.held === true]));
+  const held = new Map(rows.map((r) => [`${r.tbl}|${r.grantee}|${r.verb}`, pgBool(r.held)]));
   const has = (tbl, grantee, verb) => held.get(`${tbl}|${grantee}|${verb}`) === true;
   const verbsOf = (tbl, grantee) => VERBS.filter((v) => has(tbl, grantee, v));
 
-  const controlArmed = has(CONTROL_TABLE, "authenticated", "TRUNCATE");
-  prove("GRANT.0",
-    `\`authenticated\` DOES hold TRUNCATE on public.${CONTROL_TABLE} — a pre-existing table this phase never touches, whose grants can only have come from production's bootstrap \`ALTER DEFAULT PRIVILEGES … GRANT ALL ON TABLES\` or from the hand-maintained block in qa-harness/shadow-grants.sql that reproduces it. That is the arming control for the two assertions below: without it they would be measuring a database in which nothing was ever granted TRUNCATE to anybody, and a REVOKE that was never needed prints the same word as a REVOKE that worked`,
-    controlArmed,
-    controlArmed
-      ? `${CONTROL_TABLE} → authenticated holds [${verbsOf(CONTROL_TABLE, "authenticated").join(", ")}]`
-      : `${CONTROL_TABLE} → authenticated holds [${verbsOf(CONTROL_TABLE, "authenticated").join(", ") || "nothing"}] — NO TRUNCATE, so this shadow never had the create-time bootstrap grant. ` +
-        "GRANT.1 and GRANT.2 below are VACUOUS in this state and are reported as failures rather than passes. " +
-        "Run the shadow-grants.sql default-privileges block BEFORE `supabase db push` (see that file's ORDERING header), rebuild, and re-run.");
+  // ── GRANT.0a — the catalogue entry SECTION A writes ──────────────────────
+  //
+  // pg_default_acl is where `ALTER DEFAULT PRIVILEGES` lands, and it is the one
+  // part of prod's grant model a per-table `information_schema.role_table_grants`
+  // dump structurally cannot capture: the rows describe tables that do not exist
+  // yet. Read per granting role, because default privileges are recorded per
+  // granting role — `postgres` here, `supabase_admin` on the platform.
+  const defacl = await sql(`
+    SELECT creator.rolname AS creator, grantee.rolname AS grantee,
+           string_agg(DISTINCT a.privilege_type, ',' ORDER BY a.privilege_type) AS privs
+      FROM pg_default_acl d
+      JOIN pg_roles creator ON creator.oid = d.defaclrole
+      CROSS JOIN LATERAL aclexplode(d.defaclacl) AS a
+      JOIN pg_roles grantee ON grantee.oid = a.grantee
+     WHERE d.defaclnamespace = 'public'::regnamespace
+       AND d.defaclobjtype = 'r'
+       AND grantee.rolname IN (${CLIENT_ROLES.map(lit).join(", ")})
+     GROUP BY 1, 2
+     ORDER BY 1, 2`);
+  const defaclByCreator = new Map();
+  for (const row of defacl) {
+    if (!defaclByCreator.has(row.creator)) defaclByCreator.set(row.creator, new Map());
+    defaclByCreator.get(row.creator).set(row.grantee, String(row.privs || "").split(",").filter(Boolean));
+  }
+  const armingCreators = [...defaclByCreator.entries()].filter(([, byRole]) =>
+    CLIENT_ROLES.every((role) => VERBS.every((v) => (byRole.get(role) || []).includes(v))));
+  const defaclArmed = armingCreators.length > 0;
+  prove("GRANT.0a",
+    "this database carries the create-time bootstrap itself — a pg_default_acl entry on schema public for relations, handing `anon` AND `authenticated` the full seven-verb list, for at least one role that creates objects here. That is the statement production's platform runs once per project and that qa-harness/shadow-grants.sql SECTION A reproduces, read from the catalogue it actually lands in rather than inferred from some table's grants. It is the premise the two assertions below stand on: they claim verbs are ABSENT, and an absence only means something where a presence was possible",
+    defaclArmed,
+    defaclArmed
+      ? `pg_default_acl(public, relations) armed by ${armingCreators.map(([c]) => c).join(", ")} — ` +
+        armingCreators.map(([c, byRole]) =>
+          CLIENT_ROLES.map((role) => `${c}→${role}=[${(byRole.get(role) || []).join(", ")}]`).join(" · ")).join(" · ")
+      : (defacl.length
+          ? `pg_default_acl(public, relations) exists but is incomplete: ` +
+            defacl.map((r) => `${r.creator}→${r.grantee}=[${r.privs}]`).join(" · ")
+          : "pg_default_acl holds NO entry for schema public / relations at all") +
+        ". GRANT.1 and GRANT.2 below are VACUOUS in this state and are reported as failures rather than " +
+        "passes. See the PROVISION recipe the precondition prints: SECTION A of qa-harness/shadow-grants.sql " +
+        "must run BEFORE `supabase db push`, and on an already-pushed shadow that means rebuilding it first.");
+
+  // ── GRANT.0b — the same claim, measured instead of read ──────────────────
+  //
+  // A catalogue entry is a statement of intent; this is the effect. Create a
+  // table through the SAME channel `db push` creates tables through and ask what
+  // it ARRIVES holding. Nothing else in this file — and no migration, and no
+  // line of shadow-grants.sql SECTION B — can put a verb on this table, so its
+  // verb set is the create-time default and nothing else.
+  let probeVerbs = { anon: [], authenticated: [] };
+  let probeError = "";
+  try {
+    await sql(`
+      DROP TABLE IF EXISTS public.${PROBE_TABLE};
+      CREATE TABLE public.${PROBE_TABLE} (id int);
+      SELECT 1;`);
+    const probeRows = await sql(`
+      SELECT r.rolname AS grantee, v.verb,
+             has_table_privilege(r.oid, c.oid, v.verb) AS held
+        FROM (VALUES ${verbValues}) AS v(verb)
+        CROSS JOIN pg_roles r
+        JOIN pg_class c ON c.relname = ${lit(PROBE_TABLE)}
+         AND c.relnamespace = 'public'::regnamespace
+         AND c.relkind IN ('r', 'p')
+       WHERE r.rolname IN (${CLIENT_ROLES.map(lit).join(", ")})`);
+    for (const role of CLIENT_ROLES) {
+      probeVerbs[role] = probeRows.filter((r) => r.grantee === role && pgBool(r.held)).map((r) => r.verb);
+    }
+  } catch (e) {
+    probeError = e.message;
+  } finally {
+    await sql(`DROP TABLE IF EXISTS public.${PROBE_TABLE}; SELECT 1;`).catch(() => {});
+  }
+  const probeArmed = !probeError &&
+    CLIENT_ROLES.every((role) => VERBS.every((v) => probeVerbs[role].includes(v)));
+  prove("GRANT.0b",
+    "and the bootstrap is not merely recorded, it FIRES: a table created right now through the same connection `supabase db push` uses arrives with `anon` and `authenticated` already holding all seven verbs, TRUNCATE included. This is the empirical form of GRANT.0a and it closes the gap between them — a pg_default_acl row written FOR a role this connection is not, or armed on a different schema, reads fine in the catalogue and grants nothing to the tables the migrations actually create",
+    probeArmed,
+    probeError
+      ? `could not run the create-time probe: ${probeError}`
+      : CLIENT_ROLES.map((role) => `${role}=[${probeVerbs[role].join(", ") || "nothing"}]`).join(" · ") +
+        (probeArmed
+          ? " on a table created seconds ago and dropped again"
+          : " on a freshly created table — the create-time grant did NOT fire for these roles, so every " +
+            "table the R0 migrations created arrived the same way and the REVOKEs in both §7s took back nothing"));
+
+  const controlArmed = defaclArmed && probeArmed;
 
   const roomOffenders = [];
   for (const tbl of ROOM_TABLES) {
@@ -2596,10 +2803,10 @@ section("GRANT — the verb list underneath the wall",
     "on BOTH room tables `authenticated` holds SELECT and none of the four verbs that can change or destroy a row — no INSERT, no UPDATE, no DELETE and no TRUNCATE — and `anon` holds nothing at all. Membership is server-derived (NFR-SEC-1) and the config is ops-owned, so the client role's entire relationship with cohort_room_members and cohort_room_configs is reading its own rows through RLS. TRUNCATE is named because it is the one verb the bootstrap hands out that section 7's `REVOKE INSERT, UPDATE, DELETE` does not take back, it empties a table without evaluating one row policy, and PostgREST exposes no verb for it — so W3.1–W3.3 all pass with it held",
     controlArmed && roomOffenders.length === 0,
     !controlArmed
-      ? "VACUOUS — GRANT.0's arming control is not held, so this assertion could not have failed. See GRANT.0."
+      ? "VACUOUS — the create-time bootstrap is not armed on this database, so this assertion could not have failed. See GRANT.0a / GRANT.0b."
       : roomOffenders.length === 0
         ? ROOM_TABLES.map((t) => `${t}: authenticated=[${verbsOf(t, "authenticated").join(", ")}] anon=[${verbsOf(t, "anon").join(", ") || "none"}]`).join(" · ") +
-          " (REFERENCES/TRIGGER are reported, not asserted: neither reads nor destroys a row, and both are inert without CREATE on the schema)"
+          " (REFERENCES/TRIGGER are not asserted HERE — neither reads nor destroys a row, and both are inert without CREATE on the schema — but they are not decoration either: the PRECONDITION asserts them on these same tables as the one observable proving they were CREATED under the bootstrap, which is what makes this line's absences meaningful)"
         : `HELD: ${roomOffenders.join("; ")}`);
 
   const contentOffenders = [];
@@ -2612,7 +2819,7 @@ section("GRANT — the verb list underneath the wall",
     "no client role can TRUNCATE any of the seven room-content tables, and `anon` holds nothing on any of them. Their SELECT/INSERT/UPDATE/DELETE sets are the ones 20260729100100 §7 states deliberately and are not narrowed here — every one of those verbs is filtered by a row policy the rest of this suite attacks. TRUNCATE is the exception: it is granted by the same bootstrap, revoked by nothing, filtered by no policy, and would let any logged-in user with a direct connection empty a cohort's noticeboard, library, feed, gallery and every recording position in one statement",
     controlArmed && contentOffenders.length === 0,
     !controlArmed
-      ? "VACUOUS — GRANT.0's arming control is not held, so this assertion could not have failed. See GRANT.0."
+      ? "VACUOUS — the create-time bootstrap is not armed on this database, so this assertion could not have failed. See GRANT.0a / GRANT.0b."
       : contentOffenders.length === 0
         ? `${CONTENT_TABLES.length} tables, authenticated verb sets: ` +
           CONTENT_TABLES.map((t) => `${t}=[${verbsOf(t, "authenticated").join(", ")}]`).join(" · ") +
