@@ -7,7 +7,7 @@ The emotional peak of the whole funnel. A sealed decision → a full-viewport re
 
 ## The inviolable rules
 1. **The app READS `accepted`; it NEVER writes it (SOR-1).** TeleCRM is the master. The reveal fires because the reconciler observed the flip. **There is NO in-app admin decision RPC** — SEC-DECISION-1 was removed. Any code that sets a funnel status is a bug.
-2. **The payment pipeline and `ApplicationStatus.tsx:319,337` `isIOS()` guard are untouched.** The ₹8k seat-confirm runs on the EXISTING Razorpay link (INTEG-PAY-1) — this phase SURFACES it, it does not originate it.
+2. **The payment pipeline and `ApplicationStatus.tsx`'s `isIOS()` guards are untouched.** The ₹8k seat-confirm runs on the EXISTING Razorpay link (INTEG-PAY-1) — this phase SURFACES it, it does not originate it.
 3. **NFR-COPY-1: the 100-word essay text is NEVER surfaced in any UI**, including the artifact. Personalise from STRUCTURED fields only (name, cohort, craft, city).
 4. **No verdict in any notification payload.** The decision is learned by opening it, never by a push preview.
 5. **REQ-DEC-4: no seat numbers.** Low numbers signal an empty cohort. Use the locked-future view instead.

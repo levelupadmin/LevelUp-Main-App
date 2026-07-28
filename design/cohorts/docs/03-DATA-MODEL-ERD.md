@@ -859,7 +859,7 @@ GRANT EXECUTE ON FUNCTION public.get_cohort_progress(uuid, uuid) TO authenticate
 | `review_batches` (optional) | new table | 🟡/🔴 | INT-3 (REVBATCH-1) |
 | Calendly webhook receiver + signing secret | edge fn | 🔴 | INT-1 |
 
-**The do-not-touch line (PRD §4.4, NFR-SEC-5):** `ApplicationStatus.tsx:319,337` `isIOS()` staged-payment guard, and the existing `status` transition logic in `verify-razorpay-payment`/`razorpay-webhook`, are **sacred**. Every 🟥 column above is *additive and nullable* precisely so none of them changes an existing write path.
+**The do-not-touch line (PRD §4.4, NFR-SEC-5):** `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` staged-payment guard, and the existing `status` transition logic in `verify-razorpay-payment`/`razorpay-webhook`, are **sacred**. Every 🟥 column above is *additive and nullable* precisely so none of them changes an existing write path.
 
 ---
 

@@ -255,7 +255,7 @@ Every legal transition, its **trigger** (the event that fires it), its **proof**
 - **No verdict in transit.** No notification payload for T6a/T6b/T6c contains the decision; only the sealed in-app screen reveals it (`REQ-DEC-1`).
 - **Idempotency everywhere money or provisioning fires.** T2 is idempotent on `tally_response_id`; the ladder is idempotent via `cohort_notifications_log`; re-delivering any webhook creates no duplicate state.
 - **Membership is server-derived, never client-claimed.** T9/T10 write `cohort_room_members` only through resolver triggers + nightly reconcile; zero client INSERT/UPDATE grants (`NFR-SEC-1`).
-- **The staged-payment `isIOS()` guard (`ApplicationStatus.tsx:319,337`) is do-not-touch** on T3/T7/T8 (`NFR-SEC-5`).
+- **The staged-payment `isIOS()` guard (`ApplicationStatus.tsx`'s `isIOS()` guards) is do-not-touch** on T3/T7/T8 (`NFR-SEC-5`).
 
 ---
 

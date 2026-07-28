@@ -2,7 +2,7 @@
 ### Everything the app knows about a live cohort today: pipeline, entities, RPCs, and where it's thin
 *Authored 2026-07-08 on branch `design/phase-6`, from a full read of `supabase/migrations/`, `src/integrations/supabase/types.ts` surfaces, `src/pages/CohortDashboard.tsx`, `src/pages/ApplicationStatus.tsx`, `src/pages/CheckoutPage.tsx`, `src/pages/PublicOffering.tsx`, `src/pages/admin/AdminCohort*.tsx`, `src/components/cohort/*`, `supabase/functions/tally-application-webhook/` and `notify-cohort/`. Companions: `ROOMS-ARCHITECTURE.md` (what we build on this), `ROOMS-BACKLOG.md` (how), `migrations-draft/` (DRAFT SQL — nothing applied).*
 
-**Standing guard:** `ApplicationStatus.tsx:319,337` — the `isIOS()` gate on staged-payment buttons is a REVENUE GUARD (Apple anti-steering; Android staged payments depend on the gate being `isIOS()`, not `isNative()`). Nothing in this program touches it. Ever.
+**Standing guard:** `ApplicationStatus.tsx`'s `isIOS()` guards — the `isIOS()` gate on staged-payment buttons is a REVENUE GUARD (Apple anti-steering; Android staged payments depend on the gate being `isIOS()`, not `isNative()`). Nothing in this program touches it. Ever.
 
 ---
 

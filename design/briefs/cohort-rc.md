@@ -6,7 +6,7 @@
 The reconciler is the **north-star linchpin** — it makes the app a first-party observer of a user's funnel stage for the first time. For the **logged-in user**, a server-side edge path reads the three external systems the app can query (**Tally, TeleCRM, Razorpay**) keyed on **phone (primary) → email (fallback)**, derives the user's funnel stage per the `FUNNEL-DATA-AUDIT.md §6` stage→CTA table, **mirrors** the derived stage onto `cohort_applications` (app-owned columns only), and surfaces two markers invisible today (**completed-no-fee**, **contactable-partial**) plus a **join-completeness health metric**. It ships **dark** behind `VITE_FUNNEL_RECON` (default off).
 
 ## The three inviolable rules (a violation is a failed task)
-1. **Payment pipeline untouched.** Do NOT modify `create-razorpay-order`, `verify-razorpay-payment`, `razorpay-webhook`, or the `ApplicationStatus.tsx:319,337` `isIOS()` staged-payment guard. RC-T4 *reads* stage in the staged home but must leave those two guard lines byte-identical — verify `git diff src/pages/ApplicationStatus.tsx` shows no change at lines 319/337.
+1. **Payment pipeline untouched.** Do NOT modify `create-razorpay-order`, `verify-razorpay-payment`, `razorpay-webhook`, or the `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` staged-payment guard. RC-T4 *reads* stage in the staged home but must leave those two guard lines byte-identical — verify `git diff src/pages/ApplicationStatus.tsx` shows no change at lines 319/337.
 2. **Read-only against externals (SOR-1).** The reconciler issues **ZERO writes** to Tally / TeleCRM / Razorpay. It only READS them. It writes ONLY the app-owned mirror columns on `cohort_applications`, and it NEVER writes `cohort_applications.status` (TeleCRM owns funnel status) and NEVER writes/authors `accepted`. A grep for any external POST/PUT/PATCH or any write to `status` must return 0.
 3. **Secrets by name only.** Reference `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` (both already exist as edge secrets), and the NET-NEW `TELECRM_API_KEY`, `TELECRM_ENTERPRISE_ID`, `TALLY_API_KEY` via `Deno.env.get(...)`. Never inline a key. Fail-soft if a secret/system is unavailable (mark that source `unavailable`, never fabricate a stage).
 
@@ -59,7 +59,7 @@ Live external credentials (`TELECRM_*`, `TALLY_API_KEY`) are set as **edge secre
 2. `useFunnelStage()` (react-query, key `["funnel","stage",uid]`, staleTime 60s) calls the `reconcile-funnel-stage` fn **only when `VITE_FUNNEL_RECON` is on**; flag off → returns `null` and consumers fall back to `cohort_applications.status` exactly as today (byte-identical).
 3. In `ApplicationStatus.tsx` (or the staged applicant home surface), consume the reconciled stage to pick the label chip + single CTA **only under the flag**, WITHOUT editing the `isIOS()` guard at lines 319/337. Confirm the guard diff = 0.
 **Edge cases:** flag off = zero behavioral diff (the whole reconciler path is inert); fn unreachable → home degrades to the `status`-only view, never a spinner-lock.
-**Acceptance:** flag off = today's behavior byte-for-byte incl. `ApplicationStatus.tsx:319,337` diff = 0 (grep/verify); flag on = home reflects reconciled stage; `npm run build` + `npx vitest run` + `npm run lint` green.
+**Acceptance:** flag off = today's behavior byte-for-byte incl. `ApplicationStatus.tsx`'s `isIOS()` guards diff = 0 (grep/verify); flag on = home reflects reconciled stage; `npm run build` + `npx vitest run` + `npm run lint` green.
 
 ---
 
