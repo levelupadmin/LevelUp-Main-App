@@ -293,7 +293,7 @@ Serves P1, P5. Implements v2 Stage 02 (screens 2A/2B/2C). Sources: `FLOW-FEEDBAC
 
 **REQ-APP-2 — Contact captured at step one, pipeline untouched.** `🔴 Tier 1 (do-not-touch)`
 - Behavior: Phone + email land at step one of the existing Tally form; the ₹400 staged checkout (`type=app_fee`), server-side verification, and status advance stay byte-for-byte as shipped.
-- Acceptance: The staged checkout and `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` guard are unmodified (diff = 0). Contact fields are present before any quiz wall so partials are recoverable.
+- Acceptance: The staged checkout and `ApplicationStatus.tsx`'s `isIOS()` guards are unmodified (diff = 0). Contact fields are present before any quiz wall so partials are recoverable.
 - Implements: Screens 2A/2C. Source: `COHORT-LOGIC.md` "Standing guard"; `TALLY-UX-ANALYSIS.md` §4.
 
 **REQ-APP-3 — Shorten the form: the single biggest measured lever.** `🟢 Tier 3 (Tally-side)` — **RULED OUT of v1; parked fast-follow (ROUND-F INTEG-PAY-1, 2026-07-18).**

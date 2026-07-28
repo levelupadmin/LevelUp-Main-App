@@ -81,7 +81,7 @@ erDiagram
 
 - **Every content row carries `(offering_id, batch_id)`** FK'd to real containers (`0003_cohort_room_content.sql`). There is no client-writable "scope" string to spoof — scope is a foreign key to a row that already has its own RLS.
 - **`cohort_room_members` is the single indexed table** every room policy consults (`ROOMS-ARCHITECTURE.md` §6.1). One `EXISTS` against one covering index answers every access question. This is the perf doctrine and the audit doctrine at once: **one table to secure, one table to test.**
-- **The application pipeline is untouched.** `cohort_applications`, `enrolments`, staged payments, and the `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` guard keep their existing RLS byte-for-byte (`COHORT-LOGIC.md` "Standing guard"; PRD NFR-SEC-5). Rooms are a *delivery* layer *on top* of these tables, not a rewrite of them.
+- **The application pipeline is untouched.** `cohort_applications`, `enrolments`, staged payments, and the `ApplicationStatus.tsx`'s `isIOS()` guards keep their existing RLS byte-for-byte (`COHORT-LOGIC.md` "Standing guard"; PRD NFR-SEC-5). Rooms are a *delivery* layer *on top* of these tables, not a rewrite of them.
 
 ### 3.2 The four membership sources (and who may write each)
 

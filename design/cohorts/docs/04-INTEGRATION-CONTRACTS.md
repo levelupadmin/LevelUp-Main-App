@@ -9,7 +9,7 @@
 - **The one hard key.** §2 is the spine of the whole document. Everything else is an application of it. Read it first.
 - **Tier tags** follow `CLAUDE.md`'s blast-radius model. Every item here touches auth, payments, or an edge function on the money/login path, so nearly all of it is `🔴 Tier 1` and gated on the bugfix council + adversarial suite + Rahul's written sign-off before ship.
 - **RULED blocks** carry Rahul's Round-F decisions (2026-07-18). All four integration choices in this doc — INTEG-KEY-1 (phone primary), INTEG-PAY-1 (do not touch the intake chain), INTEG-CRM-1 (TeleCRM read-only) and INTEG-CAL-1 (org-level single Calendly account) — are now **RULED**, together with SOR-1 (TeleCRM master / app read-only mirror) and FEE-1 (₹400 non-refundable, not tuition-credited). Where a ruling reverses an earlier recommended default, a dated ⚠️ margin note marks the reversal in place.
-- **Do-not-touch.** The staged-checkout pipeline (`create-razorpay-order` staged branch, `verify-razorpay-payment`, `razorpay-webhook`) and the `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` guard are sacred (PRD §4.4, NFR-SEC-5). This doc *reads and extends around* them; it does not modify them.
+- **Do-not-touch.** The staged-checkout pipeline (`create-razorpay-order` staged branch, `verify-razorpay-payment`, `razorpay-webhook`) and the `ApplicationStatus.tsx`'s `isIOS()` guards are sacred (PRD §4.4, NFR-SEC-5). This doc *reads and extends around* them; it does not modify them.
 
 **Terms defined once (used throughout):**
 - **The join.** Every cross-system link in the live funnel today is a **phone/email match**, not a foreign key. "The join" always means this phone-or-email match and its ~90% hit rate / ~10% orphan rate (`FUNNEL-DATA-AUDIT.md` §1/§5).
