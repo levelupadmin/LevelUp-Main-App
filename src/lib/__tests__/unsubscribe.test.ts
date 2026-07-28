@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildUnsubscribeUrl,
   canonicalUnsubscribeIssuedAt,
@@ -46,7 +46,204 @@ import {
  * email" is the thing this whole task exists to replace, and an opt-out written
  * into `suppressed_emails` would quietly kill the same person's payment
  * receipts. Each is asserted against the source that actually ships.
+ *
+ * ── AND THEN THE ENDPOINT IS DRIVEN FOR REAL ────────────────────────────────
+ * Everything above is a claim ABOUT source text. That is the right shape for
+ * copy in a migration and for a coupling between two files, and the wrong shape
+ * for the behaviour of a public, unauthenticated, WRITING endpoint: a grep
+ * proves a line is present, never that it does what it says. This program has
+ * already watched a handler that referenced a deleted binding pass 395 tests, a
+ * green build and a clean lint.
+ *
+ * So the last two blocks import the handlers and hand them real inputs:
+ * `email-unsubscribe`'s `handler` gets `Request`s and is judged on `Response`s
+ * and on what the store holds afterwards, and `cohort-reentry-cron`'s
+ * `ensureUnsubscribeCredential` gets a client whose row can change underneath it
+ * mid-call. Three things made that possible and each is deliberate:
+ *   • `vitest.config.ts` aliases the `https://esm.sh/@supabase/supabase-js@2`
+ *     specifier onto the installed npm package, so an edge module resolves here;
+ *   • `vi.hoisted` installs a `globalThis.Deno` stub (env + a no-op `serve`)
+ *     BEFORE the imports run, so module scope and the top-level `Deno.serve` do
+ *     not throw. It is local to this file: `src/test/setup.ts` is untouched;
+ *   • the endpoint reads its secret per request rather than into a module const,
+ *     which is what lets "an unset secret answers 500" be tested at all.
+ * The fake client below refuses any table but `email_unsubscribe_tokens`, so
+ * "this endpoint does not write `suppressed_emails`" stops being a grep and
+ * becomes a thing the endpoint would have to actually do to fail the suite.
  */
+
+/** The one table these two modules are allowed to touch. */
+interface StoredTokenRow {
+  id: string;
+  email: string;
+  token_hash: string | null;
+  issued_at: string | null;
+  used_at: string | null;
+}
+
+interface FakeResult {
+  data: unknown;
+  error: { message: string; code?: string } | null;
+}
+
+interface FakeBuilder extends PromiseLike<FakeResult> {
+  select(columns?: string): FakeBuilder;
+  update(patch: Partial<StoredTokenRow>): FakeBuilder;
+  insert(row: Partial<StoredTokenRow>): FakeBuilder;
+  eq(column: keyof StoredTokenRow, value: unknown): FakeBuilder;
+  is(column: keyof StoredTokenRow, value: unknown): FakeBuilder;
+  maybeSingle(): Promise<FakeResult>;
+}
+
+/**
+ * The Deno stub and the fake Supabase client, installed before the imports.
+ *
+ * `beforeUpdate` is the whole point of writing this by hand rather than reaching
+ * for a mocking helper: it fires ONCE, between the moment an UPDATE is issued
+ * and the moment it matches rows, which is the exact window a lost race lives
+ * in. Without a way to open that window, "the rotation is conditional" is
+ * another sentence nobody can falsify.
+ */
+const fake = vi.hoisted(() => {
+  const SECRET_FOR_IMPORT = "test-secret-that-is-long-enough-0123456789";
+  const env = new Map<string, string>([
+    ["UNSUBSCRIBE_TOKEN_SECRET", SECRET_FOR_IMPORT],
+    ["SUPABASE_URL", "https://ref.supabase.co"],
+    ["SUPABASE_SERVICE_ROLE_KEY", "service-role-key-for-tests"],
+  ]);
+  (globalThis as unknown as { Deno: unknown }).Deno = {
+    env: { get: (name: string) => env.get(name) },
+    // The handlers register themselves at import. Nothing listens here.
+    serve: () => ({}),
+  };
+
+  const rows: StoredTokenRow[] = [];
+  const counters = { clients: 0, writes: 0 };
+  const faults: { read: string | null; write: string | null } = { read: null, write: null };
+  const hooks: {
+    beforeUpdate: (() => void) | null;
+    beforeInsert: (() => void) | null;
+  } = { beforeUpdate: null, beforeInsert: null };
+
+  function table(name: string): FakeBuilder {
+    if (name !== "email_unsubscribe_tokens") {
+      // `suppressed_emails` gates EVERY transactional send and is append-only.
+      // An opt-out written there would permanently kill the same person's
+      // payment receipts, so touching any other table is a test failure, not a
+      // surprise to be tolerated.
+      throw new Error(`forbidden table: ${name}`);
+    }
+
+    const filters: Array<(row: StoredTokenRow) => boolean> = [];
+    let mode: "select" | "update" | "insert" = "select";
+    let patch: Partial<StoredTokenRow> = {};
+    let inserting: Partial<StoredTokenRow> | null = null;
+    let returning = false;
+
+    const run = async (): Promise<FakeResult> => {
+      if (mode === "insert") {
+        hooks.beforeInsert?.();
+        hooks.beforeInsert = null;
+        if (faults.write) return { data: null, error: { message: faults.write } };
+        const next = inserting as StoredTokenRow;
+        if (rows.some((row) => row.email === next.email)) {
+          // `email` is UNIQUE; this is the race the mint path adopts through.
+          return { data: null, error: { message: "duplicate key", code: "23505" } };
+        }
+        rows.push({ used_at: null, ...next });
+        counters.writes++;
+        return { data: null, error: null };
+      }
+
+      if (mode === "update") {
+        hooks.beforeUpdate?.();
+        hooks.beforeUpdate = null;
+      }
+
+      const matched = rows.filter((row) => filters.every((keep) => keep(row)));
+
+      if (mode === "select") {
+        if (faults.read) return { data: null, error: { message: faults.read } };
+        return { data: matched.map((row) => ({ ...row })), error: null };
+      }
+
+      if (faults.write) return { data: null, error: { message: faults.write } };
+      for (const row of matched) {
+        Object.assign(row, patch);
+        counters.writes++;
+      }
+      return { data: returning ? matched.map((row) => ({ ...row })) : null, error: null };
+    };
+
+    const builder: FakeBuilder = {
+      select() {
+        if (mode === "update") returning = true;
+        return builder;
+      },
+      update(next) {
+        mode = "update";
+        patch = next;
+        return builder;
+      },
+      insert(row) {
+        mode = "insert";
+        inserting = row;
+        return builder;
+      },
+      eq(column, value) {
+        filters.push((row) => row[column] === value);
+        return builder;
+      },
+      is(column, value) {
+        filters.push((row) => row[column] === value);
+        return builder;
+      },
+      async maybeSingle() {
+        const result = await run();
+        if (result.error) return { data: null, error: result.error };
+        const list = (result.data ?? []) as StoredTokenRow[];
+        if (list.length > 1) return { data: null, error: { message: "multiple rows returned" } };
+        return { data: list[0] ?? null, error: null };
+      },
+      then(onFulfilled, onRejected) {
+        return run().then(onFulfilled, onRejected);
+      },
+    };
+    return builder;
+  }
+
+  const createClient = () => {
+    counters.clients++;
+    return { from: table };
+  };
+
+  return {
+    env,
+    rows,
+    counters,
+    faults,
+    hooks,
+    createClient,
+    reset() {
+      rows.length = 0;
+      counters.clients = 0;
+      counters.writes = 0;
+      faults.read = null;
+      faults.write = null;
+      hooks.beforeUpdate = null;
+      hooks.beforeInsert = null;
+      env.set("UNSUBSCRIBE_TOKEN_SECRET", SECRET_FOR_IMPORT);
+      env.delete("UNSUBSCRIBE_TOKEN_SECRET_PREVIOUS");
+    },
+  };
+});
+
+vi.mock("https://esm.sh/@supabase/supabase-js@2", () => ({ createClient: fake.createClient }));
+
+const { handler } = await import("../../../supabase/functions/email-unsubscribe/index.ts");
+const { ensureUnsubscribeCredential } = await import(
+  "../../../supabase/functions/cohort-reentry-cron/index.ts"
+);
 
 const SECRET = "test-secret-that-is-long-enough-0123456789";
 const ROW_ID = "11111111-2222-3333-4444-555555555555";
@@ -644,12 +841,27 @@ describe("the wiring the ladder cannot survive without", () => {
   });
 
   it("verifies the tag BEFORE it builds a client, so a guess buys no database read", () => {
-    const body = endpoint.split("Deno.serve(")[1] ?? "";
+    // Ordering in the source. The behavioural half of this claim — a forged tag
+    // constructs no client at all — is asserted against a real Response in
+    // "the endpoint, driven as a real Request" below.
+    const body = endpoint.split("export async function handler(")[1] ?? "";
     const gateAt = body.indexOf("verifyUnsubscribeCredential(");
     const clientAt = body.indexOf("createAdminClient()");
     expect(gateAt).toBeGreaterThan(-1);
     expect(clientAt).toBeGreaterThan(-1);
     expect(gateAt).toBeLessThan(clientAt);
+  });
+
+  it("keeps Deno.serve a one-liner over the exported handler, which is what makes it testable", () => {
+    // The refactor this file depends on. If somebody inlines the handler back
+    // into `Deno.serve`, every behavioural test below stops importing anything
+    // and the endpoint silently returns to grep-only coverage.
+    expect(endpoint).toContain("export async function handler(req: Request): Promise<Response> {");
+    expect(endpoint).toContain("Deno.serve(handler);");
+    // And the secret is read per request, not captured into a module const:
+    // that is the only reason "an unset secret answers 500" can be exercised.
+    expect(endpoint).toMatch(/function unsubscribeSecrets\(\): string\[\]/);
+    expect(endpoint).toContain("const secrets = unsubscribeSecrets();");
   });
 
   it("bounds what it reads from a POST body instead of buffering it whole", () => {
@@ -703,9 +915,11 @@ describe("the wiring the ladder cannot survive without", () => {
     // A mismatch must ROTATE, never reuse: both callers fall through to the
     // rotate helper when this returns null.
     expect(cron).toMatch(/if \(reused\) return \{ credential: reused/);
-    expect(cron).toContain("rotateUnsubscribeCredential(admin, existing.id, now)");
+    // The whole ROW goes to the rotate, not just its id: the write pins the
+    // derivation inputs it read. See the race tests at the foot of this file.
+    expect(cron).toContain("rotateUnsubscribeCredential(admin, existing, now)");
     // The race-adoption path gets the same scrutiny as the ordinary one.
-    expect(cron).toContain("rotateUnsubscribeCredential(admin, winner.id, now)");
+    expect(cron).toContain("rotateUnsubscribeCredential(admin, winner, now)");
   });
 
   it("mints only with the CURRENT secret, while the endpoint also accepts the previous one", () => {
@@ -747,5 +961,493 @@ describe("the wiring the ladder cannot survive without", () => {
     // retains for a failed message. The COMMENT must not overstate.
     expect(migration).toContain("a read of THIS TABLE cannot forge an unsubscribe");
     expect(migration).toContain("move_to_dlq");
+  });
+});
+
+/**
+ * ── THE ENDPOINT, DRIVEN AS A REAL REQUEST ──────────────────────────────────
+ *
+ * `handler` in, `Response` out, and the store inspected afterwards. Every claim
+ * here is about what the endpoint DOES, so none of it can be satisfied by a
+ * comment, a renamed helper or a line that no longer runs.
+ */
+describe("email-unsubscribe handler", () => {
+  const ENDPOINT = "https://ref.supabase.co/functions/v1/email-unsubscribe";
+  const EMAIL = "applicant@example.com";
+
+  /** The URL exactly as `buildUnsubscribeUrl` writes it into an email. */
+  const linkUrl = (credential: string) =>
+    `${ENDPOINT}?${UNSUBSCRIBE_QUERY_PARAM}=${credential}`;
+
+  /** What the confirmation form actually submits: the hidden field, and the
+   *  query string that `action=""` drags along with it. */
+  const formPost = (credential: string, query: string | null = credential) =>
+    new Request(query === null ? ENDPOINT : linkUrl(query), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ [UNSUBSCRIBE_QUERY_PARAM]: credential }).toString(),
+    });
+
+  const seedRow = async (overrides: Partial<StoredTokenRow> = {}) => {
+    const tokenHash = await hashUnsubscribeToken(TOKEN);
+    const row: StoredTokenRow = {
+      id: ROW_ID,
+      email: EMAIL,
+      token_hash: tokenHash,
+      issued_at: ISSUED_AT,
+      used_at: null,
+      ...overrides,
+    };
+    fake.rows.push(row);
+    return row;
+  };
+
+  const stored = () => fake.rows.find((row) => row.id === ROW_ID) ?? null;
+
+  beforeEach(() => fake.reset());
+  afterEach(() => fake.reset());
+
+  describe("method routing", () => {
+    it("answers 405 with an Allow header for anything that is not GET, HEAD or POST", async () => {
+      for (const method of ["PUT", "PATCH", "DELETE", "OPTIONS"]) {
+        const res = await handler(new Request(ENDPOINT, { method }));
+        expect(res.status).toBe(405);
+        expect(res.headers.get("Allow")).toBe("GET, HEAD, POST");
+        expect(fake.counters.writes).toBe(0);
+        expect(fake.counters.clients).toBe(0);
+      }
+    });
+
+    it("renders the confirmation form on GET and on HEAD, and writes NOTHING", async () => {
+      await seedRow();
+      for (const method of ["GET", "HEAD"]) {
+        const res = await handler(new Request(linkUrl(CREDENTIAL), { method }));
+        expect(res.status).toBe(200);
+        expect(res.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+        // Re-query the row rather than trusting the counter alone: this is the
+        // entire GET-prefetch defence, and a mail scanner reaches exactly here.
+        expect(stored()?.used_at).toBeNull();
+        expect(fake.counters.writes).toBe(0);
+        // A valid credential does not even buy a service-role client on GET.
+        expect(fake.counters.clients).toBe(0);
+      }
+    });
+
+    it("puts the credential in a hidden field, which is what makes a bodyless POST unnecessary", async () => {
+      const res = await handler(new Request(linkUrl(CREDENTIAL)));
+      const body = await res.text();
+      expect(body).toContain(`<input type="hidden" name="${UNSUBSCRIBE_QUERY_PARAM}" value="${CREDENTIAL}">`);
+      expect(body).toContain('<form method="POST" action="">');
+    });
+
+    it("renders the same page for a GET with no credential at all", async () => {
+      const withCredential = await (await handler(new Request(linkUrl(CREDENTIAL)))).text();
+      const without = await (await handler(new Request(ENDPOINT))).text();
+      // Identical but for the field value: the page is not an oracle either.
+      expect(without).toContain(`value=""`);
+      expect(without.replace('value=""', `value="${CREDENTIAL}"`)).toBe(withCredential);
+    });
+  });
+
+  describe("the POST guard: a query string is not a submission", () => {
+    it("unsubscribes when the credential arrives in the FORM BODY", async () => {
+      await seedRow();
+      const res = await handler(formPost(CREDENTIAL, null));
+      expect(res.status).toBe(200);
+      expect(stored()?.used_at).toEqual(expect.any(String));
+      expect(fake.counters.writes).toBe(1);
+    });
+
+    it("REGRESSION: does NOT unsubscribe when the credential is only in the QUERY STRING", async () => {
+      // `curl -X POST '<url>?t=<credential>'` with no body and no content-type.
+      // The confirmation form posts to `action=""`, which preserves the query
+      // string, so a mail-security scanner that follows a form action arrives
+      // exactly like this. Before the fix it unsubscribed somebody who never
+      // clicked, and the GET-prefetch defence bought nothing.
+      await seedRow();
+      const res = await handler(new Request(linkUrl(CREDENTIAL), { method: "POST" }));
+      expect(res.status).toBe(200);
+      expect(stored()?.used_at).toBeNull();
+      expect(fake.counters.writes).toBe(0);
+      expect(fake.counters.clients).toBe(0);
+    });
+
+    it("REGRESSION: still refuses a query-string credential when the scanner sends the form content-type", async () => {
+      // The same request with the header a scanner might copy from the form,
+      // and an empty body. The field is what counts, not the header.
+      await seedRow();
+      const res = await handler(
+        new Request(linkUrl(CREDENTIAL), {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: "",
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(stored()?.used_at).toBeNull();
+      expect(fake.counters.writes).toBe(0);
+    });
+
+    it("ignores a JSON body carrying the credential, because this endpoint takes a form", async () => {
+      await seedRow();
+      const res = await handler(
+        new Request(ENDPOINT, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ [UNSUBSCRIBE_QUERY_PARAM]: CREDENTIAL }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(stored()?.used_at).toBeNull();
+      expect(fake.counters.writes).toBe(0);
+    });
+
+    it("still works for the real self-post, which carries the credential in BOTH places", async () => {
+      await seedRow();
+      const res = await handler(formPost(CREDENTIAL));
+      expect(res.status).toBe(200);
+      expect(stored()?.used_at).toEqual(expect.any(String));
+    });
+  });
+
+  describe("no enumeration oracle: five outcomes, one response", () => {
+    it("returns byte-identical 200s for malformed, forged, unknown, unused and already-used", async () => {
+      const forged = `${TOKEN}.${"A".repeat(UNSUBSCRIBE_TAG_LENGTH)}`;
+      const unknown = (await deriveUnsubscribeCredential(
+        SECRET,
+        "99999999-2222-3333-4444-555555555555",
+        ISSUED_AT,
+      )).credential;
+
+      const bodies: string[] = [];
+      const statuses: number[] = [];
+
+      const record = async (req: Request) => {
+        const res = await handler(req);
+        statuses.push(res.status);
+        bodies.push(await res.text());
+      };
+
+      // 1. malformed — never reaches the gate.
+      fake.reset();
+      await record(formPost("not-a-credential", null));
+      expect(fake.counters.clients).toBe(0);
+
+      // 2. a tag forged without the secret — gate rejects, no client built.
+      fake.reset();
+      await record(formPost(forged, null));
+      expect(fake.counters.clients).toBe(0);
+
+      // 3. signed by us, but no such row.
+      fake.reset();
+      await seedRow();
+      await record(formPost(unknown, null));
+      expect(fake.counters.writes).toBe(0);
+
+      // 4. the ordinary success.
+      fake.reset();
+      await seedRow();
+      await record(formPost(CREDENTIAL, null));
+      expect(stored()?.used_at).toEqual(expect.any(String));
+
+      // 5. a second click on a row already stamped.
+      fake.reset();
+      await seedRow({ used_at: "2026-07-01T00:00:00.000Z" });
+      await record(formPost(CREDENTIAL, null));
+      expect(stored()?.used_at).toBe("2026-07-01T00:00:00.000Z");
+      expect(fake.counters.writes).toBe(0);
+
+      expect(statuses).toEqual([200, 200, 200, 200, 200]);
+      expect(new Set(bodies).size).toBe(1);
+    });
+
+    it("keeps the first timestamp on a second click rather than overwriting it", async () => {
+      // `used_at` is the record of when somebody asked us to stop. The
+      // conditional write is what stops a later click from moving it.
+      await seedRow({ used_at: "2026-07-01T00:00:00.000Z" });
+      await handler(formPost(CREDENTIAL, null));
+      await handler(formPost(CREDENTIAL, null));
+      expect(stored()?.used_at).toBe("2026-07-01T00:00:00.000Z");
+    });
+
+    it("accepts a credential signed with the PREVIOUS secret, so a rotation is not an outage", async () => {
+      const previous = `${SECRET}-previous-key`;
+      const { token, credential } = await deriveUnsubscribeCredential(previous, ROW_ID, ISSUED_AT);
+      await seedRow({ token_hash: await hashUnsubscribeToken(token) });
+      fake.env.set("UNSUBSCRIBE_TOKEN_SECRET", `${SECRET}-rotated-current`);
+      fake.env.set("UNSUBSCRIBE_TOKEN_SECRET_PREVIOUS", previous);
+
+      const res = await handler(formPost(credential, null));
+      expect(res.status).toBe(200);
+      expect(stored()?.used_at).toEqual(expect.any(String));
+    });
+  });
+
+  describe("the honest failures", () => {
+    it("answers 500 when the secret is unset, rather than claiming an unsubscribe it never wrote", async () => {
+      await seedRow();
+      fake.env.delete("UNSUBSCRIBE_TOKEN_SECRET");
+      const res = await handler(formPost(CREDENTIAL, null));
+      expect(res.status).toBe(500);
+      expect(await res.text()).toContain("We could not complete that.");
+      expect(stored()?.used_at).toBeNull();
+      expect(fake.counters.clients).toBe(0);
+    });
+
+    it("answers 500 when the secret is present but too short to be one of ours", async () => {
+      await seedRow();
+      fake.env.set("UNSUBSCRIBE_TOKEN_SECRET", "short");
+      const res = await handler(formPost(CREDENTIAL, null));
+      expect(res.status).toBe(500);
+      expect(stored()?.used_at).toBeNull();
+    });
+
+    it("answers 500 on a read failure instead of saying the reminders are off", async () => {
+      await seedRow();
+      fake.faults.read = "connection reset";
+      const res = await handler(formPost(CREDENTIAL, null));
+      expect(res.status).toBe(500);
+      expect(stored()?.used_at).toBeNull();
+    });
+
+    it("answers 500 on a write failure, because lying to somebody who asked us to stop is worse", async () => {
+      await seedRow();
+      fake.faults.write = "deadlock detected";
+      const res = await handler(formPost(CREDENTIAL, null));
+      expect(res.status).toBe(500);
+      expect(stored()?.used_at).toBeNull();
+    });
+
+    it("abandons an oversized body rather than buffering it whole", async () => {
+      await seedRow();
+      const padded = new URLSearchParams({
+        pad: "x".repeat(8192),
+        [UNSUBSCRIBE_QUERY_PARAM]: CREDENTIAL,
+      }).toString();
+      const res = await handler(
+        new Request(ENDPOINT, {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: padded,
+        }),
+      );
+      // The credential sits past the 4 KB ceiling, so it is never read: the same
+      // no-match page, and nothing written.
+      expect(res.status).toBe(200);
+      expect(stored()?.used_at).toBeNull();
+    });
+  });
+
+  describe("the page a human actually reads", () => {
+    it("headlines what stops, not an unqualified 'you are unsubscribed'", async () => {
+      // `send-bulk-email` gates only on `suppressed_emails`, which this endpoint
+      // deliberately never writes, so somebody who clicks here CAN still get a
+      // marketing campaign. The H1 is the one line most people read; it now
+      // names the reminders, matching the paragraphs that always did.
+      await seedRow();
+      const body = await (await handler(formPost(CREDENTIAL, null))).text();
+      expect(body).toContain("These reminders are off.");
+      expect(body).not.toContain("You are unsubscribed.");
+      expect(body).toContain("separate list");
+      expect(body).toContain("support@leveluplearning.in");
+      // LevelUp copy rule, asserted against the rendered page.
+      expect(body).not.toContain("—");
+    });
+
+    it("never echoes an address, and sets the headers that keep the credential out of caches and referrers", async () => {
+      await seedRow();
+      const res = await handler(formPost(CREDENTIAL, null));
+      const body = await res.text();
+      expect(body).not.toContain(EMAIL);
+      expect(res.headers.get("Cache-Control")).toBe("no-store, no-cache, must-revalidate");
+      expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
+      expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+      expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      // No CORS: this is a navigation and a same-document form post.
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    });
+  });
+});
+
+/**
+ * ── THE ROTATION, WITH THE ROW MOVING UNDERNEATH IT ─────────────────────────
+ *
+ * `ensureUnsubscribeCredential` is the sender's half. The interesting cases are
+ * the ones where the row changes between the read and the write, which is why
+ * the fake client can run a hook inside that window. A blind
+ * `.update().eq("id", …)` passes every one of these by luck and fails them the
+ * moment the window is opened.
+ */
+describe("cohort-reentry-cron: minting and rotating an unsubscribe credential", () => {
+  const EMAIL = "applicant@example.com";
+  const NOW = new Date("2026-07-28T12:00:00.000Z");
+
+  /** A row whose stored hash does NOT match what the current secret derives, so
+   *  every test below takes the rotate path rather than the reuse path. */
+  const seedStale = () => {
+    const row: StoredTokenRow = {
+      id: ROW_ID,
+      email: EMAIL,
+      token_hash: "0".repeat(64),
+      issued_at: NOW.toISOString(),
+      used_at: null,
+    };
+    fake.rows.push(row);
+    return row;
+  };
+
+  const stored = () => fake.rows.find((row) => row.id === ROW_ID) ?? null;
+  const client = () => fake.createClient() as unknown as Parameters<typeof ensureUnsubscribeCredential>[0];
+
+  beforeEach(() => fake.reset());
+  afterEach(() => fake.reset());
+
+  it("mints on first contact and stores only the hash", async () => {
+    const state = await ensureUnsubscribeCredential(client(), " Applicant@Example.com ", NOW);
+    expect(state.optedOut).toBe(false);
+    expect(state.credential).toMatch(UNSUBSCRIBE_CREDENTIAL_RE);
+    expect(fake.rows).toHaveLength(1);
+    // Normalised address, hashed token, and the plaintext nowhere on the row.
+    expect(fake.rows[0].email).toBe(EMAIL);
+    expect(fake.rows[0].token_hash).toBe(
+      await hashUnsubscribeToken(state.credential.split(".")[0]),
+    );
+    expect(JSON.stringify(fake.rows[0])).not.toContain(state.credential);
+  });
+
+  it("REUSES a healthy row without writing anything", async () => {
+    const issuedAt = NOW.toISOString();
+    const { token, credential } = await deriveUnsubscribeCredential(SECRET, ROW_ID, issuedAt);
+    fake.rows.push({
+      id: ROW_ID,
+      email: EMAIL,
+      token_hash: await hashUnsubscribeToken(token),
+      issued_at: issuedAt,
+      used_at: null,
+    });
+    fake.counters.writes = 0;
+
+    const state = await ensureUnsubscribeCredential(client(), EMAIL, NOW);
+    expect(state).toEqual({ credential, optedOut: false });
+    expect(fake.counters.writes).toBe(0);
+  });
+
+  it("refuses to send to an opted-out address, and does not rotate its row", async () => {
+    const row = seedStale();
+    row.used_at = "2026-07-01T00:00:00.000Z";
+    const state = await ensureUnsubscribeCredential(client(), EMAIL, NOW);
+    expect(state).toEqual({ credential: "", optedOut: true });
+    expect(fake.counters.writes).toBe(0);
+    expect(stored()?.token_hash).toBe("0".repeat(64));
+  });
+
+  it("rotates a stale row, and the new credential opens the row it just wrote", async () => {
+    seedStale();
+    const state = await ensureUnsubscribeCredential(client(), EMAIL, NOW);
+    expect(state.optedOut).toBe(false);
+    const row = stored();
+    expect(row?.token_hash).toBe(await hashUnsubscribeToken(state.credential.split(".")[0]));
+    expect(row?.issued_at).toBe(NOW.toISOString());
+    // The opt-out record is never touched by a rotation.
+    expect(row?.used_at).toBeNull();
+  });
+
+  it("REGRESSION: a rotation that loses to an UNSUBSCRIBE does not overwrite the row, and sends nothing", async () => {
+    // Somebody clicks unsubscribe in the window between this run reading the row
+    // and writing to it. A blind `.eq("id", …)` re-keys their row and the caller
+    // mails them another reminder, which is exactly what `used_at` exists to
+    // prevent. The `.is("used_at", null)` predicate is what stops it.
+    const row = seedStale();
+    fake.hooks.beforeUpdate = () => {
+      row.used_at = "2026-07-28T11:59:59.000Z";
+    };
+
+    const state = await ensureUnsubscribeCredential(client(), EMAIL, NOW);
+    expect(state).toEqual({ credential: "", optedOut: true });
+    expect(stored()?.token_hash).toBe("0".repeat(64));
+    expect(stored()?.used_at).toBe("2026-07-28T11:59:59.000Z");
+  });
+
+  it("REGRESSION: a rotation that loses to ANOTHER rotation adopts the winner instead of mailing a dead link", async () => {
+    // Two overlapping invocations. The winner's credential may already be in an
+    // inbox. A blind write clobbers the winner's `token_hash`, the loser mails a
+    // link that opens no row, and the endpoint answers it with the same "these
+    // reminders are off" page it gives a stranger: the person is told they are
+    // unsubscribed and is not. That is the one lie the derived-token design
+    // exists to make impossible, so the write pins `token_hash` too.
+    const row = seedStale();
+    const winnerIssuedAt = "2026-07-28T11:59:58.000Z";
+    const winner = await deriveUnsubscribeCredential(SECRET, ROW_ID, winnerIssuedAt);
+    // The hook runs synchronously inside the write, so settle the hash up front.
+    const winnerHash = await hashUnsubscribeToken(winner.token);
+    fake.hooks.beforeUpdate = () => {
+      row.token_hash = winnerHash;
+      row.issued_at = winnerIssuedAt;
+    };
+
+    const state = await ensureUnsubscribeCredential(client(), EMAIL, NOW);
+    expect(state).toEqual({ credential: winner.credential, optedOut: false });
+    // The winner's row is intact: we adopted it rather than overwriting it.
+    expect(stored()?.token_hash).toBe(winnerHash);
+    expect(stored()?.issued_at).toBe(winnerIssuedAt);
+  });
+
+  it("throws rather than mailing a reminder whose opt-out link cannot work", async () => {
+    // Lost the race, and the row that won does not verify either. There is no
+    // credential to put in the message, and a reminder with a hole where its
+    // opt-out should be is not a degraded send. The caller burns the rung.
+    const row = seedStale();
+    fake.hooks.beforeUpdate = () => {
+      row.token_hash = "1".repeat(64);
+    };
+    await expect(ensureUnsubscribeCredential(client(), EMAIL, NOW)).rejects.toThrow(/lost the race/);
+  });
+
+  it("adopts the winner of a first-contact INSERT race instead of overwriting it", async () => {
+    // Nothing on the read; another invocation mints between the read and our
+    // insert, so `email`'s UNIQUE rejects ours with 23505. The winner's token
+    // may already be in an email, so it is adopted, not replaced.
+    const issuedAt = "2026-07-28T11:59:57.000Z";
+    const { token, credential } = await deriveUnsubscribeCredential(SECRET, ROW_ID, issuedAt);
+    const winnerHash = await hashUnsubscribeToken(token);
+    fake.hooks.beforeInsert = () => {
+      fake.rows.push({
+        id: ROW_ID,
+        email: EMAIL,
+        token_hash: winnerHash,
+        issued_at: issuedAt,
+        used_at: null,
+      });
+    };
+
+    const state = await ensureUnsubscribeCredential(client(), EMAIL, NOW);
+    expect(state).toEqual({ credential, optedOut: false });
+    expect(fake.rows).toHaveLength(1);
+    expect(stored()?.token_hash).toBe(winnerHash);
+  });
+
+  it("does not send when the INSERT race is lost to a row that is already opted out", async () => {
+    fake.hooks.beforeInsert = () => {
+      fake.rows.push({
+        id: ROW_ID,
+        email: EMAIL,
+        token_hash: "0".repeat(64),
+        issued_at: NOW.toISOString(),
+        used_at: "2026-07-01T00:00:00.000Z",
+      });
+    };
+    const state = await ensureUnsubscribeCredential(client(), EMAIL, NOW);
+    expect(state).toEqual({ credential: "", optedOut: true });
+  });
+
+  it("does not touch any table but email_unsubscribe_tokens", async () => {
+    // The fake client throws on any other name, so `suppressed_emails` — which
+    // gates every transactional send and is append-only — cannot be written from
+    // this path without failing the suite. Proven both ways: the fake really
+    // does refuse, and a full mint plus rotate never trips it.
+    const admin = client() as unknown as { from: (table: string) => unknown };
+    expect(() => admin.from("suppressed_emails")).toThrow(/forbidden table/);
+    seedStale();
+    await expect(ensureUnsubscribeCredential(client(), EMAIL, NOW)).resolves.toBeTruthy();
   });
 });

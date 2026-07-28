@@ -26,12 +26,14 @@
  * THE CONSEQUENCE, AND IT IS NOT A FOOTNOTE: `send-bulk-email` is a SECOND,
  * INDEPENDENT producer, and the only opt-out list it consults is
  * `fetchSuppressedSet` over `suppressed_emails`. So somebody who clicks a link
- * labelled "Unsubscribe" here and is shown "You are unsubscribed" CAN STILL
- * RECEIVE A BULK MARKETING CAMPAIGN. Two things follow, and both are done
- * rather than intended:
+ * labelled "Unsubscribe" here CAN STILL RECEIVE A BULK MARKETING CAMPAIGN. Two
+ * things follow, and both are done rather than intended:
  *   • the pages below say it in as many words, and offer the write-to-support
  *     path that does stop everything. A page that promised more than the
- *     mechanism delivers would be the actual defect;
+ *     mechanism delivers would be the actual defect, which is why the success
+ *     H1 reads "These reminders are off." rather than a bare "You are
+ *     unsubscribed.": the qualification belongs in the one line people read,
+ *     not only in the paragraph under it;
  *   • whether a reminder opt-out SHOULD also suppress marketing is a product
  *     decision (it costs receipts, irreversibly, under today's schema), so it
  *     is flagged for a decision rather than taken here by a code comment.
@@ -96,10 +98,18 @@
  * the sender `process-email-queue` hands the payload to — is absent from this
  * repo's package.json and so cannot be read here, so whether
  * one-click-from-the-inbox ever reaches this endpoint is UNVERIFIED. Nothing depends on it. The load-bearing path is
- * the link in the body, which we render ourselves. The query-string read below
- * exists for a reason that IS verified: the confirmation form posts to `action=""`,
- * which preserves the query string, so a self-post carries the credential in
- * both places and either is a valid place to find it.
+ * the link in the body, which we render ourselves.
+ *
+ * ── THE QUERY STRING IS A GET-ONLY INPUT. A POST MUST CARRY A BODY. ──────────
+ * `readCredential` reads the query string for GET and HEAD and for nothing else.
+ * That is not tidiness, it is the GET-prefetch defence holding together: the
+ * confirmation form posts to `action=""`, which PRESERVES the query string, so a
+ * mail-security scanner that follows a form action would arrive with the
+ * credential already in the URL. If a POST could take it from there, `curl -X
+ * POST '<url>?t=<credential>'` with no body and no content-type would
+ * unsubscribe somebody who never clicked, and the whole "only the POST writes"
+ * arrangement would buy nothing. The form's hidden field always carries the
+ * credential, so the query string was never needed on that path.
  *
  * ── NO ENUMERATION ORACLE ───────────────────────────────────────────────────
  * An unknown, superseded, unsigned or already-used credential produces a
@@ -150,9 +160,6 @@ import {
   verifyUnsubscribeCredential,
 } from "../_shared/unsubscribe.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
 /**
  * The keys a delivered link may have been signed with, current first. Needed
  * here for the pre-database tag check and for nothing else: identifying the row
@@ -163,11 +170,21 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
  * rotation does not instantly break every link already in an inbox; it is
  * unset in the ordinary case, and `unsubscribeSecretCandidates` drops anything
  * absent or too short, so a list of one is the normal state.
+ *
+ * READ PER REQUEST, NOT ONCE AT MODULE LOAD. Two reasons, and the second is the
+ * one that matters: a rotation applied to the deployed secrets takes effect on
+ * the next request rather than the next cold start, and `handler` becomes
+ * importable and drivable from a test that varies the environment, which is how
+ * "an unset secret answers 500" stopped being a claim about source text and
+ * became an assertion about a Response. Same shape as `createAdminClient`,
+ * which has always read its environment per call.
  */
-const UNSUBSCRIBE_SECRETS = unsubscribeSecretCandidates(
-  Deno.env.get("UNSUBSCRIBE_TOKEN_SECRET"),
-  Deno.env.get("UNSUBSCRIBE_TOKEN_SECRET_PREVIOUS"),
-);
+function unsubscribeSecrets(): string[] {
+  return unsubscribeSecretCandidates(
+    Deno.env.get("UNSUBSCRIBE_TOKEN_SECRET"),
+    Deno.env.get("UNSUBSCRIBE_TOKEN_SECRET_PREVIOUS"),
+  );
+}
 
 /**
  * Ceiling on what this endpoint will read from a request body. One
@@ -177,7 +194,10 @@ const UNSUBSCRIBE_SECRETS = unsubscribeSecretCandidates(
 const MAX_BODY_BYTES = 4096;
 
 function createAdminClient() {
-  return createClient(SUPABASE_URL, SERVICE_KEY);
+  return createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
 }
 
 /**
@@ -276,11 +296,18 @@ function confirmPage(credential: string): string {
  * credential we have never seen, an unsigned one, a superseded one and a second
  * click on a working one all land here, which is what makes the endpoint both
  * idempotent and free of an enumeration oracle.
+ *
+ * THE HEADLINE NAMES THE REMINDERS, NOT EMAIL IN GENERAL. A bare "You are
+ * unsubscribed." is the one sentence on this page a person actually reads, and
+ * it was a bigger promise than the mechanism keeps: `used_at` on one token row
+ * stops this ladder, while `send-bulk-email` gates only on `suppressed_emails`
+ * and would keep sending. The paragraphs below always said so; the H1 now says
+ * it too, so the page is honest at a glance rather than on a second read.
  */
 function donePage(): string {
   return page(
     "Unsubscribed",
-    `<h1 style="margin:0 0 16px;font-size:26px;font-weight:600;">You are unsubscribed.</h1>
+    `<h1 style="margin:0 0 16px;font-size:26px;font-weight:600;">These reminders are off.</h1>
 <p style="margin:0 0 20px;color:#c9c9c9;">We will not send you any more application reminder emails. If one is already on its way it may still arrive, but nothing further will follow.</p>
 <p style="margin:0 0 20px;color:#c9c9c9;">This covers the reminders only. Your application is untouched, you can still finish it any time from the app, and receipts for anything you pay for will still reach you.</p>
 <p style="margin:0 0 20px;color:#c9c9c9;">Announcements and other LevelUp emails are a separate list and are not affected by this. To come off everything, write to support@leveluplearning.in and we will do it by hand.</p>
@@ -396,24 +423,43 @@ async function readBoundedText(req: Request): Promise<string> {
 }
 
 /**
- * The credential, from wherever this particular caller put it. The confirmation
- * form posts to `action=""`, which preserves the query string, so a self-post
- * carries it in the form field AND in the URL. The form field is read first;
- * the query string is the fallback that also serves the GET.
+ * The credential, from the one place this particular method is allowed to put
+ * it. A POST must carry it in the form body; there is NO query-string fallback
+ * on the writing path, and that absence is load-bearing.
+ *
+ * The confirmation form posts to `action=""`, which preserves the query string,
+ * so a self-post arrives with the credential in the form field AND in the URL.
+ * Reading the URL half would mean a bodyless `POST ?t=<credential>` unsubscribes
+ * — which is precisely what a mail-security scanner that follows form actions
+ * issues, and it would defeat the entire reason GET does not write. The form
+ * field is always populated by the page we render, so nothing legitimate is
+ * lost: a POST without our field is not our form.
+ *
+ * GET and HEAD still read the query string, because that is where the link in
+ * the email puts it, and neither writes anything.
  */
 async function readCredential(req: Request, url: URL): Promise<string | null> {
   if (req.method === "POST") {
     const contentType = req.headers.get("content-type") ?? "";
-    if (contentType.includes("application/x-www-form-urlencoded")) {
-      const raw = await readBoundedText(req);
-      const field = new URLSearchParams(raw).get(UNSUBSCRIBE_QUERY_PARAM);
-      if (field) return field;
-    }
+    if (!contentType.includes("application/x-www-form-urlencoded")) return null;
+    const raw = await readBoundedText(req);
+    return new URLSearchParams(raw).get(UNSUBSCRIBE_QUERY_PARAM);
   }
   return url.searchParams.get(UNSUBSCRIBE_QUERY_PARAM);
 }
 
-Deno.serve(async (req) => {
+/**
+ * THE ENDPOINT ITSELF, EXPORTED RATHER THAN BURIED IN `Deno.serve`.
+ *
+ * A public, unauthenticated, writing endpoint deserves tests that hand it a
+ * `Request` and read the `Response`, not a regex over its own source text: a
+ * grep can only ever confirm that a line is present, never that the line does
+ * what it says. (This program has already had a handler that referenced a
+ * deleted binding pass 395 tests, a green build and a clean lint.) Exporting
+ * `handler` and leaving `Deno.serve` a one-liner costs nothing at runtime and
+ * makes every claim below falsifiable from `src/lib/__tests__/unsubscribe.test.ts`.
+ */
+export async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
 
   if (req.method !== "GET" && req.method !== "POST" && req.method !== "HEAD") {
@@ -439,7 +485,8 @@ Deno.serve(async (req) => {
   // unsubscribed" without having written would be the lie this endpoint exists
   // to avoid. Fail loudly instead; it is an operator fault, not an oracle,
   // because it is the answer for EVERY input while the secret is missing.
-  if (UNSUBSCRIBE_SECRETS.length === 0) {
+  const secrets = unsubscribeSecrets();
+  if (secrets.length === 0) {
     log("error", "unsubscribe_secret_unset", { reason: "UNSUBSCRIBE_TOKEN_SECRET missing or too short" });
     return htmlRes(errorPage(), 500);
   }
@@ -447,7 +494,7 @@ Deno.serve(async (req) => {
   // THE GATE, AND IT IS BEFORE THE CLIENT. Nothing below this line runs for a
   // credential that could not have been produced with one of our secrets, so a
   // guessed string never reaches a service-role query.
-  const token = await verifyUnsubscribeCredential(UNSUBSCRIBE_SECRETS, credential);
+  const token = await verifyUnsubscribeCredential(secrets, credential);
   if (!token) {
     // Malformed, absent or unsigned. Answer exactly as a valid credential does:
     // an attacker learns nothing, and a human who somehow got here is told the
@@ -472,4 +519,6 @@ Deno.serve(async (req) => {
 
   log("info", "unsubscribed", { tokenId: row.id, repeat: row.used_at !== null });
   return htmlRes(donePage());
-});
+}
+
+Deno.serve(handler);

@@ -736,21 +736,77 @@ async function reusableUnsubscribeCredential(
  * Re-derive against a fresh issue time and write the new hash. Retires the old
  * token by simply no longer matching it, and touches NOTHING else on the row —
  * in particular never `used_at`, which is somebody's recorded opt-out.
+ *
+ * THE WRITE IS CONDITIONAL ON THE ROW WE READ, AND THE ROW COUNT IS CHECKED.
+ * `.eq("id", …)` alone is a blind write: it lands on whatever the row has become
+ * since the read, and reports success either way. Two things can have happened
+ * in that window, and both are silent disasters:
+ *   • THE PERSON CLICKED UNSUBSCRIBE. `used_at` is now set. A blind rotate
+ *     re-keys their row and the caller mails them another reminder, which is the
+ *     exact thing `used_at` exists to prevent.
+ *   • ANOTHER INVOCATION ROTATED FIRST. Its credential is the live one and may
+ *     already be in an email. A blind rotate overwrites `token_hash` with ours,
+ *     the loser's link goes into an inbox already dead, and the endpoint answers
+ *     it with the same "these reminders are off" page it gives a stranger. The
+ *     person is told they are unsubscribed and is not. That lie is the single
+ *     failure the derived-token design exists to make impossible, so it cannot
+ *     be left to chance here.
+ * So the predicate pins BOTH derivation inputs we read (`token_hash`, plus the
+ * `used_at IS NULL` guard) and `.select("id")` returns the rows that actually
+ * matched. This is the same shape `recordOptOut` uses in `email-unsubscribe`.
+ *
+ * A zero-row result is not an error, it is stale state, so it is re-read once
+ * and answered off what the row ACTUALLY holds now: opted out means do not send;
+ * a live rotated token means adopt the winner's credential. Exactly one retry —
+ * a second miss means something is wrong beyond a race, and the caller turning
+ * that into a burned rung with a `last_error` is better than looping or than
+ * mailing a reminder with a dead opt-out link in it.
  */
 async function rotateUnsubscribeCredential(
   admin: AdminClient,
-  id: string,
+  row: UnsubscribeTokenRow,
   now: Date,
-): Promise<string> {
+): Promise<UnsubscribeState> {
   const issuedAt = now.toISOString();
-  const { token, credential } = await deriveUnsubscribeCredential(UNSUBSCRIBE_SECRET, id, issuedAt);
+  const { token, credential } = await deriveUnsubscribeCredential(UNSUBSCRIBE_SECRET, row.id, issuedAt);
   const tokenHash = await hashUnsubscribeToken(token);
-  const { error } = await admin
+
+  const conditional = admin
     .from("email_unsubscribe_tokens")
     .update({ token_hash: tokenHash, issued_at: issuedAt })
-    .eq("id", id);
+    .eq("id", row.id)
+    .is("used_at", null);
+  // A legacy row can carry a NULL hash, and `.eq(col, null)` is not `IS NULL` in
+  // PostgREST, so the two cases need the two different predicates.
+  const pinned = row.token_hash === null
+    ? conditional.is("token_hash", null)
+    : conditional.eq("token_hash", row.token_hash);
+
+  const { data, error } = await pinned.select("id");
   if (error) throw new Error(`unsubscribe token rotate failed: ${error.message}`);
-  return credential;
+  if (((data ?? []) as Array<{ id: string }>).length === 1) {
+    return { credential, optedOut: false };
+  }
+
+  // Nothing matched: the row moved under us. Ask it what it is now.
+  log("warn", "unsubscribe_token_rotate_raced", {
+    tokenId: row.id,
+    reason: "row changed between read and rotate; re-reading rather than trusting our write",
+  });
+  const { data: fresh, error: reReadError } = await admin
+    .from("email_unsubscribe_tokens")
+    .select("id, issued_at, token_hash, used_at")
+    .eq("id", row.id)
+    .maybeSingle();
+  if (reReadError) throw new Error(`unsubscribe token rotate re-read failed: ${reReadError.message}`);
+
+  const current = (fresh as unknown as UnsubscribeTokenRow | null) ?? null;
+  if (!current) throw new Error("unsubscribe token rotate found no row to re-read");
+  if (current.used_at) return { credential: "", optedOut: true };
+
+  const adopted = await reusableUnsubscribeCredential(current, now);
+  if (adopted) return { credential: adopted, optedOut: false };
+  throw new Error("unsubscribe token rotate lost the race and the winning token does not verify");
 }
 
 /**
@@ -784,8 +840,13 @@ async function rotateUnsubscribeCredential(
  * should not make: the caller turns this into a dispatch failure, which burns
  * the rung and records `last_error` instead of mailing an unopt-outable
  * reminder.
+ *
+ * EXPORTED so `src/lib/__tests__/unsubscribe.test.ts` can drive mint, reuse and
+ * the lost-rotation race against a real client rather than asserting that the
+ * right words appear in this file. Nothing in this module imports it; the export
+ * exists for the test and changes no runtime behaviour.
  */
-async function ensureUnsubscribeCredential(
+export async function ensureUnsubscribeCredential(
   admin: AdminClient,
   email: string,
   now: Date,
@@ -804,7 +865,7 @@ async function ensureUnsubscribeCredential(
   if (existing) {
     const reused = await reusableUnsubscribeCredential(existing, now);
     if (reused) return { credential: reused, optedOut: false };
-    return { credential: await rotateUnsubscribeCredential(admin, existing.id, now), optedOut: false };
+    return await rotateUnsubscribeCredential(admin, existing, now);
   }
 
   // FIRST CONTACT. The id is generated HERE, not by the column default, because
@@ -841,7 +902,7 @@ async function ensureUnsubscribeCredential(
     // either and there is nothing live to invalidate.
     const adopted = await reusableUnsubscribeCredential(winner, now);
     if (adopted) return { credential: adopted, optedOut: false };
-    return { credential: await rotateUnsubscribeCredential(admin, winner.id, now), optedOut: false };
+    return await rotateUnsubscribeCredential(admin, winner, now);
   }
   return { credential, optedOut: false };
 }
