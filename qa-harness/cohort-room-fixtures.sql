@@ -7,7 +7,7 @@
 -- lives with the runner and with you.
 --
 -- CONTRACT WITH THE RUNNER
---   1. The runner creates the eight fixture auth users FIRST (Auth admin API,
+--   1. The runner creates the nine fixture auth users FIRST (Auth admin API,
 --      emails below). Every id in this file is resolved from auth.users by
 --      email via _room_qa_uid() — nothing is hard-coded, nothing is guessed.
 --   2. This file is applied as ONE statement batch (Supabase Management API
@@ -24,6 +24,20 @@
 --   mentor_A spans offering A (manual grant, batch_id NULL).
 --   accepted_A has NO membership row at all, by design.
 --
+--   TWO LOBBY OCCUPANTS, NOT ONE — and the second exists because the first
+--   cannot prove what the suite was claiming with it (GAP-4):
+--     pre_member_A1    application stamped confirmation_paid, NO enrolments row
+--     staged_lobby_A1  the SAME `pre_member` room tier, reached the way the
+--                      staged payment path actually reaches it: an ACTIVE
+--                      enrolment that still owes a balance (R-1 contract note
+--                      3, resolver branch (b)).
+--   Every April-era policy on live_sessions asks "is there an active enrolment
+--   for this offering?" — a question the first actor answers NO to for reasons
+--   that have nothing to do with being a pre_member, and the second answers
+--   YES to while holding the identical room row. A fixture with only the first
+--   makes "a pre_member reads zero rows from live_sessions" pass for free,
+--   which is exactly what 20260729100000:906-918 forbids asserting.
+--
 -- WHY offering_courses IS MAPPED (it was missing before the 2026-07-27 review):
 --   live_sessions RLS is `live_sessions_read` (has_course_access(course_id)) and
 --   `live_sessions_student_read` (active enrolment in an offering mapped to the
@@ -37,7 +51,21 @@
 --   batch-scoped, so both batches of offering A can read each other's session
 --   ROWS at the table. That is pre-existing product shape, not something R0
 --   changes; batch scoping of the schedule is delivered by R-3's envelope and
---   the suite asserts it there (R8.2).
+--   the suite asserts it there (R8.2). The residue that leaves at the TABLE and
+--   in get_live_session_zoom_link is measured honestly as GAP-2 rather than
+--   asserted away — see the note below.
+--
+-- ⚠️ READ THIS BEFORE ADDING A SURFACE IN R1–R4: live_sessions HAS NO BATCH
+--   DIMENSION. The table hangs off course_id and reaches a batch only through
+--   week_id → cohort_weeks → cohort_batch_id, so no RLS policy on it can draw a
+--   batch boundary at all. Every batch boundary in this phase is therefore
+--   drawn in an RPC standing ABOVE tables that do not know batches exist, and
+--   the same root cause surfaces three times in this one diff: the envelope's
+--   own session predicate (R8.2), the cross-batch table read and the
+--   course-scoped get_live_session_zoom_link (both GAP-2), and
+--   get_cohort_progress's lateral (GAP-3). Any NEW surface R1–R4 puts over
+--   live_sessions needs its own hand-written scoping — and its own case here,
+--   because nothing underneath it will do the scoping for you.
 --
 -- WHY TWO BATCHES UNDER ONE OFFERING: a single-batch fixture makes R8/R9/C3
 -- vacuous. Splitting the canaries per batch is the only arrangement that proves
@@ -59,17 +87,58 @@
 --   LEAK_CANARY_ZOOMNEAR_A1 zoom_link of the T+30m session (released to A1 members
 --                           ONLY — it is the positive control for the T-60 gate,
 --                           so it must never reach anyone outside batch A1)
+--   LEAK_CANARY_ZOOMLIVE_A1 zoom_link of the session that is RUNNING RIGHT NOW
+--                           (started 20m ago, 90m long) — the row without which
+--                           the "which session is this week's session" ordering
+--                           cannot be tested at all
+--   LEAK_CANARY_ZOOMCANCEL_A1 zoom_link of the CANCELLED session — a link that
+--                           must reach nobody at any tier and at any distance,
+--                           because the class is not happening
+--   LEAK_CANARY_ZOOM_A2     zoom_link of batch A2's session (T+30m, so the
+--                           entitlement half of the link gate is the only thing
+--                           left to prove — a T+4h session answers NULL to
+--                           everyone and proves nothing about entitlement)
+--   LEAK_CANARY_ZOOM_B1     zoom_link of offering B's session (T+30m, same reason)
 --   LEAK_CANARY_CONFIG_A    cohort_room_configs theme of offering A (masthead)
 --   LEAK_CANARY_CONFIG_A2   cohort_room_configs theme of the batch-A2 OVERRIDE
 --                           (readable by batch A2 only — the one intra-offering
 --                           boundary room_configs_member_read actually draws)
 --   LEAK_CANARY_REC_A1      recording_url of the recorded session (pre_member denied)
 --   LEAK_CANARY_CURRIC_A1   cohort_weeks.description (curriculum detail)
+--   LEAK_CANARY_CURRIC_A2   the same, for batch A2 (cross-batch curriculum)
+--   LEAK_CANARY_CURRIC_B1   the same, for offering B (cross-offering curriculum)
 --   LEAK_CANARY_ASSIGN_A1   cohort_weeks.assignment_prompt (assignment content)
+--   LEAK_CANARY_ASSIGN_A2 / LEAK_CANARY_ASSIGN_B1   ditto, per container
 --   LEAK_CANARY_FEEDBACK_A1 cohort_week_submissions.feedback_text (feedback)
 --   LEAK_CANARY_MENTORDOC_A1 a mentor-materials resource
+--   LEAK_CANARY_ATTEND_A1   cohort_week_attendance.notes (the attendance fact)
 --   LEAK_CANARY_PII_A1      mentor_A's users.phone + users.email (roster PII)
 --   LEAK_CANARY_PII_A2      member_A2's users.phone + users.email (cross-batch PII)
+--
+--   TWO SENTINELS ARE TIMESTAMPS, NOT STRINGS, because their tables have no
+--   text column to hide a word in — cohort_room_seen is (user, offering,
+--   seen_at) and cohort_recording_progress is (user, session, seconds,
+--   completed, updated_at). An absurd, hand-picked instant is just as greppable
+--   in a response body as a word, and it is the only sentinel those two
+--   surfaces can carry:
+--     2011-11-11T11:11:11+00  cohort_room_seen.seen_at        (member_A1)
+--     2012-12-12T12:12:12+00  cohort_recording_progress.updated_at (member_A1)
+--   Both render in UTC in a PostgREST body because Supabase pins the connection
+--   TimeZone to UTC. If a shadow project ever did not, the positive control
+--   fails loudly rather than the leak sweep passing quietly, which is the
+--   direction that error has to break in.
+--
+-- EVERY SENTINEL ABOVE IS HUNTED BY A CORPUS THAT CAN ACTUALLY CARRY IT.
+--   That is a rule, not an aspiration, and all three halves of it are checked by
+--   machine: the suite's CANARY-LEDGER fails the run if a sentinel is planted
+--   here and never swept for (.1), or swept for but never observed by the actor
+--   entitled to it (.2), or hunted over a window that never queried a surface
+--   carrying it (.3 — every canary declares its home surfaces in the spec's
+--   CANARY_HOME map, and proveCorpusClean fails the individual sweep too). A
+--   planted-but-unhunted sentinel is worse than no sentinel, because the sweep
+--   it sits out still prints a pass. If you add a canary here, add it to the
+--   CANARY map, to CANARY_HOME and to a needle list swept over a window that
+--   probes its home surface — or do not add it at all.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -92,6 +161,30 @@ DELETE FROM public.cohort_week_submissions
     JOIN public.cohort_batches b ON b.id = w.cohort_batch_id
     JOIN public.offerings o ON o.id = b.offering_id
    WHERE o.slug LIKE 'room-qa-%');
+
+-- Attendance hangs off cohort_weeks with ON DELETE CASCADE, so the offerings
+-- delete below would take it — but it is spelled out for the same reason the
+-- submissions delete above is: this file is re-applied against a project whose
+-- previous run may have died between statements, and a half-torn world has to
+-- be recoverable by running the file again, not by hand.
+DELETE FROM public.cohort_week_attendance
+ WHERE cohort_week_id IN (
+   SELECT w.id FROM public.cohort_weeks w
+    JOIN public.cohort_batches b ON b.id = w.cohort_batch_id
+    JOIN public.offerings o ON o.id = b.offering_id
+   WHERE o.slug LIKE 'room-qa-%');
+
+-- cohort_recording_progress cascades from live_sessions, and MUST be deleted
+-- before them anyway if that cascade is ever weakened — it is the one fixture
+-- table whose parent is deleted by title match rather than by the offerings
+-- cascade, so it does not ride the same safety net as everything else.
+DELETE FROM public.cohort_recording_progress
+ WHERE live_session_id IN (SELECT id FROM public.live_sessions WHERE title LIKE 'ROOM QA %');
+
+-- cohort_room_seen cascades from offerings (FK ON DELETE CASCADE), stated
+-- explicitly so the teardown list matches the INSERT list one for one.
+DELETE FROM public.cohort_room_seen
+ WHERE offering_id IN (SELECT id FROM public.offerings WHERE slug LIKE 'room-qa-%');
 
 DELETE FROM public.live_sessions WHERE title LIKE 'ROOM QA %';
 
@@ -142,6 +235,9 @@ UPDATE public.users SET full_name = 'ROOM QA Accepted A', city = 'Pune'
 
 UPDATE public.users SET full_name = 'ROOM QA Pre Member A1', city = 'Hyderabad'
  WHERE id = public._room_qa_uid('room-qa-pre-member-a1@leveluptest.invalid');
+
+UPDATE public.users SET full_name = 'ROOM QA Staged Lobby A1', city = 'Coimbatore'
+ WHERE id = public._room_qa_uid('room-qa-staged-lobby-a1@leveluptest.invalid');
 
 UPDATE public.users SET full_name = 'ROOM QA Outsider', city = 'Delhi'
  WHERE id = public._room_qa_uid('room-qa-outsider@leveluptest.invalid');
@@ -249,13 +345,31 @@ FROM (VALUES
 JOIN public.cohort_batches b ON b.name = v.batch;
 
 -- ---------------------------------------------------------------------------
--- 6. Live sessions. Three for batch A1, deliberately timed:
---      FAR  at T+3h   → the T-60 gate must NULL its zoom_link
---      NEAR at T+30m  → inside T-60, zoom_link must be present
---      PAST           → carries the recording sentinel
+-- 6. Live sessions. FIVE for batch A1, deliberately timed:
+--      FAR       at T+3h   → the T-60 gate must NULL its zoom_link
+--      NEAR      at T+30m  → inside T-60, zoom_link must be present
+--      LIVE      at T-20m  → RUNNING RIGHT NOW (started 20m ago, 90m long, so
+--                            scheduled_at < now() < scheduled_at + duration)
+--      CANCELLED at T-60m  → also still inside its own window, starts EARLIER
+--                            than LIVE, and must lose anyway
+--      PAST                → carries the recording sentinel
 --    Offering A's sessions hang off course A, offering B's off course B, so the
 --    course→offering mapping in §3 makes each one visible to exactly the
 --    offering that paid for it and to nobody else.
+--
+--    WHY THE RUNNING SESSION EXISTS. A week with several sessions has to
+--    collapse to ONE row in get_cohort_progress, and "which one" is a decision
+--    with a right answer: the session a student is IN right now, not the one
+--    that starts later this week. Without a currently-running row, both a
+--    lateral that prefers the running session and one that classifies it as
+--    "past" return the same answer for these fixtures, and the case cannot
+--    fail — so it would prove nothing. It also gives the T-60 window its middle
+--    case: the gate is a WINDOW (T-60 → end + 1h), and FAR/NEAR only ever
+--    exercise its lower edge.
+--
+--    ALL FIVE HANG OFF WEEK A1 ON PURPOSE. That is what makes the per-week
+--    collapse testable: five sessions, one week row — and it is the shape the
+--    old plain LEFT JOIN turned into five week cards on the dashboard.
 -- ---------------------------------------------------------------------------
 INSERT INTO public.live_sessions (course_id, week_id, title, scheduled_at,
                                   duration_minutes, status, zoom_link, recording_url)
@@ -275,6 +389,28 @@ WHERE c.slug = 'room-qa-course-a';
 
 INSERT INTO public.live_sessions (course_id, week_id, title, scheduled_at,
                                   duration_minutes, status, zoom_link, recording_url)
+SELECT c.id, w.id, 'ROOM QA A1 LIVE session', now() - interval '20 minutes',
+       90, 'scheduled', 'https://zoom.test/j/LEAK_CANARY_ZOOMLIVE_A1', NULL
+FROM public.courses c
+JOIN public.cohort_weeks w ON w.theme LIKE '%LEAK_CANARY_A1%'
+WHERE c.slug = 'room-qa-course-a';
+
+-- The CANCELLED decoy. It starts EARLIER than the live session and has not
+-- ended, so under "pick the earliest session that has not finished" it would win
+-- the week if cancelled sessions were candidates — which is the whole point:
+-- a week whose Join button pointed at a class that was called off is a student
+-- sitting alone in an empty meeting. Its link carries its own sentinel because
+-- a cancelled session's link must never be handed to anyone, at any distance.
+INSERT INTO public.live_sessions (course_id, week_id, title, scheduled_at,
+                                  duration_minutes, status, zoom_link, recording_url)
+SELECT c.id, w.id, 'ROOM QA A1 CANCELLED session', now() - interval '60 minutes',
+       120, 'cancelled', 'https://zoom.test/j/LEAK_CANARY_ZOOMCANCEL_A1', NULL
+FROM public.courses c
+JOIN public.cohort_weeks w ON w.theme LIKE '%LEAK_CANARY_A1%'
+WHERE c.slug = 'room-qa-course-a';
+
+INSERT INTO public.live_sessions (course_id, week_id, title, scheduled_at,
+                                  duration_minutes, status, zoom_link, recording_url)
 SELECT c.id, w.id, 'ROOM QA A1 PAST session', now() - interval '2 days',
        90, 'completed', NULL, 'https://vdo.test/LEAK_CANARY_REC_A1.m3u8'
 FROM public.courses c
@@ -283,7 +419,13 @@ WHERE c.slug = 'room-qa-course-a';
 
 INSERT INTO public.live_sessions (course_id, week_id, title, scheduled_at,
                                   duration_minutes, status, zoom_link, recording_url)
-SELECT c.id, w.id, 'ROOM QA A2 session', now() + interval '4 hours',
+-- A2's and B1's sessions sit at T+30m, INSIDE the T-60 window, on purpose: a
+-- session outside the window answers NULL to every caller, entitled or not, so
+-- a "member_B gets NULL for batch A2's link" result would be a timing artefact
+-- wearing an entitlement claim. Inside the window, time is settled and the only
+-- thing left for the RPC to decide is who the caller is — which is the property
+-- C2.7 is actually asserting.
+SELECT c.id, w.id, 'ROOM QA A2 session', now() + interval '30 minutes',
        90, 'scheduled', 'https://zoom.test/j/LEAK_CANARY_ZOOM_A2', NULL
 FROM public.courses c
 JOIN public.cohort_weeks w ON w.theme LIKE '%LEAK_CANARY_A2%'
@@ -291,7 +433,7 @@ WHERE c.slug = 'room-qa-course-a';
 
 INSERT INTO public.live_sessions (course_id, week_id, title, scheduled_at,
                                   duration_minutes, status, zoom_link, recording_url)
-SELECT c.id, w.id, 'ROOM QA B1 session', now() + interval '5 hours',
+SELECT c.id, w.id, 'ROOM QA B1 session', now() + interval '30 minutes',
        90, 'scheduled', 'https://zoom.test/j/LEAK_CANARY_ZOOM_B1', NULL
 FROM public.courses c
 JOIN public.cohort_weeks w ON w.theme LIKE '%LEAK_CANARY_B1%'
@@ -370,11 +512,54 @@ SELECT public._room_qa_uid('room-qa-pre-member-a1@leveluptest.invalid'), o.id,
        '+9190000000PM', 'Hyderabad', 'accepted', now() - interval '10 days', gen_random_uuid()
 FROM public.offerings o WHERE o.slug = 'room-qa-offering-a';
 
+-- The staged lobby occupant's application. Identical to pre_member_A1's up to
+-- here; what makes it the STAGED shape is the active enrolment added below,
+-- after the stamp.
+INSERT INTO public.cohort_applications
+       (user_id, offering_id, full_name, email, phone, city, status, app_fee_paid_at, app_fee_payment_id)
+SELECT public._room_qa_uid('room-qa-staged-lobby-a1@leveluptest.invalid'), o.id,
+       'ROOM QA Staged Lobby A1', 'room-qa-staged-lobby-a1@leveluptest.invalid',
+       '+9190000000SL', 'Coimbatore', 'accepted', now() - interval '10 days', gen_random_uuid()
+FROM public.offerings o WHERE o.slug = 'room-qa-offering-a';
+
 -- The stamp. This UPDATE is the pre_member path; nothing else creates that row.
 UPDATE public.cohort_applications
    SET confirmation_payment_id = gen_random_uuid(),
        status = 'confirmation_paid'
- WHERE email = 'room-qa-pre-member-a1@leveluptest.invalid';
+ WHERE email IN ('room-qa-pre-member-a1@leveluptest.invalid',
+                 'room-qa-staged-lobby-a1@leveluptest.invalid');
+
+-- ---------------------------------------------------------------------------
+-- 8b. THE STAGED CONFIRMATION ENROLMENT — and the reason it is written HERE,
+--     three statements after §7 rather than inside it.
+--
+--     ORDER IS LOAD-BEARING. The resolver runs on every one of these writes.
+--     Insert this enrolment BEFORE the confirmation stamp and the sequence is:
+--     branch (a2) sees an active enrolment with no application row, so
+--     _room_balance_outstanding() is FALSE and it mints a full `member` row;
+--     the stamp then fires the resolver again, branch (b) is blocked by its own
+--     `NOT EXISTS (an active non-pre_member row)` guard, and branch (c)
+--     retracts the member row to 'revoked'. The actor ends up with a revoked
+--     member row and NO lobby row, and every GAP-4 probe measures the wrong
+--     thing. Written in this order — application, stamp, then enrolment —
+--     branch (b) owns the row first and the enrolment upserts it in place.
+--
+--     WHAT MAKES THE BALANCE OUTSTANDING: offerings.price_inr is 100000 and
+--     app_fee_inr / confirmation_amount_inr are unset, so
+--     price − app_fee − confirmation > 0 and _room_balance_outstanding()
+--     (20260729100000:759-774) reads TRUE for this application. That predicate,
+--     not the enrolments table, is the Δ2 tier line.
+--
+--     AND DELIBERATELY NO cohort_batch_members ROW. A staged occupant has not
+--     been placed on a roster yet, which is what keeps
+--     cohort_weeks_student_read shut for them — so GAP-4's residue is exactly
+--     live_sessions and the join link, and the suite can assert the curriculum
+--     half stays closed instead of carrying a vaguer gap.
+-- ---------------------------------------------------------------------------
+INSERT INTO public.enrolments (user_id, offering_id, status, source)
+SELECT public._room_qa_uid('room-qa-staged-lobby-a1@leveluptest.invalid'), o.id,
+       'active', 'admin_grant'
+FROM public.offerings o WHERE o.slug = 'room-qa-offering-a';
 
 -- ---------------------------------------------------------------------------
 -- 9. Room content. Canary per batch — never co-mingled, or R8/R9/C3 prove
@@ -474,9 +659,41 @@ JOIN public.cohort_batches b ON b.id = w.cohort_batch_id
 WHERE b.name = 'ROOM QA Batch A1';
 
 -- 9f. Private recording position for member_A1 (own-row-only surface).
-INSERT INTO public.cohort_recording_progress (user_id, live_session_id, position_seconds)
-SELECT public._room_qa_uid('room-qa-member-a1@leveluptest.invalid'), ls.id, 424
+--     updated_at carries the sentinel: this table has no text column, and
+--     without a greppable value the accepted_A / pre_member_A1 / outsider
+--     corpus sweeps could not name what a leak from here would look like — the
+--     surface would be probed but not hunted, which is the shape of a vacuous
+--     pass. `completed` is set so the row is not all-defaults either.
+INSERT INTO public.cohort_recording_progress (user_id, live_session_id, position_seconds, completed, updated_at)
+SELECT public._room_qa_uid('room-qa-member-a1@leveluptest.invalid'), ls.id, 424, false,
+       timestamptz '2012-12-12 12:12:12+00'
 FROM public.live_sessions ls WHERE ls.title = 'ROOM QA A1 PAST session';
+
+-- 9g. The room-seen watermark for member_A1. Until now this table had no seed
+--     row at all, so the "accepted_A reads EVERY room-content surface and gets
+--     nothing" claim was made over eight of the ten surfaces and this one was
+--     simply absent from the list. seen_at IS the sentinel (see the header
+--     note), and it is set absurdly far in the past so every announcement stays
+--     UNSEEN — get_my_cohort_rooms counts announcements created after
+--     max(seen_at), and MYROOMS.1/.4 assert that counter is non-zero.
+INSERT INTO public.cohort_room_seen (user_id, offering_id, seen_at)
+SELECT public._room_qa_uid('room-qa-member-a1@leveluptest.invalid'), o.id,
+       timestamptz '2011-11-11 11:11:11+00'
+FROM public.offerings o WHERE o.slug = 'room-qa-offering-a';
+
+-- 9h. Attendance for member_A1's week. get_cohort_progress LEFT JOINs this
+--     table for its `attended` / `attendance_marked` columns; with no row here
+--     those two columns are structurally false/NULL for every fixture actor, so
+--     a case asserting on them would be asserting on the absence of a seed
+--     rather than on the RPC. notes carries a sentinel because the attendance
+--     FACT — who showed up — is cohort-mate-private like everything else here.
+INSERT INTO public.cohort_week_attendance (cohort_week_id, user_id, attended, marked_by, marked_at, notes)
+SELECT w.id, public._room_qa_uid('room-qa-member-a1@leveluptest.invalid'), true,
+       public._room_qa_uid('room-qa-mentor-a@leveluptest.invalid'), now() - interval '1 day',
+       'Attendance note :: LEAK_CANARY_ATTEND_A1'
+FROM public.cohort_weeks w
+JOIN public.cohort_batches b ON b.id = w.cohort_batch_id
+WHERE b.name = 'ROOM QA Batch A1';
 
 -- ---------------------------------------------------------------------------
 -- 10. Safety net. The resolver runs on the enrolment/batch triggers above; call
@@ -495,6 +712,11 @@ BEGIN
     -- resolver here is belt-and-braces so a missing TRIGGER (as opposed to a
     -- missing resolver branch) still surfaces as PRE.5 rather than as silence.
     'room-qa-pre-member-a1@leveluptest.invalid',
+    -- The staged lobby occupant: the ONE actor whose end state depends on the
+    -- order of three separate writes (§8b), so re-deriving them once more here
+    -- means PRE.5b reads a settled world rather than whatever the last trigger
+    -- happened to leave behind.
+    'room-qa-staged-lobby-a1@leveluptest.invalid',
     -- accepted_A too: if a stray branch ever grants the unpaid applicant a row,
     -- PRE.6 must see it here rather than have it appear later out of nowhere.
     'room-qa-accepted-a@leveluptest.invalid'
@@ -510,10 +732,46 @@ SELECT
      JOIN public.offerings o ON o.id = b.offering_id WHERE o.slug LIKE 'room-qa-%')      AS batches,
   (SELECT count(*) FROM public.cohort_room_configs c
      JOIN public.offerings o ON o.id = c.offering_id WHERE o.slug LIKE 'room-qa-%')      AS configs,
+  -- Reported as EVIDENCE on PRE.1, never asserted as a number: every roster
+  -- member legitimately owns two rows here (the batch-less row branch (a2)
+  -- writes at the enrolment, and the batch-scoped row branch (a) writes at the
+  -- roster placement, with (c) retracting the first). The per-actor SHAPE is
+  -- what PRE.2–PRE.7 assert; pinning a total would break on correct behaviour.
   (SELECT count(*) FROM public.cohort_room_members m
      JOIN public.offerings o ON o.id = m.offering_id WHERE o.slug LIKE 'room-qa-%')      AS memberships,
   (SELECT count(*) FROM public.live_sessions       WHERE title LIKE 'ROOM QA %')         AS sessions,
   -- The suite asserts this is 2: a zero here means every live_sessions probe in
   -- the run is a dead probe, and the session half of the matrix proves nothing.
   (SELECT count(*) FROM public.offering_courses oc
-     JOIN public.offerings o ON o.id = oc.offering_id WHERE o.slug LIKE 'room-qa-%')     AS course_maps;
+     JOIN public.offerings o ON o.id = oc.offering_id WHERE o.slug LIKE 'room-qa-%')     AS course_maps,
+  -- The three seeds added for the 10-surface matrix. Counted here so a missing
+  -- one fails at the PRE preflight — named, in one line — instead of surfacing
+  -- as an unarmed positive control twenty assertions later.
+  (SELECT count(*) FROM public.cohort_room_seen s
+     JOIN public.offerings o ON o.id = s.offering_id WHERE o.slug LIKE 'room-qa-%')      AS room_seen,
+  (SELECT count(*) FROM public.cohort_recording_progress rp
+     JOIN public.live_sessions ls ON ls.id = rp.live_session_id
+    WHERE ls.title LIKE 'ROOM QA %')                                                    AS rec_progress,
+  (SELECT count(*) FROM public.cohort_week_attendance a
+     JOIN public.cohort_weeks w ON w.id = a.cohort_week_id
+     JOIN public.cohort_batches b ON b.id = w.cohort_batch_id
+     JOIN public.offerings o ON o.id = b.offering_id WHERE o.slug LIKE 'room-qa-%')      AS attendance,
+  -- A currently-RUNNING session must exist or the per-week session choice is
+  -- untestable (see §6). BOTH of these are asserted as 1 by PRE.1b — the
+  -- running session and the cancelled decoy that is ALSO inside its own window
+  -- right now and must still lose. The decoy is the tighter clock dependency of
+  -- the two (it leaves its window 60 minutes after this file applies, against
+  -- the live session's 70), and if it has ended by the time PROG runs it drops
+  -- out of the not-yet-ended bucket and loses on timing alone — so PROG.2 would
+  -- pass with the cancelled-demotion sort key (rpcs.sql:1149) deleted. Hence
+  -- the assertion rather than the comment this used to be.
+  (SELECT count(*) FROM public.live_sessions ls
+    WHERE ls.title LIKE 'ROOM QA %'
+      AND COALESCE(ls.status, 'scheduled') <> 'cancelled'
+      AND ls.scheduled_at < now()
+      AND now() < ls.scheduled_at + make_interval(mins => COALESCE(ls.duration_minutes, 60))) AS running_sessions,
+  (SELECT count(*) FROM public.live_sessions ls
+    WHERE ls.title LIKE 'ROOM QA %'
+      AND ls.status = 'cancelled'
+      AND ls.scheduled_at < now()
+      AND now() < ls.scheduled_at + make_interval(mins => COALESCE(ls.duration_minutes, 60))) AS cancelled_running;

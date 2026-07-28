@@ -23,10 +23,37 @@
  *
  * WHAT IT NEEDS (shadow project only — the prod ref is refused outright)
  *   SUPABASE_PAT            Management-API PAT (SQL channel: fixtures + introspection)
+ *                           — SUPABASE_ACCESS_TOKEN is read as a fallback
  *   ROOM_QA_PROJECT_REF     the SHADOW project ref
+ *                           — SUPABASE_SHADOW_REF is read as a fallback
  *   optional: ROOM_QA_ANON_KEY / ROOM_QA_SERVICE_KEY (else fetched via the PAT)
  *   optional: ROOM_QA_KEEP=1 to leave the fixture world in place for inspection
  *   optional: ROOM_QA_DIFF_BASE (default "main") for the Delta-6 copy grep
+ *
+ * A SHADOW RUN, EXACTLY
+ *   1. The three R0 migrations (20260729100000 / 100100 / 100200) must already
+ *      be applied to the shadow project. Nothing here applies them, and the
+ *      fixture failure message decodes the SQLSTATE if they are missing.
+ *   2. Export the five names above (values live in the vault, never here, never
+ *      in a log line, and never in this file's output).
+ *   3. `npm run test:room-access`. Exit 0 = the wall holds; exit 1 = a leak;
+ *      exit 2 = it could not run at all, which is NOT a pass; exit 3 = --list.
+ *   The suite creates and deletes its own auth users, plants canaries, revokes
+ *   and re-grants an enrolment, and briefly arms a forced trigger failure. It
+ *   is destructive by design and refuses the prod ref for exactly that reason.
+ *
+ * A NOTE FOR R1–R4 — live_sessions HAS NO BATCH DIMENSION
+ *   The table hangs off course_id and reaches a batch only through
+ *   week_id → cohort_weeks → cohort_batch_id. No policy on live_sessions can
+ *   draw a batch boundary, so EVERY batch boundary in this phase is drawn in an
+ *   RPC standing above tables that do not know batches exist — and the same
+ *   root cause surfaces three times in this one diff (R8.2's envelope
+ *   predicate, GAP-2's table read + link RPC, GAP-3's progress lateral). Every
+ *   new surface R1–R4 puts over live_sessions needs its own hand-written
+ *   scoping and its own case here; nothing underneath it will scope for you.
+ *   It has no TIER dimension either — the April policies on it ask only "is
+ *   there an ACTIVE enrolment for this offering?", which a staged lobby row
+ *   satisfies while the room tier says pre_member. That is GAP-4.
  *
  * READING THE OUTPUT
  *   Every line states WHAT IT PROVES, not that something passed. A green run is
@@ -52,41 +79,265 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
 
 // ── The canaries. Planted by cohort-room-fixtures.sql, hunted for here. ──────
+//
+// THE RULE THIS MAP OBEYS, AND THE THREE CHECKS THAT ENFORCE IT MECHANICALLY.
+// A sentinel is planted only if a corpus that CAN ACTUALLY CARRY IT hunts it.
+// Six used to fail that test — three were hunted over a corpus in which the
+// surface carrying them was never queried, and three were planted and named
+// nowhere in this file. A sweep that cannot fail is worse than a missing sweep:
+// it prints the same word. Prose cannot police that, so all three halves of the
+// rule are executable:
+//   CANARY-LEDGER.1  every planted sentinel appears in at least one needle list
+//                    that was actually swept;
+//   CANARY-LEDGER.2  every sentinel reached the actor ENTITLED to it at least
+//                    once, so "0 hits" cannot mean "never written";
+//   CANARY-LEDGER.3  every sweep is REACHABLE — for each needle, at least one
+//                    of its HOME SURFACES (CANARY_HOME below) was queried inside
+//                    that sweep's own window. This is the check whose absence
+//                    the 2026-07-28 review found: without it, re-adding the
+//                    three unreachable needles that started all this to R9.1's
+//                    list left both other ledger cases printing PASS.
+// proveCorpusClean() fails the individual sweep too, so an unreachable needle is
+// named where it was added rather than only in the aggregate at the foot.
 const CANARY = {
   A1: "LEAK_CANARY_A1",
   A2: "LEAK_CANARY_A2",
   B1: "LEAK_CANARY_B1",
   ZOOM_A1: "LEAK_CANARY_ZOOM_A1",
   ZOOMNEAR_A1: "LEAK_CANARY_ZOOMNEAR_A1",
+  ZOOMLIVE_A1: "LEAK_CANARY_ZOOMLIVE_A1",
+  ZOOMCANCEL_A1: "LEAK_CANARY_ZOOMCANCEL_A1",
+  ZOOM_A2: "LEAK_CANARY_ZOOM_A2",
+  ZOOM_B1: "LEAK_CANARY_ZOOM_B1",
   CONFIG_A: "LEAK_CANARY_CONFIG_A",
   CONFIG_A2: "LEAK_CANARY_CONFIG_A2",
   REC_A1: "LEAK_CANARY_REC_A1",
   CURRIC_A1: "LEAK_CANARY_CURRIC_A1",
+  CURRIC_A2: "LEAK_CANARY_CURRIC_A2",
+  CURRIC_B1: "LEAK_CANARY_CURRIC_B1",
   ASSIGN_A1: "LEAK_CANARY_ASSIGN_A1",
+  ASSIGN_A2: "LEAK_CANARY_ASSIGN_A2",
+  ASSIGN_B1: "LEAK_CANARY_ASSIGN_B1",
   FEEDBACK_A1: "LEAK_CANARY_FEEDBACK_A1",
   MENTORDOC_A1: "LEAK_CANARY_MENTORDOC_A1",
+  ATTEND_A1: "LEAK_CANARY_ATTEND_A1",
   PII_A1: "LEAK_CANARY_PII_A1",
   PII_A2: "LEAK_CANARY_PII_A2",
+  // Two surfaces have no text column to hide a word in, so their sentinel is an
+  // absurd instant instead. Rendered UTC by PostgREST (Supabase pins the
+  // connection TimeZone), and just as greppable as a word.
+  SEEN_A1: "2011-11-11T11:11:11",     // cohort_room_seen.seen_at
+  RECPROG_A1: "2012-12-12T12:12:12",  // cohort_recording_progress.updated_at
 };
-/** Everything private to offering A. No outsider may ever see any of it. */
-const ALL_A_SECRETS = [
-  CANARY.A1, CANARY.A2, CANARY.ZOOM_A1, CANARY.ZOOMNEAR_A1,
-  CANARY.CONFIG_A, CANARY.CONFIG_A2,
-  CANARY.REC_A1, CANARY.CURRIC_A1, CANARY.ASSIGN_A1, CANARY.FEEDBACK_A1,
-  CANARY.MENTORDOC_A1, CANARY.PII_A1, CANARY.PII_A2,
-];
+
 /**
- * What a pre_member is redacted out of (MEMBER-1 §R11): the five named surfaces
- * — recordings, curriculum detail, assignments, feedback, mentor materials —
- * plus both join links. The lobby's whitelist is titles and dates; a link is
- * never on it at any distance from the session, which is why the zoom sentinels
- * belong in the same sweep rather than only in the envelope assertion.
+ * WHERE EACH SENTINEL LIVES — the reachability map, and the thing that makes a
+ * sweep falsifiable.
+ *
+ * A surface is listed here if the sentinel is IN the data that surface reads,
+ * so a broken wall could hand it over. A sweep whose window never queried any
+ * of a needle's homes could not have found it however wide the hole was, and
+ * proveCorpusClean() now FAILS on that rather than printing a pass.
+ *
+ * Two deliberate absences, both load-bearing:
+ *   · live_sessions is NOT a home for any ZOOM_* sentinel. zoom_link carries a
+ *     column-level REVOKE from `authenticated` (20260408151600) and no probe in
+ *     this file projects it, so the link can only ever arrive through an RPC.
+ *   · get_my_cohort_rooms carries the theme and an unseen COUNT — never an
+ *     announcement body, never a link — so it is a home for the config pair only.
+ * The token for a table probe is the path before '?'; for an RPC it is
+ * `rpc:<function>`; both are stamped onto every corpus entry by record().
+ */
+const TEXT_SURFACES = [
+  "cohort_announcements", "cohort_resources", "cohort_room_posts",
+  "cohort_room_post_replies", "cohort_demo_entries", "cohort_weeks",
+];
+const CANARY_HOME = {
+  // Batch/offering bodies: every content table, the envelope's announcements
+  // block, and get_cohort_progress (which returns cohort_weeks.theme).
+  A1: [...TEXT_SURFACES, "cohort_week_submissions", "rpc:get_cohort_room", "rpc:get_cohort_progress"],
+  A2: [...TEXT_SURFACES, "rpc:get_cohort_room", "rpc:get_cohort_progress"],
+  B1: [...TEXT_SURFACES, "rpc:get_cohort_room", "rpc:get_cohort_progress"],
+  ZOOM_A1: ["rpc:get_live_session_zoom_link", "rpc:get_cohort_room", "rpc:get_cohort_progress"],
+  ZOOMNEAR_A1: ["rpc:get_live_session_zoom_link", "rpc:get_cohort_room", "rpc:get_cohort_progress"],
+  ZOOMLIVE_A1: ["rpc:get_live_session_zoom_link", "rpc:get_cohort_room", "rpc:get_cohort_progress"],
+  ZOOMCANCEL_A1: ["rpc:get_live_session_zoom_link", "rpc:get_cohort_room", "rpc:get_cohort_progress"],
+  ZOOM_A2: ["rpc:get_live_session_zoom_link", "rpc:get_cohort_room", "rpc:get_cohort_progress"],
+  ZOOM_B1: ["rpc:get_live_session_zoom_link", "rpc:get_cohort_room", "rpc:get_cohort_progress"],
+  CONFIG_A: ["cohort_room_configs", "rpc:get_cohort_room", "rpc:get_my_cohort_rooms"],
+  CONFIG_A2: ["cohort_room_configs", "rpc:get_cohort_room", "rpc:get_my_cohort_rooms"],
+  REC_A1: ["live_sessions", "rpc:get_cohort_room"],
+  CURRIC_A1: ["cohort_weeks", "rpc:get_cohort_progress"],
+  CURRIC_A2: ["cohort_weeks", "rpc:get_cohort_progress"],
+  CURRIC_B1: ["cohort_weeks", "rpc:get_cohort_progress"],
+  ASSIGN_A1: ["cohort_weeks", "rpc:get_cohort_progress"],
+  ASSIGN_A2: ["cohort_weeks", "rpc:get_cohort_progress"],
+  ASSIGN_B1: ["cohort_weeks", "rpc:get_cohort_progress"],
+  FEEDBACK_A1: ["cohort_week_submissions", "rpc:get_cohort_progress"],
+  MENTORDOC_A1: ["cohort_resources", "rpc:get_cohort_room"],
+  ATTEND_A1: ["cohort_week_attendance"],
+  PII_A1: ["users", "rpc:get_room_roster"],
+  PII_A2: ["users", "rpc:get_room_roster"],
+  SEEN_A1: ["cohort_room_seen"],
+  RECPROG_A1: ["cohort_recording_progress"],
+};
+/** sentinel VALUE → the surfaces that could carry it. */
+const HOME_OF = new Map(Object.entries(CANARY).map(([k, v]) => [v, CANARY_HOME[k] ?? []]));
+
+/**
+ * Everything private to offering A. No outsider may ever see any of it.
+ *
+ * ZOOM_A2 is deliberately IN this list and deliberately OUT of member_A1's
+ * (below): it is offering-A private against the world, and cross-BATCH residue
+ * inside offering A, which is GAP-2's territory rather than a pass/fail claim.
+ */
+const ALL_A_SECRETS = [
+  CANARY.A1, CANARY.A2,
+  CANARY.ZOOM_A1, CANARY.ZOOMNEAR_A1, CANARY.ZOOMLIVE_A1, CANARY.ZOOMCANCEL_A1, CANARY.ZOOM_A2,
+  CANARY.CONFIG_A, CANARY.CONFIG_A2,
+  CANARY.REC_A1, CANARY.RECPROG_A1, CANARY.SEEN_A1, CANARY.ATTEND_A1,
+  CANARY.CURRIC_A1, CANARY.CURRIC_A2, CANARY.ASSIGN_A1, CANARY.ASSIGN_A2,
+  CANARY.FEEDBACK_A1, CANARY.MENTORDOC_A1, CANARY.PII_A1, CANARY.PII_A2,
+];
+
+/**
+ * ALL_A_SECRETS minus the five join links — the list for a window built ONLY
+ * out of table probes. The links live behind an RPC (zoom_link is column-REVOKEd
+ * from `authenticated`, so no table read in this file can project one), so
+ * hunting them over a corpus of pure table reads is exactly the vacuity the
+ * reachability check exists to stop. The run-wide sweeps at the foot of the
+ * file, whose windows DO include the link RPC, carry them instead.
+ */
+const A_SECRETS_TABLE_BORNE = ALL_A_SECRETS.filter((n) => !n.includes("ZOOM"));
+
+/**
+ * What the TEN room-content surfaces in SURFACES_A can actually hand over. It
+ * is narrower than A_SECRETS_TABLE_BORNE by four: the mentor's feedback and the
+ * attendance mark live on cohort_week_submissions / cohort_week_attendance, and
+ * the two PII sentinels on users — none of which is a room-content table, and
+ * none of which SURFACES_A probes.
+ */
+const A_SECRETS_VIA_SURFACES = A_SECRETS_TABLE_BORNE.filter(
+  (n) => ![CANARY.FEEDBACK_A1, CANARY.ATTEND_A1, CANARY.PII_A1, CANARY.PII_A2].includes(n)
+);
+
+/**
+ * The sentinels the surfaces R0's own revocation wall covers can carry — the
+ * ten minus cohort_weeks, plus the envelope and the link RPC. The curriculum,
+ * assignment, feedback, attendance and PII sentinels are deliberately absent:
+ * they live on tables OUTSIDE that wall, which is GAP-1 / GAP-3 territory and
+ * is measured there rather than swept over a window that never queries them.
+ */
+const R0_OWNED_A_SECRETS = [
+  CANARY.A1, CANARY.A2, CANARY.CONFIG_A, CANARY.CONFIG_A2,
+  CANARY.REC_A1, CANARY.RECPROG_A1, CANARY.SEEN_A1,
+  CANARY.ZOOM_A1, CANARY.ZOOMNEAR_A1, CANARY.ZOOMLIVE_A1, CANARY.ZOOMCANCEL_A1, CANARY.ZOOM_A2,
+];
+
+/**
+ * Everything private to offering B — the mirror set, swept over the offering-A
+ * actors. It exists because isolation is a claim about a WALL, not about a
+ * direction: a suite that only ever proves "B's members see nothing of A" has
+ * proven half a wall. Reachable because the TOTAL section makes every A-side
+ * actor enumerate every content table with no filter at all, which is the one
+ * request shape under which another offering's rows COULD come back.
+ */
+const ALL_B_SECRETS = [
+  CANARY.B1, CANARY.ZOOM_B1, CANARY.CURRIC_B1, CANARY.ASSIGN_B1,
+];
+/** The same, for a window made of table probes only — see A_SECRETS_TABLE_BORNE. */
+const B_SECRETS_TABLE_BORNE = ALL_B_SECRETS.filter((n) => n !== CANARY.ZOOM_B1);
+
+/**
+ * What a batch-A1 member must never receive about batch A2, and vice versa.
+ *
+ * The zoom/recording sentinels are NOT here. That is not an oversight and not a
+ * softening: live_sessions carries no batch column at all (see the header
+ * note), so the cross-batch residue on that ONE surface is a pre-existing
+ * April-policy shape R0 neither widens nor narrows. It is measured as GAP-2 and
+ * carried, which is louder than a sweep that silently avoided the surface.
+ */
+const CROSS_BATCH_A2_FORBIDDEN = [
+  CANARY.A2, CANARY.CURRIC_A2, CANARY.ASSIGN_A2, CANARY.CONFIG_A2, CANARY.PII_A2,
+];
+const CROSS_BATCH_A1_FORBIDDEN = [
+  CANARY.A1, CANARY.CURRIC_A1, CANARY.ASSIGN_A1, CANARY.FEEDBACK_A1,
+  CANARY.MENTORDOC_A1, CANARY.SEEN_A1, CANARY.RECPROG_A1, CANARY.ATTEND_A1,
+  CANARY.PII_A1,
+];
+
+/**
+ * What a pre_member is redacted out of ON THE SURFACES R0 OWNS: curriculum
+ * detail, assignments, mentor feedback, mentor materials, the attendance fact
+ * and the resume position. Every one of those is a cohort_room_can_access()
+ * table or an R-3 envelope field, so the redaction is R0's to claim.
+ *
+ * 🔴 THE RECORDING URL AND THE JOIN LINKS ARE DELIBERATELY NOT HERE, AND THIS
+ * IS THE ONE LIST IN THE FILE THAT GOT SMALLER ON PURPOSE. Both ride
+ * live_sessions, whose read is governed by `live_sessions_student_read`
+ * (20260408140000:54) and `get_live_session_zoom_link` (20260408151600:74-86) —
+ * two APRIL policies that test "an ACTIVE enrolment in an offering mapped to
+ * this course" and know nothing of rooms, batches or tiers. R-1's own migration
+ * header (20260729100000:906-918) marks the STAGED lobby shape (ACTIVE
+ * enrolment + outstanding balance) as a known, escalated, NOT-CLOSED hole and
+ * ends: "do not re-assert 'a pre_member reads zero rows from live_sessions'
+ * anywhere until that follow-up lands." This suite used to re-assert it three
+ * ways, and passed only because its single lobby occupant was the OTHER lobby
+ * shape — an application stamp with no enrolment at all, for whom the April
+ * policies deny for a reason that has nothing to do with being a pre_member.
+ * So the claim is retired as a PASS and measured instead, on BOTH lobby shapes
+ * and against a purpose-built staged actor, as GAP-4.
  */
 const PRE_MEMBER_FORBIDDEN = [
-  CANARY.REC_A1, CANARY.CURRIC_A1, CANARY.ASSIGN_A1,
-  CANARY.FEEDBACK_A1, CANARY.MENTORDOC_A1,
-  CANARY.ZOOM_A1, CANARY.ZOOMNEAR_A1,
+  CANARY.CURRIC_A1, CANARY.ASSIGN_A1,
+  CANARY.FEEDBACK_A1, CANARY.MENTORDOC_A1, CANARY.ATTEND_A1, CANARY.RECPROG_A1,
 ];
+
+/**
+ * THE LEDGER — one row per planted sentinel, and the anti-vacuity contract.
+ *
+ * `observedBy` names the actor who is ENTITLED to the sentinel and must
+ * therefore be handed it at least once in this run. If nobody ever receives it,
+ * every "0 hits" result for that sentinel is unfalsifiable — the string might
+ * simply not be in the database. `observedBy: null` marks the sentinels nobody
+ * is ever entitled to (the PII pair), whose armed-ness is proven differently
+ * and named in `hunt`.
+ *
+ * CANARY-LEDGER at the foot of the run asserts, mechanically:
+ *   · every value in CANARY appears in at least one needle list actually swept;
+ *   · every entry with an `observedBy` was in fact observed by that actor;
+ *   · every sweep could have found every needle it hunted (CANARY_HOME).
+ */
+const CANARY_LEDGER = {
+  A1: { observedBy: "member_A1", hunt: "member_B / outsider / anon / accepted_A / member_A2" },
+  A2: { observedBy: "member_A2", hunt: "member_A1 + every non-A actor" },
+  B1: { observedBy: "member_B", hunt: "every offering-A actor via TOTAL" },
+  // No STUDENT may ever hold this one — it is the withheld link. The admin
+  // path is what proves the column is a real string rather than NULL, which is
+  // the difference between "the gate held" and "there was nothing to hand out".
+  ZOOM_A1: { observedBy: "admin", hunt: "member_A1 / member_A2 / member_B / outsider — nobody entitled to the room before T-60 (the two LOBBY shapes are measured as GAP-4, not asserted)" },
+  ZOOMNEAR_A1: { observedBy: "member_A1", hunt: "member_B / outsider / accepted_A via the link RPC; both lobby shapes measured as GAP-4" },
+  ZOOMLIVE_A1: { observedBy: "member_A1", hunt: "member_B / outsider / accepted_A via the link RPC and the envelope; lobby shapes → GAP-4" },
+  ZOOMCANCEL_A1: { observedBy: "admin", hunt: "member_A1 first of all — the entitled student of a class that was called off — then every other tier" },
+  ZOOM_A2: { observedBy: "member_A2", hunt: "member_B / outsider / accepted_A / anon via the link RPC" },
+  ZOOM_B1: { observedBy: "member_B", hunt: "member_A1 / member_A2 / outsider via the link RPC" },
+  CONFIG_A: { observedBy: "member_A1", hunt: "outsider / accepted_A / anon" },
+  CONFIG_A2: { observedBy: "member_A2", hunt: "member_A1 (the one intra-offering boundary the config policy draws)" },
+  REC_A1: { observedBy: "member_A1", hunt: "member_B / outsider / anon / accepted_A — the two lobby shapes are measured as GAP-4 (live_sessions is April policy, not R0's wall)" },
+  RECPROG_A1: { observedBy: "member_A1", hunt: "member_A2 / accepted_A / pre_member / outsider" },
+  SEEN_A1: { observedBy: "member_A1", hunt: "member_A2 / accepted_A / outsider" },
+  ATTEND_A1: { observedBy: "member_A1", hunt: "member_A2 / accepted_A / pre_member / outsider" },
+  CURRIC_A1: { observedBy: "member_A1", hunt: "member_A2 / pre_member / outsider / anon" },
+  CURRIC_A2: { observedBy: "member_A2", hunt: "member_A1 / outsider" },
+  CURRIC_B1: { observedBy: "member_B", hunt: "member_A1 / member_A2 / outsider via TOTAL" },
+  ASSIGN_A1: { observedBy: "member_A1", hunt: "member_A2 / pre_member / outsider" },
+  ASSIGN_A2: { observedBy: "member_A2", hunt: "member_A1 / outsider" },
+  ASSIGN_B1: { observedBy: "member_B", hunt: "member_A1 / member_A2 / outsider via TOTAL" },
+  FEEDBACK_A1: { observedBy: "member_A1", hunt: "member_A2 / pre_member / outsider" },
+  MENTORDOC_A1: { observedBy: "member_A1", hunt: "member_A2 / pre_member / outsider" },
+  PII_A1: { observedBy: "admin", hunt: "the roster RPC (C1.2 proves the mentor ROW is returned while the sentinel is not) + every actor's own users read" },
+  PII_A2: { observedBy: "admin", hunt: "member_A1's roster and users reads" },
+};
 
 const ACTORS = {
   admin: "room-qa-admin@leveluptest.invalid",
@@ -96,6 +347,16 @@ const ACTORS = {
   mentor_A: "room-qa-mentor-a@leveluptest.invalid",
   accepted_A: "room-qa-accepted-a@leveluptest.invalid",
   pre_member_A1: "room-qa-pre-member-a1@leveluptest.invalid",
+  // THE SECOND LOBBY SHAPE, and the reason GAP-4 is a measurement rather than
+  // prose. pre_member_A1 is the application-only lobby occupant (no enrolments
+  // row at all). staged_lobby_A1 is the one the STAGED payment path actually
+  // mints: the same `pre_member` room tier, reached with an ACTIVE enrolment
+  // that still owes a balance (R-1 contract note 3). Every April-era policy on
+  // live_sessions asks "is there an active enrolment for this offering?" and
+  // gets a YES from this actor and a NO from the other — so a fixture carrying
+  // only the first proves the lobby redaction against the shape where it is
+  // free, and says nothing about the shape where it costs something.
+  staged_lobby_A1: "room-qa-staged-lobby-a1@leveluptest.invalid",
   outsider: "room-qa-outsider@leveluptest.invalid",
 };
 const MODULE_KEYS = [
@@ -179,12 +440,14 @@ function die(msg, code = 2) {
 const INVENTORY = [
   ["PRE", "fixture world + membership preflight (derived vs manual vs none)"],
   ["Δ6", "R0 diff carries no certificate tiers and no tuition-credit phrasing"],
+  ["SEC-ENT-2", "the four guarded triggers ARE attached and armed, and a forced failure — thrown, and CANCELLED — never blocks the enrolment write"],
   ["R1/R2/R3", "member_B / outsider / anon read every offering-A surface"],
   ["R4", "non-members calling the room RPCs are raised at, not handed an empty set"],
   ["R7", "recording positions are own-row-only between members"],
   ["R8/R9/C3", "cross-batch isolation inside one offering (A1 vs A2), config override included"],
   ["R10", "accepted_A holds zero room read grant, and there is no preview RPC"],
-  ["R11", "pre_member_A1 sees the whitelist only, redacted out of five surfaces"],
+  ["R11", "pre_member_A1 sees the whitelist only, and is redacted out of the surfaces R0's wall owns"],
+  ["GAP-4", "the measured live_sessions/join-link residue of the STAGED lobby shape (April policy, not R0's)"],
   ["MYROOMS", "the room-LIST RPC is self-scoped and carries the lobby redaction"],
   ["W1/W2/W5/W6/W7", "write attacks on announcements, demo entries and the feed"],
   ["W3/W4", "membership and config are server-derived, never client-claimed"],
@@ -193,11 +456,16 @@ const INVENTORY = [
   ["W8", "forged channel_key is rejected by the write RPC"],
   ["W9", "client-set is_mentor_answer is overridden; raw feed INSERT is revoked"],
   ["L1/L2", "revoking an enrolment removes access; re-granting restores it"],
+  ["PROG", "get_cohort_progress — the one shipped-client surface R0 redefines"],
+  ["TOTAL", "unfiltered enumeration: every actor asks each table for everything"],
   ["GAP-1", "the measured residue revocation leaves outside R0's own surfaces"],
+  ["GAP-2", "the measured cross-batch residue on live_sessions (no batch column)"],
+  ["GAP-3", "the measured residue get_cohort_progress leaves (links + revocation)"],
   ["C1", "roster ships the safe column set only — no phone, no email"],
   ["C2", "the T-60 zoom gate holds server-side, in the envelope AND in the link RPC"],
   ["NFR-CONFIG-2", "flipping every module flag ON changes no row count anywhere"],
   ["CANARY", "full-corpus grep for every planted sentinel"],
+  ["CANARY-LEDGER", "every planted sentinel was hunted, every hunt was armed, and every sweep was reachable"],
 ];
 
 if (process.argv.includes("--list")) {
@@ -276,12 +544,21 @@ const session = {};
 /** actor → [{ label, text }] — every byte the server ever handed this actor. */
 const corpus = new Map();
 
-function record(actor, label, text) {
+/**
+ * `surface` is the reachability token — the path before '?' for a table probe,
+ * `rpc:<fn>` for a function call. It is stamped on the entry whether the server
+ * answered or refused, which is the correct definition: what makes a sweep
+ * falsifiable is that the REQUEST went out, not that it succeeded. A request
+ * denied by the wall is the wall holding, and the sweep has to be able to say so.
+ */
+function record(actor, label, text, surface) {
   if (!corpus.has(actor)) corpus.set(actor, []);
-  corpus.get(actor).push({ label, text: text ?? "" });
+  corpus.get(actor).push({ label, text: text ?? "", surface: surface ?? "" });
 }
 const mark = (actor) => (corpus.get(actor) ?? []).length;
 const since = (actor, from) => (corpus.get(actor) ?? []).slice(from);
+const surfacesIn = (actor, from) =>
+  new Set(since(actor, from).map((e) => e.surface).filter(Boolean));
 
 function authHeaders(actor) {
   if (actor === "anon") return { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` };
@@ -306,7 +583,7 @@ function isMalformed(status, json) {
 async function read(actor, path, label = path) {
   const res = await fetch(`${BASE}/rest/v1/${path}`, { headers: authHeaders(actor) });
   const text = await res.text();
-  record(actor, `GET ${label}`, text);
+  record(actor, `GET ${label}`, text, path.split("?")[0]);
   let json = null;
   try {
     json = JSON.parse(text);
@@ -342,7 +619,7 @@ async function write(actor, path, method, body, label) {
     body: method === "DELETE" ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
-  record(actor, `${method} ${label || path}`, text);
+  record(actor, `${method} ${label || path}`, text, path.split("?")[0]);
   let json = null;
   try {
     json = JSON.parse(text);
@@ -372,7 +649,7 @@ async function rpc(actor, fn, args = {}, label) {
     body: JSON.stringify(args),
   });
   const text = await res.text();
-  record(actor, `RPC ${label || fn}`, text);
+  record(actor, `RPC ${label || fn}`, text, `rpc:${fn}`);
   let json = null;
   let parsed = false;
   try {
@@ -399,8 +676,9 @@ async function rpc(actor, fn, args = {}, label) {
     /**
      * The function RAN, answered 200, and its answer was SQL NULL.
      *
-     * This is the pass condition for every link-gate case (C2.5, C2.7.*, L1.3b,
-     * R11.b3), which makes it the one place where "the server sent nothing
+     * This is the pass condition for every link-gate case (C2.5, C2.7.*, L1.3b)
+     * and the measurement GAP-4 reads, which makes it the one place where "the
+     * server sent nothing
      * usable" and "the server deliberately withheld the link" must never be
      * allowed to look the same. `json === null` alone conflates them: a gateway
      * 502 HTML page, a proxy error or an empty body all fail JSON.parse, leave
@@ -426,17 +704,44 @@ function corpusHits(actor, needle, from = 0) {
     .map((e) => e.label);
 }
 
+/** Every needle any sweep has actually looked for — CANARY-LEDGER reads this. */
+const sweptNeedles = new Set();
+/** One row per sweep: what it hunted, and what it could not possibly have found. */
+const sweepAudit = [];
+
+/**
+ * THE ANTI-VACUITY GUARD, APPLIED AT THE SWEEP.
+ *
+ * Two things have to be true before "zero hits" means anything:
+ *   1. nothing leaked  — the obvious half;
+ *   2. something COULD have leaked — for every needle, at least one of its home
+ *      surfaces (CANARY_HOME) was queried inside this sweep's own window.
+ * (2) is the half that was missing. A needle hunted over a window that never
+ * touched the surface carrying it returns zero for the same reason an empty
+ * database does, and the printed word is identical. So an unreachable needle
+ * FAILS the sweep here — naming the sentinel and the window — instead of being
+ * discovered later, or never.
+ */
 function proveCorpusClean(id, actor, needles, claim, from = 0) {
+  for (const n of needles) sweptNeedles.add(n);
+  const surfaces = surfacesIn(actor, from);
+  const unreachable = needles.filter((n) => !(HOME_OF.get(n) ?? []).some((s) => surfaces.has(s)));
   const leaks = [];
   for (const n of needles) for (const label of corpusHits(actor, n, from)) leaks.push(`${n} via ${label}`);
   const responses = since(actor, from).length;
+  sweepAudit.push({ id, actor, needles: needles.length, unreachable });
   return prove(
     id,
     claim,
-    leaks.length === 0,
-    leaks.length === 0
-      ? `${responses} response bodies swept for ${needles.length} sentinel(s); zero hits`
-      : `LEAKED: ${leaks.slice(0, 8).join("; ")}`
+    leaks.length === 0 && unreachable.length === 0,
+    leaks.length
+      ? `LEAKED: ${leaks.slice(0, 8).join("; ")}`
+      : unreachable.length
+        ? `VACUOUS SWEEP — ${unreachable.join(", ")} could not have appeared in this window: ` +
+          `${actor} queried [${[...surfaces].join(", ") || "nothing"}] and none of those surfaces carries them. ` +
+          "Hunt them over a window that queries their home surface, or drop them from this list."
+        : `${responses} response bodies swept for ${needles.length} sentinel(s) across ` +
+          `${surfaces.size} distinct surface(s); zero hits`
   );
 }
 
@@ -535,12 +840,31 @@ async function signIn(password) {
 
 async function teardown() {
   await sql(`
+    -- SEC-ENT-2's forced-failure props first. That section disarms itself in a
+    -- finally and asserts the world is back (SEC-ENT-2.5); this is the second
+    -- lock, because a CHECK(false) left on cohort_room_members would break the
+    -- next run of this suite AND every room write on the shadow project.
+    ALTER TABLE public.cohort_room_members DROP CONSTRAINT IF EXISTS tmp_room_qa_force_fail;
+    ALTER TABLE public.cohort_room_members DROP CONSTRAINT IF EXISTS tmp_room_qa_force_cancel;
+    DO $do$
+    BEGIN
+      IF to_regclass('public.enrolments_room_qa_real') IS NOT NULL THEN
+        DROP VIEW IF EXISTS public.enrolments;
+        ALTER TABLE public.enrolments_room_qa_real RENAME TO enrolments;
+      END IF;
+    END $do$;
+    -- cohort_recording_progress and cohort_room_seen are not named here: the
+    -- first cascades from live_sessions and the second from offerings, both
+    -- deleted below. cohort_week_attendance and cohort_week_submissions cascade
+    -- from cohort_weeks, which cascades from cohort_batches → offerings.
     DELETE FROM public.live_sessions WHERE title LIKE 'ROOM QA %';
     DELETE FROM public.cohort_applications WHERE email LIKE 'room-qa-%';
     DELETE FROM public.enrolments WHERE offering_id IN (SELECT id FROM public.offerings WHERE slug LIKE 'room-qa-%');
     DELETE FROM public.offerings WHERE slug LIKE 'room-qa-%';
     DELETE FROM public.courses WHERE slug LIKE 'room-qa-%';
     DROP FUNCTION IF EXISTS public._room_qa_uid(text);
+    DROP FUNCTION IF EXISTS public._room_qa_cancel(uuid);
+    DROP FUNCTION IF EXISTS public._room_qa_boom();
     SELECT 1;
   `).catch(() => {});
   const emails = Object.values(ACTORS).map(lit).join(",");
@@ -697,11 +1021,22 @@ try {
 await signIn(password);
 
 prove("PRE.1",
-  "the fixture world exists: two offerings, three batches, three room configs, five sessions and — the piece whose absence silently voided every session probe before the 2026-07-27 review — an offering_courses row per offering, which is what live_sessions RLS actually resolves through",
+  "the fixture world exists: two offerings, three batches, three room configs, seven sessions and — the piece whose absence silently voided every session probe before the 2026-07-27 review — an offering_courses row per offering, which is what live_sessions RLS actually resolves through",
   Number(world?.offerings) === 2 && Number(world?.batches) === 3 &&
-    Number(world?.configs) === 3 && Number(world?.sessions) === 5 &&
+    Number(world?.configs) === 3 && Number(world?.sessions) === 7 &&
     Number(world?.course_maps) === 2,
-  `offerings=${world?.offerings} batches=${world?.batches} configs=${world?.configs} sessions=${world?.sessions} offering_courses=${world?.course_maps}`);
+  `offerings=${world?.offerings} batches=${world?.batches} configs=${world?.configs} sessions=${world?.sessions} offering_courses=${world?.course_maps}; ` +
+    `membership rows derived so far=${world?.memberships} (reported, not asserted — the SHAPE of each one is what matters and PRE.2–PRE.7 assert that per actor; ` +
+    "the raw count is inflated by the retracted batch-less rows branch (c) leaves behind for every roster member, which is correct behaviour and a poor thing to pin a number to)");
+
+prove("PRE.1b",
+  "the three seeds the ten-surface matrix depends on are present — a cohort_room_seen watermark, a recording position and an attendance mark — and BOTH clock-dependent rows are inside their windows right now: exactly one live session RUNNING, and the CANCELLED decoy also still running. Without the running row, 'which session is this week's session' has the same answer under a correct ordering and a broken one; without the decoy still being in ITS window, PROG.2's demotion claim would be won on timing alone and would pass with the cancelled sort key deleted. The decoy leaves its window 60 minutes after the fixtures apply — half the live session's margin, and the tightest clock dependency in the run — so it is asserted here rather than assumed, and a slow or re-used (ROOM_QA_KEEP=1) world fails HERE, by name",
+  Number(world?.room_seen) === 1 && Number(world?.rec_progress) === 1 &&
+    Number(world?.attendance) === 1 && Number(world?.running_sessions) === 1 &&
+    Number(world?.cancelled_running) === 1,
+  `cohort_room_seen=${world?.room_seen} cohort_recording_progress=${world?.rec_progress} ` +
+    `cohort_week_attendance=${world?.attendance} currently-running sessions=${world?.running_sessions} ` +
+    `cancelled-but-still-in-window sessions=${world?.cancelled_running}`);
 
 const ids = await sqlOne(`
   SELECT
@@ -718,7 +1053,15 @@ const ids = await sqlOne(`
       WHERE b.name = 'ROOM QA Batch A2' LIMIT 1) AS demo_a2,
     (SELECT id FROM public.live_sessions WHERE title = 'ROOM QA A1 PAST session') AS session_past_a1,
     (SELECT id FROM public.live_sessions WHERE title = 'ROOM QA A1 FAR session') AS session_far_a1,
-    (SELECT id FROM public.live_sessions WHERE title = 'ROOM QA A1 NEAR session') AS session_near_a1
+    (SELECT id FROM public.live_sessions WHERE title = 'ROOM QA A1 NEAR session') AS session_near_a1,
+    (SELECT id FROM public.live_sessions WHERE title = 'ROOM QA A1 LIVE session') AS session_live_a1,
+    (SELECT id FROM public.live_sessions WHERE title = 'ROOM QA A1 CANCELLED session') AS session_cancelled_a1,
+    (SELECT id FROM public.live_sessions WHERE title = 'ROOM QA A2 session') AS session_a2,
+    (SELECT id FROM public.live_sessions WHERE title = 'ROOM QA B1 session') AS session_b1,
+    (SELECT w.id FROM public.cohort_weeks w JOIN public.cohort_batches b ON b.id = w.cohort_batch_id
+      WHERE b.name = 'ROOM QA Batch A1' LIMIT 1) AS week_a1,
+    (SELECT w.id FROM public.cohort_weeks w JOIN public.cohort_batches b ON b.id = w.cohort_batch_id
+      WHERE b.name = 'ROOM QA Batch A2' LIMIT 1) AS week_a2
 `);
 
 // Every room-content surface for offering A, as an outsider would probe it.
@@ -729,6 +1072,14 @@ const ids = await sqlOne(`
 // probe stops being an RLS row-isolation result at all. The explicit list is
 // the shape a real client uses; the column REVOKE itself is attacked separately
 // and on purpose in C2.
+//
+// ALL TEN ROOM-CONTENT SURFACES, not the eight this list used to carry. The
+// two that were missing are the two own-row tables — cohort_room_seen (which
+// had no reference anywhere in this file and no fixture row at all) and
+// cohort_recording_progress (referenced exactly once, member-against-member).
+// Leaving them out did not weaken any single case; it weakened the SENTENCE
+// every case rolls up into, because "accepted_A reads EVERY room-content
+// surface and gets nothing" was being asserted over 8/10 of them.
 const SURFACES_A = [
   ["cohort_announcements", `cohort_announcements?offering_id=eq.${ids.offering_a}&select=*`],
   ["cohort_resources", `cohort_resources?offering_id=eq.${ids.offering_a}&select=*`],
@@ -738,6 +1089,11 @@ const SURFACES_A = [
   ["cohort_weeks", `cohort_weeks?cohort_batch_id=in.(${ids.batch_a1},${ids.batch_a2})&select=*`],
   ["live_sessions", `live_sessions?title=like.ROOM%20QA%20A*&select=id,title,scheduled_at,duration_minutes,status,recording_url,week_id,course_id`],
   ["cohort_room_configs", `cohort_room_configs?offering_id=eq.${ids.offering_a}&select=*`],
+  // Own-row tables. An attacker gets zero rows here by ownership as well as by
+  // room access, which is exactly why they need a sentinel: without one, their
+  // zero is indistinguishable from an empty table and carries no information.
+  ["cohort_recording_progress", `cohort_recording_progress?live_session_id=eq.${ids.session_past_a1}&select=*`],
+  ["cohort_room_seen", `cohort_room_seen?offering_id=eq.${ids.offering_a}&select=*`],
 ];
 
 /**
@@ -745,7 +1101,8 @@ const SURFACES_A = [
  * with no sentinel here has no positive control, and a surface with no positive
  * control cannot support a "0 rows = the wall held" claim — it may simply be
  * empty or unreachable for reasons nothing to do with access. Every one of the
- * eight is covered.
+ * TEN is covered; the two own-row tables carry timestamp sentinels because
+ * neither has a text column to hide a word in (see the CANARY map).
  */
 const POSITIVE_CONTROL = {
   cohort_announcements: CANARY.A1,
@@ -756,7 +1113,23 @@ const POSITIVE_CONTROL = {
   cohort_weeks: CANARY.CURRIC_A1,
   live_sessions: CANARY.REC_A1,
   cohort_room_configs: CANARY.CONFIG_A,
+  cohort_recording_progress: CANARY.RECPROG_A1,
+  cohort_room_seen: CANARY.SEEN_A1,
 };
+
+/**
+ * The two MEMBER-PRIVATE curriculum tables. They are not room-content surfaces
+ * — they predate the room and are governed by their own older policies — so
+ * they are deliberately not in SURFACES_A and not part of the "every room
+ * surface" claim. They are probed alongside it wherever a sweep hunts the
+ * FEEDBACK or ATTEND sentinels, because those two sentinels live nowhere else:
+ * a window that never queries these tables cannot find them, and under the
+ * reachability rule that is now a failure rather than a quiet pass.
+ */
+const MEMBER_PRIVATE_A = [
+  ["cohort_week_submissions", `cohort_week_submissions?cohort_week_id=eq.${ids.week_a1}&select=*`],
+  ["cohort_week_attendance", `cohort_week_attendance?cohort_week_id=eq.${ids.week_a1}&select=*`],
+];
 
 /**
  * Which wall governs each surface's REVOCATION semantics.
@@ -781,7 +1154,18 @@ const LEGACY_SURFACES = SURFACES_A.filter(([name]) => name === "cohort_weeks");
       FROM public.cohort_room_members m
       JOIN public.users u ON u.id = m.user_id
      WHERE m.offering_id = ${lit(ids.offering_a)}`);
-  const by = (email) => rows.filter((r) => (r.email || "").startsWith(email));
+  // ACTIVE ROWS FIRST, because a roster member legitimately owns TWO rows here.
+  // The fixture inserts the enrolment before the batch-roster row, so resolver
+  // branch (a2) mints a batch-less `member` row first (a real purchase whose
+  // roster placement has not happened yet), and the roster write then mints the
+  // batch-scoped row and branch (c) retracts the batch-less one to 'revoked'.
+  // Both rows survive by design — revocation is a status flip, not a delete —
+  // so an unordered [0] would sometimes hand the assertions the retracted row
+  // and fail PRE.2 for a reason that has nothing to do with access.
+  const by = (email) =>
+    rows
+      .filter((r) => (r.email || "").startsWith(email))
+      .sort((a, b) => Number(b.status === "active") - Number(a.status === "active"));
 
   const a1 = by("room-qa-member-a1")[0];
   prove("PRE.2",
@@ -807,6 +1191,25 @@ const LEGACY_SURFACES = SURFACES_A.filter(([name]) => name === "cohort_weeks");
     pre?.role === "pre_member" && pre?.status === "active",
     pre ? `role=${pre.role} source=${pre.source} batch=${pre.batch_id ?? "NULL (offering-wide lobby)"}`
         : "no pre_member row appeared — R-1's cohort_applications trigger / resolver branch is missing");
+
+  // THE SECOND LOBBY SHAPE. Same tier, different truth underneath it: an ACTIVE
+  // enrolment that still owes a balance. R-1 branch (a2) stands down on
+  // _room_balance_outstanding() and branch (b) claims the row instead, so the
+  // room tier is identical — while every April-era policy that asks only "is
+  // there an active enrolment?" now answers YES. Both halves are asserted
+  // because GAP-4's whole meaning depends on them: a lobby row proves the tier,
+  // the active enrolment proves the residue is not simply this actor being an
+  // ordinary member.
+  const staged = by("room-qa-staged-lobby")[0];
+  const stagedEnrol = await sqlOne(
+    `SELECT count(*)::int AS n FROM public.enrolments
+      WHERE user_id = ${lit(session.staged_lobby_A1.id)}
+        AND offering_id = ${lit(ids.offering_a)} AND status = 'active'`);
+  prove("PRE.5b",
+    "staged_lobby_A1 holds the SAME `pre_member` room tier while carrying an ACTIVE enrolment with an outstanding balance — the shape the staged payment path actually mints, and the one R-1's own header (20260729100000:906-918) flags as the un-closed hole in the April live_sessions policies. The room resolver refuses to promote them (branch (a2) is gated on the balance, not on the enrolments table), so anything they reach through live_sessions is reached in spite of the tier, not because of it",
+    staged?.role === "pre_member" && staged?.status === "active" && stagedEnrol?.n === 1,
+    staged ? `role=${staged.role} source=${staged.source} status=${staged.status} batch=${staged.batch_id ?? "NULL"}; active enrolments in offering A: ${stagedEnrol?.n}`
+           : `no membership row for the staged lobby actor; active enrolments in offering A: ${stagedEnrol?.n}`);
 
   const accepted = by("room-qa-accepted-a");
   prove("PRE.6",
@@ -862,6 +1265,325 @@ section("PRE — positive controls", "if a member cannot see the canaries, every
     "member_B can read their OWN offering's noticeboard and their OWN course's sessions — member_B is a fully-provisioned member of a different cohort, which is what makes every zero they get from offering A a boundary result rather than an empty account",
     bAnn.ok && bAnn.rows > 0 && bAnn.text.includes(CANARY.B1) && bSessions.ok && bSessions.rows > 0,
     `announcements(B): ${bAnn.describe}, B1 sentinel ${bAnn.text.includes(CANARY.B1)}; sessions(B): ${bSessions.describe}`);
+
+  const bWeeks = await read("member_B", `cohort_weeks?cohort_batch_id=eq.${ids.batch_b1}&select=*`,
+    "weeks(B) as member_B [positive control]");
+  prove("PRE.12",
+    "member_B's own curriculum body and assignment brief are readable BY member_B — the offering-B sentinels are real, findable rows, which is the only thing that makes the offering-A actors' later zeros on those same strings a wall rather than an empty offering",
+    bWeeks.ok && bWeeks.rows > 0 && bWeeks.text.includes(CANARY.CURRIC_B1) && bWeeks.text.includes(CANARY.ASSIGN_B1),
+    `${bWeeks.describe}; ${CANARY.CURRIC_B1}=${bWeeks.text.includes(CANARY.CURRIC_B1)} ${CANARY.ASSIGN_B1}=${bWeeks.text.includes(CANARY.ASSIGN_B1)}`);
+
+  const a2Weeks = await read("member_A2", `cohort_weeks?cohort_batch_id=eq.${ids.batch_a2}&select=*`,
+    "weeks(A2) as member_A2 [positive control]");
+  prove("PRE.13",
+    "batch A2's own curriculum body and assignment brief are readable by a batch-A2 member — the sibling batch's material exists and is findable, so member_A1's zero on those two strings is batch isolation and not an empty sibling batch",
+    a2Weeks.ok && a2Weeks.rows > 0 && a2Weeks.text.includes(CANARY.CURRIC_A2) && a2Weeks.text.includes(CANARY.ASSIGN_A2),
+    `${a2Weeks.describe}; ${CANARY.CURRIC_A2}=${a2Weeks.text.includes(CANARY.CURRIC_A2)} ${CANARY.ASSIGN_A2}=${a2Weeks.text.includes(CANARY.ASSIGN_A2)}`);
+
+  const a1Attend = await read("member_A1", `cohort_week_attendance?cohort_week_id=eq.${ids.week_a1}&select=*`,
+    "own attendance as member_A1 [positive control]");
+  const a1Sub = await read("member_A1", `cohort_week_submissions?cohort_week_id=eq.${ids.week_a1}&select=*`,
+    "own submission + mentor feedback as member_A1 [positive control]");
+  prove("PRE.14",
+    "member_A1 reads their own attendance mark and their own mentor feedback — the two member-private facts that ride get_cohort_progress: both are armed, so a zero from a room-mate, a lobby occupant or an outsider later is ownership being enforced and not a table nobody ever wrote to",
+    a1Attend.ok && a1Attend.rows > 0 && a1Attend.text.includes(CANARY.ATTEND_A1) &&
+      a1Sub.ok && a1Sub.rows > 0 && a1Sub.text.includes(CANARY.FEEDBACK_A1),
+    `attendance: ${a1Attend.describe}, sentinel=${a1Attend.text.includes(CANARY.ATTEND_A1)}; submission: ${a1Sub.describe}, sentinel=${a1Sub.text.includes(CANARY.FEEDBACK_A1)}`);
+
+  // The PII sentinels are the one pair NO room actor may ever receive, so their
+  // arming cannot come from a room read. It comes from the one role that IS
+  // entitled to them: users_read_own admits `OR is_admin()`. Without this, "the
+  // roster carries no PII canary" would also be satisfied by a fixture that
+  // never planted one.
+  const adminUsers = await read("admin", "users?select=*&limit=200", "users table as admin [PII positive control]");
+  prove("PRE.15",
+    "an ADMIN reads the users table and finds both PII sentinels in it — mentor_A's and member_A2's phone/email are genuinely planted, so every later 'the PII canary is absent' result is a projection guarantee rather than a grep for a string that was never written",
+    adminUsers.ok && adminUsers.text.includes(CANARY.PII_A1) && adminUsers.text.includes(CANARY.PII_A2),
+    adminUsers.ok
+      ? `${adminUsers.rows} row(s); ${CANARY.PII_A1}=${adminUsers.text.includes(CANARY.PII_A1)} ${CANARY.PII_A2}=${adminUsers.text.includes(CANARY.PII_A2)}`
+      : adminUsers.describe);
+}
+
+// ── SEC-ENT-2 — the room is downstream of the money, never in front of it ───
+//
+// THE HIGHEST-CONSEQUENCE GUARANTEE IN THE PHASE, AND IT HAD ZERO CASES. Every
+// other failure in this file costs privacy. This one costs a student their
+// enrolment: four AFTER triggers on cohort_batch_members, enrolments and
+// cohort_applications call the resolver, and an unguarded error in any of them
+// rolls back the payment write it is attached to. Until now the only evidence
+// for it was prose describing a PGlite run against stand-in tables — which is
+// evidence about stand-in tables.
+//
+// The failure is injected from OUTSIDE, exactly as the migration's contract
+// note 8 (20260729100000:183-200) prescribes, because no test backdoor is
+// compiled into the migration: a NOT VALID CHECK makes every resolver write to
+// cohort_room_members throw, and a renamed table behind a raising view makes a
+// trigger's OWN driving query throw. Both halves are needed — the first can
+// only ever prove the inner guard, and the outer one is where the 2026-07
+// review found the hole.
+//
+// FIRST, THE ARMING — WITHOUT WHICH THIS WHOLE SECTION PASSES ON NOTHING.
+// Every case below asserts "the money write committed AND no membership row
+// appeared". That second half is byte-identical to "the trigger was never
+// attached, so the forced failure was never reached" — and an unattached
+// trigger is not hypothetical here: §5 of the backbone migration attaches all
+// four inside DO blocks that swallow a failed attachment into RAISE WARNING,
+// bounded by a 4s lock_timeout, as an explicitly accepted degradation. On a
+// shadow project where two of them lost that race, this section used to print
+// five green claims about a guard that never executed. So:
+//   .0a  the four triggers exist on their tables and are ENABLED (the migration's
+//        own section-8 VERIFY query, run as an assertion instead of a comment);
+//   .0b  with NOTHING armed, the same enrolment INSERT and the same roster
+//        INSERT DO derive a membership row — the positive control that turns
+//        every "0 membership rows" below into evidence about the guard.
+//
+// THEN THE FOUR FAILURE CASES, and the third is the one that matters most:
+//   .1  a plain error inside the resolver              (23514)
+//   .2  the same, on the roster-write trigger path     (23514)
+//   .3  a CANCELLED statement inside the resolver      (57014)
+//   .4  a failure in the trigger's own driving query   (P0001)
+// .3 exists because plpgsql's `WHEN OTHERS` does NOT match query_canceled: a
+// statement_timeout landing inside the resolver propagates straight through a
+// handler that catches everything else, and the enrolment INSERT it was
+// attached to is rolled back. Timeouts land on the busiest node under the
+// heaviest load — which is checkout. The cancel is injected by SQLSTATE rather
+// than by wall clock on purpose: a real timeout has to be raced, and a case
+// that only fails when the machine is slow is a case that never fails.
+section("SEC-ENT-2 — a failing room trigger can never block an enrolment",
+  "inviolable rule #4: enrolment is the money path and the room hangs off it, so the room's failures are the room's to absorb");
+{
+  const OUT = session.outsider.id;
+  const attempt = async (q) => {
+    try {
+      return { ok: true, rows: await sql(q) };
+    } catch (e) {
+      return { ok: false, error: e.message.slice(0, 300) };
+    }
+  };
+  const enrolInto = (slug) => `
+    INSERT INTO public.enrolments (user_id, offering_id, status, source)
+    SELECT ${lit(OUT)}, o.id, 'active', 'admin_grant'
+      FROM public.offerings o WHERE o.slug = ${lit(slug)}
+    RETURNING id;`;
+  const memberRows = () =>
+    sqlOne(`SELECT count(*)::int AS n FROM public.cohort_room_members WHERE user_id = ${lit(OUT)}`);
+  const DISARM = `
+    ALTER TABLE public.cohort_room_members DROP CONSTRAINT IF EXISTS tmp_room_qa_force_fail;
+    ALTER TABLE public.cohort_room_members DROP CONSTRAINT IF EXISTS tmp_room_qa_force_cancel;
+    SELECT 1;`;
+
+  // ── .0a  The four guarded trigger attachments ───────────────────────────────
+  const triggers = await sql(`
+    SELECT v.tgname,
+           CASE WHEN t.oid IS NULL THEN 'MISSING'
+                WHEN t.tgenabled = 'D' THEN 'DISABLED'
+                ELSE 'ok' END AS verdict
+      FROM (VALUES
+        ('cohort_batch_members', 'room_resolve_on_batch_member'),
+        ('enrolments',           'room_resolve_on_enrolment_status'),
+        ('enrolments',           'room_resolve_on_enrolment_insert'),
+        ('cohort_applications',  'room_resolve_on_application_status')
+      ) AS v(tbl, tgname)
+      LEFT JOIN pg_trigger t
+        ON t.tgname  = v.tgname
+       AND t.tgrelid = to_regclass('public.' || v.tbl)
+       AND NOT t.tgisinternal
+     ORDER BY 1`);
+  const badTriggers = triggers.filter((t) => t.verdict !== "ok");
+  prove("SEC-ENT-2.0a",
+    "all four resolver triggers are attached to the money tables and enabled — cohort_batch_members, both enrolments triggers and cohort_applications. R-1 attaches them inside DO blocks whose handler downgrades a failed attachment to a WARNING under a 4s lock_timeout, so 'the trigger is not there' is a documented, expected outcome of a busy `db push`, not a hypothetical; and with it absent every forced-failure case below would commit its write, find zero membership rows and print PASS having executed no guard at all",
+    triggers.length === 4 && badTriggers.length === 0,
+    triggers.length === 4
+      ? triggers.map((t) => `${t.tgname}:${t.verdict}`).join(" · ")
+      : `expected 4 rows from pg_trigger, got ${triggers.length} — ${JSON.stringify(triggers).slice(0, 200)}`);
+
+  // ── .0b  The positive control: nothing armed, the resolver DOES fire ────────
+  const armA = await attempt(enrolInto("room-qa-offering-a"));
+  const armEnrol = armA.ok ? armA.rows[0]?.id : null;
+  const armRow = await sqlOne(
+    `SELECT role, source, status, batch_id FROM public.cohort_room_members
+      WHERE user_id = ${lit(OUT)} AND offering_id = ${lit(ids.offering_a)}`);
+  const armRoster = await attempt(`
+    INSERT INTO public.cohort_batch_members (batch_id, enrolment_id)
+    VALUES (${lit(ids.batch_a1)}, ${lit(armEnrol)}) RETURNING id;`);
+  const armRowScoped = await sqlOne(
+    `SELECT role, batch_id FROM public.cohort_room_members
+      WHERE user_id = ${lit(OUT)} AND offering_id = ${lit(ids.offering_a)}
+        AND batch_id = ${lit(ids.batch_a1)}`);
+  prove("SEC-ENT-2.0b",
+    "with no failure armed, that same enrolment INSERT derives a membership row through resolver branch (a2) — and putting the student on a batch roster re-derives it batch-scoped through branch (a). Both writes below are therefore proven to REACH the resolver, which is the difference between 'the guard absorbed a failure' and 'nothing ever ran': the enrolment and roster paths this section attacks are live on this project right now",
+    armA.ok && armRow?.role === "member" && armRow?.source === "derived" &&
+      armRow?.status === "active" && armRow?.batch_id === null &&
+      armRoster.ok && armRowScoped?.batch_id === ids.batch_a1,
+    armA.ok
+      ? `after the enrolment INSERT: role=${armRow?.role} source=${armRow?.source} status=${armRow?.status} batch=${armRow?.batch_id ?? "NULL (branch a2)"}; ` +
+        `after the roster INSERT: batch=${armRowScoped?.batch_id === ids.batch_a1 ? "A1 (branch a)" : armRowScoped?.batch_id ?? "none"}`
+      : `the control enrolment itself failed: ${armA.error}`);
+
+  // Back to zero before anything is armed — .1 re-runs this exact INSERT and
+  // reads the membership count as its evidence, so a leftover row from the
+  // control would read as a resolver that ran while it was supposed to be
+  // throwing. Order matters: the roster row references the enrolment.
+  await sql(`
+    DELETE FROM public.cohort_batch_members
+     WHERE enrolment_id IN (SELECT id FROM public.enrolments WHERE user_id = ${lit(OUT)});
+    DELETE FROM public.enrolments WHERE user_id = ${lit(OUT)};
+    DELETE FROM public.cohort_room_members WHERE user_id = ${lit(OUT)};
+    SELECT 1;`);
+
+  let enrolA = null;
+  let enrolB = null;
+  try {
+    await sql(`
+      CREATE OR REPLACE FUNCTION public._room_qa_cancel(p_user uuid)
+      RETURNS boolean LANGUAGE plpgsql VOLATILE COST 1 AS $fn$
+      BEGIN
+        RAISE EXCEPTION 'ROOM QA: simulated statement cancellation while resolving %', p_user
+          USING ERRCODE = '57014';
+      END $fn$;
+      CREATE OR REPLACE FUNCTION public._room_qa_boom()
+      RETURNS boolean LANGUAGE plpgsql VOLATILE COST 1 AS $fn$
+      BEGIN
+        RAISE EXCEPTION 'ROOM QA: simulated failure of a trigger driving query'
+          USING ERRCODE = 'P0001';
+      END $fn$;
+      SELECT 1;`);
+
+    // ── .1  A plain throw inside the resolver ────────────────────────────────
+    await sql(`ALTER TABLE public.cohort_room_members
+                 ADD CONSTRAINT tmp_room_qa_force_fail CHECK (false) NOT VALID;`);
+    const insA = await attempt(enrolInto("room-qa-offering-a"));
+    enrolA = insA.ok ? insA.rows[0]?.id : null;
+    const rowA = await sqlOne(
+      `SELECT id, status FROM public.enrolments
+        WHERE user_id = ${lit(OUT)} AND offering_id = ${lit(ids.offering_a)}`);
+    const memA = await memberRows();
+    prove("SEC-ENT-2.1",
+      "with EVERY write to cohort_room_members forced to throw, an enrolment INSERT into a room-bearing offering still COMMITS and the student is enrolled — the AFTER trigger swallows the resolver's failure as a WARNING instead of taking the payment write down with it, which is the difference between a broken room and a broken checkout",
+      insA.ok && rowA?.status === "active" && memA.n === 0,
+      insA.ok
+        ? `enrolment ${rowA?.id} committed with status=${rowA?.status}; membership rows written: ${memA.n} (0 is correct — the resolver could not write one, and that is precisely the failure being absorbed)`
+        : `THE ENROLMENT WAS ROLLED BACK: ${insA.error}`);
+
+    // ── .2  The same forced failure, on the roster-write path ────────────────
+    const insRoster = await attempt(`
+      INSERT INTO public.cohort_batch_members (batch_id, enrolment_id)
+      VALUES (${lit(ids.batch_a1)}, ${lit(enrolA)})
+      RETURNING id;`);
+    const rosterRow = await sqlOne(
+      `SELECT count(*)::int AS n FROM public.cohort_batch_members WHERE enrolment_id = ${lit(enrolA)}`);
+    prove("SEC-ENT-2.2",
+      "an admin putting that student on a batch roster also commits while the resolver is still throwing — the roster is an ops write, it is not the room's to veto, and an ops tool that cannot save because a downstream trigger is unhappy is an outage of its own",
+      insRoster.ok && rosterRow?.n === 1,
+      insRoster.ok ? `cohort_batch_members rows for the enrolment: ${rosterRow?.n}`
+                   : `THE ROSTER WRITE WAS ROLLED BACK: ${insRoster.error}`);
+
+    await sql(DISARM);
+
+    // ── .3  A CANCELLED statement inside the resolver (the N-1 case) ─────────
+    await sql(`ALTER TABLE public.cohort_room_members
+                 ADD CONSTRAINT tmp_room_qa_force_cancel
+                 CHECK (public._room_qa_cancel(user_id)) NOT VALID;`);
+    const insB = await attempt(enrolInto("room-qa-offering-b"));
+    enrolB = insB.ok ? insB.rows[0]?.id : null;
+    const rowB = await sqlOne(
+      `SELECT id, status FROM public.enrolments
+        WHERE user_id = ${lit(OUT)} AND offering_id = ${lit(ids.offering_b)}`);
+    prove("SEC-ENT-2.3",
+      "the resolver being CANCELLED mid-write — SQLSTATE 57014, what a statement_timeout looks like from inside a trigger — also leaves the enrolment committed: `EXCEPTION WHEN OTHERS` does not match query_canceled, so a handler that catches everything else still lets a timeout roll the money write back, and a timeout is likeliest exactly when the system is busiest, which is checkout",
+      insB.ok && rowB?.status === "active",
+      insB.ok
+        ? `enrolment ${rowB?.id} committed with status=${rowB?.status} while every membership write was being cancelled`
+        : `THE ENROLMENT WAS ROLLED BACK BY A CANCELLED RESOLVER: ${insB.error}. ` +
+          "The guard must name query_canceled explicitly — `WHEN query_canceled THEN … WHEN OTHERS THEN …` — because OTHERS does not cover it.");
+
+    // ── .3b The cancel on the OTHER guard shape ─────────────────────────────
+    //
+    // The batch-member trigger resolves a LIST of users, so its per-user guard
+    // handles a cancel differently from an error: it stops the loop instead of
+    // carrying on, because Postgres arms statement_timeout once per statement
+    // and a loop that traps the cancel and continues has consumed the only
+    // interrupt an operator gets. Different code, same obligation — the write
+    // it hangs off still has to commit — so it is attacked separately rather
+    // than assumed to behave like the enrolment guard.
+    const insRosterCancelled = await attempt(`
+      INSERT INTO public.cohort_batch_members (batch_id, enrolment_id)
+      VALUES (${lit(ids.batch_a2)}, ${lit(enrolA)})
+      RETURNING id;`);
+    const rosterCancelledRow = await sqlOne(
+      `SELECT count(*)::int AS n FROM public.cohort_batch_members
+        WHERE enrolment_id = ${lit(enrolA)} AND batch_id = ${lit(ids.batch_a2)}`);
+    prove("SEC-ENT-2.3b",
+      "a roster write whose resolver is CANCELLED also commits — the batch-member trigger stops its per-user loop on 57014 rather than carrying on with a timer that has already fired, and stopping is not the same as failing: the ops write lands, a WARNING names who was skipped, and the 03:45 reconcile re-derives them",
+      insRosterCancelled.ok && rosterCancelledRow?.n === 1,
+      insRosterCancelled.ok ? `roster rows written while the resolver was being cancelled: ${rosterCancelledRow?.n}`
+                            : `THE ROSTER WRITE WAS ROLLED BACK BY A CANCELLED RESOLVER: ${insRosterCancelled.error}`);
+
+    await sql(DISARM);
+
+    // ── .4  A failure in the trigger's OWN driving query ─────────────────────
+    //
+    // Not the resolver: the `SELECT array_agg(...) FROM public.enrolments`
+    // that _room_resolve_from_batch_member runs to find out WHO to resolve.
+    // The whole rename → view → insert → restore runs as ONE statement batch,
+    // which the SQL channel sends as one implicit transaction: if the trigger
+    // does not swallow the error, the transaction aborts and the rename never
+    // reaches disk. There is deliberately no window in which this shadow
+    // project can be left holding a raising view named public.enrolments.
+    const driving = await attempt(`
+      ALTER TABLE public.enrolments RENAME TO enrolments_room_qa_real;
+      CREATE VIEW public.enrolments AS
+        SELECT * FROM public.enrolments_room_qa_real WHERE public._room_qa_boom();
+      INSERT INTO public.cohort_batch_members (batch_id, enrolment_id)
+      VALUES (${lit(ids.batch_b1)}, ${lit(enrolB)});
+      DROP VIEW public.enrolments;
+      ALTER TABLE public.enrolments_room_qa_real RENAME TO enrolments;
+      SELECT count(*)::int AS n FROM public.cohort_batch_members WHERE enrolment_id = ${lit(enrolB)};`);
+    prove("SEC-ENT-2.4",
+      "when the trigger's OWN driving query fails — reading `enrolments` itself raises, which is what a permissions change, a lock timeout or a schema edit under load looks like — the roster write STILL commits: the guard wraps the query that decides whom to resolve, not merely the resolver call, so there is no statement inside these triggers that runs outside a handler",
+      driving.ok && Number(driving.rows?.[0]?.n) === 1,
+      driving.ok
+        ? `cohort_batch_members rows for the enrolment: ${driving.rows?.[0]?.n}; public.enrolments restored to a table in the same transaction`
+        : `THE ROSTER WRITE WAS ROLLED BACK: ${driving.error} (the rename rolled back with it — public.enrolments is untouched)`);
+  } finally {
+    // Restore the world exactly. Everything below is idempotent and runs even
+    // if a case above threw, because leaving a CHECK(false) on
+    // cohort_room_members would fail every remaining case in the file for a
+    // reason that has nothing to do with access.
+    await sql(DISARM).catch(() => {});
+    await sql(`
+      DO $do$
+      BEGIN
+        IF to_regclass('public.enrolments_room_qa_real') IS NOT NULL THEN
+          DROP VIEW IF EXISTS public.enrolments;
+          ALTER TABLE public.enrolments_room_qa_real RENAME TO enrolments;
+        END IF;
+      END $do$;
+      DELETE FROM public.cohort_batch_members
+       WHERE enrolment_id IN (SELECT id FROM public.enrolments WHERE user_id = ${lit(OUT)});
+      DELETE FROM public.enrolments WHERE user_id = ${lit(OUT)};
+      DELETE FROM public.cohort_room_members WHERE user_id = ${lit(OUT)};
+      DROP FUNCTION IF EXISTS public._room_qa_cancel(uuid);
+      DROP FUNCTION IF EXISTS public._room_qa_boom();
+      SELECT 1;`).catch(() => {});
+  }
+
+  const leftovers = await sqlOne(`
+    SELECT
+      (SELECT count(*)::int FROM public.enrolments WHERE user_id = ${lit(OUT)}) AS enrolments,
+      (SELECT count(*)::int FROM public.cohort_room_members WHERE user_id = ${lit(OUT)}) AS memberships,
+      (SELECT count(*)::int FROM pg_constraint
+        WHERE conname LIKE 'tmp_room_qa_force%') AS forced_constraints,
+      (SELECT count(*)::int FROM pg_class WHERE relname = 'enrolments_room_qa_real') AS renamed_tables,
+      (SELECT count(*)::int FROM pg_class WHERE relname = 'enrolments' AND relkind = 'r') AS enrolments_is_table`);
+  prove("SEC-ENT-2.5",
+    "the forced-failure world is fully dismantled — no CHECK constraint left armed on cohort_room_members, `public.enrolments` is a TABLE again, and the outsider is back to zero enrolments and zero memberships: this section mutates the money tables, so proving it put them back is part of proving anything that follows it",
+    leftovers?.enrolments === 0 && leftovers?.memberships === 0 &&
+      leftovers?.forced_constraints === 0 && leftovers?.renamed_tables === 0 &&
+      leftovers?.enrolments_is_table === 1,
+    `outsider enrolments=${leftovers?.enrolments} memberships=${leftovers?.memberships}; ` +
+      `forced constraints=${leftovers?.forced_constraints} renamed tables=${leftovers?.renamed_tables} ` +
+      `public.enrolments is a table=${leftovers?.enrolments_is_table === 1}`);
 }
 
 // ── R1 / R2 / R3 — the cross-offering read attacks ──────────────────────────
@@ -916,18 +1638,30 @@ section("R8 / R9 / C3 — cross-batch isolation", "batch A1 and batch A2 share a
 {
   const before = mark("member_A2");
   const results = [];
+  // Every batch-A1-private surface EXCEPT live_sessions and the config row.
+  // The config is R8.3's (its boundary runs the other way). live_sessions is
+  // GAP-2's, and it is left out of this list honestly rather than quietly: the
+  // table has no batch column, so a probe here would fail for a reason R0 does
+  // not own and a sweep that avoided the surface would report a wall that is
+  // not there. The four surfaces added below — submissions, attendance, the
+  // resume position and the seen watermark — are the member-private facts that
+  // used to sit outside every cross-batch probe in this file.
   for (const [name, path] of [
     ["announcements", `cohort_announcements?batch_id=eq.${ids.batch_a1}&select=*`],
     ["resources", `cohort_resources?batch_id=eq.${ids.batch_a1}&select=*`],
     ["posts", `cohort_room_posts?batch_id=eq.${ids.batch_a1}&select=*`],
     ["demo", `cohort_demo_entries?batch_id=eq.${ids.batch_a1}&select=*`],
     ["weeks", `cohort_weeks?cohort_batch_id=eq.${ids.batch_a1}&select=*`],
+    ["submissions", `cohort_week_submissions?cohort_week_id=eq.${ids.week_a1}&select=*`],
+    ["attendance", `cohort_week_attendance?cohort_week_id=eq.${ids.week_a1}&select=*`],
+    ["recording position", `cohort_recording_progress?live_session_id=eq.${ids.session_past_a1}&select=*`],
+    ["room seen", `cohort_room_seen?offering_id=eq.${ids.offering_a}&select=*`],
   ]) {
     results.push([name, await read("member_A2", path, `batch-A1 ${name} as member_A2`)]);
   }
   const leaked = results.filter(([, r]) => !r.blocked);
   prove("R8.1",
-    "member_A2 — a paying member of the same offering — gets zero rows from every batch-A1-scoped surface: batch precision is enforced in RLS, not merely in a client query filter",
+    `member_A2 — a paying member of the same offering — gets zero rows from all ${results.length} batch-A1-scoped surfaces, including the four member-private ones (assignment, feedback, attendance, resume position, seen watermark): batch precision is enforced in RLS, not merely in a client query filter`,
     leaked.length === 0,
     leaked.length === 0 ? results.map(([n, r]) => `${n}:${r.ok ? "0 rows" : r.status}`).join(" · ")
       : `LEAKED ${leaked.map(([n, r]) => `${n} → ${r.describe}`).join("; ")}`);
@@ -967,9 +1701,48 @@ section("R8 / R9 / C3 — cross-batch isolation", "batch A1 and batch A2 share a
     `as member_A2: ${a2ConfigOwn.describe}, ${CANARY.CONFIG_A2} ${a2ConfigOwn.text.includes(CANARY.CONFIG_A2) ? "present (armed)" : "ABSENT — this probe proves nothing"}; ` +
       `as member_A1: ${a2ConfigForeign.describe}, sentinel present=${a2ConfigForeign.text.includes(CANARY.CONFIG_A2)}`);
 
-  proveCorpusClean("R9.1", "member_A2", [CANARY.A1, CANARY.CURRIC_A1, CANARY.ASSIGN_A1, CANARY.FEEDBACK_A1, CANARY.REC_A1, CANARY.ZOOM_A1, CANARY.ZOOMNEAR_A1],
-    "no batch-A1 sentinel appears anywhere in what the server handed member_A2 — cross-batch isolation holds across every response, not just the ones we thought to assert on",
+  // THE NEEDLE LIST THIS SWEEP USED TO CARRY WAS THREE-SEVENTHS UNREACHABLE.
+  // It hunted REC_A1, ZOOM_A1 and ZOOMNEAR_A1 over a corpus in which member_A2
+  // had never queried live_sessions and had never called the link RPC, so
+  // those three could not have turned up however broken the wall was — and the
+  // sweep printed a pass either way. Every needle below is carried by a probe
+  // this actor actually issued in this window (the loop above); the three
+  // live_sessions-borne sentinels are measured instead, immediately after, as
+  // GAP-2 — which is the honest home for a surface that has no batch column to
+  // scope by in the first place.
+  proveCorpusClean("R9.1", "member_A2",
+    [CANARY.A1, CANARY.CURRIC_A1, CANARY.ASSIGN_A1, CANARY.FEEDBACK_A1,
+     CANARY.MENTORDOC_A1, CANARY.ATTEND_A1, CANARY.SEEN_A1, CANARY.RECPROG_A1],
+    "no batch-A1 sentinel appears anywhere in what the server handed member_A2 — the noticeboard, the library, the mentor-materials file, the feed, the gallery, the curriculum, the assignment brief, the mentor's feedback, the attendance mark, the resume position and the seen watermark are all absent from every response, not just the ones we thought to assert on",
     before);
+
+  // ── GAP-2. The cross-batch residue on live_sessions, measured rather than
+  //    avoided. Two probes, both aimed straight at the surface R8.1 leaves out.
+  const a2ReadsA1Sessions = await read("member_A2",
+    `live_sessions?title=like.ROOM%20QA%20A1*&select=id,title,scheduled_at,status,recording_url,week_id`,
+    "batch-A1 sessions as member_A2 [GAP-2 probe]");
+  const a2PullsA1Link = await rpc("member_A2", "get_live_session_zoom_link",
+    { p_session_id: ids.session_near_a1 }, "get_live_session_zoom_link(A1 NEAR) as member_A2 [GAP-2 probe]");
+  const gap2Text = `${a2ReadsA1Sessions.text || ""}${a2PullsA1Link.text || ""}`;
+  const sessionBorne = [CANARY.REC_A1, CANARY.ZOOM_A1, CANARY.ZOOMNEAR_A1, CANARY.ZOOMLIVE_A1];
+  const gap2Residue = sessionBorne.filter((n) => gap2Text.includes(n));
+  const gap2Beyond = ALL_A_SECRETS
+    .filter((n) => !sessionBorne.includes(n))
+    .filter((n) => gap2Text.includes(n));
+  carryGap("GAP-2", {
+    claim:
+      "batch precision stops at live_sessions: a batch-A2 member reads batch A1's session rows — titles, times and recording URLs — and can pull batch A1's join link out of get_live_session_zoom_link, because that table has no batch column and that RPC gates on any active enrolment in the OFFERING",
+    closedClaim:
+      "the schedule is now batch-precise at the table and in the older link RPC as well as in the envelope — a batch-A2 member reads none of batch A1's sessions and cannot pull their join link",
+    open: (a2ReadsA1Sessions.ok && a2ReadsA1Sessions.rows > 0) || gap2Residue.length > 0,
+    widened: gap2Beyond.length > 0,
+    evidence: gap2Beyond.length > 0
+      ? `the cross-batch session path now also carries ${gap2Beyond.join(", ")} — that is past the boundary this gap is carried within`
+      : `member_A2 read ${a2ReadsA1Sessions.rows} batch-A1 session row(s) and the link RPC answered ${a2PullsA1Link.returnedNull ? "NULL" : "a link"}; sentinels reaching them: ${gap2Residue.join(", ") || "none"}. ` +
+        "live_sessions hangs off course_id and reaches a batch only through week_id → cohort_weeks → cohort_batch_id, so neither live_sessions_read (has_course_access) nor get_live_session_zoom_link (20260408151600:76-84, `active enrolment in an offering mapped to the course`) has a batch to compare against — both predate R0 by four months. R0 draws the batch line where it CAN be drawn, in R-3's envelope (R8.2), and neither widens nor narrows the April policy. What leaks is the schedule and the join link of a sibling batch of the same programme, never its noticeboard, curriculum, assignments, feedback, attendance or people — R8.1 and R9.1 above assert exactly that, on nine surfaces.",
+    closing:
+      "give the link RPC and live_sessions_student_read the batch dimension the table lacks: resolve week_id → cohort_weeks → cohort_batch_id and require the caller's cohort_batch_members row to match, falling through to the course-level check only for batch-less (legacy/workshop) sessions. That edits a pre-existing April policy and a pre-existing RPC, both outside R0's file set, so it belongs to a scoped follow-up with its own council pass and its own cross-client regression check — the shipped CohortDashboard calls that RPC.",
+  });
 }
 
 {
@@ -1017,9 +1790,16 @@ section("R10 — accepted_A holds ZERO room read grant", "MEMBER-1: the confirm-
   const before = mark("accepted_A");
   const results = [];
   for (const [name, path] of SURFACES_A) results.push([name, await read("accepted_A", path, `${name}(A) as accepted_A`)]);
+  // Beyond the ten, and the reason they are here rather than in SURFACES_A: the
+  // mentor's feedback and the attendance mark live nowhere else, so R10.5's
+  // sweep could not have found either sentinel without these two probes — it
+  // would have hunted them over a window that never asked for them.
+  for (const [name, path] of MEMBER_PRIVATE_A) {
+    results.push([name, await read("accepted_A", path, `${name}(A) as accepted_A`)]);
+  }
   const leaked = results.filter(([, r]) => !r.blocked);
   prove("R10.1",
-    "an accepted-but-unpaid applicant reads every one of the eight room-content surfaces for the offering they were admitted to and gets zero rows or denied on all of them — acceptance grants no room read at all, so the veil cannot be sourced from real room data",
+    `an accepted-but-unpaid applicant reads every one of the ${SURFACES_A.length} room-content surfaces for the offering they were admitted to — the noticeboard, the library, the feed, the replies, the gallery, the curriculum, the schedule, the room config, their would-be resume positions and the room-seen watermark — plus the ${MEMBER_PRIVATE_A.length} member-private curriculum tables beyond them, and gets zero rows or denied on all ${results.length}: acceptance grants no room read at all, so the veil cannot be sourced from real room data`,
     leaked.length === 0,
     leaked.length === 0 ? results.map(([n, r]) => `${n}:${r.ok ? "0 rows" : r.status}`).join(" · ")
       : `LEAKED ${leaked.map(([n, r]) => `${n} → ${r.describe}`).join("; ")}`);
@@ -1102,38 +1882,135 @@ section("R11 — pre_member redaction whitelist", "confirmation_paid buys the lo
     `access=${envelope.json?.access}, sessions=${JSON.stringify(lobbySessions)} (${lobbySessions.length} entr(y/ies), ${lobbyLeak.length} carrying a link key). ` +
       "An empty array here is R-3's documented lobby scope, NOT a broken envelope: R11.a1/a2 prove the same call delivers the masthead and the announcements, so the door is open and only the batch-scoped half is absent.");
 
-  // Each of these four probes has an armed positive control above (PRE.8 proved
-  // a real member reads rows carrying REC/CURRIC/MENTORDOC sentinels from the
-  // same paths), so a zero here is a denial and not an empty table. The
-  // assignments probe is the exception by construction: cohort_week_submissions
-  // is own-row-only for everyone, so its zero is proven by ownership, and the
-  // FEEDBACK sentinel is swept for in R11.b1 instead.
-  const recordings = await read("pre_member_A1", `live_sessions?title=like.ROOM%20QA%20A1*&select=id,title,scheduled_at,recording_url`, "recordings as pre_member");
+  // Every one of these probes has an armed positive control above — PRE.8
+  // proved a real member reads rows carrying the CURRIC / MENTORDOC / RECPROG
+  // sentinels from the same paths, and PRE.14 the FEEDBACK and ATTEND ones — so
+  // a zero here is a denial and not an empty table. The assignments and resume
+  // probes are own-row-only for everyone, so their zero is over-determined
+  // (ownership AND room access); their sentinels are swept for in R11.b1, which
+  // is where the stronger claim lives.
+  //
+  // 🔴 WHAT IS NO LONGER PROBED HERE, AND WHY. live_sessions and
+  // get_live_session_zoom_link used to be in this set, and their results were
+  // printed as pre_member redaction PASSes. They are not R0's wall: both are
+  // gated by April policies that ask only "is there an ACTIVE enrolment in an
+  // offering mapped to this course?", and R-1's header (20260729100000:906-918)
+  // forbids re-asserting a pre_member's zero on live_sessions until the
+  // follow-up lands. This fixture's original lobby occupant has no enrolment at
+  // all, so its zero was a property of the fixture, not of the tier. Both lobby
+  // shapes — this one and the staged actor who DOES hold an active enrolment —
+  // are probed against those two surfaces in GAP-4 immediately below, and the
+  // result is carried rather than certified.
   const curriculum = await read("pre_member_A1", `cohort_weeks?cohort_batch_id=eq.${ids.batch_a1}&select=*`, "curriculum detail as pre_member");
   const assignments = await read("pre_member_A1", `cohort_week_submissions?select=*`, "assignments as pre_member");
   const mentorDocs = await read("pre_member_A1", `cohort_resources?offering_id=eq.${ids.offering_a}&select=*`, "mentor materials as pre_member");
-  const zoomRpc = await rpc("pre_member_A1", "get_live_session_zoom_link",
-    { p_session_id: ids.session_near_a1 }, "get_live_session_zoom_link(NEAR) as pre_member");
+  // The two member-private facts the lobby also has no claim on. They are
+  // probed HERE, inside R11's sweep window, and not only in the ten-surface
+  // matrix, because R11.b1 hunts their sentinels — and a needle whose surface
+  // was never queried in the swept window is a needle that cannot be found
+  // however wide the hole is.
+  const attendance = await read("pre_member_A1", `cohort_week_attendance?cohort_week_id=eq.${ids.week_a1}&select=*`, "attendance as pre_member");
+  const resume = await read("pre_member_A1", `cohort_recording_progress?live_session_id=eq.${ids.session_past_a1}&select=*`, "resume positions as pre_member");
   const denied = [
-    ["recordings", recordings], ["curriculum", curriculum],
+    ["curriculum", curriculum],
     ["assignments", assignments], ["mentor materials", mentorDocs],
+    ["attendance", attendance], ["resume positions", resume],
   ];
 
   // The strongest form of the claim: not "these queries returned nothing" but
   // "no redacted body reached this actor by ANY path we exercised".
   proveCorpusClean("R11.b1", "pre_member_A1", PRE_MEMBER_FORBIDDEN,
-    "no recording URL, curriculum body, assignment brief, mentor feedback, mentor-materials file or join link — for either the distant session or the imminent one — has reached pre_member_A1 through any surface: the five redacted bodies unlock at `enrolled` and a link never appears in the lobby at all, and none of that depends on the UI choosing not to render them",
+    "no curriculum body, assignment brief, mentor feedback, mentor-materials file, attendance mark or resume position has reached pre_member_A1 through any surface R0's wall governs: those bodies unlock at `enrolled`, and none of it depends on the UI choosing not to render them",
     before);
 
   prove("R11.b2",
-    "each redacted surface individually returns zero rows or a denial to pre_member_A1 — every one of them was proven readable to a real member first, so the redaction is enforced per-surface and not by one lucky filter or an empty table",
+    "each redacted surface R0 OWNS individually returns zero rows or a denial to pre_member_A1 — every one of them was proven readable to a real member first, so the redaction is enforced per-surface and not by one lucky filter or an empty table. The word 'owns' is doing work: the recordings and join-link surfaces that used to sit in this list are governed by an April policy this phase does not touch, and they are measured as GAP-4 rather than counted here",
     denied.every(([, r]) => r.blocked),
     denied.map(([n, r]) => `${n}:${r.ok ? `${r.rows} row(s)` : r.status}`).join(" · "));
+}
 
-  prove("R11.b3",
-    "the second server path to a join link — get_live_session_zoom_link, which gates on any active enrolment in an offering mapped to the course rather than on the room — hands a pre_member NULL even for the session that is 30 minutes away: the lobby cannot walk around the envelope's redaction by asking the older RPC directly",
-    zoomRpc.raised || zoomRpc.returnedNull,
-    `HTTP ${zoomRpc.status}, body ${JSON.stringify(zoomRpc.text.slice(0, 80))} (${zoomRpc.describe})`);
+// ── GAP-4 — the lobby's live_sessions residue, on BOTH lobby shapes ─────────
+//
+// THE HOLE R-1's OWN HEADER NAMES, MEASURED INSTEAD OF CERTIFIED AWAY.
+// 20260729100000:906-918 marks the staged lobby shape — ACTIVE enrolment +
+// outstanding balance, resolver branch (b) — as a KNOWN, ESCALATED, NOT-CLOSED
+// hole, because that shape satisfies `live_sessions_student_read`
+// (20260408140000:54) and `get_live_session_zoom_link`'s enrolment test
+// (20260408151600:74-86) while the room tier says lobby. It ends: do not
+// re-assert "a pre_member reads zero rows from live_sessions" anywhere until
+// the follow-up lands. This suite did re-assert it, three ways, and went green
+// because its only lobby occupant was the OTHER shape.
+//
+// So both shapes are attacked, side by side, with the same probes:
+//   pre_member_A1     application stamp, NO enrolment  → the April policies deny
+//   staged_lobby_A1   the same tier, ACTIVE enrolment  → the April policies admit
+// The delta between those two rows IS the gap, and it is a measurement rather
+// than a claim. What R0 DOES own for the staged shape is asserted normally
+// right after (GAP-4.1): every redacted body on a table R0's wall governs stays
+// shut for it too, so the residue below is a boundary of this phase and not a
+// hole inside it.
+section("GAP-4 — the staged lobby's live_sessions residue",
+  "the one place the room tier and the April enrolment policies disagree — measured on both lobby shapes");
+{
+  const LINKS = [
+    ["FAR (T+3h)", ids.session_far_a1, CANARY.ZOOM_A1],
+    ["NEAR (T+30m)", ids.session_near_a1, CANARY.ZOOMNEAR_A1],
+    ["LIVE (running)", ids.session_live_a1, CANARY.ZOOMLIVE_A1],
+    ["CANCELLED", ids.session_cancelled_a1, CANARY.ZOOMCANCEL_A1],
+  ];
+  /** Probe one lobby shape against the two April-governed surfaces. */
+  const probeLobby = async (actor) => {
+    const table = await read(actor,
+      `live_sessions?title=like.ROOM%20QA%20A1*&select=id,title,scheduled_at,status,recording_url,week_id`,
+      `batch-A1 sessions as ${actor} [GAP-4 probe]`);
+    const links = [];
+    for (const [what, sessionId, sentinel] of LINKS) {
+      const r = await rpc(actor, "get_live_session_zoom_link",
+        { p_session_id: sessionId }, `get_live_session_zoom_link(${what}) as ${actor} [GAP-4 probe]`);
+      links.push([what, r, sentinel]);
+    }
+    const handed = links.filter(([, r, sentinel]) => r.text.includes(sentinel));
+    return { table, links, handed, text: table.text + links.map(([, r]) => r.text).join("") };
+  };
+
+  const applicationOnly = await probeLobby("pre_member_A1");
+  const staged = await probeLobby("staged_lobby_A1");
+
+  // The redacted bodies R0 DOES own, for the staged shape. Probed before the
+  // carryGap so the sweep below has a window that could have carried them.
+  const stagedBefore = mark("staged_lobby_A1");
+  for (const [name, path] of [
+    ["cohort_weeks", `cohort_weeks?cohort_batch_id=eq.${ids.batch_a1}&select=*`],
+    ["cohort_resources", `cohort_resources?offering_id=eq.${ids.offering_a}&select=*`],
+    ["cohort_week_submissions", `cohort_week_submissions?select=*`],
+    ["cohort_week_attendance", `cohort_week_attendance?cohort_week_id=eq.${ids.week_a1}&select=*`],
+    ["cohort_recording_progress", `cohort_recording_progress?live_session_id=eq.${ids.session_past_a1}&select=*`],
+  ]) {
+    await read("staged_lobby_A1", path, `${name}(A) as staged_lobby_A1`);
+  }
+  proveCorpusClean("GAP-4.1", "staged_lobby_A1", PRE_MEMBER_FORBIDDEN,
+    "the STAGED lobby occupant — the one whose active enrolment the April session policies do admit — still receives none of the bodies R0's own wall governs: no curriculum detail, no assignment brief, no mentor feedback, no mentor-materials file, no attendance mark, no resume position. The room tier holds exactly where R0 draws it, which is what makes the residue below a boundary of this phase rather than a failure inside it",
+    stagedBefore);
+
+  const stagedSessions = staged.table.ok ? staged.table.rows : 0;
+  const beyond = A_SECRETS_TABLE_BORNE
+    .filter((n) => n !== CANARY.REC_A1)
+    .filter((n) => staged.text.includes(n));
+  carryGap("GAP-4", {
+    claim:
+      "the LOBBY tier stops at the room's own tables: a staged lobby occupant — `pre_member` in cohort_room_members, with an ACTIVE enrolment that still owes a balance — reads batch A1's session rows straight off live_sessions, recording_url included, and pulls the join link of every session inside its window out of get_live_session_zoom_link",
+    closedClaim:
+      "both lobby shapes now read zero rows from live_sessions and are handed no join link at any distance — the April policies have caught up with the room tier and the pre_member redaction is finally true on every surface",
+    open: stagedSessions > 0 || staged.handed.length > 0,
+    widened: beyond.length > 0,
+    evidence: beyond.length > 0
+      ? `the staged lobby path now also carries ${beyond.join(", ")} — that is past the live_sessions boundary this gap is carried within, and it is a failure of R0's own wall rather than of the April one`
+      : `staged_lobby_A1 (active enrolment, balance outstanding) read ${stagedSessions} batch-A1 session row(s) and was handed ${staged.handed.length} of 4 join links (${staged.handed.map(([w]) => w).join(", ") || "none"}); ` +
+        `the application-only lobby occupant read ${applicationOnly.table.ok ? applicationOnly.table.rows : 0} row(s) and ${applicationOnly.handed.length} link(s). ` +
+        "The delta between those two lines is the whole gap: both hold the identical `pre_member` room row, and the only difference between them is an enrolments row that live_sessions_student_read (20260408140000:54) and get_live_session_zoom_link (20260408151600:74-86) test for while knowing nothing about rooms, batches or tiers. R-1's own header (20260729100000:906-918) flags this shape as KNOWN, ESCALATED and NOT CLOSED by R0, and forbids re-asserting the zero. This suite therefore does not: it reports what each shape actually receives.",
+    closing:
+      "add the room tier to the two April objects — `live_sessions_student_read` and `get_live_session_zoom_link` must require a membership row whose role is not `pre_member` (or, equivalently, `NOT _room_balance_outstanding(...)`) on top of the enrolment test. Both are shipped objects CohortDashboard reads through, so it is the same scoped follow-up as GAP-2, with its own council pass and its own client-compat check.",
+  });
 }
 
 // ── MYROOMS — the OTHER client-callable room read RPC ──────────────────────
@@ -1209,6 +2086,101 @@ section("MYROOMS — get_my_cohort_rooms is self-scoped", "the second client-cal
     "an unauthenticated caller gets no room list at all — the EXECUTE grant stops at `authenticated` and the function raises 42501 on a NULL auth.uid() besides, so the room list is not a surface the anon key reaches; MYROOMS.1 proves the same RPC works for a logged-in member, which makes this a grant boundary rather than a dead function",
     !anonList.ok && !anonList.text.includes(CANARY.CONFIG_A),
     `${anonList.describe}; offering-A masthead sentinel present=${anonList.text.includes(CANARY.CONFIG_A)}`);
+}
+
+// ── PROG — get_cohort_progress, the one SHIPPED surface R0 redefines ───────
+//
+// Every other RPC in this phase is new: nothing calls it yet, so a mistake in
+// it reaches nobody until R1 ships a screen. get_cohort_progress is the
+// opposite — CohortDashboard.tsx:78 and :265 call it TODAY, from Capacitor
+// builds that are already on phones and cannot be fixed in the same deploy —
+// and R0 rewrites its body: a LATERAL … LIMIT 1 replacing the plain join, and
+// a new own-user-or-admin assert. It had ZERO cases in this file. The suite
+// was proving the wall around a room nobody can open yet while the one door
+// already in use went untested.
+section("PROG — get_cohort_progress", "the only shipped-client surface this phase redefines: one row per week, own account only");
+{
+  const own = await rpc("member_A1", "get_cohort_progress",
+    { p_user_id: session.member_A1.id, p_offering_id: ids.offering_a }, "get_cohort_progress(self, A) as member_A1");
+  const rows = Array.isArray(own.json) ? own.json : [];
+  const weeks = new Set(rows.map((r) => r.week_id));
+
+  prove("PROG.1",
+    "member_A1's progress comes back as exactly ONE row per week even though that week carries five live sessions — the LATERAL … LIMIT 1 collapses the fan-out the plain join used to produce, and the shipped dashboard draws one card per row, so a week with three sessions used to draw three week cards; the row is armed with the curriculum body, the assignment brief, the mentor's feedback and the attendance mark, which proves all four joins actually resolved rather than the collapse being achieved by returning nothing",
+    own.ok && rows.length > 0 && rows.length === weeks.size &&
+      own.text.includes(CANARY.CURRIC_A1) && own.text.includes(CANARY.ASSIGN_A1) &&
+      own.text.includes(CANARY.FEEDBACK_A1) &&
+      rows[0]?.attended === true && rows[0]?.attendance_marked === true,
+    own.ok
+      ? `${rows.length} row(s) over ${weeks.size} distinct week(s); curriculum=${own.text.includes(CANARY.CURRIC_A1)} assignment=${own.text.includes(CANARY.ASSIGN_A1)} feedback=${own.text.includes(CANARY.FEEDBACK_A1)} attended=${rows[0]?.attended} attendance_marked=${rows[0]?.attendance_marked}`
+      : own.describe);
+
+  // The batch boundary, on the shipped surface. get_cohort_progress resolves
+  // through cohort_batch_members, so the ONE thing keeping a batch-A1 student
+  // out of batch A2's weeks is that join — the same shape that, one level down
+  // on live_sessions, has no batch to join through at all (GAP-2/GAP-3). Both
+  // week ids are named explicitly rather than counted, because "1 row came
+  // back" is equally true of the right week and the wrong one.
+  prove("PROG.1b",
+    "the weeks member_A1 receives are their OWN batch's and never batch A2's — the sibling batch's week id is absent from the response and its curriculum body and assignment brief are absent with it, so the one already-shipped call site that reads room-adjacent data is batch-precise before any room UI exists to widen it",
+    own.ok && weeks.has(ids.week_a1) && !weeks.has(ids.week_a2) &&
+      !own.text.includes(CANARY.CURRIC_A2) && !own.text.includes(CANARY.ASSIGN_A2),
+    `week ids returned: ${[...weeks].join(", ") || "none"} (own batch-A1 week present=${weeks.has(ids.week_a1)}, batch-A2 week present=${weeks.has(ids.week_a2)}); ` +
+      `batch-A2 curriculum sentinel present=${own.text.includes(CANARY.CURRIC_A2)}`);
+
+  // WHICH session survives the collapse is a decision with a right answer, and
+  // it is invisible in a fixture where every session is in the future. The
+  // week here holds four: one two days past, one running RIGHT NOW, one in
+  // thirty minutes and one in three hours. The session a student needs on that
+  // screen is the one they are supposed to be IN.
+  const week1 = rows[0];
+  const chosen = String(week1?.live_session_title || "");
+  prove("PROG.2",
+    "the session the week collapses to is the one RUNNING RIGHT NOW — not the next one to start, not the most recent to finish, and not the CANCELLED one that started even earlier and would have won on start time alone: the dashboard renders exactly one session card with one Join link per week, so a student sitting in a class that began twenty minutes ago must not be handed a link to the class that starts in thirty, and must never be sent to a class that was called off",
+    own.ok && chosen.includes("LIVE") && !own.text.includes(CANARY.ZOOMCANCEL_A1),
+    own.ok
+      ? `chosen session: ${JSON.stringify(week1?.live_session_title)} at ${week1?.live_session_at} ` +
+        `(candidates on this week: CANCELLED −60m still in window, LIVE −20m, NEAR +30m, FAR +3h, PAST −2d); ` +
+        `cancelled link present in the response=${own.text.includes(CANARY.ZOOMCANCEL_A1)}`
+      : own.describe);
+
+  // The IDOR. This RPC is SECURITY DEFINER and took p_user_id straight from
+  // the client, so before R0 any authenticated user could read any other
+  // user's submission status, rating, mentor feedback and join link by passing
+  // their uuid. Two callers, because "a stranger is refused" and "a room-mate
+  // is refused" are different claims: the second is the one a cohort makes
+  // possible, since a room-mate knows exactly whose uuid to try.
+  for (const [actor, why] of [
+    ["member_B", "a member of a different cohort"],
+    ["member_A2", "a room-mate in the sibling batch of the SAME offering, who can read that uuid off their own roster"],
+    ["outsider", "a stranger with nothing but a login"],
+  ]) {
+    const idor = await rpc(actor, "get_cohort_progress",
+      { p_user_id: session.member_A1.id, p_offering_id: ids.offering_a },
+      `get_cohort_progress(member_A1, A) as ${actor}`);
+    prove(`PROG.3.${actor}`,
+      `${actor} — ${why} — passing member_A1's uuid to get_cohort_progress is REFUSED (42501) and receives none of it: p_user_id is a client-supplied argument on a SECURITY DEFINER function, so without the own-user-or-admin assert this one call hands over another student's submission status, rating, mentor feedback and join link`,
+      idor.raised && !idor.text.includes(CANARY.FEEDBACK_A1) && !idor.text.includes(CANARY.ASSIGN_A1),
+      `${idor.describe}; feedback sentinel present=${idor.text.includes(CANARY.FEEDBACK_A1)}`);
+  }
+
+  for (const actor of ["accepted_A", "pre_member_A1", "outsider"]) {
+    const self = await rpc(actor, "get_cohort_progress",
+      { p_user_id: session[actor].id, p_offering_id: ids.offering_a },
+      `get_cohort_progress(self, A) as ${actor}`);
+    const selfRows = Array.isArray(self.json) ? self.json : [];
+    prove(`PROG.4.${actor}`,
+      `${actor} asking for their OWN progress in offering A gets an empty set — the RPC resolves through cohort_batch_members, and an applicant, a lobby occupant and a stranger all hold no roster row, so the curriculum, the assignment brief and the schedule are not reachable by asking about oneself either`,
+      self.ok && selfRows.length === 0 && !self.text.includes(CANARY.CURRIC_A1),
+      self.ok ? `${selfRows.length} row(s); curriculum sentinel present=${self.text.includes(CANARY.CURRIC_A1)}` : self.describe);
+  }
+
+  const anonProg = await rpc("anon", "get_cohort_progress",
+    { p_user_id: session.member_A1.id, p_offering_id: ids.offering_a }, "get_cohort_progress as anon");
+  prove("PROG.5",
+    "an unauthenticated caller is refused outright — auth.uid() is NULL, so the own-user assert can never be satisfied by any uuid the anon key sends, and the shipped dashboard's RPC is not a surface reachable with the public key",
+    !anonProg.ok && !anonProg.text.includes(CANARY.CURRIC_A1),
+    `${anonProg.describe}; curriculum sentinel present=${anonProg.text.includes(CANARY.CURRIC_A1)}`);
 }
 
 // ── W6b — the lobby is read-only ───────────────────────────────────────────
@@ -1441,6 +2413,19 @@ section("W8 / W9 — channel + mentor-answer forgery", "the two controls that ca
 // ── C2 — the T-60 zoom gate ────────────────────────────────────────────────
 section("C2 — the zoom-link gate is server-side", "a link the client never received cannot be rendered early");
 {
+  // ARM THE WITHHELD LINK FIRST. Every claim below about the T+3h session says
+  // "nobody got it" — a sentence that is equally true of a session whose
+  // zoom_link is NULL. The admin branch of the RPC (20260408151600:70-72)
+  // returns the link with no window check at all, which is the one path that
+  // can prove the string exists before the rest of the section proves nobody
+  // else can reach it.
+  const adminFar = await rpc("admin", "get_live_session_zoom_link",
+    { p_session_id: ids.session_far_a1 }, "get_live_session_zoom_link(FAR) as admin [positive control]");
+  prove("C2.0",
+    "an admin pulls the T+3h session's join link and it is a real string carrying the withheld sentinel — the link EXISTS, so every 'zoom_link was NULL / absent / not in the corpus' result below is the gate holding and not an empty column",
+    typeof adminFar.json === "string" && adminFar.json.includes(CANARY.ZOOM_A1),
+    typeof adminFar.json === "string" ? "admin received the FAR session's link" : adminFar.describe);
+
   const before = mark("member_A1");
   const envelope = await rpc("member_A1", "get_cohort_room", { p_offering: ids.offering_a }, "get_cohort_room(A) zoom gate");
   const sessions = envelope.json?.sessions ?? [];
@@ -1493,17 +2478,86 @@ section("C2 — the zoom-link gate is server-side", "a link the client never rec
     typeof linkNear.json === "string" && linkNear.json.includes(CANARY.ZOOMNEAR_A1),
     `returned ${typeof linkNear.json === "string" ? "a link" : JSON.stringify(linkNear.json)}`);
 
-  for (const actor of ["member_B", "outsider"]) {
+  // The session that is RUNNING RIGHT NOW — the middle of the window, which
+  // FAR and NEAR between them never test. The gate is a WINDOW (T-60 → end +
+  // 1h), not a threshold, and a student walking into class late is the case
+  // that must not be locked out.
+  const linkLive = await rpc("member_A1", "get_live_session_zoom_link",
+    { p_session_id: ids.session_live_a1 }, "get_live_session_zoom_link(LIVE) as member_A1");
+  prove("C2.6b",
+    "the session that started twenty minutes ago and is still running DOES hand its link to an entitled member — the gate is a window around the class and not a countdown that shuts at the start time, so a student who joins late is not locked out of a class they paid for",
+    typeof linkLive.json === "string" && linkLive.json.includes(CANARY.ZOOMLIVE_A1),
+    `returned ${typeof linkLive.json === "string" ? "a link" : JSON.stringify(linkLive.json)}`);
+
+  // A CALLED-OFF CLASS HANDS OUT NOTHING, to anyone, at any distance. The
+  // cancelled session is inside its own window right now and its caller is a
+  // fully entitled member of the batch that owns it, so the only reason to
+  // withhold the link is the cancellation itself — which makes this the one
+  // probe where `status = 'cancelled'` is the sole variable.
+  const cancelledEnvelope = (envelope.json?.sessions ?? []).find((s) => (s.title || "").includes("CANCELLED"));
+  const linkCancelled = await rpc("member_A1", "get_live_session_zoom_link",
+    { p_session_id: ids.session_cancelled_a1 }, "get_live_session_zoom_link(CANCELLED) as member_A1");
+  const adminCancelled = await rpc("admin", "get_live_session_zoom_link",
+    { p_session_id: ids.session_cancelled_a1 }, "get_live_session_zoom_link(CANCELLED) as admin [positive control]");
+  prove("C2.9",
+    "the cancelled session appears on the entitled member's schedule with NO join link — in the envelope and from the link RPC alike — while an admin can still retrieve it: the link exists, the class does not, so this is the cancellation being enforced on both server paths and not a row with an empty column",
+    (linkCancelled.returnedNull || linkCancelled.raised) &&
+      !linkCancelled.text.includes(CANARY.ZOOMCANCEL_A1) &&
+      (!cancelledEnvelope || cancelledEnvelope.zoom_link === null || cancelledEnvelope.zoom_link === undefined) &&
+      typeof adminCancelled.json === "string" && adminCancelled.json.includes(CANARY.ZOOMCANCEL_A1),
+    `link RPC as member_A1: HTTP ${linkCancelled.status} ${JSON.stringify(linkCancelled.text.slice(0, 40))}; ` +
+      `envelope entry zoom_link=${JSON.stringify(cancelledEnvelope?.zoom_link)}; ` +
+      `admin retrieved the link=${typeof adminCancelled.json === "string"}`);
+
+  // THE ENTITLEMENT HALF OF THE LINK GATE, AS A MATRIX. It used to be two
+  // calls — member_B and outsider, both against ONE session — which is why the
+  // A2 and B1 join links were planted in the fixture and then hunted by
+  // nobody. Every pair below is (caller who must get nothing, session they
+  // should not be able to reach), and each row's sentinel is armed by a
+  // positive control above or below it: the fixture puts all three of these
+  // sessions INSIDE the T-60 window on purpose, so a NULL here is the RPC
+  // refusing the CALLER and never the clock refusing everybody.
+  const LINK_DENIALS = [
+    ["member_B", ids.session_near_a1, "offering A's imminent session", CANARY.ZOOMNEAR_A1],
+    ["member_B", ids.session_live_a1, "offering A's running session", CANARY.ZOOMLIVE_A1],
+    ["member_B", ids.session_a2, "offering A's other batch's session", CANARY.ZOOM_A2],
+    ["outsider", ids.session_near_a1, "offering A's imminent session", CANARY.ZOOMNEAR_A1],
+    ["outsider", ids.session_live_a1, "offering A's running session", CANARY.ZOOMLIVE_A1],
+    ["outsider", ids.session_a2, "offering A's other batch's session", CANARY.ZOOM_A2],
+    ["outsider", ids.session_b1, "offering B's imminent session", CANARY.ZOOM_B1],
+    ["accepted_A", ids.session_near_a1, "the imminent session of the room they were admitted to", CANARY.ZOOMNEAR_A1],
+    ["accepted_A", ids.session_live_a1, "the running session of that same room", CANARY.ZOOMLIVE_A1],
+    ["anon", ids.session_near_a1, "offering A's imminent session", CANARY.ZOOMNEAR_A1],
+    ["anon", ids.session_b1, "offering B's imminent session", CANARY.ZOOM_B1],
+    ["member_A1", ids.session_b1, "another OFFERING's imminent session", CANARY.ZOOM_B1],
+    ["member_A2", ids.session_b1, "another OFFERING's imminent session", CANARY.ZOOM_B1],
+  ];
+  for (const [actor, sessionId, what, sentinel] of LINK_DENIALS) {
     const r = await rpc(actor, "get_live_session_zoom_link",
-      { p_session_id: ids.session_near_a1 }, `get_live_session_zoom_link(NEAR) as ${actor}`);
-    prove(`C2.7.${actor}`,
-      `${actor} calling get_live_session_zoom_link on offering A's imminent session gets NULL — the link RPC is entitlement-gated as well as time-gated, so knowing a session id is worth nothing without an enrolment behind it`,
-      r.returnedNull && !r.text.includes(CANARY.ZOOMNEAR_A1),
-      `HTTP ${r.status}, body ${JSON.stringify(r.text.slice(0, 80))}`);
+      { p_session_id: sessionId }, `get_live_session_zoom_link(${what}) as ${actor}`);
+    prove(`C2.7.${actor}.${sentinel.replace("LEAK_CANARY_", "")}`,
+      `${actor} asking for the join link of ${what} gets NULL or is refused — the link RPC is entitlement-gated as well as time-gated, and this session is INSIDE its window right now, so knowing a session id is worth nothing without an enrolment behind it`,
+      (r.returnedNull || r.raised) && !r.text.includes(sentinel),
+      `HTTP ${r.status}, body ${JSON.stringify(r.text.slice(0, 80))}; ${sentinel} present=${r.text.includes(sentinel)}`);
   }
 
-  proveCorpusClean("C2.4", "member_A1", [CANARY.ZOOM_A1],
-    "the withheld zoom link appears nowhere in anything served to member_A1 during this run", before);
+  // The other side of the same matrix: the two sessions above whose links this
+  // suite claims nobody else can reach are genuinely reachable by the people
+  // who ARE entitled to them. Without these two, every NULL above is equally
+  // explained by a NULL zoom_link column.
+  const a2OwnLink = await rpc("member_A2", "get_live_session_zoom_link",
+    { p_session_id: ids.session_a2 }, "get_live_session_zoom_link(A2) as member_A2 [positive control]");
+  const bOwnLink = await rpc("member_B", "get_live_session_zoom_link",
+    { p_session_id: ids.session_b1 }, "get_live_session_zoom_link(B1) as member_B [positive control]");
+  prove("C2.8",
+    "batch A2's member and offering B's member each DO receive their own imminent session's link — so every NULL in the matrix above is the RPC refusing a caller, not a fixture with an empty zoom_link column, and the two links R0's own actors must never see are proven to exist",
+    typeof a2OwnLink.json === "string" && a2OwnLink.json.includes(CANARY.ZOOM_A2) &&
+      typeof bOwnLink.json === "string" && bOwnLink.json.includes(CANARY.ZOOM_B1),
+    `member_A2 → A2 session: ${a2OwnLink.json ? "link" : JSON.stringify(a2OwnLink.json)}; member_B → B1 session: ${bOwnLink.json ? "link" : JSON.stringify(bOwnLink.json)}`);
+
+  proveCorpusClean("C2.4", "member_A1", [CANARY.ZOOM_A1, CANARY.ZOOMCANCEL_A1],
+    "neither the withheld T+3h link nor the cancelled class's link appears anywhere in what member_A1 was served during this run — this member is entitled to both sessions and reads both rows, so the only thing keeping either link out of their hands is the server withholding it",
+    before);
 }
 
 // ── NFR-CONFIG-2 — a feature flag can never be a privilege escalation ──────
@@ -1537,15 +2591,19 @@ section("NFR-CONFIG-2 — flags are UX, never authorization", "inviolable rule #
   for (const actor of ["outsider", "accepted_A"]) {
     const same = JSON.stringify(baseline[actor]) === JSON.stringify(after[actor]);
     prove(`NFR-CONFIG-2.${actor}`,
-      `turning every one of the ${MODULE_KEYS.length} module flags ON for room A changes ${actor}'s row counts on all eight surfaces by exactly nothing — a config edit is UX only and can never become a privilege escalation, which is what makes "just enable the module" a safe operation for ops`,
+      `turning every one of the ${MODULE_KEYS.length} module flags ON for room A changes ${actor}'s row counts on all ${SURFACES_A.length} surfaces by exactly nothing — a config edit is UX only and can never become a privilege escalation, which is what makes "just enable the module" a safe operation for ops`,
       same,
       same ? `identical: ${after[actor].map(([n, v]) => `${n}:${v}`).join(" · ")}`
            : `OFF ${JSON.stringify(baseline[actor])} vs ON ${JSON.stringify(after[actor])}`);
   }
-  proveCorpusClean("NFR-CONFIG-2.canary-outsider", "outsider", ALL_A_SECRETS,
-    "with every module flag ON, an outsider still receives no offering-A sentinel", mkOutsider);
-  proveCorpusClean("NFR-CONFIG-2.canary-accepted", "accepted_A", ALL_A_SECRETS,
-    "with every module flag ON, accepted_A still receives no offering-A sentinel", mkAccepted);
+  // Swept over A_SECRETS_VIA_SURFACES, not ALL_A_SECRETS: this window is the ten
+  // room-content surfaces and nothing else, so the join links (RPC-only), the
+  // mentor feedback, the attendance mark and the PII pair have no home in it.
+  // Hunting them here would be four more sweeps that cannot fail.
+  proveCorpusClean("NFR-CONFIG-2.canary-outsider", "outsider", A_SECRETS_VIA_SURFACES,
+    "with every module flag ON, an outsider still receives no offering-A sentinel that these ten surfaces could carry", mkOutsider);
+  proveCorpusClean("NFR-CONFIG-2.canary-accepted", "accepted_A", A_SECRETS_VIA_SURFACES,
+    "with every module flag ON, accepted_A still receives no offering-A sentinel that these ten surfaces could carry", mkAccepted);
 
   // Put the flags back exactly as the fixture seeded them (all-false on the
   // offering default, empty on the batch override) so a ROOM_QA_KEEP run leaves
@@ -1558,6 +2616,100 @@ section("NFR-CONFIG-2 — flags are UX, never authorization", "inviolable rule #
        SET modules = '{}'::jsonb
      WHERE offering_id = ${lit(ids.offering_a)} AND batch_id IS NOT NULL;
     SELECT 1;`);
+}
+
+// ── TOTAL — unfiltered enumeration ─────────────────────────────────────────
+//
+// EVERY PROBE ABOVE NAMES WHAT IT IS LOOKING FOR. That is what made three of
+// this suite's canary sweeps structurally vacuous: a sentinel planted in
+// offering B could not have surfaced in a corpus built entirely from
+// `?offering_id=eq.<A>` requests, so hunting for it there proved nothing about
+// the wall and everything about the WHERE clause. The fix is not a longer
+// needle list — it is a request shape under which the needle COULD come back.
+//
+// So: no filter at all. Every actor asks every content table for everything it
+// has, which is also the first thing a real attacker with an anon key and a
+// login types. What comes back is whatever RLS is willing to hand them across
+// the entire database, and the sweeps below finally have a corpus that could
+// carry the other offering's rows if the wall were not there.
+//
+// These sweeps are WINDOW-scoped to the probes in this section, so they carry
+// the table-borne sentinels. The link sentinels ride along in the same lists
+// and are carried by the run-wide sweeps at the foot of the file, whose window
+// includes the link-RPC probes — CANARY-LEDGER is what guarantees each one has
+// at least one window that could actually have handed it over.
+section("TOTAL — unfiltered enumeration", "no WHERE clause: every actor asks every table for everything, and the sweeps get a corpus that could actually leak");
+{
+  const TOTAL_TABLES = [
+    ["cohort_announcements", "cohort_announcements?select=*&limit=200"],
+    ["cohort_resources", "cohort_resources?select=*&limit=200"],
+    ["cohort_room_posts", "cohort_room_posts?select=*&limit=200"],
+    ["cohort_room_post_replies", "cohort_room_post_replies?select=*&limit=200"],
+    ["cohort_demo_entries", "cohort_demo_entries?select=*&limit=200"],
+    ["cohort_weeks", "cohort_weeks?select=*&limit=200"],
+    ["cohort_week_submissions", "cohort_week_submissions?select=*&limit=200"],
+    ["cohort_week_attendance", "cohort_week_attendance?select=*&limit=200"],
+    ["cohort_recording_progress", "cohort_recording_progress?select=*&limit=200"],
+    ["cohort_room_seen", "cohort_room_seen?select=*&limit=200"],
+    ["cohort_room_configs", "cohort_room_configs?select=*&limit=200"],
+    ["cohort_room_members", "cohort_room_members?select=*&limit=200"],
+    ["users", "users?select=*&limit=200"],
+    // Named columns, not `*`: zoom_link carries a column-level REVOKE, so a
+    // star projection here would come back as a privilege error for EVERY
+    // actor and this probe would stop being a row-isolation result (C2.3b
+    // attacks the column REVOKE itself, on purpose and separately).
+    ["live_sessions", "live_sessions?title=like.ROOM%20QA*&select=id,title,scheduled_at,status,recording_url,week_id,course_id"],
+  ];
+
+  const marks = {};
+  for (const actor of ["member_A1", "member_A2", "member_B", "pre_member_A1", "accepted_A", "outsider", "anon"]) {
+    marks[actor] = mark(actor);
+    const results = [];
+    for (const [name, path] of TOTAL_TABLES) {
+      results.push([name, await read(actor, path, `${name} UNFILTERED as ${actor}`)]);
+    }
+    // For the three actors who hold no grant anywhere, the unfiltered read is
+    // itself the assertion: "give me everything you have" must return nothing
+    // from every room-content table. (users is excluded from the count — every
+    // authenticated caller legitimately reads their OWN row, and that is what
+    // makes the PII sweep below meaningful rather than a locked door.)
+    if (["outsider", "accepted_A", "anon"].includes(actor)) {
+      const roomOnly = results.filter(([n]) => n !== "users");
+      const open = roomOnly.filter(([, r]) => !r.blocked);
+      prove(`TOTAL.${actor}`,
+        `${actor} asks all ${roomOnly.length} room tables for their ENTIRE contents with no filter — the first request an attacker actually writes — and every one comes back empty or denied: there is no cohort, no batch and no offering anywhere in this database whose room content they can enumerate`,
+        open.length === 0,
+        open.length === 0
+          ? roomOnly.map(([n, r]) => `${n}:${r.ok ? "0 rows" : r.status}`).join(" · ")
+          : `LEAKED ${open.map(([n, r]) => `${n} → ${r.describe}`).join("; ")}`);
+    }
+  }
+
+  // Now the sweeps that were impossible before: each actor against the OTHER
+  // container's sentinels, over a corpus that would have carried them.
+  //
+  // TABLE-BORNE LISTS ONLY. This window is fourteen table reads, and zoom_link
+  // is column-REVOKEd from `authenticated` — no probe here projects it and none
+  // could. The five link sentinels are therefore swept by the run-wide sweeps at
+  // the foot of the file, whose windows include the link RPC; hunting them here
+  // as well would print five more passes that no leak could ever fail.
+  proveCorpusClean("TOTAL.canary.member_A1", "member_A1", [...B_SECRETS_TABLE_BORNE, ...CROSS_BATCH_A2_FORBIDDEN],
+    "asked for the unfiltered contents of every content table, member_A1 receives nothing belonging to offering B and nothing belonging to batch A2 — not a noticeboard row, not a curriculum body, not an assignment brief, not a room skin and not a cohort-mate's phone number",
+    marks.member_A1);
+  proveCorpusClean("TOTAL.canary.member_A2", "member_A2", [...B_SECRETS_TABLE_BORNE, ...CROSS_BATCH_A1_FORBIDDEN],
+    "the same for member_A2 against offering B and batch A1 — the sibling batch's private material is absent from an unfiltered enumeration, which is the request shape under which a missing batch predicate would show up immediately",
+    marks.member_A2);
+  proveCorpusClean("TOTAL.canary.member_B", "member_B", A_SECRETS_TABLE_BORNE,
+    "member_B enumerating every table receives not one table-borne sentinel from offering A — the cross-offering wall holds against a request with no WHERE clause to get wrong",
+    marks.member_B);
+  proveCorpusClean("TOTAL.canary.pre_member", "pre_member_A1", [...PRE_MEMBER_FORBIDDEN, ...B_SECRETS_TABLE_BORNE],
+    "the lobby occupant enumerating every table still receives none of the redacted bodies R0's wall governs, no resume position, no attendance mark and nothing at all from offering B",
+    marks.pre_member_A1);
+  for (const actor of ["accepted_A", "outsider", "anon"]) {
+    proveCorpusClean(`TOTAL.canary.${actor}`, actor, [...A_SECRETS_TABLE_BORNE, ...B_SECRETS_TABLE_BORNE],
+      `${actor} enumerating every content table in the database receives no table-borne sentinel from either offering — including the two that live in users.phone / users.email, which this actor's own users read could have carried`,
+      marks[actor]);
+  }
 }
 
 // ── L1 / L2 — revocation and re-grant ──────────────────────────────────────
@@ -1605,8 +2757,15 @@ section("L1 / L2 — lifecycle", "the exact regression the resolver exists to pr
       ? `${revokedRooms.length} room(s); offering-A masthead sentinel present=${revokedList.text.includes(CANARY.CONFIG_A)} (MYROOMS.1 returned 1 room for this same actor before revocation)`
       : revokedList.describe);
 
-  proveCorpusClean("L1.4", "member_A1", ALL_A_SECRETS,
-    "across every response the former member received from the surfaces R0 owns, not one offering-A sentinel appears", after);
+  // R0_OWNED_A_SECRETS, not ALL_A_SECRETS, and the narrowing is the honest one:
+  // this window is the surfaces R0's revocation wall covers plus the envelope
+  // and the link RPC. cohort_weeks, cohort_week_submissions, cohort_week_
+  // attendance and users are deliberately NOT in it — they are GAP-1 and GAP-3
+  // territory, measured immediately below — so their sentinels have no home in
+  // this window and hunting them here would be five sweeps that cannot fail.
+  proveCorpusClean("L1.4", "member_A1", R0_OWNED_A_SECRETS,
+    "across every response the former member received from the surfaces R0 owns — the noticeboard, the library, the feed, the replies, the gallery, the schedule, the room skin, their own resume position and seen watermark, the envelope and the link RPC — not one sentinel those surfaces carry appears",
+    after);
 
   // ── GAP-1. Measured, not assumed, and deliberately not swept into L1.4's
   //    window above: cohort_weeks sits OUTSIDE R0's owned set and the residue it
@@ -1638,6 +2797,38 @@ section("L1 / L2 — lifecycle", "the exact regression the resolver exists to pr
       "add `AND e.status = 'active'` to cohort_weeks_student_read, or have the revocation path retract the cohort_batch_members row. Both are edits to a pre-existing policy outside R0's file set, so they belong to a scoped follow-up with its own council pass, not to this phase.",
   });
 
+  // ── GAP-2's sibling on the RPC side, and the reason this probe is placed
+  //    AFTER L1.4 rather than inside it: get_cohort_progress is not one of the
+  //    surfaces R0's revocation wall covers, and folding its response into
+  //    L1.4's sweep would either fail a case for a hole R0 does not own or,
+  //    worse, tempt someone to narrow L1.4's needle list until it passed.
+  const revokedProgress = await rpc("member_A1", "get_cohort_progress",
+    { p_user_id: session.member_A1.id, p_offering_id: ids.offering_a },
+    "get_cohort_progress(self, A) as revoked member_A1 [GAP-3 probe]");
+  const revokedRows = Array.isArray(revokedProgress.json) ? revokedProgress.json : [];
+  const revokedProgressLink = revokedRows.find((r) => r.live_session_zoom_link);
+  const progressText = revokedProgress.text || "";
+  const progressResidue = [CANARY.CURRIC_A1, CANARY.ASSIGN_A1, CANARY.FEEDBACK_A1, CANARY.ZOOMLIVE_A1]
+    .filter((n) => progressText.includes(n));
+  const progressBeyond = [...ALL_B_SECRETS, ...CROSS_BATCH_A2_FORBIDDEN]
+    .filter((n) => progressText.includes(n));
+  carryGap("GAP-3", {
+    claim:
+      "get_cohort_progress does not read enrolment STATUS and applies no join-link window: a student whose enrolment has just been revoked still receives their old batch's curriculum body, assignment brief and mentor feedback from it — and the join link of the class running right now",
+    closedClaim:
+      "get_cohort_progress now stands down on a revoked enrolment — the last read path a refunded student held into their old batch's curriculum and join link is closed",
+    open: revokedProgress.ok && revokedRows.length > 0,
+    widened: progressBeyond.length > 0,
+    evidence: progressBeyond.length > 0
+      ? `get_cohort_progress now also carries ${progressBeyond.join(", ")} to this caller — another batch's or another offering's material, which is past this gap's boundary`
+      : revokedProgress.ok && revokedRows.length > 0
+        ? `${revokedRows.length} week row(s) still returned after revocation, carrying ${progressResidue.join(", ") || "no sentinel"}${revokedProgressLink ? ", including a live join link" : ""}. ` +
+          "Its FROM clause is `cohort_batch_members → enrolments` with no `e.status = 'active'` anywhere (20260526180000:236-238, unchanged by R0 — amendment C1 authorised the per-week collapse and the four columns staying, nothing else), and revocation flips the enrolment without touching the batch roster. The same root cause as GAP-1: the roster row, not the enrolment, is what these older reads trust. R0 neither widens this nor narrows it, and every surface R0 DOES own closed on the same revocation two assertions above."
+        : "get_cohort_progress returned nothing to the revoked member",
+    closing:
+      "add `AND e.status = 'active'` to get_cohort_progress's join, and gate live_session_zoom_link on the same window get_cohort_room already applies (T-60 → end + 1h). Both are edits to a function two shipped Capacitor call sites depend on, so they need the client-compat pass a room migration does not get: same follow-up as GAP-1, same council.",
+  });
+
   await sql(
     `UPDATE public.enrolments SET status = 'active', revoked_at = NULL
       WHERE offering_id = ${lit(ids.offering_a)}
@@ -1658,18 +2849,83 @@ section("CANARY — the full-corpus sweep", "every byte the server handed each a
     proveCorpusClean(`CANARY.${actor}`, actor, ALL_A_SECRETS,
       `across every response ${actor} received in this entire run, not one offering-A sentinel appears — the isolation claim covers surfaces this suite never explicitly asserted on`);
   }
-  proveCorpusClean("CANARY.member_A2", "member_A2", [CANARY.A1, CANARY.PII_A1],
-    "member_A2 never received a batch-A1 sentinel or mentor PII across the whole run");
+  proveCorpusClean("CANARY.member_A2", "member_A2", [...CROSS_BATCH_A1_FORBIDDEN, ...ALL_B_SECRETS],
+    "across the entire run member_A2 received nothing private to batch A1 — no noticeboard row, curriculum body, assignment brief, mentor feedback, mentor-materials file, attendance mark, resume position, seen watermark or mentor PII — and nothing at all from offering B");
   // C3.3 swept member_A1 up to the roster case; this closes the window over the
   // rest of the run — the room-list RPC, the write attacks and the lifecycle
   // reads all land after it.
-  proveCorpusClean("CANARY.member_A1", "member_A1", [CANARY.A2, CANARY.PII_A2, CANARY.CONFIG_A2],
-    "across the ENTIRE run — every table read, every RPC envelope, every room-list call and every rejected write — member_A1 never received one byte of batch A2's content, people or room skin");
+  proveCorpusClean("CANARY.member_A1", "member_A1", [...CROSS_BATCH_A2_FORBIDDEN, ...ALL_B_SECRETS],
+    "across the ENTIRE run — every table read, every RPC envelope, every room-list call, every progress call and every rejected write — member_A1 never received one byte of batch A2's content, curriculum, people or room skin, nor anything belonging to offering B");
   proveCorpusClean("CANARY.pre_member", "pre_member_A1", PRE_MEMBER_FORBIDDEN,
     "pre_member_A1 never received a redacted body across the whole run");
 
   const totals = [...corpus.entries()].map(([a, e]) => `${a}:${e.length}`).join(" · ");
   console.log(`${C.d}       corpus swept: ${totals}${C.x}`);
+}
+
+// ── CANARY-LEDGER — the sweeps are audited, not trusted ────────────────────
+//
+// A canary sweep is the one kind of assertion that looks identical whether it
+// is working or not: "0 hits" is printed by a wall that held, by a needle
+// nobody planted, and by a corpus in which the needle could never have
+// appeared. Three needles in this suite's cross-batch sweep were in the third
+// category, and six of the twenty strings the fixtures plant were in the second
+// — planted, and named nowhere in this file. Prose cannot police that; the next
+// person to add a canary will not read this comment. So it is mechanical.
+//
+// AND THE THIRD CASE IS HERE BECAUSE THE FIRST TWO WERE NOT ENOUGH. Until the
+// 2026-07-28 review, this section's header claimed the reachability rule was
+// enforced mechanically while .1 and .2 between them only checked "swept
+// somewhere" and "observed by its owner". Re-adding the three unreachable
+// needles that started all this to R9.1's list left both printing PASS — the
+// ledger could not tell the fixed state from the broken one it was written to
+// prevent. .3 audits every sweep against CANARY_HOME, which is the property
+// that was being claimed all along.
+section("CANARY-LEDGER — every sentinel was hunted, every hunt was armed, and every sweep could have failed",
+  "the anti-vacuity check: a sweep nobody could fail is not evidence");
+{
+  const declared = Object.entries(CANARY);
+  const unhunted = declared.filter(([, value]) => !sweptNeedles.has(value)).map(([k]) => k);
+  prove("CANARY-LEDGER.1",
+    `all ${declared.length} planted sentinels were actually swept for by at least one corpus grep in this run — a canary planted in the fixtures and named in no needle list is a sentinel standing guard over nothing, and it makes the fixture look more adversarial than the suite is`,
+    unhunted.length === 0,
+    unhunted.length === 0
+      ? `${sweptNeedles.size} distinct needle(s) swept across the run; every CANARY entry is among them`
+      : `NEVER HUNTED: ${unhunted.join(", ")} — either sweep for them or delete them from the fixture`);
+
+  const unarmed = [];
+  const undeclared = Object.keys(CANARY).filter((k) => !CANARY_LEDGER[k]);
+  for (const [key, entry] of Object.entries(CANARY_LEDGER)) {
+    const value = CANARY[key];
+    if (!value) { unarmed.push(`${key}: in the ledger, missing from CANARY`); continue; }
+    if (!entry.observedBy) continue;
+    if (corpusHits(entry.observedBy, value).length === 0) {
+      unarmed.push(`${key}: never reached ${entry.observedBy}, who is entitled to it`);
+    }
+  }
+  prove("CANARY-LEDGER.2",
+    "every sentinel was OBSERVED at least once by the actor entitled to it — the mentor's PII by an admin, the withheld T+3h link by an admin, each batch's own curriculum by its own members, each offering's own join link by its own students: so every 'zero hits' result elsewhere is a wall holding, and never a string that was never written to the database",
+    unarmed.length === 0 && undeclared.length === 0,
+    unarmed.length === 0 && undeclared.length === 0
+      ? `${Object.keys(CANARY_LEDGER).length} ledger entries, each observed by its entitled actor`
+      : `${unarmed.join("; ")}${undeclared.length ? `; not in the ledger at all: ${undeclared.join(", ")}` : ""}`);
+
+  // .3 — THE REACHABILITY AUDIT. Every sweep, re-read against the map of where
+  // each sentinel actually lives. A needle whose home surface the swept window
+  // never queried is a needle that could not have been found however wide the
+  // hole was, and "0 hits" from that sweep is the same sentence a wall that
+  // held prints. proveCorpusClean already failed each such sweep by name; this
+  // is the aggregate, so the ledger itself carries the property its header
+  // claims rather than a weaker one that happens to co-occur with it.
+  const homeless = Object.entries(CANARY).filter(([k]) => !(CANARY_HOME[k] ?? []).length).map(([k]) => k);
+  const vacuous = sweepAudit.filter((s) => s.unreachable.length);
+  prove("CANARY-LEDGER.3",
+    `every one of the ${sweepAudit.length} corpus sweeps in this run could actually have failed — for each needle it hunted, at least one surface carrying that sentinel was queried inside that sweep's own window. This is the check whose absence made the other two unfalsifiable: without it, needles could be hunted over corpora that were never able to carry them and the ledger would still print two green lines`,
+    vacuous.length === 0 && homeless.length === 0,
+    vacuous.length === 0 && homeless.length === 0
+      ? `${sweepAudit.length} sweeps audited against ${Object.keys(CANARY_HOME).length} home-surface declarations; every needle had a live home in its own window`
+      : `${vacuous.map((s) => `${s.id} (${s.actor}): ${s.unreachable.join(", ")} unreachable`).join("; ")}` +
+        `${homeless.length ? `; no home surface declared for: ${homeless.join(", ")}` : ""}`);
 }
 
 // ── Teardown + verdict ─────────────────────────────────────────────────────

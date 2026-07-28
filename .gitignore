@@ -51,3 +51,5 @@ deno.lock
 design/qa/
 design/vision/shots/
 design/community/shots/
+
+supabase/.branches/

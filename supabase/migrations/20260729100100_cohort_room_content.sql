@@ -7,10 +7,15 @@
 --   public.cohort_room_can_access(offering, batch)         -- full member, batch-precise
 --   public.cohort_room_in_lobby(offering, batch)           -- pre_member whitelist ONLY
 --   public.cohort_room_can_post_announcement(offering)     -- mentor/host
--- All four end in `OR is_admin()`. `cohort_room_can_access()` deliberately
--- EXCLUDES `pre_member` (SEC-MEMBER-1: `member` is never widened to include
--- `pre_member`); the lobby tier is expressed here by OR-ing the separate
--- `cohort_room_in_lobby()` helper into exactly ONE read policy (announcements).
+-- THREE of those four end in `OR is_admin()`. `cohort_room_in_lobby()` does not,
+-- deliberately: an admin already passes `cohort_room_can_access()`, so OR-ing
+-- is_admin() into the lobby test would only make "is this caller a lobby
+-- occupant?" answer yes for people who are not one.
+-- `cohort_room_can_access()` deliberately EXCLUDES `pre_member` (SEC-MEMBER-1:
+-- `member` is never widened to include `pre_member`); the lobby tier is
+-- expressed here by OR-ing the separate `cohort_room_in_lobby()` helper into
+-- exactly TWO policies and nowhere else — `ann_member_read` (§1, the whitelist
+-- read surface) and `room_seen_own` (§6, the caller's own marker row).
 --
 -- ── INVARIANTS THIS FILE MUST KEEP (grep-provable) ──────────────────────────
 -- NFR-SEC-2  Every content SELECT routes through an access helper; ZERO content
@@ -73,30 +78,130 @@
 -- Tier column (who reads what):
 --   admin      — every row, every table (all helpers end in `OR is_admin()`).
 --   member     — everything above except other members' recording progress.
---   pre_member — cohort_announcements ONLY (SEC-MEMBER-1 whitelist), plus the
---                cohort_room_configs masthead row that R-1 whitelists.
+--   pre_member — cohort_announcements (READ only) and their OWN cohort_room_seen
+--                marker row, plus the cohort_room_configs masthead row that R-1
+--                whitelists. Nothing else.
 --                DENIED here: resources (curriculum + mentor materials), the
---                commons feed and replies, recording progress, demo entries, and
---                EVERY write verb on every table above.
+--                commons feed and replies, COHORT recording progress, demo
+--                entries, and every write verb on every one of those tables.
+--                ("COHORT" is load-bearing on the progress table and is spelled
+--                out in the Tier-2 block below: `recprog_own_all` is own-row
+--                FOR ALL, and it is a cohort recording it denies, not a
+--                week-less legacy one.) cohort_room_seen
+--                is the one FOR ALL grant a lobby occupant holds, deliberately:
+--                a last-seen timestamp the caller wrote about themselves is not
+--                cohort content, and the row is pinned to `user_id = auth.uid()`
+--                on both USING and WITH CHECK (§6).
 --                ⚠️ WHERE THE WHITELIST ACTUALLY LIVES — state this plainly at the
 --                Tier-1 gate rather than implying it is all RLS:
 --                  • the DENY half is RLS, on every table in this file and on
 --                    cohort_room_members / cohort_room_configs in R-1;
---                  • the ALLOW half is RLS for exactly TWO surfaces —
---                    cohort_announcements (here) and cohort_room_configs
---                    (R-1 `room_configs_member_read`, which ORs in_lobby);
+--                  • the ALLOW half is RLS for exactly THREE surfaces, and they
+--                    are not all whitelist items: cohort_announcements (here,
+--                    READ only) and cohort_room_configs (R-1
+--                    `room_configs_member_read`, which ORs in_lobby) are the
+--                    whitelist proper; the third is the caller's OWN
+--                    cohort_room_seen marker row (§6), which carries no cohort
+--                    content and exists so a lobby occupant's unseen-announcement
+--                    count works;
 --                  • the REMAINING whitelist items — this-week overview,
 --                    cohort-mate presence, upcoming-session schedule — are
---                    RPC-mediated BY DESIGN. `cohort_weeks_student_read` gates on
---                    cohort_batch_members and `live_sessions_read` /
---                    `live_sessions_student_read` gate on has_course_access() /
---                    an active enrolment, and a pre_member satisfies none of
---                    those, so a pre_member reads ZERO rows from those tables at
---                    the RLS layer. R-3's SECURITY DEFINER read RPCs are what
---                    hand a pre_member the overview/presence/schedule projection.
---                    Neither R-1 nor R-2 widens cohort_weeks or live_sessions,
---                    and neither should: widening them would leak week/session
---                    detail to every lobby occupant of every offering.
+--                    RPC-mediated BY DESIGN: R-3's SECURITY DEFINER read RPCs
+--                    are what hand a pre_member the overview/presence/schedule
+--                    projection, and R-3's `get_cohort_room` v_lobby branch
+--                    (20260729100200) withholds zoom_link, recording_url and the
+--                    resume position from it. Neither R-1 nor R-2 widens
+--                    cohort_weeks or live_sessions, and neither should: widening
+--                    them would leak week/session detail to every lobby occupant
+--                    of every offering.
+--                  • 🔴 THE TIER-2 LINE IS **NOT** FULLY ENFORCED ON THE DIRECT
+--                    TABLE READ, and an earlier revision of this comment claimed
+--                    it was. Written down exactly as it stands, because a false
+--                    assertion here is worse than the gap it hides:
+--                    (Both policies below are cited by NAME and file, with no
+--                    line number, per R-1 contract note 1: an earlier revision
+--                    of this block cited `20260526180000:322`, which was wrong on
+--                    the day it was written — the policy is at line 360 and 322
+--                    lands inside `user_is_certificate_eligible()`. Grep the
+--                    name; it cannot go stale.)
+--                      – `live_sessions_student_read` (20260408140000) gates on
+--                        "an ACTIVE enrolment for an offering mapped to this
+--                        session's course" — it never looks at a room membership.
+--                        Resolver branch (b) in R-1 mints `pre_member` for exactly
+--                        one shape that HAS such an enrolment: the staged
+--                        confirmation capture, where the enrolment row is written
+--                        at the confirmation payment and a balance is still
+--                        outstanding. That pre_member therefore DOES read
+--                        live_sessions rows for the offering — titles, times and
+--                        `recording_url` — straight from the table, and
+--                        `get_live_session_zoom_link()` (20260408151600) hands
+--                        them the join link inside its T-60 window on the same
+--                        active-enrolment test. `zoom_link` itself stays
+--                        column-REVOKEd, so the base-table read cannot expose it.
+--                      – `cohort_weeks_student_read` (20260526180000) gates on
+--                        a `cohort_batch_members` row with NO enrolment-status
+--                        filter at all, so a balance-owing applicant an admin has
+--                        already placed on a roster — the case R-1's resolver
+--                        branch (a) deliberately keeps in the lobby — reads that
+--                        batch's weeks.
+--                    WHAT IS ENFORCED: everything in R0's own blast radius —
+--                    written to agree with the table × verb matrix above rather
+--                    than rounded off, because this is the block a reviewer reads
+--                    to decide whether the tier is closed. Every table in this
+--                    file denies pre_member on every ROOM-CONTENT row, on every
+--                    verb. Three tables are not a flat deny, and all three are
+--                    enumerated here — an earlier revision said "exactly TWO"
+--                    and missed the third, which is the same class of error this
+--                    block exists to stop making:
+--                      1. cohort_announcements — READ only (`ann_member_read`),
+--                         the whitelist surface proper.
+--                      2. cohort_room_seen — `room_seen_own` is FOR ALL, but
+--                         every verb is pinned to `user_id = auth.uid()` on both
+--                         USING and WITH CHECK, so it reaches one timestamp the
+--                         caller wrote about themselves.
+--                      3. cohort_recording_progress — `recprog_own_all` (§4) is
+--                         FOR ALL and routes through
+--                         `cohort_room_recording_accessible()`, whose first
+--                         branch is `WHEN b.id IS NULL THEN true`. For a session
+--                         inside a cohort week that helper defers to
+--                         `cohort_room_can_access()` and the lobby is shut out —
+--                         the resume rail IS closed, as claimed. But
+--                         `live_sessions.week_id` is nullable (20260721000000
+--                         added the FK; every masterclass session predates it),
+--                         and for a WEEK-LESS session the helper returns true
+--                         unconditionally, so any authenticated caller —
+--                         pre_member included — holds SELECT/INSERT/UPDATE/
+--                         DELETE on their OWN progress row for it. That is
+--                         deliberate and it is stated in §4: a session with no
+--                         cohort week is not room content, so own-row semantics
+--                         apply and a lobby occupant reaches nothing but their
+--                         own playback position on a NON-cohort recording. It
+--                         reveals no cohort row, no other user's row, and no
+--                         recording the caller could not already play. It is
+--                         listed anyway because the sentence above is an
+--                         exhaustive claim a reviewer is told to trust.
+--                    Beyond those three: the room RPCs' lobby envelope is
+--                    redacted (see the R-3 note above).
+--                    WHERE THE REAL FIX HAS TO LIVE: in the two pre-existing
+--                    policies named above (and in `get_live_session_zoom_link`),
+--                    by adding "…and this user is not merely a lobby occupant of
+--                    the offering" — i.e. `NOT cohort_room_in_lobby(offering)`, or
+--                    better, an outstanding-balance test. That is NOT R0's to
+--                    make: those are shipped read paths CohortDashboard already
+--                    depends on, they are outside this phase's declared files, and
+--                    tightening them unilaterally from a room migration is exactly
+--                    the kind of cross-surface edit the R0 brief forbids.
+--                    ESCALATED to the orchestrator as a follow-up, to be scoped
+--                    with the CohortDashboard read paths in hand. Until it lands,
+--                    the honest statement of the tier is: R0 keeps a pre_member
+--                    out of every ROOM surface that carries cohort CONTENT — the
+--                    exceptions are the lobby whitelist itself (masthead config,
+--                    announcements read, their own seen marker) plus their own
+--                    progress row on a week-less, NON-cohort recording (item 3
+--                    above) — and it does NOT
+--                    close the pre-existing live_sessions / cohort_weeks
+--                    direct-table reads that an active-but-unbalanced enrolment
+--                    already opened.
 --   accepted   — no membership row => zero rows everywhere. No policy mentions it.
 --   outsider / anon — zero rows everywhere (`TO authenticated` + helpers false,
 --                and `anon` additionally holds no table privilege at all — see the
@@ -157,6 +262,24 @@ BEGIN
       ADD CONSTRAINT cohort_announcements_author_id_fkey
       FOREIGN KEY (author_id) REFERENCES public.users(id) ON DELETE SET NULL NOT VALID;
   END IF;
+-- Guarded like every other DDL block in R0 (see 20260729100000 contract note 10
+-- for the full rationale and why `query_canceled` has to be named: `OTHERS`
+-- does not trap it). Every statement above takes ACCESS EXCLUSIVE on
+-- cohort_announcements, and the DROP+ADD pair is one subtransaction, so a
+-- cancelled lock wait rolls back to the ORIGINAL FK rather than leaving the
+-- table with none — and, critically, does not abort a shared `db push`.
+-- Degradation is safe for the push but PERMANENT until someone acts: the old
+-- CASCADE FK survives, so deleting a host's account would still erase the
+-- noticeboard of every cohort they ran. A second `db push` does NOT converge it
+-- — the version is stamped on completion and never re-applied — so recovery is
+-- the manual procedure in 20260729100000 contract note 11, and the section-8
+-- VERIFY query there (confdeltype = 'n') is what detects it. The table is
+-- created by this same migration on a fresh apply, so there is no lock to wait
+-- on there and this block is a no-op.
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_announcements: author FK re-shape skipped (%) [%] — a pre-existing ON DELETE CASCADE author FK may still be in place, so deleting a host account would erase their announcements. Another db push will NOT fix this: re-run this DO block by hand (20260729100000 contract note 11).',
+    SQLERRM, SQLSTATE;
 END $$;
 
 CREATE INDEX IF NOT EXISTS cohort_announcements_room_idx
@@ -418,6 +541,21 @@ BEGIN
   ALTER TABLE public.cohort_room_post_replies
     ADD CONSTRAINT room_reply_body_len_chk
     CHECK (length(btrim(body)) BETWEEN 1 AND 10000) NOT VALID;
+-- Guarded (20260729100000 contract note 10). NOT VALID never scans, so these are
+-- metadata-only and effectively instant — but they still take ACCESS EXCLUSIVE
+-- on two tables, and a cancelled lock wait raises 57014, which `WHEN OTHERS`
+-- would NOT have caught and which would have aborted the whole shared push.
+-- The whole block is one subtransaction: on failure the DROPs roll back with the
+-- ADDs, so a project that already carried the earlier upper-bound-only
+-- definition keeps it rather than ending with no CHECK at all. The write RPCs
+-- enforce the same limits imperatively either way; only the UPDATE-verb half of
+-- SEC-WRITE-1 degrades — and it stays degraded until this DO block is re-run BY
+-- HAND, because a second `db push` will not re-apply a stamped file
+-- (20260729100000 contract note 11; the section-8 VERIFY query detects it).
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room posts/replies: body+media shape constraints not (re)applied (%) [%] — the write RPCs still enforce them, but the granted UPDATE verb is unguarded until this DO block is re-run by hand. Another db push will NOT do it (20260729100000 contract note 11).',
+    SQLERRM, SQLSTATE;
 END $$;
 
 -- Feed indexes. The channel view and the all-channel view are each ONE keyset
@@ -647,9 +785,16 @@ REVOKE INSERT ON public.cohort_room_post_replies FROM authenticated, anon;
 
 ----------------------------------------------------------------------
 -- 4. cohort_recording_progress — "recordings that resume".
---    Own rows only, AND the recording's room must be reachable, so the
---    resume rail cannot become a side channel for a `pre_member` (recordings
---    are explicitly outside the SEC-MEMBER-1 whitelist) or for a revoked member.
+--    Own rows only, AND the recording's room must be reachable, so the resume
+--    rail cannot become a side channel into a COHORT recording for a
+--    `pre_member` (recordings are explicitly outside the SEC-MEMBER-1
+--    whitelist) or for a revoked member.
+--    Precisely: the gate binds when the session hangs off a cohort week. A
+--    week-less session is not room content and keeps plain own-row semantics —
+--    which means this table is one of the three in this file that a lobby
+--    occupant holds any verb on at all. That is enumerated in the Tier-2 block
+--    in the header rather than left implicit here, because the header makes an
+--    exhaustive claim and this is the third item in it.
 ----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.cohort_recording_progress (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,

@@ -7,14 +7,20 @@
 -- FIRST and RAISEs for a caller without a grant — it never returns a silently
 -- empty set that a UI could misread as "no content yet".
 --   Corollary, added after the 2026-07-27 audit: a SECURITY DEFINER function
---   that takes its scope as ARGUMENTS cannot assert anything, so it must not be
---   reachable by a client. The three helpers here that do that —
---   cohort_room_roster_ids, cohort_room_allowed_channels and (by construction)
---   nothing else — are REVOKEd from PUBLIC/anon/authenticated and are callable
---   only by the function owner, i.e. only from the asserting RPCs below.
+--   whose scope is DECIDED BY ITS ARGUMENTS cannot assert anything, so it must
+--   not be reachable by a client. Two helpers here are in that class —
+--   cohort_room_roster_ids and cohort_room_allowed_channels — and both are
+--   REVOKEd from PUBLIC/anon/authenticated, which leaves the function owner
+--   (i.e. only the asserting RPCs below) as their caller.
+--     · cohort_room_roster_ids ALSO reads auth.uid(), on one arm: a caller with
+--       no batch resolved matches their OWN row and nothing else (§1b). That
+--       arm NARROWS the argument-driven scope, it does not replace it — the
+--       offering, the batch and the p_all widening all still arrive from the
+--       caller — so the function stays squarely in the ungranted class and the
+--       grant criterion in this paragraph is unchanged for it.
 --   cohort_room_caller_scope is the exception that stays granted: it derives
---   its scope from auth.uid() alone and can therefore only ever describe the
---   caller to themselves.
+--   its scope from auth.uid() ALONE — no argument can widen it — and can
+--   therefore only ever describe the caller to themselves.
 --
 -- 🚫 THERE IS NO get_cohort_room_preview RPC, UNDER ANY NAME.
 --    MEMBER-1 (Rahul, 2026-07-18) DELETED that path. An `accepted` applicant
@@ -160,13 +166,45 @@ COMMENT ON FUNCTION public.cohort_room_caller_scope(uuid) IS
 --     Scope, in one place:
 --       p_all               → every active room member of the offering;
 --       role mentor/host    → always visible (staff are offering-wide);
---       otherwise           → strictly the caller's own batch.
+--       a real p_batch      → strictly the caller's own batch;
+--       p_batch IS NULL     → the caller's OWN row, and nothing else.
 --     pre_member rows are never listed — the lobby is not yet a cohort-mate.
 --
---     INTERNAL, NOT CLIENT-CALLABLE: it takes its scope as arguments rather
---     than deriving it, so it asserts nothing. It is REVOKEd from PUBLIC and
---     never granted, which leaves the function owner (i.e. the SECURITY
---     DEFINER RPCs below, which DO assert first) as its only caller.
+--     THE NULL-BATCH ARM IS NOT DECORATION EITHER. This predicate used to read
+--     `m.batch_id IS NOT DISTINCT FROM p_batch`, which treats NULL as a VALUE to
+--     match rather than as "not placed yet": every batch-less caller enumerated
+--     every OTHER batch-less member of the offering, and roster_count counted
+--     them — the exact opposite of what §3's roster_count comment and runbook B2
+--     both claim. It was reachable, not theoretical: R-1's resolver branch (a2)
+--     (20260729100000:802-843 — the INSERT under the "(a2) OFFERING-WIDE
+--     membership for a paid, enrolled student the admin has not put in a batch
+--     yet" comment; cite it by that comment, not by the line number, because
+--     that file is modified in this same changeset and the range moves with it)
+--     mints exactly those rows for a paid, enrolled
+--     student an admin has not put in a batch yet, so an unplaced student was
+--     handed the names, faces, occupations and cities of every other unplaced
+--     student in the offering. Those people are a QUEUE, not cohort-mates, and
+--     by §1 nothing else in their envelope crosses a batch — the roster was the
+--     one surface that did.
+--
+--     Own-row-only rather than denied-outright, deliberately: get_room_roster
+--     must not raise or return a stranger-shaped empty set for a legitimate
+--     pre_start member (the brief's "config + empty sessions, no raise" edge
+--     case), and this keeps ONE rule for everybody — you see your own batch, and
+--     before placement your own batch is just you. A lobby caller still counts
+--     and lists nobody, because a pre_member row fails the role filter above
+--     even when it is the caller's own.
+--
+--     INTERNAL, NOT CLIENT-CALLABLE: its scope is decided by its ARGUMENTS —
+--     p_offering, p_batch and the p_all widening all arrive from the caller —
+--     so it asserts nothing, notwithstanding that the NULL-batch arm above
+--     additionally reads auth.uid() to pin the caller to their own row. That
+--     read NARROWS one arm; it does not make the function self-scoping the way
+--     cohort_room_caller_scope is, so the file-header doctrine's
+--     argument-scoped class still holds it and it stays ungranted. It is
+--     REVOKEd from PUBLIC and never granted, which leaves the function owner
+--     (i.e. the SECURITY DEFINER RPCs below, which DO assert first) as its
+--     only caller.
 ----------------------------------------------------------------------
 --     ROWS 200 is not decoration. A SECURITY DEFINER SQL function can never be
 --     inlined by the planner, so this is always a Function Scan, and Postgres
@@ -188,7 +226,10 @@ LANGUAGE sql STABLE SECURITY DEFINER ROWS 200 SET search_path = public AS $$
     AND (
       COALESCE(p_all, false)
       OR m.role IN ('mentor','host')
-      OR m.batch_id IS NOT DISTINCT FROM p_batch
+      OR (p_batch IS NOT NULL AND m.batch_id = p_batch)
+      -- No batch resolved for the caller ⇒ their own row only. NEVER a
+      -- NULL-matches-NULL bucket shared with the rest of the unplaced queue.
+      OR (p_batch IS NULL AND m.user_id = auth.uid())
     );
 $$;
 REVOKE EXECUTE ON FUNCTION public.cohort_room_roster_ids(uuid, uuid, boolean) FROM PUBLIC;
@@ -197,8 +238,11 @@ REVOKE EXECUTE ON FUNCTION public.cohort_room_roster_ids(uuid, uuid, boolean) FR
 COMMENT ON FUNCTION public.cohort_room_roster_ids(uuid, uuid, boolean) IS
   'Internal roster predicate shared by get_room_roster and '
   'get_cohort_room.roster_count so the list and the count cannot drift. '
-  'Asserts nothing — it is not granted to any client role; only the '
-  'access-asserting SECURITY DEFINER RPCs may call it.';
+  'p_all lists the whole offering; mentors/hosts are always listed; a real '
+  'p_batch lists that batch; a NULL p_batch lists the CALLER''S OWN ROW ONLY, '
+  'never the other not-yet-placed members. Asserts nothing — it is not granted '
+  'to any client role; only the access-asserting SECURITY DEFINER RPCs may '
+  'call it.';
 
 
 ----------------------------------------------------------------------
@@ -334,11 +378,29 @@ GRANT EXECUTE ON FUNCTION public.get_my_cohort_rooms() TO authenticated;
 --    config + this-week + sessions + announcements + cohort-mate count.
 --    Weeks×submissions detail keeps riding get_cohort_progress (§6).
 --
---    THE T-60 ZOOM GATE IS SERVER-SIDE. zoom_link is NULL in the envelope
---    until scheduled_at - 1 hour <= now(), so the client cannot render what it
---    never received (PRD REQ-ROOM-2). live_sessions also carries a column-level
---    REVOKE SELECT (zoom_link) for authenticated (20260408151600), so this RPC
---    — running as owner — is the ONLY member-facing path to a join link.
+--    THE ZOOM GATE IS SERVER-SIDE AND IT IS A WINDOW, NOT A THRESHOLD. It
+--    opens at T-60 and CLOSES one hour after the scheduled end, which is the
+--    same window get_live_session_zoom_link has enforced since
+--    20260408151600:88-97 — the RPC this envelope supersedes for room members.
+--    The client cannot render what it never received (PRD REQ-ROOM-2), and
+--    live_sessions carries a column-level REVOKE SELECT (zoom_link) for
+--    authenticated (20260408151600), so no client reaches the column by reading
+--    the TABLE.
+--
+--    ⚠️ IT IS NOT, HOWEVER, THE ONLY MEMBER-FACING PATH TO A JOIN LINK, and this
+--    header used to claim it was. Two other SECURITY DEFINER functions are
+--    GRANTed to authenticated and read the same column:
+--      · get_live_session_zoom_link (20260408151600) — same window, still
+--        granted; R-4 asserts it returns the near link to member_A1. Superseded
+--        for room members, not revoked, because non-room callers still use it.
+--      · get_cohort_progress (§6 of this file) — selects ls.zoom_link RAW at the
+--        SELECT list with NO time gate at all, and its enrolment join is not
+--        filtered on status. Both are INHERITED VERBATIM from
+--        20260526180000:233-245 (that definition has neither), so closing them
+--        here would widen this phase past its own change; they are booked as a
+--        follow-up in runbook B5.4 instead. Until that follow-up lands, the gate
+--        below closes THIS envelope's hole, not the offering's last one — say so
+--        in the PR rather than reading this section as an all-clear.
 --
 --    MEMBER-1 tier 2: a pre_member (lobby) caller gets the WHITELIST ONLY —
 --    masthead/theme, session titles + dates, cohort-mate count, announcements
@@ -418,9 +480,12 @@ BEGIN
       -- returns rows from (§1b), narrowed to cohort-mates: staff are listed in
       -- the roster but are not counted as cohort-mates, and R-4's C3.2 asserts
       -- exactly that relationship. Batch-scoped (ROSTER-SCOPE-1); offering-wide
-      -- for staff and admins only. A batch-less caller (lobby, pre_start
-      -- member) counts no one — a headcount summed across batches is still a
-      -- cross-batch fact.
+      -- for staff and admins only. A headcount summed across batches is still a
+      -- cross-batch fact, so a caller with no batch resolved counts only
+      -- themselves: a LOBBY caller counts 0 (a pre_member row is not listed by
+      -- §1b at all, and this narrows to member/alumni on top of that), and an
+      -- unplaced pre_start MEMBER counts exactly 1. It used to count every
+      -- other unplaced member of the offering — see the NULL-batch note in §1b.
       SELECT count(*) FROM public.cohort_room_roster_ids(p_offering, v_batch, v_wide) r
       WHERE r.role IN ('member','alumni')
     ),
@@ -471,9 +536,38 @@ BEGIN
           'id', ls.id, 'title', ls.title, 'scheduled_at', ls.scheduled_at,
           'duration_minutes', ls.duration_minutes, 'status', ls.status,
           'session_type', ls.session_type, 'week_id', ls.week_id,
-          -- the T-60 gate, server-side
-          'zoom_link', CASE WHEN ls.scheduled_at - interval '1 hour' <= now()
-                            THEN ls.zoom_link END,
+          -- The join-link WINDOW, server-side: opens at T-60, closes one hour
+          -- after the scheduled end. The upper bound is the half that was
+          -- missing, and it is this file's own defect, not an inherited one:
+          -- without it the envelope was strictly MORE permissive than
+          -- get_live_session_zoom_link (20260408151600:88-97), which it claims
+          -- to supersede. These cohorts run on RECURRING meeting links and
+          -- cohort_room_can_access admits role='alumni', so an open-ended gate
+          -- meant every past student held a live join link into every future
+          -- session of the offering, indefinitely.
+          -- A cancelled session hands out nothing, and a session with a BLANK
+          -- status hands out nothing either. `ls.status IS NOT NULL AND
+          -- ls.status <> 'cancelled'` is the exact truth table of the function
+          -- this supersedes: get_live_session_zoom_link (20260408151600:96-97)
+          -- tests `status <> 'cancelled'` inside an IF, which evaluates NULL for
+          -- a NULL status and falls through to RETURN NULL — it DENIES a blank
+          -- status. status is nullable (the CHECK at 20260408140000:11 passes on
+          -- NULL) so the row is insertable and the cell is reachable; an earlier
+          -- pass wrote COALESCE(status,'scheduled') here, which ADMITTED it, and
+          -- that was strictly wider than the thing being replaced. "Match or
+          -- tighten" is the rule for a gate, and a status explicitly written
+          -- over a DEFAULT 'scheduled' column is a data-integrity signal, not a
+          -- class about to lose its link — so this conforms. §6's LATERAL uses
+          -- COALESCE for the OPPOSITE job (choosing which session represents a
+          -- week, where "unspecified" must not read as "cancelled"); the two
+          -- expressions differ because the questions do.
+          'zoom_link', CASE
+            WHEN now() >= ls.scheduled_at - interval '1 hour'
+             AND now() <= ls.scheduled_at
+                          + make_interval(mins => COALESCE(ls.duration_minutes, 60))
+                          + interval '1 hour'
+             AND ls.status IS NOT NULL AND ls.status <> 'cancelled'
+            THEN ls.zoom_link END,
           'recording_url', ls.recording_url,
           'my_position', (SELECT rp.position_seconds
                           FROM public.cohort_recording_progress rp
@@ -527,7 +621,9 @@ GRANT EXECUTE ON FUNCTION public.get_cohort_room(uuid) TO authenticated;
 --
 --    ROSTER-SCOPE-1 = BATCH-SCOPED: a member sees their own batch plus the
 --    offering-wide mentors/hosts. A mentor/host (NULL-batch grant) and an admin
---    see the whole offering. The predicate itself lives in
+--    see the whole offering. A member who has no batch yet (pre_start, resolver
+--    branch (a2)) sees the mentors and their own row and no one else — the
+--    unplaced are a queue, not a batch. The predicate itself lives in
 --    cohort_room_roster_ids (§1b) so roster_count cannot drift from this list.
 --
 --    pre_member is DENIED. The lobby whitelist grants a cohort-mate COUNT
@@ -887,13 +983,25 @@ COMMENT ON FUNCTION public.cohort_room_reply_write(uuid, text, boolean) IS
 --    paired fix. Removing them is a later phase with a CohortDashboard.tsx
 --    change in the same PR.
 --
---    WHAT ACTUALLY CHANGES (two things, both invisible to the shipped client):
+--    WHAT ACTUALLY CHANGES (three things — and (a) IS visible to the shipped
+--    client, which is why it is written up in the runbook at B6 and not left
+--    buried here):
 --    (a) the plain LEFT JOIN on live_sessions is replaced by a LEFT JOIN
 --        LATERAL … LIMIT 1, which kills the >1-session-per-week row
 --        duplication (a week with 3 sessions used to emit 3 week rows, and the
---        dashboard drew 3 week cards). The lateral picks the NEXT upcoming
---        session for the week, falling back to the most recent past one, which
---        is the session the Join link should point at.
+--        dashboard drew 3 week cards). The lateral picks the session that has
+--        not ended yet — the one in progress if a class is running, else the
+--        next upcoming — falling back to the most recent past one, which is the
+--        session the Join link should point at.
+--        ⚠️ THE ROW COUNT IS A CLIENT-VISIBLE NUMBER. CohortDashboard.tsx:144
+--        reads rows.length as totalWeeks and :157 divides by it for the
+--        progress percentage, so on any offering with a multi-session week a
+--        student's percentage moves the moment this is applied. The new count
+--        is the CORRECT one and the change is intended, not a regression —
+--        rows.length was never "weeks", it was week×session pairs — but it
+--        reaches Capacitor bundles that cannot be updated and R0 ships no
+--        paired .tsx fix. Runbook B6 carries the verdict, the worked arithmetic
+--        and the pre-apply blast-radius query.
 --    (b) an own-user-or-admin assert. This RPC is SECURITY DEFINER and took
 --        p_user_id from the client with no check, so any authenticated user
 --        could read any other user's submission status, rating, mentor feedback
@@ -915,6 +1023,19 @@ COMMENT ON FUNCTION public.cohort_room_reply_write(uuid, text, boolean) IS
 --        qa-harness/ and studio-worker/ finds exactly the two call sites
 --        above), and any future one must be added to this assert explicitly
 --        rather than discovering the raise in production.
+--    (c) the LATERAL's ORDER BY ranks a CANCELLED session LAST, so it can only
+--        ever represent a week that holds nothing else. This is part of (a),
+--        not a separate change: the collapse is what forces a choice of one
+--        session per week, and a called-off class must not win that choice over
+--        a real one while this RPC still hands zoom_link out ungated (B5.4a).
+--        It is a sort key and NOT a filter — filtering cancelled rows out would
+--        blank the live_session columns for a cancelled-only week, and the
+--        prior definition (20260526180000:278, a bare LEFT JOIN) has always
+--        shown that session's title and date. An earlier pass DID filter, which
+--        was an inherited-behaviour change of exactly the class this task rules
+--        out of scope; it is reverted. Nothing client-visible moves: a week
+--        with a real session already elected it, and a cancelled-only week
+--        still renders exactly what it renders today.
 --
 --    CREATE OR REPLACE (not DROP + CREATE): the signature and return type are
 --    identical, so a drop is not required — and CREATE OR REPLACE preserves the
@@ -983,13 +1104,55 @@ BEGIN
   JOIN public.enrolments e ON e.id = cbm.enrolment_id
   JOIN public.cohort_batches cb ON cb.id = cbm.batch_id
   JOIN public.cohort_weeks cw ON cw.cohort_batch_id = cb.id
-  -- ONE session per week: the next upcoming, else the most recent past.
+  -- ONE session per week: the one that has not ENDED yet — the class in
+  -- progress if there is one, else the next upcoming — falling back to the most
+  -- recent past session when the week is over.
+  --
+  -- The bucket key is the session's END (scheduled_at + duration), never its
+  -- start. Keying on the start put a CURRENTLY-RUNNING session in the past
+  -- bucket, so a week that also held a later session sorted the later one first
+  -- and the dashboard swapped the Join link off the class the student was
+  -- supposed to be in — mid-class, with no way back in. duration_minutes
+  -- defaults to 60 for a row that never set one, matching
+  -- get_live_session_zoom_link (20260408151600:93).
+  --
+  -- A CANCELLED SESSION IS DEMOTED, NOT EXCLUDED — and the distinction is the
+  -- whole point. Collapsing a week to one row forces a choice this function
+  -- never had to make before, so "which session represents the week" is R-3's
+  -- own decision and a cancelled class must never win it over a real one:
+  -- get_cohort_progress ships zoom_link raw (no time gate — inherited, B5.4a),
+  -- so electing the called-off session drew a live "Join session" button
+  -- (CohortDashboard.tsx:510) for a class nobody would be in. The FIRST sort key
+  -- below therefore ranks a cancelled row last, and it is applied ahead of every
+  -- timing key: a cancelled class running right now still loses to a real one
+  -- that finished two days ago.
+  --   It is a sort key and NOT a WHERE clause because excluding the row would
+  --   change what a week LOOKS like, and that is inherited behaviour this phase
+  --   is not allowed to touch: the prior definition (20260526180000:278) is a
+  --   bare LEFT JOIN with no cancelled handling at all, so a week whose ONLY
+  --   session is cancelled has always rendered that session's title and date.
+  --   Filtering it out would blank those columns, and CohortDashboard.tsx:521
+  --   renders the literal 'Not scheduled yet' for a NULL title — a false
+  --   statement about a class that WAS scheduled and then called off, shipped to
+  --   Capacitor bundles that cannot be updated, in a phase whose acceptance is
+  --   zero client-visible change. Demotion keeps §6 and §3 telling the same
+  --   story: §3 LISTS a cancelled session and withholds only its link, and now
+  --   so does §6 — the week still shows it when it is all there is, and the link
+  --   question stays where B5.4a books it.
+  -- COALESCE(status,'scheduled') is right for THIS job (a blank status is
+  -- "unspecified", which is not "cancelled" when choosing a week's session) and
+  -- deliberately differs from §3's stricter gate, where a blank status denies.
   LEFT JOIN LATERAL (
     SELECT lsx.id, lsx.title, lsx.scheduled_at, lsx.zoom_link
     FROM public.live_sessions lsx
     WHERE lsx.week_id = cw.id
-    ORDER BY (lsx.scheduled_at >= now()) DESC NULLS LAST,
-             CASE WHEN lsx.scheduled_at >= now() THEN lsx.scheduled_at END ASC,
+    ORDER BY (COALESCE(lsx.status, 'scheduled') = 'cancelled') ASC,
+             (lsx.scheduled_at
+                + make_interval(mins => COALESCE(lsx.duration_minutes, 60)) >= now())
+               DESC NULLS LAST,
+             CASE WHEN lsx.scheduled_at
+                         + make_interval(mins => COALESCE(lsx.duration_minutes, 60)) >= now()
+                  THEN lsx.scheduled_at END ASC,
              lsx.scheduled_at DESC
     LIMIT 1
   ) ls ON true
@@ -1143,6 +1306,25 @@ GRANT EXECUTE ON FUNCTION public.get_cohort_progress(uuid, uuid) TO authenticate
 --          -- as mentor_A (offering-wide): sessions SPAN both batches — that is
 --          -- the one caller for whom a cross-batch payload is correct.
 --
+--          -- as an UNPLACED member (paid + enrolled, no batch row yet — R-1
+--          -- resolver branch (a2), 20260729100000:802-843, the INSERT under the
+--          -- "(a2) OFFERING-WIDE membership …" comment in the SHIPPING tree, not
+--          -- the pre-change range at that offset in git HEAD): roster_count must be
+--          -- exactly 1, and get_room_roster must return that one row plus the
+--          -- offering's mentors/hosts and NOBODY else. Before the §1b NULL-batch
+--          -- fix this enumerated every OTHER unplaced student in the offering —
+--          -- list and count alike — because the predicate matched NULL to NULL.
+--          -- Seed the case first (there is no such fixture today; R-4 should
+--          -- gain one):
+--          --   INSERT INTO public.cohort_room_members
+--          --          (user_id, offering_id, batch_id, role, source, status)
+--          --   VALUES ('<u1>','<offering_A>',NULL,'member','derived','active'),
+--          --          ('<u2>','<offering_A>',NULL,'member','derived','active');
+--          SELECT count(*) FILTER (WHERE r.role IN ('member','alumni')) AS mates,
+--                 count(*)                                              AS listed
+--            FROM public.get_room_roster('<offering_A>') r;
+--          -- mates must be 1 (self). Anything higher is the NULL-batch leak back.
+--
 --    B3. p95 over 100 sequential calls, which is the acceptance number (a
 --        single ANALYZE run is a sample of one):
 --
@@ -1199,7 +1381,14 @@ GRANT EXECUTE ON FUNCTION public.get_cohort_progress(uuid, uuid) TO authenticate
 --                                + users shape this file deliberately dropped
 --                                shows up as a Seq Scan under a Subquery Scan.)
 --          get_cohort_progress   cohort_batch_members → cohort_weeks_batch_idx,
---                                live_sessions_week_idx inside the LATERAL
+--                                live_sessions_week_idx inside the LATERAL.
+--                                Expect an Index Scan FEEDING A SORT there, not
+--                                an ordered index read: the LATERAL's leading
+--                                sort keys are expressions (cancelled-last, then
+--                                ended-vs-not) that no index provides. That sort
+--                                is over one week's sessions — single digits —
+--                                so it is not the finding. A Seq Scan on
+--                                live_sessions is.
 --
 --    PR EVIDENCE BLOCK (⛔ UNFILLED — these are placeholders, not results; the
 --    acceptance gate is open until an operator replaces them):
@@ -1209,17 +1398,242 @@ GRANT EXECUTE ON FUNCTION public.get_cohort_progress(uuid, uuid) TO authenticate
 --          | get_cohort_room     |        |        |              |
 --          | get_room_roster     |        |        |              |
 --          | get_cohort_progress |        |        |              |
---        …plus the four EXPLAIN outputs, the mentor/pre_member reruns, and the
---        B2 scope probe (ann_LEAK must read false for pre_member_A1).
+--        …plus the four EXPLAIN outputs, the mentor/pre_member reruns, the
+--        B2 scope probes (ann_LEAK must read false for pre_member_A1; the
+--        unplaced-member roster must count exactly 1), and B7's zoom-window
+--        probe (PAST withheld, LIVE present, link_exists true). Those three
+--        probes are the only evidence in the PR that the roster fix and the
+--        window's upper bound do anything — an unarmed run passes without them.
 --
---    B5. TWO THINGS THE PR BODY MUST SAY IN WORDS, not leave in this file:
---       1. get_cohort_progress keeps its client contract — all four
+--    B5. FIVE THINGS THE PR BODY MUST SAY IN WORDS, not leave in this file:
+--       1. get_cohort_progress keeps its column contract — all four
 --          live_session columns, same names, same order (amendment C1). What
---          changed is one session per week instead of one row per session, and
---          an own-user-or-admin assert (§6(b)) that is a runtime-contract
---          change outside C1 and is called out there for the reviewer to
---          accept or split out.
+--          changed is one session per week instead of one row per session
+--          (§6(a), including the tie-break that ranks a cancelled session last
+--          among the candidates for that one slot — §6(c), a sort key, not a
+--          filter: no session stops being visible), and an own-user-or-admin
+--          assert (§6(b)) that is a runtime-contract change outside C1 and is
+--          called out there for the reviewer to accept or split out.
 --       2. The p95/EXPLAIN acceptance criterion is NOT met. See B above.
+--       3. That per-week collapse changes a NUMBER THE SHIPPED CLIENT SHOWS —
+--          the progress percentage. It is not an internal-only change. B6.
+--       4. TWO KNOWN HOLES SURVIVE THIS MIGRATION UNTOUCHED, deliberately, and
+--          need their own follow-up ticket. Both live in get_cohort_progress
+--          (§6) and both are INHERITED VERBATIM from its prior definition,
+--          20260526180000:233-245 — that definition has neither guard, so
+--          adding one here would put a pre-existing fix inside the highest-blast
+--          -radius phase in the programme, and it is booked out rather than
+--          smuggled in:
+--            a. NO TIME GATE ON THE JOIN LINK. §6 selects ls.zoom_link raw into
+--               live_session_zoom_link and is GRANTed to authenticated, so the
+--               window §3 closes for the room envelope is still wide open one
+--               RPC over. Any enrolled user — including an alumnus, since (b)
+--               below does not filter status — reads the link for every session
+--               of their offering at any time, which matters precisely because
+--               these cohorts run on RECURRING meeting links. The follow-up must
+--               apply §3's window here and ship the paired CohortDashboard.tsx
+--               change in the same PR (that file's own T-60 check at :510 has no
+--               lower bound either).
+--            b. THE ENROLMENT JOIN IS NOT FILTERED ON status='active'. A
+--               withdrawn or refunded enrolment still reads week detail,
+--               submissions, mentor feedback and the link from (a).
+--          Neither is a regression introduced by this phase; both are live on
+--          prod today. Open the ticket WITH the PR, do not let this note be the
+--          only record.
+--       5. §3'S ZOOM GATE MATCHES OR TIGHTENS get_live_session_zoom_link ON
+--          EVERY CELL, and its upper bound is the security fix this task exists
+--          for — so say both, and attach B7's evidence. The gate is a WINDOW
+--          (T-60 → scheduled end + 1h). The old function had one; the first draft
+--          of this file opened at T-60 and never closed, which — with recurring
+--          meeting links and role='alumni' admitted by can_access — left every
+--          past student holding a live join link into every future session.
+--          On the one cell where an earlier pass was WIDER than the function it
+--          supersedes (a NULL status: `COALESCE(status,'scheduled')` admitted it,
+--          the old IF-based test evaluates NULL and falls through to RETURN NULL,
+--          i.e. DENIES), this file now conforms — `ls.status IS NOT NULL AND
+--          ls.status <> 'cancelled'`. That was a reviewer decision and it was
+--          taken: conform. §6's LATERAL keeps COALESCE because it answers a
+--          different question (which session REPRESENTS a week; "unspecified" is
+--          not "cancelled" there) and it gates nothing.
+--
+--    B6. CLIENT-VISIBLE CHANGE THAT REACHES ALREADY-SHIPPED BUNDLES.
+--        Web redeploys; the iOS and Android Capacitor builds in the field do
+--        not. Both call get_cohort_progress, so this lands on them the moment
+--        the migration is applied, with no paired client fix available — R0
+--        ships zero .tsx (brief rule 1). Apply it deliberately or hold it.
+--
+--        WHAT MOVES: §6's LATERAL collapses a week to ONE row; before, a week
+--        emitted one row per live session. src/pages/CohortDashboard.tsx reads
+--        that row count as a domain fact:
+--            :144  const totalWeeks = rows.length;
+--            :157  progressPct = round((completedCount / totalWeeks) * 100)
+--        so for any offering where a week holds more than one session, a
+--        student's progress percentage changes. (:148-156 index into the same
+--        array for "week N of M", so that moves with it.)
+--
+--        THE VERDICT — CORRECT AND INTENDED, NOT A REGRESSION. rows.length was
+--        never "weeks"; it was week×session pairs. totalWeeks over-counted, the
+--        dashboard drew duplicate week cards (the defect this collapse exists
+--        to fix), and progressPct divided one inflated number by another
+--        inflated by a DIFFERENT factor, so it was not even consistently wrong.
+--        Worked example — week 1 completed with 3 sessions, week 2 upcoming
+--        with 1: before, 4 rows / 3 completed = 75%; after, 2 rows / 1
+--        completed = 50%. 50% is the true answer. Students on an affected
+--        cohort will see their percentage DROP to the honest value, which is a
+--        support-facing fact even though the new number is the right one.
+--
+--        BLAST RADIUS — measure it before applying, do not assume it. The row
+--        set is byte-identical for any offering whose weeks each hold at most
+--        one live session:
+--
+--          SELECT o.title, cb.name AS batch, cw.week_number,
+--                 count(*) AS sessions_in_week
+--            FROM public.live_sessions ls
+--            JOIN public.cohort_weeks cw ON cw.id = ls.week_id
+--            JOIN public.cohort_batches cb ON cb.id = cw.cohort_batch_id
+--            JOIN public.offerings o ON o.id = cb.offering_id
+--           GROUP BY 1, 2, 3
+--          HAVING count(*) > 1
+--           ORDER BY sessions_in_week DESC;
+--
+--        No rows → nobody's percentage moves and this is a no-op on the field
+--        bundles. Rows → those are exactly the cohorts whose numbers change:
+--        name them in the PR and tell support, or hold this migration until the
+--        phase that is allowed to touch CohortDashboard.tsx can ship the paired
+--        change described next.
+--
+--        THE PAIRED CLIENT FIX — DEDUPE THE NUMERATOR AND THE DENOMINATOR
+--        TOGETHER, OR NOT AT ALL. An earlier draft of this runbook prescribed
+--        "derive totalWeeks from DISTINCT week_id rather than rows.length,
+--        which is correct under either shape". IT IS NOT. Only the denominator
+--        is named there, and the numerator is never deduped: :145-147 computes
+--        completedCount by filtering ROWS
+--          rows.filter(r => ["completed","archived"].includes(r.week_status)).length
+--        so under the DUPLICATING shape a completed week with 3 sessions
+--        contributes 3 to completedCount while contributing 1 to a DISTINCT
+--        week_id denominator. Same worked example, inverted: week 1 completed
+--        with 3 sessions + week 2 upcoming with 1 → completedCount 3 /
+--        distinctWeeks 2 = 150%. The footer goes with it: activeIdx (:148) is a
+--        ROW index and weekOfM is progressIdx + 1 (:156) compared against M, so
+--        it reads "week 4 of 2".
+--
+--        That is not a stale-shape hypothetical. §C of THIS FILE is a reversal
+--        script that deliberately restores the duplicating LEFT JOIN, so the
+--        exact sequence the old wording invited — later phase ships the client
+--        fix, this migration is then rolled back — puts a >100% percentage on
+--        iOS/Android Capacitor bundles that cannot be updated.
+--
+--        The shape-independent fix is to collapse the rows to one entry per
+--        week_id FIRST and derive every one of the four numbers from that list:
+--
+--          const weeks = Array.from(
+--            rows.reduce((m, r) => m.has(r.week_id) ? m : m.set(r.week_id, r),
+--                        new Map<string, ProgressRow>()).values()
+--          );
+--          const totalWeeks    = weeks.length;
+--          const completedCount = weeks.filter((w) =>
+--            ["completed", "archived"].includes(w.week_status)).length;
+--          const activeIdx     = weeks.findIndex((w) => w.week_status === "active");
+--          // progressIdx / weekOfM / progressPct unchanged, but now indexing
+--          // DISTINCT WEEKS on both sides of the ratio.
+--
+--        Under the collapsed shape `weeks` is `rows` and nothing moves; under
+--        the duplicating shape it yields the same honest 50% and "week 2 of 2".
+--        Correct under either shape, in either migration state, which is what
+--        "safe to ship ahead of / behind this migration" actually requires.
+--        currentWeek (:139-142) already keys off week_id and needs no change.
+--
+--        NOT PART OF THIS — THE TWO ORDERING RULES INSIDE THE SAME LATERAL.
+--        Neither moves a number and neither removes a row; they only decide
+--        WHICH session fills the single slot the collapse creates, and that slot
+--        did not exist before, so there is no prior behaviour for them to change:
+--          · a session that has STARTED but not ENDED sorts as present rather
+--            than past, so a week holding a later session no longer swaps the
+--            Join link away from the class a student is sitting in, mid-class;
+--          · a CANCELLED session sorts LAST, so it fills the slot only for a week
+--            that holds nothing else — which is the same thing that week shows
+--            today under the plain LEFT JOIN. It is deliberately a sort key and
+--            not a WHERE clause: filtering would blank live_session_title for a
+--            cancelled-only week and CohortDashboard.tsx:521 renders 'Not
+--            scheduled yet' for a NULL title, which is a false statement about a
+--            class that was scheduled and then called off — a product decision,
+--            on un-updatable bundles, in a phase whose acceptance is zero
+--            client-visible change. An earlier pass of this file did filter; it
+--            was reverted for exactly that reason, and because cancelled-session
+--            VISIBILITY is inherited (20260526180000:278 has no status handling
+--            at all), which puts it in the same leave-alone class as B5.4's two
+--            holes.
+--        The residue that survives: a cancelled-only week still renders its
+--        title, its date and — because §6 ships zoom_link ungated (B5.4a) — a
+--        live Join button for a called-off class. That is prod behaviour today,
+--        unchanged by this migration, and it belongs to the B5.4a follow-up,
+--        which must ship §3's window here together with the paired
+--        CohortDashboard.tsx change. Name it in that ticket. Count the affected
+--        weeks with:
+--
+--          SELECT o.title, cb.name AS batch, cw.week_number
+--            FROM public.cohort_weeks cw
+--            JOIN public.cohort_batches cb ON cb.id = cw.cohort_batch_id
+--            JOIN public.offerings o ON o.id = cb.offering_id
+--           WHERE EXISTS (SELECT 1 FROM public.live_sessions ls
+--                          WHERE ls.week_id = cw.id)
+--             AND NOT EXISTS (SELECT 1 FROM public.live_sessions ls
+--                              WHERE ls.week_id = cw.id
+--                                AND COALESCE(ls.status,'scheduled') <> 'cancelled');
+--        -- Rows here are NOT a blast radius for this migration — they render
+--        -- identically before and after it. They are the follow-up's worklist.
+--
+--    B7. PROVE THE ZOOM WINDOW CLOSES — the upper bound is the highest-severity
+--        change in this diff and NOTHING IN THE PR CAN CURRENTLY DISTINGUISH IT
+--        FROM ITS OWN ABSENCE. R-4's C2 section probes T+3h (FAR, below the
+--        window), T+30m (NEAR, inside it) and T-20m (LIVE, mid-class, C2.6b) —
+--        the lower edge and the middle, never the upper edge.
+--        qa-harness/cohort-room-fixtures.sql concedes it ("FAR/NEAR only ever
+--        exercise its lower edge"). The one fixture session that sits ABOVE the
+--        window, 'ROOM QA A1 PAST session', is seeded with `zoom_link NULL`, so
+--        "the past session carries no link" is TRUE WITH THE FIX AND WITHOUT IT.
+--        That is exactly the vacuity C2.0 was written to prevent.
+--
+--        R-4 MUST GAIN AN ARMED PAST SESSION (its file, not this one — raise it
+--        as an R-4 change, do not let this note be the only record):
+--          · give 'ROOM QA A1 PAST session' a real zoom_link carrying its own
+--            sentinel, e.g. 'https://zoom.test/j/LEAK_CANARY_ZOOMPAST_A1', add
+--            that sentinel to CANARY and to the leak corpus, and
+--          · add a case — C2.10, since C2.7.* is already the entitlement matrix
+--            — asserting that the envelope's PAST entry has zoom_link null while
+--            an admin can still pull the same link off `ids.session_past_a1`
+--            (the C2.0 positive-control shape), so the NULL is the window
+--            closing and not an empty column.
+--        Until that lands, an operator runs the probe by hand on the shadow
+--        project. It arms the column, then reads it back through the RPC:
+--
+--          -- arm it (the fixture ships this column NULL)
+--          UPDATE public.live_sessions
+--             SET zoom_link = 'https://zoom.test/j/LEAK_CANARY_ZOOMPAST_A1'
+--           WHERE title = 'ROOM QA A1 PAST session';
+--
+--          -- then, as member_A1 (the B2 set_config + SET LOCAL ROLE block):
+--          SELECT s ->> 'title'                       AS title,
+--                 s ->> 'scheduled_at'                AS at,
+--                 (s ->> 'zoom_link') IS NULL         AS link_withheld
+--            FROM jsonb_array_elements(
+--                   public.get_cohort_room('<offering_A>') -> 'sessions') s
+--           WHERE s ->> 'title' LIKE '%PAST%'
+--              OR s ->> 'title' LIKE '%LIVE%';
+--          -- ACCEPTANCE: PAST → link_withheld TRUE (it ended 2 days ago, so it
+--          -- is above scheduled_at + duration + 1h), LIVE → link_withheld FALSE
+--          -- (it started 20m ago and is still running). Both rows must appear:
+--          -- one TRUE and one FALSE is the WINDOW; two TRUEs is a broken column
+--          -- and two FALSEs is the unbounded gate this fix removed.
+--
+--          -- and the positive control, so the TRUE above is a withheld string
+--          -- and not an empty cell (run as the admin/owner, outside the role):
+--          SELECT zoom_link IS NOT NULL AS link_exists
+--            FROM public.live_sessions WHERE title = 'ROOM QA A1 PAST session';
+--          -- must be TRUE. If it is FALSE the probe proved nothing.
+--
+--        Paste both results into the PR next to the p95 table. The upper bound
+--        does not ship signed off on an unverifiable claim.
 --
 -- C. REVERSAL — one script, drops only what this migration added and restores
 --    get_cohort_progress to its VERBATIM prior definition:

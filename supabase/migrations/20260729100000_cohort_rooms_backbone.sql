@@ -220,6 +220,141 @@
 --    for a room-bearing offering (worst case) and a room-less one (the common
 --    case), and both are far inside the 5 ms budget.
 --
+-- 10. THE EXCEPTION-HANDLER LIST — why every guard below names codes explicitly
+--    instead of stopping at `WHEN OTHERS`. PL/pgSQL's `OTHERS` does NOT trap
+--    `query_canceled` (57014) or `assert_failure` (P0004); the manual is
+--    explicit about it. 57014 is the one that matters here: it is what a
+--    `statement_timeout`, a `pg_cancel_backend()` and a cancelled lock wait all
+--    raise. A `WHEN OTHERS`-only guard therefore lets a resolver that ran out of
+--    statement budget propagate straight through an AFTER trigger and ROLL BACK
+--    THE ENROLMENT INSERT — the money write — at the moment of purchase, which
+--    is precisely what SEC-ENT-2 forbids.
+--
+--    THERE ARE TWO GUARD SHAPES BELOW, and which one a site uses is a decision,
+--    not a copy-paste. Read this before adding a third.
+--
+--    (A) THE SWALLOW — for a guard standing in front of a write that MUST
+--        commit: every AFTER trigger on `enrolments` / `cohort_batch_members` /
+--        `cohort_applications`, the alumni flip, and every DDL block in this
+--        file and in 20260729100100 — including the four trigger-ATTACH blocks
+--        in §5, which take ACCESS EXCLUSIVE on the money tables themselves.
+--        It reads:
+--
+--          EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+--                      OR crash_shutdown OR cannot_connect_now OR others THEN
+--
+--        · `query_canceled` / `assert_failure` — the two codes `OTHERS` skips.
+--          These are the only two names in the list that change what the
+--          handler catches.
+--        · 57P01/57P02/57P03 (admin_shutdown / crash_shutdown /
+--          cannot_connect_now) are NOT "already covered by OTHERS" either — an
+--          earlier revision of this note said so and it was wrong in the other
+--          direction. They arrive at FATAL (57P03 at connection time), which
+--          terminates the backend instead of unwinding into a PL/pgSQL handler,
+--          so no handler traps them at all. Naming them therefore neither adds
+--          nor removes coverage: it is documentation, kept so the list is
+--          greppable and so nobody reading a money-path guard has to re-derive
+--          which shutdown code is or is not inside `OTHERS`. It costs nothing —
+--          a handler is chosen by first match.
+--        · What `OTHERS` DOES carry here, and what the list therefore does not
+--          need to name: every ordinary ERROR, including 55P03
+--          `lock_not_available` — the code a wait cut short by the LOCAL
+--          `lock_timeout` in §0 and §5 raises. A bounded lock wait is caught by
+--          the plain `OTHERS`; 57014 is what a `statement_timeout` or a
+--          `pg_cancel_backend()` aimed at the push raises, and that is the one
+--          the explicit names exist for.
+--
+--    (B) THE PER-ITEM SKIP — for a LOOP that resolves many users inside one
+--        statement: the batch-member trigger's FOREACH and
+--        cohort_room_reconcile()'s nightly sweep. There a cancel and an error
+--        are different events and are handled separately:
+--
+--          WHEN query_canceled OR admin_shutdown OR crash_shutdown
+--               OR cannot_connect_now THEN   -- WARN, flag, and EXIT the loop
+--          WHEN assert_failure OR others THEN            -- WARN and carry on
+--
+--        The reason is mechanical rather than stylistic. Postgres arms
+--        `statement_timeout` once per top-level statement and disarms it the
+--        moment it fires; a `pg_cancel_backend()` likewise sets
+--        QueryCancelPending once. A loop that TRAPS a cancel and keeps going has
+--        therefore consumed the only interrupt it is going to get: every
+--        remaining iteration runs with no timer armed and no way for an operator
+--        to stop it. Using shape (A) in a loop would make the 03:45 sweep immune
+--        to BOTH `statement_timeout` and `pg_cancel_backend()` — over a
+--        four-way UNION candidate set that is the whole room world, unbounded.
+--        Trapping the cancel only in order to STOP is what keeps both
+--        properties: the interrupt is honoured (the loop ends), the caller's
+--        write is still never aborted, and whoever was skipped re-derives on the
+--        next run, because the sweep is idempotent.
+--
+--    ACCEPTED CONSEQUENCE OF SHAPE (A), stated so it is a decision and not an
+--    accident: swallowing 57014 inside the trigger means an operator's
+--    `pg_cancel_backend()` aimed at a slow enrolment statement is absorbed by
+--    the room's trigger rather than killing the statement. That is the trade
+--    SEC-ENT-2 asks for — the room is downstream of the money, never in front of
+--    it — and the swallow is never silent: it emits a WARNING carrying SQLSTATE,
+--    and the 03:45 reconcile re-derives whatever the cancelled resolver missed.
+--    Use `pg_terminate_backend()` if such a statement genuinely has to die.
+--    The trade is bought for the MONEY PATH ONLY. It is paid for by the
+--    reconcile, so the reconcile itself must stay killable — which is exactly
+--    what shape (B) is for. A cancel aimed at `SELECT
+--    public.cohort_room_reconcile();` still ends that sweep.
+--
+--    Shape (A) also guards the DDL blocks, of which this file has TWO classes
+--    against LIVE tables — both are inventoried here so neither is mistaken for
+--    the only one:
+--      · §0's `ALTER TABLE public.cohort_batches ADD CONSTRAINT … UNIQUE`, which
+--        takes ACCESS EXCLUSIVE on cohort_batches AND builds the backing index
+--        inside the migration's transaction;
+--      · §5's four trigger attachments on `cohort_batch_members`, `enrolments`
+--        (twice) and `cohort_applications` — the money path's own tables.
+--        `DROP TRIGGER` takes ACCESS EXCLUSIVE and `CREATE TRIGGER` takes SHARE
+--        ROW EXCLUSIVE; both are catalogue-only (no rewrite, no scan), so they
+--        are quick ONCE THEY HAVE THE LOCK, and the whole hazard is the WAIT.
+--    Every one of the above is unsafe unguarded for the same two reasons: an
+--    unhandled error there aborts the whole `db push` and takes every sibling
+--    migration down with it — the exact failure this file's header rules out —
+--    and an UNBOUNDED ACCESS EXCLUSIVE wait behind one open transaction queues
+--    every subsequent reader of that table behind us, which on `enrolments`
+--    means stalling the money path to install a trigger that is downstream of
+--    it. So each site takes a short LOCAL `lock_timeout` as well as a handler.
+--    What the resulting degradation costs, and how to recover from it, is
+--    note 11.
+--
+-- 11. RECOVERING A DEGRADED DDL BLOCK. "Re-run this migration" is NOT a
+--    procedure on this repo's deploy path, so no comment in either R0 file says
+--    it. Read this before writing another one that does.
+--
+--    Every shape-(A) DDL guard lets the migration COMPLETE with its ALTER
+--    skipped and a WARNING as the only trace. CLAUDE.md's runbook — and the only
+--    documented deploy path here — is `npx -y supabase@latest db push`, which
+--    stamps the version into `supabase_migrations.schema_migrations` on
+--    completion and never re-applies a stamped file: a second push reports the
+--    remote database is up to date and changes nothing. So recovery is manual,
+--    and it is one of these two:
+--
+--      (a) PER-OBJECT (preferred). Re-execute the DO block that warned, by hand
+--          against the target project (psql, or the Supabase SQL editor),
+--          copied verbatim from this file. Every guarded block is safe to run at
+--          any time and as often as needed, by one of two mechanisms — the
+--          CONSTRAINT blocks re-probe pg_constraint / pg_class first and are a
+--          no-op when the object is already there; §5's four TRIGGER blocks are
+--          idempotent by construction instead (`DROP TRIGGER IF EXISTS` then
+--          `CREATE TRIGGER`, both inside one transaction, so the trigger is
+--          never observably absent to a concurrent writer). Run it when the
+--          table is quiet — the lock is the reason it failed the first time.
+--      (b) WHOLE-FILE. Only for a file that is idempotent end to end (both R0
+--          files are), and never concurrently with another push:
+--            DELETE FROM supabase_migrations.schema_migrations
+--             WHERE version = '20260729100000';   -- or '20260729100100'
+--          then `db push` again.
+--
+--    DETECTION, because a WARNING is a scrolling NOTICE-level line that CI
+--    discards: do not rely on reading the push output. After any push that
+--    included these files, run the VERIFY query in section 8 at the foot of this
+--    file. It returns one row per guarded object with a present/missing verdict,
+--    and THAT is what belongs in the deploy checklist.
+--
 -- Sources: design/briefs/cohort-r0.md R-1 · design/cohorts/docs/05-ACCESS-SECURITY.md
 -- (MEMBER-1 / SEC-MEMBER-1 / SEC-ENT-1 / SEC-ENT-2 / LOBBY-1) ·
 -- design/cohorts/docs/03-DATA-MODEL-ERD.md §4.6a/§4.7/§17 ·
@@ -232,8 +367,47 @@
 --    cohort_batches has no (id, offering_id) unique pair yet; adding one is
 --    additive and lets the "a batch override must belong to its offering" rule
 --    be declarative instead of a raising trigger.
+--
+--    THIS IS THE HEAVIEST DDL IN R0 AGAINST A LIVE PRODUCTION TABLE — not the
+--    only one. The full live-table inventory is contract note 10: this block,
+--    plus §5's four trigger attachments on cohort_batch_members / enrolments
+--    (twice) / cohort_applications. Those are catalogue-only; this one is the
+--    heavy one because `ADD CONSTRAINT … UNIQUE` takes ACCESS EXCLUSIVE on
+--    cohort_batches AND builds the backing unique index inside the migration's
+--    transaction. An unguarded failure here — a lock wait cancelled by
+--    statement_timeout, a concurrent admin roster edit holding the table, a
+--    duplicate (id, offering_id) pair — aborts the ENTIRE `db push` and takes
+--    every sibling migration in the same push down with it. So:
+--      · a short LOCAL lock_timeout bounds the wait instead of blocking behind
+--        an open transaction (and behind US, since ACCESS EXCLUSIVE queues in
+--        front of every subsequent reader) — restored on the success path, and
+--        rolled back automatically with the subtransaction on the failure path;
+--      · the handler catches BOTH ways the wait can end, which is why the list
+--        is what it is (contract note 10). A wait cut short by the lock_timeout
+--        just set raises 55P03 `lock_not_available`, an ordinary ERROR that the
+--        plain `WHEN OTHERS` already carries; 57014 `query_canceled` — from a
+--        `statement_timeout` or a `pg_cancel_backend()` aimed at the push — is
+--        the one `OTHERS` would have missed, and it is named for that reason.
+--    DEGRADATION, named exactly, because it is a real loss of a guarantee and
+--    not a formality: without this UNIQUE the composite FK below cannot be
+--    created either, so "a batch override belongs to its offering" stops being
+--    enforced by the DATABASE. What is left is the imperative check inside
+--    admin_upsert_room_config(), which exists for precisely this case and
+--    rejects a foreign batch with NULL + a WARNING. That covers the admin RPC —
+--    the only write path `authenticated` has, since section 7 revokes their DML
+--    on the table — and covers NOTHING ELSE: a `service_role` write or direct
+--    SQL bypasses it, and until the constraint exists there is no guard on
+--    those. A config row whose batch belongs to another offering is live, not
+--    inert: cohort_room_phase() and room_configs_member_read both resolve
+--    through batch_id.
+--    RECOVERY IS MANUAL AND IS CONTRACT NOTE 11 — another `db push` will NOT
+--    re-apply this file once the version is stamped. Re-run this DO block by
+--    hand (it is idempotent and re-probes pg_constraint) when the table is
+--    quiet, then confirm with the section-8 VERIFY query.
 -- ---------------------------------------------------------------------------
 DO $$
+DECLARE
+  v_prev_lock_timeout text;
 BEGIN
   IF to_regclass('public.cohort_batches') IS NOT NULL
      AND NOT EXISTS (
@@ -242,9 +416,26 @@ BEGIN
          AND conrelid = 'public.cohort_batches'::regclass
      )
   THEN
-    ALTER TABLE public.cohort_batches
-      ADD CONSTRAINT cohort_batches_id_offering_key UNIQUE (id, offering_id);
+    BEGIN
+      v_prev_lock_timeout := current_setting('lock_timeout', true);
+      PERFORM set_config('lock_timeout', '4s', true);   -- LOCAL: this txn only
+
+      ALTER TABLE public.cohort_batches
+        ADD CONSTRAINT cohort_batches_id_offering_key UNIQUE (id, offering_id);
+
+      PERFORM set_config('lock_timeout',
+                         COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+    EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+                OR crash_shutdown OR cannot_connect_now OR others THEN
+      -- The subtransaction rollback also restores lock_timeout, so nothing is
+      -- left set for the rest of the push.
+      RAISE WARNING 'cohort_room: could not add cohort_batches_id_offering_key (%) [%] — the composite FK on cohort_room_configs is skipped with it, so batch/offering integrity now holds ONLY on the admin_upsert_room_config() write path (service_role and direct SQL are unguarded). Another db push will NOT fix this: re-run this DO block by hand when the lock is free — contract note 11.',
+        SQLERRM, SQLSTATE;
+    END;
   END IF;
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room: cohort_batches_id_offering_key probe failed (%) [%] — constraint not added; re-run this DO block by hand (contract note 11)', SQLERRM, SQLSTATE;
 END $$;
 
 
@@ -320,15 +511,27 @@ BEGIN
       ADD CONSTRAINT room_config_vocab_object CHECK (jsonb_typeof(vocab) = 'object') NOT VALID;
     BEGIN
       ALTER TABLE public.cohort_room_configs VALIDATE CONSTRAINT room_config_vocab_object;
-    EXCEPTION WHEN OTHERS THEN
-      RAISE WARNING 'cohort_room_configs: room_config_vocab_object left NOT VALID — a pre-existing row holds a non-object vocab (%). New writes are still checked; fix the row and re-run VALIDATE.', SQLERRM;
+    EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+                OR crash_shutdown OR cannot_connect_now OR others THEN
+      -- VALIDATE takes SHARE UPDATE EXCLUSIVE and scans the table: a cancel
+      -- here (57014) is as likely as a CHECK violation, and `OTHERS` alone
+      -- would have let it abort the push (contract note 10).
+      RAISE WARNING 'cohort_room_configs: room_config_vocab_object left NOT VALID — a pre-existing row holds a non-object vocab, or the validation was cancelled (%) [%]. New writes are still checked; fix the row and run VALIDATE CONSTRAINT by hand (a db push will not re-apply this file — contract note 11).', SQLERRM, SQLSTATE;
     END;
   END IF;
-EXCEPTION WHEN OTHERS THEN
-  RAISE WARNING 'cohort_room_configs: could not add room_config_vocab_object (%)', SQLERRM;
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room_configs: could not add room_config_vocab_object (%) [%]', SQLERRM, SQLSTATE;
 END $$;
 
 -- A batch override must belong to the same offering as the config row.
+-- Guarded (contract note 10): this ALTER needs the UNIQUE added in section 0 —
+-- if that one degraded to a WARNING, this one CANNOT succeed, and an unhandled
+-- "there is no unique constraint matching given keys" would abort the whole
+-- shared `db push` for a rule that keeps a PARTIAL imperative fallback in
+-- admin_upsert_room_config() — the admin RPC path only, not service_role or
+-- direct SQL (see section 0). It also takes a lock on BOTH tables, so a cancel
+-- is possible on its own account.
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -342,6 +545,10 @@ BEGIN
       REFERENCES public.cohort_batches (id, offering_id)
       ON DELETE CASCADE;
   END IF;
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room_configs: could not add room_config_batch_belongs_to_offering (%) [%] — a batch override is no longer declaratively pinned to its offering; admin_upsert_room_config() still rejects one on the RPC path, but service_role and direct SQL are unguarded. Another db push will NOT fix this: re-run this DO block by hand once cohort_batches_id_offering_key exists — contract note 11.',
+    SQLERRM, SQLSTATE;
 END $$;
 
 -- Exactly one offering-level row; at most one override per batch.
@@ -357,6 +564,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS cohort_room_configs_batch_override
 CREATE INDEX IF NOT EXISTS cohort_room_configs_offering_idx
   ON public.cohort_room_configs (offering_id);
 
+-- Bare DDL, deliberately: cohort_room_configs is created by the block above, so
+-- on a first apply nothing else can hold a lock on it and on a re-apply it is a
+-- room table with no money-path traffic. The lock_timeout + handler wrapper of
+-- §5 buys nothing here (contract note 10's live-table inventory excludes it).
 DROP TRIGGER IF EXISTS cohort_room_configs_updated_at ON public.cohort_room_configs;
 CREATE TRIGGER cohort_room_configs_updated_at
   BEFORE UPDATE ON public.cohort_room_configs
@@ -402,6 +613,8 @@ CREATE INDEX IF NOT EXISTS room_members_offering_idx
 CREATE INDEX IF NOT EXISTS room_members_access_idx
   ON public.cohort_room_members (user_id, offering_id, status, role);
 
+-- Bare DDL for the same reason as the configs trigger above: cohort_room_members
+-- is created by this file and carries no live traffic at apply time.
 DROP TRIGGER IF EXISTS cohort_room_members_updated_at ON public.cohort_room_members;
 CREATE TRIGGER cohort_room_members_updated_at
   BEFORE UPDATE ON public.cohort_room_members
@@ -689,6 +902,20 @@ BEGIN
   --     occupant's own row and keeps them here, which is where Δ2 puts them.
   --     THE LAST NOT EXISTS keeps the lobby from shadowing a manual mentor/host
   --     grant or a member row, which share the offering-wide arbiter index.
+  --
+  --     🔴 KNOWN, ESCALATED, NOT CLOSED BY R0 — the shape this branch mints on
+  --     the staged path (ACTIVE enrolment + outstanding balance) is the one
+  --     shape that satisfies the PRE-EXISTING `live_sessions_student_read`
+  --     policy (20260408140000:54, "any active enrolment for the offering") and
+  --     `get_live_session_zoom_link()`'s T-60 test. The room tier holds — every
+  --     R-2 table and every R-3 envelope treats this row as lobby-only — but the
+  --     DIRECT table read of live_sessions does not, and neither does
+  --     `cohort_weeks_student_read` for a balance-owing applicant already on a
+  --     roster. Closing it means editing two shipped policies CohortDashboard
+  --     reads through, which is outside R0's blast radius and is filed as a
+  --     follow-up. The full statement of what is and is not enforced lives in
+  --     20260729100100's tier column; do not re-assert "a pre_member reads zero
+  --     rows from live_sessions" anywhere until that follow-up lands.
   INSERT INTO public.cohort_room_members (user_id, offering_id, batch_id, role, source, status)
   SELECT DISTINCT ON (a.user_id, a.offering_id)
          a.user_id, a.offering_id, NULL::uuid, 'pre_member', 'derived', 'active'
@@ -846,6 +1073,43 @@ END $$;
 --    would roll back the money write, and the room is downstream of the money,
 --    never in front of it. Drift from a swallowed failure self-heals at the
 --    nightly reconcile.
+--
+--    ⚠️ ATTACHING THE TRIGGER IS ITSELF DDL AGAINST A LIVE MONEY TABLE, and it
+--    is guarded for the same reasons §0 is — the runtime guard inside the
+--    function protects the money path AFTER the trigger exists; it does nothing
+--    for the moment of installation. `DROP TRIGGER` takes ACCESS EXCLUSIVE and
+--    `CREATE TRIGGER` takes SHARE ROW EXCLUSIVE on `cohort_batch_members`,
+--    `enrolments` (twice) and `cohort_applications`. Neither rewrites nor scans
+--    the table, so both are instant once they hold the lock; the hazard is
+--    entirely the WAIT. Left bare at the top level they inherit the session
+--    `lock_timeout`, which on the CLAUDE.md deploy path (`npx supabase db push`)
+--    is the default 0 = wait forever — so one open transaction on `enrolments`
+--    parks an ACCESS EXCLUSIVE request in front of every subsequent reader of
+--    the money table for as long as it holds. That is a worse outcome than the
+--    aborted push, and it is the same effect §0 bounds its own wait to avoid.
+--
+--    So each of the four money-table attachments below runs inside a DO block
+--    that (a) sets a short LOCAL `lock_timeout` — restored on the success path,
+--    rolled back with the block on the failure path — and (b) carries the
+--    shape-(A) handler of contract note 10.
+--
+--    WHAT THE SWALLOW COSTS HERE, stated so it is a decision and not a
+--    copy-paste: a trigger that fails to attach leaves the room membership
+--    un-derived on write, in BOTH directions. It grants nobody anything they
+--    did not buy — a missing trigger cannot mint a membership row — but state
+--    the other direction plainly rather than rounding it off: with
+--    `room_resolve_on_enrolment_status` absent, a REVOCATION is not honoured on
+--    write either, so room access outlives a revoked enrolment until the sweep.
+--    Both directions land in the same place, and it is a state this file already
+--    tolerates by design: the runtime shape-(A) guards swallow exactly the same
+--    way (contract note 10), and contract note 9 records that before the
+--    enrolment-INSERT trigger existed a fully paid student sat outside the room
+--    until the 03:45 reconcile, which is idempotent and sweeps the whole room
+--    world nightly. Bounded, self-healing, ≤24h. Weighed against aborting a
+--    shared `db push` and taking sibling migrations down, the swallow is the
+--    better trade — but ONLY because the reconcile exists. Detection is
+--    the trigger half of the §8 VERIFY query; recovery is contract note 11(a),
+--    re-running the DO block by hand when the table is quiet.
 -- ---------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public._room_resolve_from_batch_member()
@@ -855,6 +1119,7 @@ DECLARE
   v_users      uuid[];
   v_new_enrol  uuid;
   v_old_enrol  uuid;
+  v_cancelled  boolean := false;
 BEGIN
   -- NEW/OLD are unassigned outside their operations; touch them via TG_OP only.
   IF TG_OP IN ('INSERT','UPDATE') THEN v_new_enrol := NEW.enrolment_id; END IF;
@@ -866,12 +1131,18 @@ BEGIN
   -- lock timeout, an enrolments schema edit — would abort the roster write it is
   -- attached to. SEC-ENT-2 is "this trigger can never block that write", not
   -- "the resolver can never block that write", so nothing here is left outside.
+  --
+  -- The handler names query_canceled/assert_failure ahead of `others` because
+  -- `others` does not trap them (contract note 10). A statement_timeout landing
+  -- on THIS select — the driving query, not the resolver — used to escape the
+  -- guard and roll the roster write back.
   BEGIN
     SELECT array_agg(DISTINCT e.user_id) INTO v_users
     FROM public.enrolments e
     WHERE e.id IN (v_new_enrol, v_old_enrol)
       AND e.user_id IS NOT NULL;
-  EXCEPTION WHEN OTHERS THEN
+  EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+              OR crash_shutdown OR cannot_connect_now OR others THEN
     v_users := NULL;
     RAISE WARNING 'cohort_room: could not read the users behind cohort_batch_members (enrolments %, %): % (%)',
       v_new_enrol, v_old_enrol, SQLERRM, SQLSTATE;
@@ -879,15 +1150,26 @@ BEGIN
 
   -- FOREACH over an array cannot itself fail, so the per-user guard below is the
   -- only thing left between a resolver error and the roster write: one poisoned
-  -- user does not cost the other their re-derivation.
+  -- user does not cost the other their re-derivation. A CANCEL is different from
+  -- an error, though — it means this statement is already over its budget, so
+  -- the loop stops instead of spending the next user's resolve on a timer that
+  -- has already fired. The reconcile picks up whoever was skipped.
+  -- (Contract note 10, shape B — the same split cohort_room_reconcile() uses.)
   IF v_users IS NOT NULL THEN
     FOREACH v_user IN ARRAY v_users LOOP
       BEGIN
         PERFORM public.cohort_room_resolve_user(v_user);
-      EXCEPTION WHEN OTHERS THEN
-        RAISE WARNING 'cohort_room resolver failed for user % on cohort_batch_members: % (%)',
-          v_user, SQLERRM, SQLSTATE;
+      EXCEPTION
+        WHEN query_canceled OR admin_shutdown OR crash_shutdown
+             OR cannot_connect_now THEN
+          v_cancelled := true;
+          RAISE WARNING 'cohort_room resolver CANCELLED for user % on cohort_batch_members: % (%) — swallowed so the roster write still commits (SEC-ENT-2); 03:45 reconcile will re-derive',
+            v_user, SQLERRM, SQLSTATE;
+        WHEN assert_failure OR others THEN
+          RAISE WARNING 'cohort_room resolver failed for user % on cohort_batch_members: % (%)',
+            v_user, SQLERRM, SQLSTATE;
       END;
+      EXIT WHEN v_cancelled;
     END LOOP;
   END IF;
 
@@ -897,28 +1179,65 @@ BEGIN
   RETURN NEW;
 END $$;
 
-DROP TRIGGER IF EXISTS room_resolve_on_batch_member ON public.cohort_batch_members;
-CREATE TRIGGER room_resolve_on_batch_member
-  AFTER INSERT OR UPDATE OR DELETE ON public.cohort_batch_members
-  FOR EACH ROW EXECUTE FUNCTION public._room_resolve_from_batch_member();
+-- Attachment 1 of 4 on a live money table — bounded lock wait + shape-(A)
+-- handler, per the §5 preamble. The DDL is spelled out in EXECUTE strings only
+-- because a LOCAL lock_timeout has to share a statement with the DDL it bounds;
+-- the object names stay greppable.
+DO $$
+DECLARE
+  v_prev_lock_timeout text := current_setting('lock_timeout', true);
+BEGIN
+  PERFORM set_config('lock_timeout', '4s', true);   -- LOCAL: this txn only
+  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_batch_member ON public.cohort_batch_members';
+  EXECUTE $ddl$
+    CREATE TRIGGER room_resolve_on_batch_member
+      AFTER INSERT OR UPDATE OR DELETE ON public.cohort_batch_members
+      FOR EACH ROW EXECUTE FUNCTION public._room_resolve_from_batch_member()
+  $ddl$;
+  PERFORM set_config('lock_timeout',
+                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room: could not attach room_resolve_on_batch_member to cohort_batch_members (%) [%] — roster edits will NOT derive membership on write; the 03:45 reconcile still does, so this degrades to <=24h lag, not to a leak. Another db push will NOT fix it: re-run this DO block by hand when the table is quiet (contract note 11) and confirm with the section-8 VERIFY query.',
+    SQLERRM, SQLSTATE;
+END $$;
 
 CREATE OR REPLACE FUNCTION public._room_resolve_from_enrolment()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
   BEGIN
     PERFORM public.cohort_room_resolve_user(NEW.user_id);
-  EXCEPTION WHEN OTHERS THEN
+  -- query_canceled/assert_failure first: `others` does not trap them and this
+  -- trigger hangs off `enrolments`, the money table (contract note 10).
+  EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+              OR crash_shutdown OR cannot_connect_now OR others THEN
     RAISE WARNING 'cohort_room resolver failed for user % on enrolments: % (%)',
       NEW.user_id, SQLERRM, SQLSTATE;
   END;
   RETURN NEW;
 END $$;
 
-DROP TRIGGER IF EXISTS room_resolve_on_enrolment_status ON public.enrolments;
-CREATE TRIGGER room_resolve_on_enrolment_status
-  AFTER UPDATE OF status ON public.enrolments
-  FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status)
-  EXECUTE FUNCTION public._room_resolve_from_enrolment();
+-- Attachment 2 of 4 — and the first of two on `enrolments` itself, the table a
+-- parked ACCESS EXCLUSIVE request would stall every reader of. §5 preamble.
+DO $$
+DECLARE
+  v_prev_lock_timeout text := current_setting('lock_timeout', true);
+BEGIN
+  PERFORM set_config('lock_timeout', '4s', true);   -- LOCAL: this txn only
+  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_enrolment_status ON public.enrolments';
+  EXECUTE $ddl$
+    CREATE TRIGGER room_resolve_on_enrolment_status
+      AFTER UPDATE OF status ON public.enrolments
+      FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status)
+      EXECUTE FUNCTION public._room_resolve_from_enrolment()
+  $ddl$;
+  PERFORM set_config('lock_timeout',
+                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room: could not attach room_resolve_on_enrolment_status to enrolments (%) [%] — an enrolment status flip (including a REVOCATION) will not re-derive membership on write; the 03:45 reconcile still revokes, so access outlives the flip by up to 24h. Re-run this DO block by hand when the table is quiet (contract note 11), then run the section-8 VERIFY query.',
+    SQLERRM, SQLSTATE;
+END $$;
 
 -- Fresh enrolments (contract note 9). An earlier revision left INSERT
 -- deliberately trigger-free on the theory that the `cohort_applications` status
@@ -947,18 +1266,41 @@ BEGIN
     THEN
       PERFORM public.cohort_room_resolve_user(NEW.user_id);
     END IF;
-  EXCEPTION WHEN OTHERS THEN
-    RAISE WARNING 'cohort_room resolver failed for user % on enrolments INSERT: % (%)',
+  -- THE SINGLE HIGHEST-CONSEQUENCE HANDLER IN THE PHASE. This fires inside the
+  -- INSERT that records a purchase. `WHEN OTHERS` does not trap query_canceled
+  -- (57014), so a statement_timeout or a cancelled lock wait anywhere under
+  -- cohort_room_resolve_user() — or in the EXISTS probe above it — used to
+  -- propagate out of this AFTER trigger and roll the enrolment back at the
+  -- moment of payment. Named explicitly per contract note 10; nothing escaping
+  -- the room resolver may abort the money write.
+  EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+              OR crash_shutdown OR cannot_connect_now OR others THEN
+    RAISE WARNING 'cohort_room resolver failed for user % on enrolments INSERT: % (%) — swallowed; the enrolment commits and 03:45 reconcile re-derives the membership',
       NEW.user_id, SQLERRM, SQLSTATE;
   END;
   RETURN NEW;
 END $$;
 
-DROP TRIGGER IF EXISTS room_resolve_on_enrolment_insert ON public.enrolments;
-CREATE TRIGGER room_resolve_on_enrolment_insert
-  AFTER INSERT ON public.enrolments
-  FOR EACH ROW WHEN (NEW.status = 'active')
-  EXECUTE FUNCTION public._room_resolve_from_enrolment_insert();
+-- Attachment 3 of 4 — the second on `enrolments`. §5 preamble.
+DO $$
+DECLARE
+  v_prev_lock_timeout text := current_setting('lock_timeout', true);
+BEGIN
+  PERFORM set_config('lock_timeout', '4s', true);   -- LOCAL: this txn only
+  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_enrolment_insert ON public.enrolments';
+  EXECUTE $ddl$
+    CREATE TRIGGER room_resolve_on_enrolment_insert
+      AFTER INSERT ON public.enrolments
+      FOR EACH ROW WHEN (NEW.status = 'active')
+      EXECUTE FUNCTION public._room_resolve_from_enrolment_insert()
+  $ddl$;
+  PERFORM set_config('lock_timeout',
+                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room: could not attach room_resolve_on_enrolment_insert to enrolments (%) [%] — a fresh purchase will not open the room until the 03:45 reconcile, which is exactly the <=24h gap contract note 9 added this trigger to close. Re-run this DO block by hand when the table is quiet (contract note 11), then run the section-8 VERIFY query.',
+    SQLERRM, SQLSTATE;
+END $$;
 
 -- The lobby writer (A3 / LOBBY-1). Fires on the confirmation-payment stamp that
 -- verify-razorpay-payment + razorpay-webhook write alongside the status flip,
@@ -974,24 +1316,44 @@ RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
   BEGIN
     PERFORM public.cohort_room_resolve_user(NEW.user_id);
-  EXCEPTION WHEN OTHERS THEN
+  -- cohort_applications carries the confirmation- and balance-payment stamps:
+  -- this is a money-path table too, so the same explicit list applies
+  -- (contract note 10).
+  EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+              OR crash_shutdown OR cannot_connect_now OR others THEN
     RAISE WARNING 'cohort_room resolver failed for user % on cohort_applications: % (%)',
       NEW.user_id, SQLERRM, SQLSTATE;
   END;
   RETURN NEW;
 END $$;
 
-DROP TRIGGER IF EXISTS room_resolve_on_application_status ON public.cohort_applications;
-CREATE TRIGGER room_resolve_on_application_status
-  AFTER UPDATE OF status, confirmation_payment_id, user_id ON public.cohort_applications
-  FOR EACH ROW WHEN (
-    NEW.user_id IS NOT NULL AND (
-      OLD.status IS DISTINCT FROM NEW.status
-      OR OLD.confirmation_payment_id IS DISTINCT FROM NEW.confirmation_payment_id
-      OR OLD.user_id IS DISTINCT FROM NEW.user_id
-    )
-  )
-  EXECUTE FUNCTION public._room_resolve_from_application();
+-- Attachment 4 of 4 — cohort_applications carries the confirmation- and
+-- balance-payment stamps, so it is a money-path table too. §5 preamble.
+DO $$
+DECLARE
+  v_prev_lock_timeout text := current_setting('lock_timeout', true);
+BEGIN
+  PERFORM set_config('lock_timeout', '4s', true);   -- LOCAL: this txn only
+  EXECUTE 'DROP TRIGGER IF EXISTS room_resolve_on_application_status ON public.cohort_applications';
+  EXECUTE $ddl$
+    CREATE TRIGGER room_resolve_on_application_status
+      AFTER UPDATE OF status, confirmation_payment_id, user_id ON public.cohort_applications
+      FOR EACH ROW WHEN (
+        NEW.user_id IS NOT NULL AND (
+          OLD.status IS DISTINCT FROM NEW.status
+          OR OLD.confirmation_payment_id IS DISTINCT FROM NEW.confirmation_payment_id
+          OR OLD.user_id IS DISTINCT FROM NEW.user_id
+        )
+      )
+      EXECUTE FUNCTION public._room_resolve_from_application()
+  $ddl$;
+  PERFORM set_config('lock_timeout',
+                     COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room: could not attach room_resolve_on_application_status to cohort_applications (%) [%] — the confirmation-capture stamp will not mint the lobby row and the balance flip will not promote it until the 03:45 reconcile. Re-run this DO block by hand when the table is quiet (contract note 11), then run the section-8 VERIFY query.',
+    SQLERRM, SQLSTATE;
+END $$;
 
 -- Alumni flip: rooms are never deleted, so when a config's phase moves to
 -- 'alumni' the membership survives and the ROLE renames. Scoped to the config's
@@ -1010,7 +1372,11 @@ BEGIN
         AND source = 'derived'
         AND role = 'member'
         AND status = 'active';
-    EXCEPTION WHEN OTHERS THEN
+    -- Not a money-path trigger, but the rule is uniform: an admin flipping a
+    -- room to `alumni` must never see the config UPDATE rejected because a
+    -- membership rename was cancelled (contract note 10).
+    EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+                OR crash_shutdown OR cannot_connect_now OR others THEN
       RAISE WARNING 'cohort_room alumni flip failed for offering %: % (%)',
         NEW.offering_id, SQLERRM, SQLSTATE;
     END;
@@ -1018,6 +1384,8 @@ BEGIN
   RETURN NEW;
 END $$;
 
+-- Bare DDL: cohort_room_configs is this file's own table (see the configs
+-- trigger in §1), not a money-path table, so it is outside the §5 wrapper.
 DROP TRIGGER IF EXISTS room_alumni_flip ON public.cohort_room_configs;
 CREATE TRIGGER room_alumni_flip
   AFTER UPDATE OF phase ON public.cohort_room_configs
@@ -1032,11 +1400,21 @@ CREATE TRIGGER room_alumni_flip
 --    The candidate set is bounded by the room world: batch rosters, applications
 --    that paid a confirmation fee, active enrolments in ROOM-BEARING offerings
 --    only, and everyone who already holds a derived row.
+--
+--    IT MUST STAY KILLABLE. This sweep is the compensating control the money
+--    path's swallow relies on (contract note 10), which is precisely why it is
+--    the one place that must NOT swallow a cancel and carry on: it is a single
+--    top-level statement iterating that whole candidate set, so the first
+--    trapped cancel would consume the only interrupt an operator gets and every
+--    remaining user would resolve with no `statement_timeout` armed. The
+--    per-user handler is therefore shape (B): an ERROR skips one user, a CANCEL
+--    ends the sweep.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.cohort_room_reconcile()
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
-  r record;
+  r           record;
+  v_cancelled boolean := false;
 BEGIN
   FOR r IN
     SELECT DISTINCT e.user_id
@@ -1060,11 +1438,26 @@ BEGIN
   LOOP
     BEGIN
       PERFORM public.cohort_room_resolve_user(r.user_id);
-    EXCEPTION WHEN OTHERS THEN
-      -- One poisoned user must not abort the whole sweep.
-      RAISE WARNING 'cohort_room reconcile failed for user %: % (%)',
-        r.user_id, SQLERRM, SQLSTATE;
+    EXCEPTION
+      -- A CANCEL ends the sweep (contract note 10, shape B). This is not a
+      -- money-path trigger, so SEC-ENT-2 buys nothing here, and the interrupt is
+      -- one-shot: absorbing it would leave every later user running with no
+      -- statement_timeout armed and no way for an operator to stop a job that is
+      -- pinning the database. Stopping honours the cancel, and tomorrow's run
+      -- re-derives everyone who was skipped.
+      WHEN query_canceled OR admin_shutdown OR crash_shutdown
+           OR cannot_connect_now THEN
+        v_cancelled := true;
+        RAISE WARNING 'cohort_room reconcile CANCELLED at user %: % (%) — the sweep stops here; it is idempotent and the next run re-derives the remainder',
+          r.user_id, SQLERRM, SQLSTATE;
+      -- An ERROR is per-user: one poisoned row must not cost everyone else their
+      -- re-derivation. `assert_failure` is named because `OTHERS` does not trap
+      -- it.
+      WHEN assert_failure OR others THEN
+        RAISE WARNING 'cohort_room reconcile failed for user %: % (%)',
+          r.user_id, SQLERRM, SQLSTATE;
     END;
+    EXIT WHEN v_cancelled;
   END LOOP;
 END $$;
 
@@ -1076,8 +1469,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     CREATE EXTENSION pg_cron;
   END IF;
-EXCEPTION WHEN OTHERS THEN
-  RAISE WARNING 'cohort_room reconcile: pg_cron unavailable (%) — schedule cohort_room_reconcile() by hand', SQLERRM;
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room reconcile: pg_cron unavailable (%) [%] — schedule cohort_room_reconcile() by hand', SQLERRM, SQLSTATE;
 END $$;
 
 DO $$
@@ -1099,8 +1493,9 @@ BEGIN
     '15 22 * * *',                      -- 22:15 UTC = 03:45 IST
     'SELECT public.cohort_room_reconcile();'
   );
-EXCEPTION WHEN OTHERS THEN
-  RAISE WARNING 'cohort_room reconcile: could not schedule (%) — schedule cohort_room_reconcile() by hand', SQLERRM;
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room reconcile: could not schedule (%) [%] — schedule cohort_room_reconcile() by hand', SQLERRM, SQLSTATE;
 END $$;
 
 
@@ -1295,6 +1690,30 @@ BEGIN
     RETURN NULL;
   END IF;
 
+  -- BATCH/OFFERING INTEGRITY, imperatively. Section 0's UNIQUE and the composite
+  -- FK it enables are the DECLARATIVE form of this rule, and both degrade to a
+  -- WARNING when their lock is cancelled (contract notes 10 and 11) — so on a
+  -- degraded project this check is the only thing between an admin RPC call and
+  -- a config row whose batch belongs to a DIFFERENT offering. Such a row is not
+  -- inert: cohort_room_phase() and room_configs_member_read both resolve through
+  -- batch_id, so it would take effect as a live override.
+  -- SCOPE, so the degradation note it backs stays honest: this covers the RPC,
+  -- which is the only sanctioned write path for `authenticated` (section 7
+  -- revokes their DML on the table). It does NOT cover service_role or direct
+  -- SQL, which write past both the policy and this function — for those the FK
+  -- is the only guard, and while it is missing there is none.
+  -- Rejection is NULL + WARNING, never a raise (contract note 7a).
+  IF p_batch IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM public.cohort_batches b
+       WHERE b.id = p_batch AND b.offering_id = p_offering
+     )
+  THEN
+    RAISE WARNING 'admin_upsert_room_config: rejected — batch % does not belong to offering % (a batch override must be a batch of its own offering)',
+      p_batch, p_offering;
+    RETURN NULL;
+  END IF;
+
   SELECT c.id INTO v_id
   FROM public.cohort_room_configs c
   WHERE c.offering_id = p_offering
@@ -1340,6 +1759,80 @@ COMMENT ON FUNCTION public.cohort_room_in_lobby(uuid, uuid) IS
   'TRUE only for role=pre_member. Gates the SEC-MEMBER-1 whitelist. Never widen the member helpers to include pre_member.';
 COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
   'The single definition of the offering-wide staff scope (ROSTER-SCOPE-1): a NULL-batch mentor/host grant, or an admin. R-3''s cohort_room_caller_scope() must call this instead of re-stating it.';
+
+
+-- ============================================================================
+-- 8. POST-PUSH VERIFY (contract note 11) — the check that replaces "read the
+--    WARNINGs". Every guarded DDL block in R0 lets the migration COMPLETE
+--    whether or not its ALTER — or its CREATE TRIGGER — landed, and `db push`
+--    stamps the version either way, so a green push proves nothing about the
+--    objects below and the
+--    WARNING that says so is a scrolling line CI throws away. Run this against
+--    the target project after any push that included 20260729100000 or
+--    20260729100100. Treat a MISSING as an incident, not a note.
+--
+--      SELECT v.what,
+--             CASE WHEN c.oid IS NULL      THEN 'MISSING — contract note 11'
+--                  WHEN NOT c.convalidated THEN 'present (NOT VALID)'
+--                  ELSE 'ok' END AS verdict
+--        FROM (VALUES
+--          ('cohort_batches',           'cohort_batches_id_offering_key',        'UNIQUE(id,offering_id)      — 100000 §0'),
+--          ('cohort_room_configs',      'room_config_vocab_object',              'CHECK vocab is an object    — 100000 §1'),
+--          ('cohort_room_configs',      'room_config_batch_belongs_to_offering', 'FK batch belongs to offering— 100000 §1'),
+--          ('cohort_announcements',     'cohort_announcements_author_id_fkey',   'author FK (SET NULL)        — 100100 §1'),
+--          ('cohort_room_posts',        'room_posts_body_len_chk',               'CHECK body 1..20000         — 100100 §3'),
+--          ('cohort_room_posts',        'room_posts_media_array_chk',            'CHECK media is an array     — 100100 §3'),
+--          ('cohort_room_post_replies', 'room_reply_body_len_chk',               'CHECK body 1..10000         — 100100 §3')
+--        ) AS v(tbl, conname, what)
+--        LEFT JOIN pg_constraint c
+--          ON c.conname  = v.conname
+--         AND c.conrelid = to_regclass('public.' || v.tbl)
+--       ORDER BY 2, 1;
+--
+--    `present (NOT VALID)` is the EXPECTED answer for the four objects
+--    20260729100100 adds that way — they bind every future INSERT/UPDATE and
+--    deliberately never scan existing rows. It is NOT expected for
+--    room_config_vocab_object: there it means the validating scan was cancelled
+--    or a legacy row holds a non-object vocab.
+--
+--    THE SECOND HALF — the four trigger attachments on the money tables (§5).
+--    They are guarded the same way and degrade the same way (a WARNING, and
+--    membership derived only by the 03:45 reconcile), so they need the same
+--    check and they are NOT in pg_constraint:
+--
+--      SELECT v.what,
+--             CASE WHEN t.oid IS NULL THEN 'MISSING — contract note 11'
+--                  WHEN t.tgenabled = 'D' THEN 'present but DISABLED'
+--                  ELSE 'ok' END AS verdict
+--        FROM (VALUES
+--          ('cohort_batch_members', 'room_resolve_on_batch_member',       'roster edit -> resolve   — §5'),
+--          ('enrolments',           'room_resolve_on_enrolment_status',   'status flip -> resolve   — §5'),
+--          ('enrolments',           'room_resolve_on_enrolment_insert',   'fresh purchase -> resolve— §5'),
+--          ('cohort_applications',  'room_resolve_on_application_status', 'confirmation -> lobby    — §5')
+--        ) AS v(tbl, tgname, what)
+--        LEFT JOIN pg_trigger t
+--          ON t.tgname   = v.tgname
+--         AND t.tgrelid  = to_regclass('public.' || v.tbl)
+--         AND NOT t.tgisinternal
+--       ORDER BY 1;
+--
+--    A MISSING here is not a leak — a trigger that never attached grants nobody
+--    anything — but it IS an up-to-24h lag on both opening and REVOKING room
+--    access, so treat it as an incident on the same footing as the constraints.
+--
+--    Two things those queries cannot cover:
+--      · the announcements author FK must also be ON DELETE SET NULL rather than
+--        the draft's CASCADE, or deleting a host's account still erases the
+--        noticeboard of every cohort they ran. 'n' is the right answer:
+--          SELECT confdeltype FROM pg_constraint
+--           WHERE conname = 'cohort_announcements_author_id_fkey';
+--      · the nightly job, which lives in a schema that may not exist at all:
+--          SELECT schedule, active FROM cron.job
+--           WHERE jobname = 'cohort_room_reconcile_nightly';   -- '15 22 * * *'
+--        No cron.job, or zero rows, means the reconcile is manual — and the
+--        money path's swallow (contract note 10, shape A) is then running with
+--        no compensating control. Schedule it by hand.
+-- ============================================================================
 
 
 -- ============================================================================
@@ -1497,7 +1990,8 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 --     PERFORM cron.unschedule(jobid) FROM cron.job
 --      WHERE jobname = 'cohort_room_reconcile_nightly';
 --   END IF;
--- EXCEPTION WHEN OTHERS THEN NULL;
+-- EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+--             OR crash_shutdown OR cannot_connect_now OR others THEN NULL;
 -- END $$;
 --
 -- DROP TRIGGER IF EXISTS room_resolve_on_batch_member       ON public.cohort_batch_members;
@@ -1531,5 +2025,8 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 -- DROP FUNCTION IF EXISTS public.cohort_room_can_access(uuid, uuid) CASCADE;
 -- DROP FUNCTION IF EXISTS public.cohort_room_is_member(uuid) CASCADE;
 --
+-- -- IF EXISTS, because section 0 degrades to a WARNING rather than aborting a
+-- -- shared `db push`: on a project where the ADD was cancelled there is nothing
+-- -- to drop, and the reversal must still run to completion.
 -- ALTER TABLE public.cohort_batches DROP CONSTRAINT IF EXISTS cohort_batches_id_offering_key;
 -- ============================================================================
