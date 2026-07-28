@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { flag, FUNNEL_RECON, REMINDER_LADDER } from "@/lib/flags";
+import { flag, FUNNEL_RECON, INSTALL_NUDGE, REMINDER_LADDER } from "@/lib/flags";
 
 // This jsdom build ships without a working `localStorage` (same gap the
 // queryClient persist test papers over). Install a memory-backed mock so the
@@ -35,6 +35,14 @@ describe("flag()", () => {
 
   it("VITE_REMINDER_LADDER defaults off (dark) with no override or env", () => {
     expect(flag(REMINDER_LADDER)).toBe(false);
+  });
+
+  // The install nudge's default is load-bearing beyond this file: with it false
+  // the app attaches no `beforeinstallprompt` listener and never preventDefaults
+  // the browser's own install bar. If this ever defaults true, install promotion
+  // for every web visitor changes with it.
+  it("VITE_INSTALL_NUDGE defaults off (dark) with no override or env", () => {
+    expect(flag(INSTALL_NUDGE)).toBe(false);
   });
 
   it("unknown flags read false", () => {

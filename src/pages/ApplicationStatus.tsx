@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { isIOS } from "@/lib/platform";
 import { useFunnelStage } from "@/hooks/useFunnelStage";
 import InstallNudge from "@/components/install/InstallNudge";
+import { isInstallNudgeEnabled } from "@/hooks/useInstallMoment";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -531,11 +532,18 @@ const ApplicationStatus = () => {
             asks "is this the installed app?" and is a different question from
             the Apple anti-steering guards above, which this block does not
             touch. (The token those guards grep for is deliberately not repeated
-            here, so the phase's verification grep stays a clean four hits.) */}
-        {application.status === "app_fee_paid" && (
+            here, so the phase's verification grep stays a clean four hits.)
+
+            BOTH mounts are behind `VITE_INSTALL_NUDGE`, which defaults OFF
+            (src/lib/flags.ts). Flag down, this whole block is exactly the empty
+            space it was before E-3 — no card, and, upstream of it, no listener
+            on `window` and no `preventDefault()` of the browser's own install
+            bar. The status conditions below are unchanged; the flag is simply
+            the first thing each of them has to get past. */}
+        {isInstallNudgeEnabled() && application.status === "app_fee_paid" && (
           <InstallNudge moment="fee-paid" />
         )}
-        {application.status === "accepted" && (
+        {isInstallNudgeEnabled() && application.status === "accepted" && (
           <InstallNudge moment="accepted" />
         )}
       </div>

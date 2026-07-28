@@ -1,5 +1,19 @@
 // useInstallMoment — the decision layer behind <InstallNudge> (REQ-INSTALL-1/2).
 //
+// ── THE FLAG COMES FIRST ──
+// Everything below is dark behind `VITE_INSTALL_NUDGE` (src/lib/flags.ts),
+// default OFF. That gate is not cosmetic: `handleBeforeInstallPrompt` calls
+// `event.preventDefault()`, which SUPPRESSES Chromium's own install mini-infobar
+// for every web visitor — an app-wide change to install promotion, not a change
+// to one page. Whether the event fires here at all is browser-version dependent
+// (no service worker is registered in this repo, and Chromium's installability
+// criteria have moved across versions), so the gate is what makes the answer
+// stop mattering: flag down, we attach no listener, claim no event and render no
+// card, which is exactly the app as it was before this feature.
+// `isInstallNudgeEnabled()` is read LIVE at every gate rather than cached at
+// module load, so a tester flipping the localStorage override off mid-session
+// genuinely stops the suppression instead of only stopping the card.
+//
 // The rule this hook exists to enforce: **web is the whole journey**. Applying,
 // paying, interviewing, hearing the decision and entering the room all complete
 // in a browser, so install is an OFFER at a value moment and never a wall, never
@@ -36,7 +50,20 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
+import { flag, INSTALL_NUDGE } from "@/lib/flags";
 import { isNative } from "@/lib/platform";
+
+/**
+ * Is the install nudge switched on? Default false. Exported because every entry
+ * point into this feature — the entry-point capture call in src/main.tsx, the
+ * <InstallNudge> module and component, and both of its mounts in
+ * ApplicationStatus — gates on it, and they should all be asking the same
+ * question of the same registry rather than each reaching for `flag()` with a
+ * name of their own.
+ */
+export function isInstallNudgeEnabled(): boolean {
+  return flag(INSTALL_NUDGE);
+}
 
 /**
  * The ONLY value moments allowed to offer install. Exactly two, by product
@@ -144,6 +171,13 @@ const getSnapshot = (): boolean => deferredPrompt !== null && !readDismissed();
 const getServerSnapshot = (): boolean => false;
 
 const handleBeforeInstallPrompt = (event: Event): void => {
+  // Flag down: leave the event completely alone. registerInstallCapture() will
+  // not have attached this handler in the first place, so the only way here is a
+  // flag that went off after registration (a tester clearing the localStorage
+  // override mid-session) — and in that case the browser's mini-infobar must go
+  // back to being the browser's business, immediately.
+  if (!isInstallNudgeEnabled()) return;
+
   // Native shell: the app IS installed, so there is nothing to offer and
   // therefore nothing to suppress — leave the event entirely alone. A Capacitor
   // WebView does not fire it today, so this is belt-and-braces; it lives here
@@ -210,8 +244,15 @@ interface CaptureHost extends Window {
  * Inside the native shell the listeners are still attached but inert: the
  * handler itself returns before touching the event (see
  * handleBeforeInstallPrompt), so an installed app neither offers nor suppresses.
+ *
+ * With `VITE_INSTALL_NUDGE` off (the default) this attaches NOTHING — it is the
+ * one choke point every caller funnels through, so the flag-off app never has a
+ * `beforeinstallprompt` listener on `window` at all and can never claim the
+ * browser's install affordance. Note the early return leaves `captureRegistered`
+ * false, so flipping the flag on and calling again still registers.
  */
 export function registerInstallCapture(): void {
+  if (!isInstallNudgeEnabled()) return;
   if (captureRegistered || typeof window === "undefined") return;
   captureRegistered = true;
 
@@ -235,7 +276,8 @@ export function registerInstallCapture(): void {
 
 // Register on import as the floor, so any consumer that forgets the entry-point
 // call still behaves as it did before. The entry's explicit call is what makes
-// it EARLY; this one only makes it certain.
+// it EARLY; this one only makes it certain. Flag-gated inside the function, so
+// merely importing this module is inert while the flag is off.
 registerInstallCapture();
 
 /**
@@ -288,9 +330,11 @@ export function useInstallMoment(moment: InstallMoment): InstallMomentState {
     getServerSnapshot,
   );
 
-  // isNative() is a synchronous Capacitor platform read with no side effects, so
-  // it is safe to evaluate during render. Already installed → no offer at all.
-  const eligible = !isNative() && MOMENT_KEYS.has(moment);
+  // Flag first, then platform. isNative() is a synchronous Capacitor platform
+  // read with no side effects, so both are safe to evaluate during render.
+  // Flag off → no offer; already installed → no offer at all.
+  const eligible =
+    isInstallNudgeEnabled() && !isNative() && MOMENT_KEYS.has(moment);
 
   const promptInstall = useCallback(async (): Promise<InstallPromptOutcome> => {
     const event = deferredPrompt;

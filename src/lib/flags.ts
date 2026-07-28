@@ -27,13 +27,34 @@ export const FUNNEL_RECON = "VITE_FUNNEL_RECON";
  * the server-side env var `REMINDER_LADDER_ENABLED` on that function, which is
  * fail-closed and unset. Turning this one on lights up any future client
  * surface for the ladder; it does not start the sending.
+ *
+ * SCOPE: the ladder, and only the ladder. The install nudge built in the same
+ * phase is NOT under this flag — it has its own switch, `INSTALL_NUDGE` below,
+ * for the reasons stated there.
  */
 export const REMINDER_LADDER = "VITE_REMINDER_LADDER";
+
+/**
+ * The install nudge at the two application value moments (PHASE RE, E-3 —
+ * REQ-INSTALL-1/2). Default off, and OFF MEANS INERT: with this flag down the
+ * `beforeinstallprompt` listener is never attached, the browser's own
+ * mini-infobar is never `preventDefault()`ed, and neither <InstallNudge> mount
+ * renders anything. Flag-off is byte-identical to the app before E-3 existed.
+ *
+ * It is deliberately a SECOND flag rather than a reuse of REMINDER_LADDER. That
+ * one is Rahul's switch for "start messaging applicants"; this one decides
+ * whether we take over install promotion in the browser, which lands on every
+ * web visitor including people who never applied. Different blast radius,
+ * different decision, different day — so they turn on independently, and the
+ * ladder docblock above stays true.
+ */
+export const INSTALL_NUDGE = "VITE_INSTALL_NUDGE";
 
 /** Known flags and their default when neither localStorage nor env speaks. */
 const REGISTRY: Record<string, boolean> = {
   [FUNNEL_RECON]: false,
   [REMINDER_LADDER]: false,
+  [INSTALL_NUDGE]: false,
 };
 
 function truthy(value: unknown): boolean {

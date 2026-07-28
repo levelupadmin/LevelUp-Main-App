@@ -1,10 +1,11 @@
 // InstallNudge — the install OFFER at a value moment (REQ-INSTALL-1/2).
 //
-// Renders nothing unless `useInstallMoment` says this exact moment may offer:
-// web only, a real captured `beforeinstallprompt` in hand, not dismissed this
-// session. That "nothing" is the common case today (no service worker is
-// registered in this repo, so the browser event does not fire) and it is the
-// correct degrade: no dead button, no empty card, no reserved space.
+// Renders nothing unless `VITE_INSTALL_NUDGE` is on (it defaults OFF) AND
+// `useInstallMoment` says this exact moment may offer: web only, a real captured
+// `beforeinstallprompt` in hand, not dismissed this session. That "nothing" is
+// the common case today (no service worker is registered in this repo, so the
+// browser event does not fire) and it is the correct degrade: no dead button, no
+// empty card, no reserved space.
 //
 // It is an inline card in the page's own column, NOT a sheet, modal, toast or
 // sticky bar. Nothing is covered, nothing is blocked, and the applicant's next
@@ -37,6 +38,7 @@ import { Smartphone } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
+  isInstallNudgeEnabled,
   registerInstallCapture,
   useInstallMoment,
   type InstallMoment,
@@ -48,7 +50,9 @@ import { cn } from "@/lib/utils";
 // fires `beforeinstallprompt` once per page load, long before this lazy route
 // chunk exists); this call only guarantees the listener is never missing when
 // the component is rendered outside that entry — a test, a story, a future host.
-registerInstallCapture();
+// Flag-gated for the same reason main.tsx is: with `VITE_INSTALL_NUDGE` off,
+// importing this module must not put a listener on `window`.
+if (isInstallNudgeEnabled()) registerInstallCapture();
 
 interface MomentCopy {
   /** Small label naming the thing that just happened. */
@@ -221,6 +225,12 @@ const InstallNudge = ({ moment, className }: InstallNudgeProps) => {
   const exitTransition = motionSafe.reduced
     ? instant
     : { duration: durations.fast, ease: easings.out };
+
+  // Feature dark: render literally nothing, and do it as its own statement
+  // rather than folded into the line below, so the gate survives any future
+  // rework of the offered/wasOffered latch. (`offered` is already false while
+  // the flag is off, so this is belt to that brace — deliberately.)
+  if (!isInstallNudgeEnabled()) return null;
 
   // Never offered, never will be: render literally nothing.
   if (!offered && !wasOffered) return null;

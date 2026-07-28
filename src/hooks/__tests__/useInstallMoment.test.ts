@@ -14,6 +14,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * days), so every test re-imports the module through `vi.resetModules()` to get
  * a clean store and a freshly-registered window listener. That is also why the
  * import is dynamic rather than top-of-file.
+ *
+ * The whole feature is dark behind `VITE_INSTALL_NUDGE`, so every test that
+ * exercises behaviour turns it on FIRST (via the real flags module's
+ * localStorage override, before the dynamic import that registers the listener).
+ * The flag-off cases at the bottom are the ones that matter for shipping: they
+ * prove the default app attaches no listener and claims no event.
  */
 
 // Platform is read through a mutable flag so a single test can flip the app into
@@ -28,6 +34,57 @@ type HookModule = typeof import("@/hooks/useInstallMoment");
 const loadHook = async (): Promise<HookModule> => {
   vi.resetModules();
   return import("@/hooks/useInstallMoment");
+};
+
+// This jsdom build ships without a working `localStorage` (see the same note in
+// src/lib/__tests__/flags.test.ts), and `flag()` resolves its override through
+// it. Memory-backed mock so the flag can actually be switched on for real,
+// through the real registry, rather than by mocking @/lib/flags away.
+function installLocalStorageMock() {
+  const store = new Map<string, string>();
+  const mem = {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => void store.set(k, String(v)),
+    removeItem: (k: string) => void store.delete(k),
+    clear: () => store.clear(),
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    get length() {
+      return store.size;
+    },
+  };
+  for (const target of [globalThis, window]) {
+    Object.defineProperty(target, "localStorage", {
+      value: mem,
+      configurable: true,
+      writable: true,
+    });
+  }
+}
+
+/** Switch the feature on for this test, before the module registers anything. */
+const enableInstallNudge = (): void => {
+  localStorage.setItem("VITE_INSTALL_NUDGE", "true");
+};
+
+// Where registerInstallCapture() parks its live handlers so a replacing module
+// instance can unhook them. The tests need the same handle: a flag-OFF module
+// registers nothing, so nothing would unhook a listener left over from the
+// previous test, and a stale listener would keep claiming events the flag-off
+// app is supposed to leave alone.
+interface CaptureHost extends Window {
+  __levelupInstallCapture?: {
+    beforeInstallPrompt: (event: Event) => void;
+    appInstalled: () => void;
+  };
+}
+
+const clearCapture = (): void => {
+  const host = window as CaptureHost;
+  const live = host.__levelupInstallCapture;
+  if (!live) return;
+  window.removeEventListener("beforeinstallprompt", live.beforeInstallPrompt);
+  window.removeEventListener("appinstalled", live.appInstalled);
+  delete host.__levelupInstallCapture;
 };
 
 // Dispatch a `beforeinstallprompt` the way Chromium does, carrying the single
@@ -49,10 +106,17 @@ beforeEach(() => {
   promptSpy.mockClear();
   promptSpy.mockImplementation(() => Promise.resolve());
   window.sessionStorage.clear();
+  installLocalStorageMock();
+  clearCapture();
+  // The suite below exercises the FEATURE, which ships dark — so it runs with
+  // the flag up. The `flag off` block at the bottom takes it back down and
+  // proves what the default app actually does.
+  enableInstallNudge();
 });
 
 afterEach(() => {
   window.sessionStorage.clear();
+  clearCapture();
 });
 
 describe("useInstallMoment", () => {
@@ -236,5 +300,61 @@ describe("useInstallMoment", () => {
     renderHook(() => useInstallMoment("fee-paid"));
     const event = fireInstallPrompt();
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+/**
+ * The shipped default. `event.preventDefault()` on `beforeinstallprompt`
+ * suppresses Chromium's own install mini-infobar for every web visitor, so
+ * "flag off = the app as it was" has to be a proven property of the code, not an
+ * argument about whether that event fires in this browser today.
+ */
+describe("useInstallMoment with VITE_INSTALL_NUDGE off (the default)", () => {
+  beforeEach(() => {
+    // No override and no env value → the registry default, which is false.
+    localStorage.removeItem("VITE_INSTALL_NUDGE");
+  });
+
+  it("registers no window listener when the module is imported", async () => {
+    await loadHook();
+    // registerInstallCapture() parks its handlers here when it attaches. Nothing
+    // parked means nothing attached.
+    expect((window as CaptureHost).__levelupInstallCapture).toBeUndefined();
+  });
+
+  it("leaves the browser's install prompt completely alone", async () => {
+    await loadHook();
+
+    const event = fireInstallPrompt();
+
+    // Not claimed: the browser keeps its own mini-infobar and its own timing.
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("never offers, at either moment, even after an event fires", async () => {
+    const { useInstallMoment, INSTALL_MOMENTS } = await loadHook();
+    fireInstallPrompt();
+
+    for (const moment of INSTALL_MOMENTS) {
+      const { result } = renderHook(() => useInstallMoment(moment));
+      expect(result.current.offered).toBe(false);
+    }
+  });
+
+  it("reports the flag itself as off", async () => {
+    const { isInstallNudgeEnabled } = await loadHook();
+    expect(isInstallNudgeEnabled()).toBe(false);
+  });
+
+  it("stops claiming the event if the flag goes down after registration", async () => {
+    // Registered while the flag was up (the outer beforeEach), then switched
+    // off mid-session — the handler must hand the browser its bar back on the
+    // very next event rather than only hiding our card.
+    enableInstallNudge();
+    await loadHook();
+    expect(fireInstallPrompt().defaultPrevented).toBe(true);
+
+    localStorage.removeItem("VITE_INSTALL_NUDGE");
+    expect(fireInstallPrompt().defaultPrevented).toBe(false);
   });
 });
