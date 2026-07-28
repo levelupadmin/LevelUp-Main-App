@@ -22,6 +22,19 @@ import { instant, otpSuccess, springs, useMotionSafe } from "@/lib/motion";
  * honestly can: ONE more one-time code, on the SECOND channel, proved by the
  * human. Nothing here needs an admin, a support ticket or a link from an email.
  *
+ * WHAT THIS SCREEN KNOWS ABOUT THE PARKED ROW, and it is deliberately almost
+ * nothing: which channel still needs proof (`claim.channel`) and a MASK of that
+ * channel's target (`claim.maskedTarget`, e.g. "r•••@gmail.com" /
+ * "••••••3210"). Both are computed SERVER-SIDE by `get_my_pending_claim()` from
+ * the caller's own auth identity — the channel is never chosen here and never
+ * sent, and the raw address/number never reaches this client at all. The
+ * applicant's essay (`bio`, NFR-COPY-1), the raw `tally_data`, their city and
+ * their occupation are not merely unrendered here; they are unreachable.
+ *
+ * So the user still has to TYPE the identifier they are proving. That is the
+ * point: the mask is enough to recognise a value you own and useless for
+ * learning one you do not.
+ *
  * Failure modes are deliberately boring:
  *   • wrong code  → rejected, nothing attached, nothing merged;
  *   • abandoned   → nothing was written, the row stays parked and surfaces

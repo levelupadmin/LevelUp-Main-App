@@ -183,19 +183,37 @@ async function provisionApplicant(
           );
           return { userId: null, pendingClaim: false, status: "skipped" };
         }
-        const phone = mintablePhone(applicant.phone);
-        if (keys.phone && !phone) {
+        // EMAIL-ONLY, mirroring the poller exactly. See the long note at
+        // tally-application-poll/index.ts's createUser for the full reasoning.
+        //
+        // WHY THIS FILE MATTERS EVEN THOUGH IT IS INERT. This handler is
+        // fail-closed today: no TALLY_SIGNING_SECRET is set, so it rejects
+        // every delivery. That makes the vector LATENT, not absent — setting a
+        // signing secret is a one-line operator action that would silently arm
+        // it. A dormant account-takeover path is still an account-takeover
+        // path, and this file's own header promises it stays identical to the
+        // poller, so the two must not diverge on the one line that matters.
+        //
+        // THE VECTOR: `auth.users.phone` is the phone-OTP login key
+        // (`find_login_identity`, 20260603120000, matches it on the last 10
+        // digits with no `phone_confirmed_at` predicate). Writing unproven form
+        // text there lets {an email you own, a stranger's number} bind that
+        // stranger's next genuine MSG91 login into an account you control.
+        const intakePhone = mintablePhone(applicant.phone);
+        if (keys.phone && !intakePhone) {
           console.warn(
-            "[tally-webhook] the application's phone is not a 10-digit or 91-prefixed 12-digit number; minting the auth identity email-only, so a later phone OTP will not resolve to it",
+            "[tally-webhook] the application's phone is not a 10-digit or 91-prefixed 12-digit number, so nothing is stashed for later promotion",
           );
         }
         const { data: created, error: createErr } = await admin.auth.admin.createUser({
           email: keys.email,
-          ...(phone ? { phone } : {}),
           email_confirm: false,
           phone_confirm: false,
           user_metadata: { full_name: applicant.fullName },
-          app_metadata: { ...INTAKE_APP_METADATA },
+          app_metadata: {
+            ...INTAKE_APP_METADATA,
+            ...(intakePhone ? { levelup_intake_phone: intakePhone } : {}),
+          },
         });
         if (createErr || !created?.user?.id) {
           throw new Error(createErr?.message ?? "createUser returned no user");

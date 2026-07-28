@@ -534,18 +534,28 @@ interface ProvisionResult {
  *    unauthenticated form text; the account must be INERT (no entitlements,
  *    nothing confirmed) until a real OTP proves a channel.
  *
- *  • ACCEPTED RESIDUAL RISK, stated plainly because it is inherent to the
- *    design and not to this implementation: `auth.users.phone` is the phone-OTP
- *    login key and `find_login_identity` matches it with no reference to
- *    `phone_confirmed_at`, so a number written here is reachable before anyone
- *    proves it. Someone who submits the public form with {their own email, a
- *    stranger's number} pre-binds that number, and the stranger's first genuine
- *    MSG91 OTP resolves into an account whose email the submitter controls. It
- *    is bounded: a number that ALREADY belongs to an account is never touched
- *    (that is `phone_taken` → parked, below), so only unregistered numbers can
- *    be pre-bound. Closing it properly means teaching `find_login_identity` to
- *    prefer a confirmed row — a change to the live login path for every user,
- *    which is neither this task's file nor its blast radius.
+ *  • NO `auth.users.phone`. THIS IS THE CENTRAL SAFETY PROPERTY OF THIS FILE.
+ *    An earlier revision wrote the applicant's number there and filed the
+ *    consequence as an "accepted residual risk" on the grounds that fixing it
+ *    properly meant touching `find_login_identity`. That reasoning was wrong
+ *    and the block that recorded it has been deleted, because it read as
+ *    licence to put the write back.
+ *
+ *    It is not a residual risk, it is an ACCOUNT TAKEOVER. `auth.users.phone`
+ *    is the phone-OTP login key and `find_login_identity` (20260603120000)
+ *    matches it on the last 10 digits with no `phone_confirmed_at` predicate.
+ *    Submit the public form with {an email you own, a stranger's unregistered
+ *    number} and that stranger's first genuine MSG91 OTP resolves into an
+ *    account whose email — and whose already-shipped magic-link sign-in at
+ *    Login.tsx — the submitter controls. "Bounded to unregistered numbers" is
+ *    not a mitigation; every number is unregistered until its owner first
+ *    signs in, which is exactly who this steals from.
+ *
+ *    The number is stashed in `app_metadata.levelup_intake_phone`, which no
+ *    lookup keys on. Do not reinstate the write. If a future task needs the
+ *    phone tab to resolve for applicants, the correct fix is still what that
+ *    block described — teach the login path to prefer a CONFIRMED row — and it
+ *    is a deliberate Tier-1 change to the login path, not a line in this file.
  *
  *  • NO `user_metadata.phone`, which is a DIFFERENT field from the above.
  *    `handle_new_user` mirrors `NEW.raw_user_meta_data->>'phone'` (never

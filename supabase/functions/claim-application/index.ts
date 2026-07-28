@@ -58,11 +58,26 @@
  *    `auth`. It only ever binds an existing application row to the already
  *    signed-in caller.
  *
- * SECRETS, BY NAME: `EMAIL_OTP_PEPPER` (shared with `verify-email-otp`; the
- * HMAC key for the at-rest code hash — the function fails closed with 503 while
- * it is unset), `MSG91_AUTH_KEY` (shared with `verify-msg91-otp`, for the phone
- * channel's access-token check), plus the platform-injected SUPABASE_URL /
- * SUPABASE_SERVICE_ROLE_KEY.
+ * 6. A DEAD END IS LOGGED, NOT MAILED. An application whose email is the
+ *    synthetic `<digits>@phone.leveluplearning.in` placeholder (a phone-only
+ *    legacy customer) can never receive a code: the domain has no MX record.
+ *    `issueClaimCode` refuses one exactly as `verify-email-otp` does, the
+ *    response is still the single SEND_ACCEPTED literal so the refusal is not
+ *    an oracle, and the ONLY signal is a loud log naming the application id —
+ *    never the address. Such a row cannot be self-claimed and needs a human,
+ *    which is precisely the thing an operator must be able to see.
+ *
+ * SECRETS, BY NAME, AND WHAT EACH ONE CAN DISABLE. Each channel fails closed on
+ * its OWN secret; neither can take the other down, because a parked row's two
+ * channels are its only two exits and a row with both disabled has no
+ * resolution path at all.
+ *   • `EMAIL_OTP_PEPPER` (shared with `verify-email-otp`) — the HMAC key for
+ *     the at-rest code hash. Unset ⇒ the EMAIL channel answers 503
+ *     `otp_unconfigured`; the PHONE claim still works.
+ *   • `MSG91_AUTH_KEY` (shared with `verify-msg91-otp`) — the phone channel's
+ *     access-token check. Unset ⇒ the PHONE channel answers 503; the EMAIL
+ *     claim still works.
+ *   • plus the platform-injected SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.
  *
  * `verify-msg91-otp` and `verify-email-otp` are NOT touched by this file.
  */
@@ -73,7 +88,7 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { canClaim, identityKeys } from "../_shared/identity.ts";
-import { e164, phoneBinding } from "../_shared/phone.ts";
+import { e164, phoneBinding, syntheticEmail } from "../_shared/phone.ts";
 import { enqueueEmail, isEmailSuppressed } from "../_shared/email.ts";
 import {
   generateOtpCode,
@@ -130,6 +145,20 @@ const MSG91_AUTH_KEY = Deno.env.get("MSG91_AUTH_KEY") ?? "";
 // deno-lint-ignore no-explicit-any
 type Admin = SupabaseClient<any, any, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
+/**
+ * "@phone.leveluplearning.in" — the placeholder domain minted for phone-only
+ * legacy customers, which has NO MX record and delivers nowhere.
+ *
+ * DERIVED FROM THE HELPER THAT MINTS THOSE ADDRESSES, never written out a
+ * second time. `verify-email-otp` derives the identical constant the identical
+ * way (index.ts:149-152); a hardcoded copy here would be a third place the
+ * domain lives and the first one to go stale if it ever moves.
+ */
+const SYNTHETIC_EMAIL_SUFFIX = (() => {
+  const sample = syntheticEmail("9999999999");
+  return sample.slice(sample.indexOf("@"));
+})();
+
 /** THE single rejection literal. See property 4 in the header. */
 const CLAIM_REJECTED = { error: "claim_rejected" } as const;
 
@@ -174,13 +203,26 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
-  // Fail closed rather than key claim codes on the service-role key — same
-  // rule, and the same secret, as verify-email-otp.
-  if (!OTP_PEPPER) {
-    console.error("claim-application: EMAIL_OTP_PEPPER is not set; the claim flow is disabled");
-    return json({ error: "otp_unconfigured" }, 503);
-  }
-
+  // EMAIL_OTP_PEPPER IS NOT CHECKED HERE, and that placement is deliberate.
+  //
+  // It used to be: a 503 at the top of the handler, before the body was even
+  // parsed. Failing closed is right — a claim code must never be keyed on the
+  // service-role key — but the pepper is the HMAC key for the EMAIL channel's
+  // at-rest code hash and NOTHING ELSE. The phone channel's proof is a MSG91
+  // widget access token checked against MSG91; it never touches
+  // `email_otp_codes`, never calls `hashOtpCode`, and cannot be made more or
+  // less safe by this variable. A blanket 503 therefore took the PHONE claim
+  // down with the email one, and a parked row's two channels are its only two
+  // exits: with both disabled, every collision row minted while the secret was
+  // missing had NO resolution path at all and needed the operator the S-4
+  // acceptance criterion exists to make unnecessary.
+  //
+  // So the check now lives on each email-channel path (sections 4 and 5),
+  // where it is symmetric with the phone channel's own MSG91_AUTH_KEY 503:
+  // each channel fails closed on ITS OWN missing secret and neither can
+  // disable the other. Both still answer the same `otp_unconfigured` / 503 as
+  // verify-email-otp, so a client can still tell an unreachable server from a
+  // rejected claim.
   let body: Body;
   try {
     body = await req.json();
@@ -243,6 +285,13 @@ Deno.serve(async (req) => {
   // ─ 4. SEND (email channel only) ──────────────────────────────────────
   if (action === "send") {
     if (channel !== "email") return json({ error: "invalid_channel" }, 400);
+
+    // The email channel's own secret, checked on the email channel only. See
+    // the note where this used to live, at the top of the handler.
+    if (!OTP_PEPPER) {
+      console.error("claim-application: EMAIL_OTP_PEPPER is not set; the EMAIL claim channel is disabled (the phone channel is unaffected)");
+      return json({ error: "otp_unconfigured" }, 503);
+    }
 
     const requested = normalizeEmail(body.email);
     if (!requested) return json({ error: "invalid_email" }, 400);
@@ -312,6 +361,14 @@ Deno.serve(async (req) => {
   let provedValue: string;
 
   if (channel === "email") {
+    // Symmetric with the phone branch's MSG91_AUTH_KEY check below: each
+    // channel fails closed on its OWN missing secret, and neither disables the
+    // other. Without the pepper there is no way to compare a candidate code to
+    // a stored hash, so accepting one would mean accepting anything.
+    if (!OTP_PEPPER) {
+      console.error("claim-application: EMAIL_OTP_PEPPER is not set; the EMAIL claim channel is disabled (the phone channel is unaffected)");
+      return json({ error: "otp_unconfigured" }, 503);
+    }
     const requested = normalizeEmail(body.email);
     if (!requested) return json({ error: "invalid_email" }, 400);
     if (!isOtpCodeShaped(body.code)) return json({ error: "invalid_code_format" }, 400);
@@ -441,6 +498,37 @@ function unprovenChannel(
  * parked row.
  */
 async function issueClaimCode(admin: Admin, applicationId: string, email: string): Promise<void> {
+  // ── SYNTHETIC PLACEHOLDER ADDRESSES: FIRST, BEFORE ANY WORK. ──────────────
+  // `<digits>@phone.leveluplearning.in` is the placeholder `verify-msg91-otp`
+  // mints for a phone-only legacy customer so GoTrue has an address to hang a
+  // magiclink on. The domain carries no MX record, so a code mailed there is a
+  // guaranteed hard bounce that reaches nobody. `verify-email-otp` refuses one
+  // at index.ts:529 for exactly this reason; without the same refusal here the
+  // claim's send path stores a code, hands the shared transactional sender a
+  // bounce, answers SEND_ACCEPTED, and the applicant waits for mail that
+  // cannot arrive — on a row whose only other channel they have already
+  // proved, so there is no second way out and the row stays parked forever.
+  //
+  // THE RESPONSE DOES NOT CHANGE — same as verify-email-otp, and for the same
+  // reason. `issueClaimCode` returns void and the handler answers with the one
+  // fixed SEND_ACCEPTED literal whatever happened in here (header property 4).
+  // A distinct body would tell an authenticated caller which parked rows carry
+  // a placeholder address, i.e. which applicants are phone-only.
+  //
+  // SO THE ONLY SIGNAL IS THE LOG, and this is a dead end an operator has to
+  // be able to find: the claim cannot complete by itself, and the row needs a
+  // human. Logged at ERROR, with the application id (which the operator can
+  // act on) and NEVER the address — not even masked. `maskEmail` keeps the
+  // domain and the first character, and on a synthetic address the domain IS
+  // the finding and the local part is the customer's phone number.
+  if (email.endsWith(SYNTHETIC_EMAIL_SUFFIX)) {
+    console.error(
+      "claim-application: CLAIM CODE BLOCKED — the application's email is a synthetic phone-only placeholder on a domain with no MX record, so no code can ever be delivered. The email channel is a DEAD END for this row: it cannot be self-claimed and needs an operator.",
+      { application_id: applicationId, reason: "synthetic_placeholder_domain" },
+    );
+    return;
+  }
+
   const key = claimCodeKey(applicationId, email);
 
   // A live code stays in flight rather than being re-issued, so a repeat

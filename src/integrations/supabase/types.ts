@@ -6282,6 +6282,16 @@ export type Database = {
         Args: { p_session_id: string }
         Returns: string
       }
+      get_my_pending_claim: {
+        Args: never
+        Returns: {
+          application_id: string
+          claim_channel: string
+          masked_target: string
+          offering_id: string
+          offering_title: string
+        }[]
+      }
       has_course_access: { Args: { p_course_id: string }; Returns: boolean }
       has_offering_learnings_access: {
         Args: { p_offering_id: string }

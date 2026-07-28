@@ -829,10 +829,22 @@ async function staticProvisioningWiring() {
         "PROVEN: every property passed to createUser in both hosts parsed to a named key (including the conditionally-spread ones), so the argument sets compared below are the complete sets and not the subset a parser happened to understand.",
         `NOT PROVEN: a createUser property could not be parsed, so the argument set is UNKNOWN and no claim about which identifiers are minted can be made from it. Poller: ${renderKeys(pollArgs.flat()).join(", ")}. Webhook: ${renderKeys(hookArgs.flat()).join(", ")}.`,
       );
+      // THE DIVERGENCE THAT MATTERS IS `phone`, SO THE REFUTATION NAMES IT.
+      // Both files' own headers say they must mint identically ("KEPT
+      // DELIBERATELY IDENTICAL"; "Changes here MUST be mirrored"), and the
+      // reason is not tidiness: `phone` at createUser is the phone-OTP LOGIN
+      // KEY written from unauthenticated form text (see S-STATIC-6B). A host
+      // that still passes it is a host through which the account-takeover
+      // vector is open, whatever the other host does.
+      const pollMintsPhone = pollArgs.some((site) => keyNames(site).includes("phone"));
+      const hookMintsPhone = hookArgs.some((site) => keyNames(site).includes("phone"));
+      const divergenceDiagnosis = pollMintsPhone === hookMintsPhone
+        ? "The sets differ on something other than the phone."
+        : `THE DIVERGENCE IS THE LOGIN KEY: ${pollMintsPhone ? POLL_HOST : WEBHOOK_HOST} still passes \`phone\` to createUser and ${pollMintsPhone ? WEBHOOK_HOST : POLL_HOST} does not. The host that DOES is the unsafe one — it binds the phone-OTP login key from unauthenticated public-form text, which is the account-takeover vector this phase closed. Mirror the email-only shape into it; do NOT mirror the phone back the other way.`;
       claim(
         pollArgs.length === 1 && argShape(pollArgs) === argShape(hookArgs),
         `PROVEN: each host has exactly ONE createUser call site and both take the SAME argument set (${renderKeys(pollArgs[0]).join(", ")}) — compared on key names AND on each spread's source expression, so a host that spread in a differently-sourced identifier would fail here even though its key names matched. An applicant's minted account is identical whichever door ingested them, and neither host has a second minting path.`,
-        `NOT PROVEN: the hosts do not mint identically. Poller call sites: ${argShape(pollArgs)}. Webhook call sites: ${argShape(hookArgs)}.`,
+        `NOT PROVEN: the hosts do not mint identically, which both of their headers forbid. Poller call sites: ${argShape(pollArgs)}. Webhook call sites: ${argShape(hookArgs)}. ${divergenceDiagnosis}`,
       );
     }
 
@@ -868,20 +880,34 @@ async function staticProvisioningWiring() {
     );
   });
 
-  await runCase("S-STATIC-6B", "static", "REQ-IDENT-2: a minted account carries BOTH identifiers, both unconfirmed", () => {
-    // WHAT THIS CASE ENFORCES. The brief's ground truth (line 21) writes the
-    // provisioning surface as
-    // `createUser({ email, phone, email_confirm:false, phone_confirm:false })`,
-    // and line 6 promises that "a later OTP on EITHER channel resolves to the
-    // same auth.uid". S-2 ships exactly that. This case asserts it on CODE —
-    // both identifiers present, both unconfirmed, the number normalised rather
-    // than copied out of form text, and nothing written into the ONE field that
-    // would let unproven text squat the public mirror.
+  await runCase("S-STATIC-6B", "static", "A minted account carries the EMAIL ONLY — the phone is stashed, never made a login key", () => {
+    // ⚠️ THIS CASE WAS INVERTED ON PURPOSE, AND MUST NOT BE INVERTED BACK.
     //
-    // It is deliberately worded so that it can only pass for the shipped shape.
-    // The conditional spread `...(phone ? { phone } : {})` is invisible to a
-    // naive comma-token parser; the parser above sees it, so "phone is passed"
-    // is a fact this case can actually establish rather than assume.
+    // It used to assert that intake mints with BOTH identifiers, on the brief's
+    // reading (line 21: `createUser({ email, phone, ... })`; line 6: "a later
+    // OTP on EITHER channel resolves to the same auth.uid"). That is a genuine
+    // product goal and it was WRONG to implement it this way, because
+    // `auth.users.phone` is not a contact field — it is the phone-OTP LOGIN
+    // KEY, matched by find_login_identity (20260603120000:78-92) on its last 10
+    // digits with NO phone_confirmed_at predicate.
+    //
+    // THE ATTACK the old assertion demanded: POST the public form with {an
+    // email you own, a stranger's unregistered number}. Intake mints an account
+    // carrying both. The stranger's first genuine MSG91 OTP resolves into THAT
+    // account — whose email, and therefore whose magic-link sign-in, the
+    // submitter controls. Silent, permanent, and invisible to the victim.
+    //
+    // THE SHIPPED SHAPE, which this case now enforces: mint EMAIL-ONLY, stash
+    // the normalised number at `app_metadata.levelup_intake_phone` (service-role
+    // only; nothing keys on it), and let `sync_intake_phone_on_confirm` promote
+    // it to the login key when — and only when — a phone_confirmed_at proves it
+    // (asserted live in S-LIVE-8). The cost is disclosed in the note at the end
+    // of this case; it is a data-quality cost, and the thing it replaces is an
+    // account takeover.
+    //
+    // If you are here because the Phone tab does not find an applicant's
+    // account: that is the DISCLOSED COST, not a bug, and the fix is never to
+    // put the unproven number back into createUser.
     const pollCode = readRepoCode(POLL_HOST);
     const hookCode = readRepoCode(WEBHOOK_HOST);
     if (!pollCode || !hookCode) {
@@ -902,9 +928,9 @@ async function staticProvisioningWiring() {
       }
       const names = sites.map((site) => keyNames(site));
       claim(
-        sites.length > 0 && names.every((k) => k.includes("email") && k.includes("phone")),
-        `PROVEN: ${path} mints with {${shown}} — BOTH identifiers on ONE auth row, which is the whole phase ("one passwordless auth.users row carries both phone and email, so a later OTP on either channel resolves to the same auth.uid"). The phone arrives via a CONDITIONAL SPREAD, so this is asserted by a spread-aware parser: a minting path that dropped the phone, or that added a second identifier, changes this set and fails here.`,
-        `NOT PROVEN: ${path} does not pass both identifiers to createUser (keys: ${shown}). Minting email-only dead-ends the Phone tab — find_login_identity finds no row for the number, verify-msg91-otp answers 404 signup_requires_email_and_name, and the applicant is pushed at the signup screen this phase promises they will never see.`,
+        sites.length > 0 && names.every((k) => k.includes("email") && !k.includes("phone")),
+        `PROVEN: ${path} mints with {${shown}} — the EMAIL and NOT the phone. auth.users.phone is the phone-OTP login key and intake reads its phone out of an unauthenticated public form, so this is the single line that decides whether one form submission can pre-bind a stranger's number to an account the submitter controls. Asserted by a spread-aware parser, so a conditionally-spread \`...(phone ? { phone } : {})\` could not slip past it as "no key".`,
+        `NOT PROVEN — ACCOUNT-TAKEOVER VECTOR OPEN IN ${path}: it passes \`phone\` to createUser (keys: ${shown}). That column is the phone-OTP LOGIN KEY, find_login_identity matches it with no reference to phone_confirmed_at, and the value came from an unauthenticated public form. One submission of {an email the attacker owns, a stranger's unregistered number} makes the stranger's first genuine OTP resolve into the attacker's account. Mint email-only and stash the number at app_metadata.levelup_intake_phone instead.`,
       );
       claim(
         names.every((k) => k.includes("email_confirm") && k.includes("phone_confirm")) &&
@@ -913,27 +939,25 @@ async function staticProvisioningWiring() {
         `PROVEN: ${path} passes email_confirm: false AND phone_confirm: false — both values are still unauthenticated form text, so the account is minted INERT and nothing is treated as proven until a real OTP proves a channel. This is the guest-create-order/index.ts:247-255 pattern the brief names as the proven precedent.`,
         `NOT PROVEN: ${path} does not mint with both confirmations false (keys: ${shown}). An intake account whose channels arrive pre-confirmed would be trusted on the strength of a public form.`,
       );
-      // THE NUMBER MUST BE NORMALISED, NOT COPIED. `e164()` only prepends "+",
-      // so raw form text like "9788385577" would mint "+9788385577" — a number
-      // that exists nowhere and that no MSG91 login can ever present, i.e. a
-      // login key bound to digits nobody can prove.
+      // THE NUMBER IS NOT LOST, IT IS PARKED. Email-only minting is only the
+      // safe option and not simply a lossy one because the number survives
+      // somewhere that NOTHING KEYS ON: `app_metadata` is service-role-only (a
+      // user can never write it) and no lookup reads it. It becomes a login key
+      // exactly once, when a confirmation proves it.
+      //
+      // It must still be NORMALISED before being stashed. `e164()` only
+      // prepends "+", so raw form text like "9788385577" would stash
+      // "+9788385577" — digits nobody can ever present at an OTP prompt — and
+      // the promotion would install that as the login key.
       const mintable = /function mintablePhone\s*\([\s\S]{0,200}?normalizePhone\s*\([\s\S]{0,120}?\+91/.test(code);
-      // SHORTHAND is the load-bearing part. `{ phone }` can only carry the local
-      // `phone` binding, which is assigned from mintablePhone(). A spread that
-      // ASSIGNED a value — `...{ phone: applicant.phone }` — would contribute
-      // the same key name while smuggling raw form text past the normaliser, so
-      // an assigned phone is rejected here even though its key matches.
-      const boundToMintable = /const phone\s*=\s*mintablePhone\s*\(/.test(code);
-      const spreadIsShorthand = sites.some((site) =>
-        site.some((d) => d.spread && d.name === "phone" && d.shorthand),
-      );
-      const assignedPhone = sites.some((site) =>
-        site.some((d) => d.name === "phone" && !d.shorthand),
-      );
+      const stashMatch = code.match(/levelup_intake_phone\s*:\s*([A-Za-z_$][\w$]*)/);
+      const stashBinding = stashMatch ? stashMatch[1] : null;
+      const stashFromMintable =
+        !!stashBinding && new RegExp(`const\\s+${stashBinding}\\s*=\\s*mintablePhone\\s*\\(`).test(code);
       claim(
-        mintable && boundToMintable && spreadIsShorthand && !assignedPhone,
-        `PROVEN: the number ${path} writes is mintablePhone(applicant.phone) — normalizePhone() then a literal +91 prefix — and it reaches createUser as SHORTHAND ({ phone }), which can carry only that binding. A number the normaliser rejects yields null, the spread contributes nothing, and the account is minted email-only rather than bound to digits no MSG91 login could present. A call site that assigned the key instead (\`phone: <expression>\`) fails here even though the key name is identical, because that is how raw form text would get past the normaliser.`,
-        `NOT PROVEN: ${path} does not derive the minted phone from mintablePhone() via a shorthand property (normalising helper present: ${mintable}; phone bound to it: ${boundToMintable}; passed as shorthand: ${spreadIsShorthand}; passed as an assigned expression instead: ${assignedPhone}). An unnormalised number reaching createUser mints a login key that its owner can never present.`,
+        mintable && !!stashBinding && stashFromMintable,
+        `PROVEN: ${path} stashes the applicant's number at app_metadata.levelup_intake_phone, bound to \`${stashBinding}\` = mintablePhone(...) — normalizePhone() then a literal +91 prefix. The number is preserved for sync_intake_phone_on_confirm to promote once it is proven, and it is preserved in the SAME normalised form the login key would need, so the promotion cannot install digits no MSG91 login could present.`,
+        `NOT PROVEN: ${path} does not stash a normalised number for later promotion (normalising helper present: ${mintable}; levelup_intake_phone bound to: ${JSON.stringify(stashBinding)}; that binding comes from mintablePhone(): ${stashFromMintable}). Minting email-only WITHOUT the stash does not just dead-end the Phone tab, it discards the applicant's number entirely — there is no second copy to promote when they finally prove it.`,
       );
       claim(
         !/user_metadata\s*:\s*\{[^}]*\bphone\b/.test(code),
@@ -961,22 +985,31 @@ async function staticProvisioningWiring() {
       "NOT PROVEN: no migration gates the legacy-entitlement claim on levelup_unverified_intake with both channels unconfirmed. An account minted from unauthenticated form text could collect a paying customer's entitlements before anyone proved a channel.",
     );
 
+    // WHY auth.users.phone IS THE ONE COLUMN INTAKE MAY NOT WRITE, read out of
+    // the login migration itself rather than asserted from memory. The predicate
+    // below is a last-10-digit match on auth.users.phone with NO reference to
+    // phone_confirmed_at — so anything written there is a live login key the
+    // moment it lands, proven or not.
     const loginFix = readRepoFile("supabase/migrations/20260603120000_legacy_login_fix.sql") || "";
+    const matchesUnconfirmed =
+      /right\(regexp_replace\(u\.phone[^)]*\)[^)]*\)\s*=\s*right\(w\.digits/.test(loginFix) &&
+      !/phone_confirmed_at/.test(loginFix);
     claim(
-      /right\(regexp_replace\(u\.phone[^)]*\)[^)]*\)\s*=\s*right\(w\.digits/.test(loginFix),
-      "PROVEN: find_login_identity resolves a phone against auth.users.phone (last-10 digits) — the exact column intake writes. That is WHY writing it closes the phone half of REQ-IDENT-2: the applicant's later MSG91 OTP resolves to the identity intake already created, instead of missing and minting a second one. (It consults no other table, so a number living only on an application row would be invisible to it.)",
-      "NOT PROVEN: find_login_identity's phone predicate could not be read from supabase/migrations/20260603120000_legacy_login_fix.sql, so what the phone channel can resolve is unknown.",
+      matchesUnconfirmed,
+      "PROVEN: find_login_identity resolves a phone by last-10 digits against auth.users.phone and NEVER consults phone_confirmed_at — read out of 20260603120000_legacy_login_fix.sql, not assumed. That is exactly WHY intake must not write that column: an unproven number written there is a working login key from the instant it is stored, and the applicant's number therefore waits in app_metadata until a confirmation promotes it.",
+      `NOT PROVEN: find_login_identity's phone predicate could not be read from supabase/migrations/20260603120000_legacy_login_fix.sql, or it now consults phone_confirmed_at (predicate readable: ${/right\(regexp_replace\(u\.phone/.test(loginFix)}). If it HAS learned to prefer a confirmed row, the email-only mint above may no longer be necessary — but that is a change to the login path of every existing account and must be ruled on deliberately, not inferred from a green test.`,
     );
 
-    // ── DISCLOSED RESIDUAL RISK — a note, not a failure. ────────────────────
-    // The council should rule on this with its eyes open; it is inherent to the
-    // brief's design (mint both identifiers unconfirmed), not to S-2's
-    // implementation of it, and S-2 discloses it in its own source.
-    const discloses = /ACCEPTED RESIDUAL RISK/.test(readRepoFile(POLL_HOST) || "");
+    // ── THE DISCLOSED COST — a note, not a failure. ─────────────────────────
+    // Closing the takeover is not free, and the council should rule on the bill
+    // with its eyes open rather than discover it in support tickets.
+    const stalePollerProse = /ACCEPTED RESIDUAL RISK/.test(readRepoFile(POLL_HOST) || "");
     note(
-      `ACCEPTED RESIDUAL RISK, for the council to rule on explicitly — carried here because it is the cost of REQ-IDENT-2 and is disclosed in the poller's own header (${
-        discloses ? "present" : "NO LONGER DOCUMENTED IN SOURCE — that is itself worth a finding"
-      }): auth.users.phone IS the phone-OTP login key and find_login_identity matches it with no reference to phone_confirmed_at, so a number written at intake is reachable before anyone proves it. Someone submitting the public form with {their own email, a stranger's number} pre-binds that number, and the stranger's first genuine MSG91 OTP resolves into an account whose email the submitter controls. It is BOUNDED: a number that already belongs to an account is never touched (that is the phone_taken collision, parked and proven in S-LIVE-3), so only unregistered numbers can be pre-bound, and the entitlement gate above means such an account holds nothing until a channel is proven. Closing it fully means teaching find_login_identity to prefer a confirmed row — a change to the live login path of every existing user, which inviolable rule 2 puts outside this phase.`,
+      `THE DISCLOSED COST of minting email-only, for the council to accept explicitly. (1) Until the applicant proves their number, the Phone tab does not resolve to the account intake made for them — which is today's production behaviour for an applicant anyway, so it is an unmet stretch goal rather than a regression, and their confirmation mail's CTA is the email route. (2) A second application from the SAME number under a DIFFERENT email no longer lands as collision/phone_taken (nothing keys on the phone any more), so it mints a second identity instead of parking a row: one human, two email-keyed accounts. That is a data-quality problem an operator can merge. What it replaces is an account takeover, which cannot be undone. Deliberate trade.${
+        stalePollerProse
+          ? ` ⚠️ SEPARATELY: ${POLL_HOST} still carries an "ACCEPTED RESIDUAL RISK" header block describing the pre-fix design (a number written at intake being reachable before anyone proves it) as an accepted risk. The code no longer writes it. That prose is now STALE and reads as licence to reinstate the write — worth a docs fix in that file, which this suite does not own.`
+          : ""
+      }`,
     );
   });
 
@@ -1234,6 +1267,193 @@ async function staticNoSignupScreen() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AUTHORISATION SURFACES — the static half
+//
+// Their real proof is in the catalog (S-LIVE-7/9/10): a grant, a policy and a
+// trigger are database facts, and source can only ever say what was INTENDED.
+// These cases exist anyway, because the live lane needs a shadow project and
+// the most common run of this suite is a laptop with none — and "the migration
+// that removes the entitlement-theft path is missing from the tree" is worth
+// catching before anyone gets as far as applying it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** SQL with `--` line comments and `/* *​/` blocks removed. */
+function stripSqlComments(src) {
+  return (src || "")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/--[^\n]*/g, " ");
+}
+
+/** Every migration, oldest first, as { name, sql, bare }. */
+function migrationSources() {
+  return readdirSync(join(ROOT, "supabase/migrations"))
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((name) => {
+      const sql = readRepoFile(`supabase/migrations/${name}`) || "";
+      return { name, sql, bare: stripSqlComments(sql) };
+    });
+}
+
+async function staticAuthorisationSurfaces() {
+  await runCase("S-STATIC-11", "static", "The entitlement-theft path is absent from the migration tree, not merely unused", () => {
+    // ⚠️ DO NOT "RESTORE" THIS FUNCTION. `claim_legacy_enrolments_on_email_confirm`
+    // was designed and then DELIBERATELY REMOVED. It is a working
+    // entitlement-theft path, not a hypothetical one:
+    //
+    //   intake mints an account from an UNAUTHENTICATED public form, on an email
+    //   address nobody has proved. `claim_legacy_enrolments_for_user` is what
+    //   grants a returning TagMango customer their paid catalogue by matching on
+    //   that address. A trigger that ran the legacy claim ON EMAIL CONFIRMATION
+    //   would therefore hand a real paying customer's entire catalogue to whoever
+    //   typed that customer's address into the form and then confirmed the
+    //   mailbox they themselves control — and it stamps
+    //   `legacy_enrolments.claimed_by_user_id`, which is a PERMANENT write. The
+    //   victim never touched the form.
+    //
+    // The shipped design instead GATES the legacy claim on
+    // `levelup_unverified_intake` with neither channel confirmed (asserted in
+    // S-STATIC-6B), and arms nothing on confirmation. If you are here because
+    // "applicants don't get their legacy enrolments", that is the design.
+    //
+    // A DROP or a comment naming the function is fine and expected — this asserts
+    // that nothing CREATES it. Comment-stripped, so prose about why it is gone
+    // can never be mistaken for the thing itself.
+    const migrations = migrationSources();
+    const creators = migrations.filter((m) =>
+      /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+[^;]{0,120}?claim_legacy_enrolments_on_email_confirm/i.test(m.bare),
+    );
+    claim(
+      creators.length === 0,
+      "PROVEN: no migration in the tree creates claim_legacy_enrolments_on_email_confirm. The removed entitlement-theft path cannot arrive by applying the repo's own migrations — asserted on comment-stripped SQL, so a DROP or an explanatory comment naming it does not count as defining it.",
+      `NOT PROVEN — ENTITLEMENT THEFT IS IN THE TREE: ${creators.map((m) => m.name).join(", ")} create(s) claim_legacy_enrolments_on_email_confirm. Applying these migrations installs a path that grants a paying customer's whole legacy catalogue to whoever typed their address into the public intake form and confirmed their own mailbox, with a permanent claimed_by_user_id stamp. This function was removed on purpose.`,
+    );
+    const triggers = migrations.filter((m) =>
+      /CREATE\s+(?:CONSTRAINT\s+)?TRIGGER\s+auth_users_claim_legacy_on_email_confirm/i.test(m.bare),
+    );
+    claim(
+      triggers.length === 0,
+      "PROVEN: no migration creates an `auth_users_claim_legacy_on_email_confirm` trigger either. Both halves of the removed path — the function and the trigger that would fire it — are absent.",
+      `NOT PROVEN: ${triggers.map((m) => m.name).join(", ")} create(s) the auth_users_claim_legacy_on_email_confirm trigger.`,
+    );
+    const anyOnConfirm = migrations.filter((m) =>
+      /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+[^;]{0,120}?claim_legacy_enrolments_on_/i.test(m.bare),
+    );
+    claim(
+      anyOnConfirm.length === 0,
+      "PROVEN: the whole `claim_legacy_enrolments_on_*` CLASS is absent from the tree, so the path cannot come back under a slightly different name.",
+      `NOT PROVEN: ${anyOnConfirm.map((m) => m.name).join(", ")} define(s) a claim_legacy_enrolments_on_* function — the removed path, renamed.`,
+    );
+  });
+
+  await runCase("S-STATIC-12", "static", "The parked-row read surface is a whitelist RPC, and the old table policy is dropped", () => {
+    // WHY THIS SURFACE IS AN AUTHORISATION PROBLEM. A parked application must be
+    // shown to a CANDIDATE claimant — somebody whose email or phone matches the
+    // row but who has proved neither. Anything the surface returns is therefore
+    // returned to a caller who might not be the applicant. A table policy hands
+    // back WHOLE ROWS; the whitelist RPC hands back five columns with the target
+    // masked. `bio` is the applicant's 100-word essay (NFR-COPY-1: it must never
+    // reach a client), and `tally_data` is the raw form envelope.
+    //
+    // The catalog is the real proof (S-LIVE-10). This is the tree's intent.
+    const migrations = migrationSources();
+    const defining = migrations.filter((m) =>
+      /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?get_my_pending_claim\s*\(/i.test(m.bare),
+    );
+    claim(
+      defining.length > 0,
+      `PROVEN: ${defining.map((m) => m.name).join(", ")} defines public.get_my_pending_claim(). The claim screen has a whitelisted read surface in the migration tree.`,
+      "NOT PROVEN: no migration defines public.get_my_pending_claim(). Until it lands, either the claim screen has no data or it is reading the table directly — and reading the table directly is what returns bio, tally_data, city and occupation to a caller who has proved nothing.",
+    );
+    if (defining.length > 0) {
+      const src = defining.map((m) => m.bare).join("\n");
+      const returns = (src.match(/RETURNS\s+TABLE\s*\(([\s\S]*?)\)\s*(?:LANGUAGE|AS|SECURITY|STABLE|SET)/i) || [])[1] || "";
+      const flat = returns.replace(/\s+/g, " ").toLowerCase();
+      const wanted = ["application_id uuid", "offering_id uuid", "offering_title text", "claim_channel text", "masked_target text"];
+      const missing = wanted.filter((w) => !flat.includes(w));
+      const forbidden = ["bio", "tally_data", "city", "occupation"].filter((c) => new RegExp(`\\b${c}\\b`).test(flat));
+      claim(
+        missing.length === 0 && forbidden.length === 0,
+        `PROVEN: it returns exactly the agreed whitelist (${returns.replace(/\s+/g, " ").trim()}) — and declares none of bio, tally_data, city or occupation, so those columns cannot come back even by accident.`,
+        `NOT PROVEN: the declared RETURNS TABLE is ${JSON.stringify(returns.replace(/\s+/g, " ").trim())} (missing: ${missing.join(", ") || "none"}; forbidden columns declared: ${forbidden.join(", ") || "none"}).`,
+      );
+      claim(
+        /SECURITY\s+DEFINER/i.test(src) && /GRANT\s+EXECUTE[\s\S]{0,160}?get_my_pending_claim[\s\S]{0,80}?authenticated/i.test(src),
+        "PROVEN: it is SECURITY DEFINER and EXECUTE is granted to `authenticated` — which is what lets the table stay shut to the claimant while this one projection remains answerable to them.",
+        "NOT PROVEN: the function is not SECURITY DEFINER, or EXECUTE is not granted to authenticated. Without both, either the table has to be opened to the caller (the leak) or the signed-in claimant gets nothing (the dead end).",
+      );
+      claim(
+        !/get_my_pending_claim\s*\(\s*[a-z_]+\s+[a-z]/i.test(src),
+        "PROVEN: it declares no parameters, so claim_channel and masked_target are derived server-side and a client has nowhere to inject its own opinion of which channel it still owes.",
+        "NOT PROVEN: get_my_pending_claim declares parameters. Any parameter is a client-supplied value, and the channel a claimant must prove is exactly the value they must not choose.",
+      );
+    }
+
+    // THE OLD POLICY. Sorted by filename = applied in order, so the LAST
+    // statement naming it decides whether it exists at the end of the tree.
+    let lastPolicyAction = null;
+    for (const m of migrations) {
+      const re = /(CREATE|DROP)\s+POLICY[^;]{0,200}?claimants_read_pending_applications/gi;
+      let hit;
+      while ((hit = re.exec(m.bare))) lastPolicyAction = { verb: hit[1].toUpperCase(), file: m.name };
+    }
+    claim(
+      lastPolicyAction === null || lastPolicyAction.verb === "DROP",
+      `PROVEN: the tree does not leave \`claimants_read_pending_applications\` installed — the last statement naming it is ${
+        lastPolicyAction ? `a DROP in ${lastPolicyAction.file}` : "absent entirely"
+      }. The candidate claimant's read no longer goes through the table, so it can no longer return whole application rows to someone who has proved nothing.`,
+      `NOT PROVEN: the last migration statement naming \`claimants_read_pending_applications\` is a CREATE (${lastPolicyAction?.file}), so applying the tree leaves the policy installed. A policy that matches a parked row on the caller's identifiers returns the WHOLE ROW — bio, tally_data, city, occupation and all — to a caller who has proved neither channel.`,
+    );
+  });
+
+  await runCase("S-STATIC-13", "static", "NFR-COPY-1 at the source: no client code asks cohort_applications for `bio`", () => {
+    // The RPC is only half the guarantee. If any client query still selects the
+    // withheld columns — or selects `*` — the whitelist is a formality, because
+    // the leak happens at the other call site. Checked on the CLIENT tree, which
+    // is the only tree whose queries run with a user's own credentials.
+    const withheld = ["bio", "tally_data", "city", "occupation"];
+    const offenders = [];
+    const stack = ["src"];
+    const files = [];
+    while (stack.length) {
+      const dir = stack.pop();
+      for (const entry of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
+        const rel = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) stack.push(rel);
+        else if (/\.(ts|tsx)$/.test(entry.name)) files.push(rel);
+      }
+    }
+    let inspected = 0;
+    for (const rel of files) {
+      const code = readRepoCode(rel);
+      if (!code || !code.includes("cohort_applications")) continue;
+      inspected += 1;
+      const re = /\.from\(\s*["']cohort_applications["']\s*\)([\s\S]{0,400})/g;
+      let hit;
+      while ((hit = re.exec(code))) {
+        const window = hit[1];
+        const sel = window.match(/\.select\(\s*(["'`])([\s\S]*?)\1/);
+        if (!sel) continue;
+        const cols = sel[2];
+        if (cols.trim() === "*" || withheld.some((c) => new RegExp(`(^|[,\\s(])${c}([,\\s)]|$)`).test(cols))) {
+          offenders.push(`${rel}: .select(${JSON.stringify(cols.replace(/\s+/g, " ").slice(0, 120))})`);
+        }
+      }
+    }
+    claim(
+      inspected > 0,
+      `PROVEN: ${inspected} client file(s) query cohort_applications and every one of their select lists was read — this case is actually looking at something.`,
+      "NOT PROVEN: no client file queries cohort_applications at all, so this case inspected nothing and proves nothing. Either the applicant surfaces have moved or the detection is broken.",
+    );
+    claim(
+      offenders.length === 0,
+      `PROVEN: no client query asks cohort_applications for bio, tally_data, city or occupation, and none selects \`*\`. NFR-COPY-1 holds at the call sites as well as at the policy: the applicant's 100-word essay is never even requested by the app.`,
+      `NOT PROVEN: ${offenders.length} client query(ies) request withheld columns or a bare \`*\` from cohort_applications: ${offenders.join(" · ")}. A whitelist RPC does not help if the client asks the table for the essay directly.`,
+    );
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // LIVE LANE
 // ─────────────────────────────────────────────────────────────────────────────
 const FIXTURE = {
@@ -1252,7 +1472,50 @@ const FIXTURE = {
   // why `cross.email` IS A's address); incumbent B owns `cross.phone`.
   incumbentPhone: "idfix-incumbent-phone@identity-fixture.invalid",
   incumbentCross: "idfix-incumbent-cross@identity-fixture.invalid",
+
+  // ── ADDED FOR THE INTAKE-MINTING CASES (S-LIVE-6/7/8). ────────────────────
+  // Both carry an `@identity-fixture.invalid` address and a number containing
+  // `99000000`, which are the two predicates qa-harness/identity-fixtures.sql
+  // wipes on (its section 2). Anything minted here is therefore cleaned up by
+  // the fixture file this suite already applies, with no edit to that file.
+  //
+  // These numbers belong to NOBODY: no incumbent owns them, so provisioning
+  // takes the `created` branch and the phone is free to be pre-bound. That is
+  // precisely the condition the takeover needs, which is why the regression
+  // test uses it.
+  intake: {
+    email: "idfix-intake-mint@identity-fixture.invalid",
+    phone: "+919900000031",
+    responseId: "IDFIXRESP-INTAKE",
+  },
+  intakeSync: {
+    email: "idfix-intake-sync@identity-fixture.invalid",
+    phone: "+919900000033",
+    responseId: "IDFIXRESP-INTAKESYNC",
+    // A number the applicant never submitted, used to prove that confirming
+    // SOMETHING ELSE neither promotes nor discards the stash.
+    otherPhone: "+919900000034",
+  },
+  intakeMatch: {
+    email: "idfix-intake-match@identity-fixture.invalid",
+    phone: "+919900000035",
+    responseId: "IDFIXRESP-INTAKEMATCH",
+  },
 };
+
+/**
+ * THE SENTINEL. Planted into a parked application's `bio` — the applicant's
+ * 100-word essay — and then hunted for across every byte any CLIENT-credentialed
+ * response returned during the run.
+ *
+ * NFR-COPY-1 is categorical: `bio` must never reach a client. A whitelist RPC
+ * is only worth having if nothing else leaks the column, so this is deliberately
+ * not an assertion about one endpoint's shape — it is a corpus-wide grep, and it
+ * fails if the string appears ANYWHERE a client could have read it.
+ *
+ * Improbable by construction, so a hit is a leak and never a coincidence.
+ */
+const BIO_SENTINEL = "IDFIX-BIO-SENTINEL-4f1c9a2e-DO-NOT-LEAK";
 
 const LIVE = {
   url: (process.env.SHADOW_SUPABASE_URL || "").replace(/\/+$/, ""),
@@ -1294,6 +1557,30 @@ function productionRef() {
   return (src.match(/CORRECT_REF\s*=\s*['"]([a-z0-9]+)['"]/) || [])[1] || null;
 }
 
+/**
+ * THE RESPONSE CORPUS — every byte the live lane received, tagged with the
+ * CREDENTIAL that received it.
+ *
+ * The tag is the whole point. "Did `bio` reach a client?" is a question about
+ * what an ANON key or a USER's JWT could read, not about what the service-role
+ * key can read — the service key is the one credential that is SUPPOSED to see
+ * every column, and this suite uses it to plant the sentinel in the first
+ * place. Grepping an untagged corpus would therefore report a guaranteed hit
+ * for the suite's own set-up and prove nothing about the leak, so the sentinel
+ * case below greps the client-credentialed subset and states that it did.
+ */
+const CORPUS = [];
+
+/** Record one response body verbatim. `credential` is anon | user | service_role. */
+function recordResponse(label, credential, text) {
+  CORPUS.push({ label, credential, text: typeof text === "string" ? text : JSON.stringify(text ?? "") });
+}
+
+/** Everything a NON-service-role credential was ever handed, as one string. */
+function clientVisibleCorpus() {
+  return CORPUS.filter((e) => e.credential !== "service_role");
+}
+
 async function sb(path, init = {}) {
   const res = await fetch(`${LIVE.url}${path}`, {
     ...init,
@@ -1305,6 +1592,7 @@ async function sb(path, init = {}) {
     },
   });
   const text = await res.text();
+  recordResponse(`service:${path}`, "service_role", text);
   let body = text;
   try {
     body = text ? JSON.parse(text) : null;
@@ -1312,6 +1600,109 @@ async function sb(path, init = {}) {
     /* keep the raw text */
   }
   return { status: res.status, ok: res.ok, body };
+}
+
+/**
+ * The same call, made AS A CLIENT: the anon apikey plus (optionally) a user's
+ * own JWT — exactly what the browser sends. Everything it receives goes into
+ * the client-visible corpus.
+ *
+ * This is the credential that matters for every authorisation claim below. A
+ * row that RLS hides from a signed-in user must be absent HERE; proving it with
+ * the service-role key would prove nothing at all, because that key bypasses
+ * RLS by design.
+ */
+async function asClient(path, { jwt = null, label = null, ...init } = {}) {
+  const res = await fetch(`${LIVE.url}${path}`, {
+    ...init,
+    headers: {
+      apikey: LIVE.anonKey,
+      Authorization: `Bearer ${jwt || LIVE.anonKey}`,
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+  });
+  const text = await res.text();
+  recordResponse(label || `client:${path}`, jwt ? "user" : "anon", text);
+  let body = text;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    /* keep the raw text */
+  }
+  return { status: res.status, ok: res.ok, body };
+}
+
+/**
+ * One SQL query against the shadow project, as JSON rows.
+ *
+ * PostgREST cannot answer the questions the authorisation cases ask — "does
+ * this function exist", "can `anon` execute it", "is that policy still on the
+ * table", "is that trigger gone". Those live in the catalog, and a catalog read
+ * is the only way to prove ABSENCE: an RPC that 404s might be missing, might be
+ * unexposed, might be misspelled in this file, and a suite that cannot tell
+ * those apart cannot assert "this function does not exist".
+ *
+ * `psql` and SHADOW_DB_URL are already required by the live lane (the fixture
+ * file is applied the same way), so this adds no new dependency and no new
+ * secret. Read-only by construction — every caller passes a SELECT.
+ */
+function psqlRows(sql) {
+  const wrapped = `SELECT coalesce(json_agg(t), '[]'::json)::text FROM (${sql}) t`;
+  let out;
+  try {
+    out = execFileSync("psql", [LIVE.dbUrl, "-v", "ON_ERROR_STOP=1", "-At", "-c", wrapped], {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err) {
+    throw new Error(`catalog query failed: ${(err.stderr || err.message || "").toString().trim()}`);
+  }
+  try {
+    return JSON.parse((out || "[]").trim());
+  } catch {
+    throw new Error(`catalog query returned unparseable output: ${String(out).slice(0, 200)}`);
+  }
+}
+
+/**
+ * One statement against the shadow project, for the few places the suite has to
+ * WRITE to `auth.users` — a channel confirmation is a GoTrue-side event with no
+ * PostgREST surface at all, and "what happens when a phone_confirmed_at lands
+ * on this row" cannot be asked any other way. Shadow projects only, guarded by
+ * the same SHADOW_DB_URL + production-ref abort as everything else in this lane.
+ */
+function psqlExec(sql) {
+  try {
+    execFileSync("psql", [LIVE.dbUrl, "-v", "ON_ERROR_STOP=1", "-At", "-c", sql], {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err) {
+    throw new Error(`statement failed: ${(err.stderr || err.message || "").toString().trim()}`);
+  }
+}
+
+/**
+ * Sign a fixture account in the way a human would — email OTP, start to finish —
+ * and hand back its session. Every authorisation case below needs a REAL user
+ * JWT: RLS and `auth.uid()` are what they are testing, and the service-role key
+ * bypasses both, so a case that used it would pass no matter what the policies
+ * said.
+ */
+async function signInAs(email) {
+  await clearIssuedCodes(email);
+  const sent = await emailOtp({ action: "send", email });
+  if (!sent.ok) throw new Error(`could not send a sign-in code to ${email} (HTTP ${sent.status}): ${JSON.stringify(sent.body)}`);
+  const { code } = await recoverIssuedCode(email);
+  if (!code) throw new Error(`no sign-in code could be recovered for ${email}`);
+  const signIn = await emailOtp({ action: "verify", email, code });
+  const jwt = signIn.body?.access_token;
+  const uid = signIn.body?.user_id;
+  if (!jwt || !uid) throw new Error(`sign-in for ${email} minted no session (HTTP ${signIn.status}): ${JSON.stringify(signIn.body)}`);
+  return { jwt, uid };
 }
 
 const rpc = (name, args = {}) => sb(`/rest/v1/rpc/${name}`, { method: "POST", body: JSON.stringify(args) });
@@ -1372,6 +1763,7 @@ async function postSubmission(envelope) {
     body: raw,
   });
   const text = await res.text();
+  recordResponse("tally-application-webhook", "anon", text);
   let body = text;
   try {
     body = text ? JSON.parse(text) : null;
@@ -1392,6 +1784,7 @@ async function emailOtp(body) {
     body: JSON.stringify(body),
   });
   const text = await res.text();
+  recordResponse("verify-email-otp", "anon", text);
   let parsed = text;
   try {
     parsed = text ? JSON.parse(text) : null;
@@ -1775,6 +2168,7 @@ async function liveClaim() {
         body: JSON.stringify({ application_id: app.id, ...body }),
       });
       const text = await r.text();
+      recordResponse("claim-application", "user", text);
       let parsed = text;
       try {
         parsed = text ? JSON.parse(text) : null;
@@ -1921,6 +2315,564 @@ async function liveEmailOtpParity() {
   });
 }
 
+/**
+ * Provision one applicant through the live intake door and return {app, user}.
+ * Shared by the intake cases below so each states its own property rather than
+ * re-deriving the set-up.
+ */
+async function provisionIntake(fixture, name) {
+  const res = await postSubmission(
+    tallyEnvelope({ responseId: fixture.responseId, name, email: fixture.email, phone: fixture.phone }),
+  );
+  const apps = await applicationFor(fixture.responseId);
+  const users = await fixtureAuthUsers();
+  const user = users.find((u) => (u.email || "").toLowerCase() === fixture.email) || null;
+  return { res, app: apps[0] || null, user };
+}
+
+/**
+ * S-LIVE-6 — THE REGRESSION TEST FOR AN ACCOUNT-TAKEOVER VECTOR.
+ *
+ * THE ATTACK, in full, because a test whose reason is not written down is a
+ * test somebody deletes. `auth.users.phone` is not a contact detail: it is the
+ * PHONE-OTP LOGIN KEY, and `find_login_identity` (20260603120000:78-92) matches
+ * on its last 10 digits with NO reference to `phone_confirmed_at`. Intake reads
+ * its phone out of an unauthenticated public form. So if intake WRITES that
+ * column, one form submission — {an email you control, a stranger's unregistered
+ * number} — pre-binds the stranger's number to an account whose email you own.
+ * Their first genuine MSG91 OTP then signs them into it, and your magic-link on
+ * the email side signs YOU into it. Silent, permanent, invisible to the victim.
+ *
+ * The fix is to mint EMAIL-ONLY and stash the number in `app_metadata`
+ * (service-role-only, and keyed on by nothing), promoting it to the login key
+ * only once a `phone_confirmed_at` proves it.
+ *
+ * WHAT THIS CASE MEASURES, AND ON WHICH HOST. The live lane's only deterministic
+ * door is `tally-application-webhook`; the poller PULLS from Tally and cannot be
+ * handed a synthetic applicant. So this observes the WEBHOOK host. The poller's
+ * identical obligation is asserted on code in S-STATIC-6B, and neither claim
+ * stands in for the other — the two hosts' own headers require them to mint
+ * identically precisely because an applicant's identity must not depend on which
+ * door ingested them.
+ */
+async function liveIntakeMintsNoLoginKey() {
+  await runCase(
+    "S-LIVE-6",
+    "live",
+    "ACCOUNT TAKEOVER, CLOSED: intake binds NO unproven number as a login key",
+    async () => {
+      const { res, app, user } = await provisionIntake(FIXTURE.intake, "Identity Fixture Intake");
+      claim(
+        res.ok,
+        `PROVEN: the intake submission was accepted (HTTP ${res.status}).`,
+        `NOT PROVEN: the intake submission returned HTTP ${res.status}: ${JSON.stringify(res.body)}`,
+      );
+      if (!app) {
+        claim(false, "", "NOT PROVEN: no application row was created for the intake fixture, so nothing about minting could be observed.");
+        return;
+      }
+      if (!user) {
+        claim(false, "", `NOT PROVEN: no auth user was minted for ${FIXTURE.intake.email}, so the takeover property could not be measured. (Provisioning may be switched off on this project — PROVISION_APPLICANTS.)`);
+        return;
+      }
+
+      // ── THE HEADLINE. Everything else in this case is corroboration. ───────
+      const byPhone = await rpc("find_login_identity", { p_phone: FIXTURE.intake.phone, p_email: null });
+      const rows = Array.isArray(byPhone.body) ? byPhone.body : byPhone.body ? [byPhone.body] : [];
+      const resolvedIds = rows.map((r) => r?.id).filter(Boolean);
+      claim(
+        byPhone.ok && !resolvedIds.includes(user.id),
+        `PROVEN: after provisioning, find_login_identity(p_phone => the applicant's number, p_email => null) does NOT resolve to the intake-minted uid (${user.id}). The number the form supplied is NOT a login key. An attacker who submits a stranger's number cannot capture the stranger's first phone OTP, because there is nothing for it to resolve to.`,
+        `NOT PROVEN — ACCOUNT TAKEOVER IS OPEN: find_login_identity(p_phone => ${FIXTURE.intake.phone}) resolves to ${JSON.stringify(resolvedIds)}, which includes the intake-minted uid ${user.id}. A number typed into an unauthenticated public form is a LOGIN KEY on an account whose email the submitter controls. The stranger's first genuine MSG91 OTP signs them into the attacker's account; the attacker's magic-link signs the attacker into the same one. This is the exact vector this phase closed and it is open again.`,
+      );
+      claim(
+        byPhone.ok && rows.length === 0,
+        "PROVEN: that number resolves to NO auth user at all — not the intake account, not any other. Intake left the phone namespace completely untouched.",
+        `NOT PROVEN: the applicant's number resolves to ${rows.length} auth row(s): ${JSON.stringify(rows)}. Intake was supposed to leave the phone namespace untouched.`,
+      );
+
+      claim(
+        user.phone === null || user.phone === "",
+        "PROVEN: the intake-minted auth.users row carries phone NULL — the login-key column was never written.",
+        `NOT PROVEN: the intake-minted auth.users row carries phone ${JSON.stringify(user.phone)}. Intake wrote the phone-OTP login key from unauthenticated form text.`,
+      );
+
+      const meta = user.app_metadata || {};
+      claim(
+        meta.levelup_intake_phone === FIXTURE.intake.phone,
+        `PROVEN: the applicant's number is not lost — it is stashed at app_metadata.levelup_intake_phone (${meta.levelup_intake_phone}), which is service-role-only (a user can never write it) and which NO lookup keys on. It becomes a login key only when sync_intake_phone_on_confirm promotes it, i.e. only once a phone_confirmed_at proves the number (S-LIVE-8).`,
+        `NOT PROVEN: app_metadata.levelup_intake_phone is ${JSON.stringify(meta.levelup_intake_phone)}, not the submitted number ${FIXTURE.intake.phone}. The number is neither a login key nor recoverable, so the applicant's phone tab can never be repaired.`,
+      );
+      claim(
+        meta.levelup_unverified_intake === true,
+        "PROVEN: the row is stamped levelup_unverified_intake = true, so the entitlement gate can tell an identity minted from form text from one whose owner proved a channel.",
+        `NOT PROVEN: app_metadata is ${JSON.stringify(meta)} — the unverified-intake stamp is missing, so nothing downstream can tell this identity apart from a proven one.`,
+      );
+      claim(
+        !user.email_confirmed_at && !user.phone_confirmed_at,
+        "PROVEN: the minted account is INERT — neither channel is confirmed, so nothing about it is treated as proven until a real OTP proves one.",
+        `NOT PROVEN: the minted account arrives pre-confirmed (email_confirmed_at ${JSON.stringify(user.email_confirmed_at)}, phone_confirmed_at ${JSON.stringify(user.phone_confirmed_at)}) on the strength of a public form.`,
+      );
+      claim(
+        !!app.user_id && app.pending_claim === false,
+        `PROVEN: the applicant still lands bound — the application carries user_id ${app.user_id} and is not parked. Closing the takeover cost the applicant nothing on the email route, which is the route their confirmation mail sends them down.`,
+        `NOT PROVEN: the application was left at user_id ${JSON.stringify(app.user_id)} / pending_claim ${JSON.stringify(app.pending_claim)} even though an identity was minted.`,
+      );
+    },
+  );
+}
+
+/**
+ * S-LIVE-7 — the gate the poller refuses to provision without.
+ *
+ * `intake_provisioning_gate_ok()` is the poller's proof that the hardening
+ * migration is actually applied before it mints anything (tally-application-poll
+ * `intakeGateInstalled`). It is a SERVICE-ROLE probe: nothing a browser holds
+ * should be able to call it, and a gate an anonymous caller can execute is a
+ * gate an anonymous caller can study.
+ */
+async function liveIntakeGate() {
+  await runCase("S-LIVE-7", "live", "intake_provisioning_gate_ok() exists and is service_role-only", async () => {
+    const rows = psqlRows(`
+      SELECT p.proname,
+             p.prosecdef,
+             has_function_privilege('anon',          p.oid, 'EXECUTE') AS anon_exec,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_exec,
+             has_function_privilege('service_role',  p.oid, 'EXECUTE') AS service_exec
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.proname = 'intake_provisioning_gate_ok'
+    `);
+    claim(
+      rows.length === 1,
+      "PROVEN: public.intake_provisioning_gate_ok() exists exactly once. The poller probes it every tick and SKIPS provisioning entirely when it is absent, so its existence is what lets intake mint at all.",
+      `NOT PROVEN: public.intake_provisioning_gate_ok() resolves to ${rows.length} function(s). The poller treats an absent gate as "migration not applied" and provisions NOTHING, so intake is silently off.`,
+    );
+    if (rows.length !== 1) return;
+    const fn = rows[0];
+    claim(
+      fn.anon_exec === false && fn.authenticated_exec === false,
+      "PROVEN: neither `anon` nor `authenticated` may EXECUTE it — the two roles a browser can ever hold. The gate is reachable only by the service-role key the poller runs under.",
+      `NOT PROVEN: the gate is executable by a browser-held role (anon: ${fn.anon_exec}, authenticated: ${fn.authenticated_exec}). EXECUTE must be revoked from PUBLIC and from both of those roles and granted to service_role alone.`,
+    );
+    claim(
+      fn.service_exec === true,
+      "PROVEN: `service_role` may execute it, so the poller's own probe succeeds and provisioning is not disabled by the very grant that protects it.",
+      "NOT PROVEN: service_role cannot execute the gate, so the poller's probe fails every tick and provisioning never runs.",
+    );
+  });
+}
+
+/**
+ * S-LIVE-8 — the stash is promoted on PROOF, and only on proof.
+ *
+ * The stash is what makes the email-only mint safe rather than merely lossy, so
+ * the promotion rule is load-bearing in BOTH directions:
+ *   • confirming a DIFFERENT number must not promote the stash (that would bind
+ *     the login key from form text after all, just later) and must not discard
+ *     it (the applicant's real number would be gone for good);
+ *   • confirming the MATCHING number is the proof the design waits for, and the
+ *     stash has done its job and must be cleared.
+ * Two separate identities on purpose: a trigger that only fires on the FIRST
+ * confirmation would make a single-identity test pass or fail for the wrong
+ * reason.
+ */
+async function liveIntakePhonePromotion() {
+  await runCase("S-LIVE-8", "live", "sync_intake_phone_on_confirm promotes the stash only on PROOF of that number", async () => {
+    // ── HALF 1: confirm a DIFFERENT number. ──────────────────────────────────
+    const other = await provisionIntake(FIXTURE.intakeSync, "Identity Fixture Intake Sync");
+    if (!other.user) {
+      claim(false, "", `NOT PROVEN: no auth user was minted for ${FIXTURE.intakeSync.email}, so the different-number half was not exercised.`);
+    } else {
+      const stashBefore = (other.user.app_metadata || {}).levelup_intake_phone ?? null;
+      psqlExec(
+        `UPDATE auth.users SET phone = '${FIXTURE.intakeSync.otherPhone}', phone_confirmed_at = now() WHERE id = '${other.user.id}'`,
+      );
+      const after = psqlRows(
+        `SELECT phone::text AS phone, raw_app_meta_data->>'levelup_intake_phone' AS stash FROM auth.users WHERE id = '${other.user.id}'`,
+      )[0];
+      claim(
+        after?.stash === stashBefore && stashBefore !== null,
+        `PROVEN: confirming a DIFFERENT number left the stash untouched (${JSON.stringify(stashBefore)} before, ${JSON.stringify(after?.stash)} after). The applicant's real number survives a confirmation that was never about it.`,
+        `NOT PROVEN: confirming a different number changed the stash (${JSON.stringify(stashBefore)} -> ${JSON.stringify(after?.stash)}). Clearing it discards the applicant's real number permanently; there is no second copy.`,
+      );
+      claim(
+        after?.phone === FIXTURE.intakeSync.otherPhone,
+        `PROVEN: the login key is the number that was actually CONFIRMED (${after?.phone}) — the unproven stash was NOT promoted over it. A confirmation on one number can never install a different, unproven one as the login key.`,
+        `NOT PROVEN: auth.users.phone is ${JSON.stringify(after?.phone)} rather than the confirmed ${FIXTURE.intakeSync.otherPhone}. An unproven stashed number was promoted onto the login key by a confirmation that proved something else entirely — the takeover, reopened one step later.`,
+      );
+    }
+
+    // ── HALF 2: confirm the MATCHING number. ─────────────────────────────────
+    const match = await provisionIntake(FIXTURE.intakeMatch, "Identity Fixture Intake Match");
+    if (!match.user) {
+      claim(false, "", `NOT PROVEN: no auth user was minted for ${FIXTURE.intakeMatch.email}, so the matching-number half was not exercised.`);
+      return;
+    }
+    const stash = (match.user.app_metadata || {}).levelup_intake_phone ?? null;
+    if (!stash) {
+      claim(false, "", "NOT PROVEN: the intake identity carries no stashed number, so there was nothing for a confirmation to promote.");
+      return;
+    }
+    psqlExec(
+      `UPDATE auth.users SET phone = '${stash}', phone_confirmed_at = now() WHERE id = '${match.user.id}'`,
+    );
+    const done = psqlRows(
+      `SELECT phone::text AS phone,
+              (raw_app_meta_data ? 'levelup_intake_phone') AS stash_present,
+              raw_app_meta_data->>'levelup_intake_phone' AS stash
+         FROM auth.users WHERE id = '${match.user.id}'`,
+    )[0];
+    claim(
+      done?.stash_present === false,
+      `PROVEN: confirming the MATCHING number cleared levelup_intake_phone — the stash existed only to survive the wait for proof, and once the proof arrives it is gone rather than left lying around as a second source of truth.`,
+      `NOT PROVEN: levelup_intake_phone is still present (${JSON.stringify(done?.stash)}) after the applicant confirmed exactly that number. A stash that outlives its promotion is a second, unproven copy of a login key.`,
+    );
+    claim(
+      done?.phone === stash,
+      `PROVEN: the proven number is now the login key (${done?.phone}) — the applicant's phone tab resolves to the identity intake created for them, which is the whole point of keeping the number at all.`,
+      `NOT PROVEN: auth.users.phone is ${JSON.stringify(done?.phone)} rather than the confirmed ${stash}.`,
+    );
+  });
+}
+
+/**
+ * S-LIVE-9 — A FUNCTION THAT MUST NEVER COME BACK.
+ *
+ * ⚠️ READ THIS BEFORE "RESTORING" ANYTHING. `claim_legacy_enrolments_on_email_confirm`
+ * was designed, then DELIBERATELY REMOVED, because it is a working
+ * entitlement-theft path — not a hypothetical one.
+ *
+ * The mechanism: intake mints an account from an UNAUTHENTICATED public form,
+ * on an email address nobody has proved. `claim_legacy_enrolments_for_user` is
+ * the function that grants a returning TagMango customer their paid catalogue by
+ * matching on that address. A trigger that ran the legacy claim when an EMAIL
+ * was confirmed would hand the entire paid catalogue of any real customer to
+ * whoever typed their address into the form and then confirmed the mailbox they
+ * themselves control — and it stamps `legacy_enrolments.claimed_by_user_id`,
+ * which is a PERMANENT write. The victim is a paying customer who never touched
+ * the form.
+ *
+ * The safe shape is the one that shipped: the legacy claim is GATED on
+ * `levelup_unverified_intake` with neither channel confirmed, and no
+ * confirmation trigger re-arms it. If you are here because "the legacy claim
+ * doesn't fire for applicants", that is the DESIGN, and the fix is not this
+ * function.
+ */
+async function liveNoLegacyClaimOnConfirm() {
+  await runCase("S-LIVE-9", "live", "claim_legacy_enrolments_on_email_confirm DOES NOT EXIST (entitlement theft, by design absent)", async () => {
+    const rows = psqlRows(`
+      SELECT
+        (SELECT count(*) FROM pg_proc p
+           JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public'
+            AND p.proname = 'claim_legacy_enrolments_on_email_confirm')            AS fn_count,
+        (SELECT count(*) FROM pg_trigger
+          WHERE NOT tgisinternal
+            AND tgname = 'auth_users_claim_legacy_on_email_confirm')               AS trigger_count,
+        (SELECT count(*) FROM pg_trigger t
+           JOIN pg_proc p ON p.oid = t.tgfoid
+          WHERE NOT t.tgisinternal
+            AND p.proname LIKE 'claim_legacy_enrolments_on_%')                     AS any_confirm_trigger
+    `);
+    const r = rows[0] || {};
+    claim(
+      Number(r.fn_count) === 0,
+      "PROVEN: public.claim_legacy_enrolments_on_email_confirm() does not exist. The entitlement-theft path is absent from the database, not merely unreferenced — a confirmed-email trigger over the legacy claim would hand a paying customer's whole catalogue to whoever typed their address into the public intake form.",
+      `NOT PROVEN — ENTITLEMENT THEFT IS INSTALLED: public.claim_legacy_enrolments_on_email_confirm exists (${r.fn_count} definition(s)). Intake mints accounts on unproven addresses; a legacy claim keyed on email confirmation grants the real customer's paid catalogue to whoever controls the mailbox they typed in, and stamps legacy_enrolments.claimed_by_user_id permanently. DROP it.`,
+    );
+    claim(
+      Number(r.trigger_count) === 0,
+      "PROVEN: no `auth_users_claim_legacy_on_email_confirm` trigger is installed on any table.",
+      `NOT PROVEN: ${r.trigger_count} trigger(s) named auth_users_claim_legacy_on_email_confirm exist. The function may be gone, but the trigger name being live means something is firing a legacy claim on confirmation.`,
+    );
+    claim(
+      Number(r.any_confirm_trigger) === 0,
+      "PROVEN: no trigger anywhere calls a `claim_legacy_enrolments_on_*` function — the class is absent, not just the one name. A rename could not slip past this.",
+      `NOT PROVEN: ${r.any_confirm_trigger} trigger(s) call a claim_legacy_enrolments_on_* function. The removed path has been reinstated under a different name.`,
+    );
+  });
+}
+
+/**
+ * S-LIVE-10 — the read surface for a parked application.
+ *
+ * A parked row is somebody's application, and it has to be shown to a candidate
+ * claimant before they have proved anything — that is the whole premise of the
+ * claim screen. Which makes the read surface an AUTHORISATION problem, not a
+ * convenience: whatever it returns is returned to a caller who has NOT yet
+ * proved they are the applicant.
+ *
+ * So the surface is a WHITELIST RPC, not a table policy. It returns five
+ * columns, the target is masked, the channel is derived server-side from the
+ * caller's own auth row, and the table itself stays shut — a raw `select=*` by
+ * the same caller must come back EMPTY. `bio` (the applicant's 100-word essay),
+ * `tally_data`, `city` and `occupation` are not in the whitelist and must not be
+ * obtainable by any route: NFR-COPY-1.
+ */
+async function livePendingClaimWhitelist() {
+  await runCase("S-LIVE-10", "live", "get_my_pending_claim: a whitelist, a masked target, a server-derived channel, and a shut table", async () => {
+    // The parked row from S-LIVE-3: its phone belongs to incumbent P, who is
+    // therefore a candidate claimant and a NON-OWNER (user_id is NULL).
+    let parked = (await applicationFor(FIXTURE.collide.responseId))[0];
+    if (!parked) {
+      await postSubmission(
+        tallyEnvelope({
+          responseId: FIXTURE.collide.responseId,
+          name: "Identity Fixture Collide",
+          email: FIXTURE.collide.email,
+          phone: FIXTURE.collide.phone,
+        }),
+      );
+      parked = (await applicationFor(FIXTURE.collide.responseId))[0];
+    }
+    if (!parked || parked.pending_claim !== true) {
+      claim(false, "", `NOT PROVEN: no parked (pending_claim) application could be prepared, so the claim read surface was not exercised. Row: ${JSON.stringify(parked)}`);
+      return;
+    }
+
+    // PLANT THE SENTINEL. Service-role write, so it is the suite's own set-up
+    // and not something a client did; the corpus tagging keeps it out of the
+    // client-visible subset S-LIVE-11 greps.
+    await sb(`/rest/v1/cohort_applications?id=eq.${parked.id}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ bio: BIO_SENTINEL, city: "IDFIX-CITY", occupation: "IDFIX-OCCUPATION" }),
+    });
+    const planted = psqlRows(`SELECT bio FROM public.cohort_applications WHERE id = '${parked.id}'`)[0];
+    claim(
+      planted?.bio === BIO_SENTINEL,
+      "PROVEN: the sentinel is really in this row's `bio` column, so a zero-hit result in S-LIVE-11 means the column did not leak — not that there was nothing to leak.",
+      `NOT PROVEN: the sentinel could not be planted in cohort_applications.bio (found ${JSON.stringify(planted?.bio)}), so any later "bio never leaked" claim would be vacuous.`,
+    );
+
+    // ── THE CATALOG SHAPE. ───────────────────────────────────────────────────
+    const fnRows = psqlRows(`
+      SELECT pg_get_function_result(p.oid)               AS result,
+             pg_get_function_identity_arguments(p.oid)   AS args,
+             p.pronargs,
+             p.prosecdef,
+             has_function_privilege('anon',          p.oid, 'EXECUTE') AS anon_exec,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_exec
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.proname = 'get_my_pending_claim'
+    `);
+    claim(
+      fnRows.length === 1,
+      "PROVEN: public.get_my_pending_claim() exists exactly once — the claim screen has a read surface that is a whitelist rather than a view onto the table.",
+      `NOT PROVEN: public.get_my_pending_claim() resolves to ${fnRows.length} function(s). Until it exists, the claim screen has no whitelisted read surface and anything it renders comes from the table itself.`,
+    );
+    if (fnRows.length === 1) {
+      const fn = fnRows[0];
+      const result = String(fn.result || "").replace(/\s+/g, " ").toLowerCase();
+      const wanted = [
+        "application_id uuid",
+        "offering_id uuid",
+        "offering_title text",
+        "claim_channel text",
+        "masked_target text",
+      ];
+      const missing = wanted.filter((w) => !result.includes(w));
+      const forbidden = ["bio", "tally_data", "city", "occupation", "email", "phone", "user_id"].filter((c) =>
+        new RegExp(`\\b${c}\\b`).test(result),
+      );
+      claim(
+        missing.length === 0 && forbidden.length === 0,
+        `PROVEN: the function's RETURNS TABLE is exactly the whitelist — ${fn.result}. Nothing outside the five agreed columns can come back, because nothing outside them is declared.`,
+        `NOT PROVEN: the returned shape is ${JSON.stringify(fn.result)} (missing: ${missing.join(", ") || "none"}; forbidden columns present: ${forbidden.join(", ") || "none"}). A whitelist that declares a column it must never return is not a whitelist.`,
+      );
+      claim(
+        Number(fn.pronargs) === 0,
+        `PROVEN: it takes NO arguments (identity args: ${JSON.stringify(fn.args)}), so claim_channel cannot be client-supplied even in principle — there is nowhere for a client value to enter. The channel is derived from the caller's own auth row.`,
+        `NOT PROVEN: the function takes ${fn.pronargs} argument(s) (${JSON.stringify(fn.args)}). Any argument is a client-supplied value, and the channel a claimant must prove is exactly the value they must not get to choose.`,
+      );
+      claim(
+        fn.prosecdef === true,
+        "PROVEN: it is SECURITY DEFINER — which is what lets the table stay shut to the caller while this one whitelisted projection is answerable.",
+        "NOT PROVEN: the function is not SECURITY DEFINER, so it can only see what the caller can see — meaning either the table is open to the caller (the leak) or the function returns nothing (the dead end).",
+      );
+      claim(
+        fn.authenticated_exec === true,
+        "PROVEN: `authenticated` may execute it — the claimant is signed in, so the flow actually works.",
+        "NOT PROVEN: `authenticated` cannot execute get_my_pending_claim, so a signed-in claimant cannot read their own pending claim and the screen is empty for everyone.",
+      );
+      if (fn.anon_exec === true) {
+        note(
+          "get_my_pending_claim is executable by `anon`. Not failed here: the function keys on auth.uid(), so an anonymous caller matches nothing — and the anonymous call below asserts exactly that. Worth tightening anyway; EXECUTE for anon is a surface with no use case.",
+        );
+      }
+    }
+
+    // ── THE OLD TABLE POLICY MUST BE GONE. ───────────────────────────────────
+    const policies = psqlRows(`
+      SELECT policyname, cmd, qual::text AS using_expr
+        FROM pg_policies
+       WHERE schemaname = 'public' AND tablename = 'cohort_applications'
+    `);
+    const names = policies.map((p) => p.policyname);
+    claim(
+      !names.includes("claimants_read_pending_applications"),
+      `PROVEN: the policy \`claimants_read_pending_applications\` no longer exists on cohort_applications (remaining policies: ${names.join(", ") || "none"}). The candidate claimant's read no longer goes through the TABLE, so it can no longer return whole rows — bio, tally_data, city, occupation and all — to somebody who has proved nothing.`,
+      `NOT PROVEN: \`claimants_read_pending_applications\` is still installed on cohort_applications. A policy that matches a parked row on the caller's identifiers returns the WHOLE ROW, so every column the whitelist RPC carefully omits is readable by a caller who has not yet proved a thing.`,
+    );
+
+    // ── THE CALLER: a signed-in NON-OWNER whose phone matches the parked row. ─
+    let claimant;
+    try {
+      claimant = await signInAs(FIXTURE.incumbentPhone);
+    } catch (err) {
+      claim(false, "", `NOT PROVEN: could not sign in as the candidate claimant, so no authorisation claim below could be measured: ${err.message}`);
+      return;
+    }
+    claim(
+      claimant.uid !== parked.user_id,
+      `PROVEN: the caller (${claimant.uid}) is NOT the owner of the parked row (user_id ${JSON.stringify(parked.user_id)}) — they are exactly the "matches an identifier, owns nothing" caller every assertion below is about.`,
+      "NOT PROVEN: the caller turned out to own the row, so nothing below tests a non-owner.",
+    );
+
+    // RAW TABLE READ, as that caller. This is the one that would have leaked.
+    const rawAll = await asClient("/rest/v1/cohort_applications?select=*", { jwt: claimant.jwt, label: "cohort_applications select=* (user)" });
+    const rawRows = Array.isArray(rawAll.body) ? rawAll.body : [];
+    claim(
+      rawAll.status === 200 && rawRows.length === 0,
+      `PROVEN: a raw select=* on cohort_applications as this signed-in non-owner returns ZERO rows (HTTP ${rawAll.status}). The table is shut: the claim screen's data comes from the whitelist RPC or from nowhere.`,
+      `NOT PROVEN: select=* returned ${rawRows.length} row(s) (HTTP ${rawAll.status}) to a signed-in caller who owns none of them. Whatever the RPC omits is readable straight off the table. First row keys: ${JSON.stringify(Object.keys(rawRows[0] || {}))}`,
+    );
+    const rawOne = await asClient(`/rest/v1/cohort_applications?id=eq.${parked.id}&select=*`, {
+      jwt: claimant.jwt,
+      label: "cohort_applications by id select=* (user)",
+    });
+    const rawOneRows = Array.isArray(rawOne.body) ? rawOne.body : [];
+    claim(
+      rawOneRows.length === 0,
+      "PROVEN: even asked for BY ID — the id the claim screen legitimately knows — the parked row is not readable off the table by the candidate claimant.",
+      `NOT PROVEN: the parked row is readable by id as a non-owner: ${JSON.stringify(rawOneRows).slice(0, 400)}`,
+    );
+
+    // ── THE RPC ITSELF. ──────────────────────────────────────────────────────
+    const mine = await asClient("/rest/v1/rpc/get_my_pending_claim", {
+      jwt: claimant.jwt,
+      method: "POST",
+      body: "{}",
+      label: "get_my_pending_claim (user)",
+    });
+    const mineRows = Array.isArray(mine.body) ? mine.body : mine.body ? [mine.body] : [];
+    const row = mineRows.find((x) => x?.application_id === parked.id) || mineRows[0] || null;
+    claim(
+      mine.status === 200 && !!row,
+      `PROVEN: the RPC answers the candidate claimant with their pending claim (HTTP ${mine.status}, ${mineRows.length} row(s)) — the screen has its data without the table being open.`,
+      `NOT PROVEN: get_my_pending_claim returned HTTP ${mine.status} / ${JSON.stringify(mine.body).slice(0, 300)} for a caller whose phone matches a parked row. Either the RPC does not exist yet, or a legitimate claimant cannot see their own pending claim.`,
+    );
+    if (row) {
+      const keys = Object.keys(row).sort();
+      const expected = ["application_id", "claim_channel", "masked_target", "offering_id", "offering_title"];
+      claim(
+        JSON.stringify(keys) === JSON.stringify(expected),
+        `PROVEN: the payload carries exactly ${keys.join(", ")} — five keys, no more. What is not in the whitelist is not in the response.`,
+        `NOT PROVEN: the payload carries ${keys.join(", ")}. Expected exactly ${expected.join(", ")}.`,
+      );
+      const leaked = ["bio", "tally_data", "city", "occupation"].filter((k) => k in row);
+      claim(
+        leaked.length === 0,
+        "PROVEN: bio, tally_data, city and occupation are ABSENT from the payload. NFR-COPY-1 holds: the applicant's 100-word essay is not shipped to a client, and neither is the raw form envelope.",
+        `NOT PROVEN: the payload contains ${leaked.join(", ")}. NFR-COPY-1 is categorical — bio in particular is the applicant's essay and must never reach a client.`,
+      );
+      const serialized = JSON.stringify(row);
+      claim(
+        !serialized.includes(BIO_SENTINEL) && !serialized.includes("IDFIX-CITY") && !serialized.includes("IDFIX-OCCUPATION"),
+        "PROVEN: no whitelisted column smuggles the withheld ones through — the sentinel bio, city and occupation values appear nowhere in the payload, including inside offering_title or masked_target.",
+        `NOT PROVEN: a withheld value appears inside the whitelisted payload: ${serialized.slice(0, 400)}`,
+      );
+
+      // MASKING. The target is shown so a human recognises their own address or
+      // number; it must not be enough to LEARN one.
+      const target = String(row.masked_target ?? "");
+      const digits = FIXTURE.collide.phone.replace(/\D/g, "");
+      const localPart = FIXTURE.collide.email.split("@")[0];
+      claim(
+        !!target &&
+          target !== FIXTURE.collide.email &&
+          !target.includes(localPart) &&
+          !target.includes(digits) &&
+          !target.includes(digits.slice(-10)),
+        `PROVEN: masked_target (${JSON.stringify(target)}) is masked — it is neither the full address nor the full number, and contains neither the address's local part nor the last-10 subscriber digits. A claimant recognises their own; a stranger learns nothing they could then claim with.`,
+        `NOT PROVEN: masked_target is ${JSON.stringify(target)}, which exposes the applicant's identifier in full (or its whole local part / all 10 subscriber digits) to a caller who has proved nothing. That hands an attacker the exact value the second-channel OTP is supposed to be proof of.`,
+      );
+
+      // SERVER-DERIVED CHANNEL. The caller matches the row on PHONE, so the
+      // channel they still owe is EMAIL. A client that could name the channel
+      // could name the one it has already proved and skip the proof entirely.
+      claim(
+        row.claim_channel === "email",
+        `PROVEN: claim_channel is "${row.claim_channel}" — the channel the caller has NOT proved, derived server-side from their own auth row (their phone matches this row, so the email is what is left to prove). This is the value the whole claim turns on.`,
+        `NOT PROVEN: claim_channel is ${JSON.stringify(row.claim_channel)}. This caller matches the row by PHONE, so the unproven channel is "email"; anything else means the claimant would be asked to re-prove what they already hold, which is the replay _shared/identity.ts#canClaim warns about.`,
+      );
+      const injected = await asClient("/rest/v1/rpc/get_my_pending_claim", {
+        jwt: claimant.jwt,
+        method: "POST",
+        body: JSON.stringify({ claim_channel: "phone", p_claim_channel: "phone", masked_target: "attacker" }),
+        label: "get_my_pending_claim with injected args (user)",
+      });
+      const injRows = Array.isArray(injected.body) ? injected.body : injected.body ? [injected.body] : [];
+      const injRow = injRows.find((x) => x?.application_id === parked.id) || injRows[0] || null;
+      claim(
+        injected.status !== 200 || !injRow || injRow.claim_channel === row.claim_channel,
+        `PROVEN: supplying claim_channel in the request body changes nothing — the call ${
+          injected.status === 200 ? `still answers "${injRow?.claim_channel}"` : `is refused outright (HTTP ${injected.status})`
+        }. The client's opinion of which channel it must prove is ignored, exactly as claim-application ignores it.`,
+        `NOT PROVEN: a client-supplied claim_channel changed the answer to ${JSON.stringify(injRow?.claim_channel)} (was ${JSON.stringify(row.claim_channel)}). A claimant who picks their own channel picks the one they have already proved, and the second-channel proof becomes a replay of the first.`,
+      );
+    }
+
+    // ANONYMOUS. Whatever the grants say, an anonymous caller must learn nothing.
+    const anon = await asClient("/rest/v1/rpc/get_my_pending_claim", {
+      method: "POST",
+      body: "{}",
+      label: "get_my_pending_claim (anon)",
+    });
+    const anonRows = Array.isArray(anon.body) ? anon.body : [];
+    claim(
+      anon.status !== 200 || anonRows.length === 0,
+      `PROVEN: an ANONYMOUS caller gets nothing from the RPC (HTTP ${anon.status}, ${anonRows.length} row(s)) — it keys on auth.uid(), which is null for them.`,
+      `NOT PROVEN: an anonymous caller received ${anonRows.length} pending claim(s): ${JSON.stringify(anon.body).slice(0, 300)}. Parked applications are readable without signing in at all.`,
+    );
+  });
+}
+
+/**
+ * S-LIVE-11 — NFR-COPY-1, asserted over EVERY byte a client was handed.
+ *
+ * A per-endpoint shape assertion proves one endpoint. This proves the rule: the
+ * sentinel was planted in a real application's `bio` before any client read
+ * anything, and it must appear ZERO times across every response any anon- or
+ * user-credentialed call received during this run. Service-role responses are
+ * excluded and the exclusion is stated, because the service key is how the
+ * sentinel got there.
+ */
+async function liveBioNeverReachesAClient() {
+  await runCase("S-LIVE-11", "live", "NFR-COPY-1: `bio` appears NOWHERE in the client-visible response corpus", async () => {
+    const corpus = clientVisibleCorpus();
+    const hits = corpus.filter((e) => e.text.includes(BIO_SENTINEL));
+    const planted = CORPUS.some((e) => e.credential === "service_role" && e.text.includes(BIO_SENTINEL));
+    claim(
+      corpus.length > 0,
+      `PROVEN: the corpus is real — ${corpus.length} response(s) received on an anon key or a user's own JWT were recorded and searched (service-role responses excluded, since the service key is what planted the sentinel).`,
+      "NOT PROVEN: no client-credentialed responses were recorded, so the corpus grep proves nothing at all.",
+    );
+    claim(
+      hits.length === 0,
+      `PROVEN: the sentinel planted in cohort_applications.bio appears 0 times across all ${corpus.length} client-visible responses. NFR-COPY-1 holds end to end: the applicant's 100-word essay never reached a client by ANY route this run exercised — not the whitelist RPC, not the table, not the claim endpoint, not the intake webhook.`,
+      `NOT PROVEN: the bio sentinel appears in ${hits.length} client-visible response(s): ${hits.map((h) => `${h.credential}:${h.label}`).join(", ")}. NFR-COPY-1 is categorical and this is a leak of the applicant's essay.`,
+    );
+    if (!planted) {
+      note(
+        "The sentinel was never observed in any service-role response either, so this run could not independently confirm the value was in the column. S-LIVE-10's plant assertion is the one to read.",
+      );
+    }
+  });
+}
+
 async function runLiveLane() {
   const prodRef = productionRef();
   if (prodRef && LIVE.url.includes(prodRef)) {
@@ -1962,6 +2914,15 @@ async function runLiveLane() {
   await liveCollisionDefers();
   await liveClaim();
   await liveEmailOtpParity();
+  // The authorisation surfaces. Ordered so the corpus grep runs LAST — it is a
+  // claim about everything that came before it, so anything appended after it
+  // would go unsearched.
+  await liveIntakeMintsNoLoginKey();
+  await liveIntakeGate();
+  await liveIntakePhonePromotion();
+  await liveNoLegacyClaimOnConfirm();
+  await livePendingClaimWhitelist();
+  await liveBioNeverReachesAClient();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2008,6 +2969,18 @@ function report(liveRan, liveMissing) {
         `The live lane did not run, so provisioning idempotency, both-identifier binding, collision deferral,\n` +
         `the claim, and email-OTP behaviour are UNPROVEN by this transcript. They are effects on auth.users and\n` +
         `cannot be established by reading source.\n` +
+        `NOR ARE THE AUTHORISATION SURFACES (S-LIVE-6..11), which is the sharpest gap in a static-only run:\n` +
+        `  • S-LIVE-6  the account-takeover regression — that no intake-provisioned identity carries the\n` +
+        `              applicant's number as a LOGIN KEY (find_login_identity must not resolve to it);\n` +
+        `  • S-LIVE-7  intake_provisioning_gate_ok() exists and anon/authenticated cannot execute it;\n` +
+        `  • S-LIVE-8  sync_intake_phone_on_confirm promotes the stashed number only on proof OF THAT NUMBER;\n` +
+        `  • S-LIVE-9  claim_legacy_enrolments_on_email_confirm is ABSENT (a removed entitlement-theft path);\n` +
+        `  • S-LIVE-10 get_my_pending_claim is a whitelist with a masked target and a server-derived channel,\n` +
+        `              the old claimants_read_pending_applications policy is gone, and a raw select=* by a\n` +
+        `              signed-in non-owner returns zero rows;\n` +
+        `  • S-LIVE-11 NFR-COPY-1: a sentinel planted in an applicant's bio appears in NO client response.\n` +
+        `Every one of those is a grant, a policy, a trigger or a payload — catalog and wire facts that no\n` +
+        `amount of reading source can establish. A static-only run says NOTHING about them.\n` +
         (liveMissing.length ? `Missing environment: ${liveMissing.join(", ")}\n` : "") +
         `Run without --static-only against a SHADOW project to produce the sign-off artifact.`,
     );
@@ -2026,6 +2999,7 @@ await staticClaimPredicate();
 await staticFrozenSurfaces();
 await staticProvisioningWiring();
 await staticNoSignupScreen();
+await staticAuthorisationSurfaces();
 
 const missing = liveReadiness();
 let liveRan = false;

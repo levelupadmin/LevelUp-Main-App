@@ -27,8 +27,10 @@ import { usePendingClaims, type PendingClaim } from "@/hooks/useClaimApplication
  * (S-2 stamps nothing when it cannot tell whose it is), so it is invisible to
  * the owned-row read below — `students_read_own_applications` only ever returns
  * rows already stamped with this uid. S-4's `usePendingClaims` is the discovery
- * read for exactly those rows (it runs against the additive RLS policy
- * `claimants_read_pending_applications`), and it is consumed here rather than
+ * read for exactly those rows (it calls the argument-free RPC
+ * `get_my_pending_claim()`, whose SELECT list is a whitelist: an id, the
+ * offering, the channel still to prove and a MASK — never the applicant's
+ * essay, raw submission or identifiers), and it is consumed here rather than
  * reimplemented. Without it `/claim/:applicationId` is unreachable from
  * anywhere in the app and a collided applicant never gets offered the claim.
  */

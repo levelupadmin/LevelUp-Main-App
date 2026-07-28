@@ -12,7 +12,8 @@
 -- migration is in five parts, and only the first is about the column:
 --
 --   1. `pending_claim` — the flag for the collisions intake refuses to resolve.
---   2. RLS so the CLAIMANT (and only the claimant) can find their parked row.
+--   2. A DISCOVERY RPC so the CLAIMANT (and only the claimant) can find their
+--      parked row — and learns from it only that it exists, never its contents.
 --   3. A gate on `claim_legacy_enrolments_for_user` so an unproven intake
 --      identity is granted NOTHING. Without it, provisioning is a paywall
 --      bypass (see part 3's header).
@@ -71,26 +72,27 @@ COMMENT ON COLUMN public.cohort_applications.pending_claim IS
   'phone_taken or cross_linked): user_id is deliberately NULL and the row '
   'awaits an interactive second-channel OTP claim (phase SP). Never merged.';
 
--- The claim path reads `WHERE pending_claim AND user_id IS NULL ORDER BY
--- created_at DESC` (src/hooks/useClaimApplication.ts) and passes NO identifier
--- — the matching is done by the policy below, against the caller's own stored
--- identity, so that the query surface is not an enumeration oracle. This index
--- is therefore built for THAT predicate and that ordering, and nothing else.
+-- The claim path scans `WHERE pending_claim AND user_id IS NULL ORDER BY
+-- created_at DESC` — inside `get_my_pending_claim()` (part 2), which the client
+-- calls with NO arguments at all. The matching is done in that function against
+-- the caller's own stored identity, so the query surface is not an enumeration
+-- oracle. This index is built for THAT predicate and that ordering, and nothing
+-- else.
 --
--- It is PARTIAL on exactly the two flags the query fixes, so it holds only the
--- vanishing fraction of rows that are actually parked; the policy's normalised
--- comparisons then run over that handful of rows rather than the table. (A
--- plain btree on the raw `(email, phone)` columns would be dead weight: the
--- policy compares `lower(btrim(email))` and `right(regexp_replace(phone, …),
--- 10)`, which no index on the raw columns can answer, and it ORs the two, which
--- no composite index can serve either.)
+-- It is PARTIAL on exactly the two flags the scan fixes, so it holds only the
+-- vanishing fraction of rows that are actually parked; the function's
+-- normalised comparisons then run over that handful of rows rather than the
+-- table. (A plain btree on the raw `(email, phone)` columns would be dead
+-- weight: the comparison is `lower(btrim(email))` and
+-- `right(regexp_replace(phone, …), 10)`, which no index on the raw columns can
+-- answer, and it ORs the two, which no composite index can serve either.)
 DROP INDEX IF EXISTS public.idx_cohort_apps_pending_claim;
 CREATE INDEX IF NOT EXISTS idx_cohort_apps_pending_claim
   ON public.cohort_applications (created_at DESC)
   WHERE pending_claim AND user_id IS NULL;
 
 -- ════════════════════════════════════════════════════════════════════════
--- 2. RLS — let the CLAIMANT see their own pending row, and nobody else's
+-- 2. DISCOVERY — the claimant learns their row EXISTS, and nothing else
 -- ════════════════════════════════════════════════════════════════════════
 --
 -- THE PROBLEM. `students_read_own_applications` is `user_id = auth.uid()`, and
@@ -99,20 +101,49 @@ CREATE INDEX IF NOT EXISTS idx_cohort_apps_pending_claim
 -- and S-4 cannot function. (`admin_manage_applications` is unaffected: admins
 -- already see every row. Neither existing policy is touched below.)
 --
--- THE CONSTRAINT. The match must be made on the caller's OWN identity as
--- recorded on `auth.users`, never on a value the client supplies — a policy
--- that took the email from the request would let anyone read any applicant's
--- name, phone, city and essay by guessing addresses. So the two helpers below
--- take NO arguments: they read `auth.users` for `auth.uid()` and return the
--- caller's own keys, normalised the same way `find_login_identity` normalises
--- them (lower/trimmed email; last-10 subscriber digits for phone). There is no
--- input to poison, and a caller invoking them directly learns only their own
--- email/phone, which they already know.
+-- WHY THIS IS NOT AN RLS POLICY, though an earlier revision of this file made it
+-- one (`claimants_read_pending_applications`, dropped at the end of this part).
+-- A permissive SELECT policy grants the WHOLE ROW, and `cohort_applications` is
+-- a WIDE table:
+--   • `bio` is the applicant's 100-word essay. NFR-COPY-1 is categorical — the
+--     essay text is never surfaced in any UI — and a policy that hands it to the
+--     client has already broken that before any component is written.
+--   • `tally_data` is the raw submission, essay included, plus every other
+--     answer the form ever collects.
+--   • `city` and `occupation` ride along too.
+-- The narrow `select=` list the client happened to send was never the gate: the
+-- POLICY is the gate, and any holder of a session could have asked PostgREST for
+-- `select=*` on the same rows instead.
+--
+-- And it granted all of that PRE-CLAIM, on a SINGLE-channel match. The entire
+-- premise of parking a collision is that we do NOT yet know the row is the
+-- caller's — that is why intake refused to stamp `user_id`. A caller who matched
+-- only on the phone could read the SUBMITTER's email, city, occupation and
+-- essay: precisely the disclosure the collision defer exists to prevent, handed
+-- over by the mechanism meant to resolve it.
+--
+-- THE REPLACEMENT is the shape phase DC uses for public admission reads: a
+-- SECURITY DEFINER function WHOSE SELECT LIST IS THE WHITELIST. There is no
+-- `select=*` against a function. It answers five values — the application id,
+-- its offering and title, the channel still to prove, and a MASK of that
+-- channel's target — and it can answer nothing else, because nothing else is
+-- named in it. No `bio`, no `tally_data`, no `city`, no `occupation`, and never
+-- a counterpart identifier in full.
+--
+-- THE CONSTRAINT ON MATCHING is unchanged and still the load-bearing one. The
+-- match must be made on the caller's OWN identity as recorded on `auth.users`,
+-- never on a value the client supplies — a function that took the email as an
+-- ARGUMENT would let anyone probe for any applicant by guessing addresses. So
+-- the two helpers below take NO arguments: they read `auth.users` for
+-- `auth.uid()` and return the caller's own keys, normalised the same way
+-- `find_login_identity` normalises them (lower/trimmed email; last-10 subscriber
+-- digits for phone). There is no input to poison, and a caller invoking them
+-- directly learns only their own email/phone, which they already know.
 --
 -- WHY SECURITY DEFINER AT ALL. `authenticated` has no SELECT on `auth.users`,
--- so an inline `EXISTS (SELECT 1 FROM auth.users …)` inside the policy would
--- fail with permission denied for every caller. STABLE so the planner
--- evaluates each once per statement rather than once per row.
+-- so an inline `EXISTS (SELECT 1 FROM auth.users …)` would fail with permission
+-- denied for every caller. STABLE so the planner evaluates each once per
+-- statement rather than once per row.
 --
 -- WHY NOT `auth.jwt() ->> 'email'`. It is cheaper, but it is a snapshot taken
 -- when the token was minted; a claimant whose email was attached during this
@@ -148,17 +179,14 @@ $$;
 REVOKE ALL ON FUNCTION public.auth_identity_email() FROM public;
 REVOKE ALL ON FUNCTION public.auth_identity_phone10() FROM public;
 
--- `anon` IS GRANTED ON PURPOSE. Supabase grants `anon` table-level SELECT on
--- public tables, so RLS is the only gate and EVERY permissive SELECT policy is
--- evaluated for an unauthenticated PostgREST read — including this one, whose
--- USING clause calls both helpers. Postgres does not guarantee that the
--- `auth.uid() IS NOT NULL` conjunct short-circuits ahead of two equal-cost
--- STABLE functions, so withholding EXECUTE would turn an anonymous read of
--- `cohort_applications` into a 42501 ("permission denied for function
--- auth_identity_email") instead of an empty array — and only once a
--- `pending_claim` row existed, i.e. a latent, data-dependent break.
--- Granting costs nothing: for `anon`, `auth.uid()` is NULL, both helpers match
--- no row and return NULL, and the policy is false regardless.
+-- `anon` KEEPS ITS GRANT. Nothing on the anonymous path calls these any more
+-- (the policy that did is dropped below, and `get_my_pending_claim()` is
+-- `authenticated`-only), so this is no longer load-bearing — but revoking it
+-- would be a permission change with no security value: for `anon`, `auth.uid()`
+-- is NULL, both helpers match no row and return NULL, so an anonymous caller
+-- learns exactly nothing by invoking them. Left granted so the helpers keep the
+-- shape any future RLS predicate would need, rather than reintroducing the
+-- latent, data-dependent 42501 that withholding EXECUTE used to cause.
 GRANT EXECUTE ON FUNCTION public.auth_identity_email() TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.auth_identity_phone10() TO anon, authenticated, service_role;
 
@@ -170,35 +198,154 @@ COMMENT ON FUNCTION public.auth_identity_phone10() IS
   'The CALLER''s own auth.users phone as last-10 subscriber digits (same key as '
   'find_login_identity). Argument-free by design; see auth_identity_email().';
 
--- ADDITIVE. Postgres ORs multiple permissive policies together, so this widens
--- SELECT by exactly one shape — a row that is BOTH pending and unclaimed AND
--- carries one of the caller's own identifiers — and changes nothing else.
-DROP POLICY IF EXISTS "claimants_read_pending_applications" ON public.cohort_applications;
+-- ── THE DISCOVERY FUNCTION ───────────────────────────────────────────────
+--
+-- WHAT EACH RETURNED VALUE IS FOR, and why nothing else is here:
+--   application_id — the claim route's parameter (`/claim/:applicationId`) and
+--                    the id the attach endpoint takes. Unavoidable, and it is
+--                    already an opaque uuid.
+--   offering_id    — so the applicant card can scope the offering it names.
+--   offering_title — so the card can say WHICH cohort ("Your application to X"),
+--                    which is public catalogue copy, not applicant data.
+--   claim_channel  — 'email' | 'phone': the channel the caller must still PROVE.
+--   masked_target  — a recognisable stub of that channel's target, so the user
+--                    knows which address/number to type. Never the value itself.
+--
+-- DERIVED, NEVER ACCEPTED. `claim_channel` is computed here from the caller's
+-- own `auth.users` row: it is the channel on the parked row their identity does
+-- NOT already match. It is not a parameter, and this function takes none. Asking
+-- a caller which channel they intend to prove is the replay
+-- `_shared/identity.ts#canClaim` warns about — proving a channel you ALREADY
+-- hold resolves a collision by asserting the very thing in doubt. (The attach
+-- endpoint re-derives it from the JWT before it trusts anything; this value is
+-- the UI's copy of that derivation, and it must agree with it.)
+--
+-- WHAT IS DELIBERATELY NOT RETURNED, and cannot be asked for:
+--   • `bio` — the 100-word essay (NFR-COPY-1: never in any UI, and this is the
+--     layer where "never" is actually enforceable);
+--   • `tally_data` — the raw submission, which contains the essay again;
+--   • `city`, `occupation`, `full_name`, `status`, and every other column;
+--   • the counterpart identifier IN FULL. A caller who matched on their phone
+--     gets `r•••@gmail.com`, not the address — enough to recognise their own,
+--     useless as a disclosure of somebody else's.
+--
+-- ROWS IT REFUSES TO RETURN AT ALL:
+--   • BOTH channels already the caller's — there is no channel left to prove, so
+--     no OTP could ever attach it. (The client used to compute this refusal
+--     itself; it is here now, where it is a property of the data rather than of
+--     a component.)
+--   • The second channel BLANK on the row — the `email_taken`-with-no-usable-
+--     phone case part 1 flags. Nothing to send a code to; it needs a human, and
+--     surfacing it would be a code entry that cannot succeed.
+--   • NEITHER channel matching the caller — i.e. everyone else's parked rows,
+--     which is the whole point.
+--
+-- SECURITY DEFINER because the body reads `auth.users` (through the helpers) and
+-- must see rows `students_read_own_applications` hides. STABLE, and search_path
+-- pinned, exactly as the helpers are.
+DROP FUNCTION IF EXISTS public.get_my_pending_claim();
 
-CREATE POLICY "claimants_read_pending_applications" ON public.cohort_applications
-  FOR SELECT USING (
-    pending_claim
-    AND user_id IS NULL
-    AND auth.uid() IS NOT NULL
+CREATE FUNCTION public.get_my_pending_claim()
+RETURNS TABLE (
+  application_id  uuid,
+  offering_id     uuid,
+  offering_title  text,
+  claim_channel   text,
+  masked_target   text
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+  WITH caller AS (
+    -- Zero rows for an anonymous caller, which makes the CROSS JOIN below empty
+    -- and the whole function return nothing — the `auth.uid() IS NOT NULL` gate,
+    -- expressed as a row count rather than a predicate that could be forgotten.
+    SELECT
+      public.auth_identity_email()   AS ident_email,
+      public.auth_identity_phone10() AS ident_phone10
+    WHERE auth.uid() IS NOT NULL
+  ),
+  parked AS (
+    SELECT
+      a.id          AS app_id,
+      a.offering_id AS app_offering_id,
+      a.created_at  AS app_created_at,
+      -- Lower/trimmed like `find_login_identity`, so the mask below is
+      -- deterministic for a given address however the form recorded its case.
+      NULLIF(lower(btrim(COALESCE(a.email, ''))), '') AS row_email,
+      NULLIF(regexp_replace(COALESCE(a.phone, ''), '\D', '', 'g'), '') AS row_digits,
+      -- The same two comparisons the dropped policy made, with the same
+      -- normalisation as `find_login_identity`.
+      (
+        NULLIF(btrim(COALESCE(a.email, '')), '') IS NOT NULL
+        AND c.ident_email IS NOT NULL
+        AND lower(btrim(a.email)) = c.ident_email
+      ) AS proven_email,
+      (
+        length(regexp_replace(COALESCE(a.phone, ''), '\D', '', 'g')) >= 10
+        AND c.ident_phone10 IS NOT NULL
+        AND right(regexp_replace(a.phone, '\D', '', 'g'), 10) = c.ident_phone10
+      ) AS proven_phone
+    FROM caller c
+    CROSS JOIN public.cohort_applications a
+    WHERE a.pending_claim
+      AND a.user_id IS NULL
+  )
+  SELECT
+    p.app_id          AS application_id,
+    p.app_offering_id AS offering_id,
+    o.title           AS offering_title,
+    -- Exactly one of the two is proven here (see the WHERE below), so the
+    -- unproven one is the channel to ask for.
+    (CASE WHEN p.proven_email THEN 'phone' ELSE 'email' END)::text AS claim_channel,
+    (CASE
+      WHEN p.proven_email
+        -- Last 4 subscriber digits, nothing before them. Enough to recognise a
+        -- number you own; useless for reconstructing one you do not.
+        THEN '••••••' || right(p.row_digits, 4)
+      WHEN position('@' IN p.row_email) > 1
+        -- First character + the domain: the shape people recognise their own
+        -- address by, with the local part gone.
+        THEN left(p.row_email, 1) || '•••@' || split_part(p.row_email, '@', 2)
+      -- No '@' to split on (an address this malformed cannot receive a code
+      -- anyway): still mask rather than return whatever is stored.
+      ELSE left(p.row_email, 1) || '•••'
+    END)::text AS masked_target
+  FROM parked p
+  LEFT JOIN public.offerings o ON o.id = p.app_offering_id
+  WHERE
+    -- Exactly one channel proven: not zero (not the caller's row) and not both
+    -- (nothing left to prove).
+    (p.proven_email <> p.proven_phone)
+    -- ...and the OTHER channel is actually present, or no code could be sent.
     AND (
-      (
-        NULLIF(btrim(COALESCE(email, '')), '') IS NOT NULL
-        AND public.auth_identity_email() IS NOT NULL
-        AND lower(btrim(email)) = public.auth_identity_email()
-      )
-      OR
-      (
-        length(regexp_replace(COALESCE(phone, ''), '\D', '', 'g')) >= 10
-        AND public.auth_identity_phone10() IS NOT NULL
-        AND right(regexp_replace(phone, '\D', '', 'g'), 10) = public.auth_identity_phone10()
-      )
+      (p.proven_email AND length(p.row_digits) >= 10)
+      OR (p.proven_phone AND p.row_email IS NOT NULL)
     )
-  );
+  ORDER BY p.app_created_at DESC
+$$;
 
-COMMENT ON POLICY "claimants_read_pending_applications" ON public.cohort_applications IS
-  'Discovery only: a signed-in user may SELECT an unclaimed pending_claim row '
-  'that carries their own auth.users email or phone. Attaching it (stamping '
+REVOKE ALL ON FUNCTION public.get_my_pending_claim() FROM public;
+GRANT EXECUTE ON FUNCTION public.get_my_pending_claim() TO authenticated;
+
+COMMENT ON FUNCTION public.get_my_pending_claim() IS
+  'Discovery for the interactive claim (phase SP / S-4): the unclaimed '
+  'pending_claim rows carrying ONE of the signed-in caller''s own auth.users '
+  'identifiers, as (application_id, offering_id, offering_title, claim_channel, '
+  'masked_target) and nothing else. The SELECT list IS the whitelist — bio (the '
+  '100-word essay, NFR-COPY-1), tally_data, city, occupation and the raw '
+  'counterpart identifier are unreachable through it. claim_channel is DERIVED '
+  'from the caller''s own identity, never passed in. Attaching a row (stamping '
   'user_id) stays a service_role write behind a second-channel OTP.';
+
+-- THE POLICY THIS REPLACES. `claimants_read_pending_applications` granted
+-- whole-row SELECT on a wide table to any signed-in caller matching on ONE
+-- channel — see the header above. Dropped unconditionally: `IF EXISTS` makes
+-- this safe on a database that never had it, and dropping it is the only reason
+-- the function above is a fix rather than a second door.
+DROP POLICY IF EXISTS "claimants_read_pending_applications" ON public.cohort_applications;
 
 -- ════════════════════════════════════════════════════════════════════════
 -- 3. THE GATE — an unproven intake identity is granted NOTHING
@@ -445,123 +592,175 @@ CREATE TRIGGER auth_users_sync_confirmed_phone
   EXECUTE FUNCTION public.sync_confirmed_phone_to_users();
 
 -- ════════════════════════════════════════════════════════════════════════
--- 5. THE EMAIL-KEYED CLAIM, ONCE THE EMAIL IS ACTUALLY CONFIRMED
+-- 5. THE EMAIL-KEYED CLAIM — DELIBERATELY NOT SHIPPED
 -- ════════════════════════════════════════════════════════════════════════
 --
--- WHY THIS EXISTS. Part 3's gate is worthless as a promise unless something
--- re-drives the claim after the gate lifts, and for the EMAIL arm nothing does:
--- `claim_legacy_enrolments_for_user` only allows email-keyed claims when
--- `TG_OP = 'INSERT'`, and that INSERT — `handle_new_user` mirroring the row —
--- is the exact event the gate returns early from. Every later firing is an
--- UPDATE, where `v_email_claims_ok` is false. So without this part, a paying
--- TagMango customer who applies through Tally is suppressed once and never
--- reconsidered: they sign in, prove their email, and still receive nothing.
+-- An earlier revision of this migration added
+-- `claim_legacy_enrolments_on_email_confirm()`, an AFTER UPDATE OF
+-- email_confirmed_at trigger that ran the email-keyed legacy claim for
+-- intake-tagged identities. IT IS REMOVED. Do not reinstate it without
+-- reading this note.
 --
--- WHAT IT DOES. Exactly one thing, for exactly the rows part 3 suppressed: when
--- `email_confirmed_at` first lands on an auth row tagged
--- `levelup_unverified_intake`, run the email-keyed half of the claim for that
--- user. No other row reaches it (every other path already ran its email claim
--- on the INSERT), and it can only ever run once per user, because it fires on
--- the NULL -> NOT NULL transition.
+-- ITS OWN DEFENCE WAS THE BUG. That revision argued the trigger only matched
+-- the bar the shipped signup path already used — Signup.tsx proves a phone,
+-- types an email, and `handle_new_user`'s INSERT claims that email's legacy
+-- rows — so restoring the behaviour for intake identities lowered nothing.
 --
--- THE SECURITY LINE IT DOES NOT CROSS. `email_confirmed_at` is not proof that
--- the applicant typed their own address: GoTrue stamps it when a magiclink is
--- redeemed, and verify-msg91-otp mints magiclinks after a PHONE OTP. So the bar
--- this clears is "somebody proved a channel on this identity", not "somebody
--- proved this email". That is deliberately the SAME bar the shipped signup path
--- has always used — Signup.tsx proves a phone, types an email, and
--- `handle_new_user`'s INSERT claims that email's legacy rows on the spot. This
--- part restores parity for intake identities; it does not lower the bar, and
--- the gate still blocks the genuinely new case this phase introduced (a form
--- submission with NO OTP anywhere, which is what would otherwise have handed a
--- stranger's catalogue away for free). Raising the bar for BOTH paths — claim
--- only on a channel that was actually proven — is a real improvement and a
--- separate task; doing it here for one path only would leave the two
--- disagreeing.
+-- THAT PARITY CLAIM IS FALSE, and it was checked against production rather
+-- than reasoned about (2026-07-28, project ivkvluezuiojovpotlyb):
+--   • The live `claim_legacy_enrolments_for_user` inserts
+--     `source = 'tagmango_migration'`. `enrolments_source_check` accepts only
+--     (checkout, admin_grant, admin_manual, bulk_import, migration, manual,
+--     import, free). `enrolments.offering_id` is NOT NULL and the live body
+--     carries no `offering_id IS NOT NULL` filter.
+--   • It is an AFTER trigger with no EXCEPTION handler, so ANY match raises
+--     and ABORTS the transaction. The shipped signup path therefore grants
+--     nothing at all — it fails closed, loudly, and has since 2026-06-11.
+--   • Measured: signups since 2026-04 whose phone matches an unclaimed
+--     legacy row = 0, 0, 0 by month, against 7 / 139 / 102 that match none.
+--     Zero legacy customers have completed signup in three months.
 --
--- Written fresh rather than reproduced: it carries `source = 'migration'` (the
--- value `enrolments_source_check` accepts — see 20260603120000) and the
--- `offering_id IS NOT NULL` filter from 20260524180000, because a pending
--- legacy row has no offering yet and inserting NULL would raise. It swallows
--- every error: this runs inside GoTrue's auth transaction, and a raise here
--- would surface as an opaque login failure.
+-- So the "existing" email-keyed claim is not a precedent — it is an outage.
+-- The removed trigger was written correctly (valid `source`, the
+-- `offering_id IS NOT NULL` filter, an EXCEPTION handler), which is precisely
+-- what made it dangerous: it would have been the FIRST WORKING email-keyed
+-- claim on an address nobody proved. `email_confirmed_at` is not email proof —
+-- GoTrue stamps it on any magiclink redemption, and verify-msg91-otp mints a
+-- magiclink after a PHONE OTP (index.ts mintSession → generateLink +
+-- verifyOtp). The full chain was: submit this form with {a paying customer's
+-- address, your own number} → one OTP on your own number → their entire
+-- unclaimed catalogue, with `claimed_by_user_id` stamped so they can never
+-- recover it. Shipping a gate (part 3) and its bypass in one file is not a
+-- defensible state.
+--
+-- WHAT REPLACES IT. Nothing here. Claiming on PROOF belongs to the
+-- claim-at-verified-sign-in work (branch feat/student-entitlements,
+-- 20260727220000_claim_at_signin.sql), which deletes the signup-time claim
+-- outright and re-drives it from a confirmed phone. That is the correct layer:
+-- one claim path, gated on a channel the server itself confirmed, rather than
+-- two paths disagreeing about what counts as proof.
+--
+-- THE ACCEPTED COST, stated plainly: an intake-provisioned identity that is
+-- also a legacy customer receives no automatic entitlement until that work
+-- lands. A stuck entitlement is recoverable by a scripted claim; a stolen one,
+-- with `claimed_by_user_id` stamped, is not.
 
-CREATE OR REPLACE FUNCTION public.claim_legacy_enrolments_on_email_confirm()
+-- ════════════════════════════════════════════════════════════════════════
+-- 6. THE DEPLOY-ORDER PROBE
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- `tally-application-poll` is a LIVE cron function. If it is deployed before
+-- this migration is applied, it mints intake-tagged auth users while part 3's
+-- gate does not yet exist — and the email-keyed claim in
+-- `claim_legacy_enrolments_for_user` then runs on an address nobody proved and
+-- stamps `claimed_by_user_id` PERMANENTLY. That is the one irreversible step in
+-- the whole sequence, and "apply the migration first" is a runbook line, not a
+-- control.
+--
+-- This is the control. The poller calls this RPC once per invocation and mints
+-- NOTHING unless it returns true. It exists only in this migration, so a
+-- missing function (PGRST202) and an erroring one are the same answer — the
+-- probe fails CLOSED, and applications still insert unlinked, which is the
+-- recoverable outcome.
+
+CREATE OR REPLACE FUNCTION public.intake_provisioning_gate_ok()
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+AS $$ SELECT true $$;
+
+REVOKE ALL ON FUNCTION public.intake_provisioning_gate_ok() FROM public;
+GRANT EXECUTE ON FUNCTION public.intake_provisioning_gate_ok() TO service_role;
+
+COMMENT ON FUNCTION public.intake_provisioning_gate_ok() IS
+  'Existence probe, service_role only. Returns true iff '
+  '20260727120000_cohort_applications_pending_claim.sql is applied, which is '
+  'what tells tally-application-poll that part 3''s gate is in place and it is '
+  'safe to mint an intake identity. Deliberately trivial: the ANSWER is its '
+  'existence, not its body.';
+
+-- ════════════════════════════════════════════════════════════════════════
+-- 4a. PROMOTE THE STASHED INTAKE PHONE — ONLY ONCE IT IS PROVEN
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- The poller stashes the applicant's number in
+-- `app_metadata.levelup_intake_phone` and NEVER writes `auth.users.phone`,
+-- because that column is the phone-OTP login key: `find_login_identity`
+-- (20260603120000) matches it on the last 10 digits with no
+-- `phone_confirmed_at` predicate, so an unproven value there lets a form
+-- submission bind a stranger's number to an account the submitter controls.
+--
+-- This promotes the stash onto the real column at the only moment it is safe:
+-- when a `phone_confirmed_at` lands on THIS row, i.e. the holder has actually
+-- passed an OTP on that number. Within-row by construction — it never looks up
+-- another row's metadata, so confirming a number can only ever promote it onto
+-- the identity that just proved it.
+
+CREATE OR REPLACE FUNCTION public.sync_intake_phone_on_confirm()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, auth
 AS $$
+DECLARE
+  v_stash text;
 BEGIN
-  -- Only identities minted by unauthenticated intake. Everyone else already
-  -- had their email-keyed claim on the public.users INSERT.
-  IF COALESCE(NEW.raw_app_meta_data ->> 'levelup_unverified_intake', '') <> 'true' THEN
+  v_stash := NULLIF(btrim(COALESCE(NEW.raw_app_meta_data ->> 'levelup_intake_phone', '')), '');
+  IF v_stash IS NULL THEN
     RETURN NEW;
   END IF;
 
-  -- One enrolment per DISTINCT resolved offering — 20260603120000's shape,
-  -- because two legacy rows mapping to ONE offering would otherwise trip
-  -- enrolments_unique_active and (here) lose the whole claim to the handler.
-  INSERT INTO public.enrolments (user_id, offering_id, payment_order_id, status, source)
-  SELECT NEW.id, x.offering_id, NULL, 'active', 'migration'
-  FROM (
-    SELECT DISTINCT le.offering_id
-    FROM public.legacy_enrolments le
-    WHERE le.claimed_by_user_id IS NULL
-      AND le.offering_id IS NOT NULL
-      AND le.email = NEW.email
-      AND NOT EXISTS (
-        SELECT 1 FROM public.enrolments e
-        WHERE e.user_id = NEW.id AND e.offering_id = le.offering_id
-      )
-  ) x
-  ON CONFLICT DO NOTHING;
+  -- Only when the number just proven IS the stashed one. A different confirmed
+  -- number means the applicant proved something else; the stash stays inert
+  -- rather than overwriting a proven value with an unproven one.
+  IF right(regexp_replace(COALESCE(NEW.phone, ''), '\D', '', 'g'), 10)
+     IS DISTINCT FROM right(regexp_replace(v_stash, '\D', '', 'g'), 10) THEN
+    RETURN NEW;
+  END IF;
 
-  UPDATE public.legacy_enrolments le
-  SET claimed_by_user_id = NEW.id,
-      claimed_at = now()
-  WHERE le.claimed_by_user_id IS NULL
-    AND le.offering_id IS NOT NULL
-    AND le.email = NEW.email;
+  -- Proven and matching: the stash has done its job. Clear it so this can never
+  -- re-fire, and so no unproven value lingers in metadata.
+  UPDATE auth.users u
+  SET raw_app_meta_data = COALESCE(u.raw_app_meta_data, '{}'::jsonb) - 'levelup_intake_phone'
+  WHERE u.id = NEW.id;
 
   RETURN NEW;
 
 EXCEPTION WHEN OTHERS THEN
-  -- Never abort the auth transaction over an entitlement grant. The sign-in
-  -- succeeds; the claim can be re-run by hand.
+  -- Never abort the auth transaction over a metadata tidy-up.
   RETURN NEW;
 END;
 $$;
 
-COMMENT ON FUNCTION public.claim_legacy_enrolments_on_email_confirm() IS
-  'Runs the email-keyed legacy-entitlement claim for an intake-provisioned '
-  'identity when its email is first confirmed — the claim '
-  'claim_legacy_enrolments_for_user suppressed at INSERT and, being INSERT-only, '
-  'would otherwise never retry. Intake-tagged rows only; never raises.';
+COMMENT ON FUNCTION public.sync_intake_phone_on_confirm() IS
+  'Retires app_metadata.levelup_intake_phone once GoTrue has confirmed that '
+  'same number on the same row. The phone is never written to auth.users.phone '
+  'by intake; GoTrue itself owns that column, and this only clears the stash '
+  'so an unproven number does not linger. Never raises into auth.';
 
-DROP TRIGGER IF EXISTS auth_users_claim_legacy_on_email_confirm ON auth.users;
-CREATE TRIGGER auth_users_claim_legacy_on_email_confirm
-  AFTER UPDATE OF email_confirmed_at ON auth.users
+DROP TRIGGER IF EXISTS auth_users_sync_intake_phone ON auth.users;
+CREATE TRIGGER auth_users_sync_intake_phone
+  AFTER UPDATE OF phone_confirmed_at ON auth.users
   FOR EACH ROW
-  WHEN (
-    OLD.email_confirmed_at IS NULL
-    AND NEW.email_confirmed_at IS NOT NULL
-    AND NEW.email IS NOT NULL
-  )
-  EXECUTE FUNCTION public.claim_legacy_enrolments_on_email_confirm();
+  WHEN (OLD.phone_confirmed_at IS NULL AND NEW.phone_confirmed_at IS NOT NULL)
+  EXECUTE FUNCTION public.sync_intake_phone_on_confirm();
 
 -- Reload PostgREST's schema cache so the new column and helpers are visible to
 -- the typed client immediately after `db push`, rather than on the next restart.
 NOTIFY pgrst, 'reload schema';
 
 -- ── Reversal (kept for reference; do not run in the forward migration) ──
--- DROP TRIGGER IF EXISTS auth_users_claim_legacy_on_email_confirm ON auth.users;
--- DROP FUNCTION IF EXISTS public.claim_legacy_enrolments_on_email_confirm();
+-- DROP TRIGGER IF EXISTS auth_users_sync_intake_phone ON auth.users;
+-- DROP FUNCTION IF EXISTS public.sync_intake_phone_on_confirm();
+-- DROP FUNCTION IF EXISTS public.intake_provisioning_gate_ok();
 -- DROP TRIGGER IF EXISTS auth_users_sync_confirmed_phone ON auth.users;
 -- DROP FUNCTION IF EXISTS public.sync_confirmed_phone_to_users();
 -- (claim_legacy_enrolments_for_user: re-apply the body from
 --  20260611130000_unbrick_onboarding_for_shipped_clients.sql to drop the gate.)
--- DROP POLICY IF EXISTS "claimants_read_pending_applications" ON public.cohort_applications;
+-- DROP FUNCTION IF EXISTS public.get_my_pending_claim();
+-- (`claimants_read_pending_applications` needs NOTHING here: the forward
+--  migration DROPs it and never creates it, so there is nothing to undo. Do not
+--  "restore" it — it is the whole-row leak this file replaced.)
 -- DROP FUNCTION IF EXISTS public.auth_identity_email();
 -- DROP FUNCTION IF EXISTS public.auth_identity_phone10();
 -- DROP INDEX IF EXISTS public.idx_cohort_apps_pending_claim;

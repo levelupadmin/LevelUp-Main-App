@@ -13,19 +13,31 @@
  * of that path.
  *
  * ── WHAT THIS TALKS TO ──
- *  1. DISCOVERY — a plain SELECT on `cohort_applications`, made possible by
- *     S-2's additive RLS policy `claimants_read_pending_applications`
- *     (20260727120000): a signed-in caller may read an unclaimed
- *     `pending_claim` row that carries THEIR OWN `auth.users` email or phone.
- *     The match happens inside the policy, on the caller's stored identity, so
- *     nothing here may filter by a client-supplied email/phone — that would be
- *     an enumeration hole, and it would not widen what comes back anyway.
- *  2. SECOND-CHANNEL DERIVATION — which channel still needs proof is derived
- *     here purely for the UI: the row channel the caller's own auth identity
- *     does NOT already match. `_shared/identity.ts#canClaim` explicitly cannot
- *     tell a second-channel proof from a replay of the first, so the SERVER
- *     re-derives this from the JWT before it trusts anything. Everything below
- *     is a UX affordance, never the gate.
+ *  1. DISCOVERY — the argument-free RPC `get_my_pending_claim()`
+ *     (20260727120000). It answers the parked rows carrying ONE of the
+ *     signed-in caller's own `auth.users` identifiers, as five values and
+ *     nothing else: application id, offering id, offering title, the channel
+ *     still to prove, and a MASK of that channel's target.
+ *
+ *     IT IS AN RPC RATHER THAN A TABLE READ ON PURPOSE, and this file used to
+ *     do the latter. `cohort_applications` is wide — `bio` is the applicant's
+ *     100-word essay (NFR-COPY-1: never in any UI) and `tally_data` is the raw
+ *     submission — and the RLS policy that made the table read possible granted
+ *     the WHOLE ROW to any caller matching on ONE channel, pre-claim. The
+ *     narrow `select=` list this file sent was never the gate; the policy was,
+ *     and `select=*` was one request away. The RPC's SELECT list IS the
+ *     whitelist, so no applicant PII can reach this client at all.
+ *
+ *     It takes NO arguments: the matching happens server-side against the
+ *     caller's own stored identity, so there is nothing here to filter by and
+ *     no enumeration surface to open.
+ *  2. SECOND-CHANNEL DERIVATION — which channel still needs proof is DERIVED BY
+ *     THE SERVER (`claim_channel`), from the caller's own auth row: the row
+ *     channel their identity does NOT already match. It is never sent to the
+ *     server, only received. `_shared/identity.ts#canClaim` explicitly cannot
+ *     tell a second-channel proof from a replay of the first, so the attach
+ *     endpoint re-derives it from the JWT before it trusts anything; what
+ *     arrives here is that same derivation, for the UI to render.
  *  3. ATTACH + the claim's own code send — `functions.invoke("claim-application")`
  *     (`supabase/functions/claim-application/index.ts`), called with the
  *     caller's JWT:
@@ -44,9 +56,9 @@
  *  4. EMAIL SIGN-IN — `verify-email-otp` (S-3), used only by the Login tab:
  *     `{ action: "send", email }` then `{ action: "verify", email, code }`.
  *
- * Every read here is fail-soft: if the policy or the function is missing (the
- * server half not deployed yet), discovery resolves to an empty list and NO
- * claim step is ever surfaced. Sign-in is unaffected either way.
+ * Every read here is fail-soft: if the discovery RPC or the claim function is
+ * missing (the server half not deployed yet), discovery resolves to an empty
+ * list and NO claim step is ever surfaced. Sign-in is unaffected either way.
  *
  * ── WHAT SURFACES IT ──
  * `usePendingClaims`, read by S-5's applicant card on Home, which links to
@@ -57,8 +69,10 @@
  * That distinction is load-bearing, and it is why this file no longer exports a
  * "route the user to the claim right after login" helper. A parked row can be
  * created by ANYONE who posts a stranger's email address into the public Tally
- * form (the `email_taken` collision is exactly that case), and RLS then makes
- * that row discoverable by the stranger. A detour would let an attacker replace
+ * form (the `email_taken` collision is exactly that case), and discovery then
+ * makes that row's EXISTENCE known to the stranger (its contents stay on the
+ * server — that is what the RPC's whitelist is for). A detour would let an
+ * attacker replace
  * a real user's landing page with a claim interstitial, at every sign-in,
  * forever, for an application that user never made. A card on Home costs the
  * same one read, is dismissible, and cannot be weaponised that way. It also
@@ -92,6 +106,13 @@ export const claimRoute = (applicationId: string) => `/claim/${applicationId}`;
 
 /** Privileged claim endpoint (see the contract note above). */
 const CLAIM_FUNCTION = "claim-application";
+
+/**
+ * Discovery RPC (migration 20260727120000). Argument-free, `authenticated`-only,
+ * and its SELECT list is the whitelist — see the header. Named here so the one
+ * string that binds this client to that migration is greppable from both sides.
+ */
+const PENDING_CLAIM_RPC = "get_my_pending_claim";
 
 /** Everything the claim endpoint ever says on success. */
 type ClaimResponse = { claimed?: boolean; status?: string } | null;
@@ -127,9 +148,16 @@ export interface PendingClaim {
   applicationId: string;
   offeringId: string | null;
   offeringTitle: string | null;
-  /** The SECOND channel the caller must verify to attach this row. */
+  /**
+   * The SECOND channel the caller must verify to attach this row, as derived
+   * SERVER-SIDE from their own auth identity. Never computed here, never sent.
+   */
   channel: ClaimChannel;
-  /** Masked hint for that channel, never the full value. */
+  /**
+   * The server's mask for that channel's target ("r•••@gmail.com",
+   * "••••••3210") — enough to recognise your own value, never the value. The
+   * raw address/number is not returned to this client at all.
+   */
   maskedTarget: string | null;
 }
 
@@ -325,120 +353,61 @@ export async function verifyEmailOtpForSession(
   }
 }
 
-// ── Identity keys ── the same normalisation `_shared/identity.ts` uses, so a
-// row storing "9788385577" and an auth identity of "+91 97883 85577" compare
-// equal. Inlined (not imported) for the same reason that module is import-free:
-// this is four lines of string handling, not a dependency.
-const emailKey = (value: string | null | undefined): string | null => {
-  const v = (value ?? "").trim().toLowerCase();
-  return v.length > 0 ? v : null;
-};
-
-const phoneKey = (value: string | null | undefined): string | null => {
-  const digits = (value ?? "").replace(/\D/g, "");
-  return digits.length >= 10 ? digits.slice(-10) : null;
-};
-
-/** "anu@example.com" → "a•••@example.com". Display only. */
-const maskEmail = (value: string): string => {
-  const [local, domain] = value.trim().split("@");
-  if (!domain) return value.trim();
-  return `${local.slice(0, 1)}•••@${domain}`;
-};
-
-/** "+919788385577" → "+91 ••••• ••577". Display only (mirrors OtpEntryStep). */
-const maskPhone = (value: string): string => {
-  const digits = value.replace(/\D/g, "");
-  if (digits.length < 6) return value.trim();
-  const cc = digits.length > 10 ? `+${digits.slice(0, digits.length - 10)}` : "+91";
-  return `${cc} ••••• ••${digits.slice(-3)}`;
-};
-
-/** The shape discovery reads off `cohort_applications`. */
-interface PendingClaimRow {
-  id: string;
+/**
+ * One row of `get_my_pending_claim()`. This IS the whole surface the server
+ * exposes for discovery — there is no applicant PII in it and no way to ask for
+ * any (see the header's note on why this is an RPC and not a table read).
+ */
+interface PendingClaimRpcRow {
+  application_id: string | null;
   offering_id: string | null;
-  email: string | null;
-  phone: string | null;
-  offerings?: { title: string | null } | null;
-}
-
-/** The caller's own identity, as stored on their auth user. */
-export interface CallerIdentity {
-  email: string | null;
-  phone: string | null;
+  offering_title: string | null;
+  claim_channel: string | null;
+  masked_target: string | null;
 }
 
 /**
- * Which channel this caller still has to prove for this row — i.e. the row
- * channel their OWN auth identity does not already match.
+ * The server's `claim_channel`, validated rather than trusted-as-typed.
  *
- * Returns null (nothing claimable in-flow) when:
- *   • the second channel is blank on the row, so no OTP could ever satisfy
- *     `canClaim` for it, or
- *   • neither channel matches the caller, which RLS should already prevent, or
- *   • BOTH channels already match the caller. That last one looks like the
- *     easiest case and is in fact the one case this screen must refuse: there
- *     is no channel left that the caller has NOT proved, and the server
- *     re-derives the unproven channel from the JWT before it trusts anything
- *     (`_shared/identity.ts#canClaim`'s warning is explicit that asking for a
- *     channel the caller already holds is the replay that defeats the collision
- *     defer). Rendering an OTP step here would be a code entry that cannot
- *     succeed no matter what the user types. Nothing is lost by returning null:
- *     the row is untouched and still parked.
+ * Not defensiveness for its own sake: the RPC is a Postgres `text` column, and
+ * a client that runs ahead of (or behind) the migration could be handed a value
+ * this build has no UI for. An unknown channel drops the row from discovery
+ * rather than rendering a step that cannot complete.
  */
-export function deriveClaimChannel(
-  row: Pick<PendingClaimRow, "email" | "phone">,
-  caller: CallerIdentity,
-): { channel: ClaimChannel; maskedTarget: string | null } | null {
-  const rowEmail = emailKey(row.email);
-  const rowPhone = phoneKey(row.phone);
-  const provenEmail = rowEmail !== null && rowEmail === emailKey(caller.email);
-  const provenPhone = rowPhone !== null && rowPhone === phoneKey(caller.phone);
-
-  if (provenEmail && provenPhone) return null;
-  if (provenEmail && rowPhone) {
-    return { channel: "phone", maskedTarget: maskPhone(row.phone as string) };
-  }
-  if (provenPhone && rowEmail) {
-    return { channel: "email", maskedTarget: maskEmail(row.email as string) };
-  }
-  return null;
-}
+const asClaimChannel = (value: string | null): ClaimChannel | null =>
+  value === "email" || value === "phone" ? value : null;
 
 /** Query key root, shared so any consumer can invalidate the discovery read. */
 export const pendingClaimsKey = (userId?: string) => ["claim", "pending", userId] as const;
 
 /**
  * The discovery read itself, kept separate from the hook that wraps it so the
- * query and the channel derivation are defined once and stay testable without a
+ * call and its projection are defined once and stay testable without a
  * QueryClient.
  *
- * Never throws and never rejects: an error, a policy that isn't deployed yet,
- * or no session all resolve to `[]`.
+ * Argument-free, because the server matches on the caller's own stored identity
+ * (`auth_identity_email()` / `auth_identity_phone10()`): there is nothing to
+ * pass, and passing an email/phone would only open an enumeration surface.
+ *
+ * Never throws and never rejects: an error, an RPC that isn't deployed yet
+ * (PGRST202), or no session all resolve to `[]`. The ordering (newest parked row
+ * first) is the RPC's, so one consumer taking `[0]` gets the same row every
+ * time.
  */
-export async function fetchPendingClaims(caller: CallerIdentity): Promise<PendingClaim[]> {
+export async function fetchPendingClaims(): Promise<PendingClaim[]> {
   try {
-    // No identifier filter on purpose: `claimants_read_pending_applications`
-    // does the matching against the caller's own auth.users row. Passing an
-    // email/phone here would add an enumeration surface and nothing else.
-    const { data, error } = await supabase
-      .from("cohort_applications")
-      .select("id, offering_id, email, phone, offerings(title)")
-      .eq("pending_claim", true)
-      .is("user_id", null)
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.rpc(PENDING_CLAIM_RPC);
     if (error || !data) return [];
 
-    return (data as PendingClaimRow[]).reduce<PendingClaim[]>((acc, row) => {
-      const derived = deriveClaimChannel(row, caller);
-      if (!derived) return acc;
+    return (data as PendingClaimRpcRow[]).reduce<PendingClaim[]>((acc, row) => {
+      const channel = asClaimChannel(row.claim_channel);
+      if (!row.application_id || !channel) return acc;
       acc.push({
-        applicationId: row.id,
+        applicationId: row.application_id,
         offeringId: row.offering_id ?? null,
-        offeringTitle: row.offerings?.title ?? null,
-        channel: derived.channel,
-        maskedTarget: derived.maskedTarget,
+        offeringTitle: row.offering_title ?? null,
+        channel,
+        maskedTarget: row.masked_target ?? null,
       });
       return acc;
     }, []);
@@ -463,14 +432,15 @@ export async function fetchPendingClaims(caller: CallerIdentity): Promise<Pendin
  */
 export function usePendingClaims() {
   const { user } = useAuth();
-  const identityEmail = user?.email ?? null;
-  const identityPhone = user?.phone ?? null;
 
   return useQuery<PendingClaim[]>({
     queryKey: pendingClaimsKey(user?.id),
     enabled: !!user,
     staleTime: 60_000,
-    queryFn: () => fetchPendingClaims({ email: identityEmail, phone: identityPhone }),
+    // No identity is passed: the RPC reads the caller's own auth row. The key is
+    // still scoped by uid so a sign-out/sign-in cannot serve the previous
+    // user's answer from cache.
+    queryFn: fetchPendingClaims,
   });
 }
 
