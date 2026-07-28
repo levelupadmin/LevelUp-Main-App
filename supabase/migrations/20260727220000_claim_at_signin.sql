@@ -58,6 +58,27 @@
 --       claim is idempotent and runs on every sign-in, so nothing is lost —
 --       only deferred to the moment the phone is actually proven.
 --
+--   (c) THE CONFIRMED-PHONE GATE IS NOT GUARANTEED BY THE SIGN-IN PATH ITSELF.
+--       verify-msg91-otp sets phone_confirm:true only on the branches that
+--       CREATE or repair an account (index.ts:266-272 and the email-collision
+--       branch at :288-292). The EXISTING-USER branch (index.ts:187-200) mints
+--       a session via mintSession and returns without ever calling
+--       updateUserById({ phone_confirm: true }), and the lookup it uses,
+--       find_login_identity (20260603120000_legacy_login_fix.sql:82-88),
+--       matches purely on the last 10 digits of auth.users.phone with NO
+--       phone_confirmed_at filter. So an auth row with a phone set and
+--       phone_confirmed_at NULL — precisely what signInWithOtp({ phone })
+--       mints, the path the granter's comment below calls one deploy away from
+--       live — would take that branch, get a valid session, and then claim
+--       NOTHING here, forever, with no error surfaced. Measured zero such rows
+--       today (242 auth phones set, 0 unconfirmed), so this is LATENT, not
+--       live, and it fails CLOSED (a real owner claims nothing; nobody claims
+--       someone else's purchases). The fix belongs in the auth path, not here:
+--       filed as a follow-up to add `AND phone_confirmed_at IS NOT NULL` to
+--       find_login_identity, or to confirm the phone on the existing-user
+--       branch after MSG91 verification. Do not weaken the gate below to
+--       compensate — that would reintroduce asserted-phone claiming.
+--
 -- Additive, idempotent (CREATE OR REPLACE), reversible (undo at the foot of
 -- this file), and contains NO `RAISE EXCEPTION` — it must never abort a
 -- `db push`, and nothing it installs may ever abort a signup or a sign-in.
@@ -100,8 +121,13 @@ COMMENT ON FUNCTION public.claim_legacy_enrolments_for_user() IS
 --
 -- Why each gate is the right one HERE, having been wrong at signup:
 --   * phone_confirmed_at IS NOT NULL — inert at signup because GoTrue confirms
---     in a later UPDATE (242/242 measured), but by sign-in time confirmation
---     has long since happened, so it is exactly the ownership proof we need.
+--     in a later UPDATE (242/242 measured), but on the account-creating and
+--     account-repairing MSG91 branches confirmation happens as part of
+--     verification (phone_confirm:true, index.ts:266-272 / :288-292), so by
+--     sign-in time it is exactly the ownership proof we need. It is NOT
+--     universally guaranteed by the sign-in path — see item (c) above for the
+--     existing-user branch, which is a latent, fail-closed gap tracked as a
+--     follow-up, not a reason to weaken this predicate.
 --   * public.users.deleted_at IS NULL — soft-delete NULLs the public.users
 --     phone/email but PRESERVES auth.users.phone (11 of 11 soft-deleted users
 --     still carry one), and `cleanup_deleted_users` is NOT scheduled (prod has
@@ -113,8 +139,8 @@ COMMENT ON FUNCTION public.claim_legacy_enrolments_for_user() IS
 --     73,926 rows: it would look like a clean success and grant nothing.
 --
 -- Idempotent: rows it grants are stamped claimed, and the enrolment INSERT is
--- guarded by NOT EXISTS(... status='active') plus ON CONFLICT DO NOTHING, so a
--- second call is a no-op returning {"claimed": 0, "stamped": 0}.
+-- guarded by NOT EXISTS(... AND e.status = 'active') plus ON CONFLICT DO
+-- NOTHING, so a second call is a no-op returning {"claimed": 0, "stamped": 0}.
 --
 -- Returns BOTH counters because they can legitimately differ: a caller who
 -- already holds an active enrolment for an offering (e.g. they re-bought through
@@ -199,23 +225,34 @@ BEGIN
      WHERE le.claimed_by_user_id IS NULL
        AND le.offering_id IS NOT NULL
        AND le.phone = v_phone_norm
-       -- ANY existing enrolment row blocks the grant, not just an active one.
-       -- enrolments_status_check allows active/expired/revoked/cancelled, and
-       -- the last three are DELIBERATE end-states (revoked_at/revoked_by/
-       -- revoked_reason, expires_at). Guarding only on 'active' would let a
-       -- claim mint a fresh active row over a refund or a revocation and
-       -- silently undo an admin decision — the one thing this phase must never
-       -- do. Prod carries 63 enrolments, all active, so this changes nothing
-       -- today; it exists because the claim now runs for 67k people on every
-       -- sign-in, forever, and a revocation WILL eventually meet it.
-       -- The asymmetry decides it: a false negative is a support ticket, a
-       -- false positive is silent restored access to a refunded course. The
-       -- legacy row is still STAMPED below, so the purchase stays attributed
-       -- to them and stamped > claimed is the observable signal.
+       -- Only an ACTIVE enrolment blocks the grant. This mirrors the shape of
+       -- enrolments_unique_active, the PARTIAL unique index ON
+       -- (user_id, offering_id) WHERE status = 'active'
+       -- (20260408150300_enrolments_unique_active.sql:38-40), so the guard and
+       -- the constraint agree exactly: if no active row exists, no unique
+       -- violation is possible and the INSERT is safe.
+       --
+       -- Do NOT widen this to "any status". Non-active rows are produced by
+       -- process-refund/index.ts:119 (status='cancelled') and admin-api
+       -- /index.ts:299 enrolments.revoke (status='revoked'), and that partial
+       -- index's own comment (20260408150300:36-37) states the intent
+       -- verbatim: cancelled/expired rows do not count, so users can
+       -- legitimately re-enrol after cancellation. A status-blind guard would
+       -- SKIP the grant while the stamping UPDATE below still marks the legacy
+       -- row claimed, and once claimed_by_user_id is non-NULL neither this
+       -- function (le.claimed_by_user_id IS NULL) nor the mapping granter
+       -- (NEW.claimed_by_user_id IS NULL) can ever retry it — permanent,
+       -- admin-SQL-only data loss, and it would break the self-healing
+       -- property that makes running this on every sign-in worthwhile.
+       --
+       -- Re-granting after a refund is a real concern, but it is a SEPARATE
+       -- change: it must also exclude those rows from the stamp so they stay
+       -- claimable, not skip the grant and stamp anyway.
        AND NOT EXISTS (
          SELECT 1 FROM public.enrolments e
           WHERE e.user_id = v_user_id
             AND e.offering_id = le.offering_id
+            AND e.status = 'active'
        )
     -- Duplicate source rows: 2,329 (phone, offering_id) groups in
     -- legacy_enrolments hold 2,620 extra rows, so this SELECT can yield the
@@ -341,16 +378,16 @@ BEGIN
     END IF;
 
     IF v_user_id IS NOT NULL THEN
-      -- ANY status blocks, not just 'active' — same reasoning as
-      -- claim_my_purchases above: revoked/cancelled/expired are deliberate
-      -- end-states and a mapping resolution must not overwrite one. This path
-      -- is the more dangerous of the two because it runs in BULK (1,067
-      -- mappings covering 67,129 students), so a status-blind re-grant here
-      -- would restore access for every revoked student at once.
+      -- Only an ACTIVE enrolment blocks, matching enrolments_unique_active —
+      -- same reasoning as claim_my_purchases above. A status-blind guard here
+      -- is strictly worse: this path runs in BULK (1,067 mappings covering
+      -- 67,129 students) with no counters at all, so every skipped-but-stamped
+      -- row would be lost silently and unobservably.
       IF NOT EXISTS (
         SELECT 1 FROM public.enrolments e
          WHERE e.user_id = v_user_id
            AND e.offering_id = NEW.offering_id
+           AND e.status = 'active'
       ) THEN
         INSERT INTO public.enrolments (user_id, offering_id, payment_order_id, status, source)
         VALUES (v_user_id, NEW.offering_id, NULL, 'active', 'migration');
@@ -367,6 +404,17 @@ $$;
 
 COMMENT ON FUNCTION public.grant_enrolment_after_offering_resolved() IS
   'Grants the enrolment when an unmapped purchase finally gets an offering_id. Matches ONLY a CONFIRMED auth.users.phone (phone_confirmed_at IS NOT NULL — an unconfirmed one is merely asserted, since GoTrue writes the phone at INSERT and confirms later) across its three storage dialects (never the forgeable public.users mirror, never email), skips foreign: placeholder phones so they mint no colliding key, ignores soft-deleted accounts, and picks deterministically — because this stamps claimed_by_user_id permanently and a wrong match locks the real buyer out for good.';
+
+-- claim_my_purchases() is a BRAND-NEW RPC that SC-2 calls from the auth path on
+-- every real sign-in, so it must be resolvable the moment this lands. Supabase's
+-- pgrst_ddl_watch event trigger normally handles that, but without an explicit
+-- nudge there is a post-push window in which PostgREST answers PGRST202 ("could
+-- not find the function in the schema cache"). Login itself survives — the client
+-- swallows the failure — but every sign-in in that window claims nothing and
+-- fires a Sentry event, which is exactly the signal the counters exist to make
+-- observable. 20260603120000_legacy_login_fix.sql:181-183 does the same for the
+-- same reason.
+NOTIFY pgrst, 'reload schema';
 
 -- ── Reversal (reference only; nothing here needs dropping to roll back) ──
 --   1. claim_legacy_enrolments_for_user → restore the body at

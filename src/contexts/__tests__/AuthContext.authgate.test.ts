@@ -45,6 +45,12 @@ vi.hoisted(() => {
 const h = vi.hoisted(() => ({
   authCallbacks: [] as Array<(event: string, session: unknown) => void>,
   getSessionResult: { data: { session: null as unknown } },
+  // Factory so a test can hand back a DEFERRED promise. The real `getSession()`
+  // awaits `initializePromise`, so it CANNOT resolve until after
+  // `_recoverAndRefresh()` has already emitted SIGNED_IN for a stored session;
+  // deferring it is how the SC-2 tests reproduce that ordering.
+  getSessionResponder: (): Promise<{ data: { session: unknown } }> =>
+    Promise.resolve(h.getSessionResult),
   // Factory so a test can hand back a DEFERRED promise and prove `loading`
   // flips before the profile fetch resolves.
   profileResponder: (): Promise<{ data: unknown; error: unknown }> =>
@@ -57,7 +63,7 @@ const h = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     auth: {
-      getSession: vi.fn(() => Promise.resolve(h.getSessionResult)),
+      getSession: vi.fn(() => h.getSessionResponder()),
       onAuthStateChange: vi.fn((cb: (event: string, session: unknown) => void) => {
         h.authCallbacks.push(cb);
         return { data: { subscription: { unsubscribe: vi.fn() } } };
@@ -101,6 +107,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { queryClient } from "@/lib/queryClient";
 
 const PROFILE_CACHE_KEY = "lu_profile_v1";
+// SC-2: the persisted "already claimed for this user at <ts>" watermark that
+// rate-limits `claim_my_purchases()` across reloads and WebView restarts.
+const CLAIM_WATERMARK_KEY = "lu_claim_v1";
+const CLAIM_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 // jsdom here ships without a working localStorage, so install an in-memory one
 // (the persister test does the same). AuthContext reads it synchronously.
@@ -145,6 +155,13 @@ const makeSession = (userId: string, email = "u@x.com"): Session =>
 const seedCache = (userId: string, profile: ProfileRow) =>
   localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ userId, profile }));
 
+// `agoMs` back from now — i.e. how long ago this user's last claim ran.
+const seedClaimWatermark = (userId: string, agoMs: number) =>
+  localStorage.setItem(
+    CLAIM_WATERMARK_KEY,
+    JSON.stringify({ userId, at: Date.now() - agoMs })
+  );
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => { resolve = r; });
@@ -160,6 +177,7 @@ beforeEach(() => {
   Object.defineProperty(window, "localStorage", { value: mem, configurable: true, writable: true });
   h.authCallbacks.length = 0;
   h.getSessionResult = { data: { session: null } };
+  h.getSessionResponder = () => Promise.resolve(h.getSessionResult);
   h.profileResponder = () => Promise.resolve({ data: null, error: null });
   h.rpcResponder = () => Promise.resolve({ data: { claimed: 0 }, error: null });
   vi.clearAllMocks();

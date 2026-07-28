@@ -117,6 +117,85 @@ const clearCachedProfile = (): void => {
   }
 };
 
+// ────────────────────────────────────────────────────────────────────
+// Claim watermark (SC-2) — one claim per user per visit, not per event
+// ────────────────────────────────────────────────────────────────────
+// `claim_my_purchases()` is a SECURITY DEFINER write, so how OFTEN it runs is a
+// production concern at 60k+ students. supabase-js emits `SIGNED_IN` far more
+// often than anyone actually signs in: `_recoverAndRefresh()` re-emits it for
+// the stored session from INSIDE `initialize()` on every cold start, and again
+// on every tab focus and every Capacitor background→foreground resume.
+//
+// An in-memory "were we signed out a moment ago?" transition check cannot
+// filter those, and fails in both directions:
+//   • On a cold start it fails OPEN. `getSession()` and `INITIAL_SESSION` both
+//     await `initializePromise`, while `onAuthStateChange` inserts the
+//     subscriber synchronously — so the recovery `SIGNED_IN` arrives while the
+//     provider is still holding nothing, reading as signed-out → signed-in on
+//     every single launch.
+//   • On the emailed magic-link callback it fails CLOSED. That path saves the
+//     session and defers its `SIGNED_IN` past `initializePromise`, so the
+//     provider can already be holding this exact user when the event lands —
+//     and the guest-checkout buyer who just paid claims nothing.
+//
+// So the rate limit is a persisted watermark instead: at most one claim per
+// user per `CLAIM_MIN_INTERVAL_MS`, surviving reloads and WebView restarts.
+// That keeps both halves of the brief — no write storm (launches and resumes
+// inside the window are free, and a token refresh never gets this far), and
+// still repeatable, because "a student who signed up before their purchase was
+// synced gets claimed on their next visit" is the entire point and a strict
+// signed-out → signed-in gate would never run again for the returning majority
+// who never sign out at all.
+//
+// Six hours is chosen to bound both sides: at most ~4 attempts per user per day
+// even for someone who relaunches constantly, while a purchase that syncs today
+// is still claimed today. The watermark is dropped whenever a resolution
+// carries no user (sign-out, expiry, account switch), so an explicit sign-in
+// always claims immediately.
+const CLAIM_WATERMARK_KEY = "lu_claim_v1";
+const CLAIM_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+interface ClaimWatermark {
+  userId: string;
+  at: number;
+}
+
+// True only when THIS user's claim already ran recently enough that repeating
+// it would be pure write traffic. Absent/corrupt/unreadable storage → false, so
+// a locked-down WebView degrades to "claim once this visit" (the in-memory
+// guard in the effect), never to "never claim".
+const claimedRecently = (userId: string): boolean => {
+  try {
+    const raw = localStorage.getItem(CLAIM_WATERMARK_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as ClaimWatermark | null;
+    if (!parsed || parsed.userId !== userId || typeof parsed.at !== "number") return false;
+    const age = Date.now() - parsed.at;
+    // A clock corrected backwards reads as a negative age; anything outside the
+    // window (either side) counts as due rather than suppressing the claim.
+    return age >= 0 && age < CLAIM_MIN_INTERVAL_MS;
+  } catch {
+    return false;
+  }
+};
+
+const stampClaim = (userId: string): void => {
+  try {
+    const watermark: ClaimWatermark = { userId, at: Date.now() };
+    localStorage.setItem(CLAIM_WATERMARK_KEY, JSON.stringify(watermark));
+  } catch {
+    /* quota / private mode → the in-memory guard still holds for this visit */
+  }
+};
+
+const clearClaimWatermark = (): void => {
+  try {
+    localStorage.removeItem(CLAIM_WATERMARK_KEY);
+  } catch {
+    /* storage unavailable → nothing to clear */
+  }
+};
+
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
@@ -396,19 +475,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     //   • NON-BLOCKING — fire-and-forget, never awaited, so it cannot land on
     //     the auth critical path. A failed claim must never lock a student out;
     //     it is logged in DEV, reported to Sentry, and otherwise swallowed.
-    //   • A REAL SIGN-IN ONLY — and a `SIGNED_IN` event is NOT by itself one.
-    //     supabase-js re-emits `SIGNED_IN` (not TOKEN_REFRESHED) from
-    //     `_recoverAndRefresh()` on every visibilitychange → visible for an
-    //     already-persisted session, i.e. on every tab focus and on every
-    //     background→foreground cycle of the Capacitor WebViews. Gating on the
-    //     event alone would therefore put 60k+ users through a needless
-    //     SECURITY DEFINER write per resume — the write storm the brief calls
-    //     out. So the real gate is the TRANSITION this provider observes: claim
-    //     only when a `SIGNED_IN` carries a user we were not already holding a
-    //     session for (signed-out → signed-in, or an account switch). A resume
-    //     or post-refresh re-emission repeats the SAME user id and is ignored —
-    //     which also makes a re-emitted identical session a no-op. `INITIAL_SESSION`
-    //     is a transition too (cold start), hence the event check as well.
+    //   • RATE-LIMITED, in two independent steps. First the event: only
+    //     `SIGNED_IN` is ever considered, so `INITIAL_SESSION` and the ~hourly
+    //     `TOKEN_REFRESHED` (24 events per user per day, 60k+ users) can never
+    //     reach the RPC. Then the watermark: `SIGNED_IN` is itself re-emitted on
+    //     every cold start and every resume, so the claim additionally runs at
+    //     most once per user per `CLAIM_MIN_INTERVAL_MS` — see the watermark
+    //     block at module scope for why a signed-out → signed-in transition
+    //     check cannot do this job.
     //   • CACHE INVALIDATION — the claim races the post-sign-in navigation, so
     //     the enrolment queries can cache their (empty) result before it
     //     commits. With `staleTime` 5min and `refetchOnWindowFocus` off, the
@@ -416,14 +490,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     //     defeats the purpose. So a claim that actually attached rows
     //     invalidates the entitlement roots.
 
-    // Which user this provider is currently holding a session for. Updated on
-    // EVERY resolution (the cold-start `getSession()` below + every auth event).
-    // Deliberately NOT tracked inside `syncAuthState` — its refresh early-return
-    // would bury the claim's trigger condition, and reading it here keeps the
-    // transition legible and read before the async sync can move it.
-    let observedUserId: string | null = null;
+    // Which user this provider has already claimed for during THIS page
+    // lifetime. Belt-and-braces beside the persisted watermark: a private-mode
+    // or locked-down WebView where `localStorage` throws still gets exactly one
+    // claim per visit instead of one per resume. Deliberately kept out of
+    // `syncAuthState` — its refresh early-return would bury the trigger.
+    let claimedThisVisitFor: string | null = null;
 
-    const claimPurchases = () => {
+    // Reads the user id off ANY session shape without throwing. auth-js can
+    // hand back a session whose `user` is `userNotAvailableProxy()`, whose get
+    // trap throws — and a throw inside the subscriber would escape the auth
+    // callback, dropping the event and stranding the provider in `loading`.
+    const sessionUserId = (nextSession: Session | null): string | null => {
+      try {
+        return nextSession?.user?.id ?? null;
+      } catch {
+        return null;
+      }
+    };
+
+    const claimPurchases = (userId: string) => {
+      // Stamp BEFORE firing so duplicate `SIGNED_IN` emissions in the same tick
+      // cannot both pass the gate.
+      claimedThisVisitFor = userId;
+      stampClaim(userId);
       void (async () => {
         try {
           // Not in the generated supabase types yet; cast per the repo
@@ -443,6 +533,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
         } catch (err) {
           if (import.meta.env.DEV) console.error("[AuthContext] claim_my_purchases failed:", err);
+          // A failed claim must not burn the whole window: drop the persisted
+          // watermark so the student's NEXT visit retries. `claimedThisVisitFor`
+          // stays set, so a failing backend still can't turn every resume in
+          // this visit into another attempt.
+          if (claimedThisVisitFor === userId) clearClaimWatermark();
           // Prod signal: without this a Tier-1 auth-path rollout is invisible
           // outside DEV. Dynamic import so unauthenticated pages don't pull
           // Sentry into their bundle (same pattern as `attachSentryUser`).
@@ -453,25 +548,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       })();
     };
 
-    void supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
-      // The cold-start path carries no event and must never claim — but it does
-      // establish who we're holding, so a later resume-driven `SIGNED_IN` for
-      // that same user reads as "not a new sign-in". Only ever fills a still-
-      // empty slot, so it can never undo an event that already landed.
-      if (currentSession?.user && observedUserId === null) {
-        observedUserId = currentSession.user.id;
-      }
-      return syncAuthState(currentSession);
-    });
+    void supabase.auth.getSession().then(({ data: { session: currentSession } }) =>
+      syncAuthState(currentSession)
+    );
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, nextSession) => {
-        const previousUserId = observedUserId;
-        observedUserId = nextSession?.user.id ?? null;
+        // Sync FIRST and unconditionally: nothing on the claim path may be able
+        // to swallow an auth event.
         void syncAuthState(nextSession);
-        if (event === "SIGNED_IN" && nextSession && nextSession.user.id !== previousUserId) {
-          claimPurchases();
+
+        const userId = sessionUserId(nextSession);
+        if (!userId) {
+          // Signed out, expired, or a session with no usable user. The next
+          // sign-in on this device is a real one and must claim immediately
+          // rather than wait out a window this user already spent.
+          claimedThisVisitFor = null;
+          clearClaimWatermark();
+          return;
         }
+        if (event !== "SIGNED_IN") return;
+        if (claimedThisVisitFor === userId || claimedRecently(userId)) return;
+        claimPurchases(userId);
       }
     );
 
@@ -491,6 +589,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Drop the cached profile row (P6-T4) so the next account on this device
     // can't cold-start into the previous user's identity.
     clearCachedProfile();
+    // Drop the claim watermark (SC-2) so whoever signs in next claims at once
+    // instead of inheriting the window this user already spent.
+    clearClaimWatermark();
     // Purge the persisted react-query cache (P6-T3): remove the dehydrated
     // localStorage copy AND clear the in-memory cache so a second user on the
     // same device never sees the first user's Home/courses/profile data. Query
