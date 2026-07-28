@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
@@ -137,10 +137,25 @@ const phaseFor = (untilMs: number | null): SeatPhase => {
  * Razorpay, mints a payment link, or writes a funnel status.
  *
  * **Apple anti-steering:** the payment CTA is wrapped in the same `isIOS()`
- * guard, with the same fallback copy, as every other money CTA in the app.
+ * guard, with the same fallback copy, as every other money CTA in the app — and
+ * on iOS the AMOUNTS go with it. `ApplicationStatus.tsx` states no figure
+ * anywhere on iOS, and "Due now to confirm ₹8,000" sitting directly above
+ * "Complete this step from a web browser" is the steering the guard exists to
+ * prevent.
  *
  * **SEAT-1:** release stays a manual admin action in v1. This page states the
- * consequence of a lapse, it does not automate one.
+ * consequence of a lapse, it does not automate one, and every sentence about
+ * that consequence is HEDGED and in the future tense for exactly that reason: a
+ * clock hands nobody's seat on, so neither this page nor `AcceptanceCard.tsx`
+ * may say the window itself puts the seat back. Because it does not automate
+ * one, a lapsed window must not dead-end. `accepted_at` is stamped once and never
+ * cleared and the app holds no write path to it, so a student re-admitted into a
+ * later batch arrives with the ORIGINAL anchor still in place and the window
+ * already lapsed. Dead-ending on that would make the "your acceptance carries to
+ * the next batch" promise unimplementable in product, and would leave this page
+ * and `ApplicationStatus.tsx` — which keeps offering the same confirmation link
+ * for an `accepted` row, with no lapse check — disagreeing about whether the
+ * same seat can be claimed. The lapse changes the COPY, never the path forward.
  */
 const ClaimSeat = () => {
   const { applicationId } = useParams<{ applicationId: string }>();
@@ -167,16 +182,20 @@ const ClaimSeat = () => {
      Scheduling off `phase` instead would wedge: if a fire resolves to the SAME
      phase — routine on Android WebView, where an NTP correction can step the
      system clock backwards — React bails out of the re-render, the effect never
-     re-runs, no successor timeout is armed, and the page keeps offering "Claim
-     my seat" past a closed window until something else remounts it. A
-     monotonic token always changes, so the machine always re-arms. */
+     re-runs, no successor timeout is armed, and the strip goes on reading "seat
+     held · closes …" for a window that has already run out, until something
+     else remounts the page. A monotonic token always changes, so the machine
+     always re-arms. */
   const [boundary, setBoundary] = useState(0);
 
   /* One-shot transitions at the two boundaries, NOT a second clock: <Countdown>
      owns the ticking display. This only walks the page held → closing → closed
-     so someone sitting on the page isn't left with a stale claim CTA. Each run
-     schedules the NEXT boundary only. It terminates because every scheduled
-     delay is strictly positive: `held` only holds while more than
+     so someone sitting on the page isn't left reading a live countdown, or a
+     held-seat strip, for a window that has already closed. The claim step
+     itself is deliberately NOT withdrawn at the boundary — the phase drives the
+     strip and the copy, nothing else (see the SEAT-1 note in the docblock).
+     Each run schedules the NEXT boundary only. It terminates because every
+     scheduled delay is strictly positive: `held` only holds while more than
      LIVE_CLOCK_WINDOW_MS remains, and `closing` only while some time remains. */
   useEffect(() => {
     const next = phaseFor(heldUntilMs);
@@ -192,10 +211,57 @@ const ClaimSeat = () => {
     return () => window.clearTimeout(id);
   }, [heldUntilMs, boundary]);
 
+  /* Whether the page is showing the lapsed presentation. Read here rather than
+     next to the render because the layout effect below is a hook, and hooks
+     cannot sit behind the early returns further down. */
+  const lapsed = phase === "closed";
+
+  /* The boundary above can fire while someone is mid-read, and the lapsed
+     presentation carries more copy than the open one. This file already refuses
+     to let a late-arriving fee card push the claim button down under the
+     reader's thumb — that is the whole justification for the spinner gate below
+     — so a transition the page schedules for ITSELF does not get to do it
+     either.
+
+     Two things hold it still. The two presentations use the same slots — window
+     strip, heading, lead, the shared payment block, footnote — so the boundary
+     rewrites copy instead of restacking the page. And what is left of the
+     difference (a longer lead) comes back out of the scroll offset in the same
+     frame, before the browser paints, so the payment block stays where the
+     reader left it.
+
+     The measurement is DOCUMENT-relative (`+ scrollY`), so a scroll the reader
+     performed between renders is never mistaken for a layout change and undone.
+     Nothing here touches html/body overflow or any scroll container: it reads a
+     scroll position and restores it, once, and only for a reader who is already
+     scrolled — at the top of the page there is nothing to restore, and the copy
+     grows below the line they are reading rather than above it. */
+  const payRef = useRef<HTMLDivElement>(null);
+  const payTopRef = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = payRef.current;
+    const top = el ? el.getBoundingClientRect().top + window.scrollY : null;
+    const previous = payTopRef.current;
+    payTopRef.current = top;
+    if (previous === null || top === null) return;
+    const delta = top - previous;
+    if (Math.abs(delta) < 1 || window.scrollY <= 0) return;
+    window.scrollBy(0, delta);
+  }, [lapsed]);
+
+  /* Read once, used by both the query gate and the render, so the page cannot
+     end up half-guarded — the figures and the CTA are one decision. */
+  const ios = isIOS();
+
+  /* NOT read on iOS: every figure this returns is suppressed there (see the
+     anti-steering note in the docblock), so fetching it would buy an iOS-only
+     round trip on the highest-stakes screen in the funnel for data that never
+     paints. A disabled query reports `isLoading: false` in react-query v5, so
+     skipping it also takes iOS off the spinner gate below. */
   const offeringId = decision?.offeringId;
   const terms = useQuery<OfferingTerms | null>({
     queryKey: ["decision", "offering-terms", offeringId],
-    enabled: !!offeringId,
+    enabled: !!offeringId && !ios,
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -217,8 +283,12 @@ const ClaimSeat = () => {
   /* The money terms are part of this page being READY, not a late enhancement.
      Painting the fee card only once the offering query lands would push the
      "Claim my seat" button down under the reader's thumb mid-read, so the
-     spinner covers both reads. A disabled query reports `isLoading: false` in
-     react-query v5, so this never hangs when there is no offering to read. */
+     spinner covers both reads. That reasoning is web/Android only, and so is
+     this half of the gate: on iOS there is no fee card and no button to push
+     down, the terms query is never enabled, and `terms.isLoading` is therefore
+     false — iOS paints on the decision read alone. Same for an offering-less
+     read: a disabled query reports `isLoading: false` in react-query v5, so
+     this never hangs when there is nothing to read. */
   if (isLoading || terms.isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-canvas">
@@ -268,7 +338,74 @@ const ClaimSeat = () => {
   const balance = balanceAfterStages(total, appFee, confirmation);
 
   const checkoutTo = `/checkout/${decision.offeringId}?type=confirmation&app=${applicationId}`;
-  const lapsed = phase === "closed";
+
+  /* ONE payment path, rendered identically by the open branch and the lapsed
+     one. The countdown is an urgency device, not an entitlement gate: seats are
+     released by hand (SEAT-1), the ₹8k runs on the existing checkout
+     (INTEG-PAY-1), and `ApplicationStatus.tsx` goes on offering that same link
+     for an `accepted` row with no lapse check of its own. Withholding it here
+     would put two live surfaces in disagreement about one seat and would leave
+     the student with hand-written SQL as the only remedy. Only the copy around
+     this block knows about the lapse.
+
+     On iOS the guard swallows the FIGURES as well as the CTA — see the docblock.
+     Nothing below reaches Razorpay or mints a link: it is a <Link> to the route
+     that already exists.
+
+     The wrapper is what the layout effect measures: one element, present in
+     both phases and in both platform branches, whose document position is the
+     thing that must not move when the window closes under a reader. It carries
+     no styling, so it collapses out of the layout. */
+  const paymentPath = (
+    <div ref={payRef}>
+      {ios ? (
+        <p className="mt-6 text-xs text-muted-foreground">
+          Complete this step from a web browser.
+        </p>
+      ) : (
+        <>
+          {confirmation !== null ? (
+            <div className="mt-6 rounded-lg border border-border bg-surface p-4">
+              <div className="flex items-baseline justify-between gap-4">
+                <span className="text-sm text-muted-foreground">
+                  Due now to confirm
+                </span>
+                <span className="text-lg font-semibold text-foreground">
+                  {inr(confirmation)}
+                </span>
+              </div>
+              {balance !== null && (
+                <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-border pt-2">
+                  <span className="text-xs text-muted-foreground">
+                    Balance, due before the cohort begins
+                  </span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {inr(balance)}
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* No positive confirmation amount on the offering, or the terms
+               read failed. Say so plainly rather than rendering ₹0. */
+            <p className="mt-6 rounded-lg border border-border bg-surface p-4 text-xs leading-relaxed text-muted-foreground">
+              The exact amount due to confirm is shown on the checkout screen
+              before you pay anything.
+            </p>
+          )}
+
+          <div className="mt-6">
+            <Link to={checkoutTo} className="block">
+              <Button size="lg" className="w-full">
+                Claim my seat
+                <ArrowRight className="ml-1 h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -289,30 +426,60 @@ const ClaimSeat = () => {
           xl:px-12 py-6 md:py-10`, so without them the strip is double-padded
           and its `border-b` stops short of the container edges on every
           platform, reading as a floating box rather than a shelf. They cancel
-          the shell's padding exactly, and the strip re-applies its own. */}
-      {!lapsed && heldUntil && (
-        <div className="sticky top-[calc(4rem+env(safe-area-inset-top))] z-30 -mx-4 -mt-6 border-b border-border bg-surface px-4 py-2.5 md:-mx-8 md:-mt-10 md:px-8 lg:-mx-10 xl:-mx-12">
+          the shell's padding exactly, and the strip re-applies its own.
+
+          It keeps its slot once the window has closed — the same bar, the same
+          height, saying the closed thing — rather than unmounting. Unmounting
+          it would pull the whole page up by its height at the exact moment the
+          copy below is growing, which is the shift the layout effect above
+          exists to prevent. It drops `sticky` there, though: a closed window is
+          not worth following the reader down the page. */}
+      {heldUntil && (
+        <div
+          className={`z-30 -mx-4 -mt-6 border-b border-border bg-surface px-4 py-2.5 md:-mx-8 md:-mt-10 md:px-8 lg:-mx-10 xl:-mx-12${
+            lapsed ? "" : " sticky top-[calc(4rem+env(safe-area-inset-top))]"
+          }`}
+        >
           <p className="mx-auto flex max-w-2xl items-center gap-2 text-xs text-muted-foreground">
             {/* Hidden from assistive tech and replaced by the sentence below:
                 <Countdown> is a session-start component whose hardcoded
                 aria-label reads "Starts in …", the exact opposite of a window
                 closing, and it exposes no prop to override it. */}
             <span aria-hidden="true" className="flex items-center gap-2">
-              <span className="font-medium text-[hsl(var(--cream))]">seat held</span>
-              <span className="opacity-40">·</span>
-              <span>closes</span>
-              {phase === "closing" ? (
-                <Countdown target={heldUntil} joinLabel="Window closed" className="text-xs" />
+              {lapsed ? (
+                <>
+                  <span className="font-medium text-[hsl(var(--cream))]">
+                    seat window
+                  </span>
+                  <span className="opacity-40">·</span>
+                  <span>closed {formatCloseTime(heldUntil)}</span>
+                </>
               ) : (
-                <span className="font-mono tabular-nums text-[hsl(var(--cream))]">
-                  {formatCloseTime(heldUntil)}
-                </span>
+                <>
+                  <span className="font-medium text-[hsl(var(--cream))]">seat held</span>
+                  <span className="opacity-40">·</span>
+                  <span>closes</span>
+                  {phase === "closing" ? (
+                    <Countdown target={heldUntil} joinLabel="Window closed" className="text-xs" />
+                  ) : (
+                    <span className="font-mono tabular-nums text-[hsl(var(--cream))]">
+                      {formatCloseTime(heldUntil)}
+                    </span>
+                  )}
+                </>
               )}
             </span>
-            <span className="sr-only">
-              {`Seat held. Closes in ${spokenRemaining(
-                heldUntil.getTime() - Date.now(),
-              )}, on ${formatCloseTime(heldUntil)}.`}
+            {/* ONE element across both phases, so the boundary UPDATES a live
+                region that already exists rather than inserting a new one —
+                which is what makes the change actually announce. It is the only
+                announcement available: the ticking clock beside it is
+                aria-hidden, so nothing else here speaks. */}
+            <span className="sr-only" role="status">
+              {lapsed
+                ? `The seat window closed on ${formatCloseTime(heldUntil)}. Your acceptance has not closed with it.`
+                : `Seat held. Closes in ${spokenRemaining(
+                    heldUntil.getTime() - Date.now(),
+                  )}, on ${formatCloseTime(heldUntil)}.`}
             </span>
           </p>
         </div>
@@ -329,20 +496,57 @@ const ClaimSeat = () => {
 
         {lapsed ? (
           <>
-            {/* The lapse, exactly as the acceptance card promised it. */}
+            {/* The lapse, in the only order that is honest about ALL of it:
+                the window closed; release is a manual admin action (SEAT-1) so
+                nothing was automatically taken at the deadline and this page
+                cannot know whether the seat is still there; the way to FIND
+                OUT, before any money moves; and only then the step itself.
+                Stating a flat "the seat goes back to the list" here would be a
+                past-tense claim about something no clock performs, and putting
+                the ₹8k CTA above the check-first line would sell a seat the
+                same screen had just called gone.
+
+                It says nothing about a step "below", and makes no claim that
+                the step still works: on iOS the block underneath collapses to
+                one line of anti-steering fallback, so there IS no step below
+                there, and "it still works" is a sentence about a checkout route
+                that a fast reader takes as a sentence about the seat — on the
+                same screen that just said the seat may be gone. The page offers
+                the path and lets it speak for itself.
+
+                Slots, in order, are the same as the open branch below —
+                heading, lead, the shared payment block, footnote — so the
+                boundary rewrites copy rather than restacking the page under
+                someone's thumb. */}
             <h1 className="mt-4 text-xl font-bold text-foreground md:text-2xl">
               Your window has closed.
             </h1>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              The seat goes back to the list for this batch. Your acceptance does
-              not expire with it. It stays valid and carries to the next batch,
-              so you are not starting again and you would not have to apply
-              again.
+              Your acceptance does not expire with it. Seats here are released by
+              hand, not by the clock, so yours may still be open, or it may
+              already have been passed on to someone else in this batch. This
+              page cannot tell you which.
             </p>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              If you still want this batch, reply to your decision email. Seats
-              are released by hand, so we can tell you honestly whether yours is
-              still open.
+              If you would rather know where you stand before you pay anything,
+              reply to your decision email first. We can tell you honestly
+              whether this batch is still open to you.
+            </p>
+
+            {paymentPath}
+
+            {/* The other half of not dead-ending: what happens if they go ahead
+                and the answer turns out to be no. Nothing downstream stops that
+                charge — `create-razorpay-order` checks ownership, the app fee
+                and a duplicate confirmation, and has no window or status test —
+                so the page that surfaces the path owes the student the remedy
+                for the one outcome it just told them it cannot rule out. */}
+            <p className="mt-6 rounded-lg border border-border bg-surface p-4 text-xs leading-relaxed text-muted-foreground">
+              Either way your acceptance stays valid and carries to the next
+              batch, so you are not starting again and you would not have to
+              apply again. And if you do go ahead and the seat here has already
+              gone, that payment is not lost: reply to the same email and it
+              moves with you to the next batch, or comes back to you.
             </p>
           </>
         ) : (
@@ -356,59 +560,33 @@ const ClaimSeat = () => {
                 : "Your seat is held for you while you confirm. Nobody else is offered it in the meantime."}
             </p>
 
-            {confirmation !== null ? (
-              <div className="mt-6 rounded-lg border border-border bg-surface p-4">
-                <div className="flex items-baseline justify-between gap-4">
-                  <span className="text-sm text-muted-foreground">
-                    Due now to confirm
-                  </span>
-                  <span className="text-lg font-semibold text-foreground">
-                    {inr(confirmation)}
-                  </span>
-                </div>
-                {balance !== null && (
-                  <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-border pt-2">
-                    <span className="text-xs text-muted-foreground">
-                      Balance, due before the cohort begins
-                    </span>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {inr(balance)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* No positive confirmation amount on the offering, or the terms
-                 read failed. Say so plainly rather than rendering ₹0. */
-              <p className="mt-6 rounded-lg border border-border bg-surface p-4 text-xs leading-relaxed text-muted-foreground">
-                The exact amount due to confirm is shown on the checkout screen
-                before you pay anything.
-              </p>
-            )}
-
-            {/* Apple anti-steering: no payment entry point of any kind on iOS,
-                same guard and same fallback copy as ApplicationStatus.tsx. */}
-            <div className="mt-6">
-              {isIOS() ? (
-                <p className="text-xs text-muted-foreground">
-                  Complete this step from a web browser.
-                </p>
-              ) : (
-                <Link to={checkoutTo} className="block">
-                  <Button size="lg" className="w-full">
-                    Claim my seat
-                    <ArrowRight className="ml-1 h-4 w-4" />
-                  </Button>
-                </Link>
-              )}
-            </div>
+            {/* Apple anti-steering plus the money, in one block, shared with
+                the lapsed branch above. */}
+            {paymentPath}
 
             {/* Lapse behaviour stated BEFORE the deadline, not after it. Saying
                 it plainly is the point: it removes the resentment a hidden
                 deadline creates, and it keeps a missed window as pipeline
-                rather than a loss. */}
+                rather than a loss.
+
+                It is HEDGED, and in the future tense, because that is the only
+                version of it that is true. Release is a manual admin action
+                (SEAT-1): no clock hands the seat on, so "the seat goes back to
+                the list" would promise an event nothing performs — and it would
+                contradict the lapsed branch above, which tells the same student
+                their seat may well still be open. Two surfaces disagreeing
+                about one seat is the defect this page was rewritten to remove;
+                it does not get to come back as copy.
+
+                What it deliberately does NOT do is announce the soft landing.
+                The window is the v1 conversion lever (REQ-DEC-5) and this is
+                the pre-deadline surface; telling a student here that the ₹8k
+                step outlives the countdown would spend the lever before it has
+                been pulled. The promise made here is the one that is actually
+                needed — the ACCEPTANCE survives — and it is the same promise
+                the lapsed branch keeps. */}
             <p className="mt-6 rounded-lg border border-border bg-surface p-4 text-xs leading-relaxed text-muted-foreground">
-              If the window closes before you confirm, the seat releases to
+              If the window closes before you confirm, we may pass the seat to
               someone else in this batch. Your acceptance stays valid and carries
               to the next batch. You would not have to apply again.
             </p>

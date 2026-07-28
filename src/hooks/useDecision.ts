@@ -60,6 +60,18 @@ export interface Decision {
    * present as already lapsed on the very first open. Being server-side, it also
    * survives a refresh and a device swap — which is what makes the countdown
    * honest rather than resettable by clearing storage.
+   *
+   * **It is a DISPLAY value, never an entitlement gate.** A consumer may change
+   * its copy once this time has passed; it must not withdraw the confirmation
+   * path on it. The anchor is stamped ONCE and there is no write path to it
+   * anywhere in the app (SOR-1), so it is never cleared and never re-based: a
+   * student re-admitted into a later batch still carries the original stamp and
+   * arrives with this value already in the past. Gating the ₹8k step on it would
+   * make the "your acceptance carries to the next batch" promise unimplementable
+   * without hand-written SQL, and would put this app's own surfaces in
+   * disagreement — `ApplicationStatus.tsx` offers the same confirmation checkout
+   * for an `accepted` row and applies no lapse check at all. Release is a manual
+   * admin action in v1 (SEAT-1); the clock says how urgent, not who is allowed.
    */
   seatHeldUntil: Date | null;
 }

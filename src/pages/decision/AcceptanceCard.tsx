@@ -189,12 +189,27 @@ const AcceptanceCard = () => {
             all rather than buried at the deadline. It removes the resentment a
             hidden deadline creates, and it is true: release is a manual admin
             action in v1 (SEAT-1) and the acceptance is not spent by missing a
-            batch. */}
+            batch. It promises exactly what ClaimSeat's lapsed branch delivers —
+            the ACCEPTANCE survives the window — and no more than that. This is
+            the pre-deadline surface, and the most screenshotted one; saying
+            here that the confirmation step itself outlives the countdown would
+            spend the v1 conversion lever (REQ-DEC-5) before it is pulled. The
+            lapsed screen is where the way forward is offered.
+
+            The seat clause is HEDGED and in the future tense, and must stay
+            that way: SEAT-1 means nothing happens at the deadline by itself, so
+            "the seat goes back to the list" would be a promise about an event
+            no clock performs — and ClaimSeat's lapsed screen tells the same
+            student, correctly, that their seat may well still be open. Two
+            surfaces disagreeing about one seat is the defect this flow was
+            rewritten to remove; it does not get to return as copy. Keep this
+            sentence and ClaimSeat's pre-deadline footnote saying the same
+            thing. */}
         <p className="mt-8 rounded-lg border border-border bg-surface p-4 text-xs leading-relaxed text-muted-foreground">
           Your seat is held for a window. If the window closes before you
-          confirm, the seat goes back to the list, but your acceptance stays
-          valid and carries to the next batch. Being accepted is not something
-          you lose by being slow.
+          confirm, we may pass the seat to someone else in this batch, but your
+          acceptance stays valid and carries to the next batch. Being accepted is
+          not something you lose by being slow.
         </p>
 
         <Link

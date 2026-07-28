@@ -27,10 +27,46 @@ import type { Decision } from "@/hooks/useDecision";
  *     `/checkout/{offering_id}?type=confirmation&app={application_id}` URL
  *     `ApplicationStatus.tsx` already uses, and must not reach for Razorpay
  *     itself. The href is asserted character for character.
- *  3. **iOS renders the fallback, and no payment link at all.** A new money CTA
- *     that isn't wrapped in the `isIOS()` guard is an App Store rejection risk.
- *  4. **The lapse copy is present** — the promise that a closed window releases
- *     the seat but keeps the acceptance valid for the next batch.
+ *  3. **iOS renders the fallback, and neither a payment link NOR a price.** A
+ *     money CTA that isn't wrapped in the `isIOS()` guard is an App Store
+ *     rejection risk, and so is the figure above it: `ApplicationStatus.tsx`
+ *     states no amount anywhere on iOS, so "Due now to confirm ₹8,000" sitting
+ *     directly above "Complete this step from a web browser" is exactly the
+ *     steering the guard exists to prevent.
+ *  4. **The lapse does not dead-end, and does not contradict itself.** A closed
+ *     window keeps the acceptance valid for the next batch — and the page must
+ *     still offer the SAME single existing-checkout path it offered before,
+ *     because `accepted_at` is stamped once with no write path to it (a student
+ *     re-admitted later arrives already lapsed), release is manual (SEAT-1),
+ *     and `ApplicationStatus.tsx` goes on offering that identical link for an
+ *     `accepted` row with no lapse check. Two live surfaces disagreeing about
+ *     one seat is the bug; the lapse changes the copy, never the path. The
+ *     ORDER is part of the contract: because release is manual, the lapsed
+ *     screen may not assert that the seat has already gone, and the
+ *     check-where-you-stand line must sit ABOVE the ₹8k CTA, not under it.
+ *     Equally, the pre-deadline surfaces may not defuse the countdown by
+ *     announcing up front that the payment step outlives it — that is the v1
+ *     conversion lever, and the promise made there is that the ACCEPTANCE
+ *     survives, nothing more.
+ *
+ *     And the two phases must describe the SAME mechanic. SEAT-1 means nothing
+ *     happens at the deadline by itself, so the pre-deadline copy may not
+ *     promise that the clock puts the seat back while the lapsed copy says
+ *     seats move by hand and this one may well still be open. That is the K-2
+ *     defect — two surfaces disagreeing about one seat — relocated into copy,
+ *     and it is asserted on both phases here. `AcceptanceCard.tsx` carries the
+ *     same hedged sentence; it has no test file, so this docblock is the note
+ *     that the two must be changed together.
+ *
+ *     Finally the lapsed page owes a REMEDY, not encouragement. Nothing
+ *     downstream refuses the charge — `create-razorpay-order`'s confirmation
+ *     branch checks ownership, the app fee and a duplicate confirmation, and
+ *     has no window or status test — so a page that surfaces the path on a seat
+ *     it has just said it cannot vouch for must say what happens if the money
+ *     goes in and the answer turns out to be no. It must NOT editorialise the
+ *     button ("it still works" reads as a claim about the seat), and it must
+ *     not point at a "step below": on iOS there is no step below, only the
+ *     anti-steering line.
  *  5. **The money is the money.** The balance quoted here must equal what
  *     `/checkout?type=balance` will actually charge (`price − app_fee −
  *     confirmation`), and a zero/unset confirmation amount must never render as
@@ -103,18 +139,17 @@ vi.mock("@/lib/platform", () => ({
   isIOS: () => mockIsIOS,
 }));
 
-// The page reads only the offering's money terms:
-// .from("offerings").select(...).eq("id", ...).single()
+/**
+ * The page reads only the offering's money terms:
+ * `.from("offerings").select(...).eq("id", ...).single()`. Hoisted as a spy so
+ * "iOS never issues this read at all" is assertable — on iOS every figure it
+ * returns is suppressed, so fetching it would be an iOS-only round trip for
+ * data that never paints.
+ */
+const { fromSpy } = vi.hoisted(() => ({ fromSpy: vi.fn() }));
+
 vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          single: () => Promise.resolve({ data: mockTerms, error: null }),
-        }),
-      }),
-    }),
-  },
+  supabase: { from: fromSpy },
 }));
 
 import ClaimSeat from "@/pages/decision/ClaimSeat";
@@ -196,12 +231,30 @@ const ariaLabels = () =>
 const allHrefs = () =>
   Array.from(document.querySelectorAll("a")).map((a) => a.getAttribute("href") ?? "");
 
+/**
+ * Reading order, which on the money surface is part of the copy. `getByText`
+ * proves a sentence exists; only document position proves the student meets it
+ * before the button rather than under it.
+ */
+const precedes = (first: Element, second: Element) =>
+  Boolean(
+    first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+
 describe("ClaimSeat — the held-seat window and the existing checkout link", () => {
   beforeEach(() => {
     mockDecision = acceptedDecision;
     mockIsIOS = false;
     mockIsOffline = false;
     mockTerms = L3AI_TERMS;
+    fromSpy.mockReset();
+    fromSpy.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          single: () => Promise.resolve({ data: mockTerms, error: null }),
+        }),
+      }),
+    }));
     installStorageSpy();
     vi.useFakeTimers({ shouldAdvanceTime: false });
     vi.setSystemTime(NOW);
@@ -375,7 +428,54 @@ describe("ClaimSeat — the held-seat window and the existing checkout link", ()
     expect(allHrefs().some((h) => /razorpay|rzp\.io/i.test(h))).toBe(false);
   });
 
-  it("on iOS: the anti-steering fallback copy renders and NO payment link exists", () => {
+  it("the lapsed page offers that SAME single route, not a second one", () => {
+    // The whole point of the shared payment block: a closed window must not
+    // grow its own money path, and must not lose the existing one. Asserting
+    // equality (not `.toContain`) is what would catch a hosted link or a
+    // duplicated CTA sneaking into the lapsed branch.
+    mockDecision = {
+      ...acceptedDecision,
+      seatHeldUntil: new Date(NOW.getTime() - 60_000),
+    };
+    renderPage();
+
+    const checkoutHrefs = allHrefs().filter((h) => h.includes("/checkout"));
+    expect(checkoutHrefs).toEqual([EXISTING_CHECKOUT_HREF]);
+    expect(allHrefs().some((h) => /razorpay|rzp\.io/i.test(h))).toBe(false);
+  });
+
+  it("crossing the boundary live rewrites copy in place instead of restacking", async () => {
+    // The page schedules this transition for itself, so it owns the
+    // consequence. The spinner gate above exists precisely so a block arriving
+    // late cannot push the claim button down under a reader's thumb; a boundary
+    // firing mid-read does not get to do it either. Both phases therefore fill
+    // the SAME slots — window bar, heading, lead, the shared payment block,
+    // footnote — and the bar in particular must not unmount and pull the page
+    // up by its own height at the moment the copy below it is growing.
+    mockDecision = {
+      ...acceptedDecision,
+      seatHeldUntil: new Date(NOW.getTime() + 60_000),
+    };
+    renderPage();
+    expect(screen.getByText("seat held")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(61_000);
+    });
+
+    expect(screen.getByText("Your window has closed.")).toBeInTheDocument();
+    // Same bar, same slot, saying the closed thing.
+    expect(screen.getByText("seat window")).toBeInTheDocument();
+    expect(screen.queryByText("seat held")).toBeNull();
+    expect(screen.queryByRole("timer", { hidden: true })).toBeNull();
+    // And the payment path was re-framed, never withdrawn.
+    expect(screen.getByRole("link", { name: /claim my seat/i })).toHaveAttribute(
+      "href",
+      EXISTING_CHECKOUT_HREF,
+    );
+  });
+
+  it("on iOS: the anti-steering fallback renders, with NO payment link and NO price", () => {
     mockIsIOS = true;
     renderPage();
 
@@ -384,6 +484,77 @@ describe("ClaimSeat — the held-seat window and the existing checkout link", ()
     ).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /claim my seat/i })).toBeNull();
     expect(allHrefs().some((h) => h.includes("/checkout"))).toBe(false);
+
+    // The figures go with the CTA. ApplicationStatus.tsx quotes no amount
+    // anywhere on iOS; a fee card reading "Due now to confirm ₹8,000" directly
+    // above the fallback line steers just as effectively as a button would.
+    expect(bodyText()).not.toContain("₹");
+    expect(screen.queryByText("Due now to confirm")).toBeNull();
+    expect(
+      screen.queryByText(/balance, due before the cohort begins/i),
+    ).toBeNull();
+  });
+
+  it("on iOS the LAPSED page is equally silent: no link, no price", () => {
+    // The lapsed branch renders the same shared block, so the guard must hold
+    // on both. This is the branch most likely to be written by hand and to
+    // forget it.
+    mockIsIOS = true;
+    mockDecision = {
+      ...acceptedDecision,
+      seatHeldUntil: new Date(NOW.getTime() - 60_000),
+    };
+    renderPage();
+
+    expect(screen.getByText("Your window has closed.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Complete this step from a web browser."),
+    ).toBeInTheDocument();
+    expect(allHrefs().some((h) => h.includes("/checkout"))).toBe(false);
+    expect(bodyText()).not.toContain("₹");
+  });
+
+  it("the lapsed copy never points at a 'step below' that iOS does not render", () => {
+    // On iOS the shared block collapses to one line of anti-steering fallback,
+    // so any sentence introducing the thing underneath ("the step below is the
+    // same one it always was", "it still works") describes something that is
+    // not there — and it is unconditional copy, so it reaches every iOS reader.
+    // The same sentence is a liability on web for a different reason: "it still
+    // works" reads to a fast reader as a claim about the SEAT, on the screen
+    // that has just said the seat may already be gone.
+    mockDecision = {
+      ...acceptedDecision,
+      seatHeldUntil: new Date(NOW.getTime() - 60_000),
+    };
+
+    for (const ios of [false, true]) {
+      cleanup();
+      mockIsIOS = ios;
+      renderPage();
+
+      const text = bodyText();
+      expect(text).not.toMatch(/still works/i);
+      expect(text).not.toMatch(/step below|below is the same/i);
+    }
+  });
+
+  it("the lapsed page states the remedy for paying on a seat that has gone", () => {
+    // `create-razorpay-order` will happily take the ₹8k: its confirmation
+    // branch checks ownership, the app fee and a duplicate confirmation, and
+    // has no window or status test. So the page that surfaces the path on a
+    // seat it has just said it cannot vouch for owes the student the other
+    // outcome, in the same breath as the CTA.
+    mockDecision = {
+      ...acceptedDecision,
+      seatHeldUntil: new Date(NOW.getTime() - 60_000),
+    };
+    renderPage();
+
+    const remedy = screen.getByText(/that payment is not lost/i);
+    expect(remedy).toBeInTheDocument();
+    expect(remedy.textContent ?? "").toMatch(
+      /moves with you to the next batch, or comes back to you/i,
+    );
   });
 
   it("states the lapse behaviour upfront: the seat releases, the acceptance does not", () => {
@@ -395,6 +566,39 @@ describe("ClaimSeat — the held-seat window and the existing checkout link", ()
     expect(
       screen.getByText(/carries to the next batch/i),
     ).toBeInTheDocument();
+  });
+
+  it("does not defuse its own countdown before the deadline", () => {
+    // The promise made while the window is still open is that the ACCEPTANCE
+    // survives — not that the ₹8k step does. "seat held · closes {countdown}"
+    // is the v1 conversion lever (REQ-DEC-5); telling a student here that
+    // paying stays available afterwards spends the lever before it is pulled.
+    // The soft landing belongs to the lapsed screen, which is where a student
+    // who actually missed the window reads it.
+    renderPage();
+
+    expect(screen.getByText("seat held")).toBeInTheDocument();
+    const text = bodyText();
+    expect(text).not.toMatch(/stays open to you/i);
+    expect(text).not.toMatch(/released by hand/i);
+    expect(text).not.toMatch(/still works/i);
+  });
+
+  it("the pre-deadline copy describes the SAME mechanic the lapsed copy does", () => {
+    // The lever may create urgency; it may not create a mechanic. Nothing
+    // happens at the deadline by itself (SEAT-1), so "the seat goes back to the
+    // list" is a promise about an event no clock performs — and the lapsed
+    // screen tells the same student the opposite, that seats move by hand and
+    // theirs may well still be open. Hedged and future-tense is the version
+    // that is true on both screens. `AcceptanceCard.tsx` carries the same
+    // sentence and has no test file of its own; change them together.
+    renderPage();
+
+    const footnote = screen.getByText(/if the window closes before you confirm/i);
+    expect(footnote.textContent ?? "").toMatch(
+      /we may pass the seat to someone else in this batch/i,
+    );
+    expect(bodyText()).not.toMatch(/goes back to the list/i);
   });
 
   it("quotes the balance checkout will actually charge: price − app fee − confirmation", () => {
@@ -433,21 +637,105 @@ describe("ClaimSeat — the held-seat window and the existing checkout link", ()
     // about to be pushed down by a fee card popping in above it.
     expect(bodyText()).not.toContain("₹");
     expect(screen.queryByRole("link", { name: /claim my seat/i })).toBeNull();
+    // The gate is justified precisely because the read feeds the render here.
+    expect(fromSpy).toHaveBeenCalled();
   });
 
-  it("after the window lapses: no claim CTA, and the acceptance is still valid", () => {
+  it("on iOS it never reads the money terms, and never waits on them to paint", () => {
+    // Every figure that read produces is suppressed on iOS, and there is no fee
+    // card and no button for a late-arriving amount to shove down the page. So
+    // the read is not issued at all, and iOS is off the spinner gate: the
+    // highest-stakes screen in the funnel must not carry an iOS-only latency
+    // path for data it discards.
+    mockIsIOS = true;
+    renderPage({ seedTerms: false });
+
+    expect(
+      screen.getByText("Complete this step from a web browser."),
+    ).toBeInTheDocument();
+    expect(fromSpy).not.toHaveBeenCalled();
+    expect(bodyText()).not.toContain("₹");
+  });
+
+  it("after the window lapses: honest copy, and the SAME path forward (no dead end)", () => {
     mockDecision = {
       ...acceptedDecision,
       seatHeldUntil: new Date(NOW.getTime() - 60_000),
     };
     renderPage();
 
+    // The framing is unchanged and stays honest: the window did close, and the
+    // urgency device is not retroactively pretended away.
     expect(screen.getByText("Your window has closed.")).toBeInTheDocument();
     expect(screen.getByText(/does not expire with it/i)).toBeInTheDocument();
-    // A released seat must not still offer to take money for itself.
-    expect(screen.queryByRole("link", { name: /claim my seat/i })).toBeNull();
-    expect(allHrefs().some((h) => h.includes("/checkout"))).toBe(false);
+    expect(screen.getByText(/carries to the next batch/i)).toBeInTheDocument();
+    // The clock itself is gone: nothing is still counting down.
     expect(screen.queryByRole("timer", { hidden: true })).toBeNull();
+    expect(screen.queryByText("seat held")).toBeNull();
+
+    // …and the student is NOT stranded. `accepted_at` is stamped once with no
+    // write path to it, so a student re-admitted into a later batch arrives
+    // with the original anchor and this window already lapsed; and
+    // ApplicationStatus.tsx keeps offering this very link for an `accepted`
+    // row with no lapse check. Withholding it here is what makes the two
+    // surfaces disagree about one seat and leaves SQL as the only remedy.
+    expect(screen.getByRole("link", { name: /claim my seat/i })).toHaveAttribute(
+      "href",
+      EXISTING_CHECKOUT_HREF,
+    );
+    // Release is manual (SEAT-1), so the page says that rather than promising
+    // the seat is definitely still there.
+    expect(screen.getByText(/released by hand/i)).toBeInTheDocument();
+  });
+
+  it("the lapsed screen never claims the clock already took the seat", () => {
+    // Nothing happens at the deadline: release is a manual admin action
+    // (SEAT-1), so a flat past-tense "the seat goes back to the list" is a
+    // statement about an event no clock performs — and it contradicts the very
+    // next paragraph, which says release is by hand. Selling a ₹8k seat on a
+    // screen that just declared it gone is the K-2 bug class reproduced inside
+    // one page. The pre-deadline copy may say it, in the future tense; the
+    // lapsed copy may not.
+    mockDecision = {
+      ...acceptedDecision,
+      seatHeldUntil: new Date(NOW.getTime() - 60_000),
+    };
+    renderPage();
+
+    const text = bodyText();
+    expect(text).not.toMatch(/goes back to the list/i);
+    expect(text).not.toMatch(
+      /(the|your) seat (is|has|was) ?(been )?(released|gone|passed on|given)/i,
+    );
+    // What it says instead: it does not know, and says so. The only mention of
+    // the seat being passed on is hedged, which is the true statement.
+    expect(
+      screen.getByText(/may still be open, or it may already have been passed/i),
+    ).toBeInTheDocument();
+  });
+
+  it("the lapsed screen offers the check-first path ABOVE the pay CTA", () => {
+    // Order is the finding. "Reply to your decision email first … before you
+    // pay anything" is advice about the button; underneath it, it is a
+    // footnote to a decision already made.
+    mockDecision = {
+      ...acceptedDecision,
+      seatHeldUntil: new Date(NOW.getTime() - 60_000),
+    };
+    renderPage();
+
+    const checkFirst = screen.getByText(/reply to your decision email first/i);
+    const feeCard = screen.getByText("Due now to confirm");
+    const claim = screen.getByRole("link", { name: /claim my seat/i });
+
+    expect(precedes(checkFirst, feeCard)).toBe(true);
+    expect(precedes(checkFirst, claim)).toBe(true);
+    // And the manual-release caveat comes before the check-first line, so the
+    // page reads: window closed → nobody knows yet → here is how to find out →
+    // here is the step if you want it anyway.
+    expect(precedes(screen.getByText(/released by hand/i), checkFirst)).toBe(
+      true,
+    );
   });
 
   it("renders NO seat number anywhere (REQ-DEC-4 / §9i)", () => {
@@ -455,6 +743,22 @@ describe("ClaimSeat — the held-seat window and the existing checkout link", ()
 
     const text = bodyText();
     // "Seat 12", "seat #12", "Seat No. 7", "you are number 4", "4th seat".
+    expect(text).not.toMatch(/seat\s*(no\.?|number|#)?\s*\d/i);
+    expect(text).not.toMatch(/#\s*\d+/);
+    expect(text).not.toMatch(/\b\d+(st|nd|rd|th)\s+seat\b/i);
+    expect(text).not.toMatch(/\b\d+\s+seats?\s+(left|remaining|available)\b/i);
+  });
+
+  it("renders no seat number on the LAPSED page either", () => {
+    // The closed window bar puts a date next to the word "seat", which is
+    // exactly the shape §9i bans anywhere near it. Same sweep, other phase.
+    mockDecision = {
+      ...acceptedDecision,
+      seatHeldUntil: new Date(NOW.getTime() - 60_000),
+    };
+    renderPage();
+
+    const text = bodyText();
     expect(text).not.toMatch(/seat\s*(no\.?|number|#)?\s*\d/i);
     expect(text).not.toMatch(/#\s*\d+/);
     expect(text).not.toMatch(/\b\d+(st|nd|rd|th)\s+seat\b/i);
