@@ -33,7 +33,18 @@ let initStarted = false;
 
 // Errors reported before the SDK finishes loading. Bounded so a pre-init error
 // storm can't grow this without limit; flushed once init completes.
-type QueuedError = { error: unknown; context?: Record<string, unknown> };
+// `info` entries are NOT errors — they are deliberate, expected conditions
+// someone may need to act on. They must never flush through captureException:
+// that files a bug for correct behaviour, and with replaysOnErrorSampleRate 1.0
+// plus the identified user it would upload a PII-bearing session replay each
+// time. It would also poison the Sentry error rate, which is the halt signal
+// the staged-rollout discipline in CLAUDE.md depends on.
+type QueuedError = {
+  error: unknown;
+  context?: Record<string, unknown>;
+  level?: "info";
+  message?: string;
+};
 const pendingErrors: QueuedError[] = [];
 const MAX_PENDING_ERRORS = 20;
 
@@ -120,9 +131,19 @@ async function loadAndInit(dsn: string): Promise<void> {
       pendingUser = undefined;
     }
 
-    // Flush errors reported before init completed.
+    // Flush reports made before init completed, preserving each one's LEVEL.
+    // Replaying an info-level message through captureException is exactly the
+    // inversion described on QueuedError above.
     for (const queued of pendingErrors.splice(0)) {
-      S.captureException(queued.error, queued.context ? { extra: queued.context } : undefined);
+      const extra = queued.context ? { extra: queued.context } : undefined;
+      if (queued.level === "info") {
+        S.captureMessage(queued.message ?? String(queued.error), {
+          level: "info",
+          ...(extra ?? {}),
+        });
+      } else {
+        S.captureException(queued.error, extra);
+      }
     }
   } catch {
     // Sentry failed to load (network, blocked CDN, chunk error). Drop the
@@ -223,9 +244,11 @@ export function captureMessage(message: string, context?: Record<string, unknown
       return;
     }
     if (initStarted && pendingErrors.length < MAX_PENDING_ERRORS) {
-      // Queued as an Error so the single flush path stays one shape; the
-      // message text is preserved either way.
-      pendingErrors.push({ error: new Error(message), context });
+      // Tagged `info` and carrying the raw text, so the flush above reports it
+      // as a message. This is the dominant path, not an edge case: init is
+      // deferred to requestIdleCallback (3s timeout) plus a chunk download,
+      // while the purchase claim fires on the FIRST auth resolution.
+      pendingErrors.push({ error: message, context, level: "info", message });
     }
   } catch {
     // Reporting must never itself throw.

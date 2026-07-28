@@ -117,8 +117,11 @@ COMMENT ON FUNCTION public.claim_legacy_enrolments_for_user() IS
 -- ────────────────────────────────────────────────────────────────────────────
 -- 2/3 — THE CLAIM, at verified sign-in.
 --
--- Zero-arg, SECURITY DEFINER, keyed on auth.uid(). The client calls it after a
--- real SIGNED_IN event (SC-2) and ignores the result on failure.
+-- Zero-arg, SECURITY DEFINER, keyed on auth.uid(). The client (SC-2) calls it
+-- on ANY auth resolution carrying a user, rate-limited by a persisted 6h
+-- watermark rather than by the event name, and ignores the result on failure.
+-- Gating on SIGNED_IN excluded every returning student: auth-js emits only
+-- TOKEN_REFRESHED once the stored token is inside its 90s expiry margin.
 --
 -- Why each gate is the right one HERE, having been wrong at signup:
 --   * phone_confirmed_at IS NOT NULL — inert at signup because GoTrue confirms
@@ -141,9 +144,11 @@ COMMENT ON FUNCTION public.claim_legacy_enrolments_for_user() IS
 --
 -- Idempotent: the INSERT is guarded by NOT EXISTS(ANY enrolment for this
 -- user+offering, whatever its status) plus a targetless ON CONFLICT DO NOTHING,
--- and the stamping UPDATE marks only rows the caller now holds an ACTIVE
--- enrolment for. A second call is a no-op returning
--- {"claimed": 0, "stamped": 0, "blocked": 0}.
+-- and the stamping UPDATE marks only rows the caller now holds a LIVE
+-- enrolment for. A second call writes nothing and returns claimed:0, stamped:0.
+-- `blocked` is NOT zero on a repeat call for anyone carrying withheld rows —
+-- it is a standing count of purchases deliberately refused, not a per-call
+-- delta, and that is exactly the value the production alarm keys on.
 --
 -- Returns BOTH counters because they can legitimately differ: a caller who
 -- already holds an active enrolment for an offering (e.g. they re-bought through
@@ -178,7 +183,8 @@ BEGIN
     -- failure, so "never raises" holds for the whole function body.
     v_user_id := auth.uid();
     IF v_user_id IS NULL THEN
-      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0);
+      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0,
+                                'eligible', false);
     END IF;
 
     -- Live account only. A soft-deleted caller keeps a usable auth phone, so
@@ -188,7 +194,8 @@ BEGIN
      WHERE u.id = v_user_id
        AND u.deleted_at IS NULL;
     IF NOT FOUND THEN
-      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0);
+      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0,
+                                'eligible', false);
     END IF;
 
     -- Trust the AUTH row, never the public.users mirror, which carries
@@ -202,7 +209,8 @@ BEGIN
     -- matched, and NULL would fall through the NOT below.
     IF NOT COALESCE(v_confirmed, false) OR v_auth_phone IS NULL THEN
       -- nothing proven to match on
-      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0);
+      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0,
+                                'eligible', false);
     END IF;
 
     -- Canonicalise to the '+91XXXXXXXXXX' form legacy_enrolments stores.
@@ -229,7 +237,9 @@ BEGIN
     -- the statement_timeout trapped below — would roll back a SUCCESSFUL grant
     -- and report it as a no-op. A read that runs first can only ever cost the
     -- read. The predicate is the exact negation of the INSERT guard, so it is
-    -- unaffected by rows the INSERT is about to add.
+    -- unaffected by rows the INSERT is about to add. It is NARROWER than the plain
+-- negation of that guard: a caller who already holds a LIVE enrolment is
+-- reconciled rather than refused, so they are excluded here too.
     SELECT count(*) INTO v_blocked
       FROM public.legacy_enrolments le
      WHERE le.claimed_by_user_id IS NULL
@@ -358,15 +368,24 @@ BEGIN
     -- statement_timeout is trapped explicitly.
     WHEN query_canceled THEN
       RAISE WARNING 'claim_my_purchases timed out for user %', v_user_id;
-      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0);
+      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0,
+                                'eligible', false);
     WHEN OTHERS THEN
       RAISE WARNING 'claim_my_purchases failed for user %: % %',
         v_user_id, SQLSTATE, SQLERRM;
-      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0);
+      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0,
+                                'eligible', false);
   END;
 
+  -- eligible=true means the claim RAN to completion for a caller we could
+  -- actually identify. The client persists its 6h watermark ONLY on this, so a
+  -- refusal (no uid / soft-deleted / phone not confirmed) or an internal error
+  -- does not burn the window. That mattered: an email or magic-link sign-in
+  -- leaves auth.users.phone NULL, returned all zeros WITHOUT raising, and the
+  -- client stamped anyway — so the MSG91 sign-in for the SAME user minutes
+  -- later, the one that WOULD have claimed, was silently skipped for six hours.
   RETURN jsonb_build_object('claimed', v_claimed, 'stamped', v_stamped,
-                            'blocked', v_blocked);
+                            'blocked', v_blocked, 'eligible', true);
 END;
 $$;
 
@@ -495,9 +514,27 @@ BEGIN
     END IF;
   END IF;
   EXCEPTION
-    -- Plain WHEN OTHERS does not catch query_canceled (57014).
-    WHEN query_canceled THEN
-      RAISE WARNING 'grant_enrolment_after_offering_resolved timed out for legacy_enrolments %', NEW.id;
+    -- DELIBERATELY NO `WHEN query_canceled` HERE, unlike claim_my_purchases.
+    --
+    -- This is a per-ROW BEFORE UPDATE trigger, fired by a single bulk statement
+    -- across 1,067 mappings / 67,129 students. Postgres arms statement_timeout
+    -- once per top-level statement and CONSUMES the indicator the first time it
+    -- is caught, so trapping 57014 in a per-row trigger would disarm the
+    -- timeout for the entire remainder of that bulk UPDATE — which would then
+    -- run unbounded while holding row locks on legacy_enrolments and
+    -- enrolments, and the admin's first pg_cancel_backend would be swallowed
+    -- too. A cancel MUST propagate here: it is the operator's only handle on a
+    -- statement touching 67k rows.
+    --
+    -- Catching it also could not achieve what a handler is for. This trigger
+    -- cannot make its caller commit; ON CONFLICT DO NOTHING above is the half
+    -- that genuinely prevents an abort, by removing the only error this body
+    -- realistically raises (a 23505 race with claim_my_purchases).
+    --
+    -- claim_my_purchases keeps its query_canceled arm because there the
+    -- function body IS the top-level statement: nothing runs after it, so
+    -- consuming the indicator costs nothing and swallowing the cancel keeps the
+    -- promise that a claim can never break a sign-in.
     WHEN OTHERS THEN
       RAISE WARNING 'grant_enrolment_after_offering_resolved failed for legacy_enrolments %: % %',
         NEW.id, SQLSTATE, SQLERRM;
@@ -521,6 +558,30 @@ COMMENT ON FUNCTION public.grant_enrolment_after_offering_resolved() IS
 -- same reason.
 NOTIFY pgrst, 'reload schema';
 
+-- ── DEPLOY ORDER (this is the note referenced at the top of this file) ──────
+--   1. `supabase db push` BOTH migrations (this one and 20260728010000). They
+--      must land together: this one attaches the enrolments, that one is what
+--      lets the 55,904 archived-offering owners actually SEE them. Shipping
+--      this alone drains the backlog into a library that still renders empty.
+--   2. Confirm public.claim_my_purchases resolves through PostgREST with a real
+--      authenticated call before promoting any client.
+--   3. ONLY THEN promote the web bundle.
+--   Order matters and the default is backwards: a push to main auto-deploys
+--   Vercel while db push is manual, so without this the bundle calls an RPC
+--   that does not exist yet. Every sign-in in that window takes the client's
+--   catch path (PGRST202), which reports to Sentry and clears the watermark, so
+--   it retries on the next visit rather than backing off.
+--
+--   ACCEPTED RISK, stated rather than discovered: both migrations reach every
+--   platform the instant db push runs, but the ST-2 client guards written for
+--   them reach iOS build 16 and Android 604/3.2.1 only on their next store
+--   release. Checked, and the residual is small: CheckoutPage:706 early-returns
+--   on isNative() and ThankYou:978 gates upsells on !isNative(), so the sale
+--   surfaces are already closed on native. QuickPick is the only unguarded
+--   native surface and it degrades to an archive-notice page, not a purchase.
+--   Native users also do not CLAIM until their next build (filed separately);
+--   the outage fix itself is server-side and reaches them immediately.
+--
 -- ── Reversal (reference only; nothing here needs dropping to roll back) ──
 --   1. claim_legacy_enrolments_for_user → restore the body at
 --      20260611130000_unbrick_onboarding_for_shipped_clients.sql:53-110

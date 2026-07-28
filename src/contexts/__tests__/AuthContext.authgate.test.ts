@@ -179,7 +179,15 @@ beforeEach(() => {
   h.getSessionResult = { data: { session: null } };
   h.getSessionResponder = () => Promise.resolve(h.getSessionResult);
   h.profileResponder = () => Promise.resolve({ data: null, error: null });
-  h.rpcResponder = () => Promise.resolve({ data: { claimed: 0 }, error: null });
+  // Mirrors the real claim_my_purchases contract. `eligible` is what tells the
+  // client the call actually RAN for an identifiable caller — it is the only
+  // thing that persists the watermark, so a refusal (unconfirmed phone,
+  // soft-deleted, no uid) cannot burn the 6h window.
+  h.rpcResponder = () =>
+    Promise.resolve({
+      data: { claimed: 0, stamped: 0, blocked: 0, eligible: true },
+      error: null,
+    });
   vi.clearAllMocks();
 });
 
@@ -466,6 +474,45 @@ describe("SC-2 — claim_my_purchases fires only on a real sign-in", () => {
     });
 
     expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("an INELIGIBLE claim does not burn the 6h window, so the next resolution retries", async () => {
+    // claim_my_purchases NEVER RAISES on a refusal — the no-uid, soft-deleted
+    // and phone-not-confirmed gates all return all-zeros normally, so the
+    // client's `if (error) throw` never trips. Stamping the watermark up-front
+    // therefore burned six hours on calls that could not possibly have claimed:
+    // an email / magic-link sign-in leaves auth.users.phone NULL, returns zeros,
+    // and the MSG91 sign-in for the SAME user minutes later — the one that WOULD
+    // have claimed — was then skipped silently, all counters reading zero. The
+    // `eligible` discriminator is what closes that, so this pins it.
+    const rpc = supabase.rpc as unknown as Mock;
+    h.getSessionResult = { data: { session: null } };
+    h.profileResponder = () => Promise.resolve({ data: profileRow(), error: null });
+    h.rpcResponder = () =>
+      Promise.resolve({
+        data: { claimed: 0, stamped: 0, blocked: 0, eligible: false },
+        error: null,
+      });
+
+    const first = renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
+    const session = { ...makeSession("u1"), access_token: "tok-1" } as Session;
+    await emit("SIGNED_IN", session);
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    // Their phone-verified sign-in, moments later and well inside the window.
+    // It must NOT be suppressed: nothing eligible has happened yet.
+    h.authCallbacks.length = 0;
+    h.rpcResponder = () =>
+      Promise.resolve({
+        data: { claimed: 3, stamped: 3, blocked: 0, eligible: true },
+        error: null,
+      });
+    renderHook(() => useAuth(), { wrapper: providerWrapper });
+    await waitFor(() => expect(h.authCallbacks.length).toBeGreaterThan(0));
+    await emit("SIGNED_IN", { ...session, access_token: "tok-2" } as Session);
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
   });
 
   it("claims again when the same user signs out and back in inside the window", async () => {

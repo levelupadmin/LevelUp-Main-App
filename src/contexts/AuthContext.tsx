@@ -483,14 +483,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     //   • NON-BLOCKING — fire-and-forget, never awaited, so it cannot land on
     //     the auth critical path. A failed claim must never lock a student out;
     //     it is logged in DEV, reported to Sentry, and otherwise swallowed.
-    //   • RATE-LIMITED, in two independent steps. First the event: only
-    //     `SIGNED_IN` is ever considered, so `INITIAL_SESSION` and the ~hourly
-    //     `TOKEN_REFRESHED` (24 events per user per day, 60k+ users) can never
-    //     reach the RPC. Then the watermark: `SIGNED_IN` is itself re-emitted on
-    //     every cold start and every resume, so the claim additionally runs at
-    //     most once per user per `CLAIM_MIN_INTERVAL_MS` — see the watermark
-    //     block at module scope for why a signed-out → signed-in transition
-    //     check cannot do this job.
+    //   • RATE-LIMITED BY THE WATERMARK ALONE, deliberately not by the event
+    //     name. Any resolution carrying a user is a candidate; the claim then
+    //     runs at most once per user per `CLAIM_MIN_INTERVAL_MS`, and at most
+    //     once per visit in memory. Gating on `SIGNED_IN` was REMOVED because it
+    //     excluded every returning student — auth-js emits only
+    //     `TOKEN_REFRESHED` once the stored token is inside its 90s expiry
+    //     margin, which is every launch more than ~58.5 minutes apart. See the
+    //     watermark block at module scope for the full reasoning, including why
+    //     a signed-out → signed-in transition check cannot do this job either.
     //   • CACHE INVALIDATION — the claim races the post-sign-in navigation, so
     //     the enrolment queries can cache their (empty) result before it
     //     commits. With `staleTime` 5min and `refetchOnWindowFocus` off, the
@@ -518,10 +519,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const claimPurchases = (userId: string) => {
-      // Stamp BEFORE firing so duplicate `SIGNED_IN` emissions in the same tick
-      // cannot both pass the gate.
+      // The IN-MEMORY guard is set before firing, so duplicate emissions in the
+      // same tick cannot both pass. The PERSISTED watermark is NOT set here —
+      // it is written only once the RPC reports `eligible`, below.
+      //
+      // claim_my_purchases never raises on a refusal; it returns all zeros. So
+      // stamping up-front burned the 6h window on calls that could not possibly
+      // have claimed: an email or magic-link sign-in leaves auth.users.phone
+      // NULL, returns zeros, and the MSG91 sign-in for the SAME user minutes
+      // later — the one that WOULD have claimed — was then skipped silently.
       claimedThisVisitFor = userId;
-      stampClaim(userId);
       void (async () => {
         try {
           // Not in the generated supabase types yet; cast per the repo
@@ -538,10 +545,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             claimed?: number;
             stamped?: number;
             blocked?: number;
+            eligible?: boolean;
           };
           const claimed = Number(result.claimed ?? 0);
           const stamped = Number(result.stamped ?? 0);
           const blocked = Number(result.blocked ?? 0);
+          // Only a completed run for an identifiable caller burns the window.
+          // A refusal leaves the watermark unset, so the next resolution for
+          // this user — typically the phone-verified one — tries again.
+          if (result.eligible === true) stampClaim(userId);
           if (import.meta.env.DEV) {
             console.info("[AuthContext] claim_my_purchases:", { claimed, stamped, blocked });
           }
@@ -571,10 +583,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
         } catch (err) {
           if (import.meta.env.DEV) console.error("[AuthContext] claim_my_purchases failed:", err);
-          // A failed claim must not burn the whole window: drop the persisted
-          // watermark so the student's NEXT visit retries. `claimedThisVisitFor`
-          // stays set, so a failing backend still can't turn every resume in
-          // this visit into another attempt.
+          // A failed claim must not burn the window. The watermark is now only
+          // written on an eligible success, so there is normally nothing to
+          // undo — but clear defensively in case an earlier visit stamped it.
+          // `claimedThisVisitFor` stays set, so a failing backend still cannot
+          // turn every resume in this visit into another attempt.
           if (claimedThisVisitFor === userId) clearClaimWatermark();
           // Prod signal: without this a Tier-1 auth-path rollout is invisible
           // outside DEV. Dynamic import so unauthenticated pages don't pull
