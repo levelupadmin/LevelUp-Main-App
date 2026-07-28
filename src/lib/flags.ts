@@ -15,9 +15,24 @@
 /** The reconciler flag. Default off — the whole reconciler path is inert. */
 export const FUNNEL_RECON = "VITE_FUNNEL_RECON";
 
+/**
+ * The cohort-rooms SURFACE flag. Default off — `/rooms` and `/room/*` do not
+ * exist as routes, and `/cohort/:offeringId` behaves exactly as it did before
+ * R1 (no slug resolution, no redirect).
+ *
+ * ⚠️ SURFACE ONLY, NEVER AUTHORISATION (NFR-CONFIG-2). Because `flag()` reads
+ * localStorage BEFORE the compiled env (see the resolution order above), any
+ * visitor can turn this on for their own device. That is fine and intended: R0's
+ * RLS and the three room RPCs gate the DATA regardless, and each RPC asserts
+ * access first and RAISEs `42501` for a caller who does not hold it. Nothing in
+ * the room stack may read this flag to decide what a user is allowed to see.
+ */
+export const COHORT_ROOMS = "VITE_COHORT_ROOMS";
+
 /** Known flags and their default when neither localStorage nor env speaks. */
 const REGISTRY: Record<string, boolean> = {
   [FUNNEL_RECON]: false,
+  [COHORT_ROOMS]: false,
 };
 
 function truthy(value: unknown): boolean {

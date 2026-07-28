@@ -6270,6 +6270,10 @@ export type Database = {
           week_status: string
         }[]
       }
+      get_cohort_room: {
+        Args: { p_offering: string }
+        Returns: Json
+      }
       get_event_registration_count: {
         Args: { p_event_id: string }
         Returns: number
@@ -6278,6 +6282,36 @@ export type Database = {
       get_live_session_zoom_link: {
         Args: { p_session_id: string }
         Returns: string
+      }
+      get_my_cohort_rooms: {
+        Args: Record<string, never>
+        Returns: {
+          batch_id: string
+          batch_name: string
+          current_week: number
+          modules: Json
+          next_due_at: string
+          next_session_at: string
+          offering_id: string
+          offering_title: string
+          phase: string
+          role: string
+          room_slug: string
+          theme: Json
+          total_weeks: number
+          unseen_announcements: number
+        }[]
+      }
+      get_room_roster: {
+        Args: { p_offering: string }
+        Returns: {
+          avatar_url: string
+          city: string
+          full_name: string
+          occupation: string
+          role: string
+          user_id: string
+        }[]
       }
       has_course_access: { Args: { p_course_id: string }; Returns: boolean }
       has_offering_learnings_access: {
