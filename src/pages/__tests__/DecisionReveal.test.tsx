@@ -30,11 +30,30 @@ import type { Decision } from "@/hooks/useDecision";
  *      the reconciler says `accepted`. `deriveSeatHeldUntil`'s arithmetic is
  *      pinned alongside it — the held-seat window is REQ-DEC-5's conversion
  *      lever and must never be fabricated from a missing anchor.
+ *   7. **The store guard on beat 3, both halves of it.** Inside a native shell
+ *      no purchase-LABELLED affordance may render on this screen (Play Reader
+ *      Rule Path B / Apple 3.1.1 bar the affordance, not merely the checkout
+ *      link) — AND the route onward must survive the guard, because the working
+ *      "Continue on web" bounce lives two surfaces downstream on ClaimSeat and a
+ *      deleted CTA would strand the accepted Android student here. Both halves
+ *      are asserted, on this page and on `AcceptanceCard.tsx`, which carries the
+ *      identical CTA and is pinned by `AcceptanceCard.test.tsx`. The guard is
+ *      pinned against a RENAME, not against one string: the sweep reads the
+ *      label the page rendered, and the traversals find the CTA by
+ *      `data-testid`, so there is no expected-label constant here that could be
+ *      updated to let a purchase CTA back onto a native shell. The rename
+ *      PATTERNS are pinned in turn (`RENAME_CANDIDATES` / `NEUTRAL_LABELS`),
+ *      because a sweep can only ever see the label that ships today: the first
+ *      version of this guard wrote `\bpay\b`, which cannot match inside
+ *      "payment", so "Complete payment" passed it clean. This screen states no
+ *      rupee amount on any platform, and that is asserted too rather than left
+ *      to be noticed later.
  *
- * `useDecision`'s HOOK, `flag` and framer's `useReducedMotion` are mocked so the
- * page renders without the flag/network/media query, mirroring the isolation of
- * ApplicationStatus.ambiguous.test.tsx. The hook module's pure exports are kept
- * real (`importOriginal`) so §5 tests the shipping function, not a copy.
+ * `useDecision`'s HOOK, `flag`, `@/lib/platform` and framer's `useReducedMotion`
+ * are mocked so the page renders without the flag/network/media query/native
+ * shell, mirroring the isolation of ApplicationStatus.ambiguous.test.tsx. The
+ * hook module's pure exports are kept real (`importOriginal`) so §5 tests the
+ * shipping function, not a copy.
  */
 
 const TEST_APP_ID = "app-1";
@@ -44,6 +63,7 @@ let mockFlagOn = true;
 let mockReduced = false;
 let mockOffline = false;
 let mockErrored = false;
+let mockPlatform: "web" | "android" | "ios" = "web";
 let mockDecision: Decision | null = null;
 const mockRefetch = vi.fn();
 
@@ -66,6 +86,22 @@ vi.mock("@/hooks/useDecision", async (importOriginal) => {
     }),
   };
 });
+
+/* The real module asks Capacitor, which answers "web" under jsdom — so without
+   this the native branch would never be exercised at all, which is precisely how
+   an unguarded CTA sat on this page through four reviews.
+
+   The SHAPE is ClaimSeat.test.tsx's and EnrollmentDetails.test.tsx's, to the
+   character: ONE `mockPlatform` string with both exports derived from it, never
+   a bare `isNative` boolean. Those two pages already branch on `isIOS()`; when
+   this one gains such a branch, a half-mocked module would resolve `isIOS` to
+   undefined and kill the suite with "isIOS is not a function" instead of failing
+   as a platform assertion — and no test here could tell the iOS shell from the
+   Android one. */
+vi.mock("@/lib/platform", () => ({
+  isIOS: () => mockPlatform === "ios",
+  isNative: () => mockPlatform !== "web",
+}));
 
 // motion.ts's useMotionSafe wraps framer's useReducedMotion, so mocking the
 // hook at the source drives the reduced-motion branch deterministically (jsdom's
@@ -101,11 +137,164 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
 // reveal rendered nothing.
 const TODAYS_PATH_MARKER = "TODAYS_APPLICATION_STATUS";
 
+/** Beat 3's destination. Real on every platform — that is half the contract. */
+const ACCEPTANCE_CARD_MARKER = "ACCEPTANCE_CARD";
+
+/** The locked web beat: the one label string this file names, because it is the
+    one that must still be there on web. What beat 3 says on a native shell is
+    deliberately NOT written down anywhere here — see FORWARD_CTA. */
+const WEB_BEAT_3 = "Claim my seat";
+
+/**
+ * Beat 3, identified by what it IS rather than by what it SAYS. Every traversal
+ * goes through this id, so renaming the guarded label leaves the traversals
+ * green and sends the sweep below red — the only failure that names the actual
+ * defect. `AcceptanceCard.tsx` tags its forward CTA with the same id, and
+ * `AcceptanceCard.test.tsx` carries this same block, because the two surfaces
+ * are one pair and must fail together.
+ */
+const FORWARD_CTA = "decision-forward-cta";
+
+/** Both store shells. The guard is one `isNative()` test, so it must hold on
+    both, and running it twice is what makes the platform mock's `isIOS` half
+    load-bearing rather than decorative. */
+const NATIVE_SHELLS = ["android", "ios"] as const;
+
+/**
+ * What a store reviewer reads as a purchase entry point on a button or a link.
+ * Groups rather than strings, because the failure being pinned is a RENAME:
+ *
+ *   • the transaction VERBS — "confirm your seat", "reserve your spot" and
+ *     "secure your place" are the same button in a different coat. "Confirm" is
+ *     first in the list because it is this repo's own canonical phrase for this
+ *     exact action (`ApplicationTimeline.tsx`, `ApplicationStatus.tsx`,
+ *     `CheckoutPage.tsx`), which makes it one of the likeliest renames;
+ *   • the PAYMENT words, matched WITHOUT word boundaries, deliberately. The
+ *     first version of this guard wrote `\bpay\b`, which cannot match inside
+ *     "payment" — and "payment" is this repo's own UI wording
+ *     (`AdminOfferingEditor.tsx`, `ThankYou.tsx`, `AdminEvents.tsx`) while
+ *     `ApplicationStatus.tsx` ships a "Pay Confirmation" link today, so a
+ *     payment-NOUN relabel is the likeliest rename there is, not a contrived
+ *     one. "Complete payment" sailed through the boundary-anchored version with
+ *     the whole suite green. Boundaries would also miss "Razorpay", the
+ *     processor this flow actually hands off to;
+ *   • the OBJECT — inside a native shell no affordance needs the word "seat",
+ *     so a button reaching for it is reaching for the sale;
+ *   • the stock conversion PHRASES, which carry no verb from the first group;
+ *   • the MONEY, in each of the forms this app writes one.
+ *
+ * `RENAME_CANDIDATES` / `NEUTRAL_LABELS` below pin these patterns in BOTH
+ * directions, so neither a hole nor an over-broad sweep can arrive unnoticed —
+ * a hole is what shipped last time, and it was invisible because nothing tested
+ * the patterns themselves.
+ *
+ * This block is duplicated verbatim in `AcceptanceCard.test.tsx`. The two
+ * surfaces are one pair carrying one CTA, so the guard must be identical on
+ * both: change one, change the other.
+ *
+ * Only `a` and `button` are swept: prose that DESCRIBES the step is not an
+ * affordance, and ClaimSeat already ships exactly that inside the Play shell in
+ * `ContinueOnWebCTA`'s body copy.
+ */
+const PURCHASE_VERB =
+  /\b(confirm\w*|claim\w*|reserv\w*|secure|book(ing|s)?|buy\w*|purchas\w*|paid|checkout|check out|order(s|ing)?|regist\w*|enrol\w*|admit|subscrib\w*|upgrade|deposit|redeem|unlock|activat\w*|renew\w*)\b/i;
+const PAYMENT_WORD = /pay|\bupi\b|\bnetbanking\b|\bstripe\b/i;
+const PURCHASE_OBJECT = /\b(seats?|spots?|places?|admissions?|tickets?)\b/i;
+const PURCHASE_PHRASE = /\b(get started|sign ?up|join now|start now|lock (it|this|yours) in)\b/i;
+const MONEY = /₹|\brs\.?\s*\d|\b(inr|rupees?)\b/i;
+
+/** The matched fragment, so a red run names the word that has to change. */
+function purchaseAffordanceIn(label: string): string | null {
+  for (const pattern of [
+    PURCHASE_VERB,
+    PAYMENT_WORD,
+    PURCHASE_OBJECT,
+    PURCHASE_PHRASE,
+    MONEY,
+  ]) {
+    const hit = label.match(pattern);
+    if (hit) return hit[0];
+  }
+  return null;
+}
+
+/**
+ * The labels a relabel would actually reach for — every one of them must be
+ * caught. This is the assertion whose absence let "Complete payment" through:
+ * the sweep below only ever sees the label the page renders TODAY, so a hole in
+ * the patterns is invisible until someone renames into it.
+ */
+const RENAME_CANDIDATES = [
+  "Claim my seat",
+  "Confirm your seat",
+  "Reserve your spot",
+  "Secure your place",
+  "Complete payment",
+  "Proceed to payment",
+  "Continue to payment",
+  "Make payment",
+  "Payment",
+  "Payment details",
+  "Pay now",
+  "Continue to Razorpay",
+  "Order now",
+  "Register now",
+  "Complete your admission",
+  "Book your place",
+  "Buy now",
+  "Enrol now",
+  "Get started",
+  "Unlock your seat",
+  "₹8,000 to confirm",
+  "8,000 INR",
+] as const;
+
+/**
+ * The other direction. A guard nobody can satisfy gets widened until it means
+ * nothing, so the labels this phase legitimately ships inside a native shell —
+ * forward motion that names no transaction — are pinned as ALLOWED.
+ */
+const NEUTRAL_LABELS = [
+  "See what's next",
+  "Continue to the next step",
+  "Read what the next step involves",
+  "Open your decision",
+  "Read the panel's note",
+  "Back to your application",
+  "Try again",
+  "Skip",
+] as const;
+
+function labelOf(el: Element): string {
+  return (el.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+/** Sweeps EVERY affordance the page rendered, not a list of known ones. */
+function expectNoPurchaseAffordance(container: HTMLElement) {
+  for (const el of Array.from(container.querySelectorAll("a, button"))) {
+    const label = labelOf(el);
+    expect(
+      purchaseAffordanceIn(label),
+      `"${label}" reads as a purchase affordance inside a native shell. ` +
+        "The LABEL is what has to change — widening this guard to admit it is " +
+        "the regression it exists to catch.",
+    ).toBeNull();
+    expect(el.getAttribute("href") ?? "").not.toMatch(/checkout/i);
+  }
+}
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={[`/decision/${TEST_APP_ID}`]}>
       <Routes>
         <Route path="/decision/:applicationId" element={<DecisionReveal />} />
+        {/* The acceptance card, stubbed: the reveal's job is to REACH it, and on
+            a native shell reaching it is the half of the guard that a deletion
+            would silently break. */}
+        <Route
+          path="/decision/:applicationId/accepted"
+          element={<p>{ACCEPTANCE_CARD_MARKER}</p>}
+        />
         <Route path="/my-application/:applicationId" element={<p>{TODAYS_PATH_MARKER}</p>} />
       </Routes>
     </MemoryRouter>,
@@ -123,8 +312,32 @@ describe("DecisionReveal (D-1)", () => {
     mockReduced = false;
     mockOffline = false;
     mockErrored = false;
+    mockPlatform = "web";
     mockDecision = makeDecision();
     mockRefetch.mockClear();
+  });
+
+  it("the rename guard catches the labels a relabel would reach for", () => {
+    // Pins the PATTERNS, not the page. Without this the sweep below can only see
+    // the label that ships today, which is how a boundary-anchored `\bpay\b`
+    // shipped as "no purchase affordance under ANY name" while "Complete
+    // payment" passed clean on both surfaces.
+    for (const label of RENAME_CANDIDATES) {
+      expect(
+        purchaseAffordanceIn(label),
+        `"${label}" is a rename a native CTA could take, and the guard misses it`,
+      ).not.toBeNull();
+    }
+  });
+
+  it("…and stays narrow enough to leave the honest labels alone", () => {
+    for (const label of NEUTRAL_LABELS) {
+      expect(
+        purchaseAffordanceIn(label),
+        `"${label}" names no transaction, so flagging it would push the next ` +
+          "maintainer to widen the guard's exceptions instead of the label",
+      ).toBeNull();
+    }
   });
 
   it("flag off → nothing renders; the surface falls back to today's path", () => {
@@ -137,7 +350,7 @@ describe("DecisionReveal (D-1)", () => {
     expect(screen.queryByText("Your decision is ready")).toBeNull();
     expect(screen.queryByRole("button", { name: "Open your decision" })).toBeNull();
     expect(screen.queryByText("you're in.")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Claim my seat" })).toBeNull();
+    expect(screen.queryByTestId(FORWARD_CTA)).toBeNull();
   });
 
   it("no decision yet (pending) → today's path, no reveal", () => {
@@ -160,7 +373,97 @@ describe("DecisionReveal (D-1)", () => {
 
     // Beat 3, last of all.
     expect(screen.getByText("you're in.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Claim my seat" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: WEB_BEAT_3 })).toBeInTheDocument();
+  });
+
+  it("web: beat 3 stays verbatim and lands on the acceptance card", () => {
+    renderPage();
+    openTheSeal();
+
+    const cta = screen.getByTestId(FORWARD_CTA);
+    expect(labelOf(cta)).toBe(WEB_BEAT_3);
+    fireEvent.click(cta);
+    expect(screen.getByText(ACCEPTANCE_CARD_MARKER)).toBeInTheDocument();
+  });
+
+  it.each(NATIVE_SHELLS)("native (%s): NO purchase-labelled affordance survives", (platform) => {
+    // The full-viewport reveal is the largest surface in the phase and the one
+    // most likely to be screenshotted into a store review, and it shipped the
+    // same unguarded "Claim my seat" the acceptance card did. Both stores bar
+    // the AFFORDANCE, not merely the checkout link, so the label goes — and it
+    // goes on BOTH shells: Play's Reader Rule and Apple's 3.1.1 land in the same
+    // place here even though they are different rules.
+    mockPlatform = platform;
+    const { container } = renderPage();
+    openTheSeal();
+
+    expectNoPurchaseAffordance(container);
+    // The verdict is not collateral damage: the guard touches one label.
+    expect(screen.getByText("you're in.")).toBeInTheDocument();
+    expect(screen.getByText("Aarav,")).toBeInTheDocument();
+  });
+
+  it.each(NATIVE_SHELLS)("native (%s): beat 3 cannot come back under a new name", (platform) => {
+    // The assertion the first version of this suite failed to make. It reads the
+    // label off the rendered button and tests the LABEL, so mutating this page
+    // to "Confirm your seat", "Reserve your spot" or "Complete payment" goes red
+    // here, naming the label as the thing to fix. There is no expected string in
+    // this test that could be "corrected" instead — and the patterns it leans on
+    // are themselves pinned by RENAME_CANDIDATES above.
+    mockPlatform = platform;
+    renderPage();
+    openTheSeal();
+
+    const label = labelOf(screen.getByTestId(FORWARD_CTA));
+    expect(label).not.toBe(WEB_BEAT_3);
+    expect(
+      purchaseAffordanceIn(label),
+      `beat 3 renders "${label}" on a native shell, which still reads as a purchase affordance`,
+    ).toBeNull();
+  });
+
+  it.each(NATIVE_SHELLS)("native (%s): the path forward SURVIVES the guard", (platform) => {
+    // The half no lens asked for. The accepted Android student reaches the
+    // working "Continue on web" bounce through this button and the acceptance
+    // card behind it; deleting the CTA to satisfy the Reader Rule would dead-end
+    // them on the reveal, which is the failure class this pass exists to close.
+    // Found by test id, so this stays green under a rename and goes red only on
+    // a DELETION — the two failures stay distinguishable.
+    mockPlatform = platform;
+    renderPage();
+    openTheSeal();
+
+    fireEvent.click(screen.getByTestId(FORWARD_CTA));
+    expect(screen.getByText(ACCEPTANCE_CARD_MARKER)).toBeInTheDocument();
+  });
+
+  it("native + reduced motion: the guard costs the reveal nothing", async () => {
+    // The guard is a one-word platform branch, never a timeline branch: the
+    // verdict still lands inside the crossfade budget and the forward path is
+    // still there. If a future edit buys the guard by weakening the reveal
+    // (gating a beat on the platform, say), this is what catches it.
+    mockPlatform = "android";
+    mockReduced = true;
+    renderPage();
+    openTheSeal();
+
+    expect(screen.getByText("you're in.")).toBeInTheDocument();
+    expect(screen.getByRole("main")).toHaveAttribute("data-reveal-mode", "crossfade");
+    const rule = screen.getByTestId("decision-rule");
+    expect(["", "none"]).toContain(rule.style.transform);
+    await waitFor(() => expect(rule.style.opacity).toBe("1"), { timeout: 800 });
+
+    expect(screen.getByTestId(FORWARD_CTA)).toBeInTheDocument();
+  });
+
+  it("states no rupee amount on ANY platform, which is the state to keep", () => {
+    for (const platform of ["web", ...NATIVE_SHELLS] as const) {
+      mockPlatform = platform;
+      const { container, unmount } = renderPage();
+      openTheSeal();
+      expect(container.textContent ?? "").not.toContain("₹");
+      unmount();
+    }
   });
 
   it("reduced motion → a crossfade that STILL reveals the verdict", async () => {
@@ -208,7 +511,7 @@ describe("DecisionReveal (D-1)", () => {
     expect(screen.queryByRole("button", { name: /share/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /copy link/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Claim my seat" })).toBeNull();
+    expect(screen.queryByTestId(FORWARD_CTA)).toBeNull();
     expect(screen.queryByText("you're in.")).toBeNull();
   });
 
@@ -218,7 +521,7 @@ describe("DecisionReveal (D-1)", () => {
     openTheSeal();
 
     expect(screen.getByText("you're on the waitlist.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Claim my seat" })).toBeNull();
+    expect(screen.queryByTestId(FORWARD_CTA)).toBeNull();
     expect(screen.queryByRole("button", { name: /share/i })).toBeNull();
   });
 
@@ -252,7 +555,7 @@ describe("DecisionReveal (D-1)", () => {
     // The timeline COMPLETES; it does not unwind. Nothing is remounted, so the
     // verdict and the last beat's CTA are still there.
     expect(screen.getByText("you're in.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Claim my seat" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: WEB_BEAT_3 })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Skip" })).toBeNull();
   });
 

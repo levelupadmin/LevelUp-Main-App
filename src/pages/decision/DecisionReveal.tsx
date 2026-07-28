@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DECISION_FLOW, flag } from "@/lib/flags";
 import { decisionReveal, useMotionSafe } from "@/lib/motion";
+import { isNative } from "@/lib/platform";
 import { useDecision } from "@/hooks/useDecision";
 
 /**
@@ -19,6 +20,13 @@ import { useDecision } from "@/hooks/useDecision";
  * ApplicationStatus) → "Open your decision" (the seal) → "Claim my seat" (last).
  * Notifications announce only that a decision is READY — no payload carries the
  * verdict, which is why the seal exists at all.
+ *
+ * The one exception to "verbatim" is the third beat inside a NATIVE shell, where
+ * the store rule outranks the copy lock: it keeps its destination and drops its
+ * purchase label. This is the most prominent surface in the phase and therefore
+ * the likeliest one to be screenshotted into a review, so it is guarded the same
+ * way `AcceptanceCard.tsx` is, and for the same reason — the two carry the same
+ * CTA and must be changed together. See the note at the CTA below.
  *
  * Motion: transform/opacity only, every value from `decisionReveal` in
  * `src/lib/motion.ts`. The staged timeline settles at 2.3s (`letter` + `beat`),
@@ -76,6 +84,13 @@ const DecisionReveal = () => {
   const navigate = useNavigate();
   const { reduced } = useMotionSafe();
   const { decision, isLoading, isOffline, isError, refetch } = useDecision(applicationId);
+
+  /* Read once, for the CTA label alone. This screen states no figure on any
+     platform and nothing else on it is platform-dependent, so the branch stays
+     one word wide. It is NOT part of the timeline: the beats, their delays and
+     their easings are identical on every platform, so the ≤2.6s ceiling and the
+     ≤200ms reduced-motion crossfade are untouched by it. */
+  const native = isNative();
 
   // The seal. Nothing about the outcome is shown until the student opens it.
   const [opened, setOpened] = useState(false);
@@ -291,11 +306,39 @@ const DecisionReveal = () => {
             <p className="mt-3 text-sm text-muted-foreground">
               The panel read your application twice and wants you in this room.
             </p>
+            {/* Beat 3, and the same store guard `AcceptanceCard.tsx` carries:
+                on web this is verbatim, on a native shell it keeps its
+                destination and drops the purchase label. Both stores bar a
+                purchase AFFORDANCE, not merely a checkout link, and this is the
+                largest, most screenshot-prone surface in the funnel — "Claim my
+                seat" two taps above an ₹8,000 confirmation reads as one to a
+                reviewer. The money itself, its figures and its external link
+                stay guarded where they live, on ClaimSeat.
+
+                `isNative()`, the test ClaimSeat's own guard already uses — not
+                `ContinueOnWebCTA`'s, which is `isIOS()` alone with its Android
+                vs web gating left to its callers. The same known gap
+                `AcceptanceCard.tsx` records applies
+                here and is not restated: `ApplicationStatus.tsx` still ships a
+                "Pay Confirmation" checkout Link inside the Play shell on an
+                `isIOS()`-only gate, so the shell is not purchase-free yet. That
+                surface is the one still to bring in line.
+
+                RELABELLED, not removed. The accepted student on Android reaches
+                ClaimSeat — and the instruction to complete the money step in a
+                web browser — through this button and the acceptance card behind
+                it; deleting it would dead-end them at the reveal, which is the
+                failure mode this pass is closing.
+                `DecisionReveal.test.tsx` pins both halves, and pins them against
+                a RENAME: the label is swept as rendered, and the traversal finds
+                this button by `data-testid` so no expected-label string in the
+                test can be edited to make a purchase CTA green again. */}
             <Button
               className="mt-8"
+              data-testid="decision-forward-cta"
               onClick={() => navigate(`/decision/${applicationId}/accepted`)}
             >
-              Claim my seat
+              {native ? "See what's next" : "Claim my seat"}
             </Button>
           </>
         ) : (

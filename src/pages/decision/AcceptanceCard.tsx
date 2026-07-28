@@ -2,6 +2,7 @@ import { Link, Navigate, useParams } from "react-router-dom";
 import { ArrowRight, Loader2, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DECISION_FLOW, flag } from "@/lib/flags";
+import { isNative } from "@/lib/platform";
 import { useDecision } from "@/hooks/useDecision";
 
 /**
@@ -53,10 +54,19 @@ const LOCKED_PREVIEWS = [
  * Motion is transform/opacity only (`fade-in-up` via the shared `.stagger-in`
  * idiom), so reduced motion collapses it and leaves the content in place. No
  * blur or filter: the Android-WebView compositing budget.
+ *
+ * **Store guard:** the forward CTA keeps its destination on every platform and
+ * loses its purchase LABEL on the native shells, on the same `isNative()` test
+ * ClaimSeat's own guard uses. See the note at the CTA for why the label is the
+ * guarded thing here, and for the one surface still out of line with it.
  */
 const AcceptanceCard = () => {
   const { applicationId } = useParams<{ applicationId: string }>();
   const { decision, isLoading, isOffline } = useDecision(applicationId);
+
+  /* Read once and used for the label alone: this card states no figure on any
+     platform, so there is nothing else on it for a platform branch to own. */
+  const native = isNative();
 
   const todaysPath = `/my-application/${applicationId ?? ""}`;
 
@@ -168,20 +178,77 @@ const AcceptanceCard = () => {
           </p>
         </section>
 
-        {/* Beat 3 of REQ-DEC-1, verbatim. This is navigation, not a payment
-            entry point: the money CTA and its iOS guard live on ClaimSeat. */}
+        {/* Beat 3 of REQ-DEC-1. On web it renders verbatim; on a native shell it
+            keeps its DESTINATION and drops its purchase label.
+
+            This replaces the reasoning that used to sit here — "this is
+            navigation, not a payment entry point: the money CTA and its iOS
+            guard live on ClaimSeat" — which is true about where the money is and
+            is the wrong test. Play's Reader Rule (Path B) and Apple's 3.1.1 bar
+            a purchase AFFORDANCE, not only a checkout link, and a full-width
+            "Claim my seat" one tap above an ₹8,000 confirmation is read as one
+            by a reviewer who never sees our route table. The LABEL is what is
+            guarded here. ClaimSeat's guard over the amounts and the checkout
+            link is untouched and is still the guard that owns the money.
+
+            The test is `isNative()`, the same one ClaimSeat and the policy in
+            `src/lib/platform.ts` use: the Play shell is to carry no purchase UI
+            at all under Path B, and Apple bars both the purchase and the steer
+            toward one. `ContinueOnWebCTA` is deliberately NOT cited as a
+            precedent for that test — it branches on `isIOS()` alone, and
+            whether it renders at all on Android vs web is decided entirely by
+            its callers. It does not self-guard, and a maintainer who reads it as
+            though it did would drop a caller-side gate and ship the Play-only
+            "Continue on web" bounce to desktop web.
+
+            The KNOWN GAP in that claim, stated here rather than papered over:
+            `ApplicationStatus.tsx` still renders a "Pay Confirmation" checkout
+            Link inside the Play shell behind an `isIOS()`-only gate, and it is
+            the page this card redirects to and links back to. So the Play shell
+            is not purchase-free today. That surface is outside this pass, and it
+            is the one left to bring in line — not a reason to leave these two
+            out of line, and not licence to describe the shell as already clean.
+
+            And it is a RELABEL, never a deletion. Deleting it would leave an
+            accepted Android student stranded on this card with no route to
+            ClaimSeat, which is where the money step is explained and where the
+            instruction to complete it in a web browser lives — the same
+            dead-end this pass exists to close, moved one surface upstream. The native label also has to keep its forward momentum
+            without borrowing the SECOND link's job below — this one IS the next
+            step, that one describes it — which is why it reads as a move
+            forward rather than as a second "see the details". `DecisionReveal.tsx`
+            carries the identical treatment for the identical reason: the two are
+            one decision surface pair, they change together, and
+            `AcceptanceCard.test.tsx` / `DecisionReveal.test.tsx` pin both halves
+            — no purchase affordance under ANY name (the sweep is on the rendered
+            label, not on an expected string), and the path forward still
+            traversable, found by `data-testid` so a rename cannot be made green
+            by editing the test. */}
         <div className="mt-8">
           <Link to={`/decision/${applicationId}/claim`} className="block">
-            <Button size="lg" className="w-full">
-              Claim my seat
+            <Button size="lg" className="w-full" data-testid="decision-forward-cta">
+              {native ? "Continue to the next step" : "Claim my seat"}
               <ArrowRight className="ml-1 h-4 w-4" />
             </Button>
           </Link>
+          {/* Reading material, on both platforms: EnrollmentDetails carries its
+              own guard over the figures.
+
+              The copy change here is a consequence of the guard above, and this
+              comment is its only record, so it is stated plainly: this link read
+              "Read what happens when you claim" before this pass, and that
+              wording cannot survive inside a native shell. The store rule is
+              about affordances, and a LINK is one — a button that has just given
+              up the word "claim" sitting above a link that still says it puts
+              the same purchase word back on the same screen. It is one string on
+              both platforms rather than a second platform branch: the neutral
+              phrasing is equally true on web, and a reading link is not worth
+              the branch or the second label to keep in step. */}
           <Link
             to={`/decision/${applicationId}/details`}
             className="mt-3 block text-center text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
           >
-            Read what happens when you claim
+            Read what the next step involves
           </Link>
         </div>
 
