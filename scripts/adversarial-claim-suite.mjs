@@ -91,12 +91,12 @@ BEGIN
   -- ══ T2: confirmed sign-in claims, across the '+'-less auth dialect ═════
   res := pg_temp.claim_as('${U(1)}');
   INSERT INTO results VALUES ('T2 confirmed caller claims across dialects',
-    res::text, '{"claimed": 1, "stamped": 1}');
+    res::text, '{"blocked": 0, "claimed": 1, "stamped": 1}');
 
   -- ══ T3: idempotent — a second sign-in claims nothing ═══════════════════
   res := pg_temp.claim_as('${U(1)}');
   INSERT INTO results VALUES ('T3 second call is a no-op',
-    res::text, '{"claimed": 0, "stamped": 0}');
+    res::text, '{"blocked": 0, "claimed": 0, "stamped": 0}');
 
   -- ══ T4: exactly ONE enrolment exists for that user+offering ════════════
   SELECT count(*) INTO n FROM public.enrolments
@@ -109,7 +109,7 @@ BEGIN
   PERFORM pg_temp.mk_user('${U(2)}', '9199999000' || '02', false);
   res := pg_temp.claim_as('${U(2)}');
   INSERT INTO results VALUES ('T5 unconfirmed phone claims nothing',
-    res::text, '{"claimed": 0, "stamped": 0}');
+    res::text, '{"blocked": 0, "claimed": 0, "stamped": 0}');
 
   -- ══ T6: SOFT-DELETED caller claims nothing (auth phone survives) ═══════
   INSERT INTO public.legacy_enrolments (phone, email, offering_id, legacy_program_name)
@@ -118,7 +118,7 @@ BEGIN
   UPDATE public.users SET deleted_at = now() WHERE id = '${U(3)}';
   res := pg_temp.claim_as('${U(3)}');
   INSERT INTO results VALUES ('T6 soft-deleted caller claims nothing',
-    res::text, '{"claimed": 0, "stamped": 0}');
+    res::text, '{"blocked": 0, "claimed": 0, "stamped": 0}');
 
   -- ══ T7: NULL offering_id stays UNCLAIMED for the granter ═══════════════
   INSERT INTO public.legacy_enrolments (phone, email, offering_id, legacy_program_name)
@@ -128,7 +128,7 @@ BEGIN
   SELECT count(*) INTO n FROM public.legacy_enrolments
    WHERE phone = '${P(4)}' AND claimed_by_user_id IS NULL;
   INSERT INTO results VALUES ('T7 unmapped purchase left claimable',
-    res::text || ' unclaimed=' || n::text, '{"claimed": 0, "stamped": 0} unclaimed=1');
+    res::text || ' unclaimed=' || n::text, '{"blocked": 0, "claimed": 0, "stamped": 0} unclaimed=1');
 
   -- ══ T8: a REVOKED enrolment is never re-granted, and the purchase row
   --        stays UNSTAMPED so reversing the revocation restores the path ═════
@@ -144,7 +144,7 @@ BEGIN
    WHERE legacy_program_name = 'ADV T8' AND claimed_by_user_id IS NULL;
   INSERT INTO results VALUES ('T8 revoked student stays revoked, row stays claimable',
     res::text || ' active=' || n::text || ' claimable=' || m::text,
-    '{"claimed": 0, "stamped": 0} active=0 claimable=1');
+    '{"blocked": 1, "claimed": 0, "stamped": 0} active=0 claimable=1');
 
   -- ══ T8b: a CANCELLED (refunded) enrolment — process-refund writes this ═══
   INSERT INTO public.legacy_enrolments (phone, email, offering_id, legacy_program_name)
@@ -159,7 +159,7 @@ BEGIN
    WHERE legacy_program_name = 'ADV T8b' AND claimed_by_user_id IS NULL;
   INSERT INTO results VALUES ('T8b refunded student does not regain access',
     res::text || ' active=' || n::text || ' claimable=' || m::text,
-    '{"claimed": 0, "stamped": 0} active=0 claimable=1');
+    '{"blocked": 1, "claimed": 0, "stamped": 0} active=0 claimable=1');
 
   -- ══ T8c: already ACTIVE via checkout — no double grant, but DO stamp ═════
   INSERT INTO public.legacy_enrolments (phone, email, offering_id, legacy_program_name)
@@ -170,7 +170,7 @@ BEGIN
   res := pg_temp.claim_as('${U(13)}');
   SELECT count(*) INTO n FROM public.enrolments WHERE user_id = '${U(13)}';
   INSERT INTO results VALUES ('T8c already entitled is reconciled, not re-granted',
-    res::text || ' enrolments=' || n::text, '{"claimed": 0, "stamped": 1} enrolments=1');
+    res::text || ' enrolments=' || n::text, '{"blocked": 0, "claimed": 0, "stamped": 1} enrolments=1');
 
   -- ══ T9: DUPLICATE legacy rows -> one enrolment, no 21000/23505 ═════════
   INSERT INTO public.legacy_enrolments (phone, email, offering_id, legacy_program_name)
@@ -182,7 +182,7 @@ BEGIN
     res := pg_temp.claim_as('${U(6)}');
     SELECT count(*) INTO n FROM public.enrolments WHERE user_id = '${U(6)}';
     INSERT INTO results VALUES ('T9 duplicate purchases collapse',
-      res::text || ' enrolments=' || n::text, '{"claimed": 2, "stamped": 3} enrolments=2');
+      res::text || ' enrolments=' || n::text, '{"blocked": 0, "claimed": 2, "stamped": 3} enrolments=2');
   EXCEPTION WHEN OTHERS THEN
     INSERT INTO results VALUES ('T9 duplicate purchases collapse',
       'RAISED ' || SQLSTATE || ' ' || SQLERRM, 'no raise');
@@ -193,10 +193,10 @@ BEGIN
     PERFORM set_config('request.jwt.claims', '', true);
     res := public.claim_my_purchases();
     INSERT INTO results VALUES ('T10 anon claims nothing, no raise',
-      res::text, '{"claimed": 0, "stamped": 0}');
+      res::text, '{"blocked": 0, "claimed": 0, "stamped": 0}');
   EXCEPTION WHEN OTHERS THEN
     INSERT INTO results VALUES ('T10 anon claims nothing, no raise',
-      'RAISED ' || SQLSTATE, '{"claimed": 0, "stamped": 0}');
+      'RAISED ' || SQLSTATE, '{"blocked": 0, "claimed": 0, "stamped": 0}');
   END;
 
   -- ══ T11: malformed JWT sub must degrade, not raise 22P02 ═══════════════
@@ -204,10 +204,10 @@ BEGIN
     PERFORM set_config('request.jwt.claims', '{"sub":"not-a-uuid"}', true);
     res := public.claim_my_purchases();
     INSERT INTO results VALUES ('T11 malformed sub degrades', res::text,
-      '{"claimed": 0, "stamped": 0}');
+      '{"blocked": 0, "claimed": 0, "stamped": 0}');
   EXCEPTION WHEN OTHERS THEN
     INSERT INTO results VALUES ('T11 malformed sub degrades',
-      'RAISED ' || SQLSTATE, '{"claimed": 0, "stamped": 0}');
+      'RAISED ' || SQLSTATE, '{"blocked": 0, "claimed": 0, "stamped": 0}');
   END;
   PERFORM set_config('request.jwt.claims', '', true);
 
@@ -259,7 +259,7 @@ BEGIN
   PERFORM pg_temp.mk_user('${U(11)}', '9199999000' || '99', true);  -- different phone
   res := pg_temp.claim_as('${U(11)}');
   INSERT INTO results VALUES ('T16 cannot claim another persons purchase',
-    res::text, '{"claimed": 0, "stamped": 0}');
+    res::text, '{"blocked": 0, "claimed": 0, "stamped": 0}');
 END;
 $do$;
 

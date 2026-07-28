@@ -521,10 +521,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data, error } = await supabase.rpc("claim_my_purchases" as any);
           if (error) throw error;
-          // SC-1 returns `{"claimed": n}` precisely so the client can act on it.
-          const claimed = Number((data as { claimed?: number } | null)?.claimed ?? 0);
+          // SC-1 returns {claimed, stamped, blocked} precisely so the client can
+          // act on it and so a rollout is observable. `blocked` counts purchases
+          // deliberately withheld because an existing enrolment says the student
+          // is not entitled (refunded / revoked / expired) — without it that case
+          // is indistinguishable from "nothing to claim".
+          const result = (data ?? {}) as { claimed?: number; blocked?: number };
+          const claimed = Number(result.claimed ?? 0);
+          const blocked = Number(result.blocked ?? 0);
           if (import.meta.env.DEV) {
-            console.info("[AuthContext] claim_my_purchases claimed:", claimed);
+            console.info("[AuthContext] claim_my_purchases:", { claimed, blocked });
           }
           if (claimed > 0) {
             CLAIM_INVALIDATED_QUERY_ROOTS.forEach((root) => {

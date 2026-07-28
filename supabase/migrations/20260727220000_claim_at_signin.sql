@@ -22,12 +22,13 @@
 --   So this migration DELETES the claim from signup instead of fixing it.
 --   No constraint can be violated by a statement that no longer runs.
 --
--- ⚠️ 20260727213000_fix_student_claim_trigger.sql IS SUPERSEDED BY THIS FILE.
---   It is unapplied and stays on disk (removing an unapplied migration another
---   machine may have already pushed is its own hazard), so `db push` WILL apply
---   it immediately before this one. This file therefore fully overwrites BOTH
---   of the functions that file defines and depends on nothing it does — read
---   this file alone to know the end state.
+-- ⚠️ 20260727213000_fix_student_claim_trigger.sql was SUPERSEDED BY THIS FILE
+--   and has been DELETED. It was safe to delete rather than leave on disk:
+--   `supabase migration list` against ivkvluezuiojovpotlyb showed it absent
+--   from the remote table entirely, so no environment had applied it and
+--   nothing depends on it. `db push` therefore applies exactly two files —
+--   this one and 20260728010000 — both of which must go out together (see the
+--   deploy note at the foot). Read this file alone to know the end state.
 --
 -- ── Documented, NOT silently shipped (the brief's two out-of-scope items) ──
 --   These belong here because no other task in this phase delivers them.
@@ -138,9 +139,11 @@ COMMENT ON FUNCTION public.claim_legacy_enrolments_for_user() IS
 --     legacy_enrolments.phone is '+91XXXXXXXXXX'. A raw compare matches ZERO of
 --     73,926 rows: it would look like a clean success and grant nothing.
 --
--- Idempotent: rows it grants are stamped claimed, and the enrolment INSERT is
--- guarded by NOT EXISTS(... AND e.status = 'active') plus ON CONFLICT DO
--- NOTHING, so a second call is a no-op returning {"claimed": 0, "stamped": 0}.
+-- Idempotent: the INSERT is guarded by NOT EXISTS(ANY enrolment for this
+-- user+offering, whatever its status) plus a targetless ON CONFLICT DO NOTHING,
+-- and the stamping UPDATE marks only rows the caller now holds an ACTIVE
+-- enrolment for. A second call is a no-op returning
+-- {"claimed": 0, "stamped": 0, "blocked": 0}.
 --
 -- Returns BOTH counters because they can legitimately differ: a caller who
 -- already holds an active enrolment for an offering (e.g. they re-bought through
@@ -164,6 +167,7 @@ DECLARE
   v_phone_norm text;
   v_claimed    integer := 0;
   v_stamped    integer := 0;
+  v_blocked    integer := 0;
 BEGIN
   -- Best effort throughout. A failed claim must never break a sign-in.
   BEGIN
@@ -174,7 +178,7 @@ BEGIN
     -- failure, so "never raises" holds for the whole function body.
     v_user_id := auth.uid();
     IF v_user_id IS NULL THEN
-      RETURN jsonb_build_object('claimed', 0, 'stamped', 0);
+      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0);
     END IF;
 
     -- Live account only. A soft-deleted caller keeps a usable auth phone, so
@@ -184,7 +188,7 @@ BEGIN
      WHERE u.id = v_user_id
        AND u.deleted_at IS NULL;
     IF NOT FOUND THEN
-      RETURN jsonb_build_object('claimed', 0, 'stamped', 0);
+      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0);
     END IF;
 
     -- Trust the AUTH row, never the public.users mirror, which carries
@@ -198,7 +202,7 @@ BEGIN
     -- matched, and NULL would fall through the NOT below.
     IF NOT COALESCE(v_confirmed, false) OR v_auth_phone IS NULL THEN
       -- nothing proven to match on
-      RETURN jsonb_build_object('claimed', 0, 'stamped', 0);
+      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0);
     END IF;
 
     -- Canonicalise to the '+91XXXXXXXXXX' form legacy_enrolments stores.
@@ -299,30 +303,50 @@ BEGIN
             AND e.status = 'active'
        );
 
-    -- Counted separately from the INSERT: this UPDATE has no NOT EXISTS guard,
-    -- so it stamps rows whose enrolment already existed. stamped >= claimed
-    -- always, and stamped > 0 with claimed = 0 is the "already entitled, now
-    -- reconciled" case rather than a no-op.
+    -- Counted separately from the INSERT: the UPDATE's guard is EXISTS(ACTIVE)
+    -- while the INSERT's is NOT EXISTS(ANY), so it also stamps rows whose active
+    -- enrolment already existed. stamped >= claimed always, and stamped > 0 with
+    -- claimed = 0 is the "already entitled, now reconciled" case, not a no-op.
     GET DIAGNOSTICS v_stamped = ROW_COUNT;
+
+    -- BLOCKED: rows that matched this caller's phone and carry an offering, but
+    -- were refused because an existing enrolment (refunded / revoked / expired)
+    -- says they are not entitled. Without this counter such a caller returns
+    -- {claimed: 0, stamped: 0} — byte-identical to "you had nothing to claim" —
+    -- and with 73,865 rows draining there would be no way to tell a correct
+    -- refusal from a silently broken claim. These rows are deliberately left
+    -- unstamped and therefore still claimable, so a non-zero value here is the
+    -- ONLY signal that a real purchase is being withheld on purpose.
+    SELECT count(*) INTO v_blocked
+      FROM public.legacy_enrolments le
+     WHERE le.claimed_by_user_id IS NULL
+       AND le.offering_id IS NOT NULL
+       AND le.phone = v_phone_norm
+       AND EXISTS (
+         SELECT 1 FROM public.enrolments e
+          WHERE e.user_id = v_user_id
+            AND e.offering_id = le.offering_id
+       );
 
   EXCEPTION
     -- Plain WHEN OTHERS does NOT catch query_canceled (57014), so a
     -- statement_timeout is trapped explicitly.
     WHEN query_canceled THEN
       RAISE WARNING 'claim_my_purchases timed out for user %', v_user_id;
-      RETURN jsonb_build_object('claimed', 0, 'stamped', 0);
+      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0);
     WHEN OTHERS THEN
       RAISE WARNING 'claim_my_purchases failed for user %: % %',
         v_user_id, SQLSTATE, SQLERRM;
-      RETURN jsonb_build_object('claimed', 0, 'stamped', 0);
+      RETURN jsonb_build_object('claimed', 0, 'stamped', 0, 'blocked', 0);
   END;
 
-  RETURN jsonb_build_object('claimed', v_claimed, 'stamped', v_stamped);
+  RETURN jsonb_build_object('claimed', v_claimed, 'stamped', v_stamped,
+                            'blocked', v_blocked);
 END;
 $$;
 
 COMMENT ON FUNCTION public.claim_my_purchases() IS
-  'Claims a signed-in student''s already-in-the-system purchases. Keyed on auth.uid(); requires auth.users.phone_confirmed_at IS NOT NULL (correct at sign-in, inert at signup) and public.users.deleted_at IS NULL; canonicalises the confirmed auth phone to +91XXXXXXXXXX before matching legacy_enrolments. Writes enrolments with source=''migration'', stamps only rows it could grant so NULL-offering rows stay eligible for grant_enrolment_after_offering_resolved, is idempotent, and never raises (auth.uid() included — it is resolved inside the exception block, not in a DECLARE initialiser). Returns {"claimed": n, "stamped": m}: n counts enrolments actually inserted, m counts legacy rows marked claimed, and they differ when the caller already held an active enrolment, so a state-changing call is never logged as a no-op.';
+  'Claims a signed-in student''s already-in-the-system purchases. Keyed on auth.uid(); requires auth.users.phone_confirmed_at IS NOT NULL (correct at sign-in, inert at signup) and public.users.deleted_at IS NULL; canonicalises the confirmed auth phone to +91XXXXXXXXXX before matching legacy_enrolments. Writes enrolments with source=''migration'', stamps only rows it could grant so NULL-offering rows stay eligible for grant_enrolment_after_offering_resolved, is idempotent, and never raises (auth.uid() included — it is resolved inside the exception block, not in a DECLARE initialiser). Returns {"claimed": n, "stamped": m, "blocked": k}: n counts enrolments actually inserted, m counts legacy rows marked claimed (they differ when the caller already held an active enrolment, so a state-changing call is never logged as a no-op), and k counts eligible purchases deliberately REFUSED because an existing refunded/revoked/expired enrolment says the caller is not entitled. Those k rows are left unstamped and stay claimable, and k is the only signal distinguishing a correct refusal from a silently broken claim.';
 
 -- A zero-arg SECURITY DEFINER writer must not be anon-reachable: with no
 -- arguments there is nothing to authorise on except the caller's own JWT, so
