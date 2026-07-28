@@ -56,6 +56,30 @@ export async function enqueueEmail(
     label: string;
     idempotencyKey: string;
     messageId: string;
+    /**
+     * Per-recipient opt-out credential (PHASE RE, U-1). OPTIONAL, and omitted
+     * from the payload entirely when absent, so every existing producer queues a
+     * byte-identical message to the one it queued before this field existed.
+     *
+     * `process-email-queue` already forwards `payload.unsubscribe_token` to the
+     * sender; until something set it, it was `undefined` on every message. The
+     * only producer that sets it today is `cohort-reentry-cron`, whose bodies
+     * also carry the link itself — `_shared/unsubscribe.ts` mints it and
+     * `email-unsubscribe` consumes it.
+     *
+     * NO CLAIM IS MADE about what the sender does with it. Nothing in this repo
+     * emits a `List-Unsubscribe` / `List-Unsubscribe-Post` header, and
+     * `npm:@lovable.dev/email-js` (which `process-email-queue` imports, and
+     * which is a published package that is simply absent from this repo's
+     * package.json, hence `deno check` cannot type it either) is not readable
+     * from here, so RFC 8058 one-click from the inbox is UNVERIFIED and nothing
+     * depends on it. This
+     * field is set because it is the field that already exists on the payload,
+     * not because a capability was confirmed. The load-bearing path is the link
+     * inside the rendered body, which carries the same credential to the same
+     * provider regardless, so setting this exports nothing the body did not.
+     */
+    unsubscribeToken?: string;
   },
 ) {
   const payload = {
@@ -70,6 +94,7 @@ export async function enqueueEmail(
     label: opts.label,
     idempotency_key: opts.idempotencyKey,
     message_id: opts.messageId,
+    ...(opts.unsubscribeToken ? { unsubscribe_token: opts.unsubscribeToken } : {}),
     queued_at: new Date().toISOString(),
   };
   return admin.rpc("enqueue_email", { queue_name: "transactional_emails", payload });

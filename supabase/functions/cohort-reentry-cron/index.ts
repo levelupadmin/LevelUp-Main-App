@@ -74,7 +74,9 @@
  * email path.
  *
  * ── WHY NOTHING CAN BE SENT AS THIS FILE STANDS ─────────────────────────────
- * Three independent reasons, any one sufficient:
+ * Four independent reasons, any one sufficient (the fourth arrived with U-1:
+ * `UNSUBSCRIBE_TOKEN_SECRET` is unset, and a live run refuses to start without
+ * it rather than mail a reminder nobody can opt out of):
  *   1. `REMINDER_LADDER_ENABLED` is unset, so every scheduled tick returns
  *      before reading a row, and any other call is forced into dry-run.
  *   2. A dry run reaches no sender AT ALL: the claim and the dispatch both live
@@ -89,15 +91,70 @@
  *      dispatched — and the guarantee is enforced by the database rather than by
  *      an empty object literal in this file.
  *
- * ── CONSENT, AND THE OPT-OUT THAT ACTUALLY EXISTS ───────────────────────────
+ * ── CONSENT, AND THE OPT-OUT (U-1 BUILT IT; THIS IS NOW A REAL LINK) ────────
  * `user_marketing_prefs` holds zero rows, so no consent is claimed anywhere in
  * the copy: these are service messages to someone who submitted an application,
- * and every body says so. No unsubscribe ENDPOINT is invented here —
- * `email_unsubscribe_tokens` exists but no producer issues a token and
- * `_shared/email.ts`'s `enqueueEmail` accepts none, and that file is not this
- * task's to change. What every body does carry is the opt-out that provably
- * works today: a reply, which a human puts into `suppressed_emails`, which
- * silences the ladder through the two suppression checks below.
+ * and every body says so.
+ *
+ * U-1 replaced the reply-and-ask-a-human opt-out with a working one, and all
+ * four pieces are wired here rather than described:
+ *   • `ensureUnsubscribeCredential` below mints (or reuses) the per-address
+ *     token in `public.email_unsubscribe_tokens`. The token is DERIVED —
+ *     `HMAC-SHA256(UNSUBSCRIBE_TOKEN_SECRET, "v1:<row id>:<issued_at>")`, see
+ *     `_shared/unsubscribe.ts` — so that table stores only its SHA-256 and a
+ *     read of IT cannot forge an opt-out, while all four rungs of a ladder
+ *     still carry a link that keeps working. (The narrow claim is the true one:
+ *     the rendered body and the pgmq payload do carry the live link, and the
+ *     DLQ retains it for a message that never sent. `_shared/unsubscribe.ts`
+ *     spells that out.)
+ *     "KEEPS WORKING" IS VERIFIED, NOT ASSUMED. `issued_at` is a string inside
+ *     that HMAC, and it does not round-trip verbatim: the mint writes JS
+ *     `toISOString()`, the reuse path reads back PostgREST's rendering of the
+ *     same `timestamptz`, and the two spellings differ. So the derivation
+ *     canonicalises the instant, and the sender then re-hashes the token it
+ *     derived and compares it to the row before mailing it
+ *     (`reusableUnsubscribeCredential`). A token that would not open its own
+ *     row rotates the row instead of going in an email. Rotating
+ *     `UNSUBSCRIBE_TOKEN_SECRET` lands in the same check, which is what stops a
+ *     key change from silently killing the ladder's opt-out for the full TTL —
+ *     though links ALREADY delivered are a separate cost, and the rotation
+ *     procedure for those is in `_shared/unsubscribe.ts`.
+ *   • `{{unsubscribe_url}}` is a first-class template variable (`templateVariables`)
+ *     AND a member of `URL_VARIABLES`. Both are load-bearing: a variable the map
+ *     does not fill trips `UNRESOLVED_PLACEHOLDER` and burns the rung POST-CLAIM
+ *     with nothing sent, and a URL not in `URL_VARIABLES` is deleted outright by
+ *     `sanitizeVar`, which would mail a body promising a link that is not there.
+ *   • `enqueueEmail` now takes an OPTIONAL `unsubscribeToken` and puts it on the
+ *     payload only when present, which is the field `process-email-queue:284`
+ *     has always forwarded and that nothing has ever set. Every other producer
+ *     of that helper queues a byte-identical message to before. NO claim is made
+ *     about what the provider does with it: nothing in this repo emits a
+ *     `List-Unsubscribe` header and `npm:@lovable.dev/email-js` (the sender
+ *     `process-email-queue` imports) is absent from this repo's package.json,
+ *     so the in-body link is the only path anything relies on.
+ *   • the link resolves to the public `email-unsubscribe` function, which stamps
+ *     `email_unsubscribe_tokens.used_at`. THAT is the opt-out record, and this
+ *     file reads it in the same two places it reads `suppressed_emails`:
+ *     `loadOptedOutEmails` per page (pre-claim, so an opted-out person never
+ *     burns a rung) and `ensureUnsubscribeCredential` per dispatch (the
+ *     last-moment check). The ladder goes quiet for that person on the next
+ *     tick.
+ *
+ * THE OPT-OUT IS SCOPED TO THIS LADDER ON PURPOSE. The endpoint does NOT insert
+ * into `suppressed_emails`, because that list has no category column and
+ * `queue-transactional-email` gates EVERY transactional send on it — so an
+ * unsubscribe written there would also, silently and irreversibly, kill the
+ * same applicant's payment receipt and cohort notifications. The copy says
+ * "these reminders"; the mechanism now stops exactly those. A reply still works
+ * too, and is the path for somebody who wants everything to stop: a human puts
+ * the address into `suppressed_emails`, which the checks below also honour.
+ *
+ * WHAT THAT SCOPING DOES NOT STOP, stated because a reader should not have to
+ * infer it: `send-bulk-email` is a separate producer whose only opt-out list is
+ * `suppressed_emails`, so clicking this link does NOT stop a bulk campaign.
+ * Both pages the endpoint renders say so and offer the write-to-support path
+ * that does. Whether a reminder opt-out should also suppress marketing is a
+ * product call and is flagged as one, not settled here.
  *
  * ── THE INVIOLABLE RULES THIS FILE OBEYS ────────────────────────────────────
  *   1. The intake chain is FROZEN (INTEG-PAY-1). This function originates no
@@ -118,15 +175,26 @@
  * CHUNK, and here is the arithmetic:
  *   • candidates: at most `MAX_CANDIDATE_PAGES` (5) reads of
  *     `REENTRY_BATCH_LIMIT` (200) rows → ≤1000 rows, ≤5 round trips.
- *   • ledger history + suppression: chunked at `LOOKUP_CHUNK` (50) ids/addresses
- *     → ≤20 + ≤20 round trips (one lookup key per address, see
- *     `loadSuppressedEmails`).
+ *   • ledger history + suppression + opt-outs: chunked at `LOOKUP_CHUNK` (50)
+ *     ids/addresses → ≤20 + ≤20 + ≤20 round trips (one lookup key per address,
+ *     see `loadSuppressedEmails` and `loadOptedOutEmails`).
  *   • copy: ONE read of `email_templates` for all six rung keys, per run.
  *   • the ledger: at most `MAX_CLAIM_ATTEMPTS_PER_RUN` (50) CLAIM ATTEMPTS,
  *     each costing one INSERT plus, when the claim is won, one last-moment
- *     suppression check, one enqueue and one settle update → ≤200 round trips.
- * ≤246 sequential round trips against the same region; at even 100 ms each that
- * is ~25 s, a 2.4x margin inside the 60 s timeout.
+ *     suppression check, one unsubscribe-token read, one enqueue and one settle
+ *     update → ≤250 round trips, and ≤300 on a run where every winner is a
+ *     FIRST CONTACT, since minting that address's token row costs one more
+ *     INSERT (see `ensureUnsubscribeCredential`).
+ * ≤316 sequential round trips in the steady state and ≤366 on a first-contact
+ * run, against the same region; at even 100 ms each that is ~32 s and ~37 s, a
+ * 1.9x / 1.6x margin inside the 60 s timeout.
+ *
+ * U-1 MOVED THAT MARGIN and the number above is the post-U-1 one. The opt-out
+ * costs a page-level read (batched, ≤20) and one row read per WON claim (≤50),
+ * and both are deliberate: the page-level read is what stops an opted-out
+ * person burning a rung, and the per-claim read is the last-moment check that
+ * closes the window between the two. Anyone adding another per-claim round trip
+ * should start from 1.6x, not from the 2.4x this comment used to claim.
  *
  * THE BUDGET COUNTS CLAIM ATTEMPTS, NOT DELIVERIES, and that distinction is the
  * whole reason the bound holds. Counting only successful dispatches leaves the
@@ -164,6 +232,16 @@ import {
   type LadderSend,
   type LadderSkipReason,
 } from "../_shared/ladder.ts";
+import {
+  buildUnsubscribeUrl,
+  deriveUnsubscribeCredential,
+  hashUnsubscribeToken,
+  isUnsubscribeTokenExpired,
+  isUsableUnsubscribeSecret,
+  MIN_UNSUBSCRIBE_SECRET_LENGTH,
+  normalizeUnsubscribeEmail,
+  unsubscribeTokenMatchesStoredHash,
+} from "../_shared/unsubscribe.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -192,6 +270,20 @@ const POLL_AUTH_TOKEN = Deno.env.get("POLL_AUTH_TOKEN") ?? "";
  * how a stray environment value turns into outbound mail.
  */
 const LADDER_ENABLED = Deno.env.get("REMINDER_LADDER_ENABLED") === "true";
+
+/**
+ * The HMAC key every unsubscribe token is derived from (U-1). Secret by name
+ * only; `_shared/unsubscribe.ts` refuses anything under
+ * MIN_UNSUBSCRIBE_SECRET_LENGTH characters, because the token's entire
+ * unguessability rests on it.
+ *
+ * A LIVE run with this unset is refused up front, next to the kill switch,
+ * rather than left to fail per row. The per-row failure would be the expensive
+ * kind: minting happens after the ledger claim, so an unset secret would burn a
+ * rung per applicant and record a `last_error` for each. Mail with no working
+ * opt-out is not something to ship one rung at a time.
+ */
+const UNSUBSCRIBE_SECRET = Deno.env.get("UNSUBSCRIBE_TOKEN_SECRET") ?? "";
 
 /** Candidate applications read per page. See the 60s budget note above. */
 const REENTRY_BATCH_LIMIT = 200;
@@ -308,10 +400,22 @@ const INTERVIEW_TEMPLATE_KEYS: readonly string[] = LADDERS.interview.map((r) => 
  * it deletes the link and mails an empty button. Same carve-out
  * `queue-transactional-email` makes for `app_url`, and it is safe for exactly
  * the same reason: every member is a URL this function built or validated
- * itself (`SITE_URL`, the existing checkout route, and a `calendly_url` that
- * cleared `isCalendlyUrl`), never a string an applicant supplied.
+ * itself (`SITE_URL`, the existing checkout route, a `calendly_url` that
+ * cleared `isCalendlyUrl`, and an unsubscribe link built from `SUPABASE_URL`
+ * plus a credential this function derived), never a string an applicant
+ * supplied.
+ *
+ * `unsubscribe_url` IS IN HERE FOR A REASON, and it is the trap this comment
+ * has always been about: leave it out and `sanitizeVar` deletes the link, so
+ * the body still promises an opt-out and no longer contains one. That is a
+ * silent failure in the one sentence of the email that must not fail.
  */
-const URL_VARIABLES: ReadonlySet<string> = new Set(["app_url", "fee_link", "calendly_link"]);
+const URL_VARIABLES: ReadonlySet<string> = new Set([
+  "app_url",
+  "fee_link",
+  "calendly_link",
+  "unsubscribe_url",
+]);
 
 /** Month names for the deadline date. Fixed English, so the render is deterministic. */
 const MONTH_NAMES: readonly string[] = [
@@ -518,6 +622,231 @@ async function loadSuppressedEmails(admin: AdminClient, emails: string[]): Promi
 }
 
 /**
+ * Addresses on this page that have already used their unsubscribe link.
+ *
+ * THIS IS THE OTHER HALF OF THE SUPPRESSION READ ABOVE, and it is separate
+ * because the two tables are written by different populations.
+ * `suppressed_emails` takes rows from humans and from bounce handling, so its
+ * spellings are unnormalised and it has to be matched case-INSENSITIVELY with
+ * `ilike`. `email_unsubscribe_tokens` has exactly ONE producer — this function
+ * — which writes through `normalizeUnsubscribeEmail`, so every row in it is
+ * already lower-cased and an exact `.in()` both matches everything and uses the
+ * `UNIQUE(email)` index.
+ *
+ * READ PER PAGE, PRE-CLAIM, on purpose. `ensureUnsubscribeCredential` re-checks
+ * the same flag per dispatch and would catch an opted-out address anyway, but
+ * only AFTER the rung was claimed, which spends it. Someone who asked us to
+ * stop should not be silently burning through their own ladder one rung per
+ * tick, so the decision is made before the claim and the per-dispatch check
+ * stays what it is: the last-moment close on the window between the two.
+ *
+ * THROWS rather than returning a short set. An error swallowed here reads as
+ * "nobody opted out" and mails everybody who did, which is the exact failure
+ * `loadSuppressedEmails` refuses `fetchSuppressedSet` over.
+ */
+async function loadOptedOutEmails(admin: AdminClient, emails: string[]): Promise<Set<string>> {
+  const wanted = new Set<string>();
+  for (const email of emails) {
+    const key = normalizeUnsubscribeEmail(email);
+    if (key) wanted.add(key);
+  }
+  const unique = [...wanted];
+
+  const optedOut = new Set<string>();
+  for (let i = 0; i < unique.length; i += LOOKUP_CHUNK) {
+    const chunk = unique.slice(i, i + LOOKUP_CHUNK);
+    const { data, error } = await admin
+      .from("email_unsubscribe_tokens")
+      .select("email")
+      .in("email", chunk)
+      .not("used_at", "is", null);
+    if (error) throw new Error(`unsubscribe opt-out read failed: ${error.message}`);
+    for (const row of (data ?? []) as Array<{ email: string | null }>) {
+      if (row.email) optedOut.add(normalizeUnsubscribeEmail(row.email));
+    }
+  }
+  return optedOut;
+}
+
+/** The `email_unsubscribe_tokens` columns the mint reads. */
+interface UnsubscribeTokenRow {
+  id: string;
+  issued_at: string | null;
+  token_hash: string | null;
+  used_at: string | null;
+}
+
+/** What one dispatch needs to know about an address's opt-out state. */
+interface UnsubscribeState {
+  /** `<token>.<tag>` — what goes in the link. Empty when `optedOut`. */
+  credential: string;
+  /** `used_at` is set: this person clicked unsubscribe. Do not send. */
+  optedOut: boolean;
+}
+
+/**
+ * The credential an EXISTING row still yields, or `null` when this send has to
+ * rotate the row instead.
+ *
+ * Reuse is only safe when the re-derived token would actually open the row it
+ * came from, and there are three independent ways it would not:
+ *   1. the row has no `token_hash` or no `issued_at` (it predates hashed
+ *      storage, or `issued_at` arrived from the column DEFAULT);
+ *   2. the token aged past `UNSUBSCRIBE_TTL_MS`, the ordinary rotation trigger;
+ *   3. THE DERIVED TOKEN DOES NOT HASH TO THE STORED HASH. This is the check
+ *      whose absence made every link after the first a lie. `issued_at` is a
+ *      string inside the HMAC, the mint writes JS `toISOString()` and the reuse
+ *      path reads back PostgREST's `timestamptz` rendering of the same instant
+ *      (`+00:00` for `Z`, trailing fraction zeros dropped, microseconds where
+ *      the DEFAULT filled it), so the two spellings differ.
+ *      `canonicalUnsubscribeIssuedAt` inside `unsubscribeTokenMessage` makes
+ *      them agree; this verifies that it did, and catches a secret rotation in
+ *      the same motion. Without it a divergence is undetectable — the endpoint
+ *      renders the same "you are unsubscribed" page for a token it cannot find
+ *      as for one it can, on purpose, so nothing downstream would ever complain.
+ * All three funnel to the same answer, `null`, which the caller reads as
+ * "rotate". A mismatch is logged because it should be rare enough to explain:
+ * a live run producing these is either a secret rotation or a derivation bug.
+ */
+async function reusableUnsubscribeCredential(
+  row: UnsubscribeTokenRow,
+  now: Date,
+): Promise<string | null> {
+  if (!row.token_hash || !row.issued_at) return null;
+  // Also the guard that keeps the derivation below from throwing: an
+  // unparseable issue time reads as expired, so it never reaches the HMAC.
+  if (isUnsubscribeTokenExpired(row.issued_at, now)) return null;
+
+  const { token, credential } = await deriveUnsubscribeCredential(
+    UNSUBSCRIBE_SECRET,
+    row.id,
+    row.issued_at,
+  );
+  if (!(await unsubscribeTokenMatchesStoredHash(token, row.token_hash))) {
+    log("warn", "unsubscribe_token_hash_mismatch", {
+      tokenId: row.id,
+      reason: "re-derived token does not match the stored hash; rotating rather than mailing a dead link",
+    });
+    return null;
+  }
+  return credential;
+}
+
+/**
+ * Re-derive against a fresh issue time and write the new hash. Retires the old
+ * token by simply no longer matching it, and touches NOTHING else on the row —
+ * in particular never `used_at`, which is somebody's recorded opt-out.
+ */
+async function rotateUnsubscribeCredential(
+  admin: AdminClient,
+  id: string,
+  now: Date,
+): Promise<string> {
+  const issuedAt = now.toISOString();
+  const { token, credential } = await deriveUnsubscribeCredential(UNSUBSCRIBE_SECRET, id, issuedAt);
+  const tokenHash = await hashUnsubscribeToken(token);
+  const { error } = await admin
+    .from("email_unsubscribe_tokens")
+    .update({ token_hash: tokenHash, issued_at: issuedAt })
+    .eq("id", id);
+  if (error) throw new Error(`unsubscribe token rotate failed: ${error.message}`);
+  return credential;
+}
+
+/**
+ * The per-recipient opt-out credential for one address (U-1), minted on first
+ * contact and REUSED on every send after that — and, in the same round trip,
+ * the last-moment answer to "has this person already opted out?".
+ *
+ * WHY REUSE RATHER THAN RE-MINT. `email_unsubscribe_tokens` is one row per
+ * address and stores only `sha256(token)`, so the plaintext cannot be read back
+ * for the next email. A fresh random token per send would therefore invalidate
+ * the link in every message already delivered, and a person clicking last
+ * week's email would be shown "you are unsubscribed" and would not be — the
+ * endpoint cannot tell them otherwise without becoming an enumeration oracle.
+ * So the token is DERIVED from the row (`_shared/unsubscribe.ts`): the same row
+ * and issue time always produce the same 256-bit token, reproducible by this
+ * function and by nothing that lacks the secret.
+ *
+ * REUSE IS NEVER ASSUMED, IT IS VERIFIED. `reusableUnsubscribeCredential` above
+ * re-hashes what it derived and compares it to the row, so the link in rung 2
+ * is known to open the same row rung 1's did rather than merely intended to.
+ * Anything that fails that check is rotated.
+ *
+ * `used_at` IS NEVER CLEARED HERE, and rotation is skipped entirely for a row
+ * that has it set. That is not tidiness: `used_at` is the opt-out record, so a
+ * rotation that reset it would resurrect somebody who had asked us to stop, and
+ * an opted-out address is never mailed again anyway, so it has nothing to
+ * rotate for. Only support clearing `used_at` deliberately undoes an opt-out.
+ *
+ * Throws on a database fault rather than returning "no credential". A message
+ * with a hole where its opt-out should be is not a degraded send, it is one we
+ * should not make: the caller turns this into a dispatch failure, which burns
+ * the rung and records `last_error` instead of mailing an unopt-outable
+ * reminder.
+ */
+async function ensureUnsubscribeCredential(
+  admin: AdminClient,
+  email: string,
+  now: Date,
+): Promise<UnsubscribeState> {
+  const key = normalizeUnsubscribeEmail(email);
+  const { data, error } = await admin
+    .from("email_unsubscribe_tokens")
+    .select("id, issued_at, token_hash, used_at")
+    .eq("email", key)
+    .maybeSingle();
+  if (error) throw new Error(`unsubscribe token read failed: ${error.message}`);
+
+  const existing = (data as unknown as UnsubscribeTokenRow | null) ?? null;
+  if (existing?.used_at) return { credential: "", optedOut: true };
+
+  if (existing) {
+    const reused = await reusableUnsubscribeCredential(existing, now);
+    if (reused) return { credential: reused, optedOut: false };
+    return { credential: await rotateUnsubscribeCredential(admin, existing.id, now), optedOut: false };
+  }
+
+  // FIRST CONTACT. The id is generated HERE, not by the column default, because
+  // the token derives from it: it has to be known before the row exists. The
+  // address is stored normalised so the page-level `.in()` read can be exact.
+  const issuedAt = now.toISOString();
+  const id = crypto.randomUUID();
+  const { token, credential } = await deriveUnsubscribeCredential(UNSUBSCRIBE_SECRET, id, issuedAt);
+  const tokenHash = await hashUnsubscribeToken(token);
+
+  const { error: insertError } = await admin
+    .from("email_unsubscribe_tokens")
+    .insert({ id, email: key, token_hash: tokenHash, issued_at: issuedAt });
+  if (insertError) {
+    if (insertError.code !== "23505") {
+      throw new Error(`unsubscribe token mint failed: ${insertError.message}`);
+    }
+    // Another invocation minted for this address between the read and the
+    // insert (`email` is UNIQUE). ITS token is the live one and may already be
+    // in an email, so adopt it rather than overwrite it.
+    const { data: raced, error: reReadError } = await admin
+      .from("email_unsubscribe_tokens")
+      .select("id, issued_at, token_hash, used_at")
+      .eq("email", key)
+      .maybeSingle();
+    if (reReadError) throw new Error(`unsubscribe token re-read failed: ${reReadError.message}`);
+    const winner = (raced as unknown as UnsubscribeTokenRow | null) ?? null;
+    if (!winner) throw new Error("unsubscribe token race left no row to adopt");
+    if (winner.used_at) return { credential: "", optedOut: true };
+    // Same verify-then-rotate as the ordinary path: the winner's row gets the
+    // same scrutiny our own would, rather than being trusted for having won.
+    // Rotating it is safe precisely because we only get there when its token
+    // does not open its own row, so the winner's link would not have worked
+    // either and there is nothing live to invalidate.
+    const adopted = await reusableUnsubscribeCredential(winner, now);
+    if (adopted) return { credential: adopted, optedOut: false };
+    return { credential: await rotateUnsubscribeCredential(admin, winner.id, now), optedOut: false };
+  }
+  return { credential, optedOut: false };
+}
+
+/**
  * Claim a rung. The INSERT is built from `ledgerKey()` and nothing else, so two
  * invocations deciding the same rung produce byte-identical key columns and
  * Postgres serialises them on `reentry_notif_unique`. Returns the claim's id,
@@ -584,12 +913,17 @@ type DispatchResult =
  *
  * THE LAST-MOMENT SUPPRESSION CHECK. `isEmailSuppressed` runs here, one row
  * before the enqueue, and it is not redundant with the page-level
- * `loadSuppressedEmails`: a page is read once and then walked, so an
- * unsubscribe that lands mid-page would otherwise still be mailed. It is the
- * narrower of the two checks (exact, case-sensitive `.eq`), which is why it
- * supplements rather than replaces the case-insensitive page read. When it
- * fires the CLAIM STANDS and the rung is spent on purpose — a released claim is
- * a second chance to mail someone who asked us to stop.
+ * `loadSuppressedEmails`: a page is read once and then walked, so a suppression
+ * that lands mid-page would otherwise still be mailed. It is the narrower of
+ * the two checks (exact, case-sensitive `.eq`), which is why it supplements
+ * rather than replaces the case-insensitive page read. When it fires the CLAIM
+ * STANDS and the rung is spent on purpose — a released claim is a second chance
+ * to mail someone who asked us to stop.
+ *
+ * The self-service opt-out has the SAME two-layer shape, one level up in
+ * `dispatch`: `loadOptedOutEmails` per page, and `ensureUnsubscribeCredential`'s
+ * own read per dispatch. That one lands before this function is reached, so a
+ * person who clicked the link mid-page never gets as far as the enqueue.
  *
  * THE IDEMPOTENCY KEY IS DETERMINISTIC. `(templateKey, applicationId)` are the
  * ledger's own key columns, so the provider sees the same key for the same rung
@@ -603,6 +937,7 @@ async function sendEmail(
   applicationId: string,
   templateKey: string,
   message: ReentryMessage,
+  unsubscribeCredential: string,
 ): Promise<DispatchResult> {
   if (await isEmailSuppressed(admin, to)) {
     return { ok: false, suppressed: true, error: "recipient suppressed at dispatch" };
@@ -618,6 +953,15 @@ async function sendEmail(
     label: templateKey,
     idempotencyKey: `${templateKey}:${applicationId}`,
     messageId,
+    // The same credential the body's `{{unsubscribe_url}}` was built from, on
+    // the field `process-email-queue:284` already forwards to the sender. It is
+    // an EXTRA, not a dependency: nothing in this repo emits a
+    // `List-Unsubscribe` header, and `npm:@lovable.dev/email-js` is absent from
+    // this repo's package.json, so whether the provider turns it into an
+    // inbox-level one-click is unverified from here. The link in the body is the path that
+    // is guaranteed to work, and it carries the same credential to the same
+    // provider either way, so passing it adds no exposure the body did not.
+    unsubscribeToken: unsubscribeCredential,
   });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
@@ -772,7 +1116,12 @@ function renderableEmailKeys(
  * built here can contain it. What is here: a first name, the offering title,
  * the fee amount, a deadline date, and two links that already exist.
  */
-function templateVariables(row: ApplicationRow, offering: OfferingRow | null, now: Date): Record<string, string> {
+function templateVariables(
+  row: ApplicationRow,
+  offering: OfferingRow | null,
+  now: Date,
+  unsubscribeUrl: string,
+): Record<string, string> {
   const first = (row.full_name ?? "").trim().split(/\s+/)[0] ?? "";
   return {
     first_name: first.length > 0 ? first : "there",
@@ -782,6 +1131,13 @@ function templateVariables(row: ApplicationRow, offering: OfferingRow | null, no
     app_url: SITE_URL,
     fee_link: feeLink(row),
     calendly_link: calendlyLink(offering) ?? "",
+    // U-1. This map is EXHAUSTIVE by contract: `UNRESOLVED_PLACEHOLDER` is
+    // checked after render and an unfilled `{{…}}` is a post-claim failure, so
+    // a template variable that exists in the copy and not here does not degrade
+    // the ladder, it takes the whole ladder dark one burned rung at a time. The
+    // six bodies in `20260730110000_unsubscribe_tokens.sql` all reference this
+    // key, and `src/lib/__tests__/unsubscribe.test.ts` asserts the two agree.
+    unsubscribe_url: unsubscribeUrl,
   };
 }
 
@@ -838,8 +1194,34 @@ async function dispatch(
   const template = templates.get(templateKey);
   if (!template) return { ok: false, error: `no active email template for '${templateKey}'` };
 
+  // THE OPT-OUT IS RESOLVED BEFORE THE BODY IS RENDERED, and a failure here
+  // stops the send rather than degrading it. Every alternative is worse: an
+  // empty variable would trip nothing (it is a legal empty string) and would
+  // mail a body whose "unsubscribe" link goes nowhere, and skipping the
+  // variable entirely would leave `{{unsubscribe_url}}` in somebody's inbox. A
+  // run-level guard already refused to start if the secret is unset, so
+  // reaching this catch means the database itself is failing, which the ledger
+  // records.
+  let unsubscribe: UnsubscribeState;
+  try {
+    unsubscribe = await ensureUnsubscribeCredential(admin, row.email, now);
+  } catch (err) {
+    return { ok: false, error: `unsubscribe token unavailable: ${(err as Error).message}` };
+  }
+
+  // THE LAST-MOMENT OPT-OUT CHECK, and it cost no extra round trip: the read
+  // that fetches the token row is the read that answers this. `loadOptedOutEmails`
+  // already filtered the page pre-claim, so getting here means the click landed
+  // mid-page. Reported as `suppressed`, not as a fault: burning the rung is
+  // exactly right for somebody who asked us to stop.
+  if (unsubscribe.optedOut) {
+    return { ok: false, suppressed: true, error: "recipient unsubscribed from reminders" };
+  }
+
+  const unsubscribeUrl = buildUnsubscribeUrl(SUPABASE_URL, unsubscribe.credential);
+
   const offering = offeringOf(row);
-  const message = renderTemplate(template, templateVariables(row, offering, now));
+  const message = renderTemplate(template, templateVariables(row, offering, now, unsubscribeUrl));
   if (
     UNRESOLVED_PLACEHOLDER.test(message.subject) ||
     UNRESOLVED_PLACEHOLDER.test(message.html) ||
@@ -848,7 +1230,7 @@ async function dispatch(
     return { ok: false, error: `template '${templateKey}' has a placeholder with no variable` };
   }
 
-  return await sendEmail(admin, row.email, row.id, templateKey, message);
+  return await sendEmail(admin, row.email, row.id, templateKey, message, unsubscribe.credential);
 }
 
 Deno.serve(async (req) => {
@@ -896,6 +1278,20 @@ Deno.serve(async (req) => {
   // switch is off, and the claim and the dispatch both sit inside `if
   // (!dryRun)` below, so a disabled ladder has no code path to a sender at all.
   const dryRun = requestedDryRun || !LADDER_ENABLED;
+
+  // ── THE OPT-OUT PRECONDITION (U-1) ────────────────────────────────────────
+  // A live run needs a usable `UNSUBSCRIBE_TOKEN_SECRET`, because every body it
+  // sends carries an unsubscribe link derived from it. Checked HERE, before a
+  // row is read, for the same reason the kill switch is: minting happens after
+  // the ledger claim, so an unset secret discovered per row would burn one rung
+  // per applicant and write a `last_error` for each while sending nothing.
+  // A dry run is allowed through — it renders nothing and reaches no sender.
+  if (!dryRun && !isUsableUnsubscribeSecret(UNSUBSCRIBE_SECRET)) {
+    log("error", "unsubscribe_secret_unset", {
+      reason: `UNSUBSCRIBE_TOKEN_SECRET missing or under ${MIN_UNSUBSCRIBE_SECRET_LENGTH} characters`,
+    });
+    return jsonRes({ error: "unsubscribe secret not configured; refusing to send" }, 500);
+  }
 
   const admin = createAdminClient();
   const now = new Date();
@@ -985,8 +1381,14 @@ Deno.serve(async (req) => {
       if (rows.length === 0) break;
 
       const history = await loadHistory(admin, rows.map((r) => r.id));
-      // One suppression read per page rather than one per send.
-      const suppressed = await loadSuppressedEmails(admin, rows.map((r) => r.email));
+      // Two reads per page rather than two per send, unioned into ONE set: the
+      // people a human silenced (`suppressed_emails`) and the people who
+      // silenced themselves through the link (`email_unsubscribe_tokens.used_at`).
+      // Both feed the SAME `suppressedChannels` input `decide` already takes, so
+      // this adds no new skip reason and no new mechanism to the pure layer.
+      const pageEmails = rows.map((r) => r.email);
+      const suppressed = await loadSuppressedEmails(admin, pageEmails);
+      for (const optedOut of await loadOptedOutEmails(admin, pageEmails)) suppressed.add(optedOut);
 
       for (const row of rows) {
         const decision: LadderDecision = decide({
