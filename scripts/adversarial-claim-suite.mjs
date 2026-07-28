@@ -8,7 +8,12 @@ import { readFileSync } from 'node:fs';
 const PAT = process.env.SUPABASE_PAT;
 if (!PAT) { console.error('SUPABASE_PAT is required (source it from the LevelUp Core vault .env.supabase).'); process.exit(2); }
 const REF = 'ivkvluezuiojovpotlyb';
-const MIGRATION = '/Users/rahulsrinivas/Claude/LevelUp-Main-App/supabase/migrations/20260727220000_claim_at_signin.sql';
+// Both migrations, in the order db push applies them, so the suite tests the
+// end state that actually exists on prod rather than an intermediate one.
+const MIGRATIONS = [
+  '/Users/rahulsrinivas/Claude/LevelUp-Main-App/supabase/migrations/20260727220000_claim_at_signin.sql',
+  '/Users/rahulsrinivas/Claude/LevelUp-Main-App/supabase/migrations/20260728030000_claim_server_side_for_native.sql',
+];
 
 async function run(sql) {
   const r = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {
@@ -21,7 +26,7 @@ async function run(sql) {
   return JSON.parse(t);
 }
 
-const migration = readFileSync(MIGRATION, 'utf8');
+const migration = MIGRATIONS.map((f) => readFileSync(f, 'utf8')).join('\n');
 
 // Fixed UUIDs/phones so nothing depends on random(). Phones are in a range that
 // cannot collide with a real subscriber (all start 99999).
@@ -186,6 +191,50 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN
     INSERT INTO results VALUES ('T9 duplicate purchases collapse',
       'RAISED ' || SQLSTATE || ' ' || SQLERRM, 'no raise');
+  END;
+
+  -- ══ T17: SC-4 — the service-role entry point claims for a given user ════
+  INSERT INTO public.legacy_enrolments (phone, email, offering_id, legacy_program_name)
+  VALUES ('${P(14)}', 't17@adv.test', off1, 'ADV T17');
+  PERFORM pg_temp.mk_user('${U(14)}', '9199999000' || '14', true);
+  res := public.claim_purchases_for_user('${U(14)}');
+  INSERT INTO results VALUES ('T17 server-side claim works for a named user',
+    res::text, '{"blocked": 0, "claimed": 1, "stamped": 1, "eligible": true}');
+
+  -- ══ T18: SC-4 — the wrapper still behaves identically for the caller ════
+  INSERT INTO public.legacy_enrolments (phone, email, offering_id, legacy_program_name)
+  VALUES ('${P(15)}', 't18@adv.test', off1, 'ADV T18');
+  PERFORM pg_temp.mk_user('${U(15)}', '9199999000' || '15', true);
+  res := pg_temp.claim_as('${U(15)}');
+  INSERT INTO results VALUES ('T18 zero-arg wrapper still claims for auth.uid()',
+    res::text, '{"blocked": 0, "claimed": 1, "stamped": 1, "eligible": true}');
+
+  -- ══ T19: SC-4 — THE SECURITY BOUNDARY. An ordinary signed-in user must NOT
+  --        be able to name someone else's id. This grant IS the whole defence:
+  --        without it, one call claims a stranger's purchases onto your account.
+  BEGIN
+    SET LOCAL ROLE authenticated;
+    PERFORM public.claim_purchases_for_user('${U(1)}');
+    RESET ROLE;
+    INSERT INTO results VALUES ('T19 authenticated CANNOT claim for another user',
+      'ALLOWED — SECURITY HOLE', 'permission denied');
+  EXCEPTION WHEN insufficient_privilege THEN
+    RESET ROLE;
+    INSERT INTO results VALUES ('T19 authenticated CANNOT claim for another user',
+      'permission denied', 'permission denied');
+  END;
+
+  -- ══ T20: SC-4 — anon likewise refused ═══════════════════════════════════
+  BEGIN
+    SET LOCAL ROLE anon;
+    PERFORM public.claim_purchases_for_user('${U(1)}');
+    RESET ROLE;
+    INSERT INTO results VALUES ('T20 anon CANNOT claim for another user',
+      'ALLOWED — SECURITY HOLE', 'permission denied');
+  EXCEPTION WHEN insufficient_privilege THEN
+    RESET ROLE;
+    INSERT INTO results VALUES ('T20 anon CANNOT claim for another user',
+      'permission denied', 'permission denied');
   END;
 
   -- ══ T10: anonymous caller (no JWT) returns zero and does not raise ═════

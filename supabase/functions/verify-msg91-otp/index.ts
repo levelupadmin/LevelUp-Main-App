@@ -197,6 +197,7 @@ Deno.serve(async (req) => {
     }
     const session = await mintSession(admin, loginEmail);
     if (!session) return json({ error: "session_mint_failed" }, 500);
+    await claimPurchasesServerSide(admin, user.id);
     return json({ ...session, user_id: user.id, is_new_user: false });
   }
 
@@ -302,6 +303,7 @@ Deno.serve(async (req) => {
           .catch(() => {});
         const session = await mintSession(admin, signupEmail);
         if (!session) return json({ error: "session_mint_failed" }, 500);
+        await claimPurchasesServerSide(admin, existing.id);
         return json({ ...session, user_id: existing.id, is_new_user: false, is_legacy: isLegacy });
       }
     } else if (await findUserByEmail(admin, signupEmail)) {
@@ -326,6 +328,7 @@ Deno.serve(async (req) => {
 
   const session = await mintSession(admin, signupEmail);
   if (!session) return json({ error: "session_mint_failed" }, 500);
+  await claimPurchasesServerSide(admin, created.user.id);
   return json({ ...session, user_id: created.user.id, is_new_user: true, is_legacy: isLegacy });
 });
 
@@ -371,6 +374,44 @@ async function ensureSyntheticEmail(
     return null;
   }
   return email;
+}
+
+/**
+ * SC-4 — attach this student's already-in-the-system purchases, server-side.
+ *
+ * WHY THIS LIVES HERE AND NOT ONLY IN THE CLIENT
+ *   The web bundle calls claim_my_purchases() from AuthContext, but iOS build 16
+ *   and Android 604/3.2.1 are already in users' hands and will not call anything
+ *   new until they take a store build — days, across Apple review and a staged
+ *   Play rollout. This is the recorded 2026-06-14 lesson: Capacitor clients lag,
+ *   so what matters must also work for the OLD client's exact call. This point
+ *   is the right one: MSG91 has just verified the phone (phoneBinding guards
+ *   replay), so ownership is proven for every client, old or new.
+ *
+ * ABSOLUTE RULE: THIS MAY NEVER AFFECT THE LOGIN.
+ *   Every failure mode is swallowed — a missing function, a revoked grant, a
+ *   timeout, a network blip. The claim is idempotent and runs on every sign-in,
+ *   so anything missed here is simply picked up next time. A student must never
+ *   be locked out because a purchase could not be attached.
+ */
+async function claimPurchasesServerSide(
+  // Typed with explicit generics rather than the bare
+  // `ReturnType<typeof createClient>` the older helpers here use: that bare form
+  // resolves to SupabaseClient<unknown, never, GenericSchema>, which does not
+  // accept the client actually constructed at :160
+  // (SupabaseClient<any, "public", any>) — the source of this file's
+  // pre-existing `deno check` errors. Matching the real shape means this change
+  // adds none of its own.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: ReturnType<typeof createClient<any, "public", any>>,
+  userId: string,
+): Promise<void> {
+  try {
+    const { error } = await admin.rpc("claim_purchases_for_user", { p_user_id: userId });
+    if (error) console.error("claim_purchases_for_user failed", userId, error.message);
+  } catch (e) {
+    console.error("claim_purchases_for_user threw", userId, String(e));
+  }
 }
 
 async function mintSession(
