@@ -1408,6 +1408,7 @@ export type Database = {
           full_name: string
           id: string
           interview_date: string | null
+          interview_interviewer_name: string | null
           interview_modality: string | null
           interview_notes: string | null
           occupation: string | null
@@ -1436,6 +1437,7 @@ export type Database = {
           full_name: string
           id?: string
           interview_date?: string | null
+          interview_interviewer_name?: string | null
           interview_modality?: string | null
           interview_notes?: string | null
           occupation?: string | null
@@ -1464,6 +1466,7 @@ export type Database = {
           full_name?: string
           id?: string
           interview_date?: string | null
+          interview_interviewer_name?: string | null
           interview_modality?: string | null
           interview_notes?: string | null
           occupation?: string | null

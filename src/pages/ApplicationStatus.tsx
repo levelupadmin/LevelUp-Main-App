@@ -6,6 +6,11 @@ import { isIOS } from "@/lib/platform";
 import { COHORT_INTERVIEW, flag } from "@/lib/flags";
 import { useFunnelStage } from "@/hooks/useFunnelStage";
 import { InterviewEmbed } from "@/components/interview/SlotButtons";
+import { InterviewerCard } from "@/components/interview/InterviewerCard";
+import {
+  RescheduleControl,
+  isLiveBooking,
+} from "@/components/interview/RescheduleControl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,6 +59,16 @@ interface ApplicationData {
   status: string;
   created_at: string;
   rejection_reason: string | null;
+  /* ── The Calendly booking facts (`20260728100000`, `20260728130000`) ──
+     Mirrored onto this row by `calendly-webhook` under the service role and read
+     back here through the existing `students_read_own_applications` policy; the
+     page's `select("*")` already returns them. Facts only — none of them is a
+     funnel stage, and nothing here derives one from them (SOR-1). */
+  interview_date: string | null;
+  interview_modality: string | null;
+  interview_interviewer_name: string | null;
+  reschedule_count: number | null;
+  calendly_canceled_at: string | null;
   offerings: {
     title: string;
     price_inr: number | null;
@@ -315,10 +330,30 @@ const ApplicationStatus = () => {
      made. */
   const interviewAheadOfFeePaid =
     reconciledStep !== undefined && reconciledStep > STATUS_TO_STEP.app_fee_paid;
+  /* THE THIRD SIGNAL, AND THE FASTEST OF THE THREE. `calendly-webhook` writes the
+     booking onto this very row the moment Calendly delivers, which is well before
+     either stage signal above catches up: `application.status` is only moved by an
+     admin, and the reconciled stage is derived from an external read on its own
+     cadence. So an applicant who booked minutes ago has a live booking on the row
+     while both stage signals still say "fee paid, no interview" — and the ceiling
+     above, which reads only the derived stage, would hand them the calendar again
+     with the reschedule card sitting right underneath it. Two live booking surfaces
+     at once is the double-booking hazard `04-INTEGRATION-CONTRACTS.md` §6.4 names,
+     and it is worse than it looks: Calendly reports a second BOOKING (not a move),
+     so it carries no `old_invitee`, the receiver does not count it, and the
+     one-reschedule budget quietly stops binding.
+     `isLiveBooking` is the reschedule card's OWN predicate, imported rather than
+     restated, so "booked" means exactly one thing on this page. Flag off → the row
+     is never written by anything in this phase and both branches stay inert. */
+  const hasLiveBooking = isLiveBooking(
+    application.interview_date,
+    application.calendly_canceled_at,
+  );
   const showInterviewEmbed =
     flag(COHORT_INTERVIEW) &&
     application.status === "app_fee_paid" &&
-    !interviewAheadOfFeePaid;
+    !interviewAheadOfFeePaid &&
+    !hasLiveBooking;
 
   /* Determine which step was "failed" at, for rejected/withdrawn */
   // For rejected, show failure at the step after the last completed step
@@ -417,6 +452,35 @@ const ApplicationStatus = () => {
             email={profile?.email ?? user?.email}
             className="mb-8"
           />
+        )}
+
+        {/* The booked interview: when it is, how it happens, who is taking it, and
+            the one move that is available. The mutually-exclusive twin of the
+            calendar above — `hasLiveBooking` gates both, in opposite directions.
+
+            THE INTERVIEWER CARD CAN ONLY LIVE HERE, and that is a fact about the
+            source rather than a layout choice. The one thing in this repo that can
+            name an interviewer is the Calendly delivery itself, so the name does not
+            exist until a booking does; rendering the card beside the calendar above
+            would be rendering it at the one moment nothing is known. It supplies its
+            own empty state — no name, no card — which is what a delivery that named
+            no single host (or named several) correctly produces.
+
+            NO SELECTIVITY FIGURE IS PASSED, because the component accepts none and
+            no source for one exists (see its header: no reconciler aggregate, no
+            interviewer outcome column). A number typed in here and attributed by
+            name to a real colleague, shown to the applicant about to meet them, is
+            the exact failure REQ-INT-2 guards against. */}
+        {flag(COHORT_INTERVIEW) && hasLiveBooking && (
+          <div className="mb-8 space-y-4">
+            <RescheduleControl
+              interviewDate={application.interview_date}
+              interviewModality={application.interview_modality}
+              rescheduleCount={application.reschedule_count}
+              canceledAt={application.calendly_canceled_at}
+            />
+            <InterviewerCard name={application.interview_interviewer_name} />
+          </div>
         )}
 
         {/* Rejection reason: neutral surface, no red, to match the

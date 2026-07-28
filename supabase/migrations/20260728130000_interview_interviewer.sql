@@ -1,0 +1,87 @@
+-- ============================================================
+-- PHASE IV — The Interview: who is taking it (REQ-INT-2)
+-- ============================================================
+--
+-- `01-PRD.md` REQ-INT-2 presents the interviewer by REAL FIRST NAME with the
+-- admissions title and no bio. Until this migration NOTHING in this repo could name
+-- an interviewer, so the card built for that requirement (Task V-3's
+-- `InterviewerCard`) had no honest caller and stayed unmounted:
+--   * `offerings.instructor_name` is the TEACHING instructor. Reaching for it here
+--     is exactly the conflation REQ-INT-2 forbids ("never mentor, never counselor"
+--     is the same rule seen from the copy side), so it is not a source.
+--   * `reconcile-funnel-stage`'s TeleCRM read maps a lead to
+--     `{resolvedKey, product1, status, mql, essayPresent, timestamp}`. No field
+--     there names a person.
+--   * `cohort_applications` carried interview_date / interview_modality /
+--     reschedule_count / calendly_* (`20260728100000`) and nothing else about the
+--     interview.
+-- The one real, unexploited source was the Calendly delivery we ALREADY receive:
+-- `payload.scheduled_event.event_memberships[].user_name`, the event's host. V-1's
+-- parser read only the invitee half of that payload. `_shared/calendly.ts`
+-- `interviewerNameFromEvent()` now reads the host half, and this column is where
+-- `calendly-webhook` puts the result.
+--
+-- WHAT IT IS: a BOOKING FACT Calendly delivered, mirrored onto the app's own table,
+-- exactly like the five columns `20260728100000` added. WHAT IT IS NOT: a funnel
+-- stage, a role assignment, an entitlement, or a claim that this person is staff of
+-- any particular kind. TeleCRM remains the master (SOR-1); the reconciler
+-- (`reconcile-funnel-stage`) alone derives stage. The receiver writes no `status`,
+-- and neither does anything reading this column.
+--
+-- ONE COLUMN, NOT TWO — THE HOST'S EMAIL IS DELIBERATELY NOT STORED. The only thing
+-- any surface renders is a FIRST name (derived at the component boundary, so a full
+-- name delivered here never reaches the screen whole). An address would therefore be
+-- colleague PII persisted on every applicant's row for nothing, on a table students
+-- read through `students_read_own_applications`. And a name derived FROM an address
+-- ("admissions@…", "r.s@…") is a guess, which is the move this whole phase refuses.
+-- `interviewerNameFromEvent` reads `user_name` and nothing else, so there is no
+-- second value for a second column to hold.
+--
+-- NULL IS A FIRST-CLASS VALUE HERE, AND THE COMMON ONE AT FIRST. It means "this
+-- delivery did not name exactly one host", which covers three real cases and is
+-- never a defect to be back-filled with a placeholder:
+--   (i)   the envelope carried no `event_memberships` at all, or no `user_name` on
+--         them — Calendly's older published webhook schema documents a membership as
+--         `user` + `user_email` only, so a leaner envelope is legitimate;
+--   (ii)  the delivery named TWO OR MORE distinct hosts (a collective event type),
+--         where "your interviewer" is not one person and picking one of them would
+--         be arbitrary — the parser returns null rather than choose;
+--   (iii) no Calendly delivery has landed on this row yet.
+-- The card renders nothing in all three. A stand-in name on that surface is a claim
+-- about a real colleague made to the applicant who is about to meet them, which is
+-- the specific failure REQ-INT-2 guards.
+--
+-- NO CHECK CONSTRAINT AND NO ENUM: this is an open-vocabulary human name, not the
+-- two-value modality. NO INDEX: it is written by `id` on a row already resolved and
+-- read back with that row, never searched.
+--
+-- LIFECYCLE, mirroring the fact columns beside it (see `20260728100000`'s tombstone
+-- rules, which this column now obeys as a peer):
+--   * `invitee.created` for a NEW booking  → set to whatever that delivery names
+--     (null included — a new booking's facts replace the old ones wholesale, and
+--     carrying a previous host's name onto a different booking would be a lie).
+--   * a redelivery of the SAME booking that happens to carry no name → the stored
+--     name is KEPT, because a leaner envelope for a booking we already understand is
+--     not evidence the host changed.
+--   * `invitee.canceled` for the held booking → cleared alongside `interview_date`
+--     and `interview_modality`. The cancelled booking's host is not the applicant's
+--     interviewer, and the cancellation SIGNAL remains `calendly_canceled_at`.
+--
+-- Additive, reversible, idempotent (`ADD COLUMN IF NOT EXISTS`). No RLS change: the
+-- existing `students_read_own_applications` SELECT policy (`user_id = auth.uid()`)
+-- covers a new column for free, and the service-role writer bypasses RLS.
+--
+-- NO `RAISE EXCEPTION` ANYWHERE, AND NO `DO` BLOCK. `db push` runs every pending
+-- migration in ONE transaction, so an aborting block here would take its sibling
+-- migrations down with it. Every statement below is a no-op on a second run.
+
+ALTER TABLE public.cohort_applications
+  ADD COLUMN IF NOT EXISTS interview_interviewer_name text;
+
+COMMENT ON COLUMN public.cohort_applications.interview_interviewer_name IS
+  'Calendly booking fact only: the display name of the event HOST, read from scheduled_event.event_memberships[].user_name on the delivery that booked this interview (see _shared/calendly.ts interviewerNameFromEvent). NULL whenever the delivery did not name exactly ONE host — no memberships, no user_name, or two-or-more distinct hosts on a collective event type, where naming one would be an arbitrary pick — and NULL before any delivery lands; surfaces render nothing rather than a stand-in (REQ-INT-2). May hold a full name; only the FIRST name is ever rendered, derived at the component boundary. The host EMAIL is deliberately not stored: nothing renders it, and a name derived from an address would be a guess. Cleared when the booking is cancelled, and kept when a redelivery of the SAME booking carries no name. Not a role, not an entitlement, and not a stage - the reconciler owns funnel stage.';
+
+-- ── Reversal (kept for reference; do not run in the forward migration) ──
+-- COMMENT ON COLUMN public.cohort_applications.interview_interviewer_name IS NULL;
+-- ALTER TABLE public.cohort_applications
+--   DROP COLUMN IF EXISTS interview_interviewer_name;

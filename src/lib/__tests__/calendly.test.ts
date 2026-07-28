@@ -3,6 +3,7 @@ import { hmacSha256Hex, timingSafeEqual } from "@shared/crypto";
 import {
   bookingFromEvent,
   eventTypeOf,
+  interviewerNameFromEvent,
   isAllowedEventType,
   isFreshSignature,
   modalityFromEvent,
@@ -224,6 +225,124 @@ describe("modalityFromEvent — the §6.3 table, and null for everything else", 
     expect(modalityFromEvent({ payload: {} })).toBeNull();
     expect(modalityFromEvent({ payload: { scheduled_event: {} } })).toBeNull();
     expect(modalityFromEvent("not-an-object")).toBeNull();
+  });
+});
+
+describe("interviewerNameFromEvent — one named host, or nothing (REQ-INT-2)", () => {
+  /** `meetEvent`, with the host half of the payload spelled out. */
+  const withMemberships = (event_memberships: unknown) =>
+    meetEvent({
+      scheduled_event: {
+        uri: "https://api.calendly.com/scheduled_events/EVT1",
+        name: "LevelUp Cohort Interview",
+        event_type: "https://api.calendly.com/event_types/ET-INTERVIEW",
+        start_time: "2026-07-30T13:00:00.000000Z",
+        status: "active",
+        location: { type: "google_conference" },
+        event_memberships,
+      },
+    });
+
+  it("reads the single host's display name", () => {
+    expect(
+      interviewerNameFromEvent(
+        withMemberships([
+          {
+            user: "https://api.calendly.com/users/USR1",
+            user_email: "arundhati@leveluplearning.in",
+            user_name: "Arundhati Menon",
+          },
+        ]),
+      ),
+    ).toBe("Arundhati Menon");
+  });
+
+  it("accepts a single-word name — a mononym is a real name, not a partial one", () => {
+    expect(interviewerNameFromEvent(withMemberships([{ user_name: "Arundhati" }]))).toBe(
+      "Arundhati",
+    );
+  });
+
+  it("returns null when TWO OR MORE distinct hosts are named", () => {
+    // A collective event type carries every host. "Your interviewer" is then not one
+    // person, and Calendly documents no ordering for the array — so taking the first
+    // would be an arbitrary pick shown to the applicant as the person they are about
+    // to meet. That is the invention REQ-INT-2 rules out; null is the honest answer.
+    expect(
+      interviewerNameFromEvent(
+        withMemberships([{ user_name: "Arundhati Menon" }, { user_name: "Kavya Rao" }]),
+      ),
+    ).toBeNull();
+  });
+
+  it("collapses repeats of the SAME host rather than reading them as ambiguity", () => {
+    expect(
+      interviewerNameFromEvent(
+        withMemberships([
+          { user_name: "Arundhati Menon" },
+          { user_name: "  arundhati   menon " },
+        ]),
+      ),
+    ).toBe("Arundhati Menon");
+  });
+
+  it("ignores memberships that name nobody, and reads the one that does", () => {
+    expect(
+      interviewerNameFromEvent(
+        withMemberships([
+          // The shape Calendly's older published webhook schema documents: a URI and
+          // an email, no name at all.
+          { user: "https://api.calendly.com/users/USR9", user_email: "ops@leveluplearning.in" },
+          { user_name: "   " },
+          { user_name: null },
+          "not-an-object",
+          { user_name: "Arundhati Menon" },
+        ]),
+      ),
+    ).toBe("Arundhati Menon");
+  });
+
+  it("returns null for a missing or empty event_memberships", () => {
+    // Not a defect to be filled in: a delivery that names no host is a delivery we
+    // know less from, and the card simply does not render.
+    expect(interviewerNameFromEvent(meetEvent())).toBeNull();
+    expect(interviewerNameFromEvent(withMemberships([]))).toBeNull();
+    expect(interviewerNameFromEvent(withMemberships(null))).toBeNull();
+    expect(interviewerNameFromEvent(withMemberships({}))).toBeNull();
+    expect(interviewerNameFromEvent(withMemberships("USR1"))).toBeNull();
+  });
+
+  it("never derives a name from the host's email, and never reads the address", () => {
+    // The email is deliberately not a fallback: "admissions@…" or "r.s@…" is an
+    // address, not the name of the person the applicant is about to meet, and the
+    // column exists to hold a real name or nothing.
+    expect(
+      interviewerNameFromEvent(
+        withMemberships([
+          { user: "https://api.calendly.com/users/USR1", user_email: "arundhati@leveluplearning.in" },
+        ]),
+      ),
+    ).toBeNull();
+    // Nor is an address accepted when it arrives IN the name field.
+    expect(
+      interviewerNameFromEvent(withMemberships([{ user_name: "arundhati@leveluplearning.in" }])),
+    ).toBeNull();
+    // A URL and a nameless token are not names either.
+    expect(
+      interviewerNameFromEvent(withMemberships([{ user_name: "https://calendly.com/levelup" }])),
+    ).toBeNull();
+    expect(interviewerNameFromEvent(withMemberships([{ user_name: "98765" }]))).toBeNull();
+  });
+
+  it("yields null for a payload shape that does not match at all, instead of throwing", () => {
+    expect(interviewerNameFromEvent(null)).toBeNull();
+    expect(interviewerNameFromEvent(undefined)).toBeNull();
+    expect(interviewerNameFromEvent({})).toBeNull();
+    expect(interviewerNameFromEvent({ payload: {} })).toBeNull();
+    expect(interviewerNameFromEvent({ payload: { scheduled_event: {} } })).toBeNull();
+    expect(interviewerNameFromEvent({ payload: "nope" })).toBeNull();
+    expect(interviewerNameFromEvent("not-an-object")).toBeNull();
+    expect(interviewerNameFromEvent([{ user_name: "Arundhati Menon" }])).toBeNull();
   });
 });
 

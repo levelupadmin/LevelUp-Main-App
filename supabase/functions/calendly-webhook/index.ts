@@ -91,6 +91,16 @@
  * create half owns the booking fact. Missing this is how a reschedule ends as a row
  * with no interview and a consumed reschedule budget.
  *
+ * THE HOST HALF OF THE PAYLOAD IS NOW READ TOO (REQ-INT-2). V-1 parsed the invitee
+ * and nothing else, which left the product unable to NAME the person taking the
+ * interview — the reason `InterviewerCard` had no honest caller. `scheduled_event.
+ * event_memberships[].user_name` is that name, mirrored onto
+ * `cohort_applications.interview_interviewer_name` (migration `20260728130000`).
+ * It is a booking fact like the rest: cleared on cancellation, replaced wholesale by
+ * a different booking, and NULL — deliberately, not defectively — whenever the
+ * delivery does not name exactly one host. The host's EMAIL is never read or stored;
+ * nothing renders it, and deriving a name from an address would be a guess.
+ *
  * `reschedule_count` is the only counter here. It advances when Calendly says this
  * booking replaced a previous invitee (`old_invitee`) AND the delivered event is
  * not the one already held, so neither a redelivery nor a late retry can
@@ -103,6 +113,7 @@ import { last10 } from "../_shared/phone.ts";
 import {
   bookingFromEvent,
   eventTypeOf,
+  interviewerNameFromEvent,
   isAllowedEventType,
   isFreshSignature,
   modalityFromEvent,
@@ -132,6 +143,12 @@ interface ApplicationRow {
   phone: string | null;
   created_at: string;
   interview_modality: string | null;
+  /**
+   * The host Calendly named on the booking this row holds (REQ-INT-2), or NULL when
+   * the delivery named no single host. See the create branch for why a redelivery
+   * that carries no name does not clear it.
+   */
+  interview_interviewer_name: string | null;
   /** The one start column (§6.1 reuse, §6.3 mapping) — see the header. */
   interview_date: string | null;
   reschedule_count: number | null;
@@ -156,6 +173,7 @@ interface ApplicationRow {
 /** The booking-fact columns this receiver writes. `status` is absent BY DESIGN (SOR-1). */
 interface BookingWrite {
   interview_modality: string | null;
+  interview_interviewer_name: string | null;
   interview_date: string | null;
   calendly_event_uri: string | null;
   calendly_booked_at: string | null;
@@ -164,7 +182,7 @@ interface BookingWrite {
 }
 
 const SELECT_COLUMNS =
-  "id, email, phone, created_at, interview_modality, interview_date, reschedule_count, calendly_event_uri, calendly_booked_at, calendly_canceled_at";
+  "id, email, phone, created_at, interview_modality, interview_interviewer_name, interview_date, reschedule_count, calendly_event_uri, calendly_booked_at, calendly_canceled_at";
 
 function jsonRes(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -414,6 +432,10 @@ Deno.serve(async (req) => {
     // reschedule, and the replacement booking is what counts.
     update = {
       interview_modality: null,
+      // The host of a cancelled booking is not this applicant's interviewer, so the
+      // name goes with the rest of the booking facts. Same rule as the modality:
+      // cleared here, re-asserted by whatever booking lands next.
+      interview_interviewer_name: null,
       interview_date: null,
       calendly_event_uri: booking.eventUri,
       calendly_booked_at: laterInstant(row.calendly_booked_at, booking.bookedAt),
@@ -424,6 +446,23 @@ Deno.serve(async (req) => {
   } else {
     const modality = modalityFromEvent(payload);
     const startTime = booking.startTime;
+
+    // WHO IS TAKING IT (REQ-INT-2). `interviewerNameFromEvent` reads the HOST half
+    // of the payload — `scheduled_event.event_memberships[].user_name` — and yields
+    // null unless the delivery names exactly one host; it never reads the host's
+    // email and never derives a name from one.
+    //
+    // The `sameEvent` fallback is the one nuance: Calendly's older published webhook
+    // schema documents a membership as `user` + `user_email` only, so a leaner
+    // envelope for a booking we ALREADY hold is not evidence the host changed, and
+    // letting it null the stored name would lose a true fact for nothing. For a
+    // DIFFERENT event there is no fallback on purpose — a new booking's facts
+    // replace the old ones wholesale, and carrying a previous host's name onto
+    // another booking would be exactly the invention this column exists to avoid.
+    const deliveredInterviewer = interviewerNameFromEvent(payload);
+    const interviewerName = sameEvent
+      ? (deliveredInterviewer ?? row.interview_interviewer_name)
+      : deliveredInterviewer;
 
     // A booking with no start time is not a booking fact — and writing one would
     // forge a tombstone (uri set, start NULL), i.e. make a live booking look
@@ -443,7 +482,8 @@ Deno.serve(async (req) => {
     // Redelivery of the very event we hold, carrying the same fact: write nothing.
     if (
       sameEvent && sameInstant(row.interview_date, startTime) &&
-      row.interview_modality === modality
+      row.interview_modality === modality &&
+      row.interview_interviewer_name === interviewerName
     ) {
       return jsonRes({ ok: true, matched: true, key, idempotent: true });
     }
@@ -457,6 +497,7 @@ Deno.serve(async (req) => {
 
     update = {
       interview_modality: modality,
+      interview_interviewer_name: interviewerName,
       // The one start column: the pre-existing `interview_date` §6.1 reuses and §6.3
       // maps `scheduled_event.start_time` onto. One fact, one home — nothing else
       // here mirrors the start instant (see the header).

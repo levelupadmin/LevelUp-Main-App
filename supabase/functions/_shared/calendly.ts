@@ -5,8 +5,9 @@
  * Everything the receiver DECIDES lives here: how the `Calendly-Webhook-Signature`
  * header splits into `{t, v1}`, what exact string gets HMAC'd, whether the signed
  * timestamp is still inside the replay window, whether the delivery is even the
- * INTERVIEW event type, which modality a Calendly location object means, and which
- * booking facts a delivery carries — including the three that tell a RESCHEDULE
+ * INTERVIEW event type, which modality a Calendly location object means, whether the
+ * delivery names ONE host we may call the interviewer, and which booking facts a
+ * delivery carries — including the three that tell a RESCHEDULE
  * apart from a cancellation and order two deliveries. The handler
  * (`calendly-webhook/index.ts`) is then only I/O — read the body, verify, resolve
  * the row, write. That split is what lets the security-critical parsing be proven by
@@ -372,6 +373,77 @@ export function modalityFromEvent(payload: unknown): InterviewModality | null {
   // happens; it never tells us WHOSE number it is (see `inviteePhoneFromLocation`).
   if (kind === "custom") return looksLikePhoneNumber(locationTextOf(location)) ? "phone" : null;
   return null;
+}
+
+/**
+ * Is this string usable as a person's DISPLAY NAME?
+ *
+ * Deliberately narrow, because the value ends up on a card that tells an applicant
+ * who they are about to meet: an address is not a name, a URL is not a name, and a
+ * token carrying no letter at all is not a name. Anything rejected here degrades to
+ * `null` — no card — rather than to a stand-in.
+ */
+function asDisplayName(value: unknown): string | null {
+  const name = asString(value);
+  if (!name) return null;
+  if (name.includes("@")) return null;
+  if (/https?:\/\//i.test(name)) return null;
+  if (!/\p{L}/u.test(name)) return null;
+  return name;
+}
+
+/**
+ * The event's HOST — the person who will actually take the interview — read from
+ * `scheduled_event.event_memberships[].user_name`, or `null`.
+ *
+ * WHY THIS EXISTS: REQ-INT-2 presents the interviewer by real first name, and until
+ * this function nothing in the repo could NAME one. `offerings.instructor_name` is
+ * the TEACHING instructor and reaching for it here would be exactly the conflation
+ * REQ-INT-2 forbids; no column on `cohort_applications` held an interviewer; and the
+ * reconciler's TeleCRM read (`reconcile-funnel-stage`) returns no such field. The
+ * webhook payload we already receive is the one real source, and this is the whole
+ * of how we read it. The host half of that payload was simply never parsed before.
+ *
+ * ONLY `user_name` IS READ, AND THE HOST'S EMAIL DELIBERATELY IS NOT. The name is
+ * the only thing any surface renders, so the address would be colleague PII stored
+ * for nothing; and deriving a name from an address ("admissions@…", "r.s@…") is a
+ * guess wearing a fact's clothes, which is the one move this module never makes.
+ *
+ * `user_name` IS NOT GUARANTEED TO BE THERE. Calendly's older published webhook
+ * schema documents a membership as `user` + `user_email` only, while the live
+ * scheduled-event resource also carries `user_name`. Absent, blank, or not
+ * name-shaped → `null`, and the card simply does not render. That is the designed
+ * outcome, not a degraded one.
+ *
+ * MORE THAN ONE NAMED HOST ALSO YIELDS `null`, ON PURPOSE. A one-on-one event type
+ * carries exactly one membership; two or more DISTINCT names means a collective
+ * event, where "your interviewer" is not one person. Calendly documents no ordering
+ * for the array, so taking the first of several would be an arbitrary pick — and an
+ * arbitrary pick shown to an applicant as the person they are about to meet is
+ * precisely the invention REQ-INT-2 exists to rule out. Repeats of the SAME name are
+ * not ambiguity and collapse to that name.
+ *
+ * SOR-1: this is a booking fact Calendly delivered, not a stage and not a claim
+ * about anyone's role in the funnel.
+ */
+export function interviewerNameFromEvent(payload: unknown): string | null {
+  const memberships = scheduledEventOf(payload)?.event_memberships;
+  if (!Array.isArray(memberships)) return null;
+
+  const names: string[] = [];
+  const seen: string[] = [];
+  for (const entry of memberships) {
+    const name = asDisplayName(asRecord(entry)?.user_name);
+    if (!name) continue;
+    // Case- and whitespace-insensitive identity, so "Arundhati  Menon" delivered
+    // twice is one host rather than two and does not read as ambiguity.
+    const key = name.toLowerCase().replace(/\s+/g, " ");
+    if (seen.includes(key)) continue;
+    seen.push(key);
+    names.push(name);
+  }
+
+  return names.length === 1 ? names[0] : null;
 }
 
 /**
