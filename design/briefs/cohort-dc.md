@@ -35,6 +35,7 @@ The emotional peak of the whole funnel. A sealed decision → a full-viewport re
 - **Acceptance card (REQ-DEC-4):** no essay, **no seat number**. Replace scarcity-by-number with the **locked future view** — they SEE what is inside the cohort as locked previews, and confirming unlocks it (this is Rahul's §9i correction: low seat numbers signal an empty cohort).
 - **Claim my seat (REQ-DEC-5):** the honest held-seat window — **"seat held · closes {countdown}"** — shown BEFORE Razorpay and persisted across scroll/refresh. This copy IS the v1 conversion lever. The ₹8k runs on the **existing** link; the app originates no order.
 - **Lapse behaviour, stated upfront:** if the window expires the seat releases **but the acceptance stays valid for the next batch**. This removes deadline resentment and builds pre-sold pipeline — say it plainly rather than hiding it.
+  > **⚠️ v1 LIMITATION — this is COPY, not a mechanism.** `accepted_at` is stamped once and never cleared, and the app holds no write path to it, so re-admitting a student to a later batch leaves the original anchor in place and their window is **already lapsed on arrival**. The only remedy is hand-written SQL. That is consistent with SEAT-1 (seat release stays MANUAL in v1) and is not a defect for this phase to fix — but the promise this copy makes is kept by an operator, not by the product. Do NOT build an auto-release or a write to `accepted_at` here. Recorded so no future task reads the line above as a description of shipped behaviour.
 - **Enrollment details:** what happens on claim, the per-SKU fee structure, the schedule.
 **Acceptance:** no seat number anywhere (grep); locked-future preview renders; countdown persists across scroll and refresh; claim routes to the EXISTING ₹8k link (app-originated order diff = 0); lapse copy present.
 
@@ -48,5 +49,6 @@ The emotional peak of the whole funnel. A sealed decision → a full-viewport re
 - `npm run build` · `npx vitest run` · `npm run typecheck:functions` green; lint no NEW errors.
 - Greps prove: no funnel-status write; no essay text in any decision surface; no seat number; no verdict in notifications.
 - Payment pipeline + `isIOS()` guard diff = 0.
-- Everything behind `VITE_DECISION_FLOW`, default OFF; flag-off = byte-identical to today.
+- Everything behind `VITE_DECISION_FLOW`, default OFF; flag-off = byte-identical to today **in the client bundle**.
+  > **⚠️ CORRECTION — the flag does NOT cover the database half, and this line used to claim it did.** `db push` GRANTs EXECUTE on `get_admission_page` to `anon` the moment the migration lands, so it is callable directly with the publishable key without ever loading the SPA; and `src/lib/flags.ts` resolves `localStorage` BEFORE env, so any visitor can flip the client flag themselves. Neither is weakened — the real boundary is the RPC's whitelist projection, the 256-bit token, and `admission_page_published_at` being NULL on every row. State that boundary honestly; do not describe the flag as the security control, because it is not one. (NFR-CONFIG-2: security never depends on a feature flag.)
 - Do NOT deploy, apply migrations, or merge.
