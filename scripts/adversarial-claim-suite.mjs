@@ -237,6 +237,35 @@ BEGIN
       'permission denied', 'permission denied');
   END;
 
+  -- ══ T21: SC-4 — service_role CAN actually execute it. Nothing tested this,
+  --        and it is the one grant the whole server-side path depends on: if it
+  --        were missing, every native login would silently claim nothing. ═════
+  BEGIN
+    SET LOCAL ROLE service_role;
+    PERFORM public.claim_purchases_for_user('${U(1)}');
+    RESET ROLE;
+    INSERT INTO results VALUES ('T21 service_role CAN execute the claim',
+      'allowed', 'allowed');
+  EXCEPTION WHEN OTHERS THEN
+    RESET ROLE;
+    INSERT INTO results VALUES ('T21 service_role CAN execute the claim',
+      'REFUSED: ' || SQLSTATE, 'allowed');
+  END;
+
+  -- ══ T22: SC-4 — the status-blind guard is INDEX-served, not a Seq Scan.
+  --        This is the finding that blocked revision 1: enrolments has only
+  --        partial-on-active indexes, so the claim's status-blind lookups
+  --        degraded to a scan that grows with the 74k-row backlog it drains,
+  --        inside an awaited call on the login path. ═════════════════════════
+  SELECT count(*) INTO n
+    FROM pg_indexes
+   WHERE schemaname = 'public'
+     AND tablename = 'enrolments'
+     AND indexdef LIKE '%(user_id, offering_id)%'
+     AND indexdef NOT LIKE '%WHERE%';
+  INSERT INTO results VALUES ('T22 status-blind (user_id, offering_id) index exists',
+    n::text, '1');
+
   -- ══ T10: anonymous caller (no JWT) returns zero and does not raise ═════
   BEGIN
     PERFORM set_config('request.jwt.claims', '', true);

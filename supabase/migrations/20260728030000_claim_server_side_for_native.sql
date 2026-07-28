@@ -29,6 +29,37 @@
 --
 -- Additive, idempotent, reversible (undo at the foot). No RAISE EXCEPTION.
 
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 0/3 — THE INDEX THIS WHOLE CHANGE DEPENDS ON.
+--
+-- Two of the claim's three statements are DELIBERATELY status-blind: the
+-- `blocked` count and the INSERT's NOT EXISTS guard both ask "does ANY enrolment
+-- exist for this user and offering", because guarding only on 'active' let a
+-- refunded student silently regain access. Every existing index on enrolments is
+-- either PARTIAL on status='active' (enrolments_unique_active,
+-- idx_enrolments_user_active, idx_enrolments_expires_at) or keyed on offering_id
+-- alone (idx_enrolments_offering, enrolments_offering_created_at_idx), so NONE of
+-- them can serve a status-blind lookup. Measured on prod 2026-07-28: that guard
+-- plans as a Seq Scan, "Rows Removed by Filter: 63".
+--
+-- 63 rows is why nobody has felt this. But this phase exists to drain ~74k legacy
+-- purchases into `enrolments` across 1,067 mappings covering 67,129 students, so
+-- the per-login cost of that scan would rise in direct proportion to the
+-- migration's own success, while sitting inside an awaited call on the ONLY OTP
+-- login path for web, Android and iOS. The signup branch is the worst case: a
+-- brand-new user holds zero enrolments, so every matching legacy row inserts,
+-- putting the heaviest write at the end of the longest request.
+--
+-- Plain CREATE INDEX, not CONCURRENTLY: the CLI runs each migration inside a
+-- transaction, where CONCURRENTLY is illegal, and at 63 rows this is instant.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS enrolments_user_offering_idx
+  ON public.enrolments (user_id, offering_id);
+
+COMMENT ON INDEX public.enrolments_user_offering_idx IS
+  'Status-blind (user_id, offering_id) lookup. Required by claim_purchases_for_user, whose blocked-count and INSERT guard both ask "does ANY enrolment exist" - a question no partial-on-active index can answer. Without it the claim degrades to a Seq Scan that grows with the 74k-row backlog it is draining, on the login path.';
+
 CREATE OR REPLACE FUNCTION public.claim_purchases_for_user(p_user_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -265,10 +296,18 @@ $$;
 COMMENT ON FUNCTION public.claim_purchases_for_user(uuid) IS
   'SERVICE-ROLE-ONLY entry point for the purchase claim. Identical body to claim_my_purchases(), but takes the user id explicitly because the caller (verify-msg91-otp) has already proven ownership via MSG91 before minting a session. Exists so already-shipped iOS/Android builds claim immediately instead of waiting for a store release. REVOKED from anon and authenticated: an arbitrary caller naming someone else''s user id would be a total entitlement bypass.';
 
--- The whole security boundary of this function is this grant. Without the
--- REVOKEs, an authenticated caller could pass ANY user id and claim a
--- stranger's purchases onto their own account, which the zero-arg wrapper
--- structurally prevents.
+-- The whole security boundary of this function is this grant.
+--
+-- Be precise about WHAT it buys, because the obvious reading is wrong: every
+-- write is keyed on the passed id (v_user_id := p_user_id), so naming a
+-- stranger's uuid grants that STRANGER their own purchases, not the caller. It
+-- is not an entitlement bypass. What a slipped grant actually buys is
+--   * a uuid oracle (eligible/blocked leak whether an id exists and owns things),
+--   * unbounded SECURITY DEFINER writes from an unauthenticated caller, and
+--   * the ability to burn claimed_by_user_id, which is PERMANENT (no unstamp
+--     path, and cleanup_deleted_users is not scheduled).
+-- Worth the boundary either way; stated accurately so the next reader does not
+-- reason from a wrong threat model.
 REVOKE ALL     ON FUNCTION public.claim_purchases_for_user(uuid) FROM PUBLIC;
 REVOKE ALL     ON FUNCTION public.claim_purchases_for_user(uuid) FROM anon;
 REVOKE ALL     ON FUNCTION public.claim_purchases_for_user(uuid) FROM authenticated;

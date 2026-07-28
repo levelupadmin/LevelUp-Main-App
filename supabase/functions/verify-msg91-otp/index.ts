@@ -407,9 +407,48 @@ async function claimPurchasesServerSide(
   userId: string,
 ): Promise<void> {
   try {
-    const { error } = await admin.rpc("claim_purchases_for_user", { p_user_id: userId });
-    if (error) console.error("claim_purchases_for_user failed", userId, error.message);
+    // BOUNDED, because nothing else bounds it. Measured on prod 2026-07-28:
+    // anon carries statement_timeout=3s and authenticated 8s, but `service_role`
+    // has rolconfig NULL — no timeout at all. So on THIS path there is no
+    // database-side limit, and the `WHEN query_canceled` arm in the function is
+    // effectively dead code here. Awaiting something unbounded on the sole OTP
+    // login path is the one way this could break login, which the rest of this
+    // helper is written to prevent.
+    //
+    // Be honest about what this bounds: it releases the LOGIN after 4s, it does
+    // not cancel the database statement, which keeps running to completion or
+    // error. That is acceptable — the claim is a single transaction, so it
+    // either commits or does not, and it is idempotent either way. The real fix
+    // for the cost is the status-blind index added in the same migration; this
+    // is the safety net, not the plan.
+    const { data, error } = await admin
+      .rpc("claim_purchases_for_user", { p_user_id: userId })
+      .abortSignal(AbortSignal.timeout(4000));
+    if (error) {
+      console.error("claim_purchases_for_user failed", userId, error.message);
+    } else {
+      // OBSERVABILITY, and it only exists here for native. The web client
+      // reports `blocked` to Sentry, but already-shipped iOS/Android builds run
+      // no client claim at all — so without this line the entire population this
+      // change exists for would drain the backlog with no signal whatsoever.
+      // Logged unconditionally at info: `claimed` is how we watch the rollout
+      // land, `blocked` is how we see purchases deliberately withheld from
+      // someone carrying a refunded or lapsed enrolment.
+      const r = (data ?? {}) as { claimed?: number; blocked?: number; eligible?: boolean };
+      console.log(
+        "claim_purchases_for_user",
+        JSON.stringify({
+          user_id: userId,
+          claimed: r.claimed ?? 0,
+          blocked: r.blocked ?? 0,
+          eligible: r.eligible ?? false,
+        }),
+      );
+    }
   } catch (e) {
+    // Includes the abort. Swallowed like everything else: the claim runs again
+    // on the next sign-in, and a student must never be locked out because a
+    // purchase could not be attached.
     console.error("claim_purchases_for_user threw", userId, String(e));
   }
 }
