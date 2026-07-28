@@ -27,12 +27,30 @@ import type { Decision } from "@/hooks/useDecision";
  *     `/checkout/{offering_id}?type=confirmation&app={application_id}` URL
  *     `ApplicationStatus.tsx` already uses, and must not reach for Razorpay
  *     itself. The href is asserted character for character.
- *  3. **iOS renders the fallback, and neither a payment link NOR a price.** A
- *     money CTA that isn't wrapped in the `isIOS()` guard is an App Store
- *     rejection risk, and so is the figure above it: `ApplicationStatus.tsx`
- *     states no amount anywhere on iOS, so "Due now to confirm ₹8,000" sitting
- *     directly above "Complete this step from a web browser" is exactly the
- *     steering the guard exists to prevent.
+ *  3. **NEITHER native shell renders a price or a purchase CTA — Android
+ *     included.** The guard is `isNative()`, never `isIOS()`. Google Play's
+ *     Reader Rule (Path B) means the Android build may carry no purchase UI at
+ *     all, not even a price chip, so an iOS-only test — which is simply false on
+ *     Android — left seven rupee glyphs and a "Claim my seat" button live inside
+ *     a shipped Play app. Both shells are exercised here for that reason.
+ *
+ *     Neither shell gets an outbound "Continue on web" link, Android included,
+ *     and THAT is the half most likely to be undone by someone reading only the
+ *     Reader Rule. On Android such a link does not leave the app:
+ *     `https://app.leveluplearning.in` is the very origin the WebView serves the
+ *     bundled build from (`capacitor.config.ts` `server.hostname`) and is
+ *     covered by its own `allowNavigation` mask, so `Bridge.launchIntent()`
+ *     declines to fire `ACTION_VIEW` and the WebView navigates internally; no
+ *     `setSupportMultipleWindows` / `onCreateWindow` exists anywhere, so
+ *     `target="_blank"` does not escape either. The SPA would reboot in-shell
+ *     with `isNative()` still true, and `CheckoutPage`'s native fallback would
+ *     drop `?type=confirmation&app=` and re-route to the full-price `/p/{slug}`
+ *     first-purchase page — charging a confirmed student the wrong amount, which
+ *     is the K-2 dead end reproduced one platform over. So "no external href on
+ *     EITHER native shell" is asserted globally, not just on iOS, and what
+ *     stands in the slot is an instruction plus a pointer to where the figure
+ *     is. Asserting only the href STRING would prove nothing about escape, which
+ *     is why the rule pinned here is the absence of the link.
  *  4. **The lapse does not dead-end, and does not contradict itself.** A closed
  *     window keeps the acceptance valid for the next batch — and the page must
  *     still offer the SAME single existing-checkout path it offered before,
@@ -86,6 +104,36 @@ const MS_PER_DAY = 24 * MS_PER_HOUR;
 /** The one URL shape INTEG-PAY-1 allows this page to send anyone to. */
 const EXISTING_CHECKOUT_HREF = `/checkout/${TEST_OFFERING_ID}?type=confirmation&app=${TEST_APP_ID}`;
 
+/**
+ * The one sentence the app is allowed to say to a NATIVE student about this
+ * money step. `ApplicationStatus.tsx` ships it at three callsites; this page
+ * states it verbatim rather than delegating to `ContinueOnWebCTA`, whose native
+ * branch drops the `body` prop and hardcodes an already-enrolled claim. Pinned
+ * here so the two surfaces cannot drift into two different explanations of one
+ * step.
+ */
+const BROWSER_FALLBACK = "Complete this step from a web browser.";
+
+/**
+ * The other half of what replaces the money block on native, and the half that
+ * is easy to drop: an instruction to go and complete a payment step is useless
+ * to a reader who has not been told where the amount is stated.
+ * `EnrollmentDetails.tsx` keeps the equivalent pointer on the same platforms, so
+ * this pin is what stops the two surfaces handing one student two different
+ * levels of information about one step.
+ */
+const FIGURE_POINTER =
+  /exact amount due to confirm is shown on the checkout screen when you open this page in a web browser/i;
+
+/**
+ * `ContinueOnWebCTA`'s hardcoded native paragraph. It is FALSE on this page —
+ * the reader is an accepted student who has not paid the confirmation fee — and
+ * on the lapsed branch it contradicts the copy directly above it. Asserted
+ * absent, because rendering it is a silent regression: the component swallows
+ * `body`, so passing the right copy does not stop the wrong copy shipping.
+ */
+const ENROLLED_CLAIM = /everything you're enrolled in lives right here in the app/i;
+
 // Frozen "now" so every countdown assertion is exact.
 const NOW = new Date("2026-07-27T10:00:00.000Z");
 // 2h30m out — inside the last day, so the live clock is the useful display.
@@ -116,7 +164,19 @@ const L3AI_TERMS = {
 
 // Overridden per test before render.
 let mockDecision: Decision | null = acceptedDecision;
-let mockIsIOS = false;
+/**
+ * The shell the page believes it is running in. ONE variable drives BOTH
+ * platform helpers, so no test can describe an impossible device (`isIOS` true
+ * while `isNative` is false), and so the thing being varied reads as "native"
+ * rather than "iOS" — the Reader Rule makes Android the shell that carried the
+ * exposure. The page itself now reads only `isNative()`, but `vi.mock` REPLACES
+ * the whole module, so any helper left unexported resolves to `undefined` and
+ * throws "is not a function" the moment something reaches for it. Both are
+ * exported, and both are driven off this one variable, so the mock can never be
+ * the reason a test fails and can never describe a device that cannot exist.
+ */
+let mockPlatform: "web" | "android" | "ios" = "web";
+const NATIVE_PLATFORMS = ["android", "ios"] as const;
 let mockIsOffline = false;
 let mockTerms: Record<string, number | null> | null = L3AI_TERMS;
 
@@ -136,15 +196,16 @@ vi.mock("@/lib/flags", () => ({
 }));
 
 vi.mock("@/lib/platform", () => ({
-  isIOS: () => mockIsIOS,
+  isIOS: () => mockPlatform === "ios",
+  isNative: () => mockPlatform !== "web",
 }));
 
 /**
  * The page reads only the offering's money terms:
  * `.from("offerings").select(...).eq("id", ...).single()`. Hoisted as a spy so
- * "iOS never issues this read at all" is assertable — on iOS every figure it
- * returns is suppressed, so fetching it would be an iOS-only round trip for
- * data that never paints.
+ * "a native shell never issues this read at all" is assertable — on native every
+ * figure it returns is suppressed, so fetching it would be a native-only round
+ * trip for data that never paints.
  */
 const { fromSpy } = vi.hoisted(() => ({ fromSpy: vi.fn() }));
 
@@ -232,6 +293,21 @@ const allHrefs = () =>
   Array.from(document.querySelectorAll("a")).map((a) => a.getAttribute("href") ?? "");
 
 /**
+ * In-shell routes only, kept separate from absolute URLs so the two rules can be
+ * asserted independently: no relative route may lead to checkout, and (below) no
+ * absolute one may exist at all on native.
+ */
+const inAppHrefs = () => allHrefs().filter((h) => h.startsWith("/"));
+
+/**
+ * Anything absolute. On native this must be EMPTY on both shells: iOS forbids
+ * the steer, and on Android a link to the web origin is served back into the
+ * same WebView, where the SPA reboots with `isNative()` true and `CheckoutPage`
+ * re-routes to the full-price page.
+ */
+const externalHrefs = () => allHrefs().filter((h) => /^https?:/.test(h));
+
+/**
  * Reading order, which on the money surface is part of the copy. `getByText`
  * proves a sentence exists; only document position proves the student meets it
  * before the button rather than under it.
@@ -244,7 +320,7 @@ const precedes = (first: Element, second: Element) =>
 describe("ClaimSeat — the held-seat window and the existing checkout link", () => {
   beforeEach(() => {
     mockDecision = acceptedDecision;
-    mockIsIOS = false;
+    mockPlatform = "web";
     mockIsOffline = false;
     mockTerms = L3AI_TERMS;
     fromSpy.mockReset();
@@ -475,31 +551,87 @@ describe("ClaimSeat — the held-seat window and the existing checkout link", ()
     );
   });
 
-  it("on iOS: the anti-steering fallback renders, with NO payment link and NO price", () => {
-    mockIsIOS = true;
-    renderPage();
+  it("in EITHER native shell: no rupee figure and no purchase-labelled CTA", () => {
+    // The guard is `isNative()`, so Android is asserted alongside iOS. An
+    // `isIOS()` test is simply FALSE inside the Play shell, which is how seven
+    // rupee glyphs and a "Claim my seat" button reached a live Play app with
+    // ~2.05k installs: the Reader Rule (Path B) allows no purchase UI there at
+    // all, not even a price chip that looks like it could lead to checkout.
+    for (const platform of NATIVE_PLATFORMS) {
+      cleanup();
+      mockPlatform = platform;
+      renderPage();
 
-    expect(
-      screen.getByText("Complete this step from a web browser."),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /claim my seat/i })).toBeNull();
-    expect(allHrefs().some((h) => h.includes("/checkout"))).toBe(false);
-
-    // The figures go with the CTA. ApplicationStatus.tsx quotes no amount
-    // anywhere on iOS; a fee card reading "Due now to confirm ₹8,000" directly
-    // above the fallback line steers just as effectively as a button would.
-    expect(bodyText()).not.toContain("₹");
-    expect(screen.queryByText("Due now to confirm")).toBeNull();
-    expect(
-      screen.queryByText(/balance, due before the cohort begins/i),
-    ).toBeNull();
+      expect(bodyText()).not.toContain("₹");
+      expect(screen.queryByText("Due now to confirm")).toBeNull();
+      expect(
+        screen.queryByText(/balance, due before the cohort begins/i),
+      ).toBeNull();
+      // No in-shell route into checkout, and no button that names the purchase.
+      expect(screen.queryByRole("link", { name: /claim my seat/i })).toBeNull();
+      expect(inAppHrefs().some((h) => h.startsWith("/checkout"))).toBe(false);
+    }
   });
 
-  it("on iOS the LAPSED page is equally silent: no link, no price", () => {
-    // The lapsed branch renders the same shared block, so the guard must hold
-    // on both. This is the branch most likely to be written by hand and to
-    // forget it.
-    mockIsIOS = true;
+  it("in EITHER native shell there is NO outbound link — ANDROID included", () => {
+    // The half a future reader is most likely to undo, because Path B does
+    // permit an out-link in principle. It does not work in THIS shell.
+    // `ContinueOnWebCTA` targets https://app.leveluplearning.in, which is both
+    // the origin the Android WebView serves the bundled build from
+    // (capacitor.config.ts `server.hostname`) and a match for its own
+    // `allowNavigation: ["*.leveluplearning.in"]`. `Bridge.launchIntent()` fires
+    // ACTION_VIEW only when the host differs from the app URL's host AND misses
+    // that mask; both tests pass here, so it returns false and the WebView
+    // navigates INTERNALLY off the bundled assets. Nothing sets
+    // `setSupportMultipleWindows` or overrides `onCreateWindow`, so
+    // `target="_blank"` does not escape either.
+    //
+    // The consequence is the money bug: the SPA reboots in-shell, `isNative()`
+    // is still TRUE, and `CheckoutPage`'s fallback drops
+    // `?type=confirmation&app=` and re-routes to the full-price `/p/{slug}`
+    // first-purchase page — the K-2 dead end, charging a confirmed student the
+    // wrong amount. Asserting an href STRING would not have caught that; only
+    // the absence of the link does.
+    for (const platform of NATIVE_PLATFORMS) {
+      cleanup();
+      mockPlatform = platform;
+      renderPage();
+
+      expect(externalHrefs()).toEqual([]);
+      expect(screen.queryByRole("link", { name: /continue on web/i })).toBeNull();
+      expect(bodyText()).not.toContain("₹");
+    }
+  });
+
+  it("in EITHER native shell it states the browser sentence AND where the figure is", () => {
+    // Losing the link must not lose the instruction, and the instruction on its
+    // own is not enough: a reader sent to a browser to pay is owed the sentence
+    // saying where the amount is stated. `EnrollmentDetails.tsx` keeps that
+    // pointer on the same platforms, so dropping it here would hand one student
+    // two levels of information about one step, one surface apart.
+    //
+    // The failure mode on the sentence is quiet: `ContinueOnWebCTA` returns
+    // early on native and IGNORES `body`, so a page that delegates the slot to
+    // it ships "Everything you're enrolled in lives right here in the app" no
+    // matter what copy it passed — false for a student who has not paid the
+    // confirmation fee, and on the lapsed branch a flat contradiction of the
+    // paragraph above.
+    for (const platform of NATIVE_PLATFORMS) {
+      cleanup();
+      mockPlatform = platform;
+      renderPage();
+
+      expect(screen.getByText(BROWSER_FALLBACK)).toBeInTheDocument();
+      expect(screen.getByText(FIGURE_POINTER)).toBeInTheDocument();
+      expect(bodyText()).not.toMatch(ENROLLED_CLAIM);
+    }
+  });
+
+  it("on the LAPSED iOS page the same sentence stands, still with no enrolment claim", () => {
+    // The branch where the wrong copy reads worst: "Your window has closed." and
+    // "your seat may still be open" sitting directly above a card telling the
+    // same student they are already enrolled.
+    mockPlatform = "ios";
     mockDecision = {
       ...acceptedDecision,
       seatHeldUntil: new Date(NOW.getTime() - 60_000),
@@ -507,29 +639,53 @@ describe("ClaimSeat — the held-seat window and the existing checkout link", ()
     renderPage();
 
     expect(screen.getByText("Your window has closed.")).toBeInTheDocument();
-    expect(
-      screen.getByText("Complete this step from a web browser."),
-    ).toBeInTheDocument();
-    expect(allHrefs().some((h) => h.includes("/checkout"))).toBe(false);
-    expect(bodyText()).not.toContain("₹");
+    expect(screen.getByText(BROWSER_FALLBACK)).toBeInTheDocument();
+    expect(screen.getByText(FIGURE_POINTER)).toBeInTheDocument();
+    expect(bodyText()).not.toMatch(ENROLLED_CLAIM);
   });
 
-  it("the lapsed copy never points at a 'step below' that iOS does not render", () => {
-    // On iOS the shared block collapses to one line of anti-steering fallback,
-    // so any sentence introducing the thing underneath ("the step below is the
-    // same one it always was", "it still works") describes something that is
-    // not there — and it is unconditional copy, so it reaches every iOS reader.
-    // The same sentence is a liability on web for a different reason: "it still
-    // works" reads to a fast reader as a claim about the SEAT, on the screen
-    // that has just said the seat may already be gone.
+  it("in EITHER native shell the LAPSED page is equally silent", () => {
+    // The lapsed branch renders the same shared block, so the guard must hold
+    // on both phases. This is the branch most likely to be written by hand and
+    // to forget it — and the lapsed native reader must still keep the same way
+    // forward the open branch gives them, which is the browser, not a link.
+    for (const platform of NATIVE_PLATFORMS) {
+      cleanup();
+      mockPlatform = platform;
+      mockDecision = {
+        ...acceptedDecision,
+        seatHeldUntil: new Date(NOW.getTime() - 60_000),
+      };
+      renderPage();
+
+      expect(screen.getByText("Your window has closed.")).toBeInTheDocument();
+      expect(bodyText()).not.toContain("₹");
+      expect(inAppHrefs().some((h) => h.startsWith("/checkout"))).toBe(false);
+      expect(externalHrefs()).toEqual([]);
+      expect(screen.getByText(BROWSER_FALLBACK)).toBeInTheDocument();
+      expect(screen.getByText(FIGURE_POINTER)).toBeInTheDocument();
+    }
+  });
+
+  it("the lapsed copy never points at a 'step below' that native does not render", () => {
+    // In neither native shell is the block underneath the ₹8k step: it is a
+    // pointer to where the figure is stated plus one line asking the reader to
+    // open a browser, which is a way out of the shell rather than a step within
+    // it. So any sentence introducing the thing underneath ("the step below is
+    // the same one it always was", "it still works") describes something that is
+    // not there — and it is unconditional copy, so it reaches every native
+    // reader. The same sentence is a liability on web for a
+    // different reason: "it still works" reads to a fast reader as a claim
+    // about the SEAT, on the screen that has just said the seat may already be
+    // gone.
     mockDecision = {
       ...acceptedDecision,
       seatHeldUntil: new Date(NOW.getTime() - 60_000),
     };
 
-    for (const ios of [false, true]) {
+    for (const platform of ["web", ...NATIVE_PLATFORMS] as const) {
       cleanup();
-      mockIsIOS = ios;
+      mockPlatform = platform;
       renderPage();
 
       const text = bodyText();
@@ -641,20 +797,26 @@ describe("ClaimSeat — the held-seat window and the existing checkout link", ()
     expect(fromSpy).toHaveBeenCalled();
   });
 
-  it("on iOS it never reads the money terms, and never waits on them to paint", () => {
-    // Every figure that read produces is suppressed on iOS, and there is no fee
-    // card and no button for a late-arriving amount to shove down the page. So
-    // the read is not issued at all, and iOS is off the spinner gate: the
-    // highest-stakes screen in the funnel must not carry an iOS-only latency
-    // path for data it discards.
-    mockIsIOS = true;
-    renderPage({ seedTerms: false });
+  it("in a native shell it never reads the money terms, and never waits to paint", () => {
+    // Every figure that read produces is suppressed on native, and there is no
+    // fee card and no button for a late-arriving amount to shove down the page.
+    // So the read is not issued at all, and native is off the spinner gate: the
+    // highest-stakes screen in the funnel must not carry a native-only latency
+    // path for data it discards. Asserted on Android too, where the guard used
+    // to be false and the round trip therefore really happened.
+    for (const platform of NATIVE_PLATFORMS) {
+      cleanup();
+      fromSpy.mockClear();
+      mockPlatform = platform;
+      renderPage({ seedTerms: false });
 
-    expect(
-      screen.getByText("Complete this step from a web browser."),
-    ).toBeInTheDocument();
-    expect(fromSpy).not.toHaveBeenCalled();
-    expect(bodyText()).not.toContain("₹");
+      expect(fromSpy).not.toHaveBeenCalled();
+      expect(bodyText()).not.toContain("₹");
+      // The page still paints its own content rather than hanging on a spinner.
+      expect(
+        screen.getByText(/your seat is held for you/i),
+      ).toBeInTheDocument();
+    }
   });
 
   it("after the window lapses: honest copy, and the SAME path forward (no dead end)", () => {

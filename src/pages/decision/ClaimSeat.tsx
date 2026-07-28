@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Countdown } from "@/components/live/Countdown";
 import { supabase } from "@/integrations/supabase/client";
-import { isIOS } from "@/lib/platform";
+import { isNative } from "@/lib/platform";
 import { DECISION_FLOW, flag } from "@/lib/flags";
 import { useDecision } from "@/hooks/useDecision";
 
@@ -130,18 +130,97 @@ const phaseFor = (untilMs: number | null): SeatPhase => {
  * Route: `/decision/:applicationId/claim`, inside the student shell.
  *
  * **INTEG-PAY-1: this page originates no order.** The seat-confirm runs on the
- * pipeline that already exists — the CTA is a plain `<Link>` to the very
+ * pipeline that already exists — the CTA is a plain `<Link>` to the
  * `/checkout/{offering_id}?type=confirmation&app={application_id}` route
- * `ApplicationStatus.tsx` links to, and `CheckoutPage` owns the
+ * `CheckoutPage` has always served, and `CheckoutPage` owns the
  * `create-razorpay-order` call from there. Nothing in this file talks to
- * Razorpay, mints a payment link, or writes a funnel status.
+ * Razorpay, mints a payment link, or writes a funnel status. The ROUTE is the
+ * pre-existing thing, not a sibling surface offering it: the one place
+ * `ApplicationStatus.tsx` spells the same URL out sits behind a condition that
+ * cannot be satisfied (see "Do not cite `ApplicationStatus.tsx`" below), so no
+ * live sibling is holding this link open for an `accepted` student. Nor is this
+ * page one yet — it is dark behind `VITE_DECISION_FLOW` (the
+ * `flag(DECISION_FLOW)` redirect further down), and the accepted signal needs
+ * `VITE_FUNNEL_RECON` on top of that (`useDecision.ts`). The honest distinction
+ * between the two surfaces is unsatisfiable-condition there versus flag-dark
+ * here; neither is "in front of a student" today, and nothing below should be
+ * read as claiming otherwise.
  *
- * **Apple anti-steering:** the payment CTA is wrapped in the same `isIOS()`
- * guard, with the same fallback copy, as every other money CTA in the app — and
- * on iOS the AMOUNTS go with it. `ApplicationStatus.tsx` states no figure
- * anywhere on iOS, and "Due now to confirm ₹8,000" sitting directly above
- * "Complete this step from a web browser" is the steering the guard exists to
- * prevent.
+ * **The store guard is `isNative()`, never `isIOS()`.** Both shells forbid this
+ * surface, for different reasons. Google Play's Reader Rule (Path B) is the
+ * binding one on Android: the shell must carry NO purchase UI at all, not even a
+ * price chip that merely looks like it could lead to checkout
+ * (`src/lib/platform.ts`, `capacitor.config.ts`). Apple's anti-steering rules
+ * (3.1.1 / 3.1.3) forbid the in-app purchase AND the link out to one. An
+ * `isIOS()` test here would have satisfied neither: it is false on Android, so
+ * every rupee figure below and a "Claim my seat" button would have shipped
+ * inside a live Play build. So the whole money block — the FIGURES as well as
+ * the CTA — is suppressed inside BOTH native shells, on one platform test, and
+ * the SAME thing stands in its place in both.
+ *
+ * **What stands in its place: an instruction, not a link.** Both shells get a
+ * pointer saying where the figure itself is, then a one-line, link-free,
+ * price-free sentence — "Complete this step from a web browser." — in the slot
+ * the button had. The wording is lifted verbatim from the three iOS branches
+ * `ApplicationStatus.tsx` carries, for one voice across the funnel and NOTHING
+ * more: all three of those branches are unreachable in v1 (see "Do not cite
+ * `ApplicationStatus.tsx`" below), so this is reuse of a phrase, not evidence
+ * that the phrase has been battle-tested in front of a student. It has not
+ * been, and no sibling makes it so: `EnrollmentDetails.tsx` pairs the same two
+ * lines on native, but that branch is this phase's own new code and that page
+ * sits behind the same `flag(DECISION_FLOW)` redirect, so it has faced no
+ * student either. The claim is consistency of wording inside this phase and
+ * nothing beyond it: whichever surface and whichever shell the student
+ * eventually opens, one money step gets one explanation of it.
+ *
+ * The sentence is stated here rather than delegated to `ContinueOnWebCTA`
+ * because that component fits NEITHER shell. Its guard is `isIOS()`, not
+ * `isNative()` (`ContinueOnWebCTA.tsx`) — precisely the test this page rejects
+ * above. On Android it therefore falls through to the outbound "Continue on
+ * web" link, which is purchase UI inside a Play build and does not leave the
+ * WebView anyway (next paragraph). On iOS it returns `null` for
+ * `variant="inline"`, and for `variant="card"` it ignores the `body` prop and
+ * hardcodes "Everything you're enrolled in lives right here in the app: every
+ * lesson, ready whenever you are." — false for an accepted student who has not
+ * paid the confirmation fee, and a flat contradiction of the lapsed copy above
+ * it. That file is outside this task's fence, so it is flagged for integration
+ * rather than edited here; the flag is the `isIOS()`/`isNative()` split, not a
+ * one-line `body` fix.
+ *
+ * **Why there is no "Continue on web" bounce here, on Android either: because
+ * on this shell it does not bounce.** `ContinueOnWebCTA` targets
+ * `https://app.leveluplearning.in` — which is ALSO the origin the Android
+ * WebView serves the bundled build from (`capacitor.config.ts`
+ * `server.hostname`), and is separately covered by its
+ * `allowNavigation: ["*.leveluplearning.in"]`. Capacitor's
+ * `Bridge.launchIntent()` fires `ACTION_VIEW` only when the host differs from
+ * the app URL's host AND misses the allow-navigation mask; here both tests
+ * pass, so it returns false and the WebView navigates INTERNALLY, off the
+ * bundled assets. `target="_blank"` does not escape either — nothing in
+ * `@capacitor/android` or `MainActivity.java` sets `setSupportMultipleWindows`
+ * or overrides `onCreateWindow`. So the "bounce" would re-enter this same SPA
+ * in-shell, where `isNative()` is TRUE, and `CheckoutPage`'s native fallback
+ * would drop `?type=confirmation&app=` and re-route to the full-price
+ * `/p/{slug}` first-purchase page — the K-2 dead end exactly, charging a
+ * confirmed student the wrong amount. The link is therefore not offered, rather
+ * than offered broken. Even given a real escape it would still not carry: a
+ * system browser holds no Supabase session, and `Login.tsx` reads only
+ * `location.state.from.pathname`, never the `?next=` param `CheckoutPage`
+ * redirects anonymous users with, so the confirmation query string dies at the
+ * login wall and the student lands on `/home`. `ContinueOnWebCTA.tsx`,
+ * `CheckoutPage.tsx` and `Login.tsx` are all outside this task's fence and the
+ * second is the payment pipeline, so all three are flagged for integration.
+ *
+ * **Where the Android student goes from here.** Out to a browser, on their own
+ * — the path forward is an instruction, so it depends on no link and on no
+ * upstream surface. `DecisionReveal.tsx` and `AcceptanceCard.tsx` RELABEL their
+ * forward CTAs on this same `isNative()` test rather than deleting them, so this
+ * page is still reached in the Play shell, as it is by deep link, bookmark and
+ * back stack; but nothing here needs that to hold. Both of those files' comments
+ * were written against an earlier draft in which this page carried a "Continue
+ * on web" bounce, and both were corrected at integration to describe what
+ * actually stands here now — the pointer and the browser instruction. Their
+ * BEHAVIOUR never depended on it.
  *
  * **SEAT-1:** release stays a manual admin action in v1. This page states the
  * consequence of a lapse, it does not automate one, and every sentence about
@@ -152,10 +231,39 @@ const phaseFor = (untilMs: number | null): SeatPhase => {
  * cleared and the app holds no write path to it, so a student re-admitted into a
  * later batch arrives with the ORIGINAL anchor still in place and the window
  * already lapsed. Dead-ending on that would make the "your acceptance carries to
- * the next batch" promise unimplementable in product, and would leave this page
- * and `ApplicationStatus.tsx` — which keeps offering the same confirmation link
- * for an `accepted` row, with no lapse check — disagreeing about whether the
- * same seat can be claimed. The lapse changes the COPY, never the path forward.
+ * the next batch" promise unimplementable in product, and would leave a student
+ * whose seat may well still be open with hand-written SQL as the only way back
+ * in. SEAT-1 settles it on its own: the clock releases nothing, so this page may
+ * not withdraw the path as though it had. The lapse changes the COPY, never the
+ * path forward.
+ *
+ * **Do not cite `ApplicationStatus.tsx` as a precedent for that.** Earlier
+ * revisions of this comment rested the ruling on that page "keeping offering the
+ * same confirmation link for an `accepted` row". It does not: its two staged-pay
+ * CTAs are UNREACHABLE. `STEPS[4].key` is `confirmation_paid` while
+ * `STATUS_TO_STEP.accepted` is 3, and `getStepState` returns `"current"` only
+ * where `index === currentStepIndex`, so "Pay Confirmation" asks for
+ * `currentStepIndex` to be 4 (the step) and 3 (the status) at once. "Pay
+ * Balance" is dead the same way: `STEPS[5]` against
+ * `STATUS_TO_STEP.confirmation_paid` of 4.
+ *
+ * Its THIRD money CTA — the reconciled one — is unreachable too, for a separate
+ * reason, and this is the one that is easy to miss because the condition reads
+ * as though it could fire. `reconciledUi` is `reconciledIsMoney ? undefined :
+ * reconciledUiCandidate`, and `reconciledIsMoney` is true whenever the
+ * candidate's own CTA carries `payment: true`; so a DEFINED `reconciledUi`
+ * proves the CTA derived from it is not payment-bearing, and
+ * `reconciledCta.payment && isIOS()` can never both hold. (Both payment-bearing
+ * entries in `RECONCILED_STAGE_UI` — `completed-no-fee` and
+ * `confirm-paid-no-balance` — are additionally listed in `MONEY_STAGES`, and the
+ * whole reconciled block is dark behind `VITE_FUNNEL_RECON` on top of that.)
+ *
+ * So all three "Complete this step from a web browser." callsites on that page,
+ * and all three checkout links paired with them, render to nobody in v1. Every
+ * one of those conditions is pre-existing — unchanged by this phase, and NOT
+ * this phase's to fix. Recorded here only so the next reader does not re-derive
+ * a live precedent, a shipped-copy precedent, or a sibling-link precedent out of
+ * a surface that renders nothing.
  */
 const ClaimSeat = () => {
   const { applicationId } = useParams<{ applicationId: string }>();
@@ -250,18 +358,21 @@ const ClaimSeat = () => {
   }, [lapsed]);
 
   /* Read once, used by both the query gate and the render, so the page cannot
-     end up half-guarded — the figures and the CTA are one decision. */
-  const ios = isIOS();
+     end up half-guarded — the figures and the CTA are one decision. ONE test,
+     with no second platform branch under it: both native shells are handed the
+     same store-legal replacement (see the docblock). */
+  const native = isNative();
 
-  /* NOT read on iOS: every figure this returns is suppressed there (see the
-     anti-steering note in the docblock), so fetching it would buy an iOS-only
-     round trip on the highest-stakes screen in the funnel for data that never
-     paints. A disabled query reports `isLoading: false` in react-query v5, so
-     skipping it also takes iOS off the spinner gate below. */
+  /* NOT read in a native shell: every figure this returns is suppressed there
+     (see the store-guard note in the docblock), so fetching it would buy a
+     native-only round trip on the highest-stakes screen in the funnel for data
+     that never paints. A disabled query reports `isLoading: false` in
+     react-query v5, so skipping it also takes native off the spinner gate
+     below. */
   const offeringId = decision?.offeringId;
   const terms = useQuery<OfferingTerms | null>({
     queryKey: ["decision", "offering-terms", offeringId],
-    enabled: !!offeringId && !ios,
+    enabled: !!offeringId && !native,
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -283,10 +394,10 @@ const ClaimSeat = () => {
   /* The money terms are part of this page being READY, not a late enhancement.
      Painting the fee card only once the offering query lands would push the
      "Claim my seat" button down under the reader's thumb mid-read, so the
-     spinner covers both reads. That reasoning is web/Android only, and so is
-     this half of the gate: on iOS there is no fee card and no button to push
+     spinner covers both reads. That reasoning is web-only, and so is this half
+     of the gate: in a native shell there is no fee card and no button to push
      down, the terms query is never enabled, and `terms.isLoading` is therefore
-     false — iOS paints on the decision read alone. Same for an offering-less
+     false — native paints on the decision read alone. Same for an offering-less
      read: a disabled query reports `isLoading: false` in react-query v5, so
      this never hangs when there is nothing to read. */
   if (isLoading || terms.isLoading) {
@@ -341,16 +452,21 @@ const ClaimSeat = () => {
 
   /* ONE payment path, rendered identically by the open branch and the lapsed
      one. The countdown is an urgency device, not an entitlement gate: seats are
-     released by hand (SEAT-1), the ₹8k runs on the existing checkout
-     (INTEG-PAY-1), and `ApplicationStatus.tsx` goes on offering that same link
-     for an `accepted` row with no lapse check of its own. Withholding it here
-     would put two live surfaces in disagreement about one seat and would leave
-     the student with hand-written SQL as the only remedy. Only the copy around
-     this block knows about the lapse.
+     released by hand (SEAT-1), so the deadline passing takes nothing away, and
+     the ₹8k runs on the existing checkout (INTEG-PAY-1). Withholding the path
+     at the boundary would have this page enforce a release nothing performed,
+     and would leave the student with hand-written SQL as the only remedy. Only
+     the copy around this block knows about the lapse. SEAT-1 is the whole of
+     that argument: no other surface seconds it, because
+     `ApplicationStatus.tsx`'s staged-pay CTAs are unreachable dead code (see
+     the docblock) and offer an `accepted` student nothing.
 
-     On iOS the guard swallows the FIGURES as well as the CTA — see the docblock.
-     Nothing below reaches Razorpay or mints a link: it is a <Link> to the route
-     that already exists.
+     On native the guard swallows the FIGURES as well as the CTA — see the
+     docblock. Nothing below reaches Razorpay or mints a link: on web it is a
+     <Link> to the route that already exists, and on native it is prose with no
+     href at all, because an outbound link to the web origin is served straight
+     back into this same WebView on Android (docblock again) and would land the
+     student on the full-price offering page.
 
      The wrapper is what the layout effect measures: one element, present in
      both phases and in both platform branches, whose document position is the
@@ -358,10 +474,22 @@ const ClaimSeat = () => {
      no styling, so it collapses out of the layout. */
   const paymentPath = (
     <div ref={payRef}>
-      {ios ? (
-        <p className="mt-6 text-xs text-muted-foreground">
-          Complete this step from a web browser.
-        </p>
+      {native ? (
+        /* Both shells, one treatment: the pointer that stands in for the fee
+           card, then the sentence that stands in for the button. The pointer is
+           not optional dressing — without it a native reader is told to go and
+           complete a money step with no idea where the amount is stated, which
+           is the one thing `EnrollmentDetails.tsx` is careful to tell them on
+           the very same platform. Neither line carries a figure or an href. */
+        <>
+          <p className="mt-6 rounded-lg border border-border bg-surface p-4 text-xs leading-relaxed text-muted-foreground">
+            The exact amount due to confirm is shown on the checkout screen when
+            you open this page in a web browser, before you pay anything.
+          </p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Complete this step from a web browser.
+          </p>
+        </>
       ) : (
         <>
           {confirmation !== null ? (
@@ -507,12 +635,15 @@ const ClaimSeat = () => {
                 same screen had just called gone.
 
                 It says nothing about a step "below", and makes no claim that
-                the step still works: on iOS the block underneath collapses to
-                one line of anti-steering fallback, so there IS no step below
-                there, and "it still works" is a sentence about a checkout route
-                that a fast reader takes as a sentence about the seat — on the
-                same screen that just said the seat may be gone. The page offers
-                the path and lets it speak for itself.
+                the step still works. In neither native shell is the block
+                underneath the ₹8k step this copy would be introducing: it is a
+                pointer to where the figure is stated and one line asking the
+                reader to open a browser, which is a way OUT of the shell rather
+                than a step within it. And "it
+                still works" is a sentence about a checkout route that a fast
+                reader takes as a sentence about the seat — on the same screen
+                that just said the seat may be gone. The page offers the path
+                and lets it speak for itself.
 
                 Slots, in order, are the same as the open branch below —
                 heading, lead, the shared payment block, footnote — so the

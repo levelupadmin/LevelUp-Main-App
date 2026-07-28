@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { DECISION_FLOW, flag } from "@/lib/flags";
-import { isIOS } from "@/lib/platform";
+import { isNative } from "@/lib/platform";
 import { useDecision } from "@/hooks/useDecision";
 
 /**
@@ -88,20 +88,42 @@ const formatDateTime = (date: Date): string | null => {
  * money runs on the existing checkout route, which ClaimSeat owns, so this page
  * links to ClaimSeat rather than to checkout.
  *
- * That indirection is NOT the iOS guard, which is the thing this page's own
- * comment used to claim. Apple's anti-steering rules are about what the screen
- * SHOWS as much as where the tap lands, and this page shows the whole ₹ fee
- * schedule and a full-width primary CTA into the payment flow. So it carries the
- * same `isIOS()` guard as the shipped precedent on `ApplicationStatus.tsx`: on
- * iOS there are no rupee amounts anywhere on the page and no CTA into the claim
- * flow, only the same fallback sentence that surface already uses — once, in
- * the CTA slot, because that sentence stands in for a step. Web and Android are
- * untouched.
+ * That indirection is NOT the store guard. What a screen SHOWS matters as much
+ * as where the tap lands, and this page shows the whole ₹ fee schedule plus a
+ * full-width primary CTA into the payment flow. Both native shells forbid that,
+ * for different reasons: Google Play's Reader Rule (Path B) allows NO purchase
+ * UI in the Android build, not even a price chip, and Apple's anti-steering
+ * rules forbid the purchase and the link out to one alike. So the guard is
+ * `isNative()`, never `isIOS()` — an iOS-only test is false on Android, and
+ * would have left the entire fee table and a "Claim my seat" button live inside
+ * a shipped Play build. On native there are no rupee amounts anywhere on the
+ * page. Web is untouched.
+ *
+ * What fills the CTA slot is the SAME in both shells: the one-line, link-free,
+ * price-free sentence `ApplicationStatus.tsx` already ships on iOS — "Complete
+ * this step from a web browser." — over the pointer this page's fee section
+ * already carries on native, the identical pairing `ClaimSeat.tsx` renders. It
+ * is stated here rather than delegated to `ContinueOnWebCTA`, whose native
+ * branch DROPS the `body` prop and hardcodes "Everything you're enrolled in
+ * lives right here in the app", false for an accepted student who has not paid
+ * the confirmation fee. (Honouring `body` there is a one-line fix;
+ * `ContinueOnWebCTA.tsx` is outside this task's file fence, so it is flagged for
+ * integration rather than edited here.)
+ *
+ * There is no "Continue on web" link on Android either, and the reason is that
+ * on this shell it does not go anywhere: `https://app.leveluplearning.in` is the
+ * origin the Android WebView serves the BUNDLED build from
+ * (`capacitor.config.ts` `server.hostname`) and is covered by its own
+ * `allowNavigation`, so Capacitor's `Bridge.launchIntent()` declines to fire
+ * `ACTION_VIEW` and the WebView navigates internally instead — landing the
+ * student back on the in-shell claim page they were already on. `ClaimSeat.tsx`
+ * carries the full reasoning and the integration flags; the two pages take the
+ * same answer so a student cannot be told two different things one tap apart.
  *
  * The guard changes WHICH figures are shown, never WHETHER the page can back
  * what it says: both platforms gate the fee-policy copy on the same offering
- * read, so a failed read drops the refund term on iOS exactly as it does on the
- * web and leaves a pointer to where the figures are in its place.
+ * read, so a failed read drops the refund term on native exactly as it does on
+ * the web and leaves a pointer to where the figures are in its place.
  */
 const EnrollmentDetails = () => {
   const { applicationId } = useParams<{ applicationId: string }>();
@@ -171,10 +193,13 @@ const EnrollmentDetails = () => {
     return <Navigate to={todaysPath} replace />;
   }
 
-  /* Apple anti-steering: no price and no purchase entry point inside the iOS
-     shell. Read once so the fee table, the step titles and the CTA cannot
-     disagree with each other about which platform they are on. */
-  const ios = isIOS();
+  /* No price and no purchase entry point inside EITHER native shell — the Play
+     Reader Rule and Apple anti-steering land on the same answer here. Read once
+     so the fee table, the step titles and the CTA cannot disagree with each
+     other about which platform they are on. ONE test, with no second platform
+     branch under it: both native shells get the same store-legal replacement in
+     the CTA slot (see the docblock). */
+  const native = isNative();
 
   const confirmation = positiveAmount(terms.data?.confirmation_amount_inr);
   const appFee = positiveAmount(terms.data?.app_fee_inr);
@@ -207,7 +232,7 @@ const EnrollmentDetails = () => {
   const claimSteps = [
     {
       title:
-        !ios && confirmation !== null
+        !native && confirmation !== null
           ? `You pay ${inr(confirmation)}`
           : "You confirm the seat",
       body: "The seat comes off the list for this batch and stops being offered to anyone else.",
@@ -218,7 +243,7 @@ const EnrollmentDetails = () => {
     },
     {
       title:
-        !ios && balance !== null
+        !native && balance !== null
           ? `You clear the balance of ${inr(balance)}`
           : "You clear the balance",
       body: "Due before the cohort begins. You can pay it any time between confirming and the first session.",
@@ -277,23 +302,22 @@ const EnrollmentDetails = () => {
           <h2 id="fees-heading" className="text-sm font-medium text-foreground">
             The fee structure
           </h2>
-          {/* iOS gets the terms without the numbers: the one sentence of this
-              section that carries no amount, kept verbatim, plus a pointer to
-              where the figures are.
+          {/* Both native shells get the terms without the numbers: the one
+              sentence of this section that carries no amount, kept verbatim,
+              plus a pointer to where the figures are.
 
               The policy sentence is gated on the SAME `hasFeeRows` as the web
-              branch below, not on `ios` alone. When the offering read fails
+              branch below, not on `native` alone. When the offering read fails
               every amount reads null, and a page that has just failed to load a
               fee schedule must not assert a refund term off it — the web branch
               deliberately says nothing about fee policy in that state, and the
               two platforms have to agree about what the page can back.
 
-              The pointer is NOT the CTA's "Complete this step from a web
-              browser." That sentence replaces a BUTTON wherever it ships
-              (`ApplicationStatus.tsx`, `ClaimSeat.tsx`), so "this step" has an
-              antecedent; this section describes a fee policy, not a step, and
-              repeating it here would put the same sentence on screen twice. */}
-          {ios && (
+              The pointer is its own sentence rather than a second copy of
+              whatever fills the CTA slot below: that slot replaces a BUTTON, so
+              its copy is about a step, and this section describes a fee policy
+              rather than a step. */}
+          {native && (
             <>
               {hasFeeRows && (
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
@@ -311,7 +335,7 @@ const EnrollmentDetails = () => {
           )}
           {/* Only rendered when there is at least one real figure: an empty
               bordered <dl> is a stray 2px rectangle, not a table. */}
-          {!ios && hasFeeRows && (
+          {!native && hasFeeRows && (
             <dl className="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
               {appFee !== null && (
                 <div className="flex items-baseline justify-between gap-4 p-4">
@@ -361,14 +385,14 @@ const EnrollmentDetails = () => {
               figures are somewhere else entirely. The "rows above" clause is
               narrowed further to the case where the application-fee row is
               actually one of them. */}
-          {!ios && hasFeeRows && (
+          {!native && hasFeeRows && (
             <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
               {appFee !== null
                 ? "The application fee you already paid counts towards the total programme fee, so the rows above add up rather than stack on top of each other. It is not refundable on its own: if you do not take a seat, it is not returned."
                 : "The application fee you already paid counts towards the total programme fee rather than stacking on top of it. It is not refundable on its own: if you do not take a seat, it is not returned."}
             </p>
           )}
-          {!ios && !hasFeeRows && (
+          {!native && !hasFeeRows && (
             <p className="mt-3 text-xs text-muted-foreground">
               The exact figures for this cohort are on your claim page and on the
               checkout screen before you pay anything.
@@ -416,10 +440,15 @@ const EnrollmentDetails = () => {
           not have to apply again.
         </p>
 
-        {/* The one CTA. On iOS it is replaced by the same sentence
-            `ApplicationStatus.tsx` uses, rather than steering to a page whose
-            only purpose is to start a payment. */}
-        {ios ? (
+        {/* The one CTA. In either native shell it is not a purchase-labelled
+            button into a page whose only purpose is to start a payment, and it
+            is not an outbound link either — on Android that link is served back
+            into this same WebView rather than out of it (see the docblock). What
+            is left is the shared link-free sentence, stated here rather than
+            delegated for the reason the docblock gives. The fee section above
+            has already said where the figures are, so the reader is not sent to
+            a browser without knowing what they are going to find there. */}
+        {native ? (
           <p className="mt-8 text-xs text-muted-foreground">
             Complete this step from a web browser.
           </p>
