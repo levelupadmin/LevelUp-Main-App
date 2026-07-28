@@ -245,14 +245,25 @@ BEGIN
        -- admin-SQL-only data loss, and it would break the self-healing
        -- property that makes running this on every sign-in worthwhile.
        --
-       -- Re-granting after a refund is a real concern, but it is a SEPARATE
-       -- change: it must also exclude those rows from the stamp so they stay
-       -- claimable, not skip the grant and stamp anyway.
+       -- SO THE GUARD IS STATUS-BLIND *AND* THE STAMP IS NOT. Both halves are
+       -- required and neither works alone:
+       --   * ANY existing enrolment blocks the grant. enrolments_status_check
+       --     permits active/expired/revoked/cancelled; process-refund writes
+       --     'cancelled' and admin-api writes 'revoked', and both are
+       --     DELIBERATE end-states. Guarding only on 'active' lets a refunded
+       --     student mint a fresh active row on their next sign-in and silently
+       --     regain the course — with no audit row, and in bulk across 1,067
+       --     mappings the moment one lands.
+       --   * The stamping UPDATE below therefore marks ONLY rows this caller
+       --     now actually holds an ACTIVE enrolment for. A blocked row stays
+       --     claimed_by_user_id IS NULL, so it remains claimable by this
+       --     function AND by the mapping granter if the refund is ever
+       --     reversed. Skipping the grant while stamping anyway would be
+       --     permanent, admin-SQL-only data loss.
        AND NOT EXISTS (
          SELECT 1 FROM public.enrolments e
           WHERE e.user_id = v_user_id
             AND e.offering_id = le.offering_id
-            AND e.status = 'active'
        )
     -- Duplicate source rows: 2,329 (phone, offering_id) groups in
     -- legacy_enrolments hold 2,620 extra rows, so this SELECT can yield the
@@ -264,16 +275,29 @@ BEGIN
 
     GET DIAGNOSTICS v_claimed = ROW_COUNT;
 
-    -- Stamp ONLY what we could actually grant. A NULL-offering row stays
-    -- unclaimed so grant_enrolment_after_offering_resolved can still serve it
-    -- when the mapping lands; stamping it here would disqualify it forever
-    -- (that granter requires claimed_by_user_id IS NULL).
+    -- Stamp ONLY what this caller now actually holds an ACTIVE enrolment for.
+    -- claimed_by_user_id is permanent (cleanup_deleted_users is not scheduled
+    -- and there is no unstamp path), so a row must never be marked claimed
+    -- unless the claim genuinely landed. Two kinds of row are deliberately left
+    -- NULL and therefore still claimable on a later sign-in:
+    --   * a NULL-offering row (unmapped purchase) — so
+    --     grant_enrolment_after_offering_resolved can still serve it when the
+    --     mapping lands; that granter requires claimed_by_user_id IS NULL;
+    --   * a row whose grant was BLOCKED above by a refunded/revoked/expired
+    --     enrolment — so reversing the refund restores the path instead of
+    --     needing admin SQL.
     UPDATE public.legacy_enrolments le
        SET claimed_by_user_id = v_user_id,
            claimed_at         = now()
      WHERE le.claimed_by_user_id IS NULL
        AND le.offering_id IS NOT NULL
-       AND le.phone = v_phone_norm;
+       AND le.phone = v_phone_norm
+       AND EXISTS (
+         SELECT 1 FROM public.enrolments e
+          WHERE e.user_id = v_user_id
+            AND e.offering_id = le.offering_id
+            AND e.status = 'active'
+       );
 
     -- Counted separately from the INSERT: this UPDATE has no NOT EXISTS guard,
     -- so it stamps rows whose enrolment already existed. stamped >= claimed
@@ -378,23 +402,35 @@ BEGIN
     END IF;
 
     IF v_user_id IS NOT NULL THEN
-      -- Only an ACTIVE enrolment blocks, matching enrolments_unique_active —
-      -- same reasoning as claim_my_purchases above. A status-blind guard here
-      -- is strictly worse: this path runs in BULK (1,067 mappings covering
-      -- 67,129 students) with no counters at all, so every skipped-but-stamped
-      -- row would be lost silently and unobservably.
+      -- ANY existing enrolment blocks, exactly as in claim_my_purchases, and
+      -- the stamp below is moved INSIDE this branch for the same reason: this
+      -- path runs in BULK (1,067 mappings covering 67,129 students) with no
+      -- counters, so a status-blind guard that stamped anyway would silently
+      -- and permanently burn rows. Blocking without stamping instead leaves the
+      -- row claimable, so nothing is lost and a refunded student does not
+      -- silently regain the course across the whole cohort at once.
       IF NOT EXISTS (
         SELECT 1 FROM public.enrolments e
          WHERE e.user_id = v_user_id
            AND e.offering_id = NEW.offering_id
-           AND e.status = 'active'
       ) THEN
         INSERT INTO public.enrolments (user_id, offering_id, payment_order_id, status, source)
         VALUES (v_user_id, NEW.offering_id, NULL, 'active', 'migration');
       END IF;
 
-      NEW.claimed_by_user_id := v_user_id;
-      NEW.claimed_at := now();
+      -- Stamp only if they now hold an ACTIVE enrolment — i.e. the row we just
+      -- inserted, or one they legitimately already had. A caller whose only
+      -- enrolment is refunded/revoked/expired falls through UNSTAMPED, so the
+      -- purchase stays claimable if that decision is ever reversed.
+      IF EXISTS (
+        SELECT 1 FROM public.enrolments e
+         WHERE e.user_id = v_user_id
+           AND e.offering_id = NEW.offering_id
+           AND e.status = 'active'
+      ) THEN
+        NEW.claimed_by_user_id := v_user_id;
+        NEW.claimed_at := now();
+      END IF;
     END IF;
   END IF;
 

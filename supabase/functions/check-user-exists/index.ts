@@ -1,36 +1,60 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeadersFor } from "../_shared/cors.ts";
-import { e164, normalizePhone, phoneVariants } from "../_shared/phone.ts";
+import { normalizePhone, phoneVariants } from "../_shared/phone.ts";
 
 // CORS is origin-aware (see _shared/cors.ts). The hardcoded single-origin
 // header this function used to build from SITE_URL rejected the iOS Capacitor
 // origin (capacitor://app.leveluplearning.in), so every call from the iOS shell
-// died as a silent "(network)" failure.
+// would die as a silent "(network)" failure.
 const ALLOW_METHODS = { "Access-Control-Allow-Methods": "POST, OPTIONS" };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// The signup gate matches every identifier by EQUALITY (`eq`/`in`), never
-// LIKE/ilike, so no caller-supplied value can be read as a pattern. Belt and
-// braces, it also validates the address against a strict character set:
-// PostgREST rewrites "*" into "%" inside like/ilike values server-side, AFTER
-// any client-side escaping has run, so the moment this branch went back to
-// ilike a single "*" would turn an anon-reachable endpoint into a
-// prefix/suffix enumeration oracle over public.users and the legacy_enrolments
-// PII table. "*" and "%" are not valid in a real address, so rejecting them
-// costs nothing real — and a rejected address 400s, which the client treats as
-// fail-open, so a false reject can never block a genuine signup.
+// The signup gate matches every identifier by EQUALITY (`eq`/`in`) or through
+// find_login_identity, never LIKE/ilike, so no caller-supplied value can be read
+// as a pattern. Belt and braces, it also validates the address against a strict
+// character set: PostgREST rewrites "*" into "%" inside like/ilike values
+// server-side, AFTER any client-side escaping has run, so the moment this branch
+// went back to ilike a single "*" would turn an anon-reachable endpoint into a
+// prefix/suffix enumeration oracle. "*" and "%" are not valid in a real address,
+// so rejecting them costs nothing real, and a rejected address 400s, which the
+// client treats as fail-open, so a false reject can never block a genuine signup.
 const SIGNUP_EMAIL_RE = /^[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
-// A phone or an email maps to a handful of users rows at most, and we only need
-// to know whether ANY of them is live vs. all of them soft-deleted.
-const IDENTITY_ROW_CAP = 10;
+// A phone maps to a handful of legacy_enrolments rows at most, and we only need
+// to know whether ANY of them still leads to an account someone can get into.
+const LEGACY_ROW_CAP = 10;
+
+// Rate-limit ceilings for the signup gate, both over the same 15-minute window
+// the offering path uses. Two-bucket rationale at the call site.
+const SIGNUP_RL_WINDOW_SECONDS = 900;
+const SIGNUP_RL_PER_IP = 60;
+const SIGNUP_RL_PER_IDENTIFIER = 10;
 
 function getClientIp(req: Request): string {
   const xff = req.headers.get("x-forwarded-for");
   if (xff) return xff.split(",")[0].trim();
   return req.headers.get("cf-connecting-ip") ?? req.headers.get("x-real-ip") ?? "unknown";
+}
+
+// Canonical +91XXXXXXXXXX for an Indian number in ANY dialect this codebase has
+// emitted (bare 10-digit, 91…, +91…), or null when the number is not Indian.
+// The endpoint is callable directly, so it cannot lean on the browser always
+// sending E.164: the offering branch below already accepts the bare 10-digit
+// form, and both branches have to agree on what a phone is.
+function indianE164(raw: string): string | null {
+  const subscriber = normalizePhone(raw);
+  return subscriber ? `+91${subscriber}` : null;
+}
+
+// Short SHA-256 digest, so the rate-limit table keys on a hash rather than
+// storing anybody's phone number or address.
+async function identifierDigest(value: string): Promise<string> {
+  const bytes = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+  );
+  return Array.from(bytes.slice(0, 16), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 Deno.serve(async (req) => {
@@ -61,18 +85,46 @@ Deno.serve(async (req) => {
     // ── mode: "signup" — boolean-only "do you already exist?" gate (SC-3) ──
     //
     // Signup has no offering to prove intent with, so this branch skips the
-    // offering lookup entirely and keys its rate limit on the IP alone. It
-    // answers exactly ONE question — does this phone/email already have an
-    // account with us, or a purchase we already hold — and returns nothing
-    // but that boolean. No user_id, no scenario, no name, no email, no
-    // offering: this endpoint is anon-reachable and must not become an
-    // enumeration oracle beyond the yes/no the signup UX genuinely needs.
+    // offering lookup entirely and keys its rate limit on the caller instead.
+    // It answers exactly ONE question and returns nothing but that boolean: no
+    // user_id, no scenario, no name, no email, no offering. This endpoint is
+    // anon-reachable and must not become an enumeration oracle beyond the
+    // yes/no the signup UX genuinely needs.
+    //
+    // The question is "WILL THE SIGN-IN DOOR OPEN for this identifier", not the
+    // looser "does some row mention it". Telling someone they already have an
+    // account and then handing them a sign-in that refuses them shuts BOTH
+    // doors, which is the one dead end the brief forbids. So every predicate
+    // below mirrors a door the app actually opens:
+    //   • +91 phone → MSG91 → verify-msg91-otp, which admits a caller whose
+    //     phone resolves through find_login_identity (auth.users), or who has
+    //     ANY legacy_enrolments row on that phone (it provisions from the row).
+    //   • email → supabase.auth.signInWithOtp({ shouldCreateUser: false }),
+    //     which admits ONLY an address that already exists in auth.users.
+    //   • a non-+91 phone has no door at all: Login sends those numbers straight
+    //     to the email step, so a number we cannot dial is never a reason to
+    //     block a signup.
+    // An identity also has to survive arrival: AuthContext force-signs-out
+    // anyone whose profile row is hidden, so a soft-deleted (or profile-less)
+    // account is a shut door too.
+    //
+    // Deliberately NOT a reason to block, each verified rather than assumed:
+    //   • A public.users row on its own. All three payment paths create the auth
+    //     user with no phone (razorpay-webhook, verify-razorpay-payment and
+    //     guest-create-order each write the number into public.users afterwards),
+    //     so a guest buyer's auth.users.phone is NULL and no phone door exists
+    //     for them. Blocking them here would strand a PAYING customer with no
+    //     way in at all, so they keep signing up exactly as they do today.
+    //     Reaching them properly needs an auth.users.phone backfill: an admin
+    //     job, filed, not guessed at from inside a gate.
+    //   • A legacy_enrolments EMAIL with no auth user behind it. That lookup is
+    //     only ever reached from the non-+91 path, whose door is
+    //     shouldCreateUser:false, which by definition refuses such an address.
     //
     // The offering_id + scenario A/B/C contract below is untouched for any
     // caller that passes an offering_id.
     if (mode === "signup") {
-      const emailRaw = typeof email === "string" ? email.trim() : "";
-      const emailIn = emailRaw.toLowerCase();
+      const emailIn = (typeof email === "string" ? email.trim() : "").toLowerCase();
       const phoneIn = typeof phone === "string" ? phone.trim() : "";
 
       if (!emailIn && !phoneIn) {
@@ -85,122 +137,125 @@ Deno.serve(async (req) => {
         return jsonRes({ error: "Invalid phone" }, 400);
       }
 
-      // Rate limit: same window and ceiling as the offering path, keyed on the
-      // IP alone since there is no offering to key on.
-      const { data: allowed, error: rlErr } = await admin.rpc(
-        "check_and_increment_rate_limit",
-        {
-          p_key: `check-user-exists:signup:${ip}`,
-          p_max_count: 10,
-          p_window_seconds: 900,
-        }
+      // The only phone with a sign-in door is an Indian one, and it is matched
+      // in every stored dialect (legacy_enrolments holds +91XXXXXXXXXX,
+      // auth.users holds whatever GoTrue was handed).
+      const phoneE164 = phoneIn ? indianE164(phoneIn) : null;
+
+      // ── Rate limit: two buckets, because one IP is not one person ──
+      // Indian carrier CGNAT and campus/office NAT put thousands of users behind
+      // a single x-forwarded-for, so a 10-per-IP ceiling would be a de-facto off
+      // switch: the eleventh signup in the window 429s, the client fails open on
+      // any non-2xx (deliberately, so a flaky check can never brick signup), and
+      // every buyer behind that egress sails through. The IP bucket is therefore
+      // sized for a shared egress, and a second bucket caps how often a single
+      // identifier can be probed. One signup costs exactly one call on either
+      // path, so 60 is ~4 signups a minute from one egress while still holding a
+      // single scraper to well under 6k bare yes/no answers a day.
+      const idDigest = await identifierDigest(
+        `${phoneE164 ?? phoneIn.replace(/\D/g, "")}|${emailIn}`,
       );
-      if (rlErr) {
-        console.error("rate-limit rpc failed:", rlErr);
-        return jsonRes({ error: "Internal error" }, 500);
+      const buckets: Array<[string, number]> = [
+        [`check-user-exists:signup:ip:${ip}`, SIGNUP_RL_PER_IP],
+        [`check-user-exists:signup:id:${idDigest}`, SIGNUP_RL_PER_IDENTIFIER],
+      ];
+      for (const [key, max] of buckets) {
+        const { data: allowed, error: rlErr } = await admin.rpc(
+          "check_and_increment_rate_limit",
+          { p_key: key, p_max_count: max, p_window_seconds: SIGNUP_RL_WINDOW_SECONDS }
+        );
+        if (rlErr) {
+          console.error("rate-limit rpc failed:", rlErr);
+          return jsonRes({ error: "Internal error" }, 500);
+        }
+        if (allowed === false) {
+          return jsonRes({ error: "Too many requests" }, 429);
+        }
       }
-      if (allowed === false) {
-        return jsonRes({ error: "Too many requests" }, 429);
-      }
 
-      // legacy_enrolments stores phones as +91XXXXXXXXXX while public.users
-      // has been written in several dialects over time (bare 10-digit from
-      // guest checkout, +91 from the MSG91 path). Querying either with a
-      // single dialect matches nothing, so match every historical form.
-      const phoneDigits = phoneIn.replace(/\D/g, "");
-      const variants = phoneDigits.length >= 8
-        ? [...new Set(phoneVariants(e164(phoneDigits)))]
-        : [];
-      // Match the address as typed AND lower-cased. Equality (not ilike) keeps
-      // the value out of any pattern and keeps the query btree-shaped, so the
-      // legacy partial index on (email) can actually serve it.
-      const emails = emailIn ? [...new Set([emailIn, emailRaw])] : [];
-
-      // ── Does an ACCOUNT already exist? ──
-      // Deliberately unfiltered on deleted_at: we need to tell "no account" from
-      // "soft-deleted account" apart. A soft-deleted user keeps their auth phone
-      // and AuthContext force-signs-out anyone whose profile row is RLS-hidden,
-      // so sign-in already rejects them. Blocking signup too would close BOTH
-      // doors, the one dead end the brief forbids. A live row wins if the
-      // identifier somehow matches both (they can genuinely sign in).
-      let liveAccount = false;
-      let softDeletedOnly = false;
-
-      // Records what an identifier matched into the two flags above.
-      // Returns false only when the query itself failed.
-      const readIdentity = async (
-        column: "phone" | "email",
-        values: string[]
-      ): Promise<boolean> => {
-        const { data, error } = await admin
-          .from("users")
-          .select("deleted_at")
-          .in(column, values)
-          .limit(IDENTITY_ROW_CAP);
+      // Is there an auth identity for this identifier, and does it still let its
+      // owner in? "shut" is a match that cannot sign in (no profile row, or a
+      // soft-deleted one), kept distinct from "none" because a match — live or
+      // not — is what verify-msg91-otp keys its existing-user branch on.
+      const authDoor = async (
+        args: { p_phone: string | null; p_email: string | null }
+      ): Promise<"open" | "shut" | "none" | null> => {
+        const { data, error } = await admin.rpc("find_login_identity", args);
         if (error) {
-          console.error(`signup check: users-by-${column} failed:`, error);
-          return false;
+          console.error("signup check: find_login_identity failed:", error);
+          return null;
         }
-        if (data && data.length > 0) {
-          if (data.some((r) => r.deleted_at === null)) liveAccount = true;
-          else softDeletedOnly = true;
+        const row = (Array.isArray(data) ? data[0] : data) as { id?: string } | undefined;
+        if (!row?.id) return "none";
+        const { data: profile, error: pErr } = await admin
+          .from("users")
+          .select("id")
+          .eq("id", row.id)
+          .is("deleted_at", null)
+          .maybeSingle();
+        if (pErr) {
+          console.error("signup check: profile lookup failed:", pErr);
+          return null;
         }
-        return true;
+        return profile ? "open" : "shut";
       };
 
-      if (variants.length > 0 && !(await readIdentity("phone", variants))) {
-        return jsonRes({ error: "Internal error" }, 500);
-      }
-      // Skipped once the phone already found a live account: the answer can
-      // no longer change, and public.users has no index on email.
-      if (emails.length > 0 && !liveAccount && !(await readIdentity("email", emails))) {
-        return jsonRes({ error: "Internal error" }, 500);
-      }
+      if (phoneE164) {
+        const door = await authDoor({ p_phone: phoneE164, p_email: null });
+        if (door === null) return jsonRes({ error: "Internal error" }, 500);
+        if (door === "open") return jsonRes({ exists: true });
+        // A matched-but-dead identity short-circuits: verify-msg91-otp takes its
+        // existing-user branch on that same match and never reaches the legacy
+        // provisioning below, so there is no second door left to find.
+        if (door === "shut") return jsonRes({ exists: false });
 
-      if (liveAccount) return jsonRes({ exists: true });
-      // Soft-deleted and nothing live: answer "no" and skip the legacy lookups
-      // entirely, so a soft-deleted account that also has a legacy purchase
-      // isn't re-blocked one query later.
-      if (softDeletedOnly) return jsonRes({ exists: false });
-
-      // ── Or a PURCHASE we already hold? ──
-      // Phone is matched in every claimed state and in every dialect, exactly
-      // as verify-msg91-otp matches it on the sign-in path. That is the point:
-      // the gate must say "you already exist" if and only if the sign-in door
-      // will actually open, and that door provisions an account straight from
-      // legacy_enrolments for any matching phone, claimed or not.
-      if (variants.length > 0) {
-        const { data: phoneLegacy, error: plErr } = await admin
+        // ── Or a PURCHASE we already hold? ──
+        // verify-msg91-otp provisions an account straight from legacy_enrolments
+        // for any matching phone, in any claimed state, so a row here IS an open
+        // door. The exception is a row whose claimer has since been soft-deleted:
+        // provisioning then collides with that account's email and logs the
+        // caller into a profile the app signs out of on arrival.
+        const { data: legacyRows, error: plErr } = await admin
           .from("legacy_enrolments")
-          .select("id")
-          .in("phone", variants)
-          .limit(1);
+          .select("claimed_by_user_id")
+          .in("phone", phoneVariants(phoneE164))
+          .limit(LEGACY_ROW_CAP);
         if (plErr) {
           console.error("signup check: legacy-by-phone failed:", plErr);
           return jsonRes({ error: "Internal error" }, 500);
         }
-        if (phoneLegacy && phoneLegacy.length > 0) return jsonRes({ exists: true });
+        if (legacyRows && legacyRows.length > 0) {
+          const claimers = [
+            ...new Set(
+              legacyRows
+                .map((r) => r.claimed_by_user_id)
+                .filter((id): id is string => typeof id === "string")
+            ),
+          ];
+          // An unclaimed row provisions cleanly, so it needs no owner check.
+          if (claimers.length < legacyRows.length) return jsonRes({ exists: true });
+          const { data: liveClaimers, error: lcErr } = await admin
+            .from("users")
+            .select("id")
+            .in("id", claimers)
+            .is("deleted_at", null)
+            .limit(1);
+          if (lcErr) {
+            console.error("signup check: legacy claimer lookup failed:", lcErr);
+            return jsonRes({ error: "Internal error" }, 500);
+          }
+          return jsonRes({ exists: !!(liveClaimers && liveClaimers.length > 0) });
+        }
       }
 
-      // The email lookup is scoped to UNCLAIMED rows so it rides the partial
-      // index legacy_enrolments_email_unclaimed_idx instead of scanning all
-      // 73,926 rows on a blocking pre-OTP path (an unindexed scan here can hit
-      // the statement timeout, and the client fails open on a 500, silently
-      // switching the gate off). Nothing is lost: a CLAIMED row means the
-      // claimer already holds an account, which the users lookup above answers
-      // — and when that account is soft-deleted we deliberately answer "no".
-      if (emails.length > 0) {
-        const { data: emailLegacy, error: elErr } = await admin
-          .from("legacy_enrolments")
-          .select("id")
-          .in("email", emails)
-          .is("claimed_by_user_id", null)
-          .limit(1);
-        if (elErr) {
-          console.error("signup check: legacy-by-email failed:", elErr);
-          return jsonRes({ error: "Internal error" }, 500);
-        }
-        if (emailLegacy && emailLegacy.length > 0) return jsonRes({ exists: true });
+      // The email door is auth.users and nothing else: signInWithOtp is called
+      // with shouldCreateUser:false, so an address GoTrue has never seen gets an
+      // otp_disabled error rather than a link, however many purchases sit behind
+      // it. find_login_identity matches case-insensitively on that same table.
+      if (emailIn) {
+        const door = await authDoor({ p_phone: null, p_email: emailIn });
+        if (door === null) return jsonRes({ error: "Internal error" }, 500);
+        if (door === "open") return jsonRes({ exists: true });
       }
 
       return jsonRes({ exists: false });

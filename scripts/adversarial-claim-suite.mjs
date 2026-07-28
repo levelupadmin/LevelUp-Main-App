@@ -70,7 +70,7 @@ $fn$;
 
 DO $do$
 DECLARE
-  off1 uuid; off2 uuid; res jsonb; n int; v text;
+  off1 uuid; off2 uuid; res jsonb; n int; m int; v text;
 BEGIN
   SELECT id INTO off1 FROM t_off WHERE rn = 1;
   SELECT id INTO off2 FROM t_off WHERE rn = 2;
@@ -130,7 +130,8 @@ BEGIN
   INSERT INTO results VALUES ('T7 unmapped purchase left claimable',
     res::text || ' unclaimed=' || n::text, '{"claimed": 0, "stamped": 0} unclaimed=1');
 
-  -- ══ T8: a REVOKED enrolment is never re-granted ════════════════════════
+  -- ══ T8: a REVOKED enrolment is never re-granted, and the purchase row
+  --        stays UNSTAMPED so reversing the revocation restores the path ═════
   INSERT INTO public.legacy_enrolments (phone, email, offering_id, legacy_program_name)
   VALUES ('${P(5)}', 't8@adv.test', off1, 'ADV T8');
   PERFORM pg_temp.mk_user('${U(5)}', '9199999000' || '05', true);
@@ -139,8 +140,37 @@ BEGIN
   res := pg_temp.claim_as('${U(5)}');
   SELECT count(*) INTO n FROM public.enrolments
    WHERE user_id = '${U(5)}' AND offering_id = off1 AND status = 'active';
-  INSERT INTO results VALUES ('T8 revoked student stays revoked',
-    res::text || ' active=' || n::text, '{"claimed": 0, "stamped": 1} active=0');
+  SELECT count(*) INTO m FROM public.legacy_enrolments
+   WHERE legacy_program_name = 'ADV T8' AND claimed_by_user_id IS NULL;
+  INSERT INTO results VALUES ('T8 revoked student stays revoked, row stays claimable',
+    res::text || ' active=' || n::text || ' claimable=' || m::text,
+    '{"claimed": 0, "stamped": 0} active=0 claimable=1');
+
+  -- ══ T8b: a CANCELLED (refunded) enrolment — process-refund writes this ═══
+  INSERT INTO public.legacy_enrolments (phone, email, offering_id, legacy_program_name)
+  VALUES ('${P(12)}', 't8b@adv.test', off1, 'ADV T8b');
+  PERFORM pg_temp.mk_user('${U(12)}', '9199999000' || '12', true);
+  INSERT INTO public.enrolments (user_id, offering_id, status, source)
+  VALUES ('${U(12)}', off1, 'cancelled', 'checkout');
+  res := pg_temp.claim_as('${U(12)}');
+  SELECT count(*) INTO n FROM public.enrolments
+   WHERE user_id = '${U(12)}' AND offering_id = off1 AND status = 'active';
+  SELECT count(*) INTO m FROM public.legacy_enrolments
+   WHERE legacy_program_name = 'ADV T8b' AND claimed_by_user_id IS NULL;
+  INSERT INTO results VALUES ('T8b refunded student does not regain access',
+    res::text || ' active=' || n::text || ' claimable=' || m::text,
+    '{"claimed": 0, "stamped": 0} active=0 claimable=1');
+
+  -- ══ T8c: already ACTIVE via checkout — no double grant, but DO stamp ═════
+  INSERT INTO public.legacy_enrolments (phone, email, offering_id, legacy_program_name)
+  VALUES ('${P(13)}', 't8c@adv.test', off1, 'ADV T8c');
+  PERFORM pg_temp.mk_user('${U(13)}', '9199999000' || '13', true);
+  INSERT INTO public.enrolments (user_id, offering_id, status, source)
+  VALUES ('${U(13)}', off1, 'active', 'checkout');
+  res := pg_temp.claim_as('${U(13)}');
+  SELECT count(*) INTO n FROM public.enrolments WHERE user_id = '${U(13)}';
+  INSERT INTO results VALUES ('T8c already entitled is reconciled, not re-granted',
+    res::text || ' enrolments=' || n::text, '{"claimed": 0, "stamped": 1} enrolments=1');
 
   -- ══ T9: DUPLICATE legacy rows -> one enrolment, no 21000/23505 ═════════
   INSERT INTO public.legacy_enrolments (phone, email, offering_id, legacy_program_name)
