@@ -31,9 +31,11 @@
  */
 
 import { useMemo } from "react";
+import { useOutletContext } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import type { RoomTheme } from "@/lib/room";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Denial
@@ -470,4 +472,29 @@ export function useRoomView(slug: string | null | undefined): RoomView {
     rooms,
     error: (memberships.error ?? envelope.error) as Error | null,
   };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The shell → module contract
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * What `RoomShell` hands every nested module route through `<Outlet context>`.
+ *
+ * A module NEVER refetches the room: the shell has already resolved the slug,
+ * opened the envelope and applied the contrast floor, and a second
+ * `get_cohort_room` per tab would be three round trips for one room.
+ */
+export interface RoomOutletContext {
+  room: CohortRoomSummary;
+  envelope: CohortRoomEnvelope;
+  /** Already contrast-floored by `resolveTheme` — render it, don't re-check it. */
+  theme: RoomTheme;
+  /** Every membership, for the switcher and cross-room links. */
+  rooms: CohortRoomSummary[];
+}
+
+/** Read the shell's context from any route nested under `/room/:slug`. */
+export function useRoomOutlet(): RoomOutletContext {
+  return useOutletContext<RoomOutletContext>();
 }

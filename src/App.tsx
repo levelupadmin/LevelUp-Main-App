@@ -15,6 +15,7 @@ import ScrollToTop from "@/components/ScrollToTop";
 import NativeDeepLinks from "@/components/NativeDeepLinks";
 import StudentLayout from "@/components/layout/StudentLayout";
 import RouteFallback from "@/components/RouteFallback";
+import { COHORT_ROOMS, flag } from "@/lib/flags";
 // AdminLayout is lazy: admin paths are <1% of traffic; no reason to ship its
 // 20 KB of nav chrome + 14 admin route imports inside every anon page load.
 const AdminLayout = lazy(() => import("@/components/layout/AdminLayout"));
@@ -94,6 +95,21 @@ const AdminCohortSubmissions = lazy(() => import("@/pages/admin/AdminCohortSubmi
 const AdminCohortAttendance = lazy(() => import("@/pages/admin/AdminCohortAttendance"));
 const AdminNotifyRequests = lazy(() => import("@/pages/admin/AdminNotifyRequests"));
 const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
+
+// ── Cohort rooms (R1), behind VITE_COHORT_ROOMS ──
+// Their own chunks: with the flag off none of them is referenced by a rendered
+// route, so the room code never enters a session's network graph. `RoomHome`
+// and `RoomModuleRoute` share one module (and therefore one chunk) because a
+// module tab is only ever reached from the home it renders beside.
+const MyCohortsPage = lazy(() => import("@/pages/MyCohortsPage"));
+const RoomShell = lazy(() => import("@/pages/room/RoomShell"));
+const RoomHome = lazy(() => import("@/pages/room/RoomHome"));
+const RoomModuleRoute = lazy(() =>
+  import("@/pages/room/RoomHome").then((m) => ({ default: m.RoomModuleRoute })),
+);
+const CohortRoomRedirect = lazy(() =>
+  import("@/pages/room/RoomShell").then((m) => ({ default: m.CohortRoomRedirect })),
+);
 
 // The QueryClient + its localStorage persister live in @/lib/queryClient so the
 // sign-out path can purge the persisted cache without importing this app root.

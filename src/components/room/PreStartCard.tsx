@@ -314,7 +314,11 @@ export function PreStartCard({
   const blocks: { key: string; node: ReactNode }[] = [];
 
   if (daysUntil !== null) {
-    const openNow = daysUntil <= 0;
+    // `openNow` is strictly the PAST case. The start day itself still reads
+    // "Today." — the phase flip is the server's call, and a room whose date has
+    // arrived but whose phase has not yet moved should say the true thing about
+    // the calendar rather than promise a door that is not open yet.
+    const openNow = daysUntil < 0;
     const headline =
       daysUntil > 1 ? `${daysUntil} days` : daysUntil === 1 ? "Tomorrow" : "Today";
 
@@ -327,7 +331,7 @@ export function PreStartCard({
           </p>
           <p className="mt-2 font-serif text-2xl leading-none text-foreground sm:text-3xl">
             {openNow ? (
-              "Your room is opening up."
+              "The room is opening up."
             ) : (
               <>
                 <span className="text-room-accent">{headline}</span>

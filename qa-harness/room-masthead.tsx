@@ -14,7 +14,8 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 import RoomMasthead from "@/components/room/RoomMasthead";
-import { RoomEntrance } from "@/components/room/RoomEntrance";
+import { RoomEntrance, useRoomEntranceContext } from "@/components/room/RoomEntrance";
+import { useMotionSafe } from "@/lib/motion";
 import { resolveTheme, type RoomConfigInput } from "@/lib/room";
 import "@/index.css";
 
@@ -149,12 +150,27 @@ function useSettleProbe() {
   }, []);
 }
 
+/**
+ * Reads the entrance the provider actually handed out, so the driver can tell
+ * "played and finished fast" apart from "did not play at all".
+ */
+function EntranceProbe() {
+  const stages = useRoomEntranceContext();
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__entrancePlaying = Boolean(stages?.playing);
+  }, [stages]);
+  return null;
+}
+
 function Harness() {
   useSettleProbe();
+  const motionSafe = useMotionSafe();
 
   useEffect(() => {
     const w = window as unknown as Record<string, unknown>;
     w.__masthead = {
+      playing: () => Boolean(w.__entrancePlaying),
+      reduced: () => motionSafe.reduced,
       fixture: params.get("room") ?? "a",
       slug: fixture.slug,
       theme,
@@ -189,6 +205,7 @@ function Harness() {
       }
     >
       <RoomEntrance slug={fixture.slug}>
+        <EntranceProbe />
         <RoomMasthead
           slug={fixture.slug}
           theme={theme}
