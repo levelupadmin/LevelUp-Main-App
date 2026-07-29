@@ -485,10 +485,14 @@ export function resolveRoomOffering(
  * - `unavailable`  — the slug resolves to nothing we can see: private OR absent,
  *                    deliberately one state (anti-enumeration).
  * - `denied`       — the server said `42501` for a room we DID resolve.
+ * - `error`        — a TRANSPORT failure, not an answer about access. Kept apart
+ *                    from `unavailable` because telling someone their room is
+ *                    private when the network dropped is a lie about their
+ *                    access, and the only honest response is "try again".
  * - `ready`        — `room` and `envelope` are both populated. Includes the
  *                    LOBBY (`access === 'pre_member'`), a real room, redacted.
  */
-export type RoomViewStatus = "loading" | "unavailable" | "denied" | "ready";
+export type RoomViewStatus = "loading" | "unavailable" | "denied" | "error" | "ready";
 
 export interface RoomView {
   status: RoomViewStatus;
@@ -517,14 +521,15 @@ export function useRoomView(slug: string | null | undefined): RoomView {
   if (memberships.isPending && memberships.isFetching) {
     status = "loading";
   } else if (memberships.isError) {
-    // A denial on the MEMBERSHIP list means "not signed in" (the only 42501 that
-    // RPC raises), and any other failure leaves us unable to resolve the slug.
-    // Either way there is nothing to show, and nothing to reveal.
-    status = "unavailable";
+    // The ONLY 42501 `get_my_cohort_rooms` raises is "authentication required"
+    // (rpcs.sql:289-292) — there is no room to name and nothing to reveal, so
+    // it lands on the same non-revealing state as an unknown slug. Anything
+    // else is transport: retryable, and not a statement about access.
+    status = memberships.denied ? "unavailable" : "error";
   } else if (!room) {
     status = "unavailable";
   } else if (envelope.isError) {
-    status = envelope.denied ? "denied" : "unavailable";
+    status = envelope.denied ? "denied" : "error";
   } else if (!envelope.data) {
     status = "loading";
   } else {

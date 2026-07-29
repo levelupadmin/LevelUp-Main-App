@@ -56,8 +56,10 @@ const RoomHome = () => {
   if (room.phase === "pre_start" || isLobbyEnvelope(envelope)) {
     return (
       <PreStartCard
-        room={room}
-        envelope={envelope}
+        // R1-T6's published contract takes the ENVELOPE as `room` — the
+        // membership row's week count is the one thing the envelope lacks.
+        room={envelope}
+        totalWeeks={room.total_weeks}
         startsAt={meta.data?.cohort_start_date ?? null}
         whatsappGroupLink={meta.data?.whatsapp_group_link ?? null}
         // The server's own phase flip is what swaps the layout — never a

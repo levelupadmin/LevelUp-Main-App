@@ -12,7 +12,12 @@ import {
   useRoomView,
   type RoomOutletContext,
 } from "@/hooks/useCohortRooms";
-import { RoomLoadingState, RoomPrivateState, RoomUnavailableState } from "./RoomStates";
+import {
+  RoomErrorState,
+  RoomLoadingState,
+  RoomPrivateState,
+  RoomUnavailableState,
+} from "./RoomStates";
 import RoomThemeProvider from "@/components/room/RoomThemeProvider";
 import RoomEntrance from "@/components/room/RoomEntrance";
 import RoomMasthead from "@/components/room/RoomMasthead";
@@ -92,6 +97,9 @@ const RoomShell = () => {
 
   if (status === "loading") return <RoomLoadingState />;
   if (status === "denied") return <RoomPrivateState />;
+  // A dropped request is not an answer about access — offer the retry rather
+  // than telling a member their own room is private.
+  if (status === "error") return <RoomErrorState onRetry={refetch} />;
   if (status !== "ready" || !room || !envelope) return <RoomUnavailableState />;
 
   const outletContext: RoomOutletContext = { room, envelope, theme, rooms, refetch };

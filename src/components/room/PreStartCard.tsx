@@ -36,8 +36,10 @@ import {
  * "no dead modules" structural rather than a thing to remember.
  *
  * ── Data ownership ────────────────────────────────────────────────────────
- * The envelope arrives from the shell's outlet context; the roster comes from
- * `useRoomRoster` (R1-T1). This file never calls
+ * The envelope arrives from the shell's outlet context (R1-T1's
+ * `RoomOutletContext.envelope`) as the `room` prop, and the one field it does
+ * not carry — the membership row's week count — arrives beside it as
+ * `totalWeeks`; the roster comes from `useRoomRoster` (R1-T1). This file never calls
  * `supabase.rpc('get_room_roster')` itself: the hook owns the denied-vs-empty
  * mapping, and re-deriving it here would give the app two answers to the one
  * question R0 was careful to keep single.
@@ -369,17 +371,22 @@ export function PreStartCard({
     const openNow = daysUntil < 0;
     const headline =
       daysUntil > 1 ? `${daysUntil} days` : daysUntil === 1 ? "Tomorrow" : "Today";
+    // A LOBBY visitor whose start date has already passed is not someone whose
+    // doors are open — they are watching a season that began without them, and
+    // "Doors are open" would be a promise this card cannot keep. The calendar
+    // fact is the same; only the claim about their access changes.
+    const openedLine = isLobby ? "The season is under way." : "The room is opening up.";
 
     blocks.push({
       key: "countdown",
       node: (
         <div className="rounded-xl border border-border bg-surface p-5">
           <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
-            {openNow ? "Doors are open" : "Doors open"}
+            {openNow ? (isLobby ? "Already started" : "Doors are open") : "Doors open"}
           </p>
           <p className="mt-2 font-serif text-2xl leading-none text-foreground sm:text-3xl">
             {openNow ? (
-              "The room is opening up."
+              openedLine
             ) : (
               <>
                 <span className="text-room-accent">{headline}</span>

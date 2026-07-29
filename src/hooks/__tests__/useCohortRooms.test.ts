@@ -63,7 +63,10 @@ const membershipRow = (over: Record<string, unknown> = {}) => ({
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({
-    defaultOptions: { queries: { gcTime: 0, staleTime: 0 } },
+    // `retry` is left to the hooks — the denied-is-terminal rule is theirs to
+    // prove. Only the BACKOFF is flattened, so a retried transport failure
+    // resolves in the test rather than four seconds later.
+    defaultOptions: { queries: { gcTime: 0, staleTime: 0, retryDelay: 0 } },
   });
   return createElement(QueryClientProvider, { client }, children);
 }
@@ -291,6 +294,29 @@ describe("useRoomView", () => {
     const { result } = renderHook(() => useRoomView("the-forge"), { wrapper });
 
     await waitFor(() => expect(result.current.status).toBe("denied"));
+  });
+
+  it("calls a dropped envelope request an error, not a private room", async () => {
+    rpc.mockImplementation((fn: string) =>
+      fn === "get_my_cohort_rooms"
+        ? Promise.resolve({ data: [membershipRow()], error: null })
+        : Promise.resolve({ data: null, error: { code: "PGRST301", message: "network" } }),
+    );
+    const { result } = renderHook(() => useRoomView("the-forge"), { wrapper });
+
+    // Transport, not access: a member of this very room must not be told it is
+    // private because the request fell over.
+    await waitFor(() => expect(result.current.status).toBe("error"));
+  });
+
+  it("treats an unauthenticated membership denial as non-revealing, not retryable", async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { ...denial(), message: "authentication required to read cohort rooms" },
+    });
+    const { result } = renderHook(() => useRoomView("the-forge"), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe("unavailable"));
   });
 
   it("never leaves a signed-in visitor on a permanent spinner", async () => {
