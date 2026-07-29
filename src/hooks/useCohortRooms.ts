@@ -233,6 +233,74 @@ export interface RoomOfferingMeta {
   whatsapp_group_link: string | null;
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Weeks — `get_cohort_progress`, the ONLY source of week metadata
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** `cohort_weeks.status` — the CHECK constraint, verbatim. */
+export const ROOM_WEEK_STATUSES = ["upcoming", "active", "completed", "archived"] as const;
+export type RoomWeekStatus = (typeof ROOM_WEEK_STATUSES)[number];
+
+/**
+ * Coerce an untrusted week status. An unrecognised value reads as `upcoming`,
+ * the state that promises nothing: a week the client cannot classify must not
+ * be drawn as finished (which would inflate the progress ring) or as active
+ * (which would move "This week" onto it).
+ */
+export function asRoomWeekStatus(value: unknown): RoomWeekStatus {
+  return (ROOM_WEEK_STATUSES as readonly string[]).includes(value as string)
+    ? (value as RoomWeekStatus)
+    : "upcoming";
+}
+
+/**
+ * One row of `get_cohort_progress(p_user_id, p_offering_id)` — the week
+ * metadata (theme, assignment, `feedback_session_at`, status) and the caller's
+ * own submission and attendance for it.
+ *
+ * ⚠️ `live_session_*` IS ONE SESSION, BY DESIGN. The RPC's LEFT JOIN LATERAL
+ * … LIMIT 1 elects exactly one session per week — the one that has not ended
+ * yet — precisely so a three-session week stops emitting three week rows
+ * (20260729100200_cohort_room_rpcs.sql:990-1003, join at :1107). A week's FULL
+ * session list lives in the envelope's `sessions` array, which has no LIMIT and
+ * carries `week_id` on every row: group `CohortRoomEnvelope.sessions` by
+ * `week_id` to render them all, and read the week row for week METADATA only.
+ *
+ * ⚠️ `rows.length` IS NOT A WEEK COUNT. It was week×session pairs before the
+ * collapse and it is one-row-per-week-with-a-session after it; a week the
+ * lateral matched nothing for still emits its row, but nothing here promises a
+ * 1:1 with `cohort_weeks`. The week COUNT is `CohortRoomSummary.total_weeks`,
+ * which counts DISTINCT `week_number` server-side (rpcs.sql:311). The old
+ * dashboard divided by `rows.length` for its percentage (CohortDashboard.tsx:144
+ * and :157); a room surface must not repeat that.
+ */
+export interface RoomWeekRow {
+  cohort_batch_id: string | null;
+  batch_label: string | null;
+  week_id: string;
+  week_number: number;
+  theme: string | null;
+  description: string | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  assignment_prompt: string | null;
+  assignment_due_at: string | null;
+  /** `cohort_weeks.feedback_session_at` — real since 20260526180000:27. */
+  feedback_session_at: string | null;
+  week_status: RoomWeekStatus;
+  live_session_id: string | null;
+  live_session_title: string | null;
+  live_session_at: string | null;
+  live_session_zoom_link: string | null;
+  submission_id: string | null;
+  submission_status: string | null;
+  submission_rating: number | null;
+  submission_feedback: string | null;
+  submission_submitted_at: string | null;
+  attended: boolean;
+  attendance_marked: boolean;
+}
+
 /** True when the envelope is a lobby (`pre_member`) one. */
 export const isLobbyEnvelope = (envelope: CohortRoomEnvelope | null | undefined) =>
   envelope?.access === "pre_member";
@@ -260,6 +328,16 @@ export const roomRosterKey = (offeringId: string | null | undefined) =>
 export const roomOfferingMetaKey = (offeringId: string | null | undefined) =>
   [COHORT_ROOMS_QUERY_ROOT, "offering", offeringId ?? "none"] as const;
 
+/**
+ * The week list is per-USER as well as per-offering (it carries that user's own
+ * submissions), so the caller's id is part of the key — two accounts on one
+ * device must never read each other's rows out of the cache.
+ */
+export const roomWeeksKey = (
+  offeringId: string | null | undefined,
+  userId: string | null | undefined,
+) => [COHORT_ROOMS_QUERY_ROOT, "weeks", offeringId ?? "none", userId ?? "anon"] as const;
+
 /* ────────────────────────────────────────────────────────────────────────────
  * Coercion — untrusted jsonb in, render-safe values out
  * ──────────────────────────────────────────────────────────────────────────── */
@@ -280,6 +358,11 @@ function asCount(value: unknown): number {
 
 function asNullableNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** A JSON boolean, or false. `attended` is a COALESCEd column; this is belt. */
+function asBool(value: unknown): boolean {
+  return value === true;
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -353,6 +436,42 @@ async function fetchRoomOfferingMeta(offeringId: string): Promise<RoomOfferingMe
     cohort_start_date: asString(data?.cohort_start_date),
     whatsapp_group_link: asString(data?.whatsapp_group_link),
   };
+}
+
+async function fetchRoomWeeks(userId: string, offeringId: string): Promise<RoomWeekRow[]> {
+  const { data, error } = await supabase.rpc("get_cohort_progress", {
+    p_user_id: userId,
+    p_offering_id: offeringId,
+  });
+  // Same posture as the room RPCs: throw the PostgrestError itself. This one
+  // raises 42501 too — it asserts own-user-or-admin (rpcs.sql:1075-1078).
+  if (error) throw error;
+
+  return (data ?? []).map((row) => ({
+    cohort_batch_id: asString(row.cohort_batch_id),
+    batch_label: asString(row.batch_label),
+    week_id: row.week_id,
+    week_number: asCount(row.week_number),
+    theme: asString(row.theme),
+    description: asString(row.description),
+    starts_on: asString(row.starts_on),
+    ends_on: asString(row.ends_on),
+    assignment_prompt: asString(row.assignment_prompt),
+    assignment_due_at: asString(row.assignment_due_at),
+    feedback_session_at: asString(row.feedback_session_at),
+    week_status: asRoomWeekStatus(row.week_status),
+    live_session_id: asString(row.live_session_id),
+    live_session_title: asString(row.live_session_title),
+    live_session_at: asString(row.live_session_at),
+    live_session_zoom_link: asString(row.live_session_zoom_link),
+    submission_id: asString(row.submission_id),
+    submission_status: asString(row.submission_status),
+    submission_rating: asNullableNumber(row.submission_rating),
+    submission_feedback: asString(row.submission_feedback),
+    submission_submitted_at: asString(row.submission_submitted_at),
+    attended: asBool(row.attended),
+    attendance_marked: asBool(row.attendance_marked),
+  }));
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -442,6 +561,38 @@ export function useRoomOfferingMeta(
     enabled: !!offeringId,
     staleTime: MEMBERSHIPS_STALE_MS,
   });
+}
+
+/**
+ * The room's weeks: theme, assignment, `feedback_session_at`, week status, and
+ * the caller's own submission and attendance per week.
+ *
+ * THIS IS THE ONLY WEEK READ IN THE CLIENT. `get_cohort_progress` is the only
+ * place week metadata exists — the room envelope carries none of it — and the
+ * weeks module (R2-T1) and the assignment module (R2-T4) both need it, so it is
+ * ONE hook on ONE key rather than two call sites that would fetch the same rows
+ * twice and disagree about the answer the second time a submission lands.
+ * (The legacy `/cohort` page calls the RPC inline at CohortDashboard.tsx:78;
+ * that page is not retired in this phase and is deliberately left alone.)
+ *
+ * The stale window matches the envelope's: a room open is the moment a student
+ * checks whether anything moved, and a submission mutation invalidates this key
+ * directly rather than waiting it out.
+ */
+export function useRoomWeeks(
+  offeringId: string | null | undefined,
+  options?: { enabled?: boolean },
+): RoomQueryResult<RoomWeekRow[]> {
+  const { user } = useAuth();
+  return withDenied(
+    useQuery({
+      queryKey: roomWeeksKey(offeringId, user?.id),
+      queryFn: () => fetchRoomWeeks(user!.id, offeringId as string),
+      enabled: !!offeringId && !!user?.id && options?.enabled !== false,
+      staleTime: ENVELOPE_STALE_MS,
+      retry: retryUnlessDenied,
+    }),
+  );
 }
 
 /* ────────────────────────────────────────────────────────────────────────────

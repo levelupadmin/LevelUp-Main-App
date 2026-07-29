@@ -19,6 +19,7 @@ import {
   RoomUnavailableState,
 } from "./RoomStates";
 import RoomThemeProvider from "@/components/room/RoomThemeProvider";
+import RoomClockProvider from "@/components/room/RoomClockProvider";
 import RoomEntrance from "@/components/room/RoomEntrance";
 import RoomMasthead from "@/components/room/RoomMasthead";
 import RoomSwitcher from "@/components/room/RoomSwitcher";
@@ -151,7 +152,13 @@ const RoomShell = () => {
         </nav>
       )}
 
-      <Outlet context={outletContext} />
+      {/* R2-T2: ONE ticking clock for the whole room. Every timed surface below
+          (countdowns, session states) reads it instead of owning a setInterval,
+          so a page of twelve sessions runs one timer, not twelve. Mounted here
+          because "one per room" is only true at the room's own root. */}
+      <RoomClockProvider>
+        <Outlet context={outletContext} />
+      </RoomClockProvider>
     </RoomThemeProvider>
   );
 };
