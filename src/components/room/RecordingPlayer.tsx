@@ -198,7 +198,7 @@ function decodeFrame(data: unknown): Record<string, unknown> | null {
 }
 
 /** Decode one message into a tick, or null if it carries no position. PURE. */
-export function readPlaybackTick(provider: RecordingProvider, data: unknown): PlaybackTick | null {
+function readPlaybackTick(provider: RecordingProvider, data: unknown): PlaybackTick | null {
   const frame = decodeFrame(data);
   if (!frame) return null;
 

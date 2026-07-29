@@ -37,7 +37,7 @@ const baseProps = {
   weekId: "week-1",
   userId: "user-1",
   prompt: "Cut a 60-second scene from your own footage.",
-  onSubmitted: () => {},
+  onChange: () => {},
 };
 
 /* ────────────────────────────────────────────────────────────────────────────

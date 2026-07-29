@@ -22,15 +22,16 @@ import { MemoryRouter } from "react-router-dom";
 
 /* ── The shell's outlet context ─────────────────────────────────────────── */
 
-interface TestSession {
-  id: string;
-  title: string | null;
-  scheduled_at: string | null;
-  duration_minutes: number | null;
-  status?: string | null;
-  week_id?: string | null;
-  recording_url?: string | null;
-  my_position?: number | null;
+/** The wire shape, verbatim — the page is written against the RPC's own row. */
+type TestSession = RoomSession;
+
+/** What the page upserts. Typed so the assertions can read the call args. */
+interface ProgressRow {
+  user_id: string;
+  live_session_id: string;
+  position_seconds: number;
+  completed: boolean;
+  updated_at: string;
 }
 
 const outlet = {
@@ -59,8 +60,10 @@ vi.mock("@/lib/haptics", () => ({
 
 /* ── The one server call this page makes ────────────────────────────────── */
 
-const upsert = vi.fn(() => Promise.resolve({ error: null }));
-const from = vi.fn(() => ({ upsert }));
+const upsert = vi.fn((_rows: ProgressRow[], _options: { onConflict: string }) =>
+  Promise.resolve({ error: null }),
+);
+const from = vi.fn((_table: string) => ({ upsert }));
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: { from: (table: string) => from(table) },
@@ -75,6 +78,7 @@ import RoomScreenings, {
   RESUME_MIN_PCT,
 } from "../RoomScreenings";
 import { embedSrc, parseEmbeddableRecording } from "@/components/room/RecordingPlayer";
+import type { RoomSession } from "@/hooks/useCohortRooms";
 
 /* ── Fixtures ───────────────────────────────────────────────────────────── */
 
@@ -90,6 +94,7 @@ const EMBED_SESSION: TestSession = {
   scheduled_at: "2026-06-01T14:30:00.000Z",
   duration_minutes: 60,
   status: "completed",
+  session_type: "live",
   week_id: "week-1",
   recording_url: YOUTUBE_URL,
   my_position: 750,
@@ -101,6 +106,7 @@ const LINK_SESSION: TestSession = {
   scheduled_at: "2026-06-08T14:30:00.000Z",
   duration_minutes: 90,
   status: "completed",
+  session_type: "live",
   week_id: "week-2",
   recording_url: ZOOM_URL,
   my_position: null,
@@ -113,6 +119,7 @@ const UPCOMING_SESSION: TestSession = {
   scheduled_at: "2026-06-15T14:30:00.000Z",
   duration_minutes: 60,
   status: "scheduled",
+  session_type: "live",
   week_id: "week-3",
   recording_url: null,
   my_position: null,
@@ -322,10 +329,7 @@ describe("RoomScreenings — the link-out path", () => {
 
     expect(from).toHaveBeenCalledWith("cohort_recording_progress");
     expect(upsert).toHaveBeenCalledTimes(1);
-    const [rows, options] = upsert.mock.calls[0] as unknown as [
-      Array<Record<string, unknown>>,
-      { onConflict: string },
-    ];
+    const [rows, options] = upsert.mock.calls[0];
     expect(options).toEqual({ onConflict: "user_id,live_session_id" });
     expect(rows[0]).toMatchObject({
       user_id: "user-1",
@@ -367,7 +371,7 @@ describe("RoomScreenings — a position that survives a restart", () => {
 
     // ── Backgrounding the app flushes the buffered position.
     backgroundApp();
-    const rows = upsert.mock.calls[0]?.[0] as unknown as Array<Record<string, unknown>>;
+    const rows = upsert.mock.calls[0][0];
     expect(rows[0]).toMatchObject({
       user_id: "user-1",
       live_session_id: "sess-embed",
@@ -411,8 +415,36 @@ describe("RoomScreenings — a position that survives a restart", () => {
     postPlayerTick(frame, 1200, 3600);
     unmount();
     expect(upsert).toHaveBeenCalledTimes(2);
-    const rows = upsert.mock.calls[1]?.[0] as unknown as Array<Record<string, unknown>>;
+    const rows = upsert.mock.calls[1][0];
     expect(rows[0]).toMatchObject({ position_seconds: 1200 });
+  });
+
+  it("never overwrites a saved position with a ready-but-not-playing zero", () => {
+    // Both players emit at least one `currentTime: 0` frame before playback —
+    // observed live against the real YouTube embed. Writing it back would wipe
+    // the resume point of anyone who opened a recording and changed their mind.
+    const { container, unmount } = renderShelf();
+    fireEvent.click(within(rowFor(container, "sess-embed")).getByRole("button"));
+    const frame = rowFor(container, "sess-embed").querySelector("iframe") as HTMLIFrameElement;
+
+    postPlayerTick(frame, 0, 3600);
+
+    // The row still stands where the server left it.
+    expect(
+      within(rowFor(container, "sess-embed")).getByText("Resume at 12:30"),
+    ).toBeInTheDocument();
+    unmount();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("still learns the recording's real length from a zero-position frame", () => {
+    const { container } = renderShelf();
+    fireEvent.click(within(rowFor(container, "sess-embed")).getByRole("button"));
+    const frame = rowFor(container, "sess-embed").querySelector("iframe") as HTMLIFrameElement;
+
+    // A 60-minute slot that produced a 25-minute file: 750s is half of it.
+    postPlayerTick(frame, 0, 1500);
+    expect(Math.abs(hairlinePct(container, "sess-embed") - 50)).toBeLessThanOrEqual(5);
   });
 
   it("marks a recording completed once it passes the 95% mark", () => {
@@ -423,7 +455,7 @@ describe("RoomScreenings — a position that survives a restart", () => {
     postPlayerTick(frame, 3500, 3600);
     unmount();
 
-    const rows = upsert.mock.calls[0]?.[0] as unknown as Array<Record<string, unknown>>;
+    const rows = upsert.mock.calls[0][0];
     expect(rows[0]).toMatchObject({ position_seconds: 3500, completed: true });
   });
 });
@@ -469,7 +501,6 @@ describe("parseEmbeddableRecording", () => {
       "",
       "   ",
       "not a url",
-      // eslint-disable-next-line no-script-url
       "javascript:alert(1)",
       "https://zoom.us/rec/share/abc123",
       "https://drive.google.com/file/d/abc/view",

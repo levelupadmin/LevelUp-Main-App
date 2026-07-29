@@ -65,7 +65,10 @@ export function DoorsOpenCountdown({
         role="timer"
         aria-live="off"
         aria-label={`Doors open in ${minutes} minutes ${seconds} seconds`}
-        className="mt-1 inline-flex items-baseline gap-px font-mono text-3xl leading-none tracking-tight text-cream tabular-nums sm:text-4xl"
+        // The room's own scale (tailwind.config.ts:20-28 tops out at 3xl/48px),
+        // so this is 32px on a phone and 48px from `sm` up — the same step the
+        // pre-start countdown takes. `text-4xl` would SHRINK it on this scale.
+        className="mt-1 inline-flex items-baseline gap-px font-mono text-2xl leading-none tracking-tight text-cream tabular-nums sm:text-3xl"
       >
         <span>{pad(minutes)}</span>
         <span className="opacity-50">:</span>

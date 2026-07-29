@@ -214,6 +214,8 @@ const DUE_SOON_MS = 48 * 60 * 60 * 1000;
 export interface AssignmentModuleProps {
   /** `cohort_weeks.id` — the week this assignment belongs to. */
   weekId: string;
+  /** `cohort_weeks.week_number`. Carried by the slot; unused here. */
+  weekNumber?: number;
   /** The signed-in student's id. Both wrapped components need it. */
   userId: string;
   /** `cohort_weeks.assignment_prompt`. Null renders the no-assignment line. */
@@ -231,10 +233,14 @@ export interface AssignmentModuleProps {
   /** `cohort_week_submissions.submitted_at` (ISO). */
   submittedAt?: string | null;
   /**
-   * Refetch the room's progress after a submit or a resubmit. This is the
-   * shared hook's invalidator — the module never refetches itself.
+   * Re-read the week rows after a submit or a resubmit — R2-T1's
+   * `RoomAssignmentSlotProps.onChange`, passed straight through so this module
+   * never learns which query key the weeks live under and never refetches
+   * itself. Named to match the slot exactly, so `ThisWeekCard`'s
+   * `renderAssignment={(props) => <AssignmentModule {...props} />}` is the
+   * whole integration.
    */
-  onSubmitted: () => Promise<void> | void;
+  onChange: () => Promise<void> | void;
   /**
    * `CohortRoomEnvelope.batch_id`. Present → the peer-review disclosure
    * renders and scopes `PeerReviewBoard` to THIS room's batch. Absent → no
@@ -264,7 +270,7 @@ export function AssignmentModule({
   submissionRating,
   submissionFeedback,
   submittedAt,
-  onSubmitted,
+  onChange,
   batchId,
   mentorName,
   className,
@@ -338,7 +344,7 @@ export function AssignmentModule({
                 weekId={weekId}
                 userId={userId}
                 compact
-                onSubmitted={onSubmitted}
+                onSubmitted={onChange}
               />
             </div>
           )}
@@ -395,7 +401,7 @@ export function AssignmentModule({
             weekId={weekId}
             userId={userId}
             existingSubmissionId={submissionId ?? undefined}
-            onSubmitted={onSubmitted}
+            onSubmitted={onChange}
           />
         </div>
       )}

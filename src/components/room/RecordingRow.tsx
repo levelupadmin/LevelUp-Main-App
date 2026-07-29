@@ -153,8 +153,11 @@ export function RecordingRow({
       {open && children && <div className="px-3 pb-3">{children}</div>}
 
       {/* The watched hairline. Rendered for every row so the shelf keeps one
-          baseline; a link-out simply never fills it. */}
-      <div className="h-px w-full overflow-hidden bg-border">
+          baseline; a link-out simply never fills it. Inset by the row's own
+          padding so it aligns with the content column and never crosses the
+          card's rounded corner — the card cannot be `overflow-hidden`, which
+          would clip the trigger's focus ring. */}
+      <div className="mx-3 mb-3 h-px overflow-hidden bg-border">
         <div
           data-testid="recording-hairline"
           data-fill-pct={Math.round(fill * 100)}

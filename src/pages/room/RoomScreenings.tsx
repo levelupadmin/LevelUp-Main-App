@@ -410,9 +410,6 @@ const RoomScreenings = () => {
   const onProgress = useCallback(
     (row: ShelfRow, position: number, reportedDuration: number | null) => {
       const seconds = Math.floor(position);
-      setLivePositions((prev) =>
-        prev[row.sessionId] === seconds ? prev : { ...prev, [row.sessionId]: seconds },
-      );
 
       if (reportedDuration && reportedDuration > 0) {
         const length = Math.round(reportedDuration);
@@ -423,6 +420,19 @@ const RoomScreenings = () => {
           return next;
         });
       }
+
+      // 🔴 A player that is READY but has not started reports `currentTime: 0`,
+      // and both providers emit at least one such frame. Writing it back would
+      // overwrite a real saved position with zero the moment a student opened a
+      // recording and changed their mind — the one way this feature can destroy
+      // the thing it exists to protect. A position of exactly zero carries no
+      // information, so it contributes its DURATION (above) and nothing else. A
+      // genuine rewind lands at some position > 0 and is honoured.
+      if (seconds <= 0) return;
+
+      setLivePositions((prev) =>
+        prev[row.sessionId] === seconds ? prev : { ...prev, [row.sessionId]: seconds },
+      );
 
       const duration = reportedDuration && reportedDuration > 0
         ? reportedDuration
@@ -493,7 +503,11 @@ const RoomScreenings = () => {
               <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
                 Continue watching
               </p>
-              <ul className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0">
+              {/* `scroll-px-4` matches the gutter the `-mx-4/px-4` bleed
+                  restores: without it, mandatory snapping aligns the first
+                  card to the container edge and eats the 16px gutter, so the
+                  rail opens flush against the screen. */}
+              <ul className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 md:mx-0 md:scroll-px-0 md:px-0">
                 {resumable.map((row) => (
                   <li key={row.sessionId} className="w-56 shrink-0 snap-start">
                     <button

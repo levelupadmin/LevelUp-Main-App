@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Check, Lock } from "lucide-react";
 
-import { useMotionSafe } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { RoomWeekRow } from "@/hooks/useCohortRooms";
 import {
@@ -30,10 +29,11 @@ import {
  * IS allowed to get narrower, because a segment carries no text.
  *
  * ── Motion ────────────────────────────────────────────────────────────────
- * Nothing here animates layout. The only movement is the rail's own scroll
- * position, set once when the selected week changes, and it is written as
- * `scrollLeft` on the track rather than `scrollIntoView` so it can never drag
- * the PAGE along with it. Reduced motion drops the smooth behaviour.
+ * Nothing here animates layout, and nothing here animates at all. The only
+ * movement is the rail's own scroll position, set once when the selected week
+ * changes, and it is written on the TRACK rather than through `scrollIntoView`
+ * so it can never drag the page along with it. It is deliberately un-eased;
+ * see the measurement in the effect below.
  */
 
 export interface WeekRailProps {
@@ -49,25 +49,31 @@ export interface WeekRailProps {
 const TILE_WIDTH = "w-[13.5rem]";
 
 export function WeekRail({ weeks, activeWeekId, onSelect, className }: WeekRailProps) {
-  const motionSafe = useMotionSafe();
   const trackRef = useRef<HTMLUListElement>(null);
   const activeRef = useRef<HTMLLIElement>(null);
 
   // Centre the selected tile in the track. Horizontal only, and a no-op when
   // the rail is not overflowing.
+  //
+  // ⚠️ NOT `behavior: "smooth"`. Measured in Chromium at 360x740: a smooth
+  // programmatic scroll on a track with `scroll-snap-type: … mandatory` is
+  // ABANDONED mid-flight and the track lands back on the first snap point
+  // (scrollLeft 16 instead of 1840 for week 9 of 20). The same call with
+  // `auto` lands exactly on the snapped position. Since the room ships to the
+  // Android System WebView, which is that same engine, an eased version of
+  // this would simply never reveal the current week. It is also the cheaper
+  // frame: the rail's position is set once, off the compositor, with no
+  // animation to keep alive.
   useEffect(() => {
     const track = trackRef.current;
     const tile = activeRef.current;
     if (!track || !tile) return;
     const left = Math.max(0, tile.offsetLeft - (track.clientWidth - tile.clientWidth) / 2);
     // `scrollTo` is not universally present on ELEMENTS (older WebViews, and
-    // jsdom under test); the assignment is the same scroll without the easing.
-    if (typeof track.scrollTo === "function") {
-      track.scrollTo({ left, behavior: motionSafe.reduced ? "auto" : "smooth" });
-    } else {
-      track.scrollLeft = left;
-    }
-  }, [activeWeekId, motionSafe.reduced]);
+    // jsdom under test); the assignment is the same scroll.
+    if (typeof track.scrollTo === "function") track.scrollTo({ left, behavior: "auto" });
+    else track.scrollLeft = left;
+  }, [activeWeekId]);
 
   if (weeks.length === 0) return null;
 
@@ -76,33 +82,33 @@ export function WeekRail({ weeks, activeWeekId, onSelect, className }: WeekRailP
       {/* ── The progress strip ──
           One segment per week, in the room's own accent: filled for the weeks
           that are done, half-lit for the week in progress, muted for what is
-          still ahead. It is a control as well as a map, so every segment is a
-          ≥44px-tall tap target with the visible bar centred inside it. */}
-      <div className="flex gap-1" role="group" aria-label="Season progress">
+          still ahead.
+
+          DECORATIVE, NOT A CONTROL. It was a row of buttons first, and the
+          measurement killed that: twenty segments across a 375px screen give a
+          13px-wide hit box, under the 24px WCAG 2.5.8 floor, and no amount of
+          padding fixes it while the season can be twenty weeks long. Every
+          week it points at is one tap away on the rail directly below at a full
+          216x100 target, and the footer states the same fact in words ("Week 9
+          of 20 · 8 done"), so the bar is the only thing lost by hiding it from
+          the accessibility tree. */}
+      <div className="flex gap-1" aria-hidden="true">
         {weeks.map((week) => {
           const tone = weekStatusTone(week.week_status);
-          const selected = week.week_id === activeWeekId;
           return (
-            <button
+            <span
               key={week.week_id}
-              type="button"
-              onClick={() => onSelect(week)}
-              aria-current={selected ? "true" : undefined}
-              aria-label={`Week ${week.week_number}${week.theme ? `: ${week.theme}` : ""}`}
-              className="focus-ring group flex h-11 flex-1 items-center px-0.5"
-            >
-              <span
-                className={cn(
-                  "block h-1.5 w-full rounded-full transition-colors",
-                  tone === "positive"
-                    ? "bg-room-accent"
-                    : tone === "accent"
-                      ? "bg-room-accent/50"
-                      : "bg-muted",
-                  selected && "ring-1 ring-room-accent ring-offset-2 ring-offset-canvas",
-                )}
-              />
-            </button>
+              data-week={week.week_number}
+              className={cn(
+                "h-1.5 flex-1 rounded-full",
+                tone === "positive"
+                  ? "bg-room-accent"
+                  : tone === "accent"
+                    ? "bg-room-accent/50"
+                    : "bg-muted",
+                week.week_id === activeWeekId && "ring-1 ring-room-accent ring-offset-2 ring-offset-canvas",
+              )}
+            />
           );
         })}
       </div>

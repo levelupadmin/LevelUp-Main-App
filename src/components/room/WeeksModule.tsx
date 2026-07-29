@@ -13,6 +13,7 @@ import {
   type RoomSession,
   type RoomWeekRow,
 } from "@/hooks/useCohortRooms";
+import AssignmentModule from "./AssignmentModule";
 import ThisWeekCard, {
   istDaysUntil,
   parseMs,

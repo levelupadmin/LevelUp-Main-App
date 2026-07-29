@@ -397,8 +397,11 @@ describe("the rail past twelve weeks", () => {
       expect(tile.className).toContain("shrink-0");
       expect(tile.className).toContain("snap-start");
     }
-    // The strip is one segment per week and stays a control, not just a bar.
-    expect(container.querySelectorAll('[aria-label^="Week "]')).toHaveLength(20);
+    // The strip is one segment per week, and decorative: twenty hit boxes
+    // across a phone are 13px wide, under the WCAG 2.5.8 floor, so the rail
+    // below is the control and the strip is hidden from the a11y tree.
+    expect(container.querySelectorAll("[data-week]")).toHaveLength(20);
+    expect(container.querySelector("[data-week]")?.closest("[aria-hidden]")).not.toBeNull();
   });
 });
 
