@@ -18,8 +18,12 @@
 --
 -- ═══ ORDERING — RUN THIS FILE TWICE, AND THE FIRST PASS IS THE ONE PEOPLE MISS ═══
 --
---   0. If `db push` has EVER run against this shadow: REBUILD IT FIRST.
---        supabase db reset --db-url "$SHADOW_DB_URL"   # or re-create the project
+--   0. If `db push` has EVER run against this shadow: EMPTY IT FIRST — and do NOT
+--      reach for `supabase db reset`, which is the wrong tool (see below).
+--        psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=1 \
+--          -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' \
+--          -c 'DELETE FROM supabase_migrations.schema_migrations;'
+--                                                    # or re-create the project
 --   1. psql "$SHADOW_DB_URL" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql  # BEFORE db push
 --   2. supabase db push --db-url "$SHADOW_DB_URL"                                 # build the schema
 --   3. psql "$SHADOW_DB_URL" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql  # AFTER db push
@@ -32,7 +36,24 @@
 -- no-op, the nine tables R0 creates already exist, and pass 1 has nothing left to
 -- affect. All three steps then succeed, print their NOTICEs, change nothing that
 -- matters, and leave exactly the state cohort-room-access.spec.mjs's PRECONDITION
--- aborts on. There is no in-place remedy: the tables have to be created again.
+-- aborts on.
+--
+-- ⚠️ AND `supabase db reset` DOES NOT SATISFY STEP 0 — IT RE-CREATES THE FAILURE.
+-- It resets the target "with local migrations": it drops and re-creates the schema
+-- and then APPLIES everything in supabase/migrations/, recording it in
+-- supabase_migrations.schema_migrations. So it hands back a database in which the
+-- nine R0 tables already exist and the ledger is already full — pass 1 has nothing
+-- to arm, step 2 is a no-op, and step 3 cannot name tables SECTION B was generated
+-- before. What step 0 has to produce is an EMPTY database at the moment pass 1
+-- runs, which is the schema drop plus the ledger wipe with no migration apply in
+-- between, or a freshly created project.
+--
+-- ⚠️ THE ARMING IS SCHEMA-SCOPED, WHICH CUTS BOTH WAYS. pg_default_acl rows for
+-- `IN SCHEMA public` are dropped with the schema, so the DROP in step 0 clears any
+-- earlier arming — correct, and the reason pass 1 comes after it, never before.
+-- The same fact means ANY later drop of schema public (a `db reset`, a teardown
+-- script) silently un-arms a shadow that used to pass, with no error at the time.
+-- Re-run this recipe from step 0 after one.
 --
 -- ⚠️ $SHADOW_DB_URL IS THE SHADOW DATABASE, NEVER PRODUCTION (ivkvluezuiojovpotlyb).
 -- SECTION A permanently alters a database's grant model — it is the one statement
@@ -45,9 +66,10 @@
 --
 -- WHY BOTH PASSES ARE REQUIRED, AND WHY NEITHER ONE SUBSUMES THE OTHER.
 -- This file does two different things with opposite timing requirements:
---   · SECTION A (hand-maintained) arms `ALTER DEFAULT PRIVILEGES`. Default
---     privileges apply ONLY to tables created AFTER the statement runs, so it is
---     useless once `db push` has already created them. It must go FIRST.
+--   · SECTION A (hand-maintained) grants USAGE on schema public and arms
+--     `ALTER DEFAULT PRIVILEGES`. Default privileges apply ONLY to tables created
+--     AFTER the statement runs, so it is useless once `db push` has already
+--     created them. It must go FIRST.
 --   · SECTION B (generated) GRANTs on named tables. Every table it names is
 --     created BY the migrations, so on pass 1 it finds nothing and skips all of
 --     them by design (`to_regclass … IS NULL → SKIP`). It must go LAST.
@@ -166,7 +188,32 @@ $prodguard$;
 -- shadow, `supabase_admin` on the platform). Roles that do not exist, or that
 -- this connection is not a member of, are skipped with a NOTICE rather than
 -- aborting the file.
+--
+-- A.1 IS THE SCHEMA-LEVEL HALF OF THE SAME BOOTSTRAP, and it is here because of
+-- step 0. Emptying the shadow means `DROP SCHEMA public CASCADE; CREATE SCHEMA
+-- public;`, and a freshly created schema grants USAGE to its owner and to nobody
+-- else. Without this every request from a client role is refused ABOVE the table
+-- ACL — which reads exactly like the wall holding, and which SECTION B cannot
+-- repair because it grants on tables, not on the schema. Production grants this,
+-- so it is parity rather than a loosening. cohort-room-access.spec.mjs's
+-- PRECONDITION checks it separately for the same reason: has_table_privilege()
+-- cannot see it.
 -- ════════════════════════════════════════════════════════════════════════════
+DO $schemausage$
+DECLARE client_role text; granted int := 0;
+BEGIN
+  FOREACH client_role IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = client_role) THEN
+      EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', client_role);
+      granted := granted + 1;
+    ELSE
+      RAISE NOTICE 'shadow-grants: role % does not exist — schema USAGE not granted to it', client_role;
+    END IF;
+  END LOOP;
+  RAISE NOTICE 'shadow-grants: USAGE on schema public granted to % client role(s)', granted;
+END
+$schemausage$;
+
 DO $bootstrap$
 DECLARE owner_role text; armed int := 0;
 BEGIN

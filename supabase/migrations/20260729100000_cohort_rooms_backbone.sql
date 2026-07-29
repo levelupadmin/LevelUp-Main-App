@@ -240,7 +240,9 @@
 --        commit: every AFTER trigger on `enrolments` / `cohort_batch_members` /
 --        `cohort_applications`, the alumni flip, and every DDL block in this
 --        file and in 20260729100100 — including the four trigger-ATTACH blocks
---        in §7A, which take ACCESS EXCLUSIVE on the money tables themselves.
+--        in §7A, which take a lock on the money tables themselves (SHARE ROW
+--        EXCLUSIVE on a first apply, ACCESS EXCLUSIVE on a re-run; the three
+--        lock classes are measured out below).
 --        It reads:
 --
 --          EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
@@ -305,24 +307,43 @@
 --
 --    Shape (A) also guards the LIVE-TABLE DDL, all of which now executes in ONE
 --    place: section 7A, the last executable section of this file. THREE classes,
---    not two — and the lock model below is stated correctly here for the first
---    time. An earlier revision of this note inventoried two classes and got
---    Postgres wrong, and that one wrong sentence is what kept the hazard
---    invisible through four reviewers and a whole fix round.
+--    not two.
 --
---    ⚠️ WHAT POSTGRES ACTUALLY DOES. `ALTER TABLE` acquires its lock and HOLDS
---    IT UNTIL THE TRANSACTION COMMITS — not until the statement ends. The text
---    that used to stand here said the catalogue-only DDL is "quick ONCE THEY
---    HAVE THE LOCK, and the whole hazard is the WAIT". That is false. There is
---    no top-level COMMIT anywhere in this file, so a lock taken on line N is
---    held for every line after N. ACCESS EXCLUSIVE conflicts with SELECT, and
---    Postgres queues lock requests FIFO, so a lock HELD (not merely waited for)
---    on `cohort_batches` parks every subsequent READER behind it —
---    `cohort_batches` is joined by R-3's room RPCs (20260729100200) and by
---    `get_cohort_progress` (20260526180000), i.e. by the shipped student
---    dashboard on desktop web, Android System WebView, Android Chrome and iOS
---    WKWebView. The same hold on `enrolments` queues checkout. HOLD DURATION,
---    not wait duration, is the quantity to minimise.
+--    ⚠️ EVERY LOCK MODE IN THIS NOTE IS MEASURED, NOT INFERRED. Two earlier
+--    revisions got this model wrong in OPPOSITE directions, and both wrong
+--    versions read as confidently as this one, so the modes are now pinned to a
+--    probe that anyone can re-run — `pg_locks` read inside an open transaction,
+--    statement by statement, recorded verbatim in the A6 block as item (8).
+--      · Revision 1 said the catalogue-only DDL is "quick ONCE THEY HAVE THE
+--        LOCK, and the whole hazard is the WAIT". False, and that one sentence
+--        is what kept the hold-to-COMMIT defect invisible through four reviewers
+--        and a whole fix round.
+--      · Revision 2 over-corrected and called all six §7A blocks an ACCESS
+--        EXCLUSIVE hold on a live table, inventing a mechanism for it ("DROP
+--        TRIGGER IF EXISTS takes ACCESS EXCLUSIVE on the RELATION before it
+--        looks for the trigger, so it takes it even on a first apply"). Also
+--        false — measured, a `DROP TRIGGER IF EXISTS` naming an ABSENT trigger
+--        takes NO lock on the relation at all — and it would have had an
+--        operator size a maintenance window for a READ outage on `enrolments`
+--        that this migration does not cause.
+--
+--    ⚠️ WHAT POSTGRES ACTUALLY DOES. A lock taken by DDL is HELD UNTIL THE
+--    TRANSACTION COMMITS — not until the statement ends. There is no top-level
+--    COMMIT anywhere in this file, so a lock taken on line N is held for every
+--    line after N. WHICH lock decides who is hurt:
+--      · ACCESS EXCLUSIVE conflicts with EVERYTHING, SELECT included. Postgres
+--        queues lock requests FIFO, so a hold (or even a pending request) on
+--        `cohort_batches` parks every subsequent READER behind it —
+--        `cohort_batches` is joined by R-3's room RPCs (20260729100200) and by
+--        `get_cohort_progress` (20260526180000), i.e. by the shipped student
+--        dashboard on desktop web, Android System WebView, Android Chrome and
+--        iOS WKWebView. This is the one class that can blank a screen.
+--      · SHARE ROW EXCLUSIVE conflicts with ROW EXCLUSIVE (every
+--        INSERT/UPDATE/DELETE) but NOT with ACCESS SHARE (SELECT). A hold of
+--        this mode on `enrolments` queues CHECKOUT WRITES and lets every reader
+--        through. Still the money path, still worth a quiet window, but it is a
+--        write stall and must not be described as a read outage.
+--    HOLD DURATION, not wait duration, is the quantity to minimise — for both.
 --
 --    THE THREE CLASSES IN THIS FILE, all executed in §7A. This is THIS FILE's
 --    inventory, not R0's: the push also carries a FOURTH live-table DDL site,
@@ -331,47 +352,67 @@
 --    GOES FROM…" below and must not be dropped from either list again.
 --      · `ALTER TABLE public.cohort_batches ADD CONSTRAINT
 --        cohort_batches_id_offering_key UNIQUE (id, offering_id)` — ACCESS
---        EXCLUSIVE on cohort_batches, held to COMMIT, and it builds the backing
---        unique index inside the transaction. The one item here that does real
---        work rather than catalogue work.
+--        EXCLUSIVE on cohort_batches (measured; plus a SHARE while it builds the
+--        backing unique index inside the transaction), held to COMMIT. THE ONLY
+--        BLOCK IN THIS FILE THAT BLOCKS A READER OF A LIVE TABLE, and the only
+--        one that does real work rather than catalogue work. When this note
+--        talks about the dashboard, it is talking about this block.
 --      · `ALTER TABLE public.cohort_room_configs ADD CONSTRAINT
 --        room_config_batch_belongs_to_offering FOREIGN KEY (batch_id,
 --        offering_id) REFERENCES public.cohort_batches (id, offering_id)` —
---        ACCESS EXCLUSIVE on cohort_room_configs (this file's own, traffic-free
---        table) AND SHARE ROW EXCLUSIVE on the REFERENCED table,
---        `cohort_batches`, also held to COMMIT. This class was absent from the
---        old inventory entirely. SHARE ROW EXCLUSIVE does NOT conflict with
---        SELECT, so it does not block the dashboard — it blocks every WRITE to
---        cohort_batches (admin roster and batch edits) for the remainder of the
---        push. Different verb, same "held to COMMIT" rule.
+--        SHARE ROW EXCLUSIVE on BOTH sides (measured): on cohort_room_configs,
+--        this file's own traffic-free table, and on the REFERENCED live table
+--        `cohort_batches`. Both held to COMMIT. Adding a foreign key does NOT
+--        take ACCESS EXCLUSIVE on the altered table — an earlier revision of
+--        this bullet said it did, and before that revision this class was absent
+--        from the inventory altogether.
+--        SHARE ROW EXCLUSIVE does NOT conflict with SELECT, so it does not block
+--        the dashboard — it blocks every WRITE to cohort_batches (admin roster
+--        and batch edits) for the remainder of the push.
 --        AND MOVING IT BUYS LESS THAN THE OTHER TWO, which is worth saying out
 --        loud rather than letting the section imply otherwise: §1's own
 --        `CREATE TABLE cohort_room_configs (… batch_id uuid REFERENCES
 --        public.cohort_batches(id) …)` ALREADY takes SHARE ROW EXCLUSIVE on
---        cohort_batches on a first apply, and holds it to COMMIT too — as do the
---        four tables 20260729100100 creates against the same parent. Writes to
---        cohort_batches are therefore blocked from §1 onward no matter where
---        this constraint sits. What deferring it does remove is its ACCESS
---        EXCLUSIVE on cohort_room_configs and its second wait on cohort_batches;
---        the reason it belongs in §7A is uniformity and the dependency on block
---        1, not a lock win of its own. Removing the §1 write block would mean
+--        cohort_batches on a first apply (measured), and holds it to COMMIT too
+--        — as do the four tables 20260729100100 creates against the same parent.
+--        Writes to cohort_batches are therefore blocked from §1 onward no matter
+--        where this constraint sits. What deferring it removes is only its
+--        SECOND wait on cohort_batches and its lock on cohort_room_configs; the
+--        reason it belongs in §7A is uniformity and the dependency on block 1,
+--        not a lock win of its own. Removing the §1 write block would mean
 --        creating the table without the parent reference and adding it back in
 --        §7A — a bigger change than this round is scoped for, and it is filed
 --        rather than done.
 --      · the four trigger attachments on `cohort_batch_members`, `enrolments`
---        (twice) and `cohort_applications` — the money path's own tables.
---        `DROP TRIGGER` takes ACCESS EXCLUSIVE and `CREATE TRIGGER` takes SHARE
---        ROW EXCLUSIVE; neither rewrites nor scans, so each EXECUTES in
---        microseconds — but the ACCESS EXCLUSIVE the DROP takes is held to
---        COMMIT exactly like the other two classes.
+--        (twice) and `cohort_applications` — the money path's own tables. Each
+--        block is `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` in one
+--        transaction, and ITS NET LOCK DEPENDS ON WHETHER THE TRIGGER IS ALREADY
+--        THERE (measured, both ways):
+--          – FIRST APPLY — the trigger does not exist, the DROP IF EXISTS is a
+--            no-op that takes NO relation lock, and the net lock is the CREATE's
+--            SHARE ROW EXCLUSIVE. Prod is a first apply — these are brand-new
+--            trigger names — so on the push this file is written for, the three
+--            blocks that land on a money-path table (§7A 4 and 5 on `enrolments`,
+--            6 on `cohort_applications`) queue WRITES and never stall a reader.
+--          – RE-RUN — on a shadow that already carries the triggers, or on the
+--            hand-recovery path of note 11(a), the DROP finds its target and
+--            takes ACCESS EXCLUSIVE. That is a READ block on `enrolments`, and
+--            it is exactly why 11(a) says to re-run the block when the table is
+--            quiet. It is short there for a reason this file cannot claim for
+--            itself: a hand-run DO block commits on its own, seconds later.
+--        Neither statement rewrites or scans the table, so both EXECUTE in
+--        microseconds; whatever lock they do take is held to COMMIT exactly like
+--        the other two classes.
 --
 --    WHY SECTION 7A EXISTS. These six blocks used to sit where they read best:
 --    the UNIQUE at the very top (old §0), the composite FK in §1, the four
 --    attachments in §5. That put `cohort_batches` under ACCESS EXCLUSIVE about
---    1600 lines before COMMIT and `enrolments` about 780 lines before it, across
---    every helper, resolver, policy, grant and admin RPC in between — a
---    dashboard-and-checkout outage for the length of the apply, not a slow
---    migration. Nothing about that ORDER was load-bearing: §1's table is created
+--    1600 lines before COMMIT — reads and writes, i.e. the dashboard dark for
+--    the length of the apply — and `enrolments` under SHARE ROW EXCLUSIVE about
+--    780 lines before it, i.e. checkout WRITES queued for the same stretch,
+--    across every helper, resolver, policy, grant and admin RPC in between. A
+--    dashboard outage plus a checkout stall for the length of the apply, not a
+--    slow migration. Nothing about that ORDER was load-bearing: §1's table is created
 --    empty so it has no row that could violate the FK, and no function, policy
 --    or grant between them reads the constraint or the triggers. So all six are
 --    deferred to §7A, in dependency order (the UNIQUE ahead of the composite FK
@@ -416,55 +457,78 @@
 --        (`grep -c lock_timeout 20260729100200_cohort_room_rpcs.sql` is 0), so
 --        it inherits the SESSION `lock_timeout`, which on the
 --        `npx supabase db push` path this file names is 0 — WAIT FOREVER. And
---        it executes while §7A's ACCESS EXCLUSIVE on `enrolments`,
---        `cohort_applications` and `cohort_batches` is still held: one
---        concurrent transaction holding a conflicting lock on live_sessions
---        parks the whole push, with the money tables locked, for as long as
---        that transaction lives. THAT IS THE LARGEST APPLY-TIME HAZARD LEFT IN
---        R0. It is not this file's statement to fix — 20260729100200 owns it,
+--        it executes while §7A's ACCESS EXCLUSIVE on `cohort_batches` and its
+--        SHARE ROW EXCLUSIVE on `enrolments` and `cohort_applications` are still
+--        held: one concurrent transaction holding a conflicting lock on
+--        live_sessions parks the whole push — with the dashboard's table locked
+--        against readers and the money tables locked against writers — for as
+--        long as that transaction lives. THAT IS THE LARGEST APPLY-TIME HAZARD
+--        LEFT IN R0. It is not this file's statement to fix — 20260729100200 owns it,
 --        and that file's own header claim that "nothing here can abort a shared
 --        db push" is wrong for the same block — so it is recorded here rather
 --        than patched from a distance. Until it is fixed, `live_sessions` has
 --        to be quiet at push time too, alongside the money tables.
 --    THE RESIDUAL, in full — meaning every lock this PUSH still holds on a
---    PRE-EXISTING live table when it commits, not only the ones §7A takes:
---      · cohort_batches SELECT blocked from §7A block 1 to the end of the push.
---        This is the dashboard, and it is the exposure §7A actually shrinks —
---        from "the whole apply" to "the tail of it".
+--    PRE-EXISTING live table when it commits, not only the ones §7A takes.
+--    "In full" is a claim, so it is enumerated per TABLE and per VERB, and each
+--    line names the EARLIEST statement in the push that imposes it (an earlier
+--    revision filed a table under the wrong sibling and under the wrong verb;
+--    both are the failure this list exists to prevent):
+--      · cohort_batches READ blocked from §7A block 1 to the end of the push.
+--        ACCESS EXCLUSIVE. THIS IS THE DASHBOARD, it is the only read block in
+--        the whole push, and it is the exposure §7A actually shrinks — from "the
+--        whole apply" to "the tail of it".
 --      · cohort_batches WRITE blocked from §1 to the end of the push, and NOT
 --        by §7A: §1's and §2's CREATE TABLE, and 20260729100100's four
 --        batch-referencing content tables, each take SHARE ROW EXCLUSIVE on it.
 --        Admin roster edits queue for the whole apply either way. Unchanged by
 --        this round and stated so nobody assumes otherwise.
---      · enrolments blocked — READS AND WRITES — from §7A block 4 to the end of
---        the push. THIS IS CHECKOUT, and an earlier revision of this note said
---        the opposite ("blocked ONLY across §7A's own blocks. Checkout is the
---        case this closes completely"). That was wrong, and wrong against the
---        rule stated a dozen lines above it: what matters is that OUR lock is
---        held to COMMIT, so whether a LATER file happens to touch the table is
---        beside the point. §7A block 4's
---        `DROP TRIGGER IF EXISTS … ON public.enrolments` takes ACCESS EXCLUSIVE
---        on the RELATION before it looks for the trigger — so it takes it even
---        on a first apply, where the trigger does not exist — and block 5 does
---        it again. That hold runs across §7A blocks 5-6, all of
+--      · enrolments WRITE blocked from §7A block 4 to the end of the push —
+--        SHARE ROW EXCLUSIVE, from the CREATE TRIGGER; block 5 takes it again.
+--        THIS IS CHECKOUT. Two earlier revisions of this line were wrong in
+--        opposite directions and both are worth keeping visible. The first said
+--        the block was "ONLY across §7A's own blocks. Checkout is the case this
+--        closes completely" — wrong, because OUR lock is held to COMMIT whatever
+--        a later file does or does not read. The second said READS AND WRITES,
+--        on the invented premise that `DROP TRIGGER IF EXISTS` takes ACCESS
+--        EXCLUSIVE on the relation before it looks for the trigger; measured, an
+--        IF EXISTS naming an absent trigger takes no relation lock at all, and
+--        on a first apply — which prod is — these blocks never reach ACCESS
+--        EXCLUSIVE. Reading `enrolments` is unaffected for the whole push;
+--        INSERTing one queues from block 4 across blocks 5-6, all of
 --        20260729100100 and all of 20260729100200.
---      · cohort_applications blocked — reads and writes — from §7A block 6 to
---        the end of the push, by the same mechanism. It carries the
---        confirmation- and balance-payment stamps, so this is the money path
---        too, not a bystander.
+--        ON A RE-RUN (a shadow that already carries the triggers, or the note
+--        11(a) hand-recovery) the DROP does find its target and the mode IS
+--        ACCESS EXCLUSIVE — reads included. Do not re-run §7A blocks 3-6 against
+--        a busy prod outside a window.
+--      · cohort_applications WRITE blocked from §7A block 6 to the end of the
+--        push, by the same mechanism and with the same first-apply/re-run split.
+--        It carries the confirmation- and balance-payment stamps, so this is the
+--        money path too, not a bystander.
 --      · users and offerings WRITE blocked from §1/§2 to the end of the push.
 --        §1's cohort_room_configs references `offerings`; §2's
 --        cohort_room_members references `users` AND `offerings`; and
---        20260729100100's seven tables reference `users`, `offerings`,
---        `cohort_weeks` and `live_sessions`. Every one of those CREATE TABLEs
---        takes SHARE ROW EXCLUSIVE on the referenced table by exactly the
---        argument made for cohort_batches above, and holds it to COMMIT. SHARE
---        ROW EXCLUSIVE spares readers, so nothing here blanks a screen — but
---        `users` is the identity spine, so signup and profile WRITES queue for
---        essentially the whole apply. The previous version of this list called
---        itself "in full" and omitted this line.
---      · live_sessions WRITE blocked from 20260729100200 §0 to the end of the
---        push — the unguarded CREATE INDEX described above.
+--        20260729100100's seven tables reference `users` and `offerings` too.
+--        Every one of those CREATE TABLEs takes SHARE ROW EXCLUSIVE on the
+--        referenced table by exactly the argument made for cohort_batches above,
+--        and holds it to COMMIT. SHARE ROW EXCLUSIVE spares readers, so nothing
+--        here blanks a screen — but `users` is the identity spine, so signup and
+--        profile WRITES queue for essentially the whole apply. An earlier
+--        version of this list called itself "in full" and omitted this line.
+--      · cohort_weeks WRITE blocked from 20260729100100 §2 to the end of the
+--        push. `cohort_resources.cohort_week_id` and the `ADD COLUMN … REFERENCES
+--        public.cohort_weeks(id)` on cohort_room_posts (Δ1's dark channel
+--        columns) each take SHARE ROW EXCLUSIVE on it. NOT a §7A lock and not a
+--        20260729100200 lock — this line was missing entirely.
+--      · live_sessions WRITE blocked from 20260729100100 §4 to the end of the
+--        push — `cohort_recording_progress.live_session_id REFERENCES
+--        public.live_sessions(id)`, SHARE ROW EXCLUSIVE, EARLIER in the push
+--        than the bullet used to say. 20260729100200 §0's unguarded CREATE INDEX
+--        then takes SHARE on the same table: it adds no new verb (writes are
+--        already queued) but it is the one UNBOUNDED WAIT in R0, so it is where
+--        the push can PARK with everything above still held. An earlier version
+--        of this list attributed the whole live_sessions block to that CREATE
+--        INDEX and so understated when the window opens.
 --    SO §7A DOES NOT "CLOSE CHECKOUT COMPLETELY". What it buys the money tables
 --    is a shorter HOLD — from "§5 onward, ~780 lines of this file plus both
 --    siblings" down to "§7A blocks 4-6 plus both siblings" — and nothing more.
@@ -486,22 +550,36 @@
 --    THE COST OF THE SUCCESS PATH, stated because this file used to state it
 --    nowhere. `lock_timeout` bounds each individual lock ACQUISITION, and that
 --    bound is paid on the way IN whether the block ultimately succeeds or not:
---    while our request sits in the queue, every reader arriving behind it waits
---    with us. §7A runs SIX guarded blocks, each of which can spend up to its
---    whole `lock_timeout` waiting for its first lock, and THREE of them wait on
---    a MONEY-PATH table: blocks 4 and 5 on `enrolments`, and block 6 on
---    `cohort_applications`, which this file's own header counts among "the money
---    path's own tables" and which carries the confirmation- and balance-payment
---    stamps. An earlier revision of this paragraph counted only the two
---    `enrolments` blocks and so understated the money-path figure by half.
+--    while our request sits in the queue, everything arriving behind it that
+--    conflicts WITH OUR PENDING REQUEST waits with us. §7A runs SIX guarded
+--    blocks, each of which can spend up to its whole `lock_timeout` waiting for
+--    its first lock, and THREE of them wait on a MONEY-PATH table: blocks 4 and
+--    5 on `enrolments`, and block 6 on `cohort_applications`, which this file's
+--    own header counts among "the money path's own tables" and which carries the
+--    confirmation- and balance-payment stamps. An earlier revision of this
+--    paragraph counted only the two `enrolments` blocks and so understated the
+--    money-path figure by half.
+--    WHAT IS QUEUED BEHIND EACH WAIT IS NOT THE SAME THING, and the runbook has
+--    to size the window from the right one:
+--      · block 1 waits for ACCESS EXCLUSIVE on `cohort_batches`. A pending
+--        ACCESS EXCLUSIVE conflicts with everything, so READS queue behind it.
+--        Up to 1s of dashboard.
+--      · blocks 2-6 wait for SHARE ROW EXCLUSIVE (first apply). That mode does
+--        not conflict with ACCESS SHARE, so a SELECT arriving behind the pending
+--        request is granted and passes; what queues is WRITES. Up to 3s of
+--        queued money-path WRITES across blocks 4-6, not of money-path reads. An
+--        earlier revision counted these three as read waits, on the DROP TRIGGER
+--        premise disproved above, and told the operator to size a read outage
+--        that does not happen on a first apply.
 --    At the 4s every site used to set, the money path alone could queue for up
 --    to 12s on the fully SUCCESSFUL path, and §7A for up to 24s in total, with
 --    nothing in the file admitting it. Every site is now 1s: worst case 3s of
---    queued money path, 6s across §7A, and a wait longer than that degrades to
---    a WARNING plus note 11(a) rather than holding the money path open. Pick a
---    quiet minute anyway — and read 1s as a ceiling on OUR WAIT, not on the
---    HOLD: the ACCESS EXCLUSIVE a block takes once it wins is held to the end of
---    the push regardless (THE RESIDUAL, above).
+--    queued money-path writes, 1s of queued dashboard reads, 6s across §7A in
+--    total, and a wait longer than that degrades to a WARNING plus note 11(a)
+--    rather than holding the money path open. Pick a quiet minute anyway — and
+--    read 1s as a ceiling on OUR WAIT, not on the HOLD: the lock a block takes
+--    once it wins is held to the end of the push regardless (THE RESIDUAL,
+--    above).
 --    What the resulting degradation costs, and how to recover from it, is
 --    note 11.
 --
@@ -674,15 +752,17 @@ END $$;
 --
 -- ➜ MOVED TO SECTION 7A. This is the live-table DDL class contract note 10's
 --   old inventory left out completely: `ADD … FOREIGN KEY … REFERENCES
---   public.cohort_batches (id, offering_id)` takes ACCESS EXCLUSIVE on
---   cohort_room_configs AND **SHARE ROW EXCLUSIVE on cohort_batches**, the
---   referenced live table — and, like every lock in a transaction, holds it to
---   COMMIT. SHARE ROW EXCLUSIVE spares readers but blocks every WRITE to
---   cohort_batches (admin roster and batch edits) for the rest of the push.
+--   public.cohort_batches (id, offering_id)` takes **SHARE ROW EXCLUSIVE on
+--   BOTH SIDES** (measured — A6 item (8)): on cohort_room_configs and on
+--   cohort_batches, the referenced live table. Adding a foreign key has not
+--   taken ACCESS EXCLUSIVE on the altered table since PG 9.5, and — like every
+--   lock in a transaction — it holds what it does take to COMMIT. SHARE ROW
+--   EXCLUSIVE spares readers but blocks every WRITE to cohort_batches (admin
+--   roster and batch edits) for the rest of the push.
 --   BE PRECISE ABOUT THE WIN: the CREATE TABLE above already holds that same
 --   SHARE ROW EXCLUSIVE via `batch_id … REFERENCES public.cohort_batches(id)`,
 --   so deferring this block does not give cohort_batches writes back — what it
---   defers is its ACCESS EXCLUSIVE on cohort_room_configs and its own wait. It
+--   defers is its lock on cohort_room_configs and its own second wait. It
 --   moves mainly because it needs `cohort_batches_id_offering_key`, which §7A
 --   creates in the block immediately before it, and because one place for
 --   live-table DDL beats three. Contract note 10 spells this out.
@@ -1217,14 +1297,19 @@ END $$;
 --    the trigger FUNCTIONS are defined here, and defining a function locks
 --    nothing but pg_proc. The runtime guard inside each function protects the
 --    money path AFTER the trigger exists; it does nothing for the moment of
---    installation. `DROP TRIGGER` takes ACCESS EXCLUSIVE and `CREATE TRIGGER`
---    takes SHARE ROW EXCLUSIVE on `cohort_batch_members`, `enrolments` (twice)
---    and `cohort_applications`. Neither rewrites nor scans the table, so both
---    EXECUTE instantly — but Postgres HOLDS the lock until the transaction
---    COMMITS, and this file has no top-level COMMIT, so attaching them here left
---    `enrolments` under ACCESS EXCLUSIVE for the remaining ~780 lines and queued
---    every checkout behind the push. That is the defect §7A exists to close, and
---    contract note 10 carries the full lock model.
+--    installation. Each attachment is `DROP TRIGGER IF EXISTS` + `CREATE
+--    TRIGGER` on `cohort_batch_members`, `enrolments` (twice) and
+--    `cohort_applications`. On a FIRST APPLY the DROP names a trigger that does
+--    not exist and takes no relation lock, so the net mode is the CREATE's SHARE
+--    ROW EXCLUSIVE — writes blocked, reads unaffected; on a RE-RUN the DROP
+--    finds its target and takes ACCESS EXCLUSIVE, which blocks reads too. Both
+--    modes are measured in the A6 block, item (8). Neither statement rewrites
+--    nor scans the table, so both EXECUTE instantly — but Postgres HOLDS
+--    whichever lock it took until the transaction COMMITS, and this file has no
+--    top-level COMMIT, so attaching them here left `enrolments` under SHARE ROW
+--    EXCLUSIVE for the remaining ~780 lines and queued every checkout WRITE
+--    behind the push. That is the defect §7A exists to close, and contract note
+--    10 carries the full lock model.
 --
 --    Each of the four blocks, in §7A, still (a) sets a short LOCAL
 --    `lock_timeout` — otherwise it inherits the session default of 0 = wait
@@ -1339,7 +1424,8 @@ END $$;
 
 -- ➜ Attachment 2 of 4 (`room_resolve_on_enrolment_status` on
 --   `public.enrolments`) has MOVED TO SECTION 7A — the first of two on the money
---   table an ACCESS EXCLUSIVE hold would stall every reader of. §5 preamble.
+--   table whose WRITES a SHARE ROW EXCLUSIVE hold queues for the rest of the
+--   push (and whose READS a re-run's ACCESS EXCLUSIVE would stall). §5 preamble.
 
 -- Fresh enrolments (contract note 9). An earlier revision left INSERT
 -- deliberately trigger-free on the theory that the `cohort_applications` status
@@ -1623,9 +1709,11 @@ GRANT ALL    ON public.cohort_room_members TO service_role;
 -- no live client-reachable exploit here today. It is (1) defence in depth, on
 -- the same "the day someone adds a permissive route, that default is the
 -- difference between a bug and a leak" footing as the rest of this block, and
--- (2) claim accuracy — section 8's A6 block asserts that `authenticated` ends
+-- (2) claim accuracy — the A6 block USED TO assert that `authenticated` ends
 -- holding SELECT and nothing else on both room tables, and until this line that
--- assertion was simply false on the target environment.
+-- assertion was simply false on the target environment. The wording is gone
+-- (A6 item (6)); what replaced it is the measured end-state in A6 item (9),
+-- which reads REFERENCES, SELECT, TRIGGER on both — no TRUNCATE.
 -- REFERENCES and TRIGGER are deliberately NOT revoked: both require ownership
 -- of, or a matching privilege on, objects `authenticated` cannot reach, and
 -- neither reads or destroys a row. TRUNCATE does.
@@ -1854,32 +1942,36 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 --     THE RULE THIS SECTION EXISTS FOR: a lock taken by `ALTER TABLE` /
 --     `DROP TRIGGER` / `CREATE TRIGGER` is HELD UNTIL THE TRANSACTION COMMITS,
 --     not until the statement ends. This file has no top-level COMMIT, so a
---     lock taken at the top is a lock held for two thousand lines. ACCESS
---     EXCLUSIVE conflicts with SELECT and lock requests queue FIFO, so that hold
---     on `cohort_batches` (joined by R-3's room RPCs and by get_cohort_progress)
---     blanks the shipped student dashboard on every surface for the length of
---     the apply, and the same hold on `enrolments` queues checkout. The six
+--     lock taken at the top is a lock held for two thousand lines. Block 1 takes
+--     ACCESS EXCLUSIVE, which conflicts with SELECT, and lock requests queue
+--     FIFO, so that hold on `cohort_batches` (joined by R-3's room RPCs and by
+--     get_cohort_progress) blanks the shipped student dashboard on every surface
+--     for the length of the apply; blocks 2-6 take SHARE ROW EXCLUSIVE on a
+--     first apply, which spares readers and queues WRITES, so the hold on
+--     `enrolments` and `cohort_applications` stalls checkout WRITES. The six
 --     blocks below used to live in §0, §1 and §5 for readability; they are
 --     gathered here so their locks are taken with nothing left in THIS FILE to
 --     execute afterwards. Contract note 10 carries the full model, the three
---     lock classes and the cost of the success path.
+--     measured lock classes and the cost of the success path.
 --
 --     WHAT IS STILL EXPOSED, so nobody reads "moved to the foot" as "instant":
 --     the push commits at the END OF THE PUSH, not at the end of this file. So
 --     EVERY lock taken below is held across 20260729100100 and 20260729100200 as
 --     well — block 1's ACCESS EXCLUSIVE on cohort_batches (the dashboard) AND
 --     blocks 4/5's on `enrolments` and block 6's on `cohort_applications` (the
---     money path). An earlier revision of this paragraph said the checkout
---     exposure "really does end with this section" on the grounds that neither
---     sibling touches those two tables. That reasoning is wrong: the lock is
---     ours and it is held to COMMIT whatever the siblings do or do not read.
---     Checkout is queued for the rest of the push, not for the rest of this
---     section. cohort_batches WRITES were already blocked from §1 by the plain
---     FK on cohort_room_configs.batch_id and this section does not change that;
---     `users` and `offerings` writes likewise, from §1/§2. The full residual —
---     including 20260729100200's own unguarded CREATE INDEX on `live_sessions`,
---     the one unbounded lock WAIT left in R0 — is contract note 10. Push R0
---     alone, in a quiet window, and size that window from the whole push.
+--     money path's writes). An earlier revision of this paragraph said the
+--     checkout exposure "really does end with this section" on the grounds that
+--     neither sibling touches those two tables. That reasoning is wrong: the
+--     lock is ours and it is held to COMMIT whatever the siblings do or do not
+--     read. Checkout is queued for the rest of the push, not for the rest of
+--     this section. cohort_batches WRITES were already blocked from §1 by the
+--     plain FK on cohort_room_configs.batch_id and this section does not change
+--     that; `users` and `offerings` writes likewise, from §1/§2, and
+--     `cohort_weeks`/`live_sessions` writes from 20260729100100 §2/§4. The full
+--     residual — including 20260729100200's own unguarded CREATE INDEX on
+--     `live_sessions`, the one unbounded lock WAIT left in R0 — is contract
+--     note 10. Push R0 alone, in a quiet window, and size that window from the
+--     whole push.
 --
 --     ORDER IS LOAD-BEARING IN EXACTLY ONE PLACE: block 1's UNIQUE (id,
 --     offering_id) is what block 2's composite FK references, so 1 precedes 2.
@@ -1891,14 +1983,19 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 --     `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` inside one transaction, so the
 --     trigger is never observably absent to a concurrent writer. Copy the block
 --     that warned, verbatim, and run it against the target project when the
---     table is quiet. Detection is the section-8 VERIFY query, not the push log.
+--     table is quiet. "When the table is quiet" is not politeness for blocks
+--     3-6: a re-run is the case where the DROP has a target, so it is the case
+--     where the mode is ACCESS EXCLUSIVE and readers queue behind it — unlike
+--     the push itself. Detection is the section-8 VERIFY query, not the push log.
 --
 --     LOCK_TIMEOUT IS 1s AT EVERY SITE (was 4s). It is a bound on ACQUISITION
 --     and it is paid on the way in whether or not the block succeeds — six
 --     guarded blocks here, THREE of them waiting on a money-path table (4 and 5
 --     on `enrolments`, 6 on `cohort_applications`), so the worst-case SUCCESS
---     path queues the money path for 3s and the whole section for 6s. At the old
---     4s those figures were 12s and 24s, and no comment in the file said so.
+--     path queues money-path WRITES for 3s (a pending SHARE ROW EXCLUSIVE does
+--     not conflict with SELECT, so reads pass) plus up to 1s of dashboard READS
+--     at block 1, and the whole section for 6s. At the old 4s those figures were
+--     12s and 24s, and no comment in the file said so.
 --     It bounds the WAIT only; the HOLD runs to the end of the push either way.
 -- ---------------------------------------------------------------------------
 
@@ -1944,10 +2041,12 @@ END $$;
 -- WARNING this one CANNOT succeed, and an unhandled "there is no unique
 -- constraint matching given keys" would abort the whole shared `db push` for a
 -- rule that keeps a PARTIAL imperative fallback in admin_upsert_room_config() —
--- the admin RPC path only, not service_role or direct SQL (see §0). It takes
--- ACCESS EXCLUSIVE on cohort_room_configs and SHARE ROW EXCLUSIVE on the
--- referenced LIVE table cohort_batches, so it now carries a bounded wait of its
--- own; the old version inherited the session default of "wait forever".
+-- the admin RPC path only, not service_role or direct SQL (see §0). Adding a
+-- foreign key takes SHARE ROW EXCLUSIVE on BOTH sides (measured — A6 item (8)):
+-- on cohort_room_configs and on the referenced LIVE table cohort_batches. It
+-- therefore blocks WRITES to cohort_batches, not reads, and it now carries a
+-- bounded wait of its own; the old version inherited the session default of
+-- "wait forever".
 DO $$
 DECLARE
   v_prev_lock_timeout text;
@@ -2003,7 +2102,11 @@ EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
 END $$;
 
 -- 4 of 6 — attachment 2 of 4, and the first of two on `enrolments` itself, the
--- table an ACCESS EXCLUSIVE hold would stall every reader of. §5 preamble.
+-- money table. On a first apply the DROP IF EXISTS is a no-op that takes no
+-- relation lock and the CREATE takes SHARE ROW EXCLUSIVE: checkout WRITES queue
+-- to the end of the push, reads pass. On a RE-RUN the DROP finds its target and
+-- takes ACCESS EXCLUSIVE, which stalls readers too — so recover this block by
+-- hand only when the table is quiet. §5 preamble; modes in A6 item (8).
 DO $$
 DECLARE
   v_prev_lock_timeout text := current_setting('lock_timeout', true);
@@ -2145,32 +2248,44 @@ END $$;
 --    trap qa-harness/shadow-grants.sql exists to close — load it first, or run
 --    this against prod itself).
 --
---    WHAT COUNTS AS A PASS, spelled out per verb, because a previous version of
---    this paragraph said "SELECT alone" and that expectation cannot be met on
---    the environment the check is FOR: §7 of this file states in as many words
---    that REFERENCES and TRIGGER are deliberately NOT revoked, so on a
---    bootstrapped database they are present by design and an operator matching
---    against "SELECT alone" would read a correct outcome as a miss on 9/9 rows —
---    and might then "fix" it by revoking two verbs this file decided to keep.
+--    WHAT COUNTS AS A PASS, spelled out per verb and per table, because TWO
+--    previous versions of this paragraph published an expectation an operator
+--    following it verbatim would have read as a defect on a CORRECT database:
+--      · v1 said "SELECT alone". §7 of this file states in as many words that
+--        REFERENCES and TRIGGER are deliberately NOT revoked, so on a
+--        bootstrapped database they are present by design — v1 missed on 9/9
+--        rows and invited a "fix" that revokes two verbs this file kept.
+--      · v2 fixed that and then added INSERT to all seven content tables on the
+--        reasoning that "omitting a verb from a GRANT does not remove it". True
+--        in general, but 20260729100100 §3 does not merely omit INSERT for the
+--        commons — it REVOKEs it (`REVOKE INSERT ON public.cohort_room_posts
+--        FROM authenticated, anon;` and the same for the replies table). v2
+--        missed on 2/9 rows. The nine rows below are MEASURED, not reasoned —
+--        A6 item (9) records the replay and its output verbatim.
 --    On PROD (bootstrap has run), the expected `authenticated` rows are:
 --      · cohort_room_configs, cohort_room_members
 --          → REFERENCES, SELECT, TRIGGER
---      · all SEVEN content tables (cohort_announcements, cohort_resources,
---        cohort_room_posts, cohort_room_post_replies, cohort_recording_progress,
---        cohort_demo_entries, cohort_room_seen)
+--      · FIVE content tables — cohort_announcements, cohort_resources,
+--        cohort_recording_progress, cohort_demo_entries, cohort_room_seen
 --          → DELETE, INSERT, REFERENCES, SELECT, TRIGGER, UPDATE
---        INSERT appears on cohort_room_posts and cohort_room_post_replies too,
---        even though 20260729100100 §7 deliberately omits it from their GRANT:
---        omitting a verb does not remove it, and that file says so in the note
---        above its GRANT block. RLS still denies it (there is no INSERT policy
---        for `authenticated` on either), so it is defence-in-depth debt, not a
---        hole — but it belongs in the EXPECTED output or it reads as a defect.
+--      · the TWO commons tables — cohort_room_posts, cohort_room_post_replies
+--          → DELETE, REFERENCES, SELECT, TRIGGER, UPDATE   (NO INSERT)
+--        INSERT is absent because 20260729100100 §3 revokes it explicitly:
+--        SEC-WRITE-1 makes the commons RPC-only, and a raw client INSERT fails
+--        on the missing grant before RLS is consulted at all. INSERT APPEARING
+--        ON EITHER ROW IS A DEFECT — that revoke did not land.
 --      · `anon` → no rows at all, on any of the nine.
 --    THE ONE ABSOLUTE: TRUNCATE must not appear on ANY row, because TRUNCATE
 --    bypasses RLS. That clause of the old expectation was the correct part.
+--    Do not "explain away" a missing INSERT on the commons with an RLS argument:
+--    `posts_admin_all` / `replies_admin_all` carry no FOR and no TO clause, so
+--    they are FOR ALL TO PUBLIC and DO admit INSERT for an admin JWT. The grant
+--    is what closes that path, for admins and members alike; a version of this
+--    paragraph that said "there is no INSERT policy for authenticated on either"
+--    was wrong about the policies as well as about the grants.
 --    On a MIGRATIONS-ONLY shadow the same query returns the GRANTs alone (no
---    REFERENCES, no TRIGGER, and no INSERT on posts/replies) — which is why this
---    check proves nothing there, per the paragraph above.
+--    REFERENCES, no TRIGGER) — which is why this check proves nothing there, per
+--    the paragraph above.
 --
 --      SELECT table_name, grantee, string_agg(privilege_type, ', ' ORDER BY privilege_type)
 --        FROM information_schema.role_table_grants
@@ -2333,11 +2448,13 @@ END $$;
 --     runs to completion with an R-2-style dependent policy in place, leaving
 --     zero cohort_room objects and all three truth tables intact.
 --
--- (6) NOT MEASURED, AND THE REASON IS THE POINT. This block used to end item (5)
---     with "`authenticated` ends holding SELECT and nothing else on BOTH room
---     tables and `anon` holding nothing", stated as executed fact. It was
---     WITHDRAWN rather than restated, because the harness cannot establish it
---     and, on the environment that matters, it was false.
+-- (6) WITHDRAWN CLAIM, KEPT BECAUSE THE REASON IS THE POINT. This block used to
+--     end item (5) with "`authenticated` ends holding SELECT and nothing else on
+--     BOTH room tables and `anon` holding nothing", stated as executed fact. It
+--     was WITHDRAWN rather than restated, because the harness as it then stood
+--     could not establish it and, on the environment that matters, it was false.
+--     Item (9) below now measures the grant end-state properly — under an ARMED
+--     bootstrap — and its result is not the withdrawn wording.
 --       · The harness is a database built from supabase/migrations/ on PGlite.
 --         It never runs Supabase's hosted bootstrap (`ALTER DEFAULT PRIVILEGES
 --         IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated,
@@ -2362,8 +2479,9 @@ END $$;
 --     reinstate the old "SELECT and nothing else" wording — it was never the
 --     right expectation for a bootstrapped database, and restating it would be
 --     the same wrong-claim failure this item exists to record.
---     Until someone does that, this file claims nothing about grants beyond the
---     text of the REVOKE statements themselves.
+--     Until someone does that ON THE TARGET, this file claims nothing about the
+--     TARGET's grants beyond item (9)'s replay and the text of the REVOKE
+--     statements themselves.
 --
 -- (7) THE §7A REORDERING POST-DATES EVERY MEASUREMENT ABOVE, and does not
 --     invalidate any of them: it moved six DDL blocks from §0/§1/§5 to the foot
@@ -2377,10 +2495,75 @@ END $$;
 --     time only, and specifically the lock HOLD window (contract note 10), which
 --     none of these measurements ever covered: the harness applies to an idle
 --     single-connection database where a held ACCESS EXCLUSIVE has nobody to
---     block, so no A/B on this machine can show the difference. The apply-time
---     property is argued from Postgres's documented locking rules and verified
---     on the target by the section-8 VERIFY queries, not measured here. Do not
---     let a future revision "confirm" it on PGlite.
+--     block, so no A/B on this machine can show the difference. The DURATION of
+--     the hold is therefore not measured here and cannot be; the MODE of every
+--     lock taken is, in item (8). Do not let a future revision "confirm" the
+--     duration on PGlite.
+--
+-- (8) LOCK MODES PER STATEMENT — MEASURED 2026-07-29, PGlite 0.5.4 (PostgreSQL
+--     18.3, WASM, this machine), because contract note 10 got them wrong twice
+--     from first principles and a third guess was not worth making. Method: each
+--     statement run alone inside an open transaction against stand-in tables,
+--     then `SELECT c.relname, l.mode FROM pg_locks l JOIN pg_class c ON
+--     c.oid = l.relation WHERE l.locktype = 'relation'`, then ROLLBACK. Only
+--     modes at or above ROW EXCLUSIVE are listed; the transient ACCESS
+--     SHARE/ROW SHARE entries a catalogue lookup leaves behind are omitted.
+--
+--       DROP TRIGGER IF EXISTS <ABSENT>  ON t   → NO relation lock at all
+--       DROP TRIGGER IF EXISTS <PRESENT> ON t   → ACCESS EXCLUSIVE
+--       CREATE TRIGGER … ON t                   → SHARE ROW EXCLUSIVE
+--       §7A blocks 3-6 as written, FIRST APPLY
+--         (DROP IF EXISTS absent; CREATE)       → SHARE ROW EXCLUSIVE
+--       §7A blocks 3-6 as written, RE-RUN
+--         (DROP IF EXISTS present; CREATE)      → ACCESS EXCLUSIVE
+--       ALTER TABLE t ADD CONSTRAINT … UNIQUE   → ACCESS EXCLUSIVE on t
+--                                                 (+ SHARE for the index build)
+--       ALTER TABLE child ADD … FOREIGN KEY …
+--         REFERENCES parent                     → SHARE ROW EXCLUSIVE on BOTH
+--                                                 child and parent
+--       CREATE TABLE … REFERENCES parent        → SHARE ROW EXCLUSIVE on parent
+--       CREATE INDEX (non-CONCURRENT) ON t      → SHARE on t
+--
+--     WHAT THIS SETTLES, and it is the whole reason the block is here: a first
+--     apply — which prod is, since these trigger names are new — never takes
+--     ACCESS EXCLUSIVE on `enrolments` or `cohort_applications`. §7A blocks 4-6
+--     queue money-path WRITES and let readers through. The one ACCESS EXCLUSIVE
+--     on a live table in this file is block 1's, on `cohort_batches`, and that
+--     one IS a read block: it is the dashboard exposure, and it is the only one.
+--     WHAT IT DOES NOT SETTLE: durations, queue depth, or anything about the
+--     target's own concurrent load. Modes only.
+--
+-- (9) GRANT END-STATE UNDER AN ARMED BOOTSTRAP — MEASURED 2026-07-29, same
+--     PGlite build. This is the measurement item (6) says was missing, done the
+--     only way this machine can do it honestly: the bootstrap is ARMED FIRST
+--     (`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon,
+--     authenticated, service_role`, SECTION A of qa-harness/shadow-grants.sql,
+--     which is generated from prod), the nine tables are then created, and
+--     EVERY `GRANT`/`REVOKE … ON public.<one of the nine>` statement in
+--     20260729100000 and 20260729100100 is replayed in file order — 38
+--     statements, and 20260729100200 issues none, so the set is complete.
+--     Output, verbatim, for `authenticated` (anon: ZERO rows):
+--
+--       cohort_room_configs          REFERENCES, SELECT, TRIGGER
+--       cohort_room_members          REFERENCES, SELECT, TRIGGER
+--       cohort_announcements         DELETE, INSERT, REFERENCES, SELECT, TRIGGER, UPDATE
+--       cohort_resources             DELETE, INSERT, REFERENCES, SELECT, TRIGGER, UPDATE
+--       cohort_recording_progress    DELETE, INSERT, REFERENCES, SELECT, TRIGGER, UPDATE
+--       cohort_demo_entries          DELETE, INSERT, REFERENCES, SELECT, TRIGGER, UPDATE
+--       cohort_room_seen             DELETE, INSERT, REFERENCES, SELECT, TRIGGER, UPDATE
+--       cohort_room_posts            DELETE, REFERENCES, SELECT, TRIGGER, UPDATE
+--       cohort_room_post_replies     DELETE, REFERENCES, SELECT, TRIGGER, UPDATE
+--
+--     TRUNCATE appears on no row; INSERT is absent on the two commons tables.
+--     That is the expectation section 8's THIRD CHECK publishes, and it is why
+--     that paragraph is now nine measured rows rather than a per-verb argument.
+--     WHAT THIS IS NOT: it is not a shadow, and it is not prod. It proves that
+--     THESE statements, applied over THAT default-privilege state, produce that
+--     end state. It assumes prod's default privileges are the `GRANT ALL` shape
+--     shadow-grants.sql captured, and it cannot see a manual grant someone made
+--     on the target outside these migrations. THE THIRD CHECK STILL HAS TO RUN
+--     ON THE TARGET AFTER THE PUSH — this item narrows what it is checking FOR,
+--     it does not replace it.
 -- ============================================================================
 
 

@@ -30,23 +30,39 @@
  *   optional: ROOM_QA_KEEP=1 to leave the fixture world in place for inspection
  *   optional: ROOM_QA_DIFF_BASE (default "main") for the Delta-6 copy grep
  *
- * A SHADOW RUN, EXACTLY — FOUR SETUP STEPS, AND THE FIRST TWO ARE THE ONES THAT
- * GET SKIPPED. Every command below targets the SHADOW database and never
- * production (ivkvluezuiojovpotlyb); two of them write schema and grants.
- *   0. If `supabase db push` has EVER run against this shadow, rebuild it before
- *      going any further:
- *        supabase db reset --db-url "$SHADOW_DB_URL"   # or re-create the project
- *      Step 1 arms `ALTER DEFAULT PRIVILEGES`, which Postgres consults at CREATE
- *      TABLE time and never again. It cannot retrofit tables that already exist,
- *      so on an already-pushed shadow the three steps below all succeed, change
- *      nothing, and leave exactly the state the PRECONDITION aborts on. This is
- *      the step the recipe used to omit.
+ * A SHADOW RUN, EXACTLY — FIVE SETUP STEPS (0–4) BEFORE THE RUN ITSELF (5), AND
+ * THE FIRST TWO ARE THE ONES THAT GET SKIPPED. Every command below targets the
+ * SHADOW database and never production (ivkvluezuiojovpotlyb); steps 0–3 are all
+ * destructive — one empties the database, two write grants, one writes schema.
+ *   0. If `supabase db push` has EVER run against this shadow, EMPTY IT before
+ *      going any further — and NOT with `supabase db reset`:
+ *        psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=1 \
+ *          -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' \
+ *          -c 'DELETE FROM supabase_migrations.schema_migrations;'
+ *      …or re-create the shadow project, which arrives in the same state.
+ *      `supabase db reset` IS THE WRONG TOOL HERE and lands exactly the state
+ *      this step exists to prevent: it drops the schema and then RE-APPLIES every
+ *      migration in supabase/migrations/, so the nine tables R0 creates are back
+ *      before step 1 ever runs. Step 1 arms `ALTER DEFAULT PRIVILEGES`, which
+ *      Postgres consults at CREATE TABLE time and never again and cannot retrofit
+ *      a table that already exists; step 2 is then a no-op because the migration
+ *      ledger is full again too. The three steps below all succeed, change
+ *      nothing that matters, and leave the state the PRECONDITION aborts on.
+ *      The ORDER IS LOAD-BEARING IN BOTH DIRECTIONS: pg_default_acl rows are
+ *      SCHEMA-SCOPED, so dropping schema public also drops step 1's arming. Any
+ *      later `db reset` (or any other drop of public) silently un-arms a shadow
+ *      that used to pass, and the recipe has to be re-run from step 0. The
+ *      re-created schema also arrives with no USAGE for the client roles;
+ *      SECTION A re-grants it in step 1, and the PRECONDITION checks it, so step 1
+ *      is not optional after emptying the database.
  *   1. Arm the default privileges, BEFORE the schema exists:
  *        psql "$SHADOW_DB_URL" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql
  *      That file's hand-maintained SECTION A reproduces the platform's
  *      `ALTER DEFAULT PRIVILEGES … GRANT ALL ON TABLES`, which only affects
- *      tables created AFTER it runs — so it has to precede `db push`. The
- *      -v ROOM_QA_SHADOW=1 marker is not decoration: the file refuses to run
+ *      tables created AFTER it runs — so it has to precede `db push` — plus the
+ *      schema-level `GRANT USAGE ON SCHEMA public`, which step 0's DROP took away
+ *      and without which every request is refused above the table ACL entirely.
+ *      The -v ROOM_QA_SHADOW=1 marker is not decoration: the file refuses to run
  *      without it, because it permanently alters a database's grant model.
  *   2. Apply the three R0 migrations (20260729100000 / 100100 / 100200):
  *        supabase db push --db-url "$SHADOW_DB_URL"
@@ -1101,22 +1117,36 @@ section(
 //     another verb the migrations do not touch — not to delete it, because
 //     without it nothing in this suite can tell the two shadows apart.
 //
-// THE REMEDY IS PRINTED ONCE, HERE, BECAUSE THE OBVIOUS ONE DOES NOT WORK. Every
-// abort below hands back PROVISION_RECIPE, and its first line is the line the
-// three-step recipe used to omit: on a shadow where `db push` has ALREADY run,
-// SECTION A cannot retrofit anything. Default privileges are consulted at CREATE
-// TABLE time and never again, `db push` is a no-op the second time, and the nine
-// tables keep whatever they were created with. Re-running the recipe in place
-// changes nothing and reports success. The shadow has to be rebuilt.
+// THE REMEDY IS PRINTED ONCE, HERE, BECAUSE BOTH OBVIOUS ONES FAIL — AND THE
+// SECOND ONE FAILS SILENTLY. Every abort below hands back PROVISION_RECIPE.
+//   · Re-running the file in place does nothing: on a shadow where `db push` has
+//     ALREADY run, SECTION A cannot retrofit anything. Default privileges are
+//     consulted at CREATE TABLE time and never again, `db push` is a no-op the
+//     second time, and the nine tables keep whatever they were created with.
+//   · `supabase db reset` — the natural reading of "rebuild it" — is WORSE than
+//     doing nothing, because it looks like compliance. It drops the schema and
+//     then RE-APPLIES every migration in supabase/migrations/, so it hands back a
+//     database in which the nine tables already exist and the migration ledger is
+//     already full. Step 1 then has nothing to arm and step 2 nothing to push, and
+//     the recipe deterministically reproduces the state that printed this message.
+// The database has to be EMPTY when SECTION A runs, which means the schema drop
+// and the ledger wipe, with no migration apply in between — or a fresh project.
 const PROVISION_RECIPE =
-  "FIX — AND IF `db push` HAS ALREADY RUN AGAINST THIS SHADOW, START BY REBUILDING IT:\n" +
+  "FIX — AND IF `db push` HAS ALREADY RUN AGAINST THIS SHADOW, START BY EMPTYING IT.\n" +
   "SECTION A of shadow-grants.sql arms `ALTER DEFAULT PRIVILEGES`, which applies only to tables\n" +
   "created AFTER it runs. It cannot retrofit tables that already exist, so re-running it in place\n" +
   "on an already-pushed shadow succeeds and fixes nothing.\n\n" +
-  "  supabase db reset --db-url \"$SHADOW_DB_URL\"     # or rebuild/re-create the shadow project\n" +
+  "  # step 0 — empty it. Do NOT use `supabase db reset`: that re-applies every migration as part\n" +
+  "  # of the reset, so the R0 tables are back before step 1 can arm anything and you land here again.\n" +
+  "  psql \"$SHADOW_DB_URL\" -v ON_ERROR_STOP=1 \\\n" +
+  "    -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' \\\n" +
+  "    -c 'DELETE FROM supabase_migrations.schema_migrations;'   # or re-create the shadow project\n" +
   "  psql \"$SHADOW_DB_URL\" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql   # pass 1: BEFORE db push\n" +
   "  supabase db push --db-url \"$SHADOW_DB_URL\"                                  # build the schema\n" +
   "  psql \"$SHADOW_DB_URL\" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql   # pass 3: AFTER db push\n\n" +
+  "pg_default_acl rows are SCHEMA-SCOPED, so the DROP above also clears any earlier arming — which\n" +
+  "is why pass 1 comes after it, and why a later `db reset` silently un-arms a shadow that used to\n" +
+  "pass. The re-created schema carries no USAGE for the client roles either; SECTION A re-grants it.\n\n" +
   "$SHADOW_DB_URL is the SHADOW database, never production (ivkvluezuiojovpotlyb). The\n" +
   "-v ROOM_QA_SHADOW=1 marker is required: shadow-grants.sql refuses to run without it, because\n" +
   "SECTION A permanently alters a database's grant model and `db push` writes schema.\n" +
@@ -1182,6 +1212,45 @@ const PROVISION_RECIPE =
         "in the shape the suite assumes, and every RLS assertion below would be meaningless."
     );
   }
+
+  // ── USAGE ON SCHEMA public — a separate check because the table check cannot
+  // see it. has_table_privilege() reports the table's own ACL and says nothing
+  // about the schema above it, so a shadow can pass every assertion in the block
+  // above while PostgREST is refused one level up. That is not hypothetical: it
+  // is the state step 0 of PROVISION_RECIPE produces. `DROP SCHEMA public
+  // CASCADE; CREATE SCHEMA public;` empties the database so SECTION A can arm the
+  // create-time grant — and the re-created schema grants USAGE to its owner and
+  // nobody else. SECTION A re-grants it on pass 1; an operator who emptied the
+  // database and skipped straight to `db push` lands here. Failing loudly is the
+  // point: a wrong-reason denial at the schema level prints the same word as the
+  // wall holding, exactly like a wrong-reason denial at the table level.
+  let schemaUsage;
+  try {
+    schemaUsage = await sql(`
+      SELECT r.rolname AS grantee,
+             CASE WHEN to_regnamespace('public') IS NULL THEN false
+                  ELSE has_schema_privilege(r.oid, 'public', 'USAGE') END AS can_use
+        FROM pg_roles r
+       WHERE r.rolname IN (${["anon", "authenticated", "service_role"].map(lit).join(", ")})
+       ORDER BY 1`);
+  } catch (e) {
+    die(`Could not read schema privileges through the SQL channel: ${e.message}`);
+  }
+  const noSchemaUsage = schemaUsage.filter((r) => !pgBool(r.can_use));
+  if (noSchemaUsage.length) {
+    die(
+      "THE CLIENT ROLES HAVE NO USAGE ON SCHEMA public — REFUSING TO RUN. EVERY REQUEST IN THIS\n" +
+        "SUITE WOULD BE REFUSED ABOVE THE TABLE ACL, WHICH READS EXACTLY LIKE THE WALL HOLDING.\n\n" +
+        `  no USAGE on schema public: ${noSchemaUsage.map((r) => r.grantee).join(", ")}\n\n` +
+        "This is the signature of a database emptied for step 0 and then pushed WITHOUT pass 1: a\n" +
+        "freshly re-created schema grants USAGE to its owner only. shadow-grants.sql SECTION A\n" +
+        "restores it, and it has to run. Re-run the recipe from the top — the DROP first, then pass 1,\n" +
+        "then `db push` — because the same pass also arms the create-time default privileges that\n" +
+        "the nine tables R0 creates can only receive while they do not yet exist.\n\n" +
+        PROVISION_RECIPE
+    );
+  }
+
   if (missingR0.length) {
     die(
       "THE R0 MIGRATIONS ARE NOT ON THIS PROJECT — NOT ONE ASSERTION RAN.\n" +
@@ -1230,7 +1299,8 @@ const PROVISION_RECIPE =
     );
   }
   console.log(
-    `${C.d}precondition: ${grants.length} representative grants verified ` +
+    `${C.d}precondition: ${schemaUsage.length} client roles hold USAGE on schema public; ` +
+      `${grants.length} representative grants verified ` +
       `(${GRANT_SAMPLE.filter(([t]) => !R0_CREATED.has(t)).length} pre-existing tables readable by anon; ` +
       `${GRANT_SAMPLE.filter(([t]) => R0_CREATED.has(t)).length} R0-created tables readable by authenticated ` +
       "AND carrying the bootstrap-only REFERENCES/TRIGGER pair, so they were created under " +
@@ -2745,7 +2815,9 @@ section("GRANT — the verb list underneath the wall",
           : "pg_default_acl holds NO entry for schema public / relations at all") +
         ". GRANT.1 and GRANT.2 below are VACUOUS in this state and are reported as failures rather than " +
         "passes. See the PROVISION recipe the precondition prints: SECTION A of qa-harness/shadow-grants.sql " +
-        "must run BEFORE `supabase db push`, and on an already-pushed shadow that means rebuilding it first.");
+        "must run BEFORE `supabase db push`, and on an already-pushed shadow that means emptying the database " +
+        "first — the schema drop plus a wipe of supabase_migrations.schema_migrations, NOT `supabase db reset`, " +
+        "which re-applies every migration as part of the reset and puts the R0 tables back before SECTION A runs.");
 
   // ── GRANT.0b — the same claim, measured instead of read ──────────────────
   //

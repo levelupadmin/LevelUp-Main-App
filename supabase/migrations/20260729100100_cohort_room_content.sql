@@ -1003,18 +1003,25 @@ REVOKE TRUNCATE ON public.cohort_recording_progress  FROM authenticated;
 REVOKE TRUNCATE ON public.cohort_demo_entries        FROM authenticated;
 REVOKE TRUNCATE ON public.cohort_room_seen           FROM authenticated;
 
--- ⚠️ OUT OF SCOPE FOR THIS FIX, RECORDED SO IT IS NOT LOST: the same "a GRANT
--- does not un-grant" reasoning applies to INSERT on cohort_room_posts and
--- cohort_room_post_replies. The GRANT below omits INSERT for the commons
--- (SEC-WRITE-1 — they are written through R-3's SECURITY DEFINER RPCs), but on a
--- project carrying the bootstrap, OMITTING a verb does not remove it, so
--- `authenticated` still holds the bootstrap's INSERT on both. Unlike TRUNCATE,
--- that one IS gated: no INSERT policy exists for `authenticated` on either
--- table, so RLS denies every attempt, and PostgREST does reach INSERT. It is
--- therefore defence-in-depth of exactly the same kind rather than an open hole,
--- and closing it is a separate change to the commons write path.
+-- ⚠️ THE SAME "A GRANT DOES NOT UN-GRANT" RULE APPLIES TO INSERT ON THE TWO
+-- COMMONS TABLES, AND IT IS ALREADY HANDLED — recorded here because a previous
+-- revision of this note filed it as open debt ("`authenticated` still holds the
+-- bootstrap's INSERT on both") and was contradicted by the very next line. The
+-- GRANT below omits INSERT for cohort_room_posts / cohort_room_post_replies
+-- (SEC-WRITE-1 — they are written through R-3's SECURITY DEFINER RPCs), and
+-- omitting is indeed not removing — which is why §3 above does not stop at
+-- omitting: it issues `REVOKE INSERT … FROM authenticated, anon` on both. So on
+-- a bootstrapped project the end state carries no INSERT on either table, and a
+-- raw client INSERT fails on the missing grant before RLS is consulted.
+-- DO NOT "simplify" that revoke away on the grounds that RLS covers it. It does
+-- not: `posts_admin_all` / `replies_admin_all` above carry no FOR and no TO
+-- clause, so they are FOR ALL TO PUBLIC and DO admit INSERT for an admin JWT —
+-- and PostgREST hands admins the same `authenticated` role as everyone else.
+-- The grant is the thing keeping the commons RPC-only.
+-- The measured end state for all nine R0 tables is in 20260729100000's A6
+-- item (9); the operator-facing expectation is its section-8 THIRD CHECK.
 --
--- INSERT is absent for the commons on purpose (SEC-WRITE-1, revoked above).
+-- INSERT is absent for the commons on purpose (SEC-WRITE-1, revoked in §3).
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.cohort_announcements       TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.cohort_resources           TO authenticated;
 GRANT SELECT,         UPDATE, DELETE ON public.cohort_room_posts          TO authenticated;
