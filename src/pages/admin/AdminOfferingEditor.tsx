@@ -17,6 +17,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import PublicPageFields from "@/components/admin/offering-editor/PublicPageFields";
 import ThankYouFields from "@/components/admin/offering-editor/ThankYouFields";
 import TrackingFields from "@/components/admin/offering-editor/TrackingFields";
+import StudentsTab from "@/components/admin/offering-editor/StudentsTab";
+import CurriculumTab from "@/components/admin/offering-editor/CurriculumTab";
+import AccessTab from "@/components/admin/offering-editor/AccessTab";
 
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
@@ -546,6 +549,11 @@ const AdminOfferingEditor = () => {
           <TabsTrigger value="checkout">Checkout</TabsTrigger>
           <TabsTrigger value="cohort">Live Cohort</TabsTrigger>
           <TabsTrigger value="upsells">Upsells</TabsTrigger>
+          {/* Read-only views. Hidden on a brand-new offering, which has no id
+              yet and therefore nothing to report on. */}
+          {!isNew && <TabsTrigger value="students">Students</TabsTrigger>}
+          {!isNew && <TabsTrigger value="curriculum">Curriculum</TabsTrigger>}
+          {!isNew && <TabsTrigger value="access">Access</TabsTrigger>}
         </TabsList>
 
         {/* ══════════════════════════════════════════ */}
@@ -1075,6 +1083,23 @@ const AdminOfferingEditor = () => {
             )}
           </div>
         </TabsContent>
+
+        {/* ══════════════════════════════════════════ */}
+        {/*  TAB 8-10: READ-ONLY VIEWS                 */}
+        {/* ══════════════════════════════════════════ */}
+        {!isNew && offeringId && (
+          <>
+            <TabsContent value="students">
+              <StudentsTab offeringId={offeringId} />
+            </TabsContent>
+            <TabsContent value="curriculum">
+              <CurriculumTab offeringId={offeringId} />
+            </TabsContent>
+            <TabsContent value="access">
+              <AccessTab offeringId={offeringId} />
+            </TabsContent>
+          </>
+        )}
       </Tabs>
     </>
   );

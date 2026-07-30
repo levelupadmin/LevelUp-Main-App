@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { TablesUpdate } from "@/integrations/supabase/types";
 import { useAuth } from "@/contexts/AuthContext";
@@ -37,7 +38,10 @@ const AdminUsers = () => {
   const PAGE_SIZE = 50;
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  // Seeded from ?q= so the offering editor's Students tab can deep-link
+  // straight to one person instead of dropping you on an unfiltered list.
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get("q") || "");
   const debouncedSearch = useDebounce(search, 300);
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
