@@ -14,6 +14,8 @@ import {
   Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2, Sparkles, Brain
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { COHORT_ROOMS, flag } from "@/lib/flags";
+import RoomNavSlot from "@/components/layout/RoomNavSlot";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
 import { useStudioEnabled } from "@/hooks/useStudio";
 import { hapticSelection, tapTick } from "@/lib/haptics";
@@ -91,8 +93,12 @@ const StudentLayout = ({ children }: Props) => {
     return () => document.removeEventListener("keydown", onKey);
   }, [sidebarOpen, dropdownOpen, notifOpen]);
   const { notifications, unreadCount, loading: notifLoading, markRead, markAllRead } = useNotifications();
+  // Called unconditionally in BOTH flag states so hook order never shifts, and
+  // still the only cohort read with the flag down (`RoomNavSlot` owns the room
+  // query and is not mounted at all until the flag is up).
   const { offeringId: activeCohortId } = useActiveCohort();
   const { data: studioEnabled } = useStudioEnabled();
+  const roomsEnabled = flag(COHORT_ROOMS);
 
   // Studio only appears for active cohort members; everyone else sees the
   // unchanged bar (additive — never orphans a route).
@@ -162,7 +168,10 @@ const StudentLayout = ({ children }: Props) => {
             );
           })}
 
-          {activeCohortId && (
+          {/* The legacy slot, untouched and unindented so the flag-off DOM is
+              provably byte-identical (StudentLayout.nav.test.tsx pins it against
+              HTML captured from this file before R1-T4 edited it). */}
+          {!roomsEnabled && activeCohortId && (
             <>
               <div className="my-3 border-t border-border" />
               <Link
@@ -180,6 +189,7 @@ const StudentLayout = ({ children }: Props) => {
               </Link>
             </>
           )}
+          {roomsEnabled && <RoomNavSlot variant="desktop" />}
 
           {(profile?.role === "admin" || profile?.role === "owner") && (
             <>
@@ -290,6 +300,14 @@ const StudentLayout = ({ children }: Props) => {
                   </Link>
                 );
               })}
+
+              {/* NEW mobile surface (R1-T4): the drawer never carried a cohort
+                  entry, so with the flag down this renders nothing and the
+                  drawer stays exactly as it shipped — backfilling a legacy
+                  `/cohort` link here would itself be a behavioural diff. */}
+              {roomsEnabled && (
+                <RoomNavSlot variant="mobile" onNavigate={() => setSidebarOpen(false)} />
+              )}
 
               {(profile?.role === "admin" || profile?.role === "owner") && (
                 <>
