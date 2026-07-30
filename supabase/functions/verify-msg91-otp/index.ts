@@ -197,6 +197,7 @@ Deno.serve(async (req) => {
     }
     const session = await mintSession(admin, loginEmail);
     if (!session) return json({ error: "session_mint_failed" }, 500);
+    await claimPurchasesServerSide(admin, user.id);
     return json({ ...session, user_id: user.id, is_new_user: false });
   }
 
@@ -206,9 +207,17 @@ Deno.serve(async (req) => {
   // phone may belong to a LEGACY TagMango student we already hold. Those
   // are existing, paying customers; they must log in seamlessly, NOT be
   // bounced to "create an account". legacy_enrolments carries their email
-  // + full_name (TagMango orders had both), so we provision from that and
-  // the users_claim_legacy_enrolments trigger grants their entitlements
-  // automatically on insert.
+  // + full_name (TagMango orders had both), so we provision from that.
+  //
+  // NOTE (2026-07-28): entitlements are NO LONGER granted by the
+  // users_claim_legacy_enrolments trigger on insert — that trigger was neutered
+  // to RETURN NEW in 20260727220000_claim_at_signin.sql, because an exception in
+  // an AFTER trigger aborts the signup transaction (it did, from 2026-06-11) and
+  // because the phone it acted on was merely asserted, not proven. The claim now
+  // happens after a VERIFIED sign-in via public.claim_my_purchases(), which this
+  // branch's `phone_confirm: true` is exactly what makes possible. Today only
+  // the web bundle calls it, so a native client provisions here and claims on
+  // its next build; moving the call server-side into this function is filed.
   let signupEmail: string | null = body.email?.trim() || null;
   let signupName: string | null = body.full_name?.trim() || null;
   let isLegacy = false;
@@ -294,6 +303,7 @@ Deno.serve(async (req) => {
           .catch(() => {});
         const session = await mintSession(admin, signupEmail);
         if (!session) return json({ error: "session_mint_failed" }, 500);
+        await claimPurchasesServerSide(admin, existing.id);
         return json({ ...session, user_id: existing.id, is_new_user: false, is_legacy: isLegacy });
       }
     } else if (await findUserByEmail(admin, signupEmail)) {
@@ -318,6 +328,7 @@ Deno.serve(async (req) => {
 
   const session = await mintSession(admin, signupEmail);
   if (!session) return json({ error: "session_mint_failed" }, 500);
+  await claimPurchasesServerSide(admin, created.user.id);
   return json({ ...session, user_id: created.user.id, is_new_user: true, is_legacy: isLegacy });
 });
 
@@ -363,6 +374,83 @@ async function ensureSyntheticEmail(
     return null;
   }
   return email;
+}
+
+/**
+ * SC-4 — attach this student's already-in-the-system purchases, server-side.
+ *
+ * WHY THIS LIVES HERE AND NOT ONLY IN THE CLIENT
+ *   The web bundle calls claim_my_purchases() from AuthContext, but iOS build 16
+ *   and Android 604/3.2.1 are already in users' hands and will not call anything
+ *   new until they take a store build — days, across Apple review and a staged
+ *   Play rollout. This is the recorded 2026-06-14 lesson: Capacitor clients lag,
+ *   so what matters must also work for the OLD client's exact call. This point
+ *   is the right one: MSG91 has just verified the phone (phoneBinding guards
+ *   replay), so ownership is proven for every client, old or new.
+ *
+ * ABSOLUTE RULE: THIS MAY NEVER AFFECT THE LOGIN.
+ *   Every failure mode is swallowed — a missing function, a revoked grant, a
+ *   timeout, a network blip. The claim is idempotent and runs on every sign-in,
+ *   so anything missed here is simply picked up next time. A student must never
+ *   be locked out because a purchase could not be attached.
+ */
+async function claimPurchasesServerSide(
+  // Typed with explicit generics rather than the bare
+  // `ReturnType<typeof createClient>` the older helpers here use: that bare form
+  // resolves to SupabaseClient<unknown, never, GenericSchema>, which does not
+  // accept the client actually constructed at :160
+  // (SupabaseClient<any, "public", any>) — the source of this file's
+  // pre-existing `deno check` errors. Matching the real shape means this change
+  // adds none of its own.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: ReturnType<typeof createClient<any, "public", any>>,
+  userId: string,
+): Promise<void> {
+  try {
+    // BOUNDED, because nothing else bounds it. Measured on prod 2026-07-28:
+    // anon carries statement_timeout=3s and authenticated 8s, but `service_role`
+    // has rolconfig NULL — no timeout at all. So on THIS path there is no
+    // database-side limit, and the `WHEN query_canceled` arm in the function is
+    // effectively dead code here. Awaiting something unbounded on the sole OTP
+    // login path is the one way this could break login, which the rest of this
+    // helper is written to prevent.
+    //
+    // Be honest about what this bounds: it releases the LOGIN after 4s, it does
+    // not cancel the database statement, which keeps running to completion or
+    // error. That is acceptable — the claim is a single transaction, so it
+    // either commits or does not, and it is idempotent either way. The real fix
+    // for the cost is the status-blind index added in the same migration; this
+    // is the safety net, not the plan.
+    const { data, error } = await admin
+      .rpc("claim_purchases_for_user", { p_user_id: userId })
+      .abortSignal(AbortSignal.timeout(4000));
+    if (error) {
+      console.error("claim_purchases_for_user failed", userId, error.message);
+    } else {
+      // OBSERVABILITY, and it only exists here for native. The web client
+      // reports `blocked` to Sentry, but already-shipped iOS/Android builds run
+      // no client claim at all — so without this line the entire population this
+      // change exists for would drain the backlog with no signal whatsoever.
+      // Logged unconditionally at info: `claimed` is how we watch the rollout
+      // land, `blocked` is how we see purchases deliberately withheld from
+      // someone carrying a refunded or lapsed enrolment.
+      const r = (data ?? {}) as { claimed?: number; blocked?: number; eligible?: boolean };
+      console.log(
+        "claim_purchases_for_user",
+        JSON.stringify({
+          user_id: userId,
+          claimed: r.claimed ?? 0,
+          blocked: r.blocked ?? 0,
+          eligible: r.eligible ?? false,
+        }),
+      );
+    }
+  } catch (e) {
+    // Includes the abort. Swallowed like everything else: the claim runs again
+    // on the next sign-in, and a student must never be locked out because a
+    // purchase could not be attached.
+    console.error("claim_purchases_for_user threw", userId, String(e));
+  }
 }
 
 async function mintSession(
