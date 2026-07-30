@@ -347,22 +347,32 @@
 --
 --    THE THREE CLASSES IN THIS FILE, all executed in §7A. This is THIS FILE's
 --    inventory, not R0's: the push also carries a FOURTH live-table DDL site,
---    in 20260729100200 §0, which is neither in this file nor in §7A. An earlier
---    revision of this sentence also called it "the one unbounded lock WAIT left
---    in the phase". That was TRUE WHEN IT WAS WRITTEN and is now FALSE: that
---    site carries a LOCAL 1s `lock_timeout` and a degrading handler on this
---    file's own §7A pattern, so its wait is bounded like every site here. It is
---    still described under "THE WINDOW GOES FROM…" below and must not be dropped
---    from either list again — a bounded site is still a site.
---    WHAT REPLACED IT AS THE PHASE'S UNBOUNDED WAIT is NOT nothing, and the
---    correction would be worthless if it stopped at the good news: R0's
---    remaining unbounded lock waits are 20260729100100's own `CREATE TABLE …
---    REFERENCES` statements — see the `cohort_weeks` and `live_sessions` bullets
---    of THE RESIDUAL below, which are the push's FIRST acquisition on those two
---    tables and take it with the session default in force. They are a different
+--    in 20260729100200 §0, which is neither in this file nor in §7A. It is now
+--    GUARDED — a LOCAL 1s `lock_timeout` and a degrading handler on this file's
+--    own §7A pattern — so its wait is bounded like every site here. It is still
+--    described under "THE WINDOW GOES FROM…" below and must not be dropped from
+--    either list again: a bounded site is still a site.
+--    TWO SUPERSEDED REVISIONS OF THIS SENTENCE, both kept because the second one
+--    is the subtler error:
+--      · Revision 1 called that site "the one unbounded lock WAIT left in the
+--        phase". FALSE — it is guarded.
+--      · Revision 2 conceded only that, and said the claim "was TRUE WHEN IT WAS
+--        WRITTEN". Also false. It was never true: 20260729100100's own
+--        `CREATE TABLE … REFERENCES` statements were unbounded first acquisitions
+--        the whole time, and they are EARLIER in the push.
+--    WHERE THE PHASE'S UNBOUNDED WAITS ACTUALLY ARE, because the correction would
+--    be worthless if it stopped at the good news: all of them are in
+--    20260729100100, and there are FIVE, not two — `offerings`, `cohort_batches`
+--    and `users` from its §1 `CREATE TABLE cohort_announcements`, `cohort_weeks`
+--    from its §2, `live_sessions` from its §4. See THE RESIDUAL below, which now
+--    files all five under that file. Each is the PUSH'S FIRST acquisition on its
+--    parent and takes it with the session default in force. They are a different
 --    problem from this one and are NOT fixable by the §7A degrade pattern (the
 --    object they would degrade is a hard dependency of ~21 policies and of
 --    20260729100200's RPCs); 20260729100100 owns the analysis and records it.
+--    An earlier revision of this paragraph named only `cohort_weeks` and
+--    `live_sessions`, having cleared the other three on the cross-file lock
+--    inheritance that THE WINDOW GOES FROM… below now disproves.
 --      · `ALTER TABLE public.cohort_batches ADD CONSTRAINT
 --        cohort_batches_id_offering_key UNIQUE (id, offering_id)` — ACCESS
 --        EXCLUSIVE on cohort_batches (measured; plus a SHARE while it builds the
@@ -441,21 +451,56 @@
 --    is not allowed to do (it has to stay ONE reversible unit, and `db push`
 --    owns the transaction). What §7A shortens is the HOLD WINDOW, and only that.
 --
---    THE WINDOW GOES FROM "this entire file" TO "§7A's six blocks, plus whatever
---    the same push runs after this file" — because this file's own rule that an
---    abort here takes sibling migrations down with it means the push is one
---    transaction across siblings, so COMMIT is the END OF THE PUSH, not the end
---    of this file. For R0 the siblings after us are 20260729100100 and
---    20260729100200. State what they actually do rather than waving at it:
+--    THE WINDOW GOES FROM "this entire file" TO "§7A's six blocks" — full stop,
+--    and the reasoning that used to extend it across the siblings was WRONG. What
+--    stood here, kept because it is the premise five other sites in this file were
+--    built on:
+--      "THE WINDOW GOES FROM 'this entire file' TO '§7A's six blocks, plus
+--       whatever the same push runs after this file' — because this file's own
+--       rule that an abort here takes sibling migrations down with it means the
+--       push is one transaction across siblings, so COMMIT is the END OF THE PUSH,
+--       not the end of this file."
+--    BOTH HALVES FAIL. The inference fails first: an abort in file N does NOT take
+--    siblings down with it — files 1..N-1 stay APPLIED AND STAMPED, which is
+--    exactly why this file's own contract note 11(b) deletes ONE version row
+--    rather than three. And the conclusion is false on its own terms:
+--    `supabase db push` runs ONE IMPLICIT TRANSACTION PER FILE. Inspected on the
+--    shipped CLI (`@supabase/cli-darwin-arm64` 2.110.0 as installed on this
+--    machine): `pkg/migration.ApplyMigrations` loops the pending files and, per
+--    file, issues `RESET ALL` and then `(*MigrationFile).ExecBatch`, which sends
+--    THAT file's statements plus THAT file's
+--    `INSERT … supabase_migrations.schema_migrations` as a single `pgconn.Batch`
+--    — implicitly transactional per batch, nothing wrapping the loop.
+--    MEASURED, 2026-07-30, PGlite 0.5.4 (PostgreSQL 18.3, WASM, this machine),
+--    each file's statements in its OWN transaction with a COMMIT between files and
+--    `pg_locks` read at every boundary, modes at or above ROW EXCLUSIVE:
+--      §1 CREATE TABLE … REFERENCES cohort_batches → ShareRowExclusiveLock
+--      §7A block 1 ALTER … ADD UNIQUE              → + AccessExclusiveLock, ShareLock
+--      AFTER THIS FILE'S COMMIT — cohort_batches, users, offerings → ALL (none)
+--      at 20260729100100's transaction start — those three plus cohort_weeks and
+--        live_sessions                             → ALL (none)
+--      at 20260729100200's transaction start — live_sessions, cohort_batches → (none)
+--    SO: EVERY lock this file takes is released at THIS FILE's COMMIT. The
+--    dashboard and checkout exposure ends with this file, not with the push, and
+--    the two siblings each impose their OWN window on their OWN tables. That is
+--    better news than this note used to give — and it does not shrink the
+--    maintenance window, because the siblings' windows are consecutive and
+--    20260729100100's are UNBOUNDED (see THE RESIDUAL). Size the window from the
+--    whole push still; just stop attributing the siblings' exposure to §7A's
+--    locks. What the siblings actually do:
 --      · 20260729100100 creates seven content tables, four of which carry
 --        `REFERENCES public.cohort_batches(id)`. Each such CREATE TABLE takes
---        SHARE ROW EXCLUSIVE on cohort_batches. That is NOT a further
---        escalation — §7A block 1 already holds ACCESS EXCLUSIVE on that table,
---        which is strictly stronger, so those references are granted instantly
---        and add no new class of blocking. But cohort_batches DOES stay under
---        §7A's ACCESS EXCLUSIVE for the length of 100100 and 100200, and that is
---        real dashboard exposure. Do not read "moved to the foot" as "over in
---        milliseconds".
+--        SHARE ROW EXCLUSIVE on cohort_batches — in ITS OWN transaction, as a
+--        FIRST acquisition, with the session `lock_timeout` of 0. An earlier
+--        revision said this was "NOT a further escalation — §7A block 1 already
+--        holds ACCESS EXCLUSIVE on that table, which is strictly stronger, so
+--        those references are granted instantly", and that "cohort_batches DOES
+--        stay under §7A's ACCESS EXCLUSIVE for the length of 100100 and 100200".
+--        Both are false: §7A's ACCESS EXCLUSIVE is gone by then, so nothing grants
+--        those requests instantly and each of them can WAIT without a ceiling.
+--        The dashboard's READ exposure really does end at this file's COMMIT; what
+--        replaces it in 100100 is an unbounded WRITE wait on the same table.
+--        20260729100100's header, APPLY-TIME LOCKS class (3), owns it.
 --      · 20260729100200 IS NOT FUNCTIONS AND GRANTS ONLY. An earlier revision of
 --        this note said "creates functions and grants only. It touches no
 --        table"; that is false, and it is the fourth live-table DDL site named
@@ -464,8 +509,9 @@
 --              ON public.live_sessions (week_id, scheduled_at)
 --              WHERE week_id IS NOT NULL;
 --        Non-CONCURRENT, so it takes SHARE on live_sessions — readers pass,
---        every WRITE blocks — plus a real index build, and like everything else
---        here the lock is held to COMMIT.
+--        every WRITE blocks — plus a real index build, held to that FILE's COMMIT
+--        (which, 20260729100200 being last, is also the end of the push, by
+--        arithmetic and not by mechanism).
 --        IT IS NOW GUARDED, AND THIS PARAGRAPH USED TO SAY IT WAS NOT. What
 --        stood here, verbatim, because a corrected note is only useful if the
 --        superseded claim is still readable:
@@ -494,133 +540,175 @@
 --          20260729100200_cohort_room_rpcs.sql      =>  2   (§0, this fix)
 --          20260729100100_cohort_room_content.sql   =>  0   (deliberate)
 --        The 0 for 20260729100100 is deliberate and is argued in that file's
---        header, not an oversight — see the `cohort_weeks` / `live_sessions`
---        bullets of THE RESIDUAL below for what it does and does not cost.
+--        header, not an oversight — see THE RESIDUAL below for what it does and
+--        does not cost. Note that "deliberate" there means FILED, not closed: it
+--        is where all five of the phase's unbounded waits live.
 --        WHAT THE FIX CHANGES AND WHAT IT DOES NOT. It bounds the WAIT and makes
 --        a timeout degrade (index ABSENT ⇒ the envelope's weeks→sessions join
 --        seq-scans; a PERFORMANCE loss, never a correctness or access one, and a
 --        second push will not converge it — note 11 recovery applies there too).
 --        It does NOT shorten the HOLD: once granted, the SHARE is held to the end
---        of the push exactly as before. And it does NOT change what this file
---        holds while that statement runs — §7A's ACCESS EXCLUSIVE on
---        `cohort_batches` and its SHARE ROW EXCLUSIVE on `enrolments` and
---        `cohort_applications` are still held across it.
---        ONE MORE THING THE FIX MADE PRECISE, worth carrying here because it
---        shortens the exposure this note has been sizing: on a FIRST APPLY that
---        SHARE cannot wait at all. 20260729100100 §4's `CREATE TABLE
---        cohort_recording_progress (… REFERENCES public.live_sessions(id))` has
---        already taken SHARE ROW EXCLUSIVE on `live_sessions` in this same
---        transaction, and SHARE ROW EXCLUSIVE is strictly stronger than SHARE, so
---        the request is granted against a lock we already hold. The wait is real
---        only where 20260729100100 §4 was an `IF NOT EXISTS` no-op — a shadow or
---        a re-apply — and prod is a first apply. Inspection of measured modes
---        plus the same-transaction grant rule, not a measured wait.
+--        of 20260729100200's transaction exactly as before.
+--        WHAT THIS FILE HOLDS WHILE THAT STATEMENT RUNS: NOTHING. Two superseded
+--        claims, both from the cross-file-transaction premise disproved above, and
+--        both kept because between them they inverted the triage:
+--          – "it does NOT change what this file holds while that statement runs —
+--             §7A's ACCESS EXCLUSIVE on `cohort_batches` and its SHARE ROW
+--             EXCLUSIVE on `enrolments` and `cohort_applications` are still held
+--             across it". FALSE. Every one of those was released at THIS FILE's
+--             COMMIT. A park in 20260729100200 §0 would have parked ALONE.
+--          – "ONE MORE THING THE FIX MADE PRECISE … on a FIRST APPLY that SHARE
+--             cannot wait at all. 20260729100100 §4's `CREATE TABLE
+--             cohort_recording_progress (… REFERENCES public.live_sessions(id))`
+--             has already taken SHARE ROW EXCLUSIVE on `live_sessions` in this
+--             same transaction … and prod is a first apply." ALSO FALSE, and this
+--             is the one that mattered: 20260729100100's SHARE ROW EXCLUSIVE is
+--             released at ITS commit, so §0's SHARE is a FIRST acquisition in
+--             20260729100200's own transaction on EVERY path. Measured — at that
+--             file's transaction start `live_sessions` holds no lock at all, and
+--             after §0 it holds ShareLock and nothing else.
+--        SO THE GUARD IS THE PROD PATH, not a shadow-only safety net, and the risk
+--        the fix removes is larger than the last revision concluded.
 --        SO THE GUIDANCE CHANGES. It used to read "Until it is fixed,
 --        `live_sessions` has to be quiet at push time too, alongside the money
---        tables". It is fixed, so: the push NO LONGER PARKS on `live_sessions`.
---        A busy `live_sessions` can still cost you the index — 1s of wait, then a
---        WARNING and a by-hand re-run — so a quiet minute is still worth having,
---        but it is no longer an outage-length risk and must not be sized as one.
---    THE RESIDUAL, in full — meaning every lock this PUSH still holds on a
---    PRE-EXISTING live table when it commits, not only the ones §7A takes.
+--        tables". It is fixed, so: the push NO LONGER PARKS on `live_sessions` in
+--        20260729100200 — though it still can in 20260729100100 §4, which is
+--        unguarded and earlier. A busy `live_sessions` costs you the index at §0 —
+--        1s of wait, then a WARNING and a by-hand re-run, and on prod that is a
+--        realistic outcome rather than a corner — so a quiet minute is still worth
+--        having. §0 itself is no longer an outage-length risk and must not be
+--        sized as one; 20260729100100 §4 on the same table still is.
+--    THE RESIDUAL, in full — meaning every lock this PUSH holds on a PRE-EXISTING
+--    live table, not only the ones §7A takes.
+--    ⚠️ THIS LIST WAS RE-SCOPED PER FILE. Every bullet used to end "to the end of
+--    the push", on the cross-file-transaction premise disproved under THE WINDOW
+--    GOES FROM… above. `db push` commits PER FILE, so a lock runs to the end of
+--    the FILE that took it, and the push's exposure is three consecutive windows
+--    rather than one cumulative one. Nothing here is released EARLIER within a
+--    file — that part of the old model was right — so no bullet gets shorter than
+--    its own file.
 --    "In full" is a claim, so it is enumerated per TABLE and per VERB, and each
---    line names the EARLIEST statement in the push that imposes it (an earlier
---    revision filed a table under the wrong sibling and under the wrong verb;
---    both are the failure this list exists to prevent):
---      · cohort_batches READ blocked from §7A block 1 to the end of the push.
+--    line names the EARLIEST statement in the push that imposes it and THE FILE
+--    THE HOLD ENDS WITH (an earlier revision filed a table under the wrong sibling
+--    and under the wrong verb; both are the failure this list exists to prevent):
+--      · cohort_batches READ blocked from §7A block 1 to THIS FILE's COMMIT.
 --        ACCESS EXCLUSIVE. THIS IS THE DASHBOARD, it is the only read block in
 --        the whole push, and it is the exposure §7A actually shrinks — from "the
---        whole apply" to "the tail of it".
---      · cohort_batches WRITE blocked from §1 to the end of the push, and NOT
---        by §7A: §1's and §2's CREATE TABLE, and 20260729100100's four
---        batch-referencing content tables, each take SHARE ROW EXCLUSIVE on it.
---        Admin roster edits queue for the whole apply either way. Unchanged by
---        this round and stated so nobody assumes otherwise.
---      · enrolments WRITE blocked from §7A block 4 to the end of the push —
+--        whole apply" to "the tail of this file". The old bullet said "to the end
+--        of the push", which over-sized it by both siblings.
+--      · cohort_batches WRITE blocked from §1 to THIS FILE's COMMIT, and NOT by
+--        §7A: §1's and §2's CREATE TABLE each take SHARE ROW EXCLUSIVE on it.
+--        Admin roster edits queue for the length of this file either way.
+--        THEN AGAIN, SEPARATELY, IN 20260729100100: its four batch-referencing
+--        content tables re-acquire SHARE ROW EXCLUSIVE in that file's own
+--        transaction, as a FIRST acquisition with no ceiling. The old bullet ran
+--        the two together as one continuous block "to the end of the push"; they
+--        are two windows with a commit between them, and the second one is where
+--        the unbounded wait is.
+--      · enrolments WRITE blocked from §7A block 4 to THIS FILE's COMMIT —
 --        SHARE ROW EXCLUSIVE, from the CREATE TRIGGER; block 5 takes it again.
---        THIS IS CHECKOUT. Two earlier revisions of this line were wrong in
---        opposite directions and both are worth keeping visible. The first said
---        the block was "ONLY across §7A's own blocks. Checkout is the case this
---        closes completely" — wrong, because OUR lock is held to COMMIT whatever
---        a later file does or does not read. The second said READS AND WRITES,
---        on the invented premise that `DROP TRIGGER IF EXISTS` takes ACCESS
---        EXCLUSIVE on the relation before it looks for the trigger; measured, an
---        IF EXISTS naming an absent trigger takes no relation lock at all, and
---        on a first apply — which prod is — these blocks never reach ACCESS
---        EXCLUSIVE. Reading `enrolments` is unaffected for the whole push;
---        INSERTing one queues from block 4 across blocks 5-6, all of
---        20260729100100 and all of 20260729100200.
+--        THIS IS CHECKOUT. Three earlier revisions of this line were wrong, and
+--        all three are worth keeping visible because they bracket the truth. The
+--        first said the block was "ONLY across §7A's own blocks. Checkout is the
+--        case this closes completely" — wrong, because our lock is held to this
+--        file's COMMIT and §7A is not the last thing in the file. The second said
+--        READS AND WRITES, on the invented premise that `DROP TRIGGER IF EXISTS`
+--        takes ACCESS EXCLUSIVE on the relation before it looks for the trigger;
+--        measured, an IF EXISTS naming an absent trigger takes no relation lock at
+--        all, and on a first apply — which prod is — these blocks never reach
+--        ACCESS EXCLUSIVE. The third said the queue ran "from block 4 across
+--        blocks 5-6, all of 20260729100100 and all of 20260729100200"; it ends at
+--        this file's COMMIT, and neither sibling touches `enrolments` at all, so
+--        checkout really is clear once this file commits.
 --        ON A RE-RUN (a shadow that already carries the triggers, or the note
 --        11(a) hand-recovery) the DROP does find its target and the mode IS
 --        ACCESS EXCLUSIVE — reads included. Do not re-run §7A blocks 3-6 against
 --        a busy prod outside a window.
---      · cohort_applications WRITE blocked from §7A block 6 to the end of the
---        push, by the same mechanism and with the same first-apply/re-run split.
---        It carries the confirmation- and balance-payment stamps, so this is the
---        money path too, not a bystander.
---      · users and offerings WRITE blocked from §1/§2 to the end of the push.
+--      · cohort_applications WRITE blocked from §7A block 6 to THIS FILE's COMMIT,
+--        by the same mechanism and with the same first-apply/re-run split. It
+--        carries the confirmation- and balance-payment stamps, so this is the
+--        money path too, not a bystander. Neither sibling touches it.
+--      · users and offerings WRITE blocked from §1/§2 to THIS FILE's COMMIT.
 --        §1's cohort_room_configs references `offerings`; §2's
---        cohort_room_members references `users` AND `offerings`; and
---        20260729100100's seven tables reference `users` and `offerings` too.
---        Every one of those CREATE TABLEs takes SHARE ROW EXCLUSIVE on the
---        referenced table by exactly the argument made for cohort_batches above,
---        and holds it to COMMIT. SHARE ROW EXCLUSIVE spares readers, so nothing
---        here blanks a screen — but `users` is the identity spine, so signup and
---        profile WRITES queue for essentially the whole apply. An earlier
+--        cohort_room_members references `users` AND `offerings`. Each CREATE TABLE
+--        takes SHARE ROW EXCLUSIVE on the referenced table by exactly the argument
+--        made for cohort_batches above. SHARE ROW EXCLUSIVE spares readers, so
+--        nothing here blanks a screen — but `users` is the identity spine, so
+--        signup and profile WRITES queue for the length of this file. An earlier
 --        version of this list called itself "in full" and omitted this line.
---      · cohort_weeks WRITE blocked from 20260729100100 §2 to the end of the
---        push. `cohort_resources.cohort_week_id` and the `ADD COLUMN … REFERENCES
+--        THEN AGAIN, SEPARATELY, IN 20260729100100: its seven tables reference
+--        `users` and `offerings` too, and in that file's own transaction those are
+--        FIRST acquisitions with no ceiling — the old bullet folded them into this
+--        one and so hid two more unbounded waits.
+--      · cohort_weeks WRITE blocked from 20260729100100 §2 to THAT FILE's COMMIT.
+--        `cohort_resources.cohort_week_id` and the `ADD COLUMN … REFERENCES
 --        public.cohort_weeks(id)` on cohort_room_posts (Δ1's dark channel
 --        columns) each take SHARE ROW EXCLUSIVE on it. NOT a §7A lock and not a
 --        20260729100200 lock — this line was missing entirely.
 --        AND IT IS THE PUSH'S FIRST ACQUISITION ON THAT TABLE, which is the part
 --        this bullet stopped short of: nothing before 20260729100100 §2 locks
 --        `cohort_weeks` at all, so that request is the one that can WAIT, and it
---        waits with the session `lock_timeout` of 0. Together with the
---        `live_sessions` line below, that is where R0's remaining unbounded lock
---        wait lives now that 20260729100200 §0 is bounded. 20260729100100 owns
---        the analysis — including why the §7A degrade pattern is the wrong tool
---        there (a skipped `CREATE TABLE` is not a degradation, it is a broken
---        migration set) — and records it in its own header.
---      · live_sessions WRITE blocked from 20260729100100 §4 to the end of the
---        push — `cohort_recording_progress.live_session_id REFERENCES
+--        waits with the session `lock_timeout` of 0.
+--      · live_sessions WRITE blocked from 20260729100100 §4 to THAT FILE's COMMIT
+--        — `cohort_recording_progress.live_session_id REFERENCES
 --        public.live_sessions(id)`, SHARE ROW EXCLUSIVE, EARLIER in the push
 --        than the bullet used to say, and — like `cohort_weeks` — the push's
---        FIRST acquisition on the table, so it is that statement, not the index,
---        that can wait unbounded. 20260729100200 §0's CREATE INDEX then takes
---        SHARE on the same table: it adds no new verb (writes are already
---        queued), and it can no longer PARK the push. Two corrections, both
---        recorded rather than overwritten:
+--        FIRST acquisition on the table, taken with no ceiling.
+--        SEPARATELY, in 20260729100200's own transaction, §0's guarded CREATE
+--        INDEX takes SHARE on the same table. It adds no new verb (writes were
+--        already queued in the previous window) and it CANNOT park the push,
+--        because it is bounded at 1s and degrades. Three corrections, recorded
+--        rather than overwritten:
 --          – an early version attributed the whole live_sessions block to that
 --            CREATE INDEX and so understated when the window opens;
---          – the version before this one called the CREATE INDEX "the one
---            UNBOUNDED WAIT in R0, so it is where the push can PARK with
---            everything above still held". It was, and it no longer is:
---            20260729100200 §0 now carries a LOCAL 1s `lock_timeout` and a
---            degrading handler. Worse for that sentence, the CREATE INDEX could
---            not have parked a FIRST APPLY even before the fix — §4 above has
---            already taken SHARE ROW EXCLUSIVE on `live_sessions` in the same
---            transaction and that mode is strictly stronger than SHARE, so the
---            index's request is granted against a lock the push already holds.
---            The wait it was guarded for is the shadow/re-apply path, where §4 is
---            an `IF NOT EXISTS` no-op that takes no lock.
+--          – the version after that called the CREATE INDEX "the one UNBOUNDED
+--            WAIT in R0, so it is where the push can PARK with everything above
+--            still held". Wrong on both counts now: it is bounded, and nothing of
+--            ours is still held — this file committed two files earlier.
+--          – the version before this one added that "the CREATE INDEX could not
+--            have parked a FIRST APPLY even before the fix — §4 above has already
+--            taken SHARE ROW EXCLUSIVE on `live_sessions` in the same transaction
+--            … The wait it was guarded for is the shadow/re-apply path". FALSE,
+--            and the most consequential of the three: §4's lock is released at
+--            20260729100100's COMMIT, so §0's SHARE is a first acquisition on
+--            every path, prod included. Measured: at 20260729100200's transaction
+--            start `live_sessions` holds no lock, and after §0 it holds ShareLock
+--            alone.
+--    SO THE UNBOUNDED WAITS ARE FIVE, ALL IN 20260729100100, ALL FIRST
+--    ACQUISITIONS IN ITS OWN TRANSACTION: `offerings`, `cohort_batches` and
+--    `users` (its §1), `cohort_weeks` (§2), `live_sessions` (§4). That file's
+--    header, APPLY-TIME LOCKS class (3), owns the analysis and the filed
+--    bounded-abort decision — including why the §7A degrade pattern is the wrong
+--    tool there (a skipped `CREATE TABLE` is not a degradation, it is a broken
+--    migration set). An earlier revision of this list counted two, having cleared
+--    the other three on cross-file lock inheritance.
 --    SO §7A DOES NOT "CLOSE CHECKOUT COMPLETELY". What it buys the money tables
---    is a shorter HOLD — from "§5 onward, ~780 lines of this file plus both
---    siblings" down to "§7A blocks 4-6 plus both siblings" — and nothing more.
---    The only thing that releases these locks before the end of the push is a
---    COMMIT, which this file is not allowed to issue. Size the maintenance
---    window from the whole push, never from this file.
+--    is a shorter HOLD — from "§5 onward, ~780 lines of this file" down to "§7A
+--    blocks 4-6" — and nothing more. An earlier revision of this sentence added
+--    "plus both siblings" to each figure; that came off the cross-file premise and
+--    is dropped, because neither sibling locks `enrolments` or
+--    `cohort_applications` at all. The only thing that releases these locks
+--    earlier is a COMMIT, which this file is not allowed to issue — but `db push`
+--    issues one FOR us at the end of this file, which is what caps the window.
+--    Size the maintenance window from the whole push all the same: the three files
+--    run back to back, and 20260729100100's own window is the unbounded one.
 --    Push R0 ALONE — queueing it behind or in front of a long unrelated
 --    migration re-opens exactly the hazard §7A closes — and treat the push as a
 --    maintenance window, not a background task.
 --
---    WHY EACH SITE IS STILL GUARDED. Two reasons, unchanged: an unhandled error
---    there aborts the whole `db push` and takes every sibling migration down
---    with it — the exact failure this file's header rules out — and an UNBOUNDED
---    lock WAIT parks our request in front of every subsequent reader of that
---    table, which on `enrolments` means stalling the money path to install a
---    trigger that is downstream of it. So each site takes a short LOCAL
---    `lock_timeout` as well as a handler.
+--    WHY EACH SITE IS STILL GUARDED. Two reasons, unchanged in substance: an
+--    unhandled error there fails the `db push` mid-phase — the exact failure this
+--    file's header rules out — and an UNBOUNDED lock WAIT parks our request in
+--    front of every subsequent reader of that table, which on `enrolments` means
+--    stalling the money path to install a trigger that is downstream of it. So
+--    each site takes a short LOCAL `lock_timeout` as well as a handler.
+--    ONE WORD OF THAT WAS WRONG AND IS CORRECTED HERE: it used to read "aborts the
+--    whole `db push` and takes every sibling migration down with it". `db push`
+--    runs one implicit transaction PER FILE, so an abort here leaves nothing behind
+--    it applied (this is the first file) but WOULD leave the phase half-applied if
+--    it happened in a later one — 20260729100000 stamped, 20260729100100 and
+--    20260729100200 absent. That is worse for triage, not better, so the rule
+--    stands; only the mechanism was misdescribed.
 --
 --    THE COST OF THE SUCCESS PATH, stated because this file used to state it
 --    nowhere. `lock_timeout` bounds each individual lock ACQUISITION, and that
@@ -653,44 +741,74 @@
 --    total, and a wait longer than that degrades to a WARNING plus note 11(a)
 --    rather than holding the money path open. Pick a quiet minute anyway — and
 --    read 1s as a ceiling on OUR WAIT, not on the HOLD: the lock a block takes
---    once it wins is held to the end of the push regardless (THE RESIDUAL,
---    above).
+--    once it wins is held to the end of THIS FILE regardless (THE RESIDUAL,
+--    above; the old wording said "to the end of the push").
 --    What the resulting degradation costs, and how to recover from it, is
 --    note 11.
 --
 -- 11. RECOVERING A DEGRADED DDL BLOCK. "Re-run this migration" is NOT a
---    procedure on this repo's deploy path, so no comment in either R0 file says
+--    procedure on this repo's deploy path, so no comment in any R0 file says
 --    it. Read this before writing another one that does.
+--    SCOPE: ALL THREE R0 FILES. This note used to say "either R0 file" and to
+--    enumerate two, which left a dangling pointer once 20260729100200 §0 gained a
+--    degradable object: both of that block's WARNING strings and its comment send
+--    the operator HERE, and an operator who followed them found a procedure that
+--    named neither their file nor their object. Corrected rather than deleted,
+--    because the two-file wording is quoted elsewhere.
 --
 --    Every shape-(A) DDL guard lets the migration COMPLETE with its ALTER
 --    skipped and a WARNING as the only trace. CLAUDE.md's runbook — and the only
 --    documented deploy path here — is `npx -y supabase@latest db push`, which
 --    stamps the version into `supabase_migrations.schema_migrations` on
 --    completion and never re-applies a stamped file: a second push reports the
---    remote database is up to date and changes nothing. So recovery is manual,
---    and it is one of these two:
+--    remote database is up to date and changes nothing. `db push` stamps PER FILE
+--    (one implicit transaction per file — see THE WINDOW GOES FROM… in note 10),
+--    which is exactly why (b) below deletes ONE version and not three. So
+--    recovery is manual, and it is one of these two:
 --
 --      (a) PER-OBJECT (preferred). Re-execute the DO block that warned, by hand
 --          against the target project (psql, or the Supabase SQL editor),
---          copied verbatim from this file. Every guarded block is safe to run at
---          any time and as often as needed, by one of two mechanisms — the
---          CONSTRAINT blocks re-probe pg_constraint / pg_class first and are a
---          no-op when the object is already there; §7A's four TRIGGER blocks are
---          idempotent by construction instead (`DROP TRIGGER IF EXISTS` then
---          `CREATE TRIGGER`, both inside one transaction, so the trigger is
---          never observably absent to a concurrent writer). Run it when the
---          table is quiet — the lock is the reason it failed the first time.
---      (b) WHOLE-FILE. Only for a file that is idempotent end to end (both R0
---          files are), and never concurrently with another push:
+--          copied verbatim from the file it lives in. Every guarded block in R0 is
+--          safe to run at any time and as often as needed, by one of three
+--          mechanisms:
+--            · THIS FILE's CONSTRAINT blocks re-probe pg_constraint / pg_class
+--              first and are a no-op when the object is already there;
+--            · §7A's four TRIGGER blocks are idempotent by construction instead
+--              (`DROP TRIGGER IF EXISTS` then `CREATE TRIGGER`, both inside one
+--              transaction, so the trigger is never observably absent to a
+--              concurrent writer);
+--            · 20260729100200 §0's INDEX block — the third file's only guarded
+--              object, added 2026-07-30 — probes `to_regclass` for both the table
+--              and the index and is a no-op when the index exists, and its
+--              `CREATE INDEX IF NOT EXISTS` is idempotent on its own besides. It
+--              is an INDEX, so it belongs to neither of the two categories above,
+--              which is why this list now has three. Copy the DO block from
+--              20260729100200 §0 and run it when `live_sessions` is quiet.
+--              (20260729100100 §1's author-FK block is the fourth shape: handler
+--              but no `lock_timeout` — see that file's §1 comment. It re-probes
+--              `confdeltype` and is likewise a no-op once the FK is right.)
+--          Run any of them when the table is quiet — the lock is the reason it
+--          failed the first time.
+--      (b) WHOLE-FILE. Only for a file that is idempotent end to end (all THREE
+--          R0 files are: 20260729100200 is CREATE OR REPLACE FUNCTION, GRANT and
+--          REVOKE apart from the §0 block, which is `IF NOT EXISTS` behind a
+--          probe), and never concurrently with another push:
 --            DELETE FROM supabase_migrations.schema_migrations
 --             WHERE version = '20260729100000';   -- or '20260729100100'
---          then `db push` again.
+--                                                 -- or '20260729100200'
+--          then `db push` again. Delete only the version you actually need to
+--          re-run; the per-file stamp is what makes that safe. An earlier revision
+--          of this clause read "both R0 files are" and listed two versions.
+--          ⚠️ RE-RUNNING 20260729100100 OR 20260729100000 THIS WAY RE-TAKES THEIR
+--          LIVE-TABLE LOCKS — including 20260729100100's five unbounded first
+--          acquisitions. Prefer (a).
 --
 --    DETECTION, because a WARNING is a scrolling NOTICE-level line that CI
 --    discards: do not rely on reading the push output. After any push that
 --    included these files, run the VERIFY query in section 8 at the foot of this
---    file. It returns one row per guarded object with a present/missing verdict,
---    and THAT is what belongs in the deploy checklist.
+--    file — plus its `live_sessions_week_idx` one-liner, which covers the third
+--    file. Between them they return one row per guarded object with a
+--    present/missing verdict, and THAT is what belongs in the deploy checklist.
 --
 -- Sources: design/briefs/cohort-r0.md R-1 · design/cohorts/docs/05-ACCESS-SECURITY.md
 -- (MEMBER-1 / SEC-MEMBER-1 / SEC-ENT-1 / SEC-ENT-2 / LOBBY-1) ·
@@ -833,7 +951,10 @@ END $$;
 --   taken ACCESS EXCLUSIVE on the altered table since PG 9.5, and — like every
 --   lock in a transaction — it holds what it does take to COMMIT. SHARE ROW
 --   EXCLUSIVE spares readers but blocks every WRITE to cohort_batches (admin
---   roster and batch edits) for the rest of the push.
+--   roster and batch edits) for the rest of THIS FILE. (Not "the rest of the
+--   push": `db push` commits per file — note 10, THE WINDOW GOES FROM….
+--   20260729100100 then re-takes the same mode on the same table in its own
+--   transaction, which is a second window, not a continuation of this one.)
 --   BE PRECISE ABOUT THE WIN: the CREATE TABLE above already holds that same
 --   SHARE ROW EXCLUSIVE via `batch_id … REFERENCES public.cohort_batches(id)`,
 --   so deferring this block does not give cohort_batches writes back — what it
@@ -2030,29 +2151,41 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 --     measured lock classes and the cost of the success path.
 --
 --     WHAT IS STILL EXPOSED, so nobody reads "moved to the foot" as "instant":
---     the push commits at the END OF THE PUSH, not at the end of this file. So
---     EVERY lock taken below is held across 20260729100100 and 20260729100200 as
---     well — block 1's ACCESS EXCLUSIVE on cohort_batches (the dashboard) AND
---     blocks 4/5's on `enrolments` and block 6's on `cohort_applications` (the
---     money path's writes). An earlier revision of this paragraph said the
---     checkout exposure "really does end with this section" on the grounds that
---     neither sibling touches those two tables. That reasoning is wrong: the
---     lock is ours and it is held to COMMIT whatever the siblings do or do not
---     read. Checkout is queued for the rest of the push, not for the rest of
---     this section. cohort_batches WRITES were already blocked from §1 by the
---     plain FK on cohort_room_configs.batch_id and this section does not change
---     that; `users` and `offerings` writes likewise, from §1/§2, and
---     `cohort_weeks`/`live_sessions` writes from 20260729100100 §2/§4. The full
---     residual is contract note 10. An earlier revision of this sentence closed
---     it with "including 20260729100200's own unguarded CREATE INDEX on
---     `live_sessions`, the one unbounded lock WAIT left in R0"; that site is now
---     guarded on THIS SECTION's pattern (probe, LOCAL 1s `lock_timeout`, DDL,
---     restore, degrade to WARNING), so neither half of that clause holds — it is
---     not unguarded, and it was not the phase's only unbounded wait even then.
---     The unbounded first acquisitions that remain are 20260729100100 §2's and
---     §4's `CREATE TABLE … REFERENCES` on `cohort_weeks` and `live_sessions`;
---     note 10's residual list names them. Push R0 alone, in a quiet window, and
---     size that window from the whole push.
+--     every lock taken below is held to THIS FILE's COMMIT — block 1's ACCESS
+--     EXCLUSIVE on cohort_batches (the dashboard) AND blocks 4/5's on `enrolments`
+--     and block 6's on `cohort_applications` (the money path's writes). §7A is not
+--     the last thing in the file (the section-8 VERIFY query, the A6 block and the
+--     DOWN block follow, all comments), but it is the last thing that EXECUTES, so
+--     "to this file's COMMIT" is as short as a hold here can be made without
+--     issuing a COMMIT this file is not allowed to issue.
+--     THREE SUPERSEDED REVISIONS OF THIS PARAGRAPH, kept in order because the
+--     middle one is what five other sites were built on:
+--       – "the checkout exposure really does end with this section", on the grounds
+--         that neither sibling touches `enrolments` or `cohort_applications`. Wrong
+--         reasoning: the lock is ours and runs to COMMIT whatever a sibling reads.
+--       – "the push commits at the END OF THE PUSH, not at the end of this file. So
+--         EVERY lock taken below is held across 20260729100100 and 20260729100200
+--         as well … Checkout is queued for the rest of the push, not for the rest
+--         of this section." Wrong CONCLUSION: `db push` runs one implicit
+--         transaction PER FILE (note 10, THE WINDOW GOES FROM…, with the CLI
+--         inspection and the measured per-file lock lifetimes), so COMMIT is the
+--         end of THIS FILE. Ironically the first revision's verdict was closer to
+--         right than its reasoning deserved.
+--       – "…including 20260729100200's own unguarded CREATE INDEX on
+--         `live_sessions`, the one unbounded lock WAIT left in R0". Neither half
+--         holds: that site is now guarded on THIS SECTION's pattern (probe, LOCAL
+--         1s `lock_timeout`, DDL, restore, degrade to WARNING), and it was not the
+--         phase's only unbounded wait even then.
+--     cohort_batches WRITES were already blocked from §1 by the plain FK on
+--     cohort_room_configs.batch_id and this section does not change that; `users`
+--     and `offerings` writes likewise, from §1/§2 — all of them to this file's
+--     COMMIT. What follows in 20260729100100 is a SEPARATE window on its own
+--     transaction, and that is where the phase's FIVE unbounded first acquisitions
+--     are: `offerings`, `cohort_batches`, `users` (its §1), `cohort_weeks` (§2),
+--     `live_sessions` (§4). Note 10's residual list enumerates them per table and
+--     per verb; an earlier revision of this sentence counted two. Push R0 alone, in
+--     a quiet window, and size that window from the whole push — the three files
+--     run back to back, so consecutive windows still add up in wall-clock terms.
 --
 --     ORDER IS LOAD-BEARING IN EXACTLY ONE PLACE: block 1's UNIQUE (id,
 --     offering_id) is what block 2's composite FK references, so 1 precedes 2.
@@ -2077,7 +2210,8 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 --     not conflict with SELECT, so reads pass) plus up to 1s of dashboard READS
 --     at block 1, and the whole section for 6s. At the old 4s those figures were
 --     12s and 24s, and no comment in the file said so.
---     It bounds the WAIT only; the HOLD runs to the end of the push either way.
+--     It bounds the WAIT only; the HOLD runs to the end of THIS FILE either way
+--     (the old wording said "the end of the push" — note 10, THE WINDOW GOES FROM…).
 -- ---------------------------------------------------------------------------
 
 -- 1 of 6 — the prerequisite UNIQUE on cohort_batches. Section 0 states what this
@@ -2185,7 +2319,9 @@ END $$;
 -- 4 of 6 — attachment 2 of 4, and the first of two on `enrolments` itself, the
 -- money table. On a first apply the DROP IF EXISTS is a no-op that takes no
 -- relation lock and the CREATE takes SHARE ROW EXCLUSIVE: checkout WRITES queue
--- to the end of the push, reads pass. On a RE-RUN the DROP finds its target and
+-- to the end of THIS FILE (not of the push — `db push` commits per file, note 10),
+-- and no sibling migration touches `enrolments`, so checkout is clear the moment
+-- this file commits. Reads pass throughout. On a RE-RUN the DROP finds its target and
 -- takes ACCESS EXCLUSIVE, which stalls readers too — so recover this block by
 -- hand only when the table is quiet. §5 preamble; modes in A6 item (8).
 DO $$
@@ -2658,6 +2794,59 @@ END $$;
 --     on the target outside these migrations. THE THIRD CHECK STILL HAS TO RUN
 --     ON THE TARGET AFTER THE PUSH — this item narrows what it is checking FOR,
 --     it does not replace it.
+--
+-- (10) LOCK LIFETIME ACROSS A FILE BOUNDARY — MEASURED 2026-07-30, PGlite 0.5.4
+--     (PostgreSQL 18.3, WASM, this machine). This is the measurement contract
+--     note 10 was missing, and its absence is why five sites in this file asserted
+--     that §7A's locks are held across 20260729100100 and 20260729100200.
+--     Item (8) measured MODES with each statement alone in a transaction; this
+--     item measures LIFETIME, by modelling `db push`'s actual shape — each file's
+--     statements inside its OWN transaction, `COMMIT` between files, `pg_locks`
+--     read at every boundary. Stand-in parents (users, offerings, cohort_batches,
+--     cohort_weeks, live_sessions) created and committed first. Modes at or above
+--     ROW EXCLUSIVE only:
+--
+--       FILE 20260729100000, its own txn
+--         §1  CREATE TABLE … REFERENCES cohort_batches → ShareRowExclusiveLock
+--         §7A block 1 ALTER … ADD UNIQUE               → AccessExclusiveLock,
+--                                                        ShareLock,
+--                                                        ShareRowExclusiveLock
+--         AFTER COMMIT — cohort_batches / users / offerings → (none) / (none) / (none)
+--       FILE 20260729100100, its own txn
+--         at file start — cohort_batches, users, offerings, cohort_weeks,
+--                         live_sessions                → ALL (none)
+--         §1/§2/§4 CREATE TABLE … REFERENCES           → ShareRowExclusiveLock on
+--                                                        each parent, FIRST
+--                                                        acquisition each time
+--         AFTER COMMIT — live_sessions / cohort_batches → (none) / (none)
+--       FILE 20260729100200, its own txn
+--         at file start — live_sessions, cohort_batches → (none) / (none)
+--         after its §0 guarded CREATE INDEX             → ShareLock ALONE
+--         AFTER COMMIT — live_sessions                  → (none)
+--       CONTROL — all three files' statements in ONE transaction, which is what
+--         the superseded notes assumed: `live_sessions` carries
+--         ShareRowExclusiveLock when §0 runs and ends ShareLock +
+--         ShareRowExclusiveLock, and `cohort_batches` is still at
+--         AccessExclusiveLock. Every "the wait here is ZERO" and "still held
+--         across it" claim in the phase was read off THIS row, and it is the wrong
+--         experiment.
+--
+--     WHY THE PER-FILE SHAPE IS THE RIGHT MODEL — inspection of the shipped CLI,
+--     not of memory. `@supabase/cli-darwin-arm64` 2.110.0, as installed on this
+--     machine, carries `pkg/migration.ApplyMigrations`,
+--     `pkg/migration.(*MigrationFile).ExecBatch`,
+--     `(*MigrationFile).insertVersionSQL` and the literal `RESET ALL`, and
+--     `ApplyMigrations` has no deferred-rollback closure (contrast
+--     `internal/db/push.Run.deferwrap1`, which the binary does carry) — i.e. no
+--     `defer tx.Rollback`, i.e. no explicit transaction around the loop. Upstream
+--     `pkg/migration/apply.go` + `file.go` are the authority; check them before
+--     rewriting this. Corroborated in-repo by contract note 11(b), which recovers
+--     a SINGLE version row.
+--     WHAT THIS IS NOT: still no WAIT and no DURATION. A single-connection PGlite
+--     has no competing lock holder, and this environment has no SHADOW_DB_URL /
+--     ROOM_QA_PROJECT_REF / SUPABASE_PAT, so nothing was applied to a real
+--     project. Item (7)'s warning applies here too: do not let a future revision
+--     "confirm" a hold DURATION on PGlite.
 -- ============================================================================
 
 

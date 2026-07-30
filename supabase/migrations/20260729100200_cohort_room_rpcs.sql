@@ -276,8 +276,12 @@ BEGIN
         SQLERRM, SQLSTATE;
     END;
   END IF;
-EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
-            OR crash_shutdown OR cannot_connect_now OR others THEN
+EXCEPTION WHEN lock_not_available OR query_canceled OR assert_failure
+            OR admin_shutdown OR crash_shutdown OR cannot_connect_now
+            OR others THEN
+  -- The outer handler covers the two `to_regclass` probes, which take no relation
+  -- lock, so 55P03 is not expected here — it is named for symmetry with the inner
+  -- list rather than because a catalogue lookup can time out on a lock.
   RAISE WARNING 'cohort_room: live_sessions_week_idx probe failed (%) [%] — index not created, so the envelope''s weeks→sessions join seq-scans; re-run this DO block by hand (20260729100000 contract note 11)', SQLERRM, SQLSTATE;
 END $$;
 
