@@ -54,7 +54,7 @@ const roomHref = (room: CohortRoomSummary) =>
   room.room_slug ? `/room/${room.room_slug}` : `/cohort/${room.offering_id}`;
 
 interface Props {
-  /** Which nav renders it — picks the sibling styling and the LayoutGroup id. */
+  /** Which nav renders it — picks up that nav's sibling styling. */
   variant: RoomNavSlotVariant;
   /** Mobile drawer: close the drawer on tap, exactly as its siblings do. */
   onNavigate?: () => void;
@@ -109,9 +109,10 @@ const RoomNavSlot = ({ variant, onNavigate }: Props) => {
           // tapping the slot mounts this bar in the very subtree AnimatePresence
           // is exiting, the shared-layout animation never settles, `onExitComplete`
           // never fires and the drawer stays mounted with `pointer-events: auto`
-          // over the page (reproduced in StudentLayout.nav.test.tsx — the drawer
-          // was still open 600ms after the tap). A 3px bar is not worth a stuck
-          // overlay, and the sibling items keep their glide untouched.
+          // over the page (reproduced in StudentLayout.nav.test.tsx: the drawer
+          // was still open 3 SECONDS after the tap, where the sibling nav items
+          // close in ~600ms). A 3px bar is not worth a stuck overlay, and the
+          // sibling items keep their glide untouched.
           <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-cream" />
         )}
         <Sparkles
