@@ -6,6 +6,7 @@ import { ProgressRing } from "@/components/progress/ProgressRing";
 import { SkeletonLine } from "@/components/patterns";
 import { TimeStateBadge } from "@/components/live/TimeStateBadge";
 import { useAuth } from "@/contexts/AuthContext";
+import { moduleEnabled } from "@/lib/room";
 import { cn } from "@/lib/utils";
 import {
   useRoomOutlet,
@@ -13,7 +14,7 @@ import {
   type RoomSession,
   type RoomWeekRow,
 } from "@/hooks/useCohortRooms";
-import AssignmentModule from "./AssignmentModule";
+import { useRoomClock } from "./RoomClockProvider";
 import ThisWeekCard, {
   istDaysUntil,
   parseMs,
@@ -49,14 +50,26 @@ import WeekRail from "./WeekRail";
  * footer ring below reaches parity with the CORRECT number, not with the old
  * page's arithmetic.
  *
- * ── One clock ─────────────────────────────────────────────────────────────
- * A single minute interval for the whole module drives every relative-time
- * read on the page. The second-by-second doors-open countdown is R2-T2's, and
- * deliberately not duplicated here.
+ * ── One clock, and it is the ROOM's ───────────────────────────────────────
+ * Every relative-time read on this page — the hero's countdown line, the
+ * footer's next-due, each session slot's state — comes from
+ * `useRoomClock()`, the single store `RoomShell` mounts for the whole room
+ * (`RoomClockProvider`). This module used to run its own minute
+ * `window.setInterval` beside it, which is precisely the thing that contract
+ * exists to prevent: a twelve-week room with sessions on screen would have
+ * accumulated a second timer for no additional information, and the two would
+ * have disagreed about "now" by up to a minute on the same screen. The provider
+ * also does two things a local interval cannot — it drops to 1s only while a
+ * doors-open countdown is mounted, and it stops dead while the document is
+ * hidden.
+ *
+ * ── The per-cohort feature matrix ─────────────────────────────────────────
+ * `moduleEnabled(envelope.config, key)` is read HERE, where the envelope is,
+ * and passed down: `assignments` gates the assignment column outright, and
+ * `peer_review` rides through `ThisWeekCard`'s slot into R2-T4's module, which
+ * holds no config of its own. A cohort that switched assignments off previously
+ * still got the whole column, flag or no flag.
  */
-
-/** The module's own clock. Minute granularity: nothing here counts seconds. */
-const TICK_MS = 60_000;
 
 /** Group the envelope's sessions by the week they belong to. */
 export function groupSessionsByWeek(sessions: RoomSession[]): Map<string, RoomSession[]> {
@@ -195,12 +208,12 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
     [envelope.sessions],
   );
 
-  /* ── One clock for the module ── */
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNowMs(Date.now()), TICK_MS);
-    return () => window.clearInterval(id);
-  }, []);
+  /* ── The room's clock, not a second one ── */
+  const nowMs = useRoomClock();
+
+  /* ── The per-cohort feature matrix (UX only, never a security gate) ── */
+  const assignmentsEnabled = moduleEnabled(envelope.config, "assignments");
+  const peerReviewEnabled = moduleEnabled(envelope.config, "peer_review");
 
   /* ── Which week is on screen ──
    * The URL is the source of truth when it names a week. `pending` covers the
@@ -272,6 +285,14 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
         userId={user?.id ?? null}
         batchId={envelope.batch_id}
         nowMs={nowMs}
+        assignmentsEnabled={assignmentsEnabled}
+        peerReviewEnabled={peerReviewEnabled}
+        // RELATIVE, and correct from this route only: React Router resolves `..`
+        // against the ROUTE tree, so from `weeks/:n` this is
+        // `/room/:slug/screenings` (App.tsx:263-272). A slot with no recording
+        // yet never renders it.
+        recordingHref="../screenings"
+        calendarNote={room.offering_title}
         renderAssignment={renderAssignment}
         onSubmissionChange={handleSubmissionChange}
       />

@@ -27,6 +27,11 @@ import { cn } from "@/lib/utils";
  * inside the Android WebView. The global `prefers-reduced-motion` block in
  * index.css collapses its transition, so there is no second reduced-motion path
  * to keep in sync here.
+ *
+ * `progressPct: null` means the caller cannot state a fraction it would stand
+ * behind, and the fill is then not rendered AT ALL — the groove keeps the row's
+ * height, and the row says where the student stopped in its status line instead.
+ * A bar that is drawn is a bar that is claimed.
  */
 
 export interface RecordingRowProps {
@@ -43,8 +48,11 @@ export interface RecordingRowProps {
   title: string;
   /** "48 min" / "1h 12m". Null when the row has nothing truthful to say. */
   durationLabel: string | null;
-  /** 0–100. Always 0 for a link-out, which has no position to report. */
-  progressPct: number;
+  /**
+   * 0–100, or null when no fraction is known well enough to draw. Always 0 for a
+   * link-out, which has no position to report.
+   */
+  progressPct: number | null;
   /** "Resume at 12:30" / "Watched" / "Opened" — the row's one status line. */
   statusLabel: string | null;
   /** Set for a link-out; the row becomes an anchor. */
@@ -76,7 +84,10 @@ export function RecordingRow({
 }: RecordingRowProps) {
   // Clamped here as well as at the source: a hairline is a claim about how much
   // of the recording has been watched, and it must never overrun its rail.
-  const fill = Math.min(100, Math.max(0, progressPct)) / 100;
+  const fill =
+    typeof progressPct === "number" && Number.isFinite(progressPct)
+      ? Math.min(100, Math.max(0, progressPct)) / 100
+      : null;
 
   const inner = (
     <>

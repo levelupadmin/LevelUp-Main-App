@@ -28,7 +28,9 @@ import { useRoomClock, useRoomClockFastTick } from "./RoomClockProvider";
  * · `soon`      — the doors-open countdown and an enabled Join. THE SCREEN'S
  *                 ONE CHAMPAGNE MOMENT: every other state here is deliberately
  *                 quiet so this one lands. A caller rendering two slots that
- *                 are both `soon` passes `champagne={false}` to the second.
+ *                 are both `soon` passes `champagne={false}` to the second —
+ *                 `ThisWeekCard` elects the FIRST uncancelled `soon` session in
+ *                 the week and opts every other slot out.
  * · `live`      — crimson LIVE with a ping that only plays under `motion-safe`,
  *                 and Join as the primary action.
  * · `ended`     — the quiet promise the notification email already made.
@@ -86,6 +88,18 @@ function externalHttpUrl(value: string | null | undefined): string | null {
   return lower.startsWith("https://") || lower.startsWith("http://") ? trimmed : null;
 }
 
+/**
+ * Is this session cancelled?
+ *
+ * Exported because the CALLER has to know: `ThisWeekCard` picks which slot gets
+ * the single champagne treatment, and a cancelled session renders no countdown
+ * and no Join, so it must not be the one that spends it. `live_sessions.status`
+ * is free text in practice, hence the trim-and-lower rather than `=== `.
+ */
+export function isCancelledSession(session: Pick<RoomSession, "status">): boolean {
+  return (session.status ?? "").trim().toLowerCase() === "cancelled";
+}
+
 /** Shared action sizing: ≥44px targets, never a squeezed tap area at 360px. */
 const ACTION_BASE =
   "focus-ring pressable inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 rounded-full px-4 text-sm";
@@ -127,7 +141,7 @@ export function SessionSlot({
 
   const startMs = session.scheduled_at ? Date.parse(session.scheduled_at) : NaN;
   const hasDate = Number.isFinite(startMs);
-  const cancelled = (session.status ?? "").trim().toLowerCase() === "cancelled";
+  const cancelled = isCancelledSession(session);
   const title = session.title?.trim() || "Live session";
   const joinUrl = externalHttpUrl(session.zoom_link);
 

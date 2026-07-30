@@ -1,10 +1,11 @@
 import { type ReactNode } from "react";
 import { CalendarDays, Clock, MessagesSquare, Video } from "lucide-react";
 
-import { TimeStateBadge } from "@/components/live/TimeStateBadge";
-import { sessionTimeState, type SessionTimeState } from "@/lib/room";
+import { ROOM_MODULE_DEFAULTS, sessionTimeState, type SessionTimeState } from "@/lib/room";
 import { cn } from "@/lib/utils";
 import type { RoomSession, RoomWeekRow, RoomWeekStatus } from "@/hooks/useCohortRooms";
+import SessionSlot, { isCancelledSession } from "./SessionSlot";
+import { useRoomClock } from "./RoomClockProvider";
 
 /**
  * ThisWeekCard — the hero of the weeks module.
@@ -27,6 +28,23 @@ import type { RoomSession, RoomWeekRow, RoomWeekStatus } from "@/hooks/useCohort
  * FULL list lives in the room envelope's `sessions` array, keyed by `week_id`,
  * and that is what this card renders: the caller passes every session for the
  * week and all of them appear. The week row is read for week METADATA only.
+ *
+ * ── One session row, and it is R2-T2's ────────────────────────────────────
+ * The sessions column mounts `SessionSlot` (R2-T2) and owns no session UI of
+ * its own. It carried a thinner local row for exactly as long as it took the
+ * two files to land: a card that states a title and a date, beside a component
+ * that also carries the T-60 countdown, the join gate and add-to-calendar, is a
+ * second implementation of the phase's centrepiece that quietly wins because it
+ * is the one that is mounted. What this card owns is the ARRANGEMENT — which
+ * slot gets the single champagne treatment, where the recording lives, and what
+ * rides along as the calendar note.
+ *
+ * ── The module gate ───────────────────────────────────────────────────────
+ * `assignmentsEnabled` / `peerReviewEnabled` are `moduleEnabled(config, …)`
+ * (src/lib/room.ts), resolved by the CALLER because that is where the room
+ * envelope is. A cohort that switched assignments off renders no assignment
+ * column at all — §5's rule is that a disabled module is ABSENT, not disabled —
+ * and the sessions column takes the full width rather than leaving a hole.
  *
  * ── The assignment seam ───────────────────────────────────────────────────
  * There is no assignments tab (RoomShell's rail is weeks/screenings/feed/
@@ -370,6 +388,15 @@ export interface RoomAssignmentSlotProps {
   submissionRating: number | null;
   submissionFeedback: string | null;
   submittedAt: string | null;
+  /**
+   * `moduleEnabled(config, "peer_review")` for this room, resolved by the caller
+   * and threaded through because `AssignmentModule` reads no config of its own.
+   * ALWAYS PRESENT here: this card is the one place that knows both halves of
+   * the slot contract, so a room with peer review switched off must not depend
+   * on the renderer guessing. R2-T4 reads it as `!== false`, which keeps the
+   * lane on for any caller that has not been taught the flag yet.
+   */
+  peerReviewEnabled: boolean;
   /** Re-read the week rows after a submit / resubmit. */
   onChange: () => void;
 }
@@ -385,8 +412,32 @@ export interface ThisWeekCardProps {
   /** The signed-in user. Null suppresses the assignment slot, nothing else. */
   userId: string | null;
   batchId: string | null;
-  /** Wall clock, ticked once per module so the page holds ONE interval. */
-  nowMs: number;
+  /**
+   * The room's wall clock, when the caller already holds it — `WeeksModule`
+   * passes its `useRoomClock()` read so the hero line, the footer and the
+   * session slots all agree on the same instant.
+   *
+   * OPTIONAL, and absent means "read the room's clock" rather than "assume a
+   * time": there is exactly ONE clock per room (`RoomClockProvider`, mounted by
+   * `RoomShell`), and this prop is a way to share it, never a second one.
+   */
+  nowMs?: number;
+  /**
+   * `moduleEnabled(config, "assignments")`. Absent takes the documented module
+   * default so the card is still correct when mounted without a config in hand.
+   */
+  assignmentsEnabled?: boolean;
+  /** `moduleEnabled(config, "peer_review")`, forwarded to the assignment slot. */
+  peerReviewEnabled?: boolean;
+  /**
+   * Where a landed recording lives (R2-T3's shelf), handed to every session
+   * slot. RELATIVE, and therefore the caller's to state: `"../screenings"` from
+   * `/room/:slug/weeks/:n`, `"screenings"` from `/room/:slug`. Absent renders
+   * the recorded line without a link rather than guessing a route.
+   */
+  recordingHref?: string | null;
+  /** Rides along as the calendar entry's description, e.g. the cohort title. */
+  calendarNote?: string | null;
   /** R2-T4's module. Absent renders the fallback assignment body. */
   renderAssignment?: (props: RoomAssignmentSlotProps) => ReactNode;
   /** Re-read the week rows (passed straight to the assignment slot). */
@@ -408,16 +459,38 @@ export function ThisWeekCard({
   sessions,
   userId,
   batchId,
-  nowMs,
+  nowMs: nowMsProp,
+  assignmentsEnabled = ROOM_MODULE_DEFAULTS.assignments,
+  peerReviewEnabled = ROOM_MODULE_DEFAULTS.peer_review,
+  recordingHref,
+  calendarNote,
   renderAssignment,
   onSubmissionChange,
   className,
 }: ThisWeekCardProps) {
+  // The room's single clock, unless the caller is already reading it and passed
+  // its value down. Subscribing twice to one store is free; a second interval is
+  // what this file must never create.
+  const clockMs = useRoomClock();
+  const nowMs = nowMsProp ?? clockMs;
+
   const lead = weekLead(week, sessions, nowMs);
   const startsMs = parseMs(week.starts_on);
   const endsMs = parseMs(week.ends_on);
   const feedbackMs = parseMs(week.feedback_session_at);
   const dueMs = parseMs(week.assignment_due_at);
+
+  /**
+   * THE ONE CHAMPAGNE MOMENT ON THE SCREEN (R2-T2's rule): the first session in
+   * its T-60 window, and no other. A week with two classes an hour apart would
+   * otherwise open two champagne buttons and the moment would stop being one. A
+   * cancelled session is skipped — it renders no countdown and no Join, so
+   * spending the treatment on it would spend it on nothing.
+   */
+  const champagneSessionId =
+    sessions.find(
+      (session) => !isCancelledSession(session) && sessionTimeState(session, nowMs) === "soon",
+    )?.id ?? null;
 
   const handleChange = () => onSubmissionChange?.();
 
@@ -458,8 +531,16 @@ export function ThisWeekCard({
         )}
       </header>
 
-      <div className="grid grid-cols-1 divide-y divide-border md:grid-cols-2 md:divide-x md:divide-y-0">
-        {/* ── Sessions ── every session the week holds, not the elected one. */}
+      <div
+        className={cn(
+          "grid grid-cols-1 divide-y divide-border",
+          // A room with assignments switched off has one column, and it takes
+          // the whole width instead of leaving half the card empty.
+          assignmentsEnabled && "md:grid-cols-2 md:divide-x md:divide-y-0",
+        )}
+      >
+        {/* ── Sessions ── every session the week holds, not the elected one,
+            each one R2-T2's slot with its full doors-open choreography. */}
         <section className="p-5" aria-label="Live sessions">
           <div className="flex items-center gap-2">
             <Video size={14} strokeWidth={1.5} className="shrink-0 text-room-accent" aria-hidden="true" />
@@ -469,7 +550,18 @@ export function ThisWeekCard({
           {sessions.length > 0 ? (
             <ul className="mt-3 space-y-3">
               {sessions.map((session) => (
-                <SessionRow key={session.id} session={session} nowMs={nowMs} />
+                <li key={session.id}>
+                  {/* `bg-surface-2` because the card behind it is already
+                      `bg-surface`: the slot has to read as a panel INSIDE the
+                      week, not as the same sheet with a stray border. */}
+                  <SessionSlot
+                    session={session}
+                    recordingHref={recordingHref ?? null}
+                    calendarNote={calendarNote ?? null}
+                    champagne={session.id === champagneSessionId}
+                    className="bg-surface-2"
+                  />
+                </li>
               ))}
             </ul>
           ) : (
@@ -497,99 +589,62 @@ export function ThisWeekCard({
           )}
         </section>
 
-        {/* ── Assignment ── R2-T4 mounts here. */}
-        <section className="p-5" aria-label="Assignment">
-          <div className="flex flex-wrap items-center gap-2">
-            <Clock size={14} strokeWidth={1.5} className="shrink-0 text-room-accent" aria-hidden="true" />
-            <h3 className={EYEBROW}>Assignment</h3>
-            {week.submission_id && (
-              <span
-                className={cn(PILL, STATUS_TONE_CLASS[submissionStatusTone(week.submission_status)])}
-              >
-                {submissionStatusLabel(week.submission_status)}
-              </span>
-            )}
-          </div>
-
-          {week.assignment_prompt ? (
-            <div className="mt-3 space-y-3">
-              {Number.isFinite(dueMs) && (
-                <p className="body-muted font-mono text-xs">
-                  Due {formatIstWeekdayDate(dueMs)}, {formatIstClock(dueMs)} IST
-                </p>
-              )}
-              {renderAssignment && userId ? (
-                renderAssignment({
-                  weekId: week.week_id,
-                  weekNumber: week.week_number,
-                  userId,
-                  batchId,
-                  prompt: week.assignment_prompt,
-                  dueAt: week.assignment_due_at,
-                  submissionId: week.submission_id,
-                  submissionStatus: week.submission_status,
-                  submissionRating: week.submission_rating,
-                  submissionFeedback: week.submission_feedback,
-                  submittedAt: week.submission_submitted_at,
-                  onChange: handleChange,
-                })
-              ) : (
-                <p className="line-clamp-4 text-sm text-foreground">{week.assignment_prompt}</p>
+        {/* ── Assignment ── R2-T4 mounts here, and only for a cohort that runs
+            assignments at all: `modules.assignments === false` renders NOTHING,
+            per §5's "a disabled module is absent". */}
+        {assignmentsEnabled && (
+          <section className="p-5" aria-label="Assignment">
+            <div className="flex flex-wrap items-center gap-2">
+              <Clock size={14} strokeWidth={1.5} className="shrink-0 text-room-accent" aria-hidden="true" />
+              <h3 className={EYEBROW}>Assignment</h3>
+              {week.submission_id && (
+                <span
+                  className={cn(
+                    PILL,
+                    STATUS_TONE_CLASS[submissionStatusTone(week.submission_status)],
+                  )}
+                >
+                  {submissionStatusLabel(week.submission_status)}
+                </span>
               )}
             </div>
-          ) : (
-            /* The old page's copy, verbatim. It is the line students already
-               know, and rewording it would be a change nobody asked for. */
-            <p className="body-muted mt-3 text-sm">No assignment this week</p>
-          )}
-        </section>
-      </div>
-    </article>
-  );
-}
 
-/**
- * One session inside the week.
- *
- * No join button and no countdown: R2-T2 owns the doors-open choreography and a
- * second implementation of it here would be a second clock to keep honest. This
- * row states what the session IS and when, and leans on the shipped
- * `TimeStateBadge` for the relative-time read.
- */
-function SessionRow({ session, nowMs }: { session: RoomSession; nowMs: number }) {
-  const state = sessionTimeState(session, nowMs);
-  const ms = parseMs(session.scheduled_at);
-  const cancelled = session.status === "cancelled";
-
-  return (
-    <li className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <p
-          className={cn(
-            "text-sm leading-snug text-foreground",
-            cancelled && "text-muted-foreground line-through",
-          )}
-        >
-          {session.title ?? "Live session"}
-        </p>
-        {Number.isFinite(ms) && (
-          <p className="body-muted mt-0.5 font-mono text-xs">
-            {formatIstWeekdayDate(ms)}, {formatIstClock(ms)} IST
-          </p>
+            {week.assignment_prompt ? (
+              <div className="mt-3 space-y-3">
+                {Number.isFinite(dueMs) && (
+                  <p className="body-muted font-mono text-xs">
+                    Due {formatIstWeekdayDate(dueMs)}, {formatIstClock(dueMs)} IST
+                  </p>
+                )}
+                {renderAssignment && userId ? (
+                  renderAssignment({
+                    weekId: week.week_id,
+                    weekNumber: week.week_number,
+                    userId,
+                    batchId,
+                    prompt: week.assignment_prompt,
+                    dueAt: week.assignment_due_at,
+                    submissionId: week.submission_id,
+                    submissionStatus: week.submission_status,
+                    submissionRating: week.submission_rating,
+                    submissionFeedback: week.submission_feedback,
+                    submittedAt: week.submission_submitted_at,
+                    peerReviewEnabled,
+                    onChange: handleChange,
+                  })
+                ) : (
+                  <p className="line-clamp-4 text-sm text-foreground">{week.assignment_prompt}</p>
+                )}
+              </div>
+            ) : (
+              /* The old page's copy, verbatim. It is the line students already
+                 know, and rewording it would be a change nobody asked for. */
+              <p className="body-muted mt-3 text-sm">No assignment this week</p>
+            )}
+          </section>
         )}
       </div>
-      {cancelled ? (
-        <span className={cn(PILL, STATUS_TONE_CLASS.neutral)}>Cancelled</span>
-      ) : Number.isFinite(ms) ? (
-        <TimeStateBadge
-          date={session.scheduled_at as string}
-          durationMin={session.duration_minutes}
-          className="mt-0.5"
-        />
-      ) : (
-        <span className={cn(PILL, STATUS_TONE_CLASS[sessionStateTone(state)])}>Scheduled</span>
-      )}
-    </li>
+    </article>
   );
 }
 

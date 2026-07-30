@@ -48,6 +48,13 @@ import { cn } from "@/lib/utils";
  * a peer board scopes to is a fact about the ROOM, never something to infer
  * from whichever progress row happened to sort first.
  *
+ * The same rule decides whether the peer lane exists at all. `peer_review` is a
+ * key in `ROOM_MODULE_KEYS`, so a cohort can switch it off — but the config
+ * lives on the room envelope, and reading it here would give this module an
+ * opinion of its own. So `moduleEnabled(config, 'peer_review')` is evaluated
+ * where the config already is (the weeks module) and arrives as
+ * `peerReviewEnabled`, like every other field.
+ *
  * ── Colour ────────────────────────────────────────────────────────────────
  * One local status→token map, `STEP_TONES`, built from tokens that already
  * exist (`--success`, `--room-accent`, `--accent-amber`, `--muted-foreground`).
@@ -248,6 +255,20 @@ export interface AssignmentModuleProps {
    */
   batchId?: string | null;
   /**
+   * `moduleEnabled(config, 'peer_review')` — computed by R2-T1's `WeeksModule`
+   * beside its own `assignments` gate and threaded through the slot, because
+   * this module reads nothing itself (see the header) and so has no config of
+   * its own to ask.
+   *
+   * OPTIONAL, and gated as `!== false`. `ROOM_MODULE_KEYS` defaults
+   * `peer_review` to true, so an ABSENT key and an absent prop must mean the
+   * same thing: the lane renders. Only an explicit `false` — a cohort that
+   * switched peer review OFF — takes it away. Defaulting the other way would
+   * silently hide the lane from every caller that has not been taught to pass
+   * the flag yet.
+   */
+  peerReviewEnabled?: boolean;
+  /**
    * Display name for the reviewing mentor, when the caller has one.
    * `get_cohort_progress` does not return `reviewed_by`, so the honest
    * fallback is "your mentor" — see the note in the phase report.
@@ -272,6 +293,7 @@ export function AssignmentModule({
   submittedAt,
   onChange,
   batchId,
+  peerReviewEnabled,
   mentorName,
   className,
 }: AssignmentModuleProps) {
@@ -298,6 +320,12 @@ export function AssignmentModule({
       submissionStatus === "cleared");
   const showResubmit = !!submissionId && submissionStatus === "needs_revision";
   const hasRating = submissionRating !== null && submissionRating !== undefined;
+
+  // The peer lane needs BOTH: a batch to scope the board to, and a cohort that
+  // has not switched `peer_review` off. The flag composes with the batch id, it
+  // does not replace it — a room with the module on but no batch still has
+  // nothing to scope a board to.
+  const showPeerReview = !!batchId && peerReviewEnabled !== false;
 
   return (
     <section className={cn("rounded-xl border border-border bg-surface p-5", className)}>
@@ -406,7 +434,7 @@ export function AssignmentModule({
         </div>
       )}
 
-      {batchId && (
+      {showPeerReview && (
         <div className="mt-5 border-t border-border pt-4">
           <button
             type="button"

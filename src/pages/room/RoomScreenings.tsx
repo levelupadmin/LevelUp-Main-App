@@ -69,10 +69,17 @@ interface ShelfRow {
   href: string | null;
   /** Best known length of the RECORDING, in seconds. */
   durationSeconds: number;
+  /** True only when `durationSeconds` came from the PLAYER, not the timetable. */
+  lengthMeasured: boolean;
   positionSeconds: number;
   completed: boolean;
-  /** 0–100, watched. Always 0 for a link-out. */
+  /**
+   * 0–100, watched. APPROXIMATE while `lengthMeasured` is false — good enough to
+   * bucket a row, not good enough to draw. Always 0 for a link-out.
+   */
   pct: number;
+  /** `pct` when it is honest to DRAW it, else null. See the note below. */
+  drawnPct: number | null;
 }
 
 /** The window in which a recording is worth resuming rather than restarting. */
@@ -181,8 +188,21 @@ export function clockLabel(seconds: number): string {
  * So the length the player reports is cached locally, keyed by session id. It
  * is media metadata — one integer — and carries no roster identity or
  * announcement body, which is what `COHORT_ROOMS_QUERY_ROOT` is kept out of
- * localStorage to protect. Absent or unreadable, the scheduled duration is used
- * and the bar is merely approximate, never wrong in a way that resumes badly.
+ * localStorage to protect. It is keyed by SESSION, not by user, which is why it
+ * is safe to leave on a shared device: a recording's length is the same length
+ * for everyone, and no position is ever cached here.
+ *
+ * 🔴 AND UNTIL THAT LENGTH IS KNOWN, NO BAR IS DRAWN AT ALL. A hairline is a
+ * quantitative claim — "you are exactly this far in" — and the scheduled
+ * `duration_minutes` cannot support one: the 90-minute slot that produced a
+ * 62-minute file would draw every bar ~30% short, which is exactly the
+ * misreporting the V9 ruling forbids. So an unmeasured row shows its resume
+ * CLOCK, which is exact (a stored position in seconds needs no length to be
+ * true), and no bar — until the player volunteers a duration, normally in its
+ * first frame, after which the length is cached here and the bar persists.
+ * Bucketing still uses the approximate length (the 5–95% Continue-watching
+ * window, the "Watched" label): those are coarse decisions about which shelf a
+ * row belongs on, not a drawn quantity a student reads a position off.
  * ──────────────────────────────────────────────────────────────────────────── */
 
 const MEASURED_LENGTH_KEY = "lu_room_rec_len";
@@ -267,6 +287,8 @@ function useProgressWriter(userId: string | null | undefined) {
   const pending = useRef(new Map<string, PendingProgress>());
   const timer = useRef<number | null>(null);
   const userIdRef = useRef(userId);
+  /** False from the moment the page starts tearing down — see `record`. */
+  const alive = useRef(true);
 
   useEffect(() => {
     userIdRef.current = userId;
@@ -301,6 +323,12 @@ function useProgressWriter(userId: string | null | undefined) {
 
   const record = useCallback(
     (sessionId: string, value: PendingProgress) => {
+      // A tick that arrives after teardown has nothing left to flush it — the
+      // final flush has already run — so buffering it would only arm a timeout
+      // on an unmounted page. There is exactly one window in which that can
+      // happen (a provider frame posting between this hook's cleanup and the
+      // player's), and dropping the tick is the correct end to it.
+      if (!alive.current) return;
       pending.current.set(sessionId, value);
       if (timer.current === null) {
         timer.current = window.setTimeout(flush, PROGRESS_FLUSH_MS);
@@ -310,6 +338,7 @@ function useProgressWriter(userId: string | null | undefined) {
   );
 
   useEffect(() => {
+    alive.current = true;
     const onHide = () => {
       if (document.visibilityState === "hidden") flush();
     };
@@ -318,7 +347,10 @@ function useProgressWriter(userId: string | null | undefined) {
     return () => {
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", flush);
+      // The last write of the mount, and the only place the 10s timer can be
+      // outlived: `flush` clears it, so nothing is left running.
       flush();
+      alive.current = false;
     };
   }, [flush]);
 
@@ -345,6 +377,17 @@ const RoomScreenings = () => {
   );
 
   const shelfRef = useRef<HTMLUListElement | null>(null);
+
+  // The cache write. The ref starts as the state's own first value, so the mount
+  // pass is skipped and nothing is written until a player actually measures
+  // something — a locked-down WebView that cannot read storage never writes to
+  // it either.
+  const persistedLengths = useRef(measuredLengths);
+  useEffect(() => {
+    if (persistedLengths.current === measuredLengths) return;
+    persistedLengths.current = measuredLengths;
+    persistMeasuredLengths(measuredLengths);
+  }, [measuredLengths]);
 
   const moduleOn = moduleEnabled(envelope.config, "recordings");
 
@@ -376,7 +419,9 @@ const RoomScreenings = () => {
         (typeof session.duration_minutes === "number" && session.duration_minutes > 0
           ? session.duration_minutes
           : SESSION_DEFAULT_DURATION_MINUTES) * 60;
-      const durationSeconds = measuredLengths[session.id] ?? scheduledSeconds;
+      const measured = measuredLengths[session.id];
+      const lengthMeasured = typeof measured === "number" && measured > 0;
+      const durationSeconds = lengthMeasured ? measured : scheduledSeconds;
 
       // The envelope's `my_position` is the saved position; anything written
       // this mount is newer, so it wins. A link-out has no position at all.
@@ -393,9 +438,14 @@ const RoomScreenings = () => {
         embeddable,
         href: embeddable ? null : url,
         durationSeconds,
+        lengthMeasured,
         positionSeconds,
         completed: pct >= COMPLETE_PCT,
         pct,
+        // A link-out keeps its empty groove — it reports nothing, and an empty
+        // rail says exactly that. An embed with an unmeasured length draws no
+        // bar at all rather than one derived from the timetable.
+        drawnPct: embeddable ? (lengthMeasured ? pct : null) : 0,
       });
     });
 
@@ -413,12 +463,11 @@ const RoomScreenings = () => {
 
       if (reportedDuration && reportedDuration > 0) {
         const length = Math.round(reportedDuration);
-        setMeasuredLengths((prev) => {
-          if (prev[row.sessionId] === length) return prev;
-          const next = { ...prev, [row.sessionId]: length };
-          persistMeasuredLengths(next);
-          return next;
-        });
+        // Pure updater: the localStorage write is an effect (below), because an
+        // updater runs twice under StrictMode and must not touch the world.
+        setMeasuredLengths((prev) =>
+          prev[row.sessionId] === length ? prev : { ...prev, [row.sessionId]: length },
+        );
       }
 
       // 🔴 A player that is READY but has not started reports `currentTime: 0`,
@@ -434,12 +483,19 @@ const RoomScreenings = () => {
         prev[row.sessionId] === seconds ? prev : { ...prev, [row.sessionId]: seconds },
       );
 
-      const duration = reportedDuration && reportedDuration > 0
-        ? reportedDuration
-        : row.durationSeconds;
+      // `completed` is a claim stored on the server, so it is made only against
+      // a length the player actually reported (this frame's, or a cached one
+      // from an earlier play). A scheduled duration can be minutes out in
+      // either direction, and "watched" is not a thing to get wrong by guessing.
+      const duration =
+        reportedDuration && reportedDuration > 0
+          ? reportedDuration
+          : row.lengthMeasured
+            ? row.durationSeconds
+            : null;
       record(row.sessionId, {
         position_seconds: seconds,
-        completed: watchedPct(seconds, duration) >= COMPLETE_PCT,
+        completed: duration !== null && watchedPct(seconds, duration) >= COMPLETE_PCT,
       });
     },
     [record],
@@ -524,15 +580,21 @@ const RoomScreenings = () => {
                       <span className="mt-2 text-xs text-room-accent">
                         Resume at {clockLabel(row.positionSeconds)}
                       </span>
+                      {/* Same rule as the shelf hairline: the groove always
+                          holds the card's height, the fill appears only once
+                          the length is measured. The clock above it is exact
+                          either way. */}
                       <span className="mt-2 h-px w-full overflow-hidden bg-border">
-                        <span
-                          className="block h-full w-full origin-left bg-room-accent transition-transform"
-                          style={{
-                            transform: `scaleX(${row.pct / 100})`,
-                            transitionDuration: "var(--motion-base)",
-                            transitionTimingFunction: "var(--ease-out)",
-                          }}
-                        />
+                        {row.drawnPct !== null && (
+                          <span
+                            className="block h-full w-full origin-left bg-room-accent transition-transform"
+                            style={{
+                              transform: `scaleX(${row.drawnPct / 100})`,
+                              transitionDuration: "var(--motion-base)",
+                              transitionTimingFunction: "var(--ease-out)",
+                            }}
+                          />
+                        )}
                       </span>
                     </button>
                   </li>
@@ -562,7 +624,7 @@ const RoomScreenings = () => {
                   posterLabel={row.posterLabel}
                   title={row.title}
                   durationLabel={durationLabel(row.durationSeconds)}
-                  progressPct={row.pct}
+                  progressPct={row.drawnPct}
                   statusLabel={statusLabel}
                   href={row.href}
                   open={activeId === row.sessionId}

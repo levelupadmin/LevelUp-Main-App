@@ -107,6 +107,14 @@ const RoomHome = lazy(() => import("@/pages/room/RoomHome"));
 const RoomModuleRoute = lazy(() =>
   import("@/pages/room/RoomHome").then((m) => ({ default: m.RoomModuleRoute })),
 );
+// R2's two built modules. `RoomWeeksRoute` rides RoomHome's chunk (it is the
+// gate + the assignment seam around WeeksModule, and needs the shell's envelope
+// that this file cannot read); the Screening Shelf is a page of its own and gets
+// its own chunk, which keeps its player + progress-writer out of the room open.
+const RoomWeeksRoute = lazy(() =>
+  import("@/pages/room/RoomHome").then((m) => ({ default: m.RoomWeeksRoute })),
+);
+const RoomScreenings = lazy(() => import("@/pages/room/RoomScreenings"));
 const CohortRoomRedirect = lazy(() =>
   import("@/pages/room/RoomShell").then((m) => ({ default: m.CohortRoomRedirect })),
 );
@@ -262,14 +270,17 @@ const App = () => {
                     <Route path="/rooms" element={<MyCohortsPage />} />
                     <Route path="/room/:slug" element={<RoomShell />}>
                       <Route index element={<RoomHome />} />
-                      <Route
-                        path="weeks/:n"
-                        element={<RoomModuleRoute module="weeks" title="Weeks" />}
-                      />
-                      <Route
-                        path="screenings"
-                        element={<RoomModuleRoute module="recordings" title="Screenings" />}
-                      />
+                      {/* The rail links `weeks/:n` (RoomShell.tsx `weeksHref`);
+                          the bare path is what a typed URL and a stale
+                          bookmark hit, and WeeksModule already resolves its own
+                          default week when the route names none. */}
+                      <Route path="weeks" element={<RoomWeeksRoute />} />
+                      <Route path="weeks/:n" element={<RoomWeeksRoute />} />
+                      {/* Mounted DIRECTLY, not through RoomModuleRoute:
+                          RoomScreenings owns the `recordings` gate itself, and
+                          double-gating it would be one cohort setting with two
+                          empty states. */}
+                      <Route path="screenings" element={<RoomScreenings />} />
                       <Route path="feed" element={<RoomModuleRoute module="feed" title="Feed" />} />
                       <Route
                         path="people"

@@ -326,4 +326,53 @@ describe("AssignmentModule — peer review scoping", () => {
     const toggle = screen.getByRole("button", { name: /peer reviews/i });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
+
+  /**
+   * `peer_review` is a `ROOM_MODULE_KEYS` key that DEFAULTS TO TRUE, so the
+   * three cases below are three different facts and only one of them hides the
+   * lane. The dangerous inversion — treating "the caller has not passed the
+   * flag" as "the cohort switched it off" — would silently strip peer review
+   * from every room, so it is pinned rather than assumed.
+   */
+  it("keeps the lane when the cohort leaves peer review on", () => {
+    render(<AssignmentModule {...baseProps} batchId="batch-1" peerReviewEnabled />);
+    expect(screen.getByRole("button", { name: /peer reviews/i })).toBeInTheDocument();
+  });
+
+  it("keeps the lane when no flag is supplied — absent means the default, which is on", () => {
+    // The state of the tree while R2-T1's plumbing has not landed: no prop, and
+    // the lane must behave exactly as `ROOM_MODULE_KEYS` says it does.
+    render(<AssignmentModule {...baseProps} batchId="batch-1" peerReviewEnabled={undefined} />);
+    expect(screen.getByRole("button", { name: /peer reviews/i })).toBeInTheDocument();
+  });
+
+  it("drops the lane for a cohort that switched peer review off", () => {
+    render(<AssignmentModule {...baseProps} batchId="batch-1" peerReviewEnabled={false} />);
+    expect(screen.queryByRole("button", { name: /peer reviews/i })).not.toBeInTheDocument();
+  });
+
+  it("leaves the rest of the loop untouched when the lane is off", () => {
+    // Switching a module off must cost a student the peer board and nothing
+    // else — their own submission, feedback and resubmit path are not part of
+    // the peer-review feature.
+    render(
+      <AssignmentModule
+        {...baseProps}
+        batchId="batch-1"
+        peerReviewEnabled={false}
+        submissionId="sub-1"
+        submissionStatus="needs_revision"
+        submissionFeedback="Recut the opening."
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /peer reviews/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("list", { name: /submission status/i })).toBeInTheDocument();
+    expect(screen.getByText("Recut the opening.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /resubmit/i })).toBeInTheDocument();
+  });
+
+  it("does not resurrect the lane from the flag alone — a batch is still required", () => {
+    render(<AssignmentModule {...baseProps} batchId={null} peerReviewEnabled />);
+    expect(screen.queryByRole("button", { name: /peer reviews/i })).not.toBeInTheDocument();
+  });
 });
