@@ -98,10 +98,18 @@ const fetchQuickPick = async (
 
     let to = `/courses/${nc.id}`;
     if (offeringId) {
+      // status='active' matters now that offerings_read_entitled
+      // (20260728010000) lets an owner read an offering they bought even after
+      // it is archived. Without it, an owner of the newest catalog item would
+      // resolve a slug here and be sent to /p/<slug> for a closed product
+      // instead of falling back to the course page. Non-owners are unaffected
+      // (RLS never returned the row for them), so this preserves today's
+      // behaviour rather than changing it.
       const { data: off } = await supabase
         .from("offerings")
         .select("slug")
         .eq("id", offeringId)
+        .eq("status", "active")
         .maybeSingle();
       if (off?.slug) to = `/p/${off.slug}`;
     }
