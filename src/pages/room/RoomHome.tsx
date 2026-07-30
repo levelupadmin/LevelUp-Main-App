@@ -153,7 +153,16 @@ const RoomHome = () => {
             sessions={heroSessions}
             userId={user?.id ?? null}
             batchId={envelope.batch_id}
+            // The room's own clock, already read above for the fallback card, so
+            // the hero and everything else on this page agree on one instant.
             nowMs={nowMs}
+            assignmentsEnabled={canSee("assignments")}
+            peerReviewEnabled={canSee("peer_review")}
+            // RELATIVE, and correct from the INDEX route only: `weeks/:n` passes
+            // `"../screenings"` for the same target. No `renderAssignment` — see
+            // the "one submission surface" note above.
+            recordingHref="screenings"
+            calendarNote={room.offering_title}
           />
           <SurfaceCard to={`weeks/${heroWeek.week_number}`} padding="md">
             <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
@@ -260,25 +269,22 @@ const ModuleOffNote = ({ title }: { title: string }) => (
  *     `RoomScreenings` gates itself (`:349`), which is why `screenings` is
  *     mounted directly and only `weeks` needs wrapping.
  *  2. **The assignment seam.** `renderAssignment` is injected from outside by
- *     contract (WeeksModule.tsx:174-183), so this call site is the ONLY reason
- *     R2-T4's submission loop reaches a student at all. It is additionally gated
- *     on the `assignments` module: switched off, `ThisWeekCard` falls back to the
- *     read-only prompt instead of a form nobody is meant to see.
+ *     contract (`WeeksModuleProps`), so this call site is the ONLY reason R2-T4's
+ *     submission loop reaches a student at all. It is passed UNCONDITIONALLY:
+ *     `WeeksModule` reads `assignments` and `peer_review` off the envelope itself
+ *     and stops the column upstream of the renderer, so re-deciding it here would
+ *     be a second copy of one gate.
  *
  * It lives in this file rather than its own because it is the same "a module tab
- * is only ever reached from the home it renders beside" chunk (App.tsx:104-117),
- * and because the gate needs the shell's envelope, which `App.tsx` cannot read.
+ * is only ever reached from the home it renders beside" chunk, and because the
+ * gate needs the shell's envelope, which `App.tsx` cannot read.
  */
 export const RoomWeeksRoute = () => {
   const { envelope } = useRoomOutlet();
 
   if (!moduleEnabled(envelope.config, "weeks")) return <ModuleOffNote title="Weeks" />;
 
-  return moduleEnabled(envelope.config, "assignments") ? (
-    <WeeksModule renderAssignment={(props) => <AssignmentModule {...props} />} />
-  ) : (
-    <WeeksModule />
-  );
+  return <WeeksModule renderAssignment={(props) => <AssignmentModule {...props} />} />;
 };
 
 /**

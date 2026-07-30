@@ -71,7 +71,14 @@ interface ShelfRow {
   durationSeconds: number;
   /** True only when `durationSeconds` came from the PLAYER, not the timetable. */
   lengthMeasured: boolean;
+  /** What the row DISPLAYS as a resume point. Forced to 0 for a link-out. */
   positionSeconds: number;
+  /**
+   * What the server currently holds, link-out or not. Separate from
+   * `positionSeconds` because a link-out must not SHOW a position it cannot
+   * report — and must not DESTROY one either when it writes `completed`.
+   */
+  storedSeconds: number;
   completed: boolean;
   /**
    * 0–100, watched. APPROXIMATE while `lengthMeasured` is false — good enough to
@@ -90,7 +97,7 @@ export const RESUME_MAX_PCT = 95;
 const COMPLETE_PCT = RESUME_MAX_PCT;
 
 /** At most one position write per this many ms, per the brief. */
-const PROGRESS_FLUSH_MS = 10_000;
+export const PROGRESS_FLUSH_MS = 10_000;
 
 /** A session id shaped like the uuid it is — the only thing put in a selector. */
 const SAFE_ID = /^[A-Za-z0-9_-]+$/;
@@ -424,10 +431,14 @@ const RoomScreenings = () => {
       const durationSeconds = lengthMeasured ? measured : scheduledSeconds;
 
       // The envelope's `my_position` is the saved position; anything written
-      // this mount is newer, so it wins. A link-out has no position at all.
-      const positionSeconds = embeddable
-        ? (livePositions[session.id] ?? session.my_position ?? 0)
-        : 0;
+      // this mount is newer, so it wins.
+      const storedSeconds = livePositions[session.id] ?? session.my_position ?? 0;
+      // A link-out shows no position, because it cannot report one. It still
+      // CARRIES the stored one (above) so that writing `completed` on open does
+      // not zero a position an earlier embeddable URL had honestly recorded —
+      // the case that reaches this is an admin swapping a YouTube link for a
+      // Zoom one after a student had already watched half of it.
+      const positionSeconds = embeddable ? storedSeconds : 0;
       const pct = embeddable ? watchedPct(positionSeconds, durationSeconds) : 0;
 
       built.push({
@@ -440,6 +451,7 @@ const RoomScreenings = () => {
         durationSeconds,
         lengthMeasured,
         positionSeconds,
+        storedSeconds,
         completed: pct >= COMPLETE_PCT,
         pct,
         // A link-out keeps its empty groove — it reports nothing, and an empty
@@ -503,13 +515,14 @@ const RoomScreenings = () => {
 
   /**
    * A link-out opens in a new tab and never reports back, so the only honest
-   * thing to write is `completed` — the position it already holds is left
-   * exactly as it was rather than reset to zero.
+   * thing to write is `completed` — and `storedSeconds`, so the position the
+   * server already holds is echoed back unchanged rather than overwritten with
+   * the zero the ROW displays.
    */
   const onOpenLinkOut = useCallback(
     (row: ShelfRow) => {
       setOpenedIds((prev) => (prev.includes(row.sessionId) ? prev : [...prev, row.sessionId]));
-      record(row.sessionId, { position_seconds: row.positionSeconds, completed: true });
+      record(row.sessionId, { position_seconds: row.storedSeconds, completed: true });
     },
     [record],
   );

@@ -14,6 +14,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * class of a two-class week and looks perfectly fine doing it. The fixture
  * below gives the week row session A and the envelope sessions A and B, and
  * asserts BOTH are on screen.
+ *
+ * ── Why every render here is wrapped in `RoomClockProvider` ────────────────
+ * `useRoomClock()` falls back to a MODULE-LEVEL singleton clock when no provider
+ * is above it (RoomClockProvider.tsx:156-157), so a test tree without the
+ * provider does not fail — it quietly shares one process-wide store, and its
+ * real interval, with every other test in the file. The provider is what
+ * `RoomShell` mounts in production (RoomShell.tsx:159), so mounting it here
+ * tests the real wiring AND keeps the one-interval assertion below honest.
  */
 
 const rpc = vi.fn();
@@ -26,16 +34,22 @@ vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({ user: { id: "user-1" } }),
 }));
 
+vi.mock("@/lib/haptics", () => ({ tapTick: vi.fn(() => Promise.resolve()) }));
+
 const { default: WeeksModule, nextOpenDue, sessionsForWeek, groupSessionsByWeek, weeksProgress } =
   await import("@/components/room/WeeksModule");
 const { weekLead, submissionStatusTone, weekStatusTone } = await import(
   "@/components/room/ThisWeekCard"
 );
 const { default: WeekRail } = await import("@/components/room/WeekRail");
+const { default: RoomClockProvider } = await import("@/components/room/RoomClockProvider");
 type RoomWeekRow = import("@/hooks/useCohortRooms").RoomWeekRow;
 type RoomSession = import("@/hooks/useCohortRooms").RoomSession;
 type CohortRoomEnvelope = import("@/hooks/useCohortRooms").CohortRoomEnvelope;
 type CohortRoomSummary = import("@/hooks/useCohortRooms").CohortRoomSummary;
+type RoomConfigRow = import("@/hooks/useCohortRooms").RoomConfigRow;
+type RoomAssignmentSlotProps =
+  import("@/components/room/ThisWeekCard").RoomAssignmentSlotProps;
 
 const OFFERING = "11111111-1111-1111-1111-111111111111";
 
@@ -80,17 +94,24 @@ const session = (over: Partial<RoomSession> = {}): RoomSession => ({
   ...over,
 });
 
-const envelopeFor = (sessions: RoomSession[]): CohortRoomEnvelope => ({
+const envelopeFor = (
+  sessions: RoomSession[],
+  config: RoomConfigRow | null = null,
+): CohortRoomEnvelope => ({
   offering_id: OFFERING,
   batch_id: "batch-1",
   role: "member",
   access: "member",
-  config: null,
+  config,
   roster_count: 12,
   announcements: [],
   sessions,
   attendance_pct: 80,
 });
+
+/** A config row that carries nothing but the module matrix under test. */
+const configWithModules = (modules: Record<string, unknown>): RoomConfigRow =>
+  ({ modules }) as RoomConfigRow;
 
 const roomFor = (over: Partial<CohortRoomSummary> = {}): CohortRoomSummary =>
   ({
@@ -115,18 +136,22 @@ function renderModule({
   rows,
   sessions = [session()],
   room = roomFor(),
+  config = null,
   path = "/room/the-forge/weeks/4",
+  renderAssignment,
 }: {
   rows: RoomWeekRow[];
   sessions?: RoomSession[];
   room?: CohortRoomSummary;
+  config?: RoomConfigRow | null;
   path?: string;
+  renderAssignment?: (props: RoomAssignmentSlotProps) => ReactNode;
 }) {
   rpc.mockResolvedValue({ data: rows, error: null });
 
   const context = {
     room,
-    envelope: envelopeFor(sessions),
+    envelope: envelopeFor(sessions, config),
     theme: null as never,
     rooms: [room],
     refetch: () => {},
@@ -142,11 +167,17 @@ function renderModule({
 
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/room/:slug" element={<Outlet context={context} />}>
-          <Route path="weeks/:n" element={<WeeksModule />} />
-        </Route>
-      </Routes>
+      {/* The room's ONE clock, exactly where RoomShell mounts it. */}
+      <RoomClockProvider>
+        <Routes>
+          <Route path="/room/:slug" element={<Outlet context={context} />}>
+            <Route
+              path="weeks/:n"
+              element={<WeeksModule renderAssignment={renderAssignment} />}
+            />
+          </Route>
+        </Routes>
+      </RoomClockProvider>
     </MemoryRouter>,
     { wrapper },
   );
@@ -332,40 +363,14 @@ describe("edge cases", () => {
   });
 
   it("mounts the assignment seam with the week's own submission state", async () => {
-    const seen: Record<string, unknown>[] = [];
-    const rows = [weekRow({ submission_id: "sub-1", submission_status: "needs_revision" })];
-    rpc.mockResolvedValue({ data: rows, error: null });
-
-    const context = {
-      room: roomFor(),
-      envelope: envelopeFor([session()]),
-      theme: null as never,
-      rooms: [roomFor()],
-      refetch: () => {},
-    };
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
-    render(
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={["/room/the-forge/weeks/4"]}>
-          <Routes>
-            <Route path="/room/:slug" element={<Outlet context={context} />}>
-              <Route
-                path="weeks/:n"
-                element={
-                  <WeeksModule
-                    renderAssignment={(props) => {
-                      seen.push(props as unknown as Record<string, unknown>);
-                      return <p>assignment module here</p>;
-                    }}
-                  />
-                }
-              />
-            </Route>
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+    const seen: RoomAssignmentSlotProps[] = [];
+    renderModule({
+      rows: [weekRow({ submission_id: "sub-1", submission_status: "needs_revision" })],
+      renderAssignment: (props) => {
+        seen.push(props);
+        return <p>assignment module here</p>;
+      },
+    });
 
     expect(await screen.findByText("assignment module here")).toBeInTheDocument();
     expect(seen[0]).toMatchObject({
@@ -375,8 +380,138 @@ describe("edge cases", () => {
       batchId: "batch-1",
       submissionId: "sub-1",
       submissionStatus: "needs_revision",
+      // R2-T4 holds no config of its own; the flag arrives through the slot.
+      peerReviewEnabled: true,
     });
     expect(typeof seen[0].onChange).toBe("function");
+  });
+});
+
+/* ── The centrepiece interaction is the one that is MOUNTED ───────────────── */
+
+describe("the session slot inside the week", () => {
+  it("mounts R2-T2's slot, not a thinner local row", async () => {
+    renderModule({ rows: [weekRow()] });
+
+    const panel = await screen.findByRole("region", { name: "Live sessions" });
+    // `data-session-state` is SessionSlot's own contract with the tests; a row
+    // that only stated a title and a date would carry nothing here.
+    const slot = within(panel).getByRole("article");
+    expect(slot).toHaveAttribute("data-session-state", "scheduled");
+    // Add-to-calendar is part of the choreography the local row did not have.
+    expect(within(panel).getByRole("button", { name: /add to calendar/i })).toBeInTheDocument();
+  });
+
+  it("runs the doors-open countdown and the join gate inside T-60", async () => {
+    renderModule({
+      rows: [weekRow()],
+      // 12:30 IST, thirty minutes after NOW: inside the T-60 window.
+      sessions: [session({ scheduled_at: "2026-08-05T07:00:00Z", zoom_link: null })],
+    });
+
+    const panel = await screen.findByRole("region", { name: "Live sessions" });
+    expect(within(panel).getByRole("article")).toHaveAttribute("data-session-state", "soon");
+    expect(within(panel).getByRole("timer")).toHaveTextContent("30:00");
+    // The server withheld the link, so the slot says where it will appear
+    // instead of rendering a button that goes nowhere.
+    expect(within(panel).getByText("Link drops here 1 hour before.")).toBeInTheDocument();
+    expect(within(panel).queryByRole("link", { name: /join/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps the champagne singular when a week holds two imminent sessions", async () => {
+    renderModule({
+      rows: [weekRow()],
+      sessions: [
+        session({ id: "a", scheduled_at: "2026-08-05T07:00:00Z", zoom_link: "https://zoom.us/j/1" }),
+        session({ id: "b", scheduled_at: "2026-08-05T07:20:00Z", zoom_link: "https://zoom.us/j/2" }),
+      ],
+    });
+
+    const panel = await screen.findByRole("region", { name: "Live sessions" });
+    const joins = within(panel).getAllByRole("link", { name: /join/i });
+    expect(joins).toHaveLength(2);
+    expect(joins.filter((join) => join.className.includes("btn-champagne"))).toHaveLength(1);
+    // And it is the one that happens FIRST.
+    expect(joins[0].className).toContain("btn-champagne");
+  });
+
+  it("points the recorded state at the screenings route, relative to this one", async () => {
+    renderModule({
+      rows: [weekRow()],
+      sessions: [
+        session({
+          scheduled_at: "2026-08-01T14:30:00Z",
+          recording_url: "https://vimeo.com/1",
+        }),
+      ],
+    });
+
+    const panel = await screen.findByRole("region", { name: "Live sessions" });
+    expect(within(panel).getByRole("article")).toHaveAttribute("data-session-state", "recorded");
+    expect(
+      within(panel).getByRole("link", { name: /watch the recording/i }),
+    ).toHaveAttribute("href", "/room/the-forge/screenings");
+  });
+});
+
+/* ── One clock for the room, and this module does not add a second ────────── */
+
+describe("the room's single clock", () => {
+  it("reads the provider's clock instead of starting an interval of its own", async () => {
+    const setInterval = vi.spyOn(window, "setInterval");
+    renderModule({ rows: [weekRow()] });
+    await screen.findByRole("region", { name: "Live sessions" });
+
+    // ONE minute timer for the module, the card, and every slot inside it — the
+    // provider's. A SECOND 60s entry is the regression: it is exactly what the
+    // module's own `window.setInterval(() => setNowMs(Date.now()), 60_000)` looked
+    // like, running beside the room clock and disagreeing with it by up to a
+    // minute. (The other cadences the spy sees belong to the shipped
+    // `TimeStateBadge` at 30s and to testing-library's own poller; neither is
+    // room-clock code, and neither is this task's to change.)
+    const minuteTimers = setInterval.mock.calls.filter((call) => call[1] === 60_000);
+    expect(minuteTimers).toHaveLength(1);
+
+    setInterval.mockRestore();
+  });
+});
+
+/* ── The per-cohort feature matrix ───────────────────────────────────────── */
+
+describe("the assignments module flag", () => {
+  it("renders no assignment column at all for a cohort that switched it off", async () => {
+    renderModule({
+      rows: [weekRow()],
+      config: configWithModules({ assignments: false }),
+      renderAssignment: () => <p>assignment module here</p>,
+    });
+
+    await screen.findByRole("region", { name: "Live sessions" });
+    // ABSENT, not disabled (ROOMS-ARCHITECTURE §5) — and the renderer is never
+    // called, so nothing behind the flag can fetch either.
+    expect(screen.queryByRole("region", { name: "Assignment" })).not.toBeInTheDocument();
+    expect(screen.queryByText("assignment module here")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cut your scene to 90 seconds.")).not.toBeInTheDocument();
+  });
+
+  it("renders the column when the key is absent, because the default is on", async () => {
+    renderModule({ rows: [weekRow()], config: configWithModules({ leaderboard: true }) });
+    expect(await screen.findByRole("region", { name: "Assignment" })).toBeInTheDocument();
+  });
+
+  it("threads the peer_review flag through the slot to R2-T4", async () => {
+    const seen: RoomAssignmentSlotProps[] = [];
+    renderModule({
+      rows: [weekRow()],
+      config: configWithModules({ peer_review: false }),
+      renderAssignment: (props) => {
+        seen.push(props);
+        return <p>assignment module here</p>;
+      },
+    });
+
+    await screen.findByText("assignment module here");
+    expect(seen[0].peerReviewEnabled).toBe(false);
   });
 });
 

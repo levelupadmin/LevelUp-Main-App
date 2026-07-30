@@ -12,6 +12,7 @@ import AssignmentSubmissionForm from "@/components/cohort/AssignmentSubmissionFo
 import AssignmentFeedbackView from "@/components/cohort/AssignmentFeedbackView";
 import PeerReviewBoard from "@/components/cohort/PeerReviewBoard";
 import { tapTick } from "@/lib/haptics";
+import { ROOM_MODULE_DEFAULTS } from "@/lib/room";
 import { useMotionSafe } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -53,7 +54,10 @@ import { cn } from "@/lib/utils";
  * lives on the room envelope, and reading it here would give this module an
  * opinion of its own. So `moduleEnabled(config, 'peer_review')` is evaluated
  * where the config already is (the weeks module) and arrives as
- * `peerReviewEnabled`, like every other field.
+ * `peerReviewEnabled`, like every other field. When it is absent the default
+ * comes from `ROOM_MODULE_DEFAULTS.peer_review` — the same constant
+ * `moduleEnabled` and `ThisWeekCard` read, so there is one place that decides
+ * what an unset key means and this module cannot drift from it.
  *
  * ── Colour ────────────────────────────────────────────────────────────────
  * One local status→token map, `STEP_TONES`, built from tokens that already
@@ -260,12 +264,13 @@ export interface AssignmentModuleProps {
    * this module reads nothing itself (see the header) and so has no config of
    * its own to ask.
    *
-   * OPTIONAL, and gated as `!== false`. `ROOM_MODULE_KEYS` defaults
-   * `peer_review` to true, so an ABSENT key and an absent prop must mean the
-   * same thing: the lane renders. Only an explicit `false` — a cohort that
-   * switched peer review OFF — takes it away. Defaulting the other way would
-   * silently hide the lane from every caller that has not been taught to pass
-   * the flag yet.
+   * OPTIONAL, and defaulted from `ROOM_MODULE_DEFAULTS.peer_review` rather than
+   * from a hardcoded boolean: an ABSENT key and an absent prop must mean the
+   * same thing, and reading the same constant `moduleEnabled` reads is the only
+   * way that stays true if the documented default ever changes. Only an
+   * explicit `false` — a cohort that switched peer review OFF — takes the lane
+   * away. Hardcoding the other way would silently hide the lane from every
+   * caller that has not been taught to pass the flag yet.
    */
   peerReviewEnabled?: boolean;
   /**
@@ -293,12 +298,11 @@ export function AssignmentModule({
   submittedAt,
   onChange,
   batchId,
-  peerReviewEnabled,
+  peerReviewEnabled = ROOM_MODULE_DEFAULTS.peer_review,
   mentorName,
   className,
 }: AssignmentModuleProps) {
   const motionSafe = useMotionSafe();
-  const [peerOpen, setPeerOpen] = useState(false);
 
   const timeline = useMemo(() => assignmentTimeline(submissionStatus), [submissionStatus]);
 
@@ -324,8 +328,10 @@ export function AssignmentModule({
   // The peer lane needs BOTH: a batch to scope the board to, and a cohort that
   // has not switched `peer_review` off. The flag composes with the batch id, it
   // does not replace it — a room with the module on but no batch still has
-  // nothing to scope a board to.
-  const showPeerReview = !!batchId && peerReviewEnabled !== false;
+  // nothing to scope a board to, and one with a batch but the module off has
+  // nothing to show. Carried as the id itself so there is a single condition and
+  // the lane cannot be rendered without the batch it scopes to.
+  const peerBatchId = peerReviewEnabled ? batchId || null : null;
 
   return (
     <section className={cn("rounded-xl border border-border bg-surface p-5", className)}>
@@ -434,46 +440,65 @@ export function AssignmentModule({
         </div>
       )}
 
-      {showPeerReview && (
-        <div className="mt-5 border-t border-border pt-4">
-          <button
-            type="button"
-            onClick={() => {
-              tapTick();
-              setPeerOpen((open) => !open);
-            }}
-            aria-expanded={peerOpen}
-            className="focus-ring pressable flex min-h-[44px] w-full items-center gap-2 text-left"
-          >
-            <Users
-              size={14}
-              strokeWidth={1.5}
-              className="shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
-              Peer reviews
-            </span>
-            <ChevronDown
-              size={16}
-              strokeWidth={1.5}
-              aria-hidden="true"
-              className={cn(
-                "ml-auto shrink-0 text-muted-foreground transition-transform",
-                peerOpen && "rotate-180",
-              )}
-            />
-          </button>
-          {/* Mounted only when opened: the board runs its own reads, and a
-              collapsed disclosure must not spend a student's data on them. */}
-          {peerOpen && (
-            <div className="mt-3">
-              <PeerReviewBoard cohortBatchId={batchId} currentUserId={userId} />
-            </div>
+      {peerBatchId && <PeerReviewLane batchId={peerBatchId} userId={userId} />}
+    </section>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * The peer lane
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The disclosure is its OWN component so its open state lives and dies with the
+ * lane. `peerReviewEnabled` derives from the room envelope, which refetches, so
+ * a cohort can switch `peer_review` off and back on inside one session with no
+ * remount. Holding the state in the parent survived that flip and re-mounted
+ * `PeerReviewBoard` — and its reads — the instant the module came back, without
+ * the student asking for it. Unmounting the owner is the only reset that cannot
+ * be forgotten.
+ */
+function PeerReviewLane({ batchId, userId }: { batchId: string; userId: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="mt-5 border-t border-border pt-4">
+      <button
+        type="button"
+        onClick={() => {
+          tapTick();
+          setOpen((wasOpen) => !wasOpen);
+        }}
+        aria-expanded={open}
+        className="focus-ring pressable flex min-h-[44px] w-full items-center gap-2 text-left"
+      >
+        <Users
+          size={14}
+          strokeWidth={1.5}
+          className="shrink-0 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
+          Peer reviews
+        </span>
+        <ChevronDown
+          size={16}
+          strokeWidth={1.5}
+          aria-hidden="true"
+          className={cn(
+            "ml-auto shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
           )}
+        />
+      </button>
+      {/* Mounted only when opened: the board runs its own reads, and a collapsed
+          disclosure must not spend a student's data on them. */}
+      {open && (
+        <div className="mt-3">
+          <PeerReviewBoard cohortBatchId={batchId} currentUserId={userId} />
         </div>
       )}
-    </section>
+    </div>
   );
 }
 

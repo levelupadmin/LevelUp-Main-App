@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
-import SessionSlot from "@/components/room/SessionSlot";
+import SessionSlot, { isCancelledSession } from "@/components/room/SessionSlot";
 import RoomClockProvider from "@/components/room/RoomClockProvider";
 import type { RoomSession } from "@/hooks/useCohortRooms";
 
@@ -134,6 +134,26 @@ describe("SessionSlot — the six-state walk", () => {
     expect(slot()).toHaveAttribute("data-session-state", "recorded");
     expect(screen.getByText("The recording is on the shelf.")).toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+});
+
+/* ── The gaps the local row in ThisWeekCard used to cover ─────────────────── */
+
+describe("SessionSlot — a session with no date yet", () => {
+  it("states the fact rather than rendering a title and nothing else", () => {
+    renderSlot({ session: session({ scheduled_at: null }) });
+
+    // `sessionTimeState` reads a null date as `scheduled`, so without this the
+    // slot would hold a heading and empty space.
+    expect(slot()).toHaveAttribute("data-session-state", "scheduled");
+    expect(screen.getByText("The date is not set yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add to calendar/i })).not.toBeInTheDocument();
+  });
+
+  it("exports the cancelled test the caller needs to place the champagne", () => {
+    expect(isCancelledSession({ status: " Cancelled " })).toBe(true);
+    expect(isCancelledSession({ status: "scheduled" })).toBe(false);
+    expect(isCancelledSession({ status: null })).toBe(false);
   });
 });
 

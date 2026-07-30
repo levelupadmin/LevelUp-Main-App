@@ -74,6 +74,7 @@ import RoomScreenings, {
   clockLabel,
   deriveWeekNumbers,
   watchedPct,
+  PROGRESS_FLUSH_MS,
   RESUME_MAX_PCT,
   RESUME_MIN_PCT,
 } from "../RoomScreenings";
@@ -149,13 +150,13 @@ const renderShelf = () =>
 const rowFor = (container: HTMLElement, sessionId: string) =>
   container.querySelector<HTMLElement>(`[data-session-id="${sessionId}"]`) as HTMLElement;
 
+/** The fill element, or null when the row draws no bar at all. */
+const hairline = (container: HTMLElement, sessionId: string) =>
+  rowFor(container, sessionId).querySelector('[data-testid="recording-hairline"]');
+
 /** How full a row's hairline is drawn, as a percentage. */
 const hairlinePct = (container: HTMLElement, sessionId: string) =>
-  Number(
-    rowFor(container, sessionId)
-      .querySelector('[data-testid="recording-hairline"]')
-      ?.getAttribute("data-fill-pct"),
-  );
+  Number(hairline(container, sessionId)?.getAttribute("data-fill-pct"));
 
 /**
  * A YouTube `infoDelivery` frame, as the real player posts it: a JSON STRING,
@@ -265,10 +266,28 @@ describe("RoomScreenings — the shelf", () => {
 });
 
 describe("RoomScreenings — the hairline", () => {
-  it("draws the watched fraction within ±5% of the true position", () => {
+  it("draws NO bar until the player has reported the recording's real length", () => {
+    // The scheduled `duration_minutes` is a plan, not a length: a 90-minute slot
+    // that produced a 62-minute file would draw every bar ~30% short. So an
+    // unmeasured row states its exact resume clock and draws nothing — the ±5%
+    // rule is met by absence, which is the V9 ruling's own remedy.
     const { container } = renderShelf();
 
-    // 750s of a 3600s recording = 20.83%.
+    expect(hairline(container, "sess-embed")).toBeNull();
+    expect(
+      within(rowFor(container, "sess-embed")).getByText("Resume at 12:30"),
+    ).toBeInTheDocument();
+  });
+
+  it("draws the watched fraction within ±5% once the length is measured", () => {
+    const { container } = renderShelf();
+
+    fireEvent.click(within(rowFor(container, "sess-embed")).getByRole("button"));
+    const frame = rowFor(container, "sess-embed").querySelector("iframe") as HTMLIFrameElement;
+    // The player confirms the 60-minute slot really is a 3600s file.
+    postPlayerTick(frame, 750, 3600);
+
+    // 750s of 3600s = 20.83%.
     expect(Math.abs(hairlinePct(container, "sess-embed") - 20.83)).toBeLessThanOrEqual(5);
   });
 
@@ -341,6 +360,27 @@ describe("RoomScreenings — the link-out path", () => {
     // Marked as opened, never as resumable.
     expect(within(rowFor(container, "sess-link")).getByText("Opened")).toBeInTheDocument();
     expect(hairlinePct(container, "sess-link")).toBe(0);
+  });
+
+  it("echoes back a position it inherited instead of zeroing it", () => {
+    // An admin swapped an embeddable URL for a Zoom share link after a student
+    // had watched 12:30 of it. The row cannot SHOW that position — nothing here
+    // can report one — but the write must not destroy it either.
+    setEnvelope([{ ...LINK_SESSION, my_position: 750 }, UPCOMING_SESSION]);
+    const { container } = renderShelf();
+
+    expect(hairline(container, "sess-link")).not.toBeNull();
+    expect(hairlinePct(container, "sess-link")).toBe(0);
+    expect(within(rowFor(container, "sess-link")).queryByText(/Resume at/)).toBeNull();
+
+    fireEvent.click(within(rowFor(container, "sess-link")).getByRole("link"));
+    backgroundApp();
+
+    expect(upsert.mock.calls[0][0][0]).toMatchObject({
+      live_session_id: "sess-link",
+      position_seconds: 750,
+      completed: true,
+    });
   });
 
   it("never mounts a player for a URL it cannot embed", () => {
@@ -457,6 +497,101 @@ describe("RoomScreenings — a position that survives a restart", () => {
 
     const rows = upsert.mock.calls[0][0];
     expect(rows[0]).toMatchObject({ position_seconds: 3500, completed: true });
+  });
+});
+
+describe("RoomScreenings — the write cannot loop or outlive the page", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const advance = (ms: number) => {
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
+  };
+
+  it("collapses a burst of player ticks into one write per 10s window", () => {
+    const { container } = renderShelf();
+    fireEvent.click(within(rowFor(container, "sess-embed")).getByRole("button"));
+    const frame = rowFor(container, "sess-embed").querySelector("iframe") as HTMLIFrameElement;
+
+    // A real player emits several frames a second. Nothing may leave until the
+    // window closes, and then only the LATEST position.
+    postPlayerTick(frame, 800, 3600);
+    postPlayerTick(frame, 810, 3600);
+    postPlayerTick(frame, 820, 3600);
+    advance(9_999);
+    expect(upsert).not.toHaveBeenCalled();
+
+    advance(1);
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert.mock.calls[0][0]).toHaveLength(1);
+    expect(upsert.mock.calls[0][0][0]).toMatchObject({ position_seconds: 820 });
+
+    // An idle player re-arms nothing: the timer is one-shot, not an interval.
+    advance(60_000);
+    expect(upsert).toHaveBeenCalledTimes(1);
+
+    // The next tick opens a fresh window.
+    postPlayerTick(frame, 900, 3600);
+    advance(PROGRESS_FLUSH_MS);
+    expect(upsert).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves no timer behind, and writes nothing more, after unmount", () => {
+    const { container, unmount } = renderShelf();
+    fireEvent.click(within(rowFor(container, "sess-embed")).getByRole("button"));
+    const frame = rowFor(container, "sess-embed").querySelector("iframe") as HTMLIFrameElement;
+
+    postPlayerTick(frame, 800, 3600);
+    advance(PROGRESS_FLUSH_MS);
+    expect(upsert).toHaveBeenCalledTimes(1);
+
+    unmount();
+    // Nothing was buffered, so the unmount flush has nothing to send…
+    expect(upsert).toHaveBeenCalledTimes(1);
+    // …and no pending timeout survives to send anything later.
+    advance(10 * PROGRESS_FLUSH_MS);
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops the player's handshake retries on unmount", () => {
+    const { container, unmount } = renderShelf();
+    fireEvent.click(within(rowFor(container, "sess-embed")).getByRole("button"));
+    const frame = rowFor(container, "sess-embed").querySelector("iframe") as HTMLIFrameElement;
+    const post = vi.spyOn(frame.contentWindow as Window, "postMessage");
+
+    advance(500);
+    expect(post).toHaveBeenCalled();
+    const before = post.mock.calls.length;
+
+    unmount();
+    advance(10_000);
+    expect(post.mock.calls.length).toBe(before);
+  });
+});
+
+describe("RoomScreenings — what it refuses to claim", () => {
+  it("never writes `completed` off a duration the player did not report", () => {
+    // 3500s is past 95% of the SCHEDULED hour, but the player volunteered no
+    // length, so "watched" is not a claim this page is entitled to make.
+    const { container, unmount } = renderShelf();
+    fireEvent.click(within(rowFor(container, "sess-embed")).getByRole("button"));
+    const frame = rowFor(container, "sess-embed").querySelector("iframe") as HTMLIFrameElement;
+
+    postPlayerTick(frame, 3500, 0);
+    unmount();
+
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert.mock.calls[0][0][0]).toMatchObject({
+      position_seconds: 3500,
+      completed: false,
+    });
   });
 });
 

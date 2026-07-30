@@ -96,6 +96,11 @@ function externalHttpUrl(value: string | null | undefined): string | null {
  * and no Join, so it must not be the one that spends it. `live_sessions.status`
  * is free text in practice, hence the trim-and-lower rather than `=== `.
  */
+// One exported predicate beside the component that owns the rule, rather than a
+// second copy of it in `ThisWeekCard` (the two would drift) or a new file for a
+// single line. Fast Refresh loses this module's state on edit as a result, and
+// this module holds none — the clock it reads lives in `RoomClockProvider`.
+// eslint-disable-next-line react-refresh/only-export-components
 export function isCancelledSession(session: Pick<RoomSession, "status">): boolean {
   return (session.status ?? "").trim().toLowerCase() === "cancelled";
 }
@@ -236,6 +241,12 @@ export function SessionSlot({
   } else if (addToCalendarButton) {
     // `scheduled` and `tonight` share one action: put it in your own calendar.
     body = <div className="flex flex-wrap gap-2">{addToCalendarButton}</div>;
+  } else {
+    // A session an admin created before its date. `sessionTimeState` reads a
+    // null `scheduled_at` as `scheduled`, so state alone would leave a slot
+    // holding nothing but a title — the thinner row this component replaced
+    // said "Scheduled" here, and the student is owed the fact either way.
+    body = <p className="body-muted text-sm">The date is not set yet.</p>;
   }
 
   return (

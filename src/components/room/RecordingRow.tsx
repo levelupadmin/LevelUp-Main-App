@@ -163,22 +163,25 @@ export function RecordingRow({
 
       {open && children && <div className="px-3 pb-3">{children}</div>}
 
-      {/* The watched hairline. Rendered for every row so the shelf keeps one
-          baseline; a link-out simply never fills it. Inset by the row's own
-          padding so it aligns with the content column and never crosses the
-          card's rounded corner — the card cannot be `overflow-hidden`, which
-          would clip the trigger's focus ring. */}
+      {/* The watched hairline. The GROOVE is rendered for every row so the shelf
+          keeps one baseline and no row changes height when a length becomes
+          known; the FILL only exists when there is a fraction to stand behind.
+          Inset by the row's own padding so it aligns with the content column and
+          never crosses the card's rounded corner — the card cannot be
+          `overflow-hidden`, which would clip the trigger's focus ring. */}
       <div className="mx-3 mb-3 h-px overflow-hidden bg-border">
-        <div
-          data-testid="recording-hairline"
-          data-fill-pct={Math.round(fill * 100)}
-          className="h-full w-full origin-left bg-room-accent transition-transform"
-          style={{
-            transform: `scaleX(${fill})`,
-            transitionDuration: "var(--motion-base)",
-            transitionTimingFunction: "var(--ease-out)",
-          }}
-        />
+        {fill !== null && (
+          <div
+            data-testid="recording-hairline"
+            data-fill-pct={Math.round(fill * 100)}
+            className="h-full w-full origin-left bg-room-accent transition-transform"
+            style={{
+              transform: `scaleX(${fill})`,
+              transitionDuration: "var(--motion-base)",
+              transitionTimingFunction: "var(--ease-out)",
+            }}
+          />
+        )}
       </div>
     </li>
   );

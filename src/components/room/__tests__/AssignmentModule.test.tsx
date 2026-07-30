@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 
 import AssignmentModule, {
   ASSIGNMENT_STEPS,
@@ -8,6 +8,26 @@ import AssignmentModule, {
   assignmentTimeline,
   type AssignmentStepTone,
 } from "@/components/room/AssignmentModule";
+import { ROOM_MODULE_DEFAULTS } from "@/lib/room";
+
+/**
+ * `PeerReviewBoard` is stubbed for ONE reason: the real board runs its own
+ * Supabase reads on mount, and the fact under test is whether the wrapper mounts
+ * it at all, with which props. The stub keeps the prop CONTRACT honest — it
+ * records what it was handed, so a rename of `cohortBatchId` (which would also
+ * break `CommunityPage.tsx` and `CohortDashboard.tsx`, neither of which this
+ * phase owns) fails here as well as in the type-check.
+ */
+const peerBoard = vi.hoisted(() => ({
+  mounts: [] as Array<{ cohortBatchId: string; currentUserId: string }>,
+}));
+
+vi.mock("@/components/cohort/PeerReviewBoard", () => ({
+  default: (props: { cohortBatchId: string; currentUserId: string }) => {
+    peerBoard.mounts.push(props);
+    return <div data-testid="peer-review-board" />;
+  },
+}));
 
 /**
  * R2-T4 — the assignment + feedback loop in the room register.
@@ -31,7 +51,10 @@ import AssignmentModule, {
  *     mentor feedback with no way to answer it.
  */
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  peerBoard.mounts.length = 0;
+});
 
 const baseProps = {
   weekId: "week-1",
@@ -374,5 +397,55 @@ describe("AssignmentModule — peer review scoping", () => {
   it("does not resurrect the lane from the flag alone — a batch is still required", () => {
     render(<AssignmentModule {...baseProps} batchId={null} peerReviewEnabled />);
     expect(screen.queryByRole("button", { name: /peer reviews/i })).not.toBeInTheDocument();
+  });
+
+  /**
+   * The default is READ from `ROOM_MODULE_DEFAULTS`, not restated as a boolean
+   * here or in the component, so this assertion stays true by construction if
+   * the documented default for `peer_review` is ever flipped — which is exactly
+   * the drift a hardcoded `!== false` would hide.
+   */
+  it("takes its default from ROOM_MODULE_DEFAULTS rather than a hardcoded boolean", () => {
+    render(<AssignmentModule {...baseProps} batchId="batch-1" />);
+    const laneRendered = screen.queryByRole("button", { name: /peer reviews/i }) !== null;
+    expect(laneRendered).toBe(ROOM_MODULE_DEFAULTS.peer_review);
+  });
+
+  it("spends nothing on the board until the student opens the disclosure", () => {
+    render(<AssignmentModule {...baseProps} batchId="batch-1" peerReviewEnabled />);
+    expect(screen.queryByTestId("peer-review-board")).not.toBeInTheDocument();
+    expect(peerBoard.mounts).toHaveLength(0);
+  });
+
+  it("scopes the board to the room's batch, under its existing prop name", () => {
+    render(<AssignmentModule {...baseProps} batchId="batch-1" peerReviewEnabled />);
+    fireEvent.click(screen.getByRole("button", { name: /peer reviews/i }));
+    expect(screen.getByTestId("peer-review-board")).toBeInTheDocument();
+    // `cohortBatchId` / `currentUserId` are the board's own shipped prop names.
+    expect(peerBoard.mounts).toEqual([{ cohortBatchId: "batch-1", currentUserId: "user-1" }]);
+  });
+
+  it("does not auto-open the board when a cohort re-enables peer review mid-session", () => {
+    // `peerReviewEnabled` comes off the room envelope, which refetches, so an
+    // off → on flip happens without a remount. An open disclosure that survived
+    // the flip would spend a student's data the moment the module came back.
+    const { rerender } = render(
+      <AssignmentModule {...baseProps} batchId="batch-1" peerReviewEnabled />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /peer reviews/i }));
+    expect(screen.getByTestId("peer-review-board")).toBeInTheDocument();
+
+    rerender(<AssignmentModule {...baseProps} batchId="batch-1" peerReviewEnabled={false} />);
+    expect(screen.queryByRole("button", { name: /peer reviews/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("peer-review-board")).not.toBeInTheDocument();
+
+    rerender(<AssignmentModule {...baseProps} batchId="batch-1" peerReviewEnabled />);
+    expect(screen.getByRole("button", { name: /peer reviews/i })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByTestId("peer-review-board")).not.toBeInTheDocument();
+    // One mount, from the click — not a second one handed out by the flip.
+    expect(peerBoard.mounts).toHaveLength(1);
   });
 });
