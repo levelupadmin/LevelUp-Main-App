@@ -29,8 +29,12 @@ import { useRoomClock, useRoomClockFastTick } from "./RoomClockProvider";
  *                 ONE CHAMPAGNE MOMENT: every other state here is deliberately
  *                 quiet so this one lands. A caller rendering two slots that
  *                 are both `soon` passes `champagne={false}` to the second —
- *                 `ThisWeekCard` elects the FIRST uncancelled `soon` session in
- *                 the week and opts every other slot out.
+ *                 `ThisWeekCard` elects the first uncancelled `soon` session
+ *                 THAT HAS A JOIN LINK (`sessionJoinUrl`) and opts every other
+ *                 slot out. The link matters because champagne is a BUTTON: a
+ *                 slot whose `zoom_link` the server has not released yet renders
+ *                 a sentence, so electing it would leave the screen with no
+ *                 champagne on it at all.
  * · `live`      — crimson LIVE with a ping that only plays under `motion-safe`,
  *                 and Join as the primary action.
  * · `ended`     — the quiet promise the notification email already made.
@@ -89,6 +93,24 @@ function externalHttpUrl(value: string | null | undefined): string | null {
 }
 
 /**
+ * The join URL this slot would actually render, or null.
+ *
+ * Exported for the same reason `isCancelledSession` is: the CALLER elects which
+ * slot gets the single champagne treatment, and champagne IS a Join button — the
+ * `btn-champagne` class only ever lands on the `<a>`. A session inside T-60 whose
+ * `zoom_link` the server has not handed over (or has handed over as something
+ * that is not http) renders "Link drops here 1 hour before." instead, so
+ * electing it spends the screen's one champagne moment on a sentence and the
+ * page ends up with no champagne at all. The caller has to be able to ask this
+ * question, and it must be answered by the same function that decides what gets
+ * rendered rather than by a second opinion in `ThisWeekCard`.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function sessionJoinUrl(session: Pick<RoomSession, "zoom_link">): string | null {
+  return externalHttpUrl(session.zoom_link);
+}
+
+/**
  * Is this session cancelled?
  *
  * Exported because the CALLER has to know: `ThisWeekCard` picks which slot gets
@@ -123,9 +145,21 @@ export interface SessionSlotProps {
   /**
    * The champagne treatment in `soon`. Exactly one slot on a screen may carry
    * it; a caller rendering a second `soon` slot passes false so the moment
-   * stays singular.
+   * stays singular. Use `sessionJoinUrl()` to elect it — champagne is a Join
+   * button, so a slot with no link cannot wear it.
    */
   champagne?: boolean;
+  /**
+   * Which heading level the session title takes.
+   *
+   * `3` is right for a STANDALONE mount, where the slot is a top-level thing on
+   * the page. Mounted inside a labelled group it is wrong: `ThisWeekCard`'s
+   * sessions column carries its own `<h3>Live sessions</h3>`, and an `<h3>` per
+   * session under it tells a heading rotor that each class is a PEER of the list
+   * it belongs to. That caller passes `4`. The level is the caller's to state
+   * because only the caller knows what is above it.
+   */
+  headingLevel?: 2 | 3 | 4 | 5;
   className?: string;
 }
 
@@ -135,6 +169,7 @@ export function SessionSlot({
   recordingHref,
   calendarNote,
   champagne = true,
+  headingLevel = 3,
   className,
 }: SessionSlotProps) {
   const nowMs = useRoomClock();
@@ -148,7 +183,8 @@ export function SessionSlot({
   const hasDate = Number.isFinite(startMs);
   const cancelled = isCancelledSession(session);
   const title = session.title?.trim() || "Live session";
-  const joinUrl = externalHttpUrl(session.zoom_link);
+  const joinUrl = sessionJoinUrl(session);
+  const Heading = `h${headingLevel}` as const;
 
   const handleAddToCalendar = () => {
     if (!session.scheduled_at) return;
@@ -263,14 +299,14 @@ export function SessionSlot({
               {eyebrow}
             </p>
           )}
-          <h3
+          <Heading
             className={cn(
               "mt-1 font-serif text-lg leading-snug text-foreground sm:text-xl",
               cancelled && "text-muted-foreground line-through",
             )}
           >
             {title}
-          </h3>
+          </Heading>
         </div>
 
         {/* The badge slot. `tonight` reuses the app's shipped relative-time

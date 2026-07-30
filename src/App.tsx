@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { bootAnalytics } from "@/lib/analytics";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
@@ -117,6 +117,36 @@ const RoomWeeksRoute = lazy(() =>
 const RoomScreenings = lazy(() => import("@/pages/room/RoomScreenings"));
 const CohortRoomRedirect = lazy(() =>
   import("@/pages/room/RoomShell").then((m) => ({ default: m.CohortRoomRedirect })),
+);
+
+/**
+ * What the module slot shows while a room module's chunk is in flight.
+ *
+ * 🔴 WHY THIS EXISTS. The nearest Suspense boundary above a room module is
+ * `StudentLayout`'s, which wraps the layout's whole `<Outlet/>` — so a module
+ * whose chunk is NOT resident makes React 18 unmount the room's chrome
+ * (switcher, masthead, module rail) and paint the generic app skeleton instead.
+ * Navigations here are synchronous (`<BrowserRouter>`, no `v7_startTransition`),
+ * so the blank is real, not theoretical. R2 split `screenings` into its own
+ * chunk, which made that reachable from inside a painted room in BOTH
+ * directions (home/weeks → screenings and screenings → home/weeks), so the
+ * boundary is per-module rather than only on the one new page.
+ *
+ * Written with plain elements and the global `skeleton-shimmer` class ON
+ * PURPOSE: importing the room's own loading states here would pull room code
+ * into the main bundle, which is exactly what the lazy boundaries above buy.
+ */
+const RoomModuleFallback = () => (
+  <div className="space-y-4" role="status" aria-busy="true">
+    <span className="sr-only">Loading…</span>
+    <div className="h-40 rounded-xl skeleton-shimmer" />
+    <div className="h-24 rounded-xl skeleton-shimmer" />
+  </div>
+);
+
+/** A room module route element, with its own boundary so the chrome survives. */
+const roomModule = (element: ReactNode) => (
+  <Suspense fallback={<RoomModuleFallback />}>{element}</Suspense>
 );
 
 // The QueryClient + its localStorage persister live in @/lib/queryClient so the
@@ -268,27 +298,35 @@ const App = () => {
                 {roomsEnabled && (
                   <>
                     <Route path="/rooms" element={<MyCohortsPage />} />
+                    {/* Every element below goes through `roomModule()`, which
+                        adds the Suspense boundary the room subtree otherwise
+                        lacks — see RoomModuleFallback. */}
                     <Route path="/room/:slug" element={<RoomShell />}>
-                      <Route index element={<RoomHome />} />
+                      <Route index element={roomModule(<RoomHome />)} />
                       {/* The rail links `weeks/:n` (RoomShell.tsx `weeksHref`);
                           the bare path is what a typed URL and a stale
                           bookmark hit, and WeeksModule already resolves its own
                           default week when the route names none. */}
-                      <Route path="weeks" element={<RoomWeeksRoute />} />
-                      <Route path="weeks/:n" element={<RoomWeeksRoute />} />
+                      <Route path="weeks" element={roomModule(<RoomWeeksRoute />)} />
+                      <Route path="weeks/:n" element={roomModule(<RoomWeeksRoute />)} />
                       {/* Mounted DIRECTLY, not through RoomModuleRoute:
                           RoomScreenings owns the `recordings` gate itself, and
                           double-gating it would be one cohort setting with two
                           empty states. */}
-                      <Route path="screenings" element={<RoomScreenings />} />
-                      <Route path="feed" element={<RoomModuleRoute module="feed" title="Feed" />} />
+                      <Route path="screenings" element={roomModule(<RoomScreenings />)} />
+                      <Route
+                        path="feed"
+                        element={roomModule(<RoomModuleRoute module="feed" title="Feed" />)}
+                      />
                       <Route
                         path="people"
-                        element={<RoomModuleRoute module="roster" title="People" />}
+                        element={roomModule(<RoomModuleRoute module="roster" title="People" />)}
                       />
                       <Route
                         path="resources"
-                        element={<RoomModuleRoute module="resources" title="Resources" />}
+                        element={roomModule(
+                          <RoomModuleRoute module="resources" title="Resources" />,
+                        )}
                       />
                     </Route>
                   </>

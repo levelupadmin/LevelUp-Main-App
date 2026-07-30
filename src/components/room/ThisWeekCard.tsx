@@ -4,7 +4,7 @@ import { CalendarDays, Clock, MessagesSquare, Video } from "lucide-react";
 import { ROOM_MODULE_DEFAULTS, sessionTimeState, type SessionTimeState } from "@/lib/room";
 import { cn } from "@/lib/utils";
 import type { RoomSession, RoomWeekRow, RoomWeekStatus } from "@/hooks/useCohortRooms";
-import SessionSlot, { isCancelledSession } from "./SessionSlot";
+import SessionSlot, { isCancelledSession, sessionJoinUrl } from "./SessionSlot";
 import { useRoomClock } from "./RoomClockProvider";
 
 /**
@@ -55,6 +55,22 @@ import { useRoomClock } from "./RoomClockProvider";
  * touches the internals here. With no renderer supplied the slot degrades to
  * the prompt, the deadline and the existing empty-state copy, so the module is
  * shippable on its own.
+ *
+ * ── WHERE THE CLOCK IS READ, AND WHY IT IS NOT READ HERE ──────────────────
+ * `RoomClockProvider` promises that "a tick re-renders the components that asked
+ * for the time and nothing else in the room" (RoomClockProvider.tsx:52-54), and
+ * inside T-60 that clock runs at 1s. If THIS component subscribed, every tick
+ * for the hour before a class would re-render the whole card — the header, the
+ * feedback line, and the assignment column with R2-T4's submission form and
+ * peer-review lane inside it — sixty times a minute, for something only two
+ * lines of it care about.
+ *
+ * So the subscription lives in the two LEAVES that need it and nowhere else:
+ *   · `WeekLeadLine`   — the serif today-first line (a countdown to the minute).
+ *   · `SessionsColumn` — the champagne election, and the slots below it, which
+ *                        each read the clock themselves for their own state.
+ * The card itself re-renders only when its DATA changes. The assignment column
+ * is a sibling of the ticking part, not a child of it.
  */
 
 /* ──────────────────────────────────────────────────────────────────────────
