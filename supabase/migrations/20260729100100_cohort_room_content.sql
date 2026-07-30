@@ -50,6 +50,101 @@
 --            abort). Scope-integrity guards are expressed as policy WITH CHECK
 --            predicates or as silently-coercing BEFORE triggers instead.
 --
+-- ── APPLY-TIME LOCKS — WHY THIS FILE CARRIES NO `lock_timeout`, AND THE ONE
+--    PLACE WHERE THAT IS STILL A COST ───────────────────────────────────────────
+-- This file sets no `lock_timeout` anywhere. Counted from supabase/migrations/
+-- with a pattern anchored to the executable line, so no comment about the subject
+-- (this one included) can move it —
+-- `grep -cE "^ +PERFORM set_config\('lock_timeout'" <file>`:
+--   20260729100100_cohort_room_content.sql   =>  0   ← this file
+--   20260729100000_cohort_rooms_backbone.sql => 12   (§7A's six sites, arm+restore)
+--   20260729100200_cohort_room_rpcs.sql      =>  2   (its §0 index, guarded 2026-07-30)
+-- That asymmetry is a CONCLUSION, audited
+-- 2026-07-30, not an omission — but "this file only touches tables R0 creates, so
+-- change nothing" is NOT the conclusion, because that premise is false. The
+-- honest answer splits three ways and is written out per class, since a verdict
+-- alone is what let the wrong premise stand.
+--
+--   (1) DDL ON THE SEVEN TABLES THIS FILE CREATES — no `lock_timeout`, by
+--       decision. Every ALTER, CREATE INDEX, ENABLE ROW LEVEL SECURITY, CREATE
+--       POLICY, CREATE TRIGGER and GRANT below targets one of them. On a fresh
+--       apply the CREATE TABLE has already taken ACCESS EXCLUSIVE on the table
+--       inside THIS transaction, so no competing holder is possible; on a
+--       shadow/re-apply they are room tables that no shipped surface touches,
+--       because R0 is the migration that introduces them. A `lock_timeout` there
+--       bounds a wait with no counterparty. Same argument 20260729100000 makes
+--       for its own `cohort_room_configs` trigger ("a room table with no
+--       money-path traffic. The lock_timeout + handler wrapper of §7A buys
+--       nothing here"). Adding one for symmetry would be actively harmful: an
+--       unnecessary guard is what makes the next reader distrust a necessary one.
+--       ⚠️ This is NOT "no handler needed". Every handler below stays — a
+--       `statement_timeout` or a `pg_cancel_backend()` aimed at the push is a real
+--       event on any table, locked or not. §1's block is where that distinction
+--       used to be stated wrongly; see the comment there.
+--
+--   (2) THE FIVE PRE-EXISTING LIVE TABLES THIS FILE LOCKS ANYWAY. It does lock
+--       them — through `REFERENCES`, never through an ALTER of theirs — and
+--       20260729100000 contract note 10's residual list is the inventory:
+--       `users`, `offerings`, `cohort_batches`, `cohort_weeks`, `live_sessions`.
+--       `CREATE TABLE … REFERENCES parent` takes SHARE ROW EXCLUSIVE on the
+--       PARENT (measured — 20260729100000 A6 item (8)) and holds it to the end of
+--       the push, not the end of the statement.
+--       For THREE of the five the wait is nevertheless ZERO, and a guard would be
+--       class-(1) noise: by the time this file runs the push already holds ACCESS
+--       EXCLUSIVE on `cohort_batches` (20260729100000 §7A block 1) and SHARE ROW
+--       EXCLUSIVE on `users` and `offerings` (its §1/§2 CREATE TABLEs) — same
+--       transaction, at or above the mode we need — and a request never conflicts
+--       with a lock its own transaction already holds. Measured on that ordering:
+--       `cohort_batches` sitting at AccessExclusiveLock, then §1's `CREATE TABLE …
+--       REFERENCES cohort_batches` completing in 2ms with the SHARE ROW EXCLUSIVE
+--       simply added alongside.
+--
+--   (3) `cohort_weeks` AND `live_sessions` — THE RESIDUAL, AND IT IS THIS FILE'S.
+--       Nothing earlier in the push locks either one (measured: both hold no lock
+--       when §2 begins), so §2's `cohort_resources.cohort_week_id REFERENCES
+--       public.cohort_weeks(id)` and §4's
+--       `cohort_recording_progress.live_session_id REFERENCES
+--       public.live_sessions(id)` are the PUSH'S FIRST ACQUISITION on them. They
+--       take SHARE ROW EXCLUSIVE with the SESSION `lock_timeout` in force, which
+--       on the `npx -y supabase@latest db push` path CLAUDE.md documents is 0.
+--       So these two — not 20260729100200 §0, which was guarded on 2026-07-30 —
+--       are R0's remaining unbounded lock waits, and they open EARLIER in the push
+--       than that one did. Both parents are live: `cohort_weeks` and
+--       `live_sessions` are joined by the shipped `get_cohort_progress` and
+--       written by the admin cohort tooling.
+--       WHY THIS ROUND DID NOT WRAP THEM — a decision, not an oversight:
+--         · §7A's pattern is DEGRADE-ON-TIMEOUT, and degrading is not available
+--           here. It works there because a skipped constraint or trigger costs an
+--           invariant something else still enforces. A skipped `CREATE TABLE
+--           cohort_resources` costs the TABLE — and the policies, indexes and
+--           grants below it, plus 20260729100200's RPCs, all reference it
+--           unguarded. The push would abort a few statements later anyway, with a
+--           worse error. A "degraded" apply there is a broken migration set, not a
+--           performance loss.
+--         · The available alternative is a BOUNDED ABORT: `SET LOCAL
+--           lock_timeout` with no handler, so a wait past the ceiling raises 55P03
+--           and the push rolls back cleanly, releasing every lock, with nothing
+--           stamped. That is arguably better than parking indefinitely while
+--           20260729100000 §7A holds ACCESS EXCLUSIVE on `cohort_batches` (the
+--           shipped student dashboard). It also CHANGES THE FAILURE MODE of a
+--           shared push, against this file's own header rule that nothing here
+--           aborts one. That is the phase owner's call, so it is FILED HERE and
+--           deliberately not done in a residuals round.
+--       Until it is decided, `cohort_weeks` and `live_sessions` want to be quiet
+--       at push time alongside the money tables. This is the one place where
+--       20260729100000's old "live_sessions has to be quiet at push time too"
+--       guidance is still right — for a different statement than the one it named.
+--
+--   VERIFICATION LIMIT, stated rather than implied: every lock MODE above is
+--   measured (PGlite 0.5.4 / PostgreSQL 18.3, WASM, this machine; `pg_locks` read
+--   between statements run in push order inside one open transaction, then
+--   ROLLBACK — the method of 20260729100000 A6 item (8)). No WAIT and no DURATION
+--   is measured anywhere: a single-connection PGlite cannot produce a competing
+--   lock holder, and this environment has no SHADOW_DB_URL, ROOM_QA_PROJECT_REF or
+--   SUPABASE_PAT, so nothing was applied to any real project. Read every claim
+--   about waiting as inspection of measured modes plus Postgres' documented
+--   same-transaction grant rule, never as a stopwatch.
+--
 -- ── TABLE × VERB POLICY MATRIX ──────────────────────────────────────────────
 -- | table                     | SELECT                               | INSERT                                   | UPDATE                                       | DELETE                  |
 -- |---------------------------|--------------------------------------|------------------------------------------|----------------------------------------------|-------------------------|
@@ -262,20 +357,58 @@ BEGIN
       ADD CONSTRAINT cohort_announcements_author_id_fkey
       FOREIGN KEY (author_id) REFERENCES public.users(id) ON DELETE SET NULL NOT VALID;
   END IF;
--- Guarded like every other DDL block in R0 (see 20260729100000 contract note 10
--- for the full rationale and why `query_canceled` has to be named: `OTHERS`
--- does not trap it). Every statement above takes ACCESS EXCLUSIVE on
--- cohort_announcements, and the DROP+ADD pair is one subtransaction, so a
--- cancelled lock wait rolls back to the ORIGINAL FK rather than leaving the
--- table with none — and, critically, does not abort a shared `db push`.
+-- HANDLER-GUARDED, WITH NO `lock_timeout`, AND THAT IS THE INTENDED SHAPE HERE.
+-- An earlier revision of this comment opened "Guarded like every other DDL block
+-- in R0"; audited 2026-07-30, that was wrong twice over and is restated rather
+-- than deleted, because the phrase is what stopped anyone checking:
+--   · The six §7A blocks in 20260729100000 and §0 in 20260729100200 carry a
+--     LOCAL `lock_timeout` AND a handler. This block carries only the handler, so
+--     it is not "like every other block" — this file sets no `lock_timeout` at
+--     all, by decision (header, APPLY-TIME LOCKS, class 1, which carries the
+--     comment-proof grep).
+--   · Consequently the `query_canceled` branch below can NEVER be reached by a
+--     bounded lock wait, which is what the old wording's "a cancelled lock wait
+--     rolls back to the ORIGINAL FK" implied. 57014 arrives here only from a
+--     `statement_timeout` or a `pg_cancel_backend()` aimed at the push, and 55P03
+--     (`lock_not_available`) cannot arrive at all with no timeout set. The branch
+--     still earns its place — those two events are real on any table — and
+--     `query_canceled` still has to be NAMED, because `OTHERS` does not trap it
+--     (20260729100000 contract note 10).
+-- WHY NO `lock_timeout`: every statement above takes ACCESS EXCLUSIVE on
+-- `cohort_announcements`, which is a table this migration creates, and there is
+-- no counterparty for the wait a timeout would bound. On a fresh apply the
+-- CREATE TABLE above has already taken ACCESS EXCLUSIVE on it inside this same
+-- transaction (measured 2026-07-30: this block runs with `cohort_announcements`
+-- already at AccessExclusiveLock), so no other holder is possible. Bounding that
+-- would be noise, and noise is what makes the next reader distrust the guards
+-- that are load-bearing.
+-- The DROP+ADD pair is one subtransaction either way, so any failure rolls back
+-- to the ORIGINAL FK rather than leaving the table with none — and, critically,
+-- does not abort a shared `db push`.
 -- Degradation is safe for the push but PERMANENT until someone acts: the old
 -- CASCADE FK survives, so deleting a host's account would still erase the
 -- noticeboard of every cohort they ran. A second `db push` does NOT converge it
 -- — the version is stamped on completion and never re-applied — so recovery is
 -- the manual procedure in 20260729100000 contract note 11, and the section-8
--- VERIFY query there (confdeltype = 'n') is what detects it. The table is
--- created by this same migration on a fresh apply, so there is no lock to wait
--- on there and this block is a no-op.
+-- VERIFY query there (confdeltype = 'n') is what detects it.
+-- WHAT THIS BLOCK DOES ON EACH PATH, because the old closing sentence ("The table
+-- is created by this same migration on a fresh apply, so there is no lock to wait
+-- on there and this block is a no-op") collapsed two different targets into one
+-- and read as if the block never does anything:
+--   · FRESH APPLY (what prod is). The CREATE TABLE above already produced
+--     `author_id uuid REFERENCES public.users(id) ON DELETE SET NULL`, so
+--     confdeltype is already 'n', the IF branch is skipped and no FK is touched.
+--     The `ALTER COLUMN … DROP NOT NULL` still EXECUTES — it is a catalogue write
+--     on an already-nullable column, not a parsed no-op — it is simply free and
+--     unblockable. So: no-op in EFFECT, not in execution, and no lock to wait on.
+--   · SHADOW / RE-APPLY, which is the case this block exists for. The table
+--     PRE-EXISTS carrying the draft's `NOT NULL … ON DELETE CASCADE` FK, so the
+--     DROP NOT NULL and the DROP+ADD both do real work. The "no lock to wait on"
+--     reason does not apply there — but the CONCLUSION still does, for a
+--     different reason: R0 is the migration that introduces
+--     `cohort_announcements`, so no shipped surface reads or writes it on any
+--     target, and the only possible competing holder is a hand session someone is
+--     running against the same project while pushing.
 EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
             OR crash_shutdown OR cannot_connect_now OR others THEN
   RAISE WARNING 'cohort_announcements: author FK re-shape skipped (%) [%] — a pre-existing ON DELETE CASCADE author FK may still be in place, so deleting a host account would erase their announcements. Another db push will NOT fix this: re-run this DO block by hand (20260729100000 contract note 11).',
@@ -398,6 +531,14 @@ CREATE POLICY ann_host_retract ON public.cohort_announcements FOR UPDATE
 ----------------------------------------------------------------------
 -- 2. cohort_resources — files/links library (optionally pinned to a week).
 --    Curriculum + mentor materials => full members only, NO lobby read.
+--
+--    ⚠️ APPLY-TIME: `cohort_week_id … REFERENCES public.cohort_weeks(id)` below is
+--    the PUSH'S FIRST lock acquisition on `cohort_weeks` — SHARE ROW EXCLUSIVE,
+--    held to the end of the push, taken with the session `lock_timeout` (0 on the
+--    `db push` path). It is one of R0's two remaining unbounded lock waits and it
+--    is NOT wrappable in the §7A degrade pattern. Header, APPLY-TIME LOCKS class
+--    (3), carries the reasoning and the filed decision. Do not "fix" it here
+--    without reading that.
 ----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.cohort_resources (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -798,6 +939,15 @@ REVOKE INSERT ON public.cohort_room_post_replies FROM authenticated, anon;
 --    occupant holds any verb on at all. That is enumerated in the Tier-2 block
 --    in the header rather than left implicit here, because the header makes an
 --    exhaustive claim and this is the third item in it.
+--
+--    ⚠️ APPLY-TIME: `live_session_id … REFERENCES public.live_sessions(id)` below
+--    is the PUSH'S FIRST lock acquisition on `live_sessions` — SHARE ROW
+--    EXCLUSIVE, held to the end of the push, taken with the session `lock_timeout`
+--    (0 on the `db push` path). It is R0's other remaining unbounded lock wait,
+--    and it is the reason 20260729100200 §0's guarded CREATE INDEX on the SAME
+--    table cannot wait at all on a first apply: SHARE ROW EXCLUSIVE is strictly
+--    stronger than the SHARE that index needs, and the push already holds it from
+--    here. Header, APPLY-TIME LOCKS class (3).
 ----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.cohort_recording_progress (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,

@@ -53,7 +53,27 @@
 --
 -- REVERSAL: a single DROP script — see the runbook block at the foot of this
 -- file, which also carries the VERBATIM prior definition of get_cohort_progress.
--- No DO block in this migration raises; nothing here can abort a shared db push.
+--
+-- NOTHING HERE CAN ABORT A SHARED `db push` — but the reason is no longer "there
+-- is no DO block", and the old wording has to be restated rather than deleted
+-- because 20260729100000 quotes it. An earlier revision of this line read:
+--   "No DO block in this migration raises; nothing here can abort a shared db
+--    push."
+-- The first clause was true and the second did not follow from it. §0 below was
+-- then a BARE `CREATE INDEX` on the LIVE table `live_sessions` with neither a
+-- `lock_timeout` nor a handler, so an error there — or a lock wait there, which
+-- inherited the session default of 0 = wait forever — was exactly the thing that
+-- could take the whole shared push down or park it indefinitely.
+-- 20260729100000 contract note 10 named that, and this file has now fixed it.
+-- POST-FIX, the halves swap truth values:
+--   · "no DO block in this migration" is now FALSE. There is exactly one: §0.
+--   · "nothing here can abort a shared db push" is now TRUE, and for a stated
+--     mechanism rather than by luck — §0 is guarded on 20260729100000 §7A's
+--     shape, so its worst case is `RAISE WARNING`, and a WARNING is not an
+--     exception. Every other statement in this file is a CREATE OR REPLACE
+--     FUNCTION, a GRANT or a REVOKE.
+-- A later pass adding a second DO block takes the same shape: probe, LOCAL
+-- lock_timeout, DDL, restore, degrade to WARNING. Never a top-level RAISE.
 -- Do NOT apply to prod: shadow project + council + adversarial suite first.
 -- ============================================================================
 
@@ -63,10 +83,119 @@
 --    live_sessions.week_id carries an FK but no index (FKs do not create one),
 --    so the envelope's weeks→sessions join degrades to a seq scan at prod
 --    scale. Additive and idempotent.
+--
+--    GUARDED ON 20260729100000 §7A's PATTERN, AND FOR ITS REASON. This is the
+--    FOURTH live-table DDL site in R0 — the other three classes are all in that
+--    file's §7A — and until this round it was the only one in the phase with
+--    neither a LOCAL `lock_timeout` nor a handler. That is not a symmetry
+--    complaint, it is the specific defect 20260729100000 contract note 10
+--    recorded against this statement:
+--      · `CREATE INDEX` (non-CONCURRENT) takes SHARE on `live_sessions`
+--        (measured — 20260729100000 A6 item (8)). Readers pass; every WRITE
+--        queues. And the lock is HELD TO COMMIT, which for a `db push` means the
+--        end of the PUSH, not the end of this statement or of this file.
+--      · With no LOCAL `lock_timeout` it inherited the SESSION value, which on
+--        the `npx -y supabase@latest db push` path CLAUDE.md documents is 0 —
+--        WAIT FOREVER. It executes while §7A's ACCESS EXCLUSIVE on
+--        `cohort_batches` (the shipped student dashboard reads it) and its SHARE
+--        ROW EXCLUSIVE on `enrolments` / `cohort_applications` (checkout writes)
+--        are still held, so a park here is a park with those held.
+--      · An unhandled error here aborts the whole shared push and takes both
+--        sibling migrations with it.
+--    1s, NOT 4s: the ceiling matches every §7A site exactly, and the 4s→1s
+--    change is recorded in 20260729100000 A6 item (7). Do not reintroduce 4s
+--    here on the assumption that §7A still uses it.
+--
+--    HOW LONG THE WAIT ACTUALLY IS, stated per path rather than left at
+--    "forever", because the two differ and only one of them is prod:
+--      · FIRST APPLY (what prod is). 20260729100100 §4's `CREATE TABLE
+--        cohort_recording_progress (… live_session_id REFERENCES
+--        public.live_sessions(id))` has ALREADY taken SHARE ROW EXCLUSIVE on
+--        `live_sessions` in this same transaction, and that mode is strictly
+--        STRONGER than the SHARE this statement needs. A request never conflicts
+--        with a lock its own transaction already holds, and no other transaction
+--        can be holding anything that conflicts with our SHARE without also
+--        conflicting with the SHARE ROW EXCLUSIVE we already hold. So on a first
+--        apply the wait here is ZERO and this guard is never exercised.
+--      · RE-APPLY / SHADOW. If `cohort_recording_progress` already exists,
+--        20260729100100 §4 is an `IF NOT EXISTS` no-op that takes NO lock on
+--        `live_sessions` at all, and THIS statement becomes the push's first
+--        acquisition on that table. That is the path the guard exists for, and
+--        it is reachable by design: every object in R0 is `IF NOT EXISTS`
+--        precisely so the set can be re-applied to a shadow.
+--    MEASURED, 2026-07-30, PGlite 0.5.4 (PostgreSQL 18.3, WASM, this machine),
+--    same method as 20260729100000 A6 item (8) — statements run in file order
+--    inside one open transaction against stand-in tables, `pg_locks` read
+--    between them, ROLLBACK. Modes on `live_sessions`:
+--      after 100100 §4 CREATE TABLE … REFERENCES  → ShareRowExclusiveLock
+--      after this block, same transaction          → + ShareLock (2ms, no wait)
+--      this block with 100100 §4 a no-op           → ShareLock (FIRST acquisition)
+--    WHAT THAT IS NOT: it is not a measurement of a WAIT. A single-connection
+--    PGlite cannot produce a competing lock holder, and this environment has no
+--    SHADOW_DB_URL / ROOM_QA_PROJECT_REF / SUPABASE_PAT, so nothing here was
+--    applied to a real project. The zero-wait claim above is INSPECTION of
+--    measured modes plus the documented same-transaction grant rule, not a
+--    stopwatch. PGlite also delivers no `statement_timeout` at all (verified:
+--    `SET statement_timeout='50ms'; SELECT pg_sleep(1)` returns after 1001ms),
+--    so the timeout path itself is unmeasurable here; what WAS measured is that
+--    a failure inside the DDL is caught by the INNER handler, leaves the
+--    surrounding transaction usable, restores `lock_timeout`, and leaves the
+--    index ABSENT.
+--
+--    WHAT A TIMEOUT MEANS FOR THE CALLER. This block DEGRADES; it does not
+--    abort. The push completes and the index is left ABSENT. That is a
+--    PERFORMANCE degradation, not a correctness one, and the difference matters
+--    for triage: nothing below depends on the index existing, `get_cohort_room()`
+--    and `get_cohort_progress()` return exactly the same rows without it, and
+--    the only consequence is that the envelope's weeks→sessions join seq-scans
+--    `public.live_sessions` at prod scale — the very cost §0 exists to remove.
+--    A SECOND `db push` WILL NOT CONVERGE IT: the version is stamped on
+--    completion and never re-applied, so recovery is the by-hand re-run of
+--    20260729100000 contract note 11 — copy this DO block verbatim, run it
+--    against the target when `live_sessions` is quiet, and confirm with
+--    `SELECT to_regclass('public.live_sessions_week_idx')`.
+--    THE REVERSAL ALREADY TOLERATES THE DEGRADED STATE: section C at the foot of
+--    this file reads `DROP INDEX IF EXISTS public.live_sessions_week_idx`, so it
+--    runs to completion whether or not the index landed (confirmed, and left
+--    exactly as it is).
+--
+--    THE PROBE IS WHAT AVOIDS THE LOCK, not the `IF NOT EXISTS`. `CREATE INDEX
+--    IF NOT EXISTS` opens — and therefore LOCKS — the table before it looks for
+--    the index name, so on a project that already carries the index the bare
+--    statement still takes SHARE on `live_sessions` (measured: bare statement
+--    with the index present → ShareLock; this block with the index present → no
+--    relation lock at all). `IF NOT EXISTS` is kept INSIDE the block anyway, so
+--    the statement stays idempotent on its own and stays greppable by name.
 ----------------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS live_sessions_week_idx
-  ON public.live_sessions (week_id, scheduled_at)
-  WHERE week_id IS NOT NULL;
+DO $$
+DECLARE
+  v_prev_lock_timeout text;
+BEGIN
+  IF to_regclass('public.live_sessions') IS NOT NULL
+     AND to_regclass('public.live_sessions_week_idx') IS NULL
+  THEN
+    BEGIN
+      v_prev_lock_timeout := current_setting('lock_timeout', true);
+      PERFORM set_config('lock_timeout', '1s', true);   -- LOCAL: this txn only
+
+      CREATE INDEX IF NOT EXISTS live_sessions_week_idx
+        ON public.live_sessions (week_id, scheduled_at)
+        WHERE week_id IS NOT NULL;
+
+      PERFORM set_config('lock_timeout',
+                         COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+    EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+                OR crash_shutdown OR cannot_connect_now OR others THEN
+      -- The subtransaction rollback also restores lock_timeout, so nothing is
+      -- left set for the rest of the push.
+      RAISE WARNING 'cohort_room: could not create live_sessions_week_idx (%) [%] — the room envelope''s weeks→sessions join will SEQ SCAN public.live_sessions at prod scale. Correctness is unaffected: every RPC below returns the same rows without the index. Another db push will NOT fix this: re-run this DO block by hand when live_sessions is quiet — 20260729100000 contract note 11.',
+        SQLERRM, SQLSTATE;
+    END;
+  END IF;
+EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
+            OR crash_shutdown OR cannot_connect_now OR others THEN
+  RAISE WARNING 'cohort_room: live_sessions_week_idx probe failed (%) [%] — index not created, so the envelope''s weeks→sessions join seq-scans; re-run this DO block by hand (20260729100000 contract note 11)', SQLERRM, SQLSTATE;
+END $$;
 
 
 ----------------------------------------------------------------------

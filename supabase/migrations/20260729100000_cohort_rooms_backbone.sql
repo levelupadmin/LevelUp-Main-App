@@ -347,9 +347,22 @@
 --
 --    THE THREE CLASSES IN THIS FILE, all executed in §7A. This is THIS FILE's
 --    inventory, not R0's: the push also carries a FOURTH live-table DDL site,
---    in 20260729100200, which is neither in this file nor in §7A and is the one
---    unbounded lock WAIT left in the phase. It is described under "THE WINDOW
---    GOES FROM…" below and must not be dropped from either list again.
+--    in 20260729100200 §0, which is neither in this file nor in §7A. An earlier
+--    revision of this sentence also called it "the one unbounded lock WAIT left
+--    in the phase". That was TRUE WHEN IT WAS WRITTEN and is now FALSE: that
+--    site carries a LOCAL 1s `lock_timeout` and a degrading handler on this
+--    file's own §7A pattern, so its wait is bounded like every site here. It is
+--    still described under "THE WINDOW GOES FROM…" below and must not be dropped
+--    from either list again — a bounded site is still a site.
+--    WHAT REPLACED IT AS THE PHASE'S UNBOUNDED WAIT is NOT nothing, and the
+--    correction would be worthless if it stopped at the good news: R0's
+--    remaining unbounded lock waits are 20260729100100's own `CREATE TABLE …
+--    REFERENCES` statements — see the `cohort_weeks` and `live_sessions` bullets
+--    of THE RESIDUAL below, which are the push's FIRST acquisition on those two
+--    tables and take it with the session default in force. They are a different
+--    problem from this one and are NOT fixable by the §7A degrade pattern (the
+--    object they would degrade is a hard dependency of ~21 policies and of
+--    20260729100200's RPCs); 20260729100100 owns the analysis and records it.
 --      · `ALTER TABLE public.cohort_batches ADD CONSTRAINT
 --        cohort_batches_id_offering_key UNIQUE (id, offering_id)` — ACCESS
 --        EXCLUSIVE on cohort_batches (measured; plus a SHARE while it builds the
@@ -452,22 +465,62 @@
 --              WHERE week_id IS NOT NULL;
 --        Non-CONCURRENT, so it takes SHARE on live_sessions — readers pass,
 --        every WRITE blocks — plus a real index build, and like everything else
---        here the lock is held to COMMIT. It is also the ONE live-table DDL
---        statement in R0 with neither a `lock_timeout` nor a handler
---        (`grep -c lock_timeout 20260729100200_cohort_room_rpcs.sql` is 0), so
---        it inherits the SESSION `lock_timeout`, which on the
---        `npx supabase db push` path this file names is 0 — WAIT FOREVER. And
---        it executes while §7A's ACCESS EXCLUSIVE on `cohort_batches` and its
---        SHARE ROW EXCLUSIVE on `enrolments` and `cohort_applications` are still
---        held: one concurrent transaction holding a conflicting lock on
---        live_sessions parks the whole push — with the dashboard's table locked
---        against readers and the money tables locked against writers — for as
---        long as that transaction lives. THAT IS THE LARGEST APPLY-TIME HAZARD
---        LEFT IN R0. It is not this file's statement to fix — 20260729100200 owns it,
---        and that file's own header claim that "nothing here can abort a shared
---        db push" is wrong for the same block — so it is recorded here rather
---        than patched from a distance. Until it is fixed, `live_sessions` has
---        to be quiet at push time too, alongside the money tables.
+--        here the lock is held to COMMIT.
+--        IT IS NOW GUARDED, AND THIS PARAGRAPH USED TO SAY IT WAS NOT. What
+--        stood here, verbatim, because a corrected note is only useful if the
+--        superseded claim is still readable:
+--          "It is also the ONE live-table DDL statement in R0 with neither a
+--           `lock_timeout` nor a handler
+--           (`grep -c lock_timeout 20260729100200_cohort_room_rpcs.sql` is 0), so
+--           it inherits the SESSION `lock_timeout`, which on the
+--           `npx supabase db push` path this file names is 0 — WAIT FOREVER. …
+--           THAT IS THE LARGEST APPLY-TIME HAZARD LEFT IN R0. It is not this
+--           file's statement to fix — 20260729100200 owns it …"
+--        20260729100200 has since fixed it, on this file's §7A pattern: the
+--        statement now sits in a DO block that probes for the index, sets a LOCAL
+--        `lock_timeout` of 1s (the same ceiling as every §7A site — A6 item (7)),
+--        runs the DDL, restores the previous value, and on failure emits
+--        `RAISE WARNING` instead of propagating. THE GREP ASSERTION ABOVE IS
+--        DEAD AND MUST NOT BE COPIED FORWARD — a reviewer running it today gets
+--        a NON-ZERO count, not 0. It is restated below in a form that counts
+--        GUARD SITES rather than the word, because `grep -c lock_timeout` also
+--        counts every comment that discusses one (this paragraph included), which
+--        is exactly how the old assertion rotted: it read 0 for a file that now
+--        argues the subject at length. The pattern below is anchored to the
+--        executable line so no amount of commentary can move it. Two such lines
+--        per site — arm and restore — so the count is 2× the sites. From
+--        supabase/migrations/, with `grep -cE "^ +PERFORM set_config\('lock_timeout'"`:
+--          20260729100000_cohort_rooms_backbone.sql => 12   (§7A's 6 sites)
+--          20260729100200_cohort_room_rpcs.sql      =>  2   (§0, this fix)
+--          20260729100100_cohort_room_content.sql   =>  0   (deliberate)
+--        The 0 for 20260729100100 is deliberate and is argued in that file's
+--        header, not an oversight — see the `cohort_weeks` / `live_sessions`
+--        bullets of THE RESIDUAL below for what it does and does not cost.
+--        WHAT THE FIX CHANGES AND WHAT IT DOES NOT. It bounds the WAIT and makes
+--        a timeout degrade (index ABSENT ⇒ the envelope's weeks→sessions join
+--        seq-scans; a PERFORMANCE loss, never a correctness or access one, and a
+--        second push will not converge it — note 11 recovery applies there too).
+--        It does NOT shorten the HOLD: once granted, the SHARE is held to the end
+--        of the push exactly as before. And it does NOT change what this file
+--        holds while that statement runs — §7A's ACCESS EXCLUSIVE on
+--        `cohort_batches` and its SHARE ROW EXCLUSIVE on `enrolments` and
+--        `cohort_applications` are still held across it.
+--        ONE MORE THING THE FIX MADE PRECISE, worth carrying here because it
+--        shortens the exposure this note has been sizing: on a FIRST APPLY that
+--        SHARE cannot wait at all. 20260729100100 §4's `CREATE TABLE
+--        cohort_recording_progress (… REFERENCES public.live_sessions(id))` has
+--        already taken SHARE ROW EXCLUSIVE on `live_sessions` in this same
+--        transaction, and SHARE ROW EXCLUSIVE is strictly stronger than SHARE, so
+--        the request is granted against a lock we already hold. The wait is real
+--        only where 20260729100100 §4 was an `IF NOT EXISTS` no-op — a shadow or
+--        a re-apply — and prod is a first apply. Inspection of measured modes
+--        plus the same-transaction grant rule, not a measured wait.
+--        SO THE GUIDANCE CHANGES. It used to read "Until it is fixed,
+--        `live_sessions` has to be quiet at push time too, alongside the money
+--        tables". It is fixed, so: the push NO LONGER PARKS on `live_sessions`.
+--        A busy `live_sessions` can still cost you the index — 1s of wait, then a
+--        WARNING and a by-hand re-run — so a quiet minute is still worth having,
+--        but it is no longer an outage-length risk and must not be sized as one.
 --    THE RESIDUAL, in full — meaning every lock this PUSH still holds on a
 --    PRE-EXISTING live table when it commits, not only the ones §7A takes.
 --    "In full" is a claim, so it is enumerated per TABLE and per VERB, and each
@@ -520,15 +573,37 @@
 --        public.cohort_weeks(id)` on cohort_room_posts (Δ1's dark channel
 --        columns) each take SHARE ROW EXCLUSIVE on it. NOT a §7A lock and not a
 --        20260729100200 lock — this line was missing entirely.
+--        AND IT IS THE PUSH'S FIRST ACQUISITION ON THAT TABLE, which is the part
+--        this bullet stopped short of: nothing before 20260729100100 §2 locks
+--        `cohort_weeks` at all, so that request is the one that can WAIT, and it
+--        waits with the session `lock_timeout` of 0. Together with the
+--        `live_sessions` line below, that is where R0's remaining unbounded lock
+--        wait lives now that 20260729100200 §0 is bounded. 20260729100100 owns
+--        the analysis — including why the §7A degrade pattern is the wrong tool
+--        there (a skipped `CREATE TABLE` is not a degradation, it is a broken
+--        migration set) — and records it in its own header.
 --      · live_sessions WRITE blocked from 20260729100100 §4 to the end of the
 --        push — `cohort_recording_progress.live_session_id REFERENCES
 --        public.live_sessions(id)`, SHARE ROW EXCLUSIVE, EARLIER in the push
---        than the bullet used to say. 20260729100200 §0's unguarded CREATE INDEX
---        then takes SHARE on the same table: it adds no new verb (writes are
---        already queued) but it is the one UNBOUNDED WAIT in R0, so it is where
---        the push can PARK with everything above still held. An earlier version
---        of this list attributed the whole live_sessions block to that CREATE
---        INDEX and so understated when the window opens.
+--        than the bullet used to say, and — like `cohort_weeks` — the push's
+--        FIRST acquisition on the table, so it is that statement, not the index,
+--        that can wait unbounded. 20260729100200 §0's CREATE INDEX then takes
+--        SHARE on the same table: it adds no new verb (writes are already
+--        queued), and it can no longer PARK the push. Two corrections, both
+--        recorded rather than overwritten:
+--          – an early version attributed the whole live_sessions block to that
+--            CREATE INDEX and so understated when the window opens;
+--          – the version before this one called the CREATE INDEX "the one
+--            UNBOUNDED WAIT in R0, so it is where the push can PARK with
+--            everything above still held". It was, and it no longer is:
+--            20260729100200 §0 now carries a LOCAL 1s `lock_timeout` and a
+--            degrading handler. Worse for that sentence, the CREATE INDEX could
+--            not have parked a FIRST APPLY even before the fix — §4 above has
+--            already taken SHARE ROW EXCLUSIVE on `live_sessions` in the same
+--            transaction and that mode is strictly stronger than SHARE, so the
+--            index's request is granted against a lock the push already holds.
+--            The wait it was guarded for is the shadow/re-apply path, where §4 is
+--            an `IF NOT EXISTS` no-op that takes no lock.
 --    SO §7A DOES NOT "CLOSE CHECKOUT COMPLETELY". What it buys the money tables
 --    is a shorter HOLD — from "§5 onward, ~780 lines of this file plus both
 --    siblings" down to "§7A blocks 4-6 plus both siblings" — and nothing more.
@@ -1968,10 +2043,16 @@ COMMENT ON FUNCTION public.cohort_room_is_offering_wide(uuid) IS
 --     plain FK on cohort_room_configs.batch_id and this section does not change
 --     that; `users` and `offerings` writes likewise, from §1/§2, and
 --     `cohort_weeks`/`live_sessions` writes from 20260729100100 §2/§4. The full
---     residual — including 20260729100200's own unguarded CREATE INDEX on
---     `live_sessions`, the one unbounded lock WAIT left in R0 — is contract
---     note 10. Push R0 alone, in a quiet window, and size that window from the
---     whole push.
+--     residual is contract note 10. An earlier revision of this sentence closed
+--     it with "including 20260729100200's own unguarded CREATE INDEX on
+--     `live_sessions`, the one unbounded lock WAIT left in R0"; that site is now
+--     guarded on THIS SECTION's pattern (probe, LOCAL 1s `lock_timeout`, DDL,
+--     restore, degrade to WARNING), so neither half of that clause holds — it is
+--     not unguarded, and it was not the phase's only unbounded wait even then.
+--     The unbounded first acquisitions that remain are 20260729100100 §2's and
+--     §4's `CREATE TABLE … REFERENCES` on `cohort_weeks` and `live_sessions`;
+--     note 10's residual list names them. Push R0 alone, in a quiet window, and
+--     size that window from the whole push.
 --
 --     ORDER IS LOAD-BEARING IN EXACTLY ONE PLACE: block 1's UNIQUE (id,
 --     offering_id) is what block 2's composite FK references, so 1 precedes 2.
@@ -2185,8 +2266,21 @@ END $$;
 --    stamps the version either way, so a green push proves nothing about the
 --    objects below and the
 --    WARNING that says so is a scrolling line CI throws away. Run this against
---    the target project after any push that included 20260729100000 or
---    20260729100100. Treat a MISSING as an incident, not a note.
+--    the target project after any push that included 20260729100000,
+--    20260729100100 or 20260729100200. Treat a MISSING as an incident, not a
+--    note.
+--    The third file joined that list on 2026-07-30, when its §0 CREATE INDEX on
+--    `live_sessions` gained a §7A-shaped guard and so became the phase's eighth
+--    degradable object. It is an INDEX, not a constraint or a trigger, so it
+--    belongs to neither query below and gets its own one-liner:
+--
+--      SELECT to_regclass('public.live_sessions_week_idx') IS NOT NULL AS ok;
+--
+--    FALSE there is the only entry in this section that is NOT an incident: it
+--    costs a seq scan on the room envelope's weeks→sessions join and nothing
+--    else — no access change, no wrong rows. Recovery is still note 11(a), by
+--    hand, because a second push will not converge it. 20260729100200 §0 carries
+--    the reasoning.
 --
 --      SELECT v.what,
 --             CASE WHEN c.oid IS NULL      THEN 'MISSING — contract note 11'
