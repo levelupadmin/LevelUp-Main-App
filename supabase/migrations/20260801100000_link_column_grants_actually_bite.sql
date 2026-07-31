@@ -103,11 +103,29 @@
 -- work on the web, shipping web + applying shortly after is fine; a native admin
 -- would need the store build out first.
 --
--- LOCK PROFILE. GRANT and REVOKE take ACCESS EXCLUSIVE on the target table and
--- hold it until COMMIT, not until the statement ends. Both tables are small and
--- read by the shipped dashboard, so this is a brief read-block on every
--- platform: apply it in a quiet hour, not mid-class. Nothing here rewrites a
--- row, so the undo is the inverse GRANT (spelled out at the bottom).
+-- LOCK PROFILE — MEASURED, AND THE EARLIER CLAIM HERE WAS WRONG.
+--
+-- An earlier draft of this header said GRANT/REVOKE takes ACCESS EXCLUSIVE on
+-- the target table and told you to apply in a quiet hour. That is not true, and
+-- it was asserted rather than measured. What the measurement shows:
+--
+--   BEGIN; REVOKE SELECT ON public.live_sessions FROM anon, authenticated;
+--   SELECT ... FROM pg_locks WHERE pid = pg_backend_pid()
+--     AND locktype = 'relation';
+--   -> NO lock on public.live_sessions at all.
+--
+--   And with that transaction HELD OPEN, a concurrent session's
+--   `SELECT count(*) FROM public.live_sessions` returned in 46ms with zero
+--   ungranted locks anywhere in the cluster.
+--
+-- GRANT/REVOKE updates the relation's ACL in the catalogue; it does not take a
+-- relation-level lock that readers queue behind. So THIS MIGRATION DOES NOT NEED
+-- A MAINTENANCE WINDOW and does not block the dashboard. Nothing here rewrites a
+-- row either, so the undo is the inverse GRANT (spelled out at the bottom).
+--
+-- The `lock_timeout` set in the DO block below is therefore belt-and-braces
+-- against catalogue contention, not the load-bearing protection the earlier
+-- draft claimed it was. It is kept because it costs nothing.
 -- =====================================================================
 
 DO $$
@@ -116,17 +134,16 @@ DECLARE
   cols      text;
   n_applied int := 0;
 BEGIN
-  -- FAIL FAST INSTEAD OF QUEUEING EVERY READER. GRANT/REVOKE take ACCESS
-  -- EXCLUSIVE and hold it to COMMIT, and the session default on the `db push`
-  -- path is 0 = wait forever. Without this, applying during traffic parks the
-  -- lock request at the head of the queue and every reader of both tables — on
-  -- every platform at once — blocks behind it. LOCAL, so it reverts with this
-  -- transaction and nothing else in the push inherits it.
+  -- BELT AND BRACES, NOT THE LOAD-BEARING GUARD. Measured (see LOCK PROFILE in
+  -- the header): GRANT/REVOKE takes NO relation lock on the target table, and a
+  -- concurrent read runs unblocked while the granting transaction is open. So
+  -- there is no queue of readers to protect here. This bounds catalogue
+  -- contention only, and it is LOCAL so nothing else in the push inherits it.
   --
-  -- NOTE THE DELIBERATE DIFFERENCE FROM R0's GUARDED INDEX: there, a timeout
-  -- degrades to RAISE WARNING because a missing index costs performance and
-  -- nothing else. Here a timeout must ABORT — a half-applied security fix that
-  -- reports success is the exact failure this whole migration exists to undo.
+  -- If it ever does fire, aborting is the right outcome: a half-applied security
+  -- fix that reports success is the exact failure this migration exists to undo.
+  -- (Contrast R0's guarded index, where a timeout correctly degrades to a
+  -- WARNING, because a missing index costs performance and nothing else.)
   PERFORM set_config('lock_timeout', '3s', true);
 
   FOR t IN
