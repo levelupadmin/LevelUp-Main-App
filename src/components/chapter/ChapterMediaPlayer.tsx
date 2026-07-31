@@ -405,6 +405,71 @@ function AppOwnedVideo({ url, title, chapterId }: { url: string; title: string; 
  *  • Vimeo / YouTube / generic / embedded / pdf → cross-origin <iframe>. Off-limits.
  *  • image / article → static, no playback surface.
  */
+/**
+ * Player for a download-protected chapter (media_provider = 'supabase-signed').
+ * The video is in a private bucket; get-video-src returns a short-lived signed
+ * URL only if the caller is enrolled. Rendered in a hardened <video> —
+ * controlsList/nodownload + no context menu + no PiP strip the easy save
+ * paths. Not unbreakable (screen capture always works), but there's no shareable
+ * link and the signed URL expires.
+ */
+function SignedVideo({ chapterId, title }: { chapterId: string; title: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setUrl(null);
+    setErr(null);
+    supabase.functions
+      .invoke("get-video-src", { body: { chapter_id: chapterId } })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        const resolved = (data as { url?: string } | null)?.url;
+        if (error || !resolved) {
+          setErr("This video couldn't be loaded. Make sure you're signed in and enrolled.");
+          return;
+        }
+        setUrl(resolved);
+      })
+      .catch(() => {
+        if (!cancelled) setErr("This video couldn't be loaded. Please try again.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chapterId]);
+
+  if (err) {
+    return (
+      <div className="h-full w-full flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
+        {err}
+      </div>
+    );
+  }
+  if (!url) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
+        Loading video…
+      </div>
+    );
+  }
+  return (
+    <video
+      key={url}
+      src={url}
+      controls
+      controlsList="nodownload noremoteplayback"
+      disablePictureInPicture
+      onContextMenu={(e) => e.preventDefault()}
+      playsInline
+      preload="metadata"
+      className="h-full w-full bg-black"
+      title={title}
+    />
+  );
+}
+
 export default function ChapterMediaPlayer({ chapter, updateProgress, lastPosition }: Props) {
   return chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
     <div className="w-full max-w-full rounded-2xl overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
@@ -426,6 +491,14 @@ export default function ChapterMediaPlayer({ chapter, updateProgress, lastPositi
         // rows where media_provider defaulted to vdocipher.
         const url = chapter.embed_url || chapter.media_url || "";
         const provider = (chapter as any).media_provider || "";
+
+        // Download-protected video: the file lives in a PRIVATE bucket with no
+        // public URL. Resolve a short-lived signed URL via the get-video-src
+        // edge function (which gates on enrolment) and play it in a hardened
+        // <video>. The free alternative to VdoCipher DRM.
+        if (provider === "supabase-signed") {
+          return <SignedVideo chapterId={chapter.id} title={chapter.title} />;
+        }
 
         // HLS playlists (Bunny CDN from WebinarKit, or any .m3u8)
         // render in a <video> tag, iframe wouldn't be able to play
