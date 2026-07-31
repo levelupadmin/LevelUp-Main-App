@@ -527,10 +527,40 @@ if (process.argv.includes("--list")) {
 }
 
 // ── Config + the prod guard ─────────────────────────────────────────────────
+//
+// TWO TARGETS, ONE SUITE. The attacks below are identical either way; only the
+// two transports differ.
+//
+//   HOSTED  — a throwaway Supabase project. SQL goes through the Management API,
+//             the data plane is <ref>.supabase.co. This is the original mode and
+//             is unchanged.
+//   LOCAL   — the `supabase start` stack on this machine (ROOM_QA_LOCAL=1). SQL
+//             goes through psql against the local Postgres; the data plane is
+//             127.0.0.1:54321. Added because the hosted mode requires a paid
+//             project, which meant this suite — the ONLY thing that attacks R0's
+//             wall — had never been executed anywhere.
+//
+// LOCAL MODE IS NOT A WEAKER TEST. Both transports drive REAL HTTP against a
+// REAL PostgREST/GoTrue carrying REAL user JWTs, so table GRANTs, RLS policies,
+// SECURITY DEFINER asserts and the PostgREST surface are all still in the path.
+// What local mode does NOT reproduce is the hosted platform's grant model, which
+// is precisely what qa-harness/shadow-grants.sql exists to reproduce by hand —
+// and the PRECONDITION below still refuses to run without it. A local shadow
+// with the grants applied and a hosted shadow with them applied are the same
+// database as far as every assertion in this file is concerned.
+const LOCAL = process.env.ROOM_QA_LOCAL === "1";
 const PAT = process.env.SUPABASE_PAT || process.env.SUPABASE_ACCESS_TOKEN;
-const REF = process.env.ROOM_QA_PROJECT_REF || process.env.SUPABASE_SHADOW_REF;
+const REF = LOCAL
+  ? process.env.ROOM_QA_PROJECT_REF || "local"
+  : process.env.ROOM_QA_PROJECT_REF || process.env.SUPABASE_SHADOW_REF;
 
-if (!PAT) die("Missing SUPABASE_PAT (Management API token for the SQL channel).");
+// The local Postgres, and the psql that talks to it. libpq is keg-only on this
+// Mac, so psql is NOT on PATH by default — hence the override.
+const DB_URL =
+  process.env.ROOM_QA_DB_URL || "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+const PSQL = process.env.ROOM_QA_PSQL || "psql";
+
+if (!LOCAL && !PAT) die("Missing SUPABASE_PAT (Management API token for the SQL channel).");
 if (!REF) die("Missing ROOM_QA_PROJECT_REF — the SHADOW project ref to attack.");
 if (REF === PROD_REF) {
   die(
@@ -540,10 +570,27 @@ if (REF === PROD_REF) {
 }
 
 const API = `https://api.supabase.com/v1/projects/${REF}`;
-const BASE = `https://${REF}.supabase.co`;
+const BASE = LOCAL
+  ? process.env.ROOM_QA_BASE_URL || "http://127.0.0.1:54321"
+  : `https://${REF}.supabase.co`;
+
+// The prod guard above keys on a project REF, which local mode does not have —
+// so local mode gets its own guard on the two things it does have. A DB_URL or
+// a BASE pointing off-box in a mode whose whole contract is "disposable stack on
+// this machine" is a misconfiguration, and this suite is destructive by design.
+if (LOCAL) {
+  const localHost = (u) => /^(127\.0\.0\.1|localhost|\[::1\]|::1)$/i.test(new URL(u).hostname);
+  const asUrl = (u) => (u.startsWith("postgres") ? u.replace(/^postgres(ql)?:/, "http:") : u);
+  if (!localHost(asUrl(DB_URL))) {
+    die(`ROOM_QA_LOCAL=1 but ROOM_QA_DB_URL is not on this machine (${new URL(asUrl(DB_URL)).hostname}).`);
+  }
+  if (!localHost(BASE)) {
+    die(`ROOM_QA_LOCAL=1 but ROOM_QA_BASE_URL is not on this machine (${new URL(BASE).hostname}).`);
+  }
+}
 
 // ── Transport 1: the SQL channel (project owner, bypasses RLS) ──────────────
-async function sql(query) {
+async function sqlHosted(query) {
   const res = await fetch(`${API}/database/query`, {
     method: "POST",
     headers: { Authorization: `Bearer ${PAT}`, "Content-Type": "application/json" },
@@ -562,6 +609,70 @@ async function sql(query) {
   }
   return Array.isArray(body) ? body : [];
 }
+
+/** One psql invocation. Throws with the server's own message on any error. */
+function psqlExec(text) {
+  try {
+    return execFileSync(
+      PSQL,
+      ["-X", "-q", "-t", "-A", "--no-psqlrc", "-v", "ON_ERROR_STOP=1", "-d", DB_URL, "-c", text],
+      { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }
+    );
+  } catch (e) {
+    const err = new Error(String(e.stderr || e.message).trim().slice(0, 600));
+    err.fromPsql = true;
+    throw err;
+  }
+}
+
+/**
+ * The local SQL channel. It has to be INDISTINGUISHABLE from the hosted one
+ * above: same rows, same JSON types, same throw on error. Two paths, and the
+ * split between them is load-bearing.
+ *
+ * PATH 1 — wrap the statement in a CTE and let Postgres serialise the result.
+ * `json_agg` is what preserves TYPE FIDELITY: a pg boolean stays a JSON boolean
+ * and a NULL stays null, exactly as the Management API hands them back. Parsing
+ * psql's text output instead would turn every boolean into "t"/"f" and every
+ * NULL into "", and this file's own `pgBool` comment records what that class of
+ * ambiguity already cost once — a precondition that read the string "false" as
+ * GRANTED and failed OPEN, in the one check whose whole job is to fail closed.
+ *
+ * A CTE — not a subquery — because three call sites read an id back out of an
+ * `INSERT … RETURNING` (`armEnrol`, `enrolA`, `enrolB`). A data-modifying
+ * statement cannot sit in a FROM, so a subquery wrap would drop those rows and
+ * hand back []. Those ids then go null, and every downstream assertion that
+ * names them stops testing anything while still printing green. A CTE accepts
+ * both a plain SELECT and an `INSERT/UPDATE/DELETE … RETURNING`, so one wrap
+ * covers every statement in this file whose rows are actually read.
+ *
+ * PATH 2 — DDL, `INSERT` with no RETURNING, and multi-statement scripts cannot
+ * be expressed as a CTE. Run them for their effects and return [], which is what
+ * the Management API returns for them too.
+ *
+ * WHY PATH 2 CANNOT DOUBLE-EXECUTE PATH 1's WORK. Every way a statement can fail
+ * to be a legal CTE — DDL, a no-RETURNING data modification, two statements — is
+ * caught during PARSE ANALYSIS, before Postgres executes any of it. And psql
+ * sends a `-c` string as ONE simple-query message, so even a multi-statement
+ * script is a single implicit transaction that rolls back whole. A statement
+ * that reached execution and then failed therefore never lands in path 2; it
+ * throws, and the caller sees the same error the hosted channel would raise.
+ */
+async function sqlLocal(query) {
+  const bare = query.trim().replace(/;\s*$/, "");
+  try {
+    const out = psqlExec(
+      `WITH __qa AS (${bare}) SELECT coalesce(json_agg(__qa), '[]'::json)::text FROM __qa`
+    ).trim();
+    return out ? JSON.parse(out) : [];
+  } catch (e) {
+    if (!e.fromPsql) throw e;
+  }
+  psqlExec(query);
+  return [];
+}
+
+const sql = (query) => (LOCAL ? sqlLocal(query) : sqlHosted(query));
 const sqlOne = async (q) => (await sql(q))[0] ?? null;
 const lit = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
@@ -587,6 +698,16 @@ let SERVICE_KEY = process.env.ROOM_QA_SERVICE_KEY || "";
 
 async function loadKeys() {
   if (ANON_KEY && SERVICE_KEY) return;
+  // Local mode has no Management API to ask, so the keys come from the env the
+  // local stack itself prints. They are the well-known development keys of a
+  // disposable stack, not secrets — but they still never get echoed from here.
+  if (LOCAL) {
+    die(
+      "Local mode needs ROOM_QA_ANON_KEY and ROOM_QA_SERVICE_KEY. Take them from the " +
+        "running stack:\n\n  eval \"$(npx -y supabase@latest status -o env | sed 's/^/export /')\"\n" +
+        "  export ROOM_QA_ANON_KEY=\"$ANON_KEY\" ROOM_QA_SERVICE_KEY=\"$SERVICE_ROLE_KEY\"\n"
+    );
+  }
   for (const url of [`${API}/api-keys?reveal=true`, `${API}/api-keys`]) {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${PAT}` } });
     if (!res.ok) continue;
