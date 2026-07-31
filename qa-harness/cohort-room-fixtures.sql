@@ -205,8 +205,22 @@ DELETE FROM public.courses   WHERE slug LIKE 'room-qa-%';
 --    when the runner created the auth users; here we only dress them, and plant
 --    the PII canaries that prove the roster never ships phone/email.
 -- ---------------------------------------------------------------------------
+-- THE ONE STATEMENT THAT NEEDS THE ROLE GUARD LIFTED, AND WHY IT IS NOT A CHEAT.
+-- `enforce_role_immutability` (BEFORE UPDATE ON public.users) calls
+-- prevent_role_escalation(), which asks is_admin() — and is_admin() resolves the
+-- actor purely from `auth.uid()`. The SQL channel carries no JWT, so auth.uid()
+-- is NULL, is_admin() is false, and this UPDATE raises 'Non-admin users cannot
+-- change their role.' That is true of the HOSTED Management API channel exactly
+-- as it is of local psql: this fixture could never have applied on either, which
+-- is a defect that survived only because this suite had never been executed.
+-- Minting the admin is SETUP — no case in this file attacks role escalation — so
+-- the guard is lifted for this ONE statement and restored on the next line.
+-- Every other UPDATE below leaves `role` untouched, and the trigger returns early
+-- unless `role` actually changes, so none of them needs this.
+ALTER TABLE public.users DISABLE TRIGGER enforce_role_immutability;
 UPDATE public.users SET role = 'admin', full_name = 'ROOM QA Admin'
  WHERE id = public._room_qa_uid('room-qa-admin@leveluptest.invalid');
+ALTER TABLE public.users ENABLE TRIGGER enforce_role_immutability;
 
 UPDATE public.users
    SET full_name = 'ROOM QA Member A1', occupation = 'Editor', city = 'Chennai',

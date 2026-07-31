@@ -561,3 +561,51 @@ BEGIN
   RAISE NOTICE 'shadow-grants: % applied, % skipped', applied, skipped;
 END
 $shadow$;
+
+
+-- ===========================================================================
+-- SECTION C — restore the COLUMN-LEVEL revokes that SECTION B necessarily undid
+-- ===========================================================================
+--
+-- THIS SECTION EXISTS BECAUSE SECTION B IS TABLE-WIDE AND POSTGRES HAS NO WAY
+-- TO SAY "EVERY COLUMN EXCEPT THIS ONE". `GRANT ALL ON public.live_sessions`
+-- grants SELECT on ALL of its columns, so it silently re-grants any column a
+-- migration had revoked. Two migrations ship exactly such a revoke:
+--
+--   20260408150800_event_venue_link_gating.sql     REVOKE SELECT (venue_link)
+--   20260408151600_live_sessions_zoom_link_gating.sql  REVOKE SELECT (zoom_link)
+--
+-- Both are the ONLY thing standing between an authenticated student and a paid
+-- event's venue link or a live class's join link. Section B runs AFTER `db push`
+-- by design (it has to, or the tables the migrations create get no grants at
+-- all), which means it runs after those revokes and wipes them every time.
+--
+-- WITHOUT THIS SECTION THE SHADOW IS NOT PRODUCTION. It is a shadow whose
+-- zoom_link wall is DOWN, and the suite says so: C2.3b and C2.4 both fail, C2.4
+-- reporting a real leak of LEAK_CANARY_ZOOM_A1 through an explicit
+-- `select=zoom_link`. Those failures are CORRECT — the column really is
+-- readable — but they are an artefact of provisioning, not of R0's code, and
+-- chasing them into the migrations would be chasing a bug that is not there.
+--
+-- Idempotent, and safe to run in pass 1 when the tables do not exist yet.
+DO $shadow_cols$
+DECLARE
+  r        record;
+  restored int := 0;
+BEGIN
+  FOR r IN
+    SELECT * FROM (VALUES
+      ('events',        'venue_link'),
+      ('live_sessions', 'zoom_link')
+    ) AS t(tbl, col)
+  LOOP
+    IF to_regclass('public.' || quote_ident(r.tbl)) IS NULL THEN
+      CONTINUE;
+    END IF;
+    EXECUTE format(
+      'REVOKE SELECT (%I) ON public.%I FROM anon, authenticated', r.col, r.tbl);
+    restored := restored + 1;
+  END LOOP;
+  RAISE NOTICE 'shadow-grants: % column-level revoke(s) restored', restored;
+END
+$shadow_cols$;

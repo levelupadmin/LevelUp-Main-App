@@ -610,20 +610,40 @@ async function sqlHosted(query) {
   return Array.isArray(body) ? body : [];
 }
 
-/** One psql invocation. Throws with the server's own message on any error. */
+/**
+ * One psql invocation. Throws with the server's own message, carrying the
+ * SQLSTATE, on any error.
+ *
+ * VERBOSITY=verbose is what puts the SQLSTATE on stderr (`ERROR:  42601: …`),
+ * and the code is the whole point: it is the only thing that distinguishes
+ * "this statement cannot be phrased as a CTE" from "this statement is wrong".
+ * Without it the fallback below has to catch everything, and catching
+ * everything turns a genuine SQL error into an empty result set — a silent []
+ * that reads downstream as "no rows found" instead of "your query is broken".
+ */
 function psqlExec(text) {
   try {
     return execFileSync(
       PSQL,
-      ["-X", "-q", "-t", "-A", "--no-psqlrc", "-v", "ON_ERROR_STOP=1", "-d", DB_URL, "-c", text],
+      ["-X", "-q", "-t", "-A", "--no-psqlrc", "-v", "ON_ERROR_STOP=1",
+       "-v", "VERBOSITY=verbose", "-d", DB_URL, "-c", text],
       { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }
     );
   } catch (e) {
-    const err = new Error(String(e.stderr || e.message).trim().slice(0, 600));
-    err.fromPsql = true;
+    const raw = String(e.stderr || e.message).trim();
+    const err = new Error(raw.slice(0, 600));
+    err.sqlState = (raw.match(/^ERROR:\s+([0-9A-Z]{5}):/m) || [])[1] || "";
     throw err;
   }
 }
+
+/**
+ * The two SQLSTATEs that mean "not expressible as a CTE", and nothing else.
+ *   42601 syntax_error          — DDL, SET, or two statements in one string
+ *   0A000 feature_not_supported — a data modification with no RETURNING clause
+ * Every other code is a real defect in the query and MUST reach the caller.
+ */
+const NOT_A_CTE = new Set(["42601", "0A000"]);
 
 /**
  * The local SQL channel. It has to be INDISTINGUISHABLE from the hosted one
@@ -661,12 +681,23 @@ function psqlExec(text) {
 async function sqlLocal(query) {
   const bare = query.trim().replace(/;\s*$/, "");
   try {
+    // The newlines around `bare` are load-bearing. This file's SQL carries
+    // trailing `--` line comments, and closing the paren on the same line would
+    // put it INSIDE that comment — a syntax error, which falls through to the
+    // raw path and returns [], so a perfectly good query reports "no rows" and
+    // every count built on it reads `undefined`. PRE.1 and PRE.1b failed exactly
+    // that way before the paren moved to its own line.
     const out = psqlExec(
-      `WITH __qa AS (${bare}) SELECT coalesce(json_agg(__qa), '[]'::json)::text FROM __qa`
+      `WITH __qa AS (\n${bare}\n) SELECT coalesce(json_agg(__qa), '[]'::json)::text FROM __qa`
     ).trim();
     return out ? JSON.parse(out) : [];
   } catch (e) {
-    if (!e.fromPsql) throw e;
+    // ONLY a structurally-impossible CTE falls through. Anything else — an
+    // ambiguous column, a missing table, a type error — is a broken query, and
+    // swallowing it here would hand the caller [] and let an assertion read a
+    // failure as "nothing found". That is the fail-open shape this file exists
+    // to prevent, so it is re-thrown exactly as the hosted channel would.
+    if (!NOT_A_CTE.has(e.sqlState)) throw e;
   }
   psqlExec(query);
   return [];
@@ -1484,11 +1515,11 @@ const ids = await sqlOne(`
     (SELECT id FROM public.cohort_batches WHERE name = 'ROOM QA Batch A1') AS batch_a1,
     (SELECT id FROM public.cohort_batches WHERE name = 'ROOM QA Batch A2') AS batch_a2,
     (SELECT id FROM public.cohort_batches WHERE name = 'ROOM QA Batch B1') AS batch_b1,
-    (SELECT id FROM public.cohort_room_posts p JOIN public.cohort_batches b ON b.id = p.batch_id
+    (SELECT p.id FROM public.cohort_room_posts p JOIN public.cohort_batches b ON b.id = p.batch_id
       WHERE b.name = 'ROOM QA Batch A1' LIMIT 1) AS post_a1,
-    (SELECT id FROM public.cohort_demo_entries d JOIN public.cohort_batches b ON b.id = d.batch_id
+    (SELECT d.id FROM public.cohort_demo_entries d JOIN public.cohort_batches b ON b.id = d.batch_id
       WHERE b.name = 'ROOM QA Batch A1' LIMIT 1) AS demo_a1,
-    (SELECT id FROM public.cohort_demo_entries d JOIN public.cohort_batches b ON b.id = d.batch_id
+    (SELECT d.id FROM public.cohort_demo_entries d JOIN public.cohort_batches b ON b.id = d.batch_id
       WHERE b.name = 'ROOM QA Batch A2' LIMIT 1) AS demo_a2,
     (SELECT id FROM public.live_sessions WHERE title = 'ROOM QA A1 PAST session') AS session_past_a1,
     (SELECT id FROM public.live_sessions WHERE title = 'ROOM QA A1 FAR session') AS session_far_a1,
