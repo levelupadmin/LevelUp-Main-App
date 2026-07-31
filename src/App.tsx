@@ -50,7 +50,9 @@ const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/Terms"));
 const RefundPolicy = lazy(() => import("@/pages/RefundPolicy"));
 const DeleteAccount = lazy(() => import("@/pages/DeleteAccount"));
-const CommunityPage = lazy(() => import("@/pages/CommunityPage"));
+// Community is locked behind a "coming soon" placeholder. The full feed
+// (CommunityPage) is retained for an easy revert — just swap the route element.
+const CommunityComingSoon = lazy(() => import("@/pages/CommunityComingSoon"));
 const InstructorDashboard = lazy(() => import("@/pages/InstructorDashboard"));
 
 // Lazy-loaded admin pages
@@ -210,7 +212,7 @@ const App = () => {
                 <Route path="/learn" element={<Learn />} />
                 <Route path="/courses/:courseId" element={<CourseDetail />} />
                 <Route path="/profile" element={<ProfilePage />} />
-                <Route path="/community" element={<CommunityPage />} />
+                <Route path="/community" element={<CommunityComingSoon />} />
                 <Route path="/my-courses" element={<Navigate to="/learn?seg=courses" replace />} />
                 <Route path="/studio" element={<Studio />} />
                 <Route path="/studio/second-brain" element={<StudioSecondBrain />} />
