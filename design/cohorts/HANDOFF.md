@@ -180,9 +180,30 @@ Docker CLI at `/Applications/OrbStack.app/Contents/MacOS/xbin`, NOT on PATH).
 
 ## 6b. A THIRD production problem — found 2026-07-31, fix built, NOT APPLIED
 
-**Every visitor and every signed-in student can read the Zoom join link of every
-live class and the venue link of every paid event**, by naming the column in the
-projection. Measured read-only against prod:
+**Signed-in users can read join links they should not have.** Stated carefully,
+because the first draft of this section overstated it and somebody could build a
+breach posture on the wrong sentence. `has_column_privilege` measures a GRANT;
+RLS still filters rows on top. Measured against the actual policies:
+
+- `events.venue_link` — `events_read_authenticated` is
+  `USING (auth.uid() IS NOT NULL)`, so **every signed-in user** can read the
+  venue link of **every paid event**. This is the broad one.
+- `live_sessions.zoom_link` — `live_sessions_read` requires
+  `has_course_access()`, so exposure is **enrolment-scoped**: join links for
+  courses you have access to, including classes you are not in and sessions
+  outside any time window.
+- **anon reads zero rows from both tables.** "Any visitor" was wrong.
+
+**There are TWO egresses, and the grant fix only closes one.**
+`get_cohort_progress` is SECURITY DEFINER, so it runs as the owner and column
+grants are *structurally invisible* to it — and the definition live on prod
+filters `WHERE e.user_id = p_user_id` with no `auth.uid()` check, an **IDOR**
+handing any signed-in user another student's join links, submission status,
+rating and mentor feedback. R0's `20260729100200` already fixes the IDOR and now
+also gates the link to the T-60 window. **Applying the grant migration alone does
+not close this — it only turns the alarm green.**
+
+Measured read-only against prod:
 
 ```
 role            zoom_link  venue_link  live_sessions(table SELECT)
@@ -276,14 +297,26 @@ a residuals round whose integrate step died.
 - **🔴 THE ADVERSARIAL SUITE HAS NEVER BEEN EXECUTED.** It needs a shadow with
   grant parity — apply `qa-harness/shadow-grants.sql` AFTER `supabase start`, or
   every assertion passes vacuously.
-- Outstanding from the residuals round: the unguarded `CREATE INDEX` on
-  `live_sessions` (`20260729100200:67`), the half-guarded DO block in
-  `content.sql:265` (has an EXCEPTION handler but no `lock_timeout`, so its
-  `query_canceled` branch can never fire), and the grant-layer documentation in
-  `design/cohorts/docs/05-ACCESS-SECURITY.md` (which has **zero** mentions of
-  TRUNCATE while `design-qa-gate.js` names its §7 as the authority).
-- **Stale prose:** `cohort-room-access.spec.mjs:1649,1712` still say "4s
-  lock_timeout"; all six sites are now 1s.
+- **THE RESIDUALS LIST ABOVE WAS ITSELF STALE — audited 2026-08-01.** Two of the
+  three were already fixed, and the code's own comments were more accurate than
+  this file:
+  - The `CREATE INDEX` on `live_sessions` (`20260729100200` §0) is fully guarded:
+    LOCAL 1s `lock_timeout`, `query_canceled` named explicitly in the handler,
+    previous value restored, worst case `RAISE WARNING`.
+  - The `content.sql` DO block is handler-only **by decision**, and the file says
+    so under "HANDLER-GUARDED, WITH NO `lock_timeout`". The old claim that its
+    `query_canceled` branch "can never fire" was garbled: 57014 does not come
+    from a lock wait at all (that is 55P03 `lock_not_available`); it arrives from
+    a `statement_timeout` or a `pg_cancel_backend`, both real on any table, and
+    `OTHERS` does not trap it — so the branch earns its place.
+  - Fixed: the stale "4s lock_timeout" prose in the suite is now 1s. Note the
+    handoff cited `:1649,1712` and the real sites were `:1907,1970` — **line
+    numbers in this file drift; grep for the symbol** (lesson 3).
+- Still open: the grant-layer documentation in
+  `design/cohorts/docs/05-ACCESS-SECURITY.md` has **zero** mentions of TRUNCATE
+  while `design-qa-gate.js` names its §7 as the authority.
+- **The adversarial suite now RUNS: 163/163, exit 0** (§10 for the recipe). It
+  found the §6b production leak.
 
 ### R1 — room shell (`LevelUp-r1`)
 **Complete.** Routes, redirect shim, all five components, the hook, MyCohortsPage,
