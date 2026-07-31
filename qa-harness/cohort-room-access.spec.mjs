@@ -1426,8 +1426,20 @@ const PROVISION_RECIPE =
       SELECT t.tbl, t.grantee,
              (c.oid IS NOT NULL) AS present,
              (r.oid IS NOT NULL) AS role_exists,
+             -- has_ANY_COLUMN_privilege, NOT has_table_privilege. What this
+             -- precondition needs to know is "can this role reach a row at all,
+             -- so that a refusal below is RLS and not a missing GRANT" - and a
+             -- role can reach rows through column-level grants with no
+             -- table-level SELECT whatsoever. live_sessions and events are
+             -- exactly that shape once the zoom_link / venue_link gate is real:
+             -- table SELECT revoked, every other column granted individually.
+             -- Asking has_table_privilege there reports "ungranted" for a
+             -- perfectly readable table and aborts the whole run. This form is
+             -- true under BOTH shapes and still false on a migrations-only
+             -- shadow, where the role holds nothing at any granularity - which
+             -- is the state this check exists to refuse.
              CASE WHEN c.oid IS NULL OR r.oid IS NULL THEN false
-                  ELSE has_table_privilege(r.oid, c.oid, 'SELECT') END AS can_select,
+                  ELSE has_any_column_privilege(r.oid, c.oid, 'SELECT') END AS can_select,
              CASE WHEN c.oid IS NULL OR r.oid IS NULL THEN false
                   ELSE has_table_privilege(r.oid, c.oid, 'REFERENCES')
                     OR has_table_privilege(r.oid, c.oid, 'TRIGGER') END AS bootstrap_verb
