@@ -343,12 +343,22 @@ interface Resolution {
  * says which interview this is. Refusing costs a mirrored booking (recoverable, and
  * logged); guessing costs a correct row (not recoverable, and silent).
  *
- * `requireEvidence` IS THE TRUNCATED-PAGE CASE. "Exactly one candidate" is only a
- * safe reason to bind when the probe could SEE every candidate; a page that came
- * back full may have left a rival application on the next page, so uniqueness is
- * then an artefact of the limit rather than a fact about the data. Under truncation
- * the two evidence tests still bind (they name a specific row), and bare uniqueness
- * refuses.
+ * `requireEvidence` HAS TWO CALLERS AND TWO DIFFERENT REASONS.
+ *
+ * 1. THE TRUNCATED-PAGE CASE (email branch). "Exactly one candidate" is only a
+ *    safe reason to bind when the probe could SEE every candidate; a page that
+ *    came back full may have left a rival application on the next page, so
+ *    uniqueness is then an artefact of the limit rather than a fact about the
+ *    data.
+ *
+ * 2. THE UNVERIFIED-KEY CASE (phone branch, always on). The phone probe runs on
+ *    `text_reminder_number`, which an invitee types into a public booking form
+ *    and never proves they own. Bare uniqueness there means one typed string
+ *    names somebody else's application row, so the phone branch passes `true`
+ *    unconditionally. See the comment at its call site in `resolveApplication`.
+ *
+ * Under either, the two evidence tests still bind (they name a specific row by
+ * making two independent identifiers agree), and bare uniqueness refuses.
  */
 function chooseOne(
   candidates: ApplicationRow[],
@@ -496,7 +506,38 @@ async function resolveApplication(
 
   if (phoneKey) {
     const { rows, truncated } = await candidatesByPhone(admin, phoneKey);
-    const { row, ambiguous } = chooseOne(rows, eventUri, emailKey, truncated);
+    // `requireEvidence` IS UNCONDITIONALLY TRUE HERE, AND IT IS A SECURITY GATE,
+    // NOT THE TRUNCATION HEURISTIC IT IS IN THE EMAIL BRANCH.
+    //
+    // The phone this probe ran on is `text_reminder_number` — a FREE-TEXT FIELD
+    // the invitee types into a PUBLIC booking form. Nobody proves they own it.
+    // With bare uniqueness allowed, an attacker who books the public event type
+    // and types a victim's mobile gets a candidate set of exactly one — the
+    // victim's application — and `chooseOne`'s third branch binds their booking
+    // onto that row. One unverified string, typed by a stranger, silently
+    // rewrites whose interview this is. That is an account-takeover shape, not a
+    // matching bug.
+    //
+    // Requiring evidence leaves the two branches that make TWO INDEPENDENT
+    // identifiers agree: the row already holding this exact `event_uri`, or a
+    // single candidate whose stored email equals the invitee's delivered
+    // address. A phone alone can no longer name a row.
+    //
+    // THIS COSTS ALMOST NOTHING ON THE REAL PATH. The slot deep-links this
+    // product hands out carry `?name=&email=` prefill, so an applicant arriving
+    // through the app books with the address already on their row and binds by
+    // email exactly as before. What stops binding is a booking made outside our
+    // flow that shares no email with any application — and for that, the file's
+    // own rule applies: refusing costs a mirrored booking, which is recoverable
+    // and logged, while guessing costs a correct row, which is neither.
+    //
+    // THE DURABLE FIX IS A SECRET WE MINT, NOT A FIELD THEY TYPE. Calendly
+    // returns a `tracking` object (utm_*, salesforce_uuid) that this parser does
+    // not read yet. Appending an opaque per-application token to `scheduling_url`
+    // and binding on that would make the phone probe unnecessary for
+    // app-originated bookings. That spans the client, the shared parser and this
+    // handler, so it is a scoped follow-up rather than part of this fix.
+    const { row, ambiguous } = chooseOne(rows, eventUri, emailKey, true);
     if (row) return { row, key: "phone", ambiguous: false, candidates: rows.length, truncated };
     if (ambiguous) {
       phoneAmbiguity = { row: null, key: "phone", ambiguous: true, candidates: rows.length, truncated };

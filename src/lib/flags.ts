@@ -17,9 +17,15 @@ export const FUNNEL_RECON = "VITE_FUNNEL_RECON";
 
 /**
  * The interview-cluster flag (PHASE IV). Default off — the slot buttons,
- * interviewer card, batch ledger and reschedule control stay dark.
- * `ApplicationStatus` renders for real applicants today, so the whole cluster
- * ships behind this before any of it is switched on.
+ * interviewer card and reschedule control stay dark. (The batch ledger this
+ * docblock used to list was deleted in c656232: it could only ever hide.)
+ *
+ * TWO SURFACES ARE BEHIND IT, NOT ONE. `ApplicationStatus` renders for real
+ * applicants today, and `ThankYou` is the ₹400 post-payment screen — so the
+ * whole cluster ships behind this before any of it is switched on. `ThankYou`
+ * additionally keeps main's Calendly iframe as its flag-off branch, so turning
+ * this off restores the surface that shipped rather than falling through to the
+ * new component's own fallback ladder.
  */
 export const COHORT_INTERVIEW = "VITE_COHORT_INTERVIEW";
 

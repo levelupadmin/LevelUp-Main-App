@@ -378,14 +378,41 @@ describe("ENTRY-PARITY-1 — both entry points render one component off one row"
     // Calendly iframe — which would still render a working calendar while
     // silently diverging on prefill, on the booked marker, and now on whether the
     // buyer is offered slots at all.
+    //
+    // AMENDED: THIS USED TO FORBID `<iframe` ANYWHERE IN THE FILE, AND THAT RULE
+    // ENCODED THE BUG. Forbidding it outright is only correct if the flag is
+    // always on — which is precisely the assumption that left this page, the ₹400
+    // post-payment screen, mounting the whole PHASE IV cluster with no gate while
+    // `flags.ts` promised the opposite. Restoring main's iframe as the FLAG-OFF
+    // branch is what makes the flag a real kill switch, so the prohibition now
+    // scopes to the live branch instead of the whole file: hand-rolling is banned
+    // where the buyer actually lands, and the fallback is allowed to be the
+    // surface that shipped.
     const src = await readSource("src/pages/ThankYou.tsx");
     expect(src).toContain('from "@/components/interview/SlotButtons"');
     expect(src).toContain("<InterviewSlots");
-    // No private surface of its own, in any of the shapes it has had.
-    expect(src).not.toMatch(/<iframe/);
-    expect(src).not.toMatch(/calendlyEmbedUrl\(/);
-    expect(src).not.toMatch(/calendly_url\}\$\{/);
-    expect(src).not.toMatch(/includes\("\?"\)/);
+
+    // The gate itself, and the two branches in the order the file writes them.
+    const offStart = src.indexOf("!flag(COHORT_INTERVIEW)");
+    const onStart = src.indexOf("<InterviewSlots");
+    expect(offStart).toBeGreaterThan(-1);
+    expect(offStart).toBeLessThan(onStart);
+
+    const offBranch = src.slice(offStart, onStart);
+    const liveBranch = src.slice(onStart);
+
+    // Exactly ONE rendered iframe in the file, and it is the flag-off fallback.
+    // (The tracking script's iframe is built via document.createElement, so it is
+    // not JSX and does not count here.)
+    const iframes = [...src.matchAll(/<iframe/g)];
+    expect(iframes).toHaveLength(1);
+    expect(offBranch).toMatch(/<iframe/);
+
+    // The LIVE path keeps no private surface of its own, in any shape it has had.
+    expect(liveBranch).not.toMatch(/<iframe/);
+    expect(liveBranch).not.toMatch(/calendlyEmbedUrl\(/);
+    expect(liveBranch).not.toMatch(/calendly_url\}\$\{/);
+    expect(liveBranch).not.toMatch(/includes\("\?"\)/);
   });
 
   it("the app path mounts the same component", async () => {

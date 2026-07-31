@@ -14,6 +14,7 @@ import { useMotionSafe, useFinePointer, durations } from "@/lib/motion";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 import { isCalendlyUrl } from "@/hooks/useInterviewSlots";
 import { InterviewSlots } from "@/components/interview/SlotButtons";
+import { COHORT_INTERVIEW, flag } from "@/lib/flags";
 import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
 import { SuccessCheck, DownloadInvoiceButton } from "@/components/checkout/SuccessMoment";
@@ -834,8 +835,36 @@ export default function ThankYou() {
 
               `text-left` because this page's celebration column is centred and
               the booking step is a form-shaped surface, not a headline. */}
+          {/* THE FLAG GATE. `flags.ts` promises, in the COHORT_INTERVIEW docblock,
+              that "the whole cluster ships behind this before any of it is switched
+              on" — and this page was the one place that did not honour it. This is
+              the ₹400 post-payment screen: without the gate, merging PHASE IV is a
+              live behavioural change to every pilot buyer's receipt page with no
+              kill switch but a revert, and it calls `calendly-slots`, which is not
+              deployed. The flag-off branch below is main's iframe verbatim, so
+              switching the flag off returns this surface to exactly what shipped
+              rather than to the component's own fallback ladder. */}
           {order.offerings?.thankyou_show_calendly &&
-            isCalendlyUrl(order.offerings?.calendly_url) && (
+            isCalendlyUrl(order.offerings?.calendly_url) &&
+            !flag(COHORT_INTERVIEW) && (
+            <motion.div variants={arrivalItemFade} className="w-full max-w-2xl mx-auto">
+              <h3 className="text-lg font-semibold text-foreground mb-3">Book Your Interview</h3>
+              <div className="rounded-xl border border-border overflow-hidden bg-white">
+                <iframe
+                  src={`${order.offerings.calendly_url}${order.offerings.calendly_url!.includes("?") ? "&" : "?"}name=${encodeURIComponent(order.guest_name || "")}&email=${encodeURIComponent(order.guest_email || "")}`}
+                  className="w-full"
+                  style={{ minHeight: 700, border: 0 }}
+                  title="Schedule Interview"
+                  sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            </motion.div>
+          )}
+
+          {order.offerings?.thankyou_show_calendly &&
+            isCalendlyUrl(order.offerings?.calendly_url) &&
+            flag(COHORT_INTERVIEW) && (
             <motion.div
               variants={arrivalItemFade}
               className="w-full max-w-2xl mx-auto text-left"
