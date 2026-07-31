@@ -564,8 +564,42 @@ $shadow$;
 
 
 -- ===========================================================================
--- SECTION C — restore the COLUMN-LEVEL revokes that SECTION B necessarily undid
+-- SECTION C — DELIBERATELY EMPTY. Do not "restore" the column-level revokes.
 -- ===========================================================================
+--
+-- MEASURED AGAINST PRODUCTION (ivkvluezuiojovpotlyb) ON 2026-07-31, read-only:
+--
+--     role            zoom_link  venue_link  live_sessions(table)
+--     anon            true       true        true
+--     authenticated   true       true        true
+--   (has_column_privilege / has_table_privilege)
+--
+-- Two migrations ship a column-level revoke:
+--   20260408150800_event_venue_link_gating.sql        REVOKE SELECT (venue_link)
+--   20260408151600_live_sessions_zoom_link_gating.sql REVOKE SELECT (zoom_link)
+--
+-- BOTH ARE NO-OPS IN PRODUCTION, and this shadow reproduces that faithfully.
+-- In PostgreSQL a table-level grant and a column-level grant are separate
+-- privileges: `GRANT SELECT ON t` authorises EVERY column, and a later
+-- `REVOKE SELECT (c) ON t` removes only a column-level grant, which may never
+-- have existed. It raises no error and emits no warning. It simply changes
+-- nothing. Withholding one column requires holding NO table-level SELECT and
+-- granting the other columns individually, which is not what production does.
+--
+-- SO C2.3b AND C2.4 FAIL, AND THOSE FAILURES ARE REAL. The suite is not
+-- mis-provisioned; it is reporting that the zoom join link and the paid event's
+-- venue link are readable by any caller who names the column explicitly. Making
+-- them pass here means revoking the table-level SELECT on this shadow, which
+-- ALSO trips the PRECONDITION (it requires live_sessions to be anon-readable,
+-- correctly, because production grants it) and makes the shadow describe a
+-- database that does not exist. That was tried on 2026-07-31 and reverted.
+--
+-- The fix belongs in a migration, not here: keep the table-level SELECT off
+-- these two tables and grant the non-gated columns explicitly, or move both
+-- surfaces behind their `_safe` views. Either edits shipped objects with live
+-- Capacitor call sites, so it needs its own council and client-compat pass.
+--
+-- What the section below used to do (and must not do again):
 --
 -- THIS SECTION EXISTS BECAUSE SECTION B IS TABLE-WIDE AND POSTGRES HAS NO WAY
 -- TO SAY "EVERY COLUMN EXCEPT THIS ONE". `GRANT ALL ON public.live_sessions`
@@ -588,24 +622,41 @@ $shadow$;
 -- chasing them into the migrations would be chasing a bug that is not there.
 --
 -- Idempotent, and safe to run in pass 1 when the tables do not exist yet.
-DO $shadow_cols$
-DECLARE
-  r        record;
-  restored int := 0;
-BEGIN
-  FOR r IN
-    SELECT * FROM (VALUES
-      ('events',        'venue_link'),
-      ('live_sessions', 'zoom_link')
-    ) AS t(tbl, col)
-  LOOP
-    IF to_regclass('public.' || quote_ident(r.tbl)) IS NULL THEN
-      CONTINUE;
-    END IF;
-    EXECUTE format(
-      'REVOKE SELECT (%I) ON public.%I FROM anon, authenticated', r.col, r.tbl);
-    restored := restored + 1;
-  END LOOP;
-  RAISE NOTICE 'shadow-grants: % column-level revoke(s) restored', restored;
-END
-$shadow_cols$;
+-- DO $shadow_cols$
+-- DECLARE
+--   r        record;
+--   restored int := 0;
+-- BEGIN
+--   FOR r IN
+--     SELECT * FROM (VALUES
+--       ('events',        'venue_link'),
+--       ('live_sessions', 'zoom_link')
+--     ) AS t(tbl, col)
+--   LOOP
+--     IF to_regclass('public.' || quote_ident(r.tbl)) IS NULL THEN
+--       CONTINUE;
+--     END IF;
+--
+--     -- A COLUMN-LEVEL REVOKE CANNOT CUT THROUGH A TABLE-LEVEL GRANT. In Postgres
+--     -- the two are separate privileges: `GRANT SELECT ON t` authorises every
+--     -- column, and a later `REVOKE SELECT (c) ON t` removes only a column-level
+--     -- grant that may not even exist. It does not error and it does not warn —
+--     -- it simply changes nothing, which is why running the migration's own
+--     -- REVOKE here left `zoom_link` readable and the suite still leaking.
+--     --
+--     -- The only way to withhold ONE column is to hold no table-level SELECT at
+--     -- all and to grant the other columns individually. That is what this does,
+--     -- and it is what the migration's REVOKE silently depends on being true.
+--     EXECUTE format('REVOKE SELECT ON public.%I FROM anon, authenticated', r.tbl);
+--     EXECUTE format(
+--       'GRANT SELECT (%s) ON public.%I TO anon, authenticated',
+--       (SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position)
+--          FROM information_schema.columns
+--         WHERE table_schema = 'public' AND table_name = r.tbl
+--           AND column_name <> r.col),
+--       r.tbl);
+--     restored := restored + 1;
+--   END LOOP;
+--   RAISE NOTICE 'shadow-grants: % column-level revoke(s) restored', restored;
+-- END
+-- $shadow_cols$;

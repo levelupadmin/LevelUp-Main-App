@@ -646,6 +646,77 @@ function psqlExec(text) {
 const NOT_A_CTE = new Set(["42601", "0A000"]);
 
 /**
+ * The LAST top-level statement of a script, or "" if it cannot be isolated.
+ *
+ * Needed because the hosted Management API answers a multi-statement script with
+ * the rows of its FINAL statement, and two call sites depend on that: the whole
+ * fixtures file is sent as one string and read as `(await sql(fixtureSql))[0]`,
+ * and SEC-ENT-2's driving query does the same. A raw psql run returns nothing
+ * usable, so those reads came back undefined and PRE.1, PRE.1b and SEC-ENT-2.4
+ * failed on a fixture world that had in fact applied perfectly.
+ *
+ * Splitting on `;` naively would be wrong on this file above all others: the
+ * fixtures and migrations are full of dollar-quoted function bodies, and one
+ * `;` inside a $$ … $$ block would truncate the script. So this walks the text
+ * tracking single quotes (with '' doubling), quoted identifiers, line and block
+ * comments, and dollar-quoted tags, and only counts a `;` seen at depth zero.
+ */
+function lastStatement(script) {
+  const n = script.length;
+  let i = 0, start = 0, last = "";
+  const close = (end) => {
+    const s = script.slice(start, end).trim();
+    if (s) last = s;
+  };
+  while (i < n) {
+    const c = script[i];
+    if (c === "'" || c === '"') {
+      const q = c;
+      i++;
+      while (i < n) {
+        if (script[i] === q) {
+          if (script[i + 1] === q) { i += 2; continue; }
+          i++; break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (c === "-" && script[i + 1] === "-") {
+      while (i < n && script[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && script[i + 1] === "*") {
+      i += 2;
+      let depth = 1;
+      while (i < n && depth > 0) {
+        if (script[i] === "/" && script[i + 1] === "*") { depth++; i += 2; continue; }
+        if (script[i] === "*" && script[i + 1] === "/") { depth--; i += 2; continue; }
+        i++;
+      }
+      continue;
+    }
+    if (c === "$") {
+      const m = /^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/.exec(script.slice(i));
+      if (m) {
+        const tag = m[0];
+        const end = script.indexOf(tag, i + tag.length);
+        i = end === -1 ? n : end + tag.length;
+        continue;
+      }
+    }
+    if (c === ";") { close(i); i++; start = i; continue; }
+    i++;
+  }
+  close(n);
+  return last;
+}
+
+/** Leading comments and whitespace stripped, so the first keyword is visible. */
+const firstKeyword = (s) =>
+  s.replace(/^(?:\s|--[^\n]*\n?|\/\*[\s\S]*?\*\/)+/, "").slice(0, 12).toLowerCase();
+
+/**
  * The local SQL channel. It has to be INDISTINGUISHABLE from the hosted one
  * above: same rows, same JSON types, same throw on error. Two paths, and the
  * split between them is load-bearing.
@@ -699,7 +770,30 @@ async function sqlLocal(query) {
     // to prevent, so it is re-thrown exactly as the hosted channel would.
     if (!NOT_A_CTE.has(e.sqlState)) throw e;
   }
+
+  // Not expressible as a CTE: run it for its effects, exactly as the hosted
+  // channel would.
   psqlExec(query);
+
+  // Then recover the FINAL statement's rows, because that is what the hosted
+  // channel returns for a multi-statement script and what two call sites read.
+  //
+  // ONLY a plain SELECT is re-run. That is the whole safety argument: a SELECT
+  // with no data-modifying CTE has no side effects, so executing it a second
+  // time cannot change the world the script just built. Anything else — an
+  // INSERT, an ALTER, a DO block — is left alone and answers [], as it did
+  // before, rather than being run twice to satisfy a reader that does not exist.
+  const tail = lastStatement(query);
+  if (tail && /^select\b/.test(firstKeyword(tail))) {
+    try {
+      const out = psqlExec(
+        `WITH __qa AS (\n${tail}\n) SELECT coalesce(json_agg(__qa), '[]'::json)::text FROM __qa`
+      ).trim();
+      return out ? JSON.parse(out) : [];
+    } catch (e) {
+      if (!NOT_A_CTE.has(e.sqlState)) throw e;
+    }
+  }
   return [];
 }
 
