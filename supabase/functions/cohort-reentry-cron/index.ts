@@ -272,6 +272,25 @@ const POLL_AUTH_TOKEN = Deno.env.get("POLL_AUTH_TOKEN") ?? "";
 const LADDER_ENABLED = Deno.env.get("REMINDER_LADDER_ENABLED") === "true";
 
 /**
+ * How old a fee-pool reading may be and still be allowed to dun somebody, in
+ * hours. Unset uses the engine's own 26h default (one cadence step).
+ *
+ * PARSED FAIL-SAFE, WHICH IS THE OPPOSITE OF THE KILL SWITCH ABOVE. Anything
+ * unparseable — a typo, a unit suffix, a negative — returns `undefined` and the
+ * engine applies its default bound. A permissive parse there would let a stray
+ * value DISABLE a guard that stops the system emailing a paying customer to
+ * demand payment, so the only way to switch it off is the explicit, documented
+ * `0`. See `resolvePool` in `_shared/ladder.ts` for what the bound protects.
+ */
+const FEE_EVIDENCE_MAX_AGE_MS: number | undefined = (() => {
+  const raw = Deno.env.get("REENTRY_FEE_EVIDENCE_MAX_AGE_HOURS");
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const hours = Number(raw);
+  if (!Number.isFinite(hours) || hours < 0) return undefined;
+  return hours * 60 * 60 * 1000;
+})();
+
+/**
  * The HMAC key every unsubscribe token is derived from (U-1). Secret by name
  * only; `_shared/unsubscribe.ts` refuses anything under
  * MIN_UNSUBSCRIBE_SECRET_LENGTH characters, because the token's entire
@@ -1546,6 +1565,7 @@ Deno.serve(async (req) => {
           // `no-copy` skip, never a claimed-and-burned rung.
           channelTemplates: { email: renderableEmailKeys(templates, offeringOf(row)) },
           suppressedChannels: suppressed.has(row.email.trim().toLowerCase()) ? EMAIL_SUPPRESSED : undefined,
+          feeEvidenceMaxAgeMs: FEE_EVIDENCE_MAX_AGE_MS,
         });
 
         if (!decision.send) {

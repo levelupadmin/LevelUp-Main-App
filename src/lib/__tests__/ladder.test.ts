@@ -182,6 +182,66 @@ describe("pool selection — the reconciler wins where it has spoken", () => {
   });
 });
 
+describe("a fee nudge will not escalate on a stale reading — the money is not in these columns", () => {
+  /**
+   * THE FAILURE THIS PINS DOWN. `feeAlreadyPaid` is the only positive-payment
+   * test and it reads `app_fee_paid_at` and `status`, whose only writers are
+   * gated on a `payment_orders` row. An off-app Razorpay payment-LINK capture
+   * never creates one, so a payment-link payer leaves BOTH columns empty
+   * forever. `completed_no_fee` does not rescue it either: the reconciler is its
+   * only writer and it runs when the applicant opens the app. Open once, get
+   * stamped, pay by link, never reopen — and every column this engine can see
+   * still says "owes ₹400".
+   *
+   * The engine cannot know they paid. It CAN know how old its evidence is, so
+   * the fee pool refuses to escalate past one cadence step of staleness.
+   */
+  const staleBy = (ms: number) =>
+    feeInput({ reconciledAt: new Date(NOW.getTime() - ms).toISOString() });
+
+  it("sends on a fresh reading, which is the case that must not regress", () => {
+    expect(resolvePool(staleBy(10 * 60_000))).toEqual({ pool: "fee" });
+  });
+
+  it("refuses once the reading is older than one cadence step (26h)", () => {
+    // Rung 3 is due at +74h. A creation-time reading is 74h old by then, so this
+    // is the rung the bound actually removes: the loudest message, aimed at the
+    // person likeliest to have paid some other way by then.
+    expect(resolvePool(staleBy(74 * HOUR))).toEqual({ pool: null, reason: "fee-evidence-stale" });
+    expect(decide(staleBy(74 * HOUR))).toEqual({ send: false, reason: "fee-evidence-stale" });
+  });
+
+  it("refuses a live stage carrying no reconciled_at, because that cannot be shown to be fresh", () => {
+    expect(resolvePool(feeInput({ reconciledAt: null }))).toEqual({
+      pool: null,
+      reason: "fee-evidence-stale",
+    });
+  });
+
+  it("leaves the INTERVIEW pool alone however stale its reading is", () => {
+    // Being wrong there offers a booking link to somebody who already booked —
+    // a nuisance. Being wrong in the fee pool accuses a customer of not paying.
+    const staleInterview = interviewInput({
+      reconciledAt: new Date(NOW.getTime() - 30 * DAY).toISOString(),
+    });
+    expect(resolvePool(staleInterview)).toEqual({ pool: "interview" });
+  });
+
+  it("can be switched off explicitly with 0, and only with 0", () => {
+    expect(resolvePool(feeInput({ ...staleBy(74 * HOUR), feeEvidenceMaxAgeMs: 0 }))).toEqual({
+      pool: "fee",
+    });
+  });
+
+  it("still defers to fee-already-paid, which is the stronger statement", () => {
+    const paidAndStale = feeInput({
+      ...staleBy(74 * HOUR),
+      appFeePaidAt: new Date(NOW.getTime() - 70 * HOUR).toISOString(),
+    });
+    expect(resolvePool(paidAndStale)).toEqual({ pool: null, reason: "fee-already-paid" });
+  });
+});
+
 describe("an unreconciled row is SILENT — the columns it has cannot say otherwise", () => {
   /**
    * The rule this suite pins down, and the reason the engine gave it up:

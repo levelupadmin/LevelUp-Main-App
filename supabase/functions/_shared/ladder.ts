@@ -314,6 +314,14 @@ export interface LadderInput {
    * where a test can reach it.
    */
   suppressedChannels?: ReadonlySet<LadderChannel>;
+  /**
+   * How old a fee-pool reading may be and still dun somebody, in milliseconds.
+   * Omitted uses `DEFAULT_FEE_EVIDENCE_MAX_AGE_MS` (26h, one cadence step); `0`
+   * disables the bound entirely and restores the pre-fix behaviour, which is an
+   * operational escape hatch and not a default anybody should reach for. See the
+   * reasoning at the check itself in `resolvePool`.
+   */
+  feeEvidenceMaxAgeMs?: number | null;
 }
 
 /** Why a tick produced nothing. Every reason is counted by the handler. */
@@ -322,6 +330,7 @@ export type LadderSkipReason =
   | "reconciled-no-pool"
   | "marker-disagrees"
   | "fee-already-paid"
+  | "fee-evidence-stale"
   | "silenced-status"
   | "no-anchor"
   | "expired"
@@ -417,8 +426,20 @@ export type PoolResolution =
   | { pool: LadderPool }
   | {
     pool: null;
-    reason: Extract<LadderSkipReason, "unreconciled" | "reconciled-no-pool" | "marker-disagrees" | "fee-already-paid">;
+    reason: Extract<
+      LadderSkipReason,
+      "unreconciled" | "reconciled-no-pool" | "marker-disagrees" | "fee-already-paid" | "fee-evidence-stale"
+    >;
   };
+
+/**
+ * How old a fee-pool reading may be and still be allowed to dun somebody.
+ *
+ * 26 HOURS, WHICH IS ONE CADENCE STEP — the gap between fee rung 1 (+2h) and
+ * rung 2 (+26h). It is not a round number picked for feel; it is the interval
+ * this ladder already treats as "long enough that something might have changed".
+ */
+export const DEFAULT_FEE_EVIDENCE_MAX_AGE_MS = 26 * HOUR_MS;
 
 /**
  * Which pool this application belongs to RIGHT NOW.
@@ -447,6 +468,48 @@ export function resolvePool(input: LadderInput): PoolResolution {
   if (pool === "fee") {
     if (feeAlreadyPaid(input)) return { pool: null, reason: "fee-already-paid" };
     if (!input.completedNoFee) return { pool: null, reason: "marker-disagrees" };
+
+    // THE READING HAS A SHELF LIFE, AND ONLY THE FEE POOL HONOURS IT.
+    //
+    // `feeAlreadyPaid` above is the ONLY positive-payment test, and it reads two
+    // columns — `app_fee_paid_at` and `status` — whose only writers are
+    // `razorpay-webhook` and `verify-razorpay-payment`. BOTH are gated on a
+    // `payment_orders` row (`if (po.payment_type && po.application_id)`, after a
+    // lookup that returns `skipped: "no payment_order"` when absent). An off-app
+    // Razorpay payment-LINK capture never creates that row, and this cron's own
+    // header calls that flow the norm. So for a payment-link payer BOTH columns
+    // stay empty and `feeAlreadyPaid` is false no matter how long ago they paid.
+    //
+    // `completed_no_fee` does not save it either: the reconciler is that column's
+    // only writer and it runs when the applicant OPENS THE APP. Open the app once,
+    // get stamped `completed-no-fee`, pay by link, never reopen — and the marker
+    // says "owes ₹400" forever. Before this check the ladder read that stale
+    // marker and sent all three rungs. Three "Complete the ₹400 step" emails to
+    // somebody who paid, unrecallable, which this file itself calls "the worst
+    // output this system has".
+    //
+    // No amount of reasoning over these columns fixes that, because the money
+    // simply is not in them. What IS knowable is how stale the reading is, so the
+    // fee pool refuses to escalate on evidence older than one cadence step. A
+    // creation-time reading still carries rung 1 (+2h) and rung 2 (+26h); rung 3
+    // (+74h) — the loudest message, sent to the person most likely to have paid
+    // some other way by then — goes silent unless the reconciler has spoken
+    // again. Erring here costs a nudge; erring the other way bills a customer
+    // twice in their inbox.
+    //
+    // Interview-pool messages are untouched: being wrong there means offering a
+    // booking link to somebody who already booked, which is a nuisance, not a
+    // false accusation about money.
+    const maxAge = input.feeEvidenceMaxAgeMs ?? DEFAULT_FEE_EVIDENCE_MAX_AGE_MS;
+    if (maxAge > 0) {
+      const readAt = parseInstant(input.reconciledAt);
+      // A null `reconciled_at` with a live stage cannot be aged, so it cannot be
+      // shown to be fresh either. The fee pool is the one place that resolves
+      // that doubt against sending.
+      if (readAt === null || input.now.getTime() - readAt.getTime() > maxAge) {
+        return { pool: null, reason: "fee-evidence-stale" };
+      }
+    }
   }
   return { pool };
 }
