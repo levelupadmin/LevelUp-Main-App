@@ -30,12 +30,27 @@
 -- (LEAK_CANARY_ZOOM_A1) through an explicit `select=zoom_link`. Those two cases
 -- are the regression test for this migration.
 --
--- WHAT IT MEANS IN PRACTICE. Any caller holding the anon or authenticated role
--- — which is every visitor and every signed-in student — can read the Zoom join
--- link of every live session and the venue link of every paid event by asking
--- for the column by name. 20260408150800's own header describes the exact
--- consequence: "a non-paying student can read the join link for every paid live
--- session, walk in, and Zoom-bomb the cohort."
+-- WHAT IT MEANS IN PRACTICE — STATED CAREFULLY, BECAUSE AN EARLIER DRAFT OF
+-- THIS HEADER OVERSTATED IT AND SOMEBODY COULD BUILD A BREACH POSTURE ON IT.
+-- `has_column_privilege` measures a GRANT, not reachable data; RLS still filters
+-- rows on top. Measured against the actual policies:
+--
+--   events.venue_link         `events_read_authenticated` is
+--                             USING (auth.uid() IS NOT NULL), so EVERY SIGNED-IN
+--                             USER can read the venue link of EVERY paid event.
+--                             This is the broad one.
+--   live_sessions.zoom_link   `live_sessions_read` is
+--                             USING (has_course_access(course_id) OR is_admin()),
+--                             so exposure is ENROLMENT-SCOPED: a student reads
+--                             join links for courses they have access to,
+--                             including classes they are not in and sessions
+--                             outside any time window.
+--   anon                      retrieves ZERO ROWS from both tables. The earlier
+--                             claim of "any visitor" was wrong.
+--
+-- 20260408150800's own header names the consequence it was written to stop: "a
+-- non-paying student can read the join link for every paid live session, walk
+-- in, and Zoom-bomb the cohort." For events that is exactly right today.
 --
 -- WHY THIS IS SAFE TO APPLY. Both original migrations already built the
 -- replacement read paths, and the client already uses them:
@@ -101,6 +116,19 @@ DECLARE
   cols      text;
   n_applied int := 0;
 BEGIN
+  -- FAIL FAST INSTEAD OF QUEUEING EVERY READER. GRANT/REVOKE take ACCESS
+  -- EXCLUSIVE and hold it to COMMIT, and the session default on the `db push`
+  -- path is 0 = wait forever. Without this, applying during traffic parks the
+  -- lock request at the head of the queue and every reader of both tables — on
+  -- every platform at once — blocks behind it. LOCAL, so it reverts with this
+  -- transaction and nothing else in the push inherits it.
+  --
+  -- NOTE THE DELIBERATE DIFFERENCE FROM R0's GUARDED INDEX: there, a timeout
+  -- degrades to RAISE WARNING because a missing index costs performance and
+  -- nothing else. Here a timeout must ABORT — a half-applied security fix that
+  -- reports success is the exact failure this whole migration exists to undo.
+  PERFORM set_config('lock_timeout', '3s', true);
+
   FOR t IN
     SELECT * FROM (VALUES
       ('live_sessions', 'zoom_link'),
@@ -168,11 +196,27 @@ BEGIN
     IF has_column_privilege(r.role, 'public.' || r.tbl, r.gated, 'SELECT') THEN
       broken := broken || format(' %s can still read %s.%s;', r.role, r.tbl, r.gated);
     END IF;
-    -- ...and an ordinary column MUST still be, or the safe views are dead and
-    -- every listing surface in the app goes with them.
-    IF NOT has_column_privilege(r.role, 'public.' || r.tbl, 'id', 'SELECT') THEN
-      broken := broken || format(' %s LOST read on %s.id;', r.role, r.tbl);
-    END IF;
+
+    -- ...and EVERY OTHER COLUMN MUST STILL BE. Checking only `id` was not
+    -- enough: the safe views are security_invoker, so they read with the
+    -- caller's privileges, and ONE ungranted column in a view's SELECT list
+    -- breaks that view for everyone. A self-check that passes while the rest of
+    -- the projection is dead would hand back a green migration and a blank
+    -- schedule screen. Name the columns that are actually missing.
+    DECLARE
+      missing text;
+    BEGIN
+      SELECT string_agg(c.column_name, ', ' ORDER BY c.ordinal_position)
+        INTO missing
+        FROM information_schema.columns c
+       WHERE c.table_schema = 'public'
+         AND c.table_name = r.tbl
+         AND c.column_name <> r.gated
+         AND NOT has_column_privilege(r.role, 'public.' || r.tbl, c.column_name, 'SELECT');
+      IF missing IS NOT NULL THEN
+        broken := broken || format(' %s LOST read on %s.{%s};', r.role, r.tbl, missing);
+      END IF;
+    END;
   END LOOP;
 
   IF broken <> '' THEN
@@ -226,6 +270,43 @@ $$;
 REVOKE ALL ON FUNCTION public.admin_live_sessions_with_zoom_link() FROM public;
 GRANT EXECUTE ON FUNCTION public.admin_live_sessions_with_zoom_link() TO authenticated;
 
+
+-- =====================================================================
+-- ⚠️ THIS MIGRATION ALONE DOES NOT CLOSE THE LEAK. READ THIS BEFORE DECLARING
+--    THE INCIDENT SHUT.
+-- =====================================================================
+--
+-- `public.get_cohort_progress` is SECURITY DEFINER. It runs as the FUNCTION
+-- OWNER, so the column-level grants above are STRUCTURALLY INVISIBLE to its
+-- body — no REVOKE on `authenticated` can restrict what it reads. Its body
+-- projects `ls.zoom_link`, and EXECUTE is granted to `authenticated`.
+--
+-- So with only this file applied, every signed-in user can still pull join links
+-- through that one function, and the alarm goes green while the exposure stands.
+-- That is a worse outcome than leaving the leak visible.
+--
+-- WORSE, ON PRODUCTION TODAY the live definition is the April one
+-- (20260526180000), which filters `WHERE e.user_id = p_user_id` — a
+-- CLIENT-SUPPLIED argument never compared to `auth.uid()`. That is an IDOR: any
+-- signed-in user can pass somebody else's uuid (enumerable from
+-- `public_user_profiles`) and receive that student's join links, submission
+-- status, RATING and mentor FEEDBACK.
+--
+-- BOTH HALVES ARE FIXED IN `20260729100200_cohort_room_rpcs.sql` ON
+-- design/cohort-r0 — it redefines the function with an `auth.uid()` assert that
+-- RAISES 42501, and (as of 2026-08-01) gates the link to the same T-60 window
+-- `get_live_session_zoom_link` enforces.
+--
+-- THIS FILE DELIBERATELY DOES NOT CARRY ITS OWN COPY OF THAT FUNCTION. An
+-- earlier revision did, rebuilt from the April body, and it CLOBBERED R0's
+-- richer definition — losing the LATERAL that collapses a week's five sessions
+-- to the one running right now. R0's adversarial suite caught it immediately
+-- (PROG.1, PROG.2). Two migrations carrying the same function body is a
+-- last-writer-wins landmine, so the body lives in exactly one place.
+--
+-- THE ORDERING RULE: apply this file only together with, or after,
+-- 20260729100200. If R0 is not going to production yet, the egress must be
+-- closed some other way first — do not ship this alone and call it done.
 
 -- =====================================================================
 -- UNDO (do not run as part of this migration — this is the rollback recipe).
