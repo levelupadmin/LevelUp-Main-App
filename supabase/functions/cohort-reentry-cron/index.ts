@@ -1278,9 +1278,29 @@ function renderTemplate(template: EmailTemplateRow, vars: Record<string, string>
   for (const [key, raw] of Object.entries(vars)) {
     const value = URL_VARIABLES.has(key) ? raw.slice(0, 500) : sanitizeVar(raw);
     const placeholder = `{{${key}}}`;
-    subject = subject.replaceAll(placeholder, value);
-    html = html.replaceAll(placeholder, value);
-    text = text.replaceAll(placeholder, value);
+    // `() => value`, NOT `value`. THE ARROW IS THE FIX AND IT IS NOT STYLE.
+    //
+    // `String.replaceAll(search, replacement)` treats a STRING replacement as a
+    // substitution pattern: `$&` inserts the match, `$'` the text after it,
+    // "$`" the text before it, `$$` a literal `$`. `first_name` comes from
+    // `full_name` — applicant-supplied, through `sanitizeVar`, which strips
+    // newlines, angle brackets and URLs but has no reason to strip `$`.
+    //
+    // So a person whose name begins `$'` renders THE ENTIRE REMAINDER OF THE
+    // EMAIL BODY into the greeting, and it does not trip the
+    // UNRESOLVED_PLACEHOLDER check below, so it SENDS. `$&` renders a literal
+    // `{{first_name}}`, which does trip the check — but only AFTER the rung was
+    // claimed, so it burns that rung silently and the applicant hears nothing.
+    // A name containing `{{fee_link}}` renders the checkout URL where the
+    // person's name belongs, and also sends.
+    //
+    // A function replacement is never pattern-interpreted: the value goes in
+    // verbatim, whatever characters it holds. Fixing it here rather than in
+    // `sanitizeVar` is deliberate — `$` is a legal character in a human name,
+    // and the defect is in how the substitution reads it, not in the name.
+    subject = subject.replaceAll(placeholder, () => value);
+    html = html.replaceAll(placeholder, () => value);
+    text = text.replaceAll(placeholder, () => value);
   }
   return { subject, html, text };
 }
