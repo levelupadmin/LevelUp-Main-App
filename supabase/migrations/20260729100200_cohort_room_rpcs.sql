@@ -1312,7 +1312,32 @@ BEGIN
     ls.id,
     ls.title,
     ls.scheduled_at,
-    ls.zoom_link,
+    -- B5.4a / GAP-3 CLOSED: the join link now carries the SAME window
+    -- `get_live_session_zoom_link` (20260408151600) enforces — T-60 to end + 1h,
+    -- never for a cancelled class, with the same unconditional admin bypass.
+    --
+    -- IT SHIPPED RAW UNTIL 2026-08-01, and the column-grant fix could never have
+    -- reached it: this function is SECURITY DEFINER, so it runs as the owner and
+    -- column-level GRANTs are STRUCTURALLY INVISIBLE to its body. Revoking
+    -- `zoom_link` from `authenticated` therefore closes the direct
+    -- `select=zoom_link` path and leaves this one wide open. CohortDashboard
+    -- does check a T-60 window before rendering the link, but that is a CLIENT
+    -- check on a row the server already handed over, which is not enforcement.
+    --
+    -- The shape is deliberately unchanged, so the two shipped Capacitor call
+    -- sites keep working: the column stays, only its VALUE goes null outside
+    -- the window, and the client already renders conditionally on null.
+    CASE
+      WHEN ls.zoom_link IS NULL THEN NULL
+      WHEN public.is_admin() THEN ls.zoom_link
+      WHEN COALESCE(ls.status, 'scheduled') <> 'cancelled'
+       AND now() BETWEEN ls.scheduled_at - interval '1 hour'
+                     AND ls.scheduled_at
+                         + make_interval(mins => COALESCE(ls.duration_minutes, 60))
+                         + interval '1 hour'
+      THEN ls.zoom_link
+      ELSE NULL
+    END,
     s.id,
     s.status,
     s.rating,
@@ -1363,7 +1388,7 @@ BEGIN
   -- "unspecified", which is not "cancelled" when choosing a week's session) and
   -- deliberately differs from §3's stricter gate, where a blank status denies.
   LEFT JOIN LATERAL (
-    SELECT lsx.id, lsx.title, lsx.scheduled_at, lsx.zoom_link
+    SELECT lsx.id, lsx.title, lsx.scheduled_at, lsx.zoom_link, lsx.status, lsx.duration_minutes
     FROM public.live_sessions lsx
     WHERE lsx.week_id = cw.id
     ORDER BY (COALESCE(lsx.status, 'scheduled') = 'cancelled') ASC,
