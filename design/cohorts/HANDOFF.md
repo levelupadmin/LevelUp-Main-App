@@ -24,23 +24,30 @@ Offering id `449056b9-9269-4bc5-ba8b-4c079c2104ee`.
 
 ## 2. Current state — everything is safe
 
-All seven branches: **0 uncommitted, 0 unpushed, 0 behind `origin/main`**
-(`origin/main` @ `cbfe628`).
+**Updated 2026-08-01.** All eight branches: 0 uncommitted, 0 unpushed.
 
-| Worktree | Branch | HEAD | Tests |
+| Worktree | Branch | Tests | Note |
 |---|---|---|---|
-| `LevelUp-cohort` | `design/cohort-sp` | `a6bda49` | 558 |
-| `LevelUp-iv` | `design/cohort-iv` | `0de5da6` | 683 |
-| `LevelUp-dc` | `design/cohort-dc` | `a36bdd0` | 841 |
-| `LevelUp-re` | `design/cohort-re` | `cee17e7` | 691 |
-| `LevelUp-r0` | `design/cohort-r0` | `4d8a565` ⚠️ | 539 |
-| `LevelUp-r1` | `design/cohort-r1` | `6bd6f46` ⚠️ | 577 |
-| `LevelUp-r2` | `design/cohort-r2` | `c6f41d5` ⚠️ | 662 |
+| `LevelUp-cohort` | `design/cohort-sp` | 558 | |
+| `LevelUp-iv` | `design/cohort-iv` | 683 | council REVISE → both blockers closed |
+| `LevelUp-dc` | `design/cohort-dc` | 841 | |
+| `LevelUp-re` | `design/cohort-re` | 697 | council REVISE → B1/B2 closed |
+| `LevelUp-r0` | `design/cohort-r0` | 539 | adversarial suite EXECUTED: 163/163 |
+| `LevelUp-r1` | `design/cohort-r1` | 577 | |
+| `LevelUp-r2` | `design/cohort-r2` | 701 | wiring confirmed landed |
+| `LevelUp-linkgate` | `design/cohort-linkgate` | 493 | the production link leak, §6 |
 
-⚠️ **R0, R1 and R2's HEADs are `wip(checkpoint)` auto-saves**, not clean
-deliverables. A session limit killed three workflows mid-flight and an automatic
-checkpoint loop committed whatever was on disk. **Re-run each phase's gate
-before trusting those three**, and expect some half-finished edits.
+**⚠️ THE PREVIOUS VERSION OF THIS FILE CLAIMED ALL SEVEN BRANCHES WERE PUSHED.
+`design/cohort-r2` WAS NOT ON ORIGIN AT ALL** — ~5,300 lines existed only on this
+machine. Now pushed. **Verify with `git ls-remote --heads origin 'design/cohort-*'`,
+never by trusting this table.**
+
+R0/R1/R2's gates were re-run after their `wip(checkpoint)` HEADs: all three green,
+`typecheck:functions` 0 new failures against the 4 known-failing baseline. R2's
+wiring DID land despite its integrate step dying — `App.tsx` routes the real
+modules and `SessionSlot` is mounted in `ThisWeekCard`. The surviving
+`{title} opens here.` in `RoomHome` is CORRECT: it is `RoomModuleRoute`, the
+fallback for R3's three unbuilt modules.
 
 **SHIPPED TO PRODUCTION:** RC (funnel reconciler, merged, runs dark) and
 TP (Tally poller — LIVE, pg_cron every 15 min, ingesting real applications).
@@ -147,6 +154,59 @@ Docker CLI at `/Applications/OrbStack.app/Contents/MacOS/xbin`, NOT on PATH).
 11. **Distinguish a stale brief from a transient failure.** Both surface as
     "workflow aborted". Ask: *did any agent actually do anything?* A stale brief
     must be rewritten, never retried; a 529 should be retried unchanged.
+12. **A column-level `REVOKE` cannot cut through a table-level `GRANT`.** They are
+    separate privileges. `REVOKE SELECT (c) ON t` removes only a COLUMN-level
+    grant; where a table-level one exists it changes nothing, silently. Two
+    shipped migrations were inert for four months this way (§6b). To withhold one
+    column you must hold NO table-level SELECT and grant the others individually.
+13. **RUN THE ARTIFACT.** R0's suite had never been executed anywhere. Executing
+    it found four defects in the suite itself — three of which would have failed
+    identically on the hosted shadow it was written for — plus the §6b production
+    leak. A test that has never run is not a test; it is a document.
+14. **`npm run build` is a bare `vite build` with NO tsc**, so type errors reach
+    main. Run `npx tsc --noEmit -p tsconfig.app.json` and compare the error COUNT
+    against `origin/main` — there is a pre-existing baseline of 8, so "zero
+    errors" is the wrong bar and "no new errors" is the right one.
+15. **A backtick inside a SQL comment terminates a JS template literal.** Writing
+    `` `live_sessions` `` inside a `sql(\`…\`)` block is a syntax error, not a
+    comment. Cost a full suite run to spot.
+16. **When a fix breaks a test, ask which one encodes the bug.** `ENTRY-PARITY-1`
+    forbade `<iframe>` anywhere in `ThankYou.tsx` — a rule that is only correct if
+    the flag is always on, which was the very defect. R0's precondition asked
+    `has_table_privilege` — wrong once a table legitimately holds none. Both tests
+    were amended, not worked around.
+
+---
+
+## 6b. A THIRD production problem — found 2026-07-31, fix built, NOT APPLIED
+
+**Every visitor and every signed-in student can read the Zoom join link of every
+live class and the venue link of every paid event**, by naming the column in the
+projection. Measured read-only against prod:
+
+```
+role            zoom_link  venue_link  live_sessions(table SELECT)
+anon            true       true        true
+authenticated   true       true        true
+```
+
+Two April migrations (`20260408150800`, `20260408151600`) each ship a
+`REVOKE SELECT (col)` intended to stop exactly this. **Both are no-ops and always
+have been.** A table-level grant and a column-level grant are SEPARATE privileges:
+`GRANT SELECT ON t` authorises every column, and a later `REVOKE SELECT (c)`
+removes only a column-level grant that may never have existed — no error, no
+warning, no effect.
+
+The fix is on `design/cohort-linkgate`: revoke the table-level SELECT, grant every
+other column individually, move `AdminSchedule` onto the safe view + the gated
+RPC (the only client still doing `select("*")` on a base table), and add an
+admin-only ids-list RPC so the admin row shortcut survives. Verified on a local
+shadow, and **R0's suite then reports 163/163, exit 0** — C2.3b and C2.4, the two
+cases that exposed the leak, pass.
+
+**Applying it is Rahul's call.** GRANT/REVOKE hold ACCESS EXCLUSIVE until COMMIT
+on tables the shipped dashboard reads, so it wants a quiet hour. The undo is two
+`GRANT SELECT` statements, spelled out at the bottom of the migration.
 
 ---
 
@@ -286,7 +346,36 @@ password from `SUPABASE_MAIN_APP_DB_PASS`.
 
 # per-phase gate
 npx vitest run && npm run build && npm run typecheck:functions
+
+# types are NOT in that gate — vite build runs no tsc. Compare the COUNT to main:
+npx tsc --noEmit -p tsconfig.app.json 2>&1 | grep -c "error TS"   # baseline is 8
 ```
+
+**Running R0's adversarial suite (works, 163/163).** It now has a local mode;
+the hosted path is unchanged. `docker` lives at
+`/Applications/OrbStack.app/Contents/MacOS/xbin` and `psql` at
+`/opt/homebrew/opt/libpq/bin` — neither is on PATH.
+
+```bash
+open -a OrbStack && npx -y supabase@latest start        # in LevelUp-r0
+
+# PROVISION IN THIS ORDER. Step 0 is a MANUAL empty — never `supabase db reset`,
+# which re-applies migrations and so lands the exact state step 1 must precede.
+# Stop the rest/auth/realtime containers first or the DROP hangs on locks, and on
+# a REUSED stack also clear storage (as supabase_admin inside the container —
+# `postgres` is not superuser and does not own those tables) or db push dies on a
+# duplicate bucket.
+psql "$DB" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' \
+           -c 'DELETE FROM supabase_migrations.schema_migrations;'
+psql "$DB" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql   # arms ALTER DEFAULT PRIVILEGES
+npx -y supabase@latest db push --db-url "$DB"
+psql "$DB" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql   # grants the new tables
+
+ROOM_QA_LOCAL=1 ROOM_QA_PSQL=/opt/homebrew/opt/libpq/bin/psql \
+ROOM_QA_ANON_KEY=... ROOM_QA_SERVICE_KEY=... npm run test:room-access
+```
+
+Exit 0 = the wall holds. Exit 2 = it could not run, which is NOT a pass.
 
 **The workflow pattern that works:** write the brief with verified facts →
 `design-phase-build` (its plan-check will catch your brief's errors — read those
@@ -295,14 +384,29 @@ fix round → **re-council** (fix rounds are where regressions get born).
 
 ---
 
-## 11. First five things the next session should do
+## 11. What is left — updated 2026-08-01
 
-1. **Re-arm a checkpoint loop** with the allowlist and force-push rules in §3.
-2. **Run each phase's gate** on R0, R1, R2 — their HEADs are auto-saves.
-3. **Verify R2's wiring actually landed** (`App.tsx` routes, `RoomHome` slots,
-   `SessionSlot` mounted). The integrate step never ran.
-4. **Launch the two missing verification councils** — IV and RE.
-5. **Stand up the local shadow and run R0's suite** — it is the proof artifact
-   for RLS on the enrolment path and has never been executed anywhere.
+**The previous list of five is DONE.** Checkpoint loop re-armed; R0/R1/R2 gates
+re-run green; R2's wiring confirmed; the IV and RE councils ran (both REVISE,
+every blocker since closed); R0's suite executed for the first time at 163/163.
 
-Then R3/R4, then the merge-and-deploy sequence with Rahul.
+Outstanding, roughly in value order:
+
+1. **Rahul's two decisions.** (a) Apply the §6b grant migration to prod — it is
+   the only open item that affects users today. (b) Tune
+   `REENTRY_FEE_EVIDENCE_MAX_AGE_HOURS`; the 26h default is a policy number and
+   how much reach it costs depends on how often the reconciler actually runs.
+2. **R3 and R4 — NOT STARTED.** R3 (announcements, roster, feed, resources) and
+   R4 (demo day, certificates, alumni), 4 tasks each, in `ROOMS-BACKLOG.md`.
+3. **The council follow-ups nobody has picked up:** IV's durable webhook fix (an
+   opaque per-application token on `scheduling_url`, so identity stops resting on
+   a field the invitee types), and RE's B3/B4/B5 — the rollback that strips the
+   unsubscribe link, the fee CTA dead-ending in the Android shell, and the ladder
+   input possibly being structurally empty because `FUNNEL_RECON` defaults false.
+4. **SP's dead Part-3 gate**, and R0's residuals: the unguarded `CREATE INDEX` on
+   `live_sessions`, the half-guarded DO block in `content.sql`, and the stale "4s
+   lock_timeout" prose in the suite (all six sites are 1s).
+5. Then the merge-and-deploy sequence in §8, with Rahul.
+
+**Nothing from any cohort branch is merged, applied or deployed.** RC and TP
+remain the only things live.
