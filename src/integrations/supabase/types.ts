@@ -6279,6 +6279,10 @@ export type Database = {
         Args: { p_session_id: string }
         Returns: string
       }
+      admin_live_sessions_with_zoom_link: {
+        Args: never
+        Returns: string[]
+      }
       has_course_access: { Args: { p_course_id: string }; Returns: boolean }
       has_offering_learnings_access: {
         Args: { p_offering_id: string }
