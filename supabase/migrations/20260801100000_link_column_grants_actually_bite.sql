@@ -63,6 +63,31 @@
 -- block (it is idempotent) after any `ALTER TABLE ... ADD COLUMN` on these two
 -- tables. The same applies if the platform ever re-grants table-level SELECT.
 --
+-- ⚠️ DEPLOY ORDER: SHIP THE CLIENT FIRST, THEN APPLY THIS. The two directions
+-- are NOT symmetrical.
+--
+--   client first (CORRECT)  The new AdminSchedule reads `live_sessions_safe`,
+--                           which already exists on production, so it works
+--                           immediately. Its one call to
+--                           `admin_live_sessions_with_zoom_link` finds no such
+--                           function yet. MEASURED, not assumed: calling a
+--                           missing RPC returns `{data: null, error}` with code
+--                           PGRST202 and does NOT reject, so the surrounding
+--                           `Promise.all` resolves, `?? []` yields an empty set,
+--                           and the page renders with no per-row Zoom shortcuts.
+--                           Degraded for one deploy, not broken.
+--
+--   migration first (WRONG) The SHIPPED AdminSchedule still does
+--                           `select("*")` on the base table. The moment this
+--                           applies, that becomes a permission error and the
+--                           admin schedule screen is DEAD for every admin until
+--                           the new client reaches them — and Capacitor clients
+--                           lag for days.
+--
+-- Web is a Vercel deploy (fast, revertible); the native shells lag. Since admins
+-- work on the web, shipping web + applying shortly after is fine; a native admin
+-- would need the store build out first.
+--
 -- LOCK PROFILE. GRANT and REVOKE take ACCESS EXCLUSIVE on the target table and
 -- hold it until COMMIT, not until the statement ends. Both tables are small and
 -- read by the shipped dashboard, so this is a brief read-block on every
