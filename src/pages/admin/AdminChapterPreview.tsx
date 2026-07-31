@@ -18,6 +18,7 @@ import {
   Play,
 } from "lucide-react";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
+import { SignedVideo } from "@/components/chapter/ChapterMediaPlayer";
 
 interface Chapter {
   id: string;
@@ -152,6 +153,13 @@ export default function AdminChapterPreview() {
             {/* Content renderer - mirrors ChapterViewer exactly */}
             {chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
               <VdoCipherPlayer chapterId={chapter.id} title={chapter.title} />
+            ) : chapter.content_type === "video" && (chapter as any).media_provider === "supabase-signed" ? (
+              // Download-protected upload: not a URL, so it can't go in an iframe.
+              // Render the same signed player students get (admins pass the
+              // access check in get-video-src).
+              <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
+                <SignedVideo chapterId={chapter.id} title={chapter.title} />
+              </div>
             ) : chapter.content_type === "video" && (chapter.media_url || chapter.embed_url) ? (
               <div className="aspect-video bg-card rounded-[16px] border border-border overflow-hidden">
                 <iframe

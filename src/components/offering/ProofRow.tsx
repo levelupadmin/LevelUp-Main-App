@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Star } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import CountUp from "@/components/motion/CountUp";
 import { cn } from "@/lib/utils";
@@ -74,16 +73,11 @@ interface ProofRowProps extends OfferingProof {
  * fetch. Renders nothing when both signals are absent.
  */
 export default function ProofRow({ avg, enrolled, className }: ProofRowProps) {
-  if (avg == null && enrolled == null) return null;
+  // Ratings hidden for now (product decision); keep the "N enrolled" proof.
+  void avg;
+  if (enrolled == null) return null;
   return (
     <div className={cn("flex flex-wrap items-center gap-2 text-sm text-muted-foreground", className)}>
-      {avg != null && (
-        <span className="inline-flex items-center gap-1">
-          <Star className="h-4 w-4 fill-gold text-gold" />
-          <span className="font-medium text-foreground">{avg.toFixed(1)}</span>
-        </span>
-      )}
-      {avg != null && enrolled != null && <span aria-hidden="true">·</span>}
       {enrolled != null && (
         <span>
           <CountUp value={enrolled} className="font-medium text-foreground" /> enrolled

@@ -14,11 +14,10 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { toast } from "@/lib/toast";
-import { CheckCircle2, Lock, Play, Clock, BookOpen, Star, Sparkles } from "lucide-react";
+import { CheckCircle2, Lock, Play, Clock, BookOpen, Sparkles } from "lucide-react";
 import { isNative } from "@/lib/platform";
 import { ProgressRing } from "@/components/progress/ProgressRing";
 import { CompletionRecap } from "@/components/progress/CompletionRecap";
-import ReviewList from "@/components/reviews/ReviewList";
 import Outcomes from "@/components/course-detail/Outcomes";
 import PortfolioPieces from "@/components/course-detail/PortfolioPieces";
 import InstructorCard from "@/components/course-detail/InstructorCard";
@@ -615,14 +614,7 @@ const CourseDetail = () => {
         <TestimonialsCarousel courseId={courseId!} />
         <FAQ faqs={course.faqs} />
 
-        {/* Ratings & Reviews */}
-        <div className="bg-card border border-border rounded-[16px] p-6 space-y-6">
-          <div className="flex items-center gap-2">
-            <Star className="h-5 w-5 text-gold fill-gold" />
-            <h2 className="text-lg font-semibold">Ratings & Reviews</h2>
-          </div>
-          <ReviewList courseId={courseId!} isEnrolled={hasAccess} />
-        </div>
+        {/* Ratings & Reviews removed for now (product decision). */}
 
         {/* Sections + Chapters */}
         <div className="bg-card border border-border rounded-[16px] overflow-hidden">

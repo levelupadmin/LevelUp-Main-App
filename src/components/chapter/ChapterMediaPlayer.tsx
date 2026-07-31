@@ -413,7 +413,7 @@ function AppOwnedVideo({ url, title, chapterId }: { url: string; title: string; 
  * paths. Not unbreakable (screen capture always works), but there's no shareable
  * link and the signed URL expires.
  */
-function SignedVideo({ chapterId, title }: { chapterId: string; title: string }) {
+export function SignedVideo({ chapterId, title }: { chapterId: string; title: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
