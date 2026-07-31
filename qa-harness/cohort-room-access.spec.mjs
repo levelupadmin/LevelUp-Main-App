@@ -1904,7 +1904,7 @@ section("PRE — positive controls", "if a member cannot see the canaries, every
 // attached, so the forced failure was never reached" — and an unattached
 // trigger is not hypothetical here: §5 of the backbone migration attaches all
 // four inside DO blocks that swallow a failed attachment into RAISE WARNING,
-// bounded by a 4s lock_timeout, as an explicitly accepted degradation. On a
+// bounded by a 1s lock_timeout, as an explicitly accepted degradation. On a
 // shadow project where two of them lost that race, this section used to print
 // five green claims about a guard that never executed. So:
 //   .0a  the four triggers exist on their tables and are ENABLED (the migration's
@@ -1967,7 +1967,7 @@ section("SEC-ENT-2 — a failing room trigger can never block an enrolment",
      ORDER BY 1`);
   const badTriggers = triggers.filter((t) => t.verdict !== "ok");
   prove("SEC-ENT-2.0a",
-    "all four resolver triggers are attached to the money tables and enabled — cohort_batch_members, both enrolments triggers and cohort_applications. R-1 attaches them inside DO blocks whose handler downgrades a failed attachment to a WARNING under a 4s lock_timeout, so 'the trigger is not there' is a documented, expected outcome of a busy `db push`, not a hypothetical; and with it absent every forced-failure case below would commit its write, find zero membership rows and print PASS having executed no guard at all",
+    "all four resolver triggers are attached to the money tables and enabled — cohort_batch_members, both enrolments triggers and cohort_applications. R-1 attaches them inside DO blocks whose handler downgrades a failed attachment to a WARNING under a 1s lock_timeout, so 'the trigger is not there' is a documented, expected outcome of a busy `db push`, not a hypothetical; and with it absent every forced-failure case below would commit its write, find zero membership rows and print PASS having executed no guard at all",
     triggers.length === 4 && badTriggers.length === 0,
     triggers.length === 4
       ? triggers.map((t) => `${t.tgname}:${t.verdict}`).join(" · ")
