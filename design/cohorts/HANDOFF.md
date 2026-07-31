@@ -180,9 +180,30 @@ Docker CLI at `/Applications/OrbStack.app/Contents/MacOS/xbin`, NOT on PATH).
 
 ## 6b. A THIRD production problem — found 2026-07-31, fix built, NOT APPLIED
 
-**Every visitor and every signed-in student can read the Zoom join link of every
-live class and the venue link of every paid event**, by naming the column in the
-projection. Measured read-only against prod:
+**Signed-in users can read join links they should not have.** Stated carefully,
+because the first draft of this section overstated it and somebody could build a
+breach posture on the wrong sentence. `has_column_privilege` measures a GRANT;
+RLS still filters rows on top. Measured against the actual policies:
+
+- `events.venue_link` — `events_read_authenticated` is
+  `USING (auth.uid() IS NOT NULL)`, so **every signed-in user** can read the
+  venue link of **every paid event**. This is the broad one.
+- `live_sessions.zoom_link` — `live_sessions_read` requires
+  `has_course_access()`, so exposure is **enrolment-scoped**: join links for
+  courses you have access to, including classes you are not in and sessions
+  outside any time window.
+- **anon reads zero rows from both tables.** "Any visitor" was wrong.
+
+**There are TWO egresses, and the grant fix only closes one.**
+`get_cohort_progress` is SECURITY DEFINER, so it runs as the owner and column
+grants are *structurally invisible* to it — and the definition live on prod
+filters `WHERE e.user_id = p_user_id` with no `auth.uid()` check, an **IDOR**
+handing any signed-in user another student's join links, submission status,
+rating and mentor feedback. R0's `20260729100200` already fixes the IDOR and now
+also gates the link to the T-60 window. **Applying the grant migration alone does
+not close this — it only turns the alarm green.**
+
+Measured read-only against prod:
 
 ```
 role            zoom_link  venue_link  live_sessions(table SELECT)
