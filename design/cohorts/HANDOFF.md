@@ -276,14 +276,26 @@ a residuals round whose integrate step died.
 - **🔴 THE ADVERSARIAL SUITE HAS NEVER BEEN EXECUTED.** It needs a shadow with
   grant parity — apply `qa-harness/shadow-grants.sql` AFTER `supabase start`, or
   every assertion passes vacuously.
-- Outstanding from the residuals round: the unguarded `CREATE INDEX` on
-  `live_sessions` (`20260729100200:67`), the half-guarded DO block in
-  `content.sql:265` (has an EXCEPTION handler but no `lock_timeout`, so its
-  `query_canceled` branch can never fire), and the grant-layer documentation in
-  `design/cohorts/docs/05-ACCESS-SECURITY.md` (which has **zero** mentions of
-  TRUNCATE while `design-qa-gate.js` names its §7 as the authority).
-- **Stale prose:** `cohort-room-access.spec.mjs:1649,1712` still say "4s
-  lock_timeout"; all six sites are now 1s.
+- **THE RESIDUALS LIST ABOVE WAS ITSELF STALE — audited 2026-08-01.** Two of the
+  three were already fixed, and the code's own comments were more accurate than
+  this file:
+  - The `CREATE INDEX` on `live_sessions` (`20260729100200` §0) is fully guarded:
+    LOCAL 1s `lock_timeout`, `query_canceled` named explicitly in the handler,
+    previous value restored, worst case `RAISE WARNING`.
+  - The `content.sql` DO block is handler-only **by decision**, and the file says
+    so under "HANDLER-GUARDED, WITH NO `lock_timeout`". The old claim that its
+    `query_canceled` branch "can never fire" was garbled: 57014 does not come
+    from a lock wait at all (that is 55P03 `lock_not_available`); it arrives from
+    a `statement_timeout` or a `pg_cancel_backend`, both real on any table, and
+    `OTHERS` does not trap it — so the branch earns its place.
+  - Fixed: the stale "4s lock_timeout" prose in the suite is now 1s. Note the
+    handoff cited `:1649,1712` and the real sites were `:1907,1970` — **line
+    numbers in this file drift; grep for the symbol** (lesson 3).
+- Still open: the grant-layer documentation in
+  `design/cohorts/docs/05-ACCESS-SECURITY.md` has **zero** mentions of TRUNCATE
+  while `design-qa-gate.js` names its §7 as the authority.
+- **The adversarial suite now RUNS: 163/163, exit 0** (§10 for the recipe). It
+  found the §6b production leak.
 
 ### R1 — room shell (`LevelUp-r1`)
 **Complete.** Routes, redirect shim, all five components, the hook, MyCohortsPage,
