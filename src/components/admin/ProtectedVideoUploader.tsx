@@ -67,7 +67,7 @@ export default function ProtectedVideoUploader({ onUploaded, courseId, alreadyPr
       <div className="flex items-center gap-2">
         <input
           type="file"
-          accept="video/mp4,video/quicktime,video/webm"
+          accept="video/*"
           disabled={uploading}
           onChange={(e) => {
             setFile(e.target.files?.[0] || null);
