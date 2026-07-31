@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, ChevronUp, ChevronDown, Trash2, GripVertical } from "lucide-react";
 import VdoCipherUploader from "@/components/admin/VdoCipherUploader";
+import ProtectedVideoUploader from "@/components/admin/ProtectedVideoUploader";
 
 interface Chapter {
   id: string;
@@ -16,6 +17,9 @@ interface Chapter {
   content_type: string;
   description: string;
   media_url: string;
+  // 'supabase-signed' = download-protected upload in the private bucket.
+  // null/'' or an external provider = plain URL (public).
+  media_provider: string;
   embed_url: string;
   article_body: string;
   duration_seconds: number;
@@ -78,7 +82,7 @@ const AdminCourseCurriculum = () => {
     const secIds = secs.map((s) => s.id);
     const { data: chs } = await supabase
       .from("chapters")
-      .select("id, title, content_type, description, media_url, embed_url, article_body, duration_seconds, make_free, sort_order, section_id, video_type, vdocipher_video_id, vdocipher_watermark_text, thumbnail_url, vdocipher_thumbnail_url")
+      .select("id, title, content_type, description, media_url, media_provider, embed_url, article_body, duration_seconds, make_free, sort_order, section_id, video_type, vdocipher_video_id, vdocipher_watermark_text, thumbnail_url, vdocipher_thumbnail_url")
       .in("section_id", secIds)
       .order("sort_order");
 
@@ -91,6 +95,7 @@ const AdminCourseCurriculum = () => {
         content_type: ch.content_type,
         description: ch.description || "",
         media_url: ch.media_url || "",
+        media_provider: (ch as { media_provider?: string }).media_provider || "",
         embed_url: ch.embed_url || "",
         article_body: ch.article_body || "",
         duration_seconds: ch.duration_seconds || 0,
@@ -136,6 +141,7 @@ const AdminCourseCurriculum = () => {
             content_type: "video",
             description: "",
             media_url: "",
+            media_provider: "",
             embed_url: "",
             article_body: "",
             duration_seconds: 0,
@@ -340,6 +346,7 @@ const AdminCourseCurriculum = () => {
             content_type: ch.content_type,
             description: ch.description || null,
             media_url: ch.media_url || null,
+            media_provider: ch.media_provider || null,
             embed_url: ch.embed_url || null,
             article_body: ch.article_body || null,
             duration_seconds: ch.duration_seconds || 0,
@@ -465,15 +472,60 @@ const AdminCourseCurriculum = () => {
                           </div>
                         )}
 
-                        {/* Standard video/media URL */}
+                        {/* Standard video: upload a download-protected file (default,
+                            recommended) OR paste an external URL (public). */}
                         {ch.content_type === "video" && ch.video_type === "standard" && (
-                          <div>
-                            <label className="block text-xs font-medium mb-1">Video URL (Vimeo, YouTube, or embed URL)</label>
-                            <Input
-                              value={ch.media_url}
-                              onChange={(e) => updateChapter(sIdx, cIdx, { media_url: e.target.value })}
-                              placeholder="https://vimeo.com/123456789"
-                            />
+                          <div className="space-y-3 border border-border rounded-lg p-3 bg-secondary/20">
+                            <div>
+                              <label className="block text-xs font-medium mb-1">
+                                Upload a video (download-protected — recommended)
+                              </label>
+                              <ProtectedVideoUploader
+                                courseId={courseId || undefined}
+                                alreadyProtected={ch.media_provider === "supabase-signed"}
+                                onUploaded={(key) =>
+                                  updateChapter(sIdx, cIdx, {
+                                    media_url: key,
+                                    media_provider: "supabase-signed",
+                                    video_type: "standard",
+                                  })
+                                }
+                              />
+                              <p className="text-[11px] text-muted-foreground mt-1">
+                                The file goes to a private bucket — no public link, download disabled. Remember to Save.
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">
+                                …or paste an external URL (Vimeo / YouTube / embed — public)
+                              </label>
+                              <Input
+                                value={ch.media_provider === "supabase-signed" ? "" : ch.media_url}
+                                disabled={ch.media_provider === "supabase-signed"}
+                                onChange={(e) =>
+                                  updateChapter(sIdx, cIdx, {
+                                    media_url: e.target.value,
+                                    media_provider: "",
+                                  })
+                                }
+                                placeholder={
+                                  ch.media_provider === "supabase-signed"
+                                    ? "Using a protected upload — clear it to paste a URL"
+                                    : "https://vimeo.com/123456789"
+                                }
+                              />
+                              {ch.media_provider === "supabase-signed" && (
+                                <button
+                                  type="button"
+                                  className="text-[11px] text-muted-foreground underline mt-1"
+                                  onClick={() =>
+                                    updateChapter(sIdx, cIdx, { media_url: "", media_provider: "" })
+                                  }
+                                >
+                                  Remove protected video and paste a URL instead
+                                </button>
+                              )}
+                            </div>
                           </div>
                         )}
 
