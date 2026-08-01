@@ -53,7 +53,33 @@
 --
 -- REVERSAL: a single DROP script — see the runbook block at the foot of this
 -- file, which also carries the VERBATIM prior definition of get_cohort_progress.
--- No DO block in this migration raises; nothing here can abort a shared db push.
+--
+-- NOTHING HERE CAN ABORT A SHARED `db push` — but the reason is no longer "there
+-- is no DO block", and the old wording has to be restated rather than deleted
+-- because 20260729100000 quotes it. An earlier revision of this line read:
+--   "No DO block in this migration raises; nothing here can abort a shared db
+--    push."
+-- The first clause was true and the second did not follow from it. §0 below was
+-- then a BARE `CREATE INDEX` on the LIVE table `live_sessions` with neither a
+-- `lock_timeout` nor a handler, so an error there — or a lock wait there, which
+-- inherited the session default of 0 = wait forever — was exactly the thing that
+-- could fail the push at this file or park it indefinitely.
+-- 20260729100000 contract note 10 named that, and this file has now fixed it.
+-- "ABORT A SHARED db push" IS SCOPED, and §0's own comment carries the proof:
+-- `db push` runs ONE IMPLICIT TRANSACTION PER FILE, so an unhandled error here
+-- fails the push AT this file and leaves 20260729100000 and 20260729100100
+-- applied and STAMPED. The rule still binds — a half-applied phase is exactly
+-- the state nobody wants to triage — but do not restate it as "takes the
+-- siblings down with it". See §0, THE TRANSACTION BOUNDARY.
+-- POST-FIX, the halves swap truth values:
+--   · "no DO block in this migration" is now FALSE. There is exactly one: §0.
+--   · "nothing here can abort a shared db push" is now TRUE, and for a stated
+--     mechanism rather than by luck — §0 is guarded on 20260729100000 §7A's
+--     shape, so its worst case is `RAISE WARNING`, and a WARNING is not an
+--     exception. Every other statement in this file is a CREATE OR REPLACE
+--     FUNCTION, a GRANT or a REVOKE.
+-- A later pass adding a second DO block takes the same shape: probe, LOCAL
+-- lock_timeout, DDL, restore, degrade to WARNING. Never a top-level RAISE.
 -- Do NOT apply to prod: shadow project + council + adversarial suite first.
 -- ============================================================================
 
@@ -63,10 +89,201 @@
 --    live_sessions.week_id carries an FK but no index (FKs do not create one),
 --    so the envelope's weeks→sessions join degrades to a seq scan at prod
 --    scale. Additive and idempotent.
+--
+--    GUARDED ON 20260729100000 §7A's PATTERN, AND FOR ITS REASON. This is the
+--    FOURTH live-table DDL site in R0 — the other three classes are all in that
+--    file's §7A — and until this round it was the only one in the phase with
+--    neither a LOCAL `lock_timeout` nor a handler. That is not a symmetry
+--    complaint, it is the specific defect 20260729100000 contract note 10
+--    recorded against this statement:
+--      · `CREATE INDEX` (non-CONCURRENT) takes SHARE on `live_sessions`
+--        (measured — 20260729100000 A6 item (8)). Readers pass; every WRITE
+--        queues. And the lock is HELD TO COMMIT — see THE TRANSACTION BOUNDARY
+--        below for WHICH commit that is. An earlier revision of this bullet said
+--        "which for a `db push` means the end of the PUSH, not the end of this
+--        statement or of this file"; the second half was right and the first was
+--        wrong, and the difference is the whole subject of this block.
+--      · With no LOCAL `lock_timeout` it inherited the SESSION value, which on
+--        the `npx -y supabase@latest db push` path CLAUDE.md documents is 0 —
+--        WAIT FOREVER, against whatever holds a conflicting lock on
+--        `live_sessions` at that moment: the shipped student dashboard READS the
+--        table through `get_cohort_progress`, and the admin cohort tooling
+--        WRITES it, and a write is what our SHARE conflicts with.
+--      · An unhandled error here fails the push AT THIS FILE. An earlier
+--        revision said it "aborts the whole shared push and takes both sibling
+--        migrations with it"; the second clause is false — see below.
+--    1s, NOT 4s: the ceiling matches every §7A site exactly, and the 4s→1s
+--    change is recorded in 20260729100000 A6 item (7). Do not reintroduce 4s
+--    here on the assumption that §7A still uses it.
+--
+--    ⚠️ THE TRANSACTION BOUNDARY — THE PREMISE THE FIRST REVISION OF THIS BLOCK
+--    GOT WRONG. It did not merely mis-size the exposure, it INVERTED the triage,
+--    so the superseded text is quoted in full rather than summarised. Under the
+--    heading "HOW LONG THE WAIT ACTUALLY IS", this comment used to read:
+--      "· FIRST APPLY (what prod is). 20260729100100 §4's `CREATE TABLE
+--         cohort_recording_progress (… live_session_id REFERENCES
+--         public.live_sessions(id))` has ALREADY taken SHARE ROW EXCLUSIVE on
+--         `live_sessions` in this same transaction, and that mode is strictly
+--         STRONGER than the SHARE this statement needs. … So on a first apply the
+--         wait here is ZERO and this guard is never exercised.
+--       · RE-APPLY / SHADOW. … That is the path the guard exists for."
+--    BOTH BULLETS ARE FALSE, because `supabase db push` does NOT run the
+--    migration set in one shared transaction. It runs ONE IMPLICIT TRANSACTION
+--    PER FILE: `pkg/migration.ApplyMigrations` loops over the pending files and,
+--    for each one, issues `RESET ALL` and then `(*MigrationFile).ExecBatch`,
+--    which sends THAT file's statements plus THAT file's
+--    `INSERT … supabase_migrations.schema_migrations` as a single `pgconn.Batch`
+--    — implicitly transactional per batch, with nothing wrapping the loop. This
+--    repo already implied it and nobody read it that way: 20260729100000
+--    contract note 11(b) recovers a SINGLE version row, a procedure that is only
+--    coherent if each file commits and stamps on its own.
+--    SO, CORRECTED, and this is the triage that belongs in the runbook:
+--      · 20260729100100's SHARE ROW EXCLUSIVE on `live_sessions` was RELEASED at
+--        20260729100100's COMMIT, before this file's transaction opened. There is
+--        no lock of ours underneath this request on any path.
+--      · This statement's SHARE is a FIRST acquisition inside THIS FILE's own
+--        transaction, on EVERY path — prod first apply included — and it contends
+--        with live traffic. THE GUARD IS THE PROD PATH. It is not a shadow-only
+--        safety net, and a prod first apply CAN spend the full 1s and then leave
+--        `live_sessions_week_idx` ABSENT. Read the degradation paragraph below as
+--        the expected-in-anger case, not as a corner.
+--      · What this file holds while §0 runs is only what THIS file has taken,
+--        which is nothing. 20260729100000 §7A's ACCESS EXCLUSIVE on
+--        `cohort_batches` and its SHARE ROW EXCLUSIVE on `enrolments` /
+--        `cohort_applications` are long released, so a park here would have
+--        parked ALONE rather than with the dashboard and checkout pinned behind
+--        it. That is better news than the first revision told — and it does not
+--        soften the requirement, because an unbounded wait here still parks the
+--        PUSH in front of every subsequent writer of `live_sessions`.
+--      · The SHARE this block takes is held to THIS FILE's COMMIT. This file is
+--        the last of the three, so that coincides with the end of the push by
+--        arithmetic, never by mechanism — do not re-derive "one transaction
+--        across siblings" from it.
+--    MEASURED, 2026-07-30, PGlite 0.5.4 (PostgreSQL 18.3, WASM, this machine).
+--    THE METHOD IS CORRECTED WITH THE PREMISE: the first revision ran all three
+--    files' statements "in file order inside one open transaction", which
+--    measures a shape the push never produces, and that reading is what produced
+--    the zero-wait claim. This run models the real shape — each file's statements
+--    inside its OWN transaction, COMMIT between files, `pg_locks` read at every
+--    boundary, modes at or above ROW EXCLUSIVE only:
+--      20260729100000, in its own txn
+--        §1  CREATE TABLE … REFERENCES cohort_batches → ShareRowExclusiveLock
+--        §7A block 1 ALTER … ADD UNIQUE               → + AccessExclusiveLock, ShareLock
+--        AFTER ITS COMMIT — cohort_batches/users/offerings → (none), (none), (none)
+--      20260729100100, in its own txn
+--        at file start — cohort_batches, users, offerings, cohort_weeks,
+--                        live_sessions                → ALL (none)
+--        §1/§2/§4 CREATE TABLE … REFERENCES           → ShareRowExclusiveLock per parent
+--        AFTER ITS COMMIT — live_sessions, cohort_batches → (none), (none)
+--      20260729100200 (this file), in its own txn
+--        at file start — live_sessions, cohort_batches → (none), (none)
+--        after THIS §0 block — live_sessions          → ShareLock, and nothing
+--                                                       else: a FIRST acquisition
+--        AFTER ITS COMMIT — live_sessions             → (none)
+--      CONTROL — the shape the old comment assumed, all three in ONE txn:
+--        live_sessions carries ShareRowExclusiveLock when §0 runs and ends
+--        ShareLock + ShareRowExclusiveLock. That is the experiment the zero-wait
+--        claim was read off, and it is the wrong experiment.
+--    WHAT THAT IS NOT: it is not a measurement of a WAIT, and PGlite cannot make
+--    it one — a single-connection instance has no competing lock holder, and this
+--    environment has no SHADOW_DB_URL / ROOM_QA_PROJECT_REF / SUPABASE_PAT, so
+--    nothing here was applied to a real project. What IS measured is lock MODE
+--    and lock LIFETIME across a COMMIT; every statement about waiting is
+--    inspection of those plus Postgres' documented conflict matrix, never a
+--    stopwatch. PGlite also delivers no `statement_timeout` at all (verified:
+--    `SET statement_timeout='50ms'; SELECT pg_sleep(1)` returns after 1001ms),
+--    so the timeout path itself is unmeasurable here; what WAS measured is that
+--    a failure inside the DDL is caught by the INNER handler, leaves the
+--    surrounding transaction usable, restores `lock_timeout` (SHOW reports 0
+--    again after the block), and leaves the index ABSENT.
+--    THE CLI CLAIM IS INSPECTION TOO, and of the shipped tool rather than of
+--    memory: `@supabase/cli-darwin-arm64` 2.110.0 as installed on this machine
+--    carries the symbols `pkg/migration.ApplyMigrations`,
+--    `pkg/migration.(*MigrationFile).ExecBatch` and
+--    `(*MigrationFile).insertVersionSQL`, and the literal `RESET ALL`, with no
+--    deferred-rollback closure in `ApplyMigrations` (contrast
+--    `internal/db/push.Run.deferwrap1`, which is present). Confirm against
+--    `pkg/migration/apply.go` + `file.go` upstream before rewriting this.
+--
+--    WHAT A TIMEOUT MEANS FOR THE CALLER. This block DEGRADES; it does not
+--    abort. The push completes and the index is left ABSENT. That is a
+--    PERFORMANCE degradation, not a correctness one, and the difference matters
+--    for triage: nothing below depends on the index existing, `get_cohort_room()`
+--    and `get_cohort_progress()` return exactly the same rows without it, and
+--    the only consequence is that the envelope's weeks→sessions join seq-scans
+--    `public.live_sessions` at prod scale — the very cost §0 exists to remove.
+--    A SECOND `db push` WILL NOT CONVERGE IT: the version is stamped on
+--    completion and never re-applied, so recovery is the by-hand re-run of
+--    20260729100000 contract note 11 — copy this DO block verbatim, run it
+--    against the target when `live_sessions` is quiet, and confirm with
+--    `SELECT to_regclass('public.live_sessions_week_idx')`.
+--    THE REVERSAL ALREADY TOLERATES THE DEGRADED STATE: section C at the foot of
+--    this file reads `DROP INDEX IF EXISTS public.live_sessions_week_idx`, so it
+--    runs to completion whether or not the index landed (confirmed, and left
+--    exactly as it is).
+--
+--    THE PROBE IS WHAT AVOIDS THE LOCK, not the `IF NOT EXISTS`. `CREATE INDEX
+--    IF NOT EXISTS` opens — and therefore LOCKS — the table before it looks for
+--    the index name, so on a project that already carries the index the bare
+--    statement still takes SHARE on `live_sessions` (measured: bare statement
+--    with the index present → ShareLock; this block with the index present → no
+--    relation lock at all). `IF NOT EXISTS` is kept INSIDE the block anyway, so
+--    the statement stays idempotent on its own and stays greppable by name.
+--
+--    THE HANDLER'S CONDITION LIST NAMES `lock_not_available` FIRST, and that is a
+--    correction. The list below was inherited verbatim from 20260729100000 §7A,
+--    which opens with `query_canceled` (57014) — and a `lock_timeout` does not
+--    raise 57014, it raises 55P03 (`lock_not_available`). The old list was
+--    BEHAVIOURALLY correct, because the trailing `others` traps 55P03, but it
+--    described the wrong SQLSTATE as the timeout branch in a block whose entire
+--    purpose is the timeout, so a reader had to already know that `others` was
+--    doing the work. 55P03 is now named explicitly and the roles are:
+--      · lock_not_available (55P03) — the `lock_timeout` above fired. THE branch
+--        this block exists for.
+--      · query_canceled (57014) — a `statement_timeout` or a
+--        `pg_cancel_backend()` aimed at the push. Must stay NAMED, because
+--        `others` does NOT trap it (20260729100000 contract note 10).
+--      · the shutdown/connect conditions and `others` — everything else,
+--        including a failed index build.
+--    §7A's six lists are NOT touched here: identical edit, different file, and
+--    that file is comment-only for this round. Filed as a §7A-wide follow-up.
 ----------------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS live_sessions_week_idx
-  ON public.live_sessions (week_id, scheduled_at)
-  WHERE week_id IS NOT NULL;
+DO $$
+DECLARE
+  v_prev_lock_timeout text;
+BEGIN
+  IF to_regclass('public.live_sessions') IS NOT NULL
+     AND to_regclass('public.live_sessions_week_idx') IS NULL
+  THEN
+    BEGIN
+      v_prev_lock_timeout := current_setting('lock_timeout', true);
+      PERFORM set_config('lock_timeout', '1s', true);   -- LOCAL: this txn only
+
+      CREATE INDEX IF NOT EXISTS live_sessions_week_idx
+        ON public.live_sessions (week_id, scheduled_at)
+        WHERE week_id IS NOT NULL;
+
+      PERFORM set_config('lock_timeout',
+                         COALESCE(NULLIF(v_prev_lock_timeout, ''), '0'), true);
+    EXCEPTION WHEN lock_not_available OR query_canceled OR assert_failure
+                OR admin_shutdown OR crash_shutdown OR cannot_connect_now
+                OR others THEN
+      -- lock_not_available (55P03) is what the 1s lock_timeout above raises;
+      -- query_canceled (57014) is a statement_timeout / pg_cancel_backend and is
+      -- named because `others` does not trap it. The subtransaction rollback also
+      -- restores lock_timeout, so nothing is left set for the rest of this file.
+      RAISE WARNING 'cohort_room: could not create live_sessions_week_idx (%) [%] — the room envelope''s weeks→sessions join will SEQ SCAN public.live_sessions at prod scale. Correctness is unaffected: every RPC below returns the same rows without the index. Another db push will NOT fix this: re-run this DO block by hand when live_sessions is quiet — 20260729100000 contract note 11.',
+        SQLERRM, SQLSTATE;
+    END;
+  END IF;
+EXCEPTION WHEN lock_not_available OR query_canceled OR assert_failure
+            OR admin_shutdown OR crash_shutdown OR cannot_connect_now
+            OR others THEN
+  -- The outer handler covers the two `to_regclass` probes, which take no relation
+  -- lock, so 55P03 is not expected here — it is named for symmetry with the inner
+  -- list rather than because a catalogue lookup can time out on a lock.
+  RAISE WARNING 'cohort_room: live_sessions_week_idx probe failed (%) [%] — index not created, so the envelope''s weeks→sessions join seq-scans; re-run this DO block by hand (20260729100000 contract note 11)', SQLERRM, SQLSTATE;
+END $$;
 
 
 ----------------------------------------------------------------------
@@ -80,18 +297,20 @@ CREATE INDEX IF NOT EXISTS live_sessions_week_idx
 --    mentor/host grant (or an admin). A member/alumni row is always scoped to
 --    its own batch_id, so batch A1 can never enumerate batch A2.
 --
---    ONE FLAG, ONE OWNER (NFR-SEC-2, and R-1 contract note 1 at
---    20260729100000:34-42, which names closing this duplication as R-3's job).
+--    ONE FLAG, ONE OWNER (NFR-SEC-2, and R-1 contract note 1 under the heading
+--    "CITE THESE BY NAME, NEVER BY LINE", which names closing this duplication
+--    as R-3's job).
 --    `offering_wide` is not recomputed here: it is R-1's published
---    `cohort_room_is_offering_wide(p_offering)` (20260729100000:351-361), which
---    is the single definition of the staff scope lift and already ORs in
+--    `public.cohort_room_is_offering_wide(uuid)` (20260729100000 §3), which is
+--    the single definition of the staff scope lift and already ORs in
 --    public.is_admin(). Nothing in this file restates the predicate inline.
 --
 --    A ROUND-G ROLLBACK, recorded so it is not re-attempted: an earlier pass
 --    carried a SECOND flag, `all_batches`, that added `pre_member` to the
 --    widening, on the stated grounds that R-1 had made
 --    cohort_room_in_lobby(offering, batch) permissive for a batch-less lobby
---    row. THAT WAS FALSE. The real helper (20260729100000:375-385) reads
+--    row. THAT WAS FALSE. The real helper —
+--    `public.cohort_room_in_lobby(uuid, uuid)`, 20260729100000 §3 — reads
 --        AND m.role = 'pre_member'
 --        AND (p_batch IS NULL OR m.batch_id = p_batch)
 --    with no `OR m.batch_id IS NULL` clause, so for a lobby row and a batch-A1
@@ -176,10 +395,11 @@ COMMENT ON FUNCTION public.cohort_room_caller_scope(uuid) IS
 --     every OTHER batch-less member of the offering, and roster_count counted
 --     them — the exact opposite of what §3's roster_count comment and runbook B2
 --     both claim. It was reachable, not theoretical: R-1's resolver branch (a2)
---     (20260729100000:802-843 — the INSERT under the "(a2) OFFERING-WIDE
---     membership for a paid, enrolled student the admin has not put in a batch
---     yet" comment; cite it by that comment, not by the line number, because
---     that file is modified in this same changeset and the range moves with it)
+--     (20260729100000 §4, `public.cohort_room_resolve_user(uuid)` — the INSERT
+--     under the "(a2) OFFERING-WIDE membership for a paid, enrolled student the
+--     admin has not put in a batch yet" comment; cited by that comment and not
+--     by a line number, because that file moves under its own maintenance —
+--     R-1's §7A restructure shifted this range once already)
 --     mints exactly those rows for a paid, enrolled
 --     student an admin has not put in a batch yet, so an unplaced student was
 --     handed the names, faces, occupations and cities of every other unplaced
@@ -1092,7 +1312,32 @@ BEGIN
     ls.id,
     ls.title,
     ls.scheduled_at,
-    ls.zoom_link,
+    -- B5.4a / GAP-3 CLOSED: the join link now carries the SAME window
+    -- `get_live_session_zoom_link` (20260408151600) enforces — T-60 to end + 1h,
+    -- never for a cancelled class, with the same unconditional admin bypass.
+    --
+    -- IT SHIPPED RAW UNTIL 2026-08-01, and the column-grant fix could never have
+    -- reached it: this function is SECURITY DEFINER, so it runs as the owner and
+    -- column-level GRANTs are STRUCTURALLY INVISIBLE to its body. Revoking
+    -- `zoom_link` from `authenticated` therefore closes the direct
+    -- `select=zoom_link` path and leaves this one wide open. CohortDashboard
+    -- does check a T-60 window before rendering the link, but that is a CLIENT
+    -- check on a row the server already handed over, which is not enforcement.
+    --
+    -- The shape is deliberately unchanged, so the two shipped Capacitor call
+    -- sites keep working: the column stays, only its VALUE goes null outside
+    -- the window, and the client already renders conditionally on null.
+    CASE
+      WHEN ls.zoom_link IS NULL THEN NULL
+      WHEN public.is_admin() THEN ls.zoom_link
+      WHEN COALESCE(ls.status, 'scheduled') <> 'cancelled'
+       AND now() BETWEEN ls.scheduled_at - interval '1 hour'
+                     AND ls.scheduled_at
+                         + make_interval(mins => COALESCE(ls.duration_minutes, 60))
+                         + interval '1 hour'
+      THEN ls.zoom_link
+      ELSE NULL
+    END,
     s.id,
     s.status,
     s.rating,
@@ -1143,7 +1388,7 @@ BEGIN
   -- "unspecified", which is not "cancelled" when choosing a week's session) and
   -- deliberately differs from §3's stricter gate, where a blank status denies.
   LEFT JOIN LATERAL (
-    SELECT lsx.id, lsx.title, lsx.scheduled_at, lsx.zoom_link
+    SELECT lsx.id, lsx.title, lsx.scheduled_at, lsx.zoom_link, lsx.status, lsx.duration_minutes
     FROM public.live_sessions lsx
     WHERE lsx.week_id = cw.id
     ORDER BY (COALESCE(lsx.status, 'scheduled') = 'cancelled') ASC,
@@ -1307,9 +1552,9 @@ GRANT EXECUTE ON FUNCTION public.get_cohort_progress(uuid, uuid) TO authenticate
 --          -- the one caller for whom a cross-batch payload is correct.
 --
 --          -- as an UNPLACED member (paid + enrolled, no batch row yet — R-1
---          -- resolver branch (a2), 20260729100000:802-843, the INSERT under the
---          -- "(a2) OFFERING-WIDE membership …" comment in the SHIPPING tree, not
---          -- the pre-change range at that offset in git HEAD): roster_count must be
+--          -- resolver branch (a2) in 20260729100000 §4, the INSERT under the
+--          -- "(a2) OFFERING-WIDE membership …" comment in the SHIPPING tree; by
+--          -- comment, never by line): roster_count must be
 --          -- exactly 1, and get_room_roster must return that one row plus the
 --          -- offering's mentors/hosts and NOBODY else. Before the §1b NULL-batch
 --          -- fix this enumerated every OTHER unplaced student in the offering —

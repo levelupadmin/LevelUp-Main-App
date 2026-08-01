@@ -50,6 +50,156 @@
 --            abort). Scope-integrity guards are expressed as policy WITH CHECK
 --            predicates or as silently-coercing BEFORE triggers instead.
 --
+-- ── APPLY-TIME LOCKS — WHY THIS FILE CARRIES NO `lock_timeout`, AND THE ONE
+--    PLACE WHERE THAT IS STILL A COST ───────────────────────────────────────────
+-- This file sets no `lock_timeout` anywhere. Counted from supabase/migrations/
+-- with a pattern anchored to the executable line, so no comment about the subject
+-- (this one included) can move it —
+-- `grep -cE "^ +PERFORM set_config\('lock_timeout'" <file>`:
+--   20260729100100_cohort_room_content.sql   =>  0   ← this file
+--   20260729100000_cohort_rooms_backbone.sql => 12   (§7A's six sites, arm+restore)
+--   20260729100200_cohort_room_rpcs.sql      =>  2   (its §0 index, guarded 2026-07-30)
+-- That asymmetry is a CONCLUSION, audited
+-- 2026-07-30 and RE-AUDITED the same day, not an omission — but "this file only
+-- touches tables R0 creates, so change nothing" is NOT the conclusion, because
+-- that premise is false. The honest answer is written out per class rather than as
+-- a verdict, since a verdict alone is what let the wrong premise stand the first
+-- time. It opened as a THREE-way split; the re-audit collapsed class (2) into
+-- class (3) and the withdrawn class is kept in place, because the reason it was
+-- wrong is the most useful thing in this section.
+--
+--   (1) DDL ON THE SEVEN TABLES THIS FILE CREATES — no `lock_timeout`, by
+--       decision. Every ALTER, CREATE INDEX, ENABLE ROW LEVEL SECURITY, CREATE
+--       POLICY, CREATE TRIGGER and GRANT below targets one of them. On a fresh
+--       apply the CREATE TABLE has already taken ACCESS EXCLUSIVE on the table
+--       inside THIS transaction, so no competing holder is possible; on a
+--       shadow/re-apply they are room tables that no shipped surface touches,
+--       because R0 is the migration that introduces them. A `lock_timeout` there
+--       bounds a wait with no counterparty. Same argument 20260729100000 makes
+--       for its own `cohort_room_configs` trigger ("a room table with no
+--       money-path traffic. The lock_timeout + handler wrapper of §7A buys
+--       nothing here"). Adding one for symmetry would be actively harmful: an
+--       unnecessary guard is what makes the next reader distrust a necessary one.
+--       ⚠️ This is NOT "no handler needed". Every handler below stays — a
+--       `statement_timeout` or a `pg_cancel_backend()` aimed at the push is a real
+--       event on any table, locked or not. §1's block is where that distinction
+--       used to be stated wrongly; see the comment there.
+--
+--   ⚠️ BEFORE CLASSES (2) AND (3): THE TRANSACTION BOUNDARY, because the first
+--       revision of this audit split them on a premise that is false and therefore
+--       cleared three live tables it had no business clearing.
+--       `supabase db push` does NOT run the migration set in one shared
+--       transaction. It runs ONE IMPLICIT TRANSACTION PER FILE:
+--       `pkg/migration.ApplyMigrations` loops over the pending files and, for each,
+--       issues `RESET ALL` and then `(*MigrationFile).ExecBatch`, which sends THAT
+--       file's statements plus THAT file's `INSERT … schema_migrations` as one
+--       `pgconn.Batch` — implicitly transactional per batch, nothing wrapping the
+--       loop. 20260729100000 §0's own TRANSACTION BOUNDARY note carries the
+--       inspection; contract note 11(b) there already implied it by recovering a
+--       SINGLE version row.
+--       CONSEQUENCE FOR THIS FILE: every lock 20260729100000 took was RELEASED at
+--       20260729100000's COMMIT, before this file's transaction opened. So EVERY
+--       `REFERENCES` parent below is a FIRST acquisition in OUR transaction, taken
+--       with the session `lock_timeout` of 0, and nothing this file does inherits
+--       cover from a sibling. MEASURED 2026-07-30 (method under VERIFICATION LIMIT
+--       below), modes at or above ROW EXCLUSIVE:
+--         after 20260729100000's COMMIT → cohort_batches (none), users (none),
+--                                          offerings (none)
+--         at THIS file's transaction start → cohort_batches, users, offerings,
+--                                          cohort_weeks, live_sessions ALL (none)
+--       Also: our own locks are held to THIS file's COMMIT, not "to the end of the
+--       push". The exposure is the length of THIS file plus nothing, and
+--       20260729100200's transaction inherits none of it.
+--
+--   (2) WITHDRAWN — IT COLLAPSED INTO (3). This class used to clear `users`,
+--       `offerings` and `cohort_batches`, and the superseded text is kept because
+--       the phrase "same transaction" is exactly what stopped anyone checking:
+--         "For THREE of the five the wait is nevertheless ZERO, and a guard would
+--          be class-(1) noise: by the time this file runs the push already holds
+--          ACCESS EXCLUSIVE on `cohort_batches` (20260729100000 §7A block 1) and
+--          SHARE ROW EXCLUSIVE on `users` and `offerings` (its §1/§2 CREATE
+--          TABLEs) — same transaction, at or above the mode we need — and a
+--          request never conflicts with a lock its own transaction already holds."
+--       That is cross-file lock inheritance, and there is none. All three are
+--       first acquisitions here, `cohort_batches` among them — the table THIS FILE
+--       calls the shipped student dashboard's. The class is empty; read (3).
+--
+--   (3) ALL FIVE PRE-EXISTING LIVE TABLES — THE RESIDUAL, AND IT IS THIS FILE'S.
+--       This file locks them through `REFERENCES`, never through an ALTER of
+--       theirs, and `CREATE TABLE … REFERENCES parent` takes SHARE ROW EXCLUSIVE
+--       on the PARENT (measured — 20260729100000 A6 item (8)). Per parent, the
+--       EARLIEST statement in this file, which is also the push's first
+--       acquisition on it — cited by NAME, never by line (20260729100000 contract
+--       note 1's rule; the first draft of this table gave line numbers that the
+--       comment above it had already invalidated by growing):
+--         offerings       §1  cohort_announcements.offering_id
+--         cohort_batches  §1  cohort_announcements.batch_id
+--         users           §1  cohort_announcements.author_id
+--         cohort_weeks    §2  cohort_resources.cohort_week_id
+--         live_sessions   §4  cohort_recording_progress.live_session_id
+--       Each takes SHARE ROW EXCLUSIVE with the SESSION `lock_timeout` in force,
+--       which on the `npx -y supabase@latest db push` path CLAUDE.md documents is
+--       0 — wait forever. So R0 has FIVE remaining unbounded lock waits, not two,
+--       and they are all in this file. (20260729100200 §0's CREATE INDEX was
+--       guarded on 2026-07-30 and is bounded; it is not one of them.)
+--       ALL FIVE PARENTS ARE LIVE. `cohort_batches` is joined by the shipped
+--       `get_cohort_progress` and by 20260729100200's room RPCs — this file's own
+--       Tier note calls it the student dashboard's table; `users` is the identity
+--       spine; `offerings` backs the catalogue; `cohort_weeks` and `live_sessions`
+--       are joined by `get_cohort_progress` and written by the admin cohort
+--       tooling. SHARE ROW EXCLUSIVE spares READERS on every one of them, so
+--       nothing here blanks a screen — what queues is WRITES: signup/profile
+--       (`users`), admin roster and batch edits (`cohort_batches`), catalogue
+--       edits (`offerings`), curriculum and session edits (`cohort_weeks`,
+--       `live_sessions`).
+--       WHY THIS ROUND DID NOT WRAP THEM — a decision, not an oversight, and it
+--       is unchanged by the correction above; only its SCOPE grew from two
+--       statements to five parents:
+--         · §7A's pattern is DEGRADE-ON-TIMEOUT, and degrading is not available
+--           here. It works there because a skipped constraint or trigger costs an
+--           invariant something else still enforces. A skipped `CREATE TABLE
+--           cohort_resources` costs the TABLE — and the policies, indexes and
+--           grants below it, plus 20260729100200's RPCs, all reference it
+--           unguarded. The push would abort a few statements later anyway, with a
+--           worse error. A "degraded" apply there is a broken migration set, not a
+--           performance loss.
+--         · The available alternative is a BOUNDED ABORT: `SET LOCAL
+--           lock_timeout` with no handler, so a wait past the ceiling raises 55P03
+--           and this file's transaction rolls back cleanly, releasing every lock,
+--           with THIS file's version unstamped (20260729100000 stays applied and
+--           stamped — that is the per-file boundary, and it is what makes a
+--           bounded abort recoverable rather than catastrophic: `db push` again
+--           re-runs only this file and 20260729100200). It also CHANGES THE
+--           FAILURE MODE of a shared push, against this file's own header rule
+--           that nothing here aborts one. That is the phase owner's call, so it is
+--           FILED HERE and deliberately not done in a residuals round — but it is
+--           now filed for FIVE parents, and one of them is the dashboard's.
+--       Until it is decided, ALL FIVE want to be quiet at push time alongside the
+--       money tables — `users`, `offerings`, `cohort_batches`, `cohort_weeks`,
+--       `live_sessions`. An earlier revision of this line named only
+--       `cohort_weeks` and `live_sessions` and so left the operator sizing a
+--       window that omitted the dashboard table. This is also the one place where
+--       20260729100000's old "live_sessions has to be quiet at push time too"
+--       guidance is still right — for a different statement than the one it named.
+--
+--   VERIFICATION LIMIT, stated rather than implied: every lock MODE and every
+--   lock LIFETIME above is measured (PGlite 0.5.4 / PostgreSQL 18.3, WASM, this
+--   machine), and THE METHOD WAS CORRECTED WITH THE PREMISE. The first pass read
+--   `pg_locks` between statements run "in push order inside one open transaction"
+--   — a shape `db push` never produces, and the reading that cleared three live
+--   tables in the withdrawn class (2). This pass runs each file's statements
+--   inside its OWN transaction with a COMMIT between files, reading `pg_locks` at
+--   every boundary, which is what showed all five parents unlocked when this
+--   file's transaction opens.
+--   No WAIT and no DURATION is measured anywhere: a single-connection PGlite
+--   cannot produce a competing lock holder, and this environment has no
+--   SHADOW_DB_URL, ROOM_QA_PROJECT_REF or SUPABASE_PAT, so nothing was applied to
+--   any real project. Read every claim about waiting as inspection of measured
+--   modes and lifetimes plus Postgres' documented conflict matrix, never as a
+--   stopwatch. The per-file-transaction claim itself is inspection of the shipped
+--   CLI (`@supabase/cli-darwin-arm64` 2.110.0 on this machine), recorded in
+--   20260729100200 §0.
+--
 -- ── TABLE × VERB POLICY MATRIX ──────────────────────────────────────────────
 -- | table                     | SELECT                               | INSERT                                   | UPDATE                                       | DELETE                  |
 -- |---------------------------|--------------------------------------|------------------------------------------|----------------------------------------------|-------------------------|
@@ -262,20 +412,58 @@ BEGIN
       ADD CONSTRAINT cohort_announcements_author_id_fkey
       FOREIGN KEY (author_id) REFERENCES public.users(id) ON DELETE SET NULL NOT VALID;
   END IF;
--- Guarded like every other DDL block in R0 (see 20260729100000 contract note 10
--- for the full rationale and why `query_canceled` has to be named: `OTHERS`
--- does not trap it). Every statement above takes ACCESS EXCLUSIVE on
--- cohort_announcements, and the DROP+ADD pair is one subtransaction, so a
--- cancelled lock wait rolls back to the ORIGINAL FK rather than leaving the
--- table with none — and, critically, does not abort a shared `db push`.
+-- HANDLER-GUARDED, WITH NO `lock_timeout`, AND THAT IS THE INTENDED SHAPE HERE.
+-- An earlier revision of this comment opened "Guarded like every other DDL block
+-- in R0"; audited 2026-07-30, that was wrong twice over and is restated rather
+-- than deleted, because the phrase is what stopped anyone checking:
+--   · The six §7A blocks in 20260729100000 and §0 in 20260729100200 carry a
+--     LOCAL `lock_timeout` AND a handler. This block carries only the handler, so
+--     it is not "like every other block" — this file sets no `lock_timeout` at
+--     all, by decision (header, APPLY-TIME LOCKS, class 1, which carries the
+--     comment-proof grep).
+--   · Consequently the `query_canceled` branch below can NEVER be reached by a
+--     bounded lock wait, which is what the old wording's "a cancelled lock wait
+--     rolls back to the ORIGINAL FK" implied. 57014 arrives here only from a
+--     `statement_timeout` or a `pg_cancel_backend()` aimed at the push, and 55P03
+--     (`lock_not_available`) cannot arrive at all with no timeout set. The branch
+--     still earns its place — those two events are real on any table — and
+--     `query_canceled` still has to be NAMED, because `OTHERS` does not trap it
+--     (20260729100000 contract note 10).
+-- WHY NO `lock_timeout`: every statement above takes ACCESS EXCLUSIVE on
+-- `cohort_announcements`, which is a table this migration creates, and there is
+-- no counterparty for the wait a timeout would bound. On a fresh apply the
+-- CREATE TABLE above has already taken ACCESS EXCLUSIVE on it inside this same
+-- transaction (measured 2026-07-30: this block runs with `cohort_announcements`
+-- already at AccessExclusiveLock), so no other holder is possible. Bounding that
+-- would be noise, and noise is what makes the next reader distrust the guards
+-- that are load-bearing.
+-- The DROP+ADD pair is one subtransaction either way, so any failure rolls back
+-- to the ORIGINAL FK rather than leaving the table with none — and, critically,
+-- does not abort a shared `db push`.
 -- Degradation is safe for the push but PERMANENT until someone acts: the old
 -- CASCADE FK survives, so deleting a host's account would still erase the
 -- noticeboard of every cohort they ran. A second `db push` does NOT converge it
 -- — the version is stamped on completion and never re-applied — so recovery is
 -- the manual procedure in 20260729100000 contract note 11, and the section-8
--- VERIFY query there (confdeltype = 'n') is what detects it. The table is
--- created by this same migration on a fresh apply, so there is no lock to wait
--- on there and this block is a no-op.
+-- VERIFY query there (confdeltype = 'n') is what detects it.
+-- WHAT THIS BLOCK DOES ON EACH PATH, because the old closing sentence ("The table
+-- is created by this same migration on a fresh apply, so there is no lock to wait
+-- on there and this block is a no-op") collapsed two different targets into one
+-- and read as if the block never does anything:
+--   · FRESH APPLY (what prod is). The CREATE TABLE above already produced
+--     `author_id uuid REFERENCES public.users(id) ON DELETE SET NULL`, so
+--     confdeltype is already 'n', the IF branch is skipped and no FK is touched.
+--     The `ALTER COLUMN … DROP NOT NULL` still EXECUTES — it is a catalogue write
+--     on an already-nullable column, not a parsed no-op — it is simply free and
+--     unblockable. So: no-op in EFFECT, not in execution, and no lock to wait on.
+--   · SHADOW / RE-APPLY, which is the case this block exists for. The table
+--     PRE-EXISTS carrying the draft's `NOT NULL … ON DELETE CASCADE` FK, so the
+--     DROP NOT NULL and the DROP+ADD both do real work. The "no lock to wait on"
+--     reason does not apply there — but the CONCLUSION still does, for a
+--     different reason: R0 is the migration that introduces
+--     `cohort_announcements`, so no shipped surface reads or writes it on any
+--     target, and the only possible competing holder is a hand session someone is
+--     running against the same project while pushing.
 EXCEPTION WHEN query_canceled OR assert_failure OR admin_shutdown
             OR crash_shutdown OR cannot_connect_now OR others THEN
   RAISE WARNING 'cohort_announcements: author FK re-shape skipped (%) [%] — a pre-existing ON DELETE CASCADE author FK may still be in place, so deleting a host account would erase their announcements. Another db push will NOT fix this: re-run this DO block by hand (20260729100000 contract note 11).',
@@ -398,6 +586,16 @@ CREATE POLICY ann_host_retract ON public.cohort_announcements FOR UPDATE
 ----------------------------------------------------------------------
 -- 2. cohort_resources — files/links library (optionally pinned to a week).
 --    Curriculum + mentor materials => full members only, NO lobby read.
+--
+--    ⚠️ APPLY-TIME: `cohort_week_id … REFERENCES public.cohort_weeks(id)` below is
+--    the PUSH'S FIRST lock acquisition on `cohort_weeks` — SHARE ROW EXCLUSIVE,
+--    held to the end of THIS FILE's transaction, taken with the session
+--    `lock_timeout` (0 on the `db push` path). It is one of R0's FIVE remaining
+--    unbounded lock waits — all five are in this file, and an earlier revision of
+--    this line said "two" on the withdrawn premise that a sibling's locks covered
+--    `users`, `offerings` and `cohort_batches` — and it is NOT wrappable in the
+--    §7A degrade pattern. Header, APPLY-TIME LOCKS class (3), carries the
+--    reasoning and the filed decision. Do not "fix" it here without reading that.
 ----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.cohort_resources (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -616,9 +814,12 @@ BEGIN
   PERFORM set_config('app.cohort_room_counter', '0', true);
 
   -- An AFTER trigger's return value is discarded, and touching OLD on INSERT
-  -- (or NEW on DELETE) is the hazard R-1 works around explicitly at
-  -- 20260729100000:443. Branch on TG_OP the same way rather than COALESCE-ing
-  -- the two together.
+  -- (or NEW on DELETE) is the hazard R-1 works around explicitly in
+  -- `public._room_resolve_from_batch_member()` (20260729100000 §5). Branch on
+  -- TG_OP the same way rather than COALESCE-ing the two together.
+  -- BY NAME, NOT BY LINE: the ":443" this comment used to carry pointed at R-1's
+  -- section 1 header, not at the code — R-1's own contract note 1 says line
+  -- citations into that file go stale and forbids new ones.
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;
   END IF;
@@ -795,6 +996,21 @@ REVOKE INSERT ON public.cohort_room_post_replies FROM authenticated, anon;
 --    occupant holds any verb on at all. That is enumerated in the Tier-2 block
 --    in the header rather than left implicit here, because the header makes an
 --    exhaustive claim and this is the third item in it.
+--
+--    ⚠️ APPLY-TIME: `live_session_id … REFERENCES public.live_sessions(id)` below
+--    is the PUSH'S FIRST lock acquisition on `live_sessions` — SHARE ROW
+--    EXCLUSIVE, held to the end of THIS FILE's transaction, taken with the session
+--    `lock_timeout` (0 on the `db push` path). It is one of R0's five remaining
+--    unbounded lock waits. Header, APPLY-TIME LOCKS class (3).
+--    IT COVERS NOTHING IN 20260729100200. An earlier revision of this note closed
+--    with "and it is the reason 20260729100200 §0's guarded CREATE INDEX on the
+--    SAME table cannot wait at all on a first apply: SHARE ROW EXCLUSIVE is
+--    strictly stronger than the SHARE that index needs, and the push already holds
+--    it from here." That is cross-file lock inheritance and `db push` provides
+--    none — this lock is RELEASED at this file's COMMIT, so 20260729100200 §0's
+--    SHARE is a first acquisition in its own transaction and its 1s guard is the
+--    PROD path, not a shadow-only one. 20260729100200 §0, THE TRANSACTION
+--    BOUNDARY, carries the correction and the measurement.
 ----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.cohort_recording_progress (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
@@ -958,6 +1174,27 @@ CREATE POLICY room_seen_own ON public.cohort_room_seen FOR ALL TO authenticated
 --    default is the difference between a bug and a leak.
 --    Grants to `authenticated` are stated explicitly rather than inherited, so
 --    the verb list per table is one grep, not an inference about defaults.
+--
+--    ⚠️ AND THE REVOKE FOR `authenticated` IS NOT OPTIONAL EITHER, which this
+--    block used to assume. A `GRANT SELECT, INSERT, UPDATE, DELETE` does not
+--    take away what the bootstrap already handed over: `GRANT ALL` is SEVEN
+--    verbs — SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER — and
+--    naming four in a GRANT is additive, not a replacement. qa-harness/
+--    shadow-grants.sql, generated from production (ivkvluezuiojovpotlyb), shows
+--    every public table reading 'DELETE, INSERT, REFERENCES, SELECT, TRIGGER,
+--    TRUNCATE, UPDATE' for `authenticated`, so on the target environment all
+--    seven content tables below were leaving TRUNCATE on the role every logged-in
+--    student carries — and **TRUNCATE BYPASSES RLS ENTIRELY**: not one of the 21
+--    policies above is consulted for it, including the ones protecting the rows
+--    the access suite plants its LEAK_CANARY sentinels in.
+--    SCOPED HONESTLY: PostgREST exposes no TRUNCATE verb, so this is not a live
+--    client-reachable exploit today. It is defence in depth on exactly the
+--    footing this block already argues for `anon` ("the day someone adds a
+--    permissive policy … that default is the difference between a bug and a
+--    leak"), plus accuracy for anything that signs off on the grant surface.
+--    REFERENCES and TRIGGER are deliberately left alone: both need ownership of
+--    or privileges on objects `authenticated` cannot reach, and neither reads or
+--    destroys a row. TRUNCATE does. Same shape as 20260729100000 §7.
 ----------------------------------------------------------------------
 REVOKE ALL ON public.cohort_announcements       FROM anon;
 REVOKE ALL ON public.cohort_resources           FROM anon;
@@ -967,7 +1204,37 @@ REVOKE ALL ON public.cohort_recording_progress  FROM anon;
 REVOKE ALL ON public.cohort_demo_entries        FROM anon;
 REVOKE ALL ON public.cohort_room_seen           FROM anon;
 
--- INSERT is absent for the commons on purpose (SEC-WRITE-1, revoked above).
+-- TRUNCATE first, on all seven, because a later GRANT of the four DML verbs
+-- would not have removed it. Ordered before the GRANTs so the end state is
+-- readable top to bottom: take away what the bootstrap gave, then state exactly
+-- what each table hands back.
+REVOKE TRUNCATE ON public.cohort_announcements       FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_resources           FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_room_posts          FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_room_post_replies   FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_recording_progress  FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_demo_entries        FROM authenticated;
+REVOKE TRUNCATE ON public.cohort_room_seen           FROM authenticated;
+
+-- ⚠️ THE SAME "A GRANT DOES NOT UN-GRANT" RULE APPLIES TO INSERT ON THE TWO
+-- COMMONS TABLES, AND IT IS ALREADY HANDLED — recorded here because a previous
+-- revision of this note filed it as open debt ("`authenticated` still holds the
+-- bootstrap's INSERT on both") and was contradicted by the very next line. The
+-- GRANT below omits INSERT for cohort_room_posts / cohort_room_post_replies
+-- (SEC-WRITE-1 — they are written through R-3's SECURITY DEFINER RPCs), and
+-- omitting is indeed not removing — which is why §3 above does not stop at
+-- omitting: it issues `REVOKE INSERT … FROM authenticated, anon` on both. So on
+-- a bootstrapped project the end state carries no INSERT on either table, and a
+-- raw client INSERT fails on the missing grant before RLS is consulted.
+-- DO NOT "simplify" that revoke away on the grounds that RLS covers it. It does
+-- not: `posts_admin_all` / `replies_admin_all` above carry no FOR and no TO
+-- clause, so they are FOR ALL TO PUBLIC and DO admit INSERT for an admin JWT —
+-- and PostgREST hands admins the same `authenticated` role as everyone else.
+-- The grant is the thing keeping the commons RPC-only.
+-- The measured end state for all nine R0 tables is in 20260729100000's A6
+-- item (9); the operator-facing expectation is its section-8 THIRD CHECK.
+--
+-- INSERT is absent for the commons on purpose (SEC-WRITE-1, revoked in §3).
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.cohort_announcements       TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.cohort_resources           TO authenticated;
 GRANT SELECT,         UPDATE, DELETE ON public.cohort_room_posts          TO authenticated;
