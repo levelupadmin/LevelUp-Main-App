@@ -115,6 +115,9 @@ const RoomWeeksRoute = lazy(() =>
   import("@/pages/room/RoomHome").then((m) => ({ default: m.RoomWeeksRoute })),
 );
 const RoomScreenings = lazy(() => import("@/pages/room/RoomScreenings"));
+// R3's roster module. Its own chunk for the same reason the shelf has one: it
+// carries the roster grid and its avatars, none of which a room open needs.
+const RoomPeople = lazy(() => import("@/pages/room/RoomPeople"));
 const CohortRoomRedirect = lazy(() =>
   import("@/pages/room/RoomShell").then((m) => ({ default: m.CohortRoomRedirect })),
 );
@@ -318,10 +321,12 @@ const App = () => {
                         path="feed"
                         element={roomModule(<RoomModuleRoute module="feed" title="Feed" />)}
                       />
-                      <Route
-                        path="people"
-                        element={roomModule(<RoomModuleRoute module="roster" title="People" />)}
-                      />
+                      {/* Mounted DIRECTLY for the same reason `screenings` is:
+                          RoomPeople owns the `roster` gate itself. `feed` and
+                          `resources` stay on RoomModuleRoute, because their
+                          modules do not exist yet and a slot with no module
+                          must keep saying so. */}
+                      <Route path="people" element={roomModule(<RoomPeople />)} />
                       <Route
                         path="resources"
                         element={roomModule(
