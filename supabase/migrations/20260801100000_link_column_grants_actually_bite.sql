@@ -309,21 +309,24 @@ GRANT EXECUTE ON FUNCTION public.admin_live_sessions_with_zoom_link() TO authent
 -- `public_user_profiles`) and receive that student's join links, submission
 -- status, RATING and mentor FEEDBACK.
 --
--- BOTH HALVES ARE FIXED IN `20260729100200_cohort_room_rpcs.sql` ON
--- design/cohort-r0 — it redefines the function with an `auth.uid()` assert that
--- RAISES 42501, and (as of 2026-08-01) gates the link to the same T-60 window
--- `get_live_session_zoom_link` enforces.
+-- BOTH HALVES ARE CLOSED BY ITS SIBLING IN THIS SAME TRAIN:
+-- `20260801130000_harden_get_cohort_progress.sql`. Apply the two together.
 --
--- THIS FILE DELIBERATELY DOES NOT CARRY ITS OWN COPY OF THAT FUNCTION. An
--- earlier revision did, rebuilt from the April body, and it CLOBBERED R0's
--- richer definition — losing the LATERAL that collapses a week's five sessions
--- to the one running right now. R0's adversarial suite caught it immediately
--- (PROG.1, PROG.2). Two migrations carrying the same function body is a
--- last-writer-wins landmine, so the body lives in exactly one place.
+-- WHY A SEPARATE FILE RATHER THAN R0's. `design/cohort-r0`'s 20260729100200
+-- already redefines this function with both guards — but VERIFIED against
+-- production on 2026-08-01, ZERO `20260729%` migrations are applied there. Using
+-- R0 as the carrier would mean shipping its entire room backbone (three
+-- migrations, new tables, new RLS) to deliver a two-line security patch. Wrong
+-- blast radius. The sibling patches the definition that is actually live, and is
+-- written to match R0's shape exactly so R0 later supersedes it with no
+-- behavioural change.
 --
--- THE ORDERING RULE: apply this file only together with, or after,
--- 20260729100200. If R0 is not going to production yet, the egress must be
--- closed some other way first — do not ship this alone and call it done.
+-- THIS FILE DELIBERATELY CARRIES NO COPY OF THAT FUNCTION. An earlier revision
+-- did, rebuilt from the April body, and it CLOBBERED R0's richer definition —
+-- losing the LATERAL that collapses a week's five sessions to the one running
+-- right now. R0's adversarial suite caught it immediately (PROG.1, PROG.2). Two
+-- migrations carrying the same function body is a last-writer-wins landmine, so
+-- the body lives in exactly one place per train.
 
 -- =====================================================================
 -- UNDO (do not run as part of this migration — this is the rollback recipe).
