@@ -22,6 +22,43 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Megaphone, Loader2 } from "lucide-react";
 
+/**
+ * AdminAnnouncements — the PLATFORM broadcast tool.
+ *
+ * ── WHAT THIS PAGE IS NOT, audited for R3-T1 ──────────────────────────────
+ * It does not read or write `cohort_announcements`, and after R3-T1 that is a
+ * boundary rather than an omission. Two different products share the word
+ * "announcement" and they are worth keeping apart:
+ *
+ *   · THIS page writes `admin_announcements` (an audit record) plus one
+ *     `notifications` row per recipient, resolved from `enrolments`. It is a
+ *     one-way inbox push. Its `audienceType === "cohort"` filter is
+ *     `.eq("cohort_batch_id", audienceId)` on ENROLMENTS inside
+ *     `resolveRecipients`, never a filter on `cohort_announcements`.
+ *   · THE ROOM NOTICEBOARD is `cohort_announcements`, authored in-room by
+ *     mentors and hosts through `AnnouncementsModule`, gated by the
+ *     `ann_host_insert` RLS policy, and fanned out by the
+ *     `cohort_announcement_notify` trigger
+ *     (20260801120000_announcement_notify_trigger.sql).
+ *
+ * Sending a "Cohort" announcement here therefore does NOT put anything on a
+ * room's board, and the composer in the room does not appear in the table
+ * below. Repointing this page at `cohort_announcements` would give the room two
+ * authoring paths with two different notification shapes; the in-room composer
+ * is deliberately the only one. The audience picker already covers cohort and
+ * course targeting and is left exactly as it was.
+ *
+ * ⚠️ ONE THING TO KNOW BEFORE EDITING `handleSend`. R3-T1 added a PARTIAL unique
+ * index to `public.notifications`:
+ *   notifications_room_unread_uniq (user_id, link)
+ *     WHERE is_read = false AND type = 'room_announcement'
+ * The `type` term is what keeps this page unaffected: the batches below insert
+ * `type: "admin_announcement"`, so two admin announcements sharing a `link`
+ * while the first is still unread continue to insert cleanly. Do NOT drop that
+ * term from the index, and do not change the literal below to
+ * "room_announcement" without reading §1 of that migration first.
+ */
+
 interface AnnouncementRow {
   id: string;
   title: string;
@@ -249,7 +286,9 @@ const AdminAnnouncements = () => {
     <>
       <div className="flex items-center justify-between mb-6">
         <p className="text-muted-foreground text-sm">
-          Send in-app notifications to all users or targeted audiences.
+          Send in-app notifications to all users or targeted audiences. These go to the
+          notification inbox. They do not appear on a cohort room noticeboard, which mentors
+          and hosts post to from inside the room.
         </p>
         <Button onClick={openDialog} className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
           <Plus className="h-4 w-4 mr-2" /> New Announcement
