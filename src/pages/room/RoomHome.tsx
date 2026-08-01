@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { CalendarClock, Megaphone, Users } from "lucide-react";
+import { CalendarClock, Users } from "lucide-react";
 import { moduleEnabled, sessionTimeState, type RoomModuleKey } from "@/lib/room";
 import { SkeletonLine, SurfaceCard } from "@/components/patterns";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,9 +8,11 @@ import {
   isLobbyEnvelope,
   useRoomOfferingMeta,
   useRoomOutlet,
+  useRoomSeenWatermark,
   useRoomWeeks,
   type RoomSession,
 } from "@/hooks/useCohortRooms";
+import AnnouncementsModule from "@/components/room/AnnouncementsModule";
 import PreStartCard from "@/components/room/PreStartCard";
 import AssignmentModule from "@/components/room/AssignmentModule";
 import ThisWeekCard from "@/components/room/ThisWeekCard";
@@ -25,19 +27,46 @@ import { useRoomClock } from "@/components/room/RoomClockProvider";
  * RoomHome — what a room opens onto.
  *
  * R1 rendered the ORDERED module stack as summary cards; R2 puts the real
- * modules behind them. The top slot is now R2-T1's This Week hero — the same
- * `ThisWeekCard` the weeks module opens on — and everything below it stays a
- * card that links onward. Nothing here is a stub: a card with nothing to say
- * does not render at all.
+ * modules behind them, and R3 puts the noticeboard here IN FULL rather than as
+ * the one-line teaser that slot used to carry. The top slot is now R2-T1's This
+ * Week hero — the same `ThisWeekCard` the weeks module opens on — and the cards
+ * that remain link onward. Nothing here is a stub: a summary CARD with nothing
+ * to say does not render at all. The noticeboard is the one thing that renders
+ * empty, and it is not an exception to that rule: a card is a teaser for
+ * something elsewhere, so an empty one is a dead end, while the board IS the
+ * surface and "Nothing on the board yet." is a true answer to the question the
+ * student came with (the brief's own edge case).
  *
  * ── Round trips ───────────────────────────────────────────────────────────
  * R1's docstring said a room open costs ONE round trip, and for the lobby it
- * still does. The hero costs a SECOND (`useRoomWeeks`), because week metadata —
- * theme, assignment, `feedback_session_at`, the caller's own submission — is
- * simply not in the envelope (rpcs.sql carries sessions and announcements, no
- * weeks). It is the same query key `WeeksModule` uses, so tapping through to
- * `weeks/:n` is a cache hit rather than a third call, and it is not fired at all
- * in the lobby or when the cohort has switched `weeks` off.
+ * still does not cost the hero's. The hero costs a SECOND (`useRoomWeeks`),
+ * because week metadata — theme, assignment, `feedback_session_at`, the caller's
+ * own submission — is simply not in the envelope (rpcs.sql carries sessions and
+ * announcements, no weeks). It is the same query key `WeeksModule` uses, so
+ * tapping through to `weeks/:n` is a cache hit rather than a third call, and it
+ * is not fired at all in the lobby or when the cohort has switched `weeks` off.
+ *
+ * R3-T1's board costs a THIRD, on BOTH branches: the envelope's `announcements`
+ * array is capped at ten rows and carries no author, so `AnnouncementsModule`
+ * reads `get_room_announcements` instead. The lobby pays it too, and that is a
+ * decision rather than an oversight — see "the lobby gets the whole board".
+ *
+ * There is also exactly ONE WRITE on open — the `cohort_room_seen` watermark,
+ * which is what clears the unseen dot on `/rooms`. It is written by whichever
+ * surface can honestly claim the board has been SEEN: the module, once its rows
+ * are in hand, and this file only for a cohort that runs no board at all.
+ *
+ * ── The lobby gets the whole board ────────────────────────────────────────
+ * A `pre_member`'s entire whitelist is masthead / schedule / presence /
+ * announcements-READ (MEMBER-1), so the noticeboard is not a nice-to-have down
+ * there, it is the tier's only content. `PreStartCard` shows exactly ONE notice
+ * (`(room.announcements ?? [])[0]`), which was enough while nothing wrote the
+ * watermark and became a data loss the moment something did: a cohort that
+ * posts three notices before doors open would have had two of them marked seen
+ * for ever with no surface that listed them. So the lobby renders the same
+ * board every member sees, and the card is handed the envelope WITHOUT its
+ * announcements so exactly one surface owns them. `PreStartCard` itself is
+ * untouched: it still renders its teaser for any caller that gives it notices.
  *
  * ── One submission surface, not two ───────────────────────────────────────
  * The hero deliberately does NOT receive `renderAssignment`, so it shows the
@@ -76,6 +105,16 @@ const RoomHome = () => {
 
   const canSee = (key: RoomModuleKey) => moduleEnabled(envelope.config, key);
 
+  // R3-T1's watermark, and this file writes it in exactly ONE case: a cohort
+  // that runs no announcements module. `get_my_cohort_rooms` counts
+  // announcements whatever the module config says, so without this the dot on
+  // `/rooms` would have no way to clear for those cohorts. Every other case
+  // belongs to `AnnouncementsModule`, which writes it once its rows are in hand
+  // — a watermark is a claim that the whole board has been seen, and only the
+  // surface that showed the board can honestly make it. Both branches below
+  // mount that module, the lobby included.
+  useRoomSeenWatermark(room.offering_id, { enabled: !canSee("announcements") });
+
   // The lobby's whitelist is the masthead, the schedule, the announcements and
   // a cohort-mate COUNT — which is exactly what the induction renders. So the
   // lobby lands here whatever the phase says: `phase` and `access` are
@@ -98,21 +137,37 @@ const RoomHome = () => {
   );
 
   const session = nextSession(envelope.sessions, nowMs);
-  const announcement = envelope.announcements[0] ?? null;
+
+  // The induction card's own single-notice teaser would duplicate the board's
+  // top row now that the lobby renders the board, so the card is handed the
+  // envelope WITHOUT announcements and draws no notice block at all
+  // (`PreStartCard` builds it from `(room.announcements ?? [])[0]`). Nothing in
+  // that file changes: this is the caller deciding which surface owns the
+  // noticeboard, which is the same call `RoomHome` already makes for every other
+  // module on this page.
+  const lobbyRoom = useMemo(() => ({ ...envelope, announcements: [] }), [envelope]);
 
   if (isLobby) {
     return (
-      <PreStartCard
-        // R1-T6's published contract takes the ENVELOPE as `room` — the
-        // membership row's week count is the one thing the envelope lacks.
-        room={envelope}
-        totalWeeks={room.total_weeks}
-        startsAt={meta.data?.cohort_start_date ?? null}
-        whatsappGroupLink={meta.data?.whatsapp_group_link ?? null}
-        // The server's own phase flip is what swaps the layout — never a
-        // client-side guess that the doors must be open by now.
-        onDoorsOpen={refetch}
-      />
+      <div className="space-y-4">
+        <PreStartCard
+          // R1-T6's published contract takes the ENVELOPE as `room` — the
+          // membership row's week count is the one thing the envelope lacks.
+          room={lobbyRoom}
+          totalWeeks={room.total_weeks}
+          startsAt={meta.data?.cohort_start_date ?? null}
+          whatsappGroupLink={meta.data?.whatsapp_group_link ?? null}
+          // The server's own phase flip is what swaps the layout — never a
+          // client-side guess that the doors must be open by now.
+          onDoorsOpen={refetch}
+        />
+
+        {/* MEMBER-1's whole whitelist for this tier. `get_room_announcements`
+            admits the lobby by name (`cohort_room_in_lobby`) and returns the
+            offering-level rows only, so the module needs no lobby branch of its
+            own. */}
+        {canSee("announcements") && <AnnouncementsModule />}
+      </div>
     );
   }
 
@@ -210,20 +265,18 @@ const RoomHome = () => {
         </>
       )}
 
-      {canSee("announcements") && announcement && (
-        <SurfaceCard padding="md" variant="static">
-          <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
-            <Megaphone size={12} strokeWidth={1.5} className="mr-2 inline align-[-1px]" />
-            From the team
-          </p>
-          <p className="mt-2 text-base text-foreground">
-            {announcement.title ?? "New announcement"}
-          </p>
-          {announcement.body && (
-            <p className="body-muted mt-1 line-clamp-2 text-sm">{announcement.body}</p>
-          )}
-        </SurfaceCard>
-      )}
+      {/*
+        R3-T1's noticeboard, in the slot R1's one-line summary card used to
+        hold. There is no `announcements` tab and no announcements route
+        (`ROOM_TABS`, RoomShell.tsx), so this is the module's ONLY mount point:
+        the board reads better here than behind a tab anyway, because a notice
+        is the thing a student opens the room to find.
+
+        The gate stays HERE rather than moving inside the module, matching every
+        other slot on this page: one file decides what a cohort's config
+        switches off.
+      */}
+      {canSee("announcements") && <AnnouncementsModule />}
 
       {canSee("roster") && envelope.roster_count > 0 && (
         <SurfaceCard to="people" padding="md">
