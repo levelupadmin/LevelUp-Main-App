@@ -49,7 +49,12 @@ interface LiveSession {
   description: string | null;
   scheduled_at: string;
   duration_minutes: number | null;
-  zoom_link: string | null;
+  // NO `zoom_link` HERE, DELIBERATELY. This list reads `live_sessions_safe`,
+  // which omits the column, and the base table no longer grants it to
+  // `authenticated`. Leaving the field on the type would let a future edit read
+  // `s.zoom_link`, get `undefined` at runtime, and quietly render nothing —
+  // which is how the April gating migration ended up inert for four months.
+  // Its absence makes the compiler point at the RPC instead.
   recording_url: string | null;
   status: string;
   course_title?: string;
@@ -166,6 +171,8 @@ const AdminSchedule = () => {
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [csvUploading, setCsvUploading] = useState(false);
+  /** Ids of sessions that have a zoom_link, so the row shortcut knows to render. */
+  const [zoomLinkIds, setZoomLinkIds] = useState<Set<string>>(new Set());
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [attendanceSession, setAttendanceSession] = useState<LiveSession | null>(null);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
@@ -179,13 +186,53 @@ const AdminSchedule = () => {
   /* ── Load ── */
   const load = async () => {
     setLoading(true);
-    const [sessRes, courseRes] = await Promise.all([
+    // `live_sessions_safe`, NOT `live_sessions`. The base table's `zoom_link` is
+    // the join link for every paid class, and it is no longer readable by the
+    // `authenticated` role (20260801100000) — so `select("*")` on the base table
+    // is now a permission error, exactly as the April gating migration always
+    // intended. The view carries every column this screen renders except the
+    // link itself, which the edit dialog fetches through the gated RPC.
+    const [sessRes, courseRes, linkedRes] = await Promise.all([
       supabase
-        .from("live_sessions")
+        .from("live_sessions_safe")
         .select("*")
         .order("scheduled_at", { ascending: true }),
       supabase.from("courses").select("id, title").order("title"),
+      // Which sessions HAVE a link, as ids only — one round trip for the whole
+      // list rather than one per row, and no URL crosses the boundary.
+      supabase.rpc("admin_live_sessions_with_zoom_link"),
     ]);
+
+    // THE TWO ERRORS ARE NOT THE SAME KIND, AND NEITHER MAY BE SWALLOWED.
+    //
+    // Silently rendering an empty screen is the exact failure mode that let the
+    // April gating migrations sit inert for four months: nothing looked wrong.
+    //
+    //  · sessRes failing means the schedule genuinely could not be read - most
+    //    likely a permission error - and an admin seeing "no sessions" would
+    //    reasonably conclude the data is gone. That gets a toast.
+    //  · linkedRes failing is EXPECTED for one deploy: the client ships before
+    //    the migration, so `admin_live_sessions_with_zoom_link` does not exist
+    //    yet and returns PGRST202. Toasting that on every load would train
+    //    admins to ignore toasts. It degrades to "no row shortcuts", which is
+    //    visible on its own, so it goes to the console instead.
+    if (sessRes.error) {
+      toast({
+        title: "Could not load the schedule",
+        description: sessRes.error.message,
+        variant: "destructive",
+      });
+    }
+    if (linkedRes.error) {
+      console.warn(
+        "[AdminSchedule] zoom-link id probe failed; row shortcuts hidden:",
+        linkedRes.error.message,
+      );
+    }
+
+    setZoomLinkIds(
+      new Set(((linkedRes.data as string[] | null) ?? []).map((id) => String(id))),
+    );
 
     const courseMap: Record<string, string> = {};
     (courseRes.data || []).forEach((c) => {
@@ -226,7 +273,37 @@ const AdminSchedule = () => {
     setDialogOpen(true);
   };
 
-  const openEdit = (s: LiveSession) => {
+  // Async because the link is no longer on the row. `get_live_session_zoom_link`
+  // is SECURITY DEFINER and returns it to an admin unconditionally — the T-60
+  // window in that function gates the STUDENT branch only, so editing a class
+  // scheduled next month still populates the field. Same shape `AdminEvents` has
+  // used for `get_event_venue_link` since April.
+  const openEdit = async (s: LiveSession) => {
+    const { data: linkData, error: linkError } = await supabase.rpc(
+      "get_live_session_zoom_link",
+      { p_session_id: s.id },
+    );
+    // REFUSING TO OPEN IS THE POINT, AND IT IS A DATA-LOSS GUARD.
+    //
+    // `handleSave` writes `zoom_link: form.zoom_link.trim() || null`
+    // UNCONDITIONALLY. Before this commit the value came from an already-loaded
+    // row, so it could not go missing. Now it comes from a network round trip —
+    // and if that round trip fails while the dialog still opens, the Zoom field
+    // renders EMPTY, the admin edits the title, hits Save, and the join link of
+    // a class that may be about to start is silently written to NULL.
+    //
+    // A null `data` with no error is different and legitimate: the session
+    // genuinely has no link, and saving an empty field is then correct. Only an
+    // ERROR is ambiguous, so only an error refuses. Same test the house already
+    // uses for this RPC in `MySessionsPage` (`if (error || !link)`).
+    if (linkError) {
+      toast({
+        title: "Could not load the Zoom link",
+        description: "Not opening the editor, so saving cannot blank it. Try again.",
+        variant: "destructive",
+      });
+      return;
+    }
     const { date, hour, minute, period } = isoToFormFields(s.scheduled_at);
     setForm({
       course_id: s.course_id,
@@ -237,13 +314,45 @@ const AdminSchedule = () => {
       minute,
       period,
       duration_minutes: s.duration_minutes || 60,
-      zoom_link: s.zoom_link || "",
+      zoom_link: (linkData as string | null) || "",
       recording_url: s.recording_url || "",
       status: s.status,
       repeat_weeks: 0,
     });
     setEditId(s.id);
     setDialogOpen(true);
+  };
+
+  /**
+   * Resolve a session's join link at click time and open it.
+   *
+   * THIS DELIBERATELY MATCHES THE SHIPPED STUDENT JOIN BUTTON rather than
+   * inventing a second pattern. `Countdown.tsx` awaits this same RPC and then
+   * calls `window.open(resolved, "_blank", "noopener,noreferrer")`, and that is
+   * the house pattern for handing a resolved join URL to the OS.
+   *
+   * An earlier revision here claimed the tab had to be opened EMPTY and
+   * synchronously, before the await, to survive popup blockers. That was worse
+   * on both counts: it diverged from the one shipped precedent for this exact
+   * action, and `window.open("", "_blank")` with no URL is strictly worse inside
+   * the Capacitor WebView, whose navigation delegate needs a URL to hand off
+   * (`invoice.ts` records that a bare `window.open` is a no-op there). The
+   * `noopener,noreferrer` feature string covers the reverse-tabnabbing risk that
+   * nulling `opener` was there for.
+   */
+  const openZoom = async (id: string) => {
+    const { data, error } = await supabase.rpc("get_live_session_zoom_link", {
+      p_session_id: id,
+    });
+    const url = (data as string | null) || null;
+    if (error || !url) {
+      toast({
+        title: error ? "Could not fetch the Zoom link" : "No Zoom link on this session",
+        variant: "destructive",
+      });
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   /* ── Save ── */
@@ -657,6 +766,8 @@ const AdminSchedule = () => {
                     key={s.id}
                     session={s}
                     badge={statusBadge(s.status, s.scheduled_at)}
+                    hasZoomLink={zoomLinkIds.has(s.id)}
+                    onZoom={() => openZoom(s.id)}
                     onEdit={() => openEdit(s)}
                     onDelete={() => setDeleteId(s.id)}
                     onAttendance={() => openAttendance(s)}
@@ -677,6 +788,8 @@ const AdminSchedule = () => {
                     key={s.id}
                     session={s}
                     badge={statusBadge(s.status, s.scheduled_at)}
+                    hasZoomLink={zoomLinkIds.has(s.id)}
+                    onZoom={() => openZoom(s.id)}
                     onEdit={() => openEdit(s)}
                     onDelete={() => setDeleteId(s.id)}
                     onAttendance={() => openAttendance(s)}
@@ -910,12 +1023,17 @@ const AdminSchedule = () => {
 function SessionRow({
   session: s,
   badge,
+  hasZoomLink,
+  onZoom,
   onEdit,
   onDelete,
   onAttendance,
 }: {
   session: LiveSession;
   badge: { label: string; color: string; icon: any };
+  /** Whether a zoom_link exists — the URL itself never reaches this component. */
+  hasZoomLink: boolean;
+  onZoom: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onAttendance: () => void;
@@ -957,15 +1075,18 @@ function SessionRow({
           {s.duration_minutes ? ` · ${s.duration_minutes}min` : ""}
         </p>
         <div className="flex items-center gap-3 mt-1.5">
-          {s.zoom_link && (
-            <a
-              href={s.zoom_link}
-              target="_blank"
-              rel="noopener noreferrer"
+          {/* A button, not an anchor, because there is no href to give it until
+              the RPC answers. Rendered only for sessions the id-set says have a
+              link, so the row still tells an admin at a glance which classes are
+              ready — without the URL ever reaching the list payload. */}
+          {hasZoomLink && (
+            <button
+              type="button"
+              onClick={onZoom}
               className="text-xs text-blue-400 hover:underline flex items-center gap-1"
             >
               <Video className="h-3 w-3" /> Zoom
-            </a>
+            </button>
           )}
           {s.recording_url && (
             <a
