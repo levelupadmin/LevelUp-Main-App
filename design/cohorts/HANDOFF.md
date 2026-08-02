@@ -385,6 +385,31 @@ certificates, alumni — 4 tasks). Sections are in `ROOMS-BACKLOG.md`.
 
 ---
 
+## 7b. ⚠️ MERGE-BLOCKING FOR R0 — two migrations define one function
+
+`public.get_cohort_progress` is defined **twice**, and the later timestamp wins:
+
+| file | body |
+|---|---|
+| `20260729100200` (R0) | plpgsql: IDOR guard + join-link time window **+ the LATERAL** that collapses a week's several sessions to the one running now |
+| `20260801130000` (linkgate, **later**) | April-based body + the same guard and window, **no LATERAL** |
+
+Verified 2026-08-01: on a **fresh build** R0 applies first and linkgate overwrites
+it, so the LATERAL is lost and R0's suite fails PROG.1/PROG.2 (161/163). On
+**production** the reverse holds — linkgate is applied, R0 is still pending, so
+R0 will apply afterwards and win. **Prod and a from-scratch build therefore
+diverge**, which is the same class as the already-once-fixed "the repo could not
+build a database from scratch".
+
+Fix it as part of the R0 merge: one authoritative definition in a migration dated
+after both. **Do not leave two copies of the body** — that is the
+last-writer-wins landmine that already bit once this week. It was deliberately
+NOT fixed on 2026-08-01 because installing R0's LATERAL on prod is a behavioural
+change to the shipped `CohortDashboard`, which belongs to R0's merge rather than
+to a security patch.
+
+---
+
 ## 8. The deploy sequence — ordering is not obvious
 
 1. **Migrations BEFORE functions.** The poller probes
