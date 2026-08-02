@@ -154,11 +154,23 @@ Docker CLI at `/Applications/OrbStack.app/Contents/MacOS/xbin`, NOT on PATH).
 11. **Distinguish a stale brief from a transient failure.** Both surface as
     "workflow aborted". Ask: *did any agent actually do anything?* A stale brief
     must be rewritten, never retried; a 529 should be retried unchanged.
-12. **A column-level `REVOKE` cannot cut through a table-level `GRANT`.** They are
-    separate privileges. `REVOKE SELECT (c) ON t` removes only a COLUMN-level
-    grant; where a table-level one exists it changes nothing, silently. Two
-    shipped migrations were inert for four months this way (§6b). To withhold one
-    column you must hold NO table-level SELECT and grant the others individually.
+12. **A NARROWER `REVOKE` NEVER CUTS THROUGH A BROADER GRANT. This project has
+    now been bitten by it TWICE in two days, in two different shapes.**
+    - *Columns:* `REVOKE SELECT (c) ON t` removes only a COLUMN-level grant.
+      Where a table-level `GRANT SELECT ON t` exists it changes nothing,
+      silently. Two shipped migrations were inert for four months this way. To
+      withhold one column you must hold NO table-level SELECT and grant the
+      others individually.
+    - *Functions:* `REVOKE ALL ON FUNCTION f FROM public` removes only the
+      PUBLIC pseudo-role entry (`=X/`). It cannot touch `anon=X/postgres`. And
+      this project's `pg_default_acl` for functions grants `anon=X`, so **every
+      function created here is born anon-executable** — including the one written
+      to fix the column bug. Revoke from the NAMED role.
+    - The common tell in both: Postgres raises no error and emits no warning for
+      revoking a privilege that is not held. **Success means nothing here; only
+      `has_column_privilege` / `has_function_privilege` afterwards does.**
+    - Both were caught by verifying AGAINST PRODUCTION after applying, not by
+      review. Build the check into the migration so it cannot pass silently.
 13. **RUN THE ARTIFACT.** R0's suite had never been executed anywhere. Executing
     it found four defects in the suite itself — three of which would have failed
     identically on the hosted shadow it was written for — plus the §6b production
@@ -178,7 +190,40 @@ Docker CLI at `/Applications/OrbStack.app/Contents/MacOS/xbin`, NOT on PATH).
 
 ---
 
-## 6b. A THIRD production problem — found 2026-07-31, fix built, NOT APPLIED
+## 6b. A THIRD production problem — found 2026-07-31, **CLOSED ON PROD 2026-08-01**
+
+**Status: fixed, applied and verified.** Three migrations are live —
+`20260801100000` (table SELECT revoked, every other column re-granted),
+`20260801130000` (the `get_cohort_progress` IDOR guard + join-link time window),
+and `20260801140000` (see the third finding below). The client shipped first via
+PR #26, the follow-up as PR #27. All six production checks green: gated columns
+unreadable by both roles, exactly **1 of 24** columns unreadable on `events` and
+**1 of 14** on `live_sessions`, the function carrying its guard, its 42501 and
+its window, anon EXECUTE false with authenticated true, and both safe views
+still serving.
+
+**A THIRD defect surfaced during verification, in the fix itself.** After the
+first two applied, `anon` still held EXECUTE on the newly created admin RPC —
+`true` on prod where the shadow said `false`. Cause: this project's
+`pg_default_acl` for functions is
+`{postgres=X, anon=X, authenticated=X, service_role=X}`, so **every function
+created here is born with an explicit `anon=X` grant**, and
+`REVOKE ALL … FROM public` removes only the PUBLIC pseudo-role entry — it cannot
+touch a grant held by a named role. The REVOKE ran, reported success, changed
+nothing. Same shape as the original defect. Not a leak (the body gates on
+`is_admin()`), fixed anyway, because "the body happens to refuse" is not "the
+caller cannot reach it".
+
+**Two of my own claims were wrong and are corrected below** — "any visitor"
+(anon reads zero rows from both tables) and the ACCESS EXCLUSIVE lock profile
+(measured: no relation lock at all; a concurrent read ran in 46ms with the
+granting transaction held open, so no maintenance window is needed).
+
+The original finding, for the record:
+
+---
+
+## 6b-original. The finding as first written
 
 **Signed-in users can read join links they should not have.** Stated carefully,
 because the first draft of this section overstated it and somebody could build a
@@ -425,12 +470,20 @@ every blocker since closed); R0's suite executed for the first time at 163/163.
 
 Outstanding, roughly in value order:
 
-1. **Rahul's two decisions.** (a) Apply the §6b grant migration to prod — it is
-   the only open item that affects users today. (b) Tune
-   `REENTRY_FEE_EVIDENCE_MAX_AGE_HOURS`; the 26h default is a policy number and
-   how much reach it costs depends on how often the reconciler actually runs.
-2. **R3 and R4 — NOT STARTED.** R3 (announcements, roster, feed, resources) and
-   R4 (demo day, certificates, alumni), 4 tasks each, in `ROOMS-BACKLOG.md`.
+1. ~~Apply the §6b migration~~ — **DONE, live and verified 2026-08-01.** Still
+   open for Rahul: tune `REENTRY_FEE_EVIDENCE_MAX_AGE_HOURS`; the 26h default is
+   a policy number and how much reach it costs depends on how often the
+   reconciler actually runs.
+2. **R3 round 1 (announcements + roster) is BUILT and green** on
+   `design/cohort-r3` — 772 tests, build clean, `typecheck:functions` 0 new
+   failures. Its council is running. Round 2 is the feed and resources: Rahul
+   ruled on 2026-08-01 to **build the feed now** rather than wait on the
+   community-v2 direction, and to rebuild the main community later to match.
+   Useful context he gave: a teammate has LOCKED the main community because it is
+   not built out, so the room feed may be the only live community surface —
+   verify its state before briefing the legacy copy step.
+   **R4 (demo day, certificates, alumni) — NOT STARTED**, 4 tasks in
+   `ROOMS-BACKLOG.md`.
 3. **The council follow-ups nobody has picked up:** IV's durable webhook fix (an
    opaque per-application token on `scheduling_url`, so identity stops resting on
    a field the invitee types), and RE's B3/B4/B5 — the rollback that strips the
