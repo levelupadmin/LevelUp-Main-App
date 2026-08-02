@@ -12,7 +12,8 @@
     "typecheck:functions": "node scripts/typecheck-functions.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:room-access": "node qa-harness/cohort-room-access.spec.mjs"
+    "test:room-access": "node qa-harness/cohort-room-access.spec.mjs",
+    "test:announcement-fanout": "psql \"${ROOM_QA_DB_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}\" -v ON_ERROR_STOP=1 -f qa-harness/announcement-fanout.sql"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",

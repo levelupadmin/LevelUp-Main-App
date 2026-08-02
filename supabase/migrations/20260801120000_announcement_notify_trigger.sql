@@ -359,6 +359,7 @@ DECLARE
   v_title text;
   v_body  text;
   v_link  text;
+  v_self  text;
 BEGIN
   -- The immutable per-room key, and a route that resolves to this caller's own
   -- room (CohortRoomRedirect, src/pages/room/RoomShell.tsx). See §1.
@@ -366,15 +367,79 @@ BEGIN
   v_title := COALESCE(NULLIF(btrim(NEW.title), ''), 'New announcement');
   v_body  := LEFT(btrim(COALESCE(NEW.body, '')), 140);
 
+  -- WHICH NOTICE A BADGE IS CURRENTLY SHOWING, AS A STABLE IDENTITY.
+  --
+  -- An earlier revision identified the badge by (link, title, body) and that was
+  -- not an identity at all — it was a description, and three separate things
+  -- collapse it: `v_link` is OFFERING-level so batch A1 and batch A2 share it,
+  -- `v_title` folds every untitled notice onto the literal 'New announcement'
+  -- (and the composer makes the title optional), and `v_body` is only a 140-char
+  -- PREFIX. Two batches given the same templated notice, or two notices sharing
+  -- an opening paragraph, were therefore the same row to the retract arm.
+  --
+  -- `link_url` is the right home for this: it is nullable, no notifications
+  -- consumer reads it (NotificationDropdown navigates on `link`; useNotifications
+  -- never selects it), and the one other writer — 20260526180000's
+  -- submission_reviewed insert — is a different `type`, so the namespace prefix
+  -- keeps the two from ever being confused.
+  v_self  := 'cohort_announcement:' || NEW.id::text;
+
   IF TG_OP = 'UPDATE' THEN
     -- Retraction, and only retraction: a pin or an unpin notifies nobody.
     IF NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL THEN
+      -- RE-POINT FIRST, DELETE ONLY WHAT IS LEFT. The refresh arm below collapses
+      -- N notices onto ONE badge per recipient, so a badge showing notice N also
+      -- stands for every live notice before it. Deleting that badge on retraction
+      -- — which an earlier revision did, and which the harness certified as a
+      -- PASS — destroys the only delivery record for notices that are still on
+      -- the board and still unseen. Retracting what you just posted is the most
+      -- likely retraction there is, so this was the common case, not the corner.
+      --
+      -- Both statements are scoped by `room_announcement_targets`, which the
+      -- earlier DELETE was not: without it, retracting batch A1's notice reached
+      -- into batch A2's inboxes, because the badge key is offering-level.
+
+      -- (a) Every badge still showing THIS notice moves to the newest notice that
+      --     recipient can still see: their own batch's, or an offering-wide one.
+      UPDATE public.notifications n
+         SET title      = COALESCE(NULLIF(btrim(s.title), ''), 'New announcement'),
+             body       = LEFT(btrim(COALESCE(s.body, '')), 140),
+             link_url   = 'cohort_announcement:' || s.id::text,
+             created_at = now()
+        FROM public.room_announcement_targets(NEW.offering_id, NEW.batch_id, NEW.author_id) t
+        JOIN LATERAL (
+          SELECT a.id, a.title, a.body
+            FROM public.cohort_announcements a
+           WHERE a.offering_id = NEW.offering_id
+             AND a.deleted_at IS NULL
+             AND a.id <> NEW.id
+             AND (a.batch_id IS NULL
+                  OR EXISTS (
+                       SELECT 1
+                         FROM public.cohort_room_members m
+                        WHERE m.user_id     = t.user_id
+                          AND m.offering_id = NEW.offering_id
+                          AND m.batch_id    = a.batch_id))
+           ORDER BY a.created_at DESC, a.id DESC
+           LIMIT 1
+        ) s ON true
+       WHERE n.user_id  = t.user_id
+         AND n.type     = 'room_announcement'
+         AND n.link     = v_link
+         AND n.is_read  = false
+         AND n.link_url = v_self;
+
+      -- (b) Whatever still points at the retracted notice had no survivor, so the
+      --     board really is empty for that recipient and the badge should go.
       DELETE FROM public.notifications n
-      WHERE n.type    = 'room_announcement'
-        AND n.link    = v_link
-        AND n.is_read = false
-        AND n.title   = v_title
-        AND COALESCE(n.body, '') = v_body;
+       WHERE n.type     = 'room_announcement'
+         AND n.link     = v_link
+         AND n.is_read  = false
+         AND n.link_url = v_self
+         AND n.user_id IN (
+               SELECT t.user_id
+                 FROM public.room_announcement_targets(
+                        NEW.offering_id, NEW.batch_id, NEW.author_id) t);
     END IF;
 
     RETURN NEW;
@@ -385,9 +450,12 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- `link_url` is stamped on BOTH arms so the badge always records which notice
+  -- it is currently showing. The retract arm above is the only reader.
   UPDATE public.notifications n
   SET title      = v_title,
       body       = v_body,
+      link_url   = v_self,
       created_at = now()
   FROM public.room_announcement_targets(NEW.offering_id, NEW.batch_id, NEW.author_id) t
   WHERE n.user_id = t.user_id
@@ -395,8 +463,8 @@ BEGIN
     AND n.type    = 'room_announcement'
     AND n.is_read = false;
 
-  INSERT INTO public.notifications (user_id, type, title, body, link, is_read)
-  SELECT t.user_id, 'room_announcement', v_title, v_body, v_link, false
+  INSERT INTO public.notifications (user_id, type, title, body, link, link_url, is_read)
+  SELECT t.user_id, 'room_announcement', v_title, v_body, v_link, v_self, false
   FROM public.room_announcement_targets(NEW.offering_id, NEW.batch_id, NEW.author_id) t
   WHERE NOT EXISTS (
     SELECT 1 FROM public.notifications n

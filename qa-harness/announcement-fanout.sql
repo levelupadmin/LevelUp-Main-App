@@ -502,8 +502,15 @@ DECLARE
   v_after_retract integer;
   v_survivors     integer;
 BEGIN
-  -- The four unread badges currently carry 'After the rename' (C7A). Retract
-  -- that notice: every badge showing it must go.
+  -- The four unread badges currently carry 'After the rename' (b2), and b1 is
+  -- STILL LIVE on the board. Retracting b2 must RE-POINT those badges at b1, not
+  -- delete them.
+  --
+  -- THIS CASE USED TO ASSERT THE OPPOSITE — that zero badges survive — and it
+  -- passed, which is how the defect stayed invisible. The refresh arm collapses
+  -- N notices onto ONE badge, so that badge also stands for b1; deleting it left
+  -- b1 live, unseen, and with no delivery record. Retracting what you just
+  -- posted is the most likely retraction there is.
   UPDATE public.cohort_announcements
   SET deleted_at = now()
   WHERE id = 'f3a11000-0000-4000-8000-0000000000b2';
@@ -511,9 +518,11 @@ BEGIN
   SELECT count(*) INTO v_after_retract FROM public.notifications n
   WHERE n.type = 'room_announcement'
     AND n.link = '/cohort/f3a11000-0000-4000-8000-000000000001'
-    AND n.is_read = false;
-  IF v_after_retract <> 0 THEN
-    RAISE EXCEPTION 'FAIL C7B — retracting the notice every unread badge was showing left % badges behind, still carrying its title in the inbox.', v_after_retract;
+    AND n.is_read = false
+    AND n.title = 'Before the rename'
+    AND n.link_url = 'cohort_announcement:f3a11000-0000-4000-8000-0000000000b1';
+  IF v_after_retract <> 4 THEN
+    RAISE EXCEPTION 'FAIL C7B — retracting the newest notice should have re-pointed all 4 badges at the still-live older notice; % carry it.', v_after_retract;
   END IF;
 
   -- Now a fresh notice, and a retraction of an OLDER one. The badge has moved
@@ -544,7 +553,122 @@ BEGIN
   SET deleted_at = now()
   WHERE id = 'f3a11000-0000-4000-8000-0000000000b3';
 
-  RAISE NOTICE 'PASS C7B — a retraction deletes the unread badges that were still showing that notice, and leaves badges carrying a later notice alone.';
+  RAISE NOTICE 'PASS C7B — a retraction re-points the badges it was showing at the newest surviving notice, and leaves badges carrying a later notice alone.';
+END $$;
+
+
+----------------------------------------------------------------------
+-- C7C. TWO NOTICES THAT READ THE SAME ARE STILL TWO NOTICES.
+--      The retract arm used to identify a badge by (link, title, body-prefix),
+--      which is a DESCRIPTION, not an identity. `title` collapses every untitled
+--      notice onto one literal and `body` is compared on its first 140
+--      characters only, so two notices from the same template were the same row
+--      to the cleanup. Retracting the older one took the newer one's badge.
+----------------------------------------------------------------------
+DO $$
+DECLARE
+  v_kept integer;
+  v_pref text := repeat('Same opening paragraph. ', 8);   -- >140 chars shared
+BEGIN
+  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body)
+  VALUES ('f3a11000-0000-4000-8000-0000000000c1', 'f3a11000-0000-4000-8000-000000000001',
+          NULL, 'f3a11000-0000-4000-8000-000000000010',
+          'Weekly note', v_pref || 'FIRST tail.');
+
+  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body)
+  VALUES ('f3a11000-0000-4000-8000-0000000000c2', 'f3a11000-0000-4000-8000-000000000001',
+          NULL, 'f3a11000-0000-4000-8000-000000000010',
+          'Weekly note', v_pref || 'SECOND tail.');
+
+  -- Badges now show c2. Retract c1 — identical title, identical 140-char prefix.
+  UPDATE public.cohort_announcements SET deleted_at = now()
+   WHERE id = 'f3a11000-0000-4000-8000-0000000000c1';
+
+  SELECT count(*) INTO v_kept FROM public.notifications n
+  WHERE n.type = 'room_announcement'
+    AND n.link = '/cohort/f3a11000-0000-4000-8000-000000000001'
+    AND n.is_read = false
+    AND n.link_url = 'cohort_announcement:f3a11000-0000-4000-8000-0000000000c2';
+  IF v_kept <> 4 THEN
+    RAISE EXCEPTION 'FAIL C7C — retracting a notice with the same title and the same 140-char body prefix took the LIVE notice''s badges: % of 4 survived.', v_kept;
+  END IF;
+
+  UPDATE public.cohort_announcements SET deleted_at = now()
+   WHERE id = 'f3a11000-0000-4000-8000-0000000000c2';
+
+  RAISE NOTICE 'PASS C7C — a badge is identified by which notice it shows, not by what that notice says, so same-title same-prefix notices no longer collide.';
+END $$;
+
+
+----------------------------------------------------------------------
+-- C7D. RETRACTING ONE BATCH'S NOTICE DOES NOT REACH INTO THE OTHER'S INBOX.
+--      The badge key `/cohort/<offering>` is deliberately OFFERING-level, so
+--      batch A1 and batch A2 share it. The retract arm therefore has to be
+--      scoped by the recipient set the way the refresh and insert arms are —
+--      an earlier revision was not, and a batch-scoped retraction cleared
+--      badges for members who never received that notice at all.
+----------------------------------------------------------------------
+DO $$
+DECLARE
+  v_a2_kept integer;
+BEGIN
+  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body)
+  VALUES ('f3a11000-0000-4000-8000-0000000000d1', 'f3a11000-0000-4000-8000-000000000001',
+          'f3a11000-0000-4000-8000-000000000002', 'f3a11000-0000-4000-8000-000000000010',
+          'Templated notice', 'Identical wording in both batches.');
+
+  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body)
+  VALUES ('f3a11000-0000-4000-8000-0000000000d2', 'f3a11000-0000-4000-8000-000000000001',
+          'f3a11000-0000-4000-8000-000000000003', 'f3a11000-0000-4000-8000-000000000010',
+          'Templated notice', 'Identical wording in both batches.');
+
+  -- Retract batch A1's copy only.
+  UPDATE public.cohort_announcements SET deleted_at = now()
+   WHERE id = 'f3a11000-0000-4000-8000-0000000000d1';
+
+  SELECT count(*) INTO v_a2_kept FROM public.notifications n
+  WHERE n.type = 'room_announcement'
+    AND n.link = '/cohort/f3a11000-0000-4000-8000-000000000001'
+    AND n.is_read = false
+    AND n.link_url = 'cohort_announcement:f3a11000-0000-4000-8000-0000000000d2';
+  IF v_a2_kept < 1 THEN
+    RAISE EXCEPTION 'FAIL C7D — retracting batch A1''s notice cleared batch A2''s badges: % still point at A2''s own live notice.', v_a2_kept;
+  END IF;
+
+  UPDATE public.cohort_announcements SET deleted_at = now()
+   WHERE id = 'f3a11000-0000-4000-8000-0000000000d2';
+
+  RAISE NOTICE 'PASS C7D — the retract arm is scoped by recipient, so one batch''s retraction leaves the other batch''s inbox alone.';
+END $$;
+
+
+----------------------------------------------------------------------
+-- C7E. THE PLATFORM BROADCAST TOOL IS NOT CAUGHT BY THE NEW UNIQUE INDEX.
+--      `notifications_room_unread_uniq` is partial on `type =
+--      'room_announcement'`, so AdminAnnouncements — which writes
+--      `admin_announcement` rows client-side in batches, one per recipient —
+--      must be able to send the SAME link to the SAME user twice without a
+--      23505. This is the Tier-1 insurance case: the index lives on a shared
+--      shipped table and the room is not its only writer.
+----------------------------------------------------------------------
+DO $$
+DECLARE
+  v_landed integer;
+BEGIN
+  INSERT INTO public.notifications (user_id, type, title, body, link, is_read)
+  VALUES ('f3a11000-0000-4000-8000-000000000011', 'admin_announcement',
+          'Platform notice one', 'body', '/same-link', false),
+         ('f3a11000-0000-4000-8000-000000000011', 'admin_announcement',
+          'Platform notice two', 'body', '/same-link', false);
+
+  SELECT count(*) INTO v_landed FROM public.notifications
+   WHERE user_id = 'f3a11000-0000-4000-8000-000000000011'
+     AND type = 'admin_announcement' AND link = '/same-link';
+  IF v_landed <> 2 THEN
+    RAISE EXCEPTION 'FAIL C7E — the partial index caught the platform broadcast tool: % of 2 admin_announcement rows landed.', v_landed;
+  END IF;
+
+  RAISE NOTICE 'PASS C7E — two unread admin_announcement rows share one link with no 23505, so the room index cannot break the platform broadcast tool.';
 END $$;
 
 
