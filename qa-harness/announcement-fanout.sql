@@ -43,8 +43,14 @@
 --       slug, and giving one batch its own override config, are ordinary
 --       operator actions, and neither may re-arm the cap for a member who is
 --       still holding an unread notice
---   C7B retracting a notice takes the matching unread badge out of the inbox,
---       and leaves a badge that has moved on to a LATER notice alone
+--   C7B retracting the newest notice re-points its badge to a live unread
+--       survivor, and leaves a badge that moved on to a LATER notice alone
+--   C7F a transferred member cannot receive their revoked batch's private copy
+--   C7G a NULL-batch host keeps a batch-scoped survivor they are allowed to see
+--   C7H a member transferred after delivery cannot retain a retracted badge
+--   C7I a retraction never resurfaces an already-read notice as new
+--   C7J RLS, fan-out, board reads and retraction all use one grant relation,
+--       whose table and explicit-user resolver are unreachable by client roles
 --   C8  the read RPC's projection carries no email, no phone and no essay
 --       (NFR-COPY-1, asserted against the catalogue rather than by eye)
 --   C9  room_announcement_targets is reachable by NO client role — the roster
@@ -87,6 +93,8 @@ SET LOCAL client_min_messages = notice;
 --     bothD     member, batch A1 AND member, batch A2  -> the C4 case
 --     revokedE  member, batch A1, status 'revoked'     -> the C3 case
 --     outsiderF NO membership row at all               -> the C13 case
+--     hostG     host, batch NULL (added at C7G)         -> non-author staff
+--     transferH member moved A1 -> A2 in C7F/C7H       -> history mutation
 --
 -- ⚠️ THE public.users ROWS ARE MADE BY THE TRIGGER, NOT BY THE INSERT BELOW.
 --   `INSERT INTO auth.users` fires `on_auth_user_created` ->
@@ -114,7 +122,9 @@ INSERT INTO auth.users (id, email, aud, role, raw_user_meta_data) VALUES
   ('f3a11000-0000-4000-8000-000000000013', 'r3f-lobby-c@example.invalid',  'authenticated', 'authenticated', '{"full_name":"Lobby C"}'::jsonb),
   ('f3a11000-0000-4000-8000-000000000014', 'r3f-both-d@example.invalid',   'authenticated', 'authenticated', '{"full_name":"Both D"}'::jsonb),
   ('f3a11000-0000-4000-8000-000000000015', 'r3f-revoked-e@example.invalid','authenticated', 'authenticated', '{"full_name":"Revoked E"}'::jsonb),
-  ('f3a11000-0000-4000-8000-000000000016', 'r3f-outsider-f@example.invalid','authenticated','authenticated', '{"full_name":"Outsider F"}'::jsonb)
+  ('f3a11000-0000-4000-8000-000000000016', 'r3f-outsider-f@example.invalid','authenticated','authenticated', '{"full_name":"Outsider F"}'::jsonb),
+  ('f3a11000-0000-4000-8000-000000000017', 'r3f-host-g@example.invalid',     'authenticated','authenticated', '{"full_name":"Host G"}'::jsonb),
+  ('f3a11000-0000-4000-8000-000000000018', 'r3f-transfer-h@example.invalid', 'authenticated','authenticated', '{"full_name":"Transfer H"}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
 -- Fallback only — for a project whose auth trigger is absent. Expected to be a
@@ -127,7 +137,9 @@ INSERT INTO public.users (id, full_name, role) VALUES
   ('f3a11000-0000-4000-8000-000000000013', 'Lobby C',    'student'),
   ('f3a11000-0000-4000-8000-000000000014', 'Both D',     'student'),
   ('f3a11000-0000-4000-8000-000000000015', 'Revoked E',  'student'),
-  ('f3a11000-0000-4000-8000-000000000016', 'Outsider F', 'student')
+  ('f3a11000-0000-4000-8000-000000000016', 'Outsider F', 'student'),
+  ('f3a11000-0000-4000-8000-000000000017', 'Host G',     'student'),
+  ('f3a11000-0000-4000-8000-000000000018', 'Transfer H', 'student')
 ON CONFLICT (id) DO NOTHING;
 
 -- The repair. `full_name` ONLY: it is the one column C10 reads back, and it is
@@ -141,7 +153,9 @@ FROM (VALUES
   ('f3a11000-0000-4000-8000-000000000013'::uuid, 'Lobby C'),
   ('f3a11000-0000-4000-8000-000000000014'::uuid, 'Both D'),
   ('f3a11000-0000-4000-8000-000000000015'::uuid, 'Revoked E'),
-  ('f3a11000-0000-4000-8000-000000000016'::uuid, 'Outsider F')
+  ('f3a11000-0000-4000-8000-000000000016'::uuid, 'Outsider F'),
+  ('f3a11000-0000-4000-8000-000000000017'::uuid, 'Host G'),
+  ('f3a11000-0000-4000-8000-000000000018'::uuid, 'Transfer H')
 ) AS v(id, full_name)
 WHERE u.id = v.id AND u.full_name IS DISTINCT FROM v.full_name;
 
@@ -155,12 +169,13 @@ BEGIN
       'f3a11000-0000-4000-8000-000000000010','f3a11000-0000-4000-8000-000000000011',
       'f3a11000-0000-4000-8000-000000000012','f3a11000-0000-4000-8000-000000000013',
       'f3a11000-0000-4000-8000-000000000014','f3a11000-0000-4000-8000-000000000015',
-      'f3a11000-0000-4000-8000-000000000016')
+      'f3a11000-0000-4000-8000-000000000016','f3a11000-0000-4000-8000-000000000017',
+      'f3a11000-0000-4000-8000-000000000018')
     AND COALESCE(u.full_name, '') <> '';
-  IF v_named <> 7 THEN
-    RAISE EXCEPTION 'FAIL setup — only % of 7 fixture users carry a name. C10 reads author_name back out of public.users, and an unnamed fixture would make that assertion pass on an empty string.', v_named;
+  IF v_named <> 9 THEN
+    RAISE EXCEPTION 'FAIL setup — only % of 9 fixture users carry a name. C10 reads author_name back out of public.users, and an unnamed fixture would make that assertion pass on an empty string.', v_named;
   END IF;
-  RAISE NOTICE 'SETUP OK — all 7 fixture users carry the name this file declares, so the author join has something real to resolve.';
+  RAISE NOTICE 'SETUP OK — all 9 fixture users carry the name this file declares, so the author join has something real to resolve.';
 END $$;
 
 -- ── Impersonation ───────────────────────────────────────────────────────────
@@ -433,10 +448,11 @@ UPDATE public.notifications
 SET is_read = true
 WHERE type = 'room_announcement' AND link = '/cohort/f3a11000-0000-4000-8000-000000000001';
 
-INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body)
+INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body, created_at)
 VALUES ('f3a11000-0000-4000-8000-0000000000b1', 'f3a11000-0000-4000-8000-000000000001',
         NULL, 'f3a11000-0000-4000-8000-000000000010',
-        'Before the rename', 'The room is about to be re-addressed.');
+        'Before the rename', 'The room is about to be re-addressed.',
+        transaction_timestamp() + interval '10 seconds');
 
 -- (a) the offering-level room is renamed …
 UPDATE public.cohort_room_configs
@@ -450,10 +466,11 @@ VALUES ('f3a11000-0000-4000-8000-000000000005', 'f3a11000-0000-4000-8000-0000000
         'f3a11000-0000-4000-8000-000000000003', 'r3-fanout-batch-a2', 'live')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body)
+INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body, created_at)
 VALUES ('f3a11000-0000-4000-8000-0000000000b2', 'f3a11000-0000-4000-8000-000000000001',
         NULL, 'f3a11000-0000-4000-8000-000000000010',
-        'After the rename', 'Two config changes later.');
+        'After the rename', 'Two config changes later.',
+        transaction_timestamp() + interval '11 seconds');
 
 DO $$
 DECLARE
@@ -520,17 +537,20 @@ BEGIN
     AND n.link = '/cohort/f3a11000-0000-4000-8000-000000000001'
     AND n.is_read = false
     AND n.title = 'Before the rename'
-    AND n.link_url = 'cohort_announcement:f3a11000-0000-4000-8000-0000000000b1';
+    AND n.link_url IN (
+      '/cohort/f3a11000-0000-4000-8000-000000000001?announcement=f3a11000-0000-4000-8000-0000000000b1',
+      'cohort_announcement:f3a11000-0000-4000-8000-0000000000b1');
   IF v_after_retract <> 4 THEN
     RAISE EXCEPTION 'FAIL C7B — retracting the newest notice should have re-pointed all 4 badges at the still-live older notice; % carry it.', v_after_retract;
   END IF;
 
   -- Now a fresh notice, and a retraction of an OLDER one. The badge has moved
   -- on, so nothing should be deleted.
-  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body)
+  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body, created_at)
   VALUES ('f3a11000-0000-4000-8000-0000000000b3', 'f3a11000-0000-4000-8000-000000000001',
           NULL, 'f3a11000-0000-4000-8000-000000000010',
-          'Still current', 'This one stays.');
+          'Still current', 'This one stays.',
+          transaction_timestamp() + interval '12 seconds');
 
   UPDATE public.cohort_announcements
   SET deleted_at = now()
@@ -570,15 +590,17 @@ DECLARE
   v_kept integer;
   v_pref text := repeat('Same opening paragraph. ', 8);   -- >140 chars shared
 BEGIN
-  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body)
+  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body, created_at)
   VALUES ('f3a11000-0000-4000-8000-0000000000c1', 'f3a11000-0000-4000-8000-000000000001',
           NULL, 'f3a11000-0000-4000-8000-000000000010',
-          'Weekly note', v_pref || 'FIRST tail.');
+          'Weekly note', v_pref || 'FIRST tail.',
+          transaction_timestamp() + interval '20 seconds');
 
-  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body)
+  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body, created_at)
   VALUES ('f3a11000-0000-4000-8000-0000000000c2', 'f3a11000-0000-4000-8000-000000000001',
           NULL, 'f3a11000-0000-4000-8000-000000000010',
-          'Weekly note', v_pref || 'SECOND tail.');
+          'Weekly note', v_pref || 'SECOND tail.',
+          transaction_timestamp() + interval '21 seconds');
 
   -- Badges now show c2. Retract c1 — identical title, identical 140-char prefix.
   UPDATE public.cohort_announcements SET deleted_at = now()
@@ -588,7 +610,9 @@ BEGIN
   WHERE n.type = 'room_announcement'
     AND n.link = '/cohort/f3a11000-0000-4000-8000-000000000001'
     AND n.is_read = false
-    AND n.link_url = 'cohort_announcement:f3a11000-0000-4000-8000-0000000000c2';
+    AND n.link_url IN (
+      '/cohort/f3a11000-0000-4000-8000-000000000001?announcement=f3a11000-0000-4000-8000-0000000000c2',
+      'cohort_announcement:f3a11000-0000-4000-8000-0000000000c2');
   IF v_kept <> 4 THEN
     RAISE EXCEPTION 'FAIL C7C — retracting a notice with the same title and the same 140-char body prefix took the LIVE notice''s badges: % of 4 survived.', v_kept;
   END IF;
@@ -612,15 +636,17 @@ DO $$
 DECLARE
   v_a2_kept integer;
 BEGIN
-  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body)
+  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body, created_at)
   VALUES ('f3a11000-0000-4000-8000-0000000000d1', 'f3a11000-0000-4000-8000-000000000001',
           'f3a11000-0000-4000-8000-000000000002', 'f3a11000-0000-4000-8000-000000000010',
-          'Templated notice', 'Identical wording in both batches.');
+          'Templated notice', 'Identical wording in both batches.',
+          transaction_timestamp() + interval '30 seconds');
 
-  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body)
+  INSERT INTO public.cohort_announcements (id, offering_id, batch_id, author_id, title, body, created_at)
   VALUES ('f3a11000-0000-4000-8000-0000000000d2', 'f3a11000-0000-4000-8000-000000000001',
           'f3a11000-0000-4000-8000-000000000003', 'f3a11000-0000-4000-8000-000000000010',
-          'Templated notice', 'Identical wording in both batches.');
+          'Templated notice', 'Identical wording in both batches.',
+          transaction_timestamp() + interval '31 seconds');
 
   -- Retract batch A1's copy only.
   UPDATE public.cohort_announcements SET deleted_at = now()
@@ -630,15 +656,376 @@ BEGIN
   WHERE n.type = 'room_announcement'
     AND n.link = '/cohort/f3a11000-0000-4000-8000-000000000001'
     AND n.is_read = false
-    AND n.link_url = 'cohort_announcement:f3a11000-0000-4000-8000-0000000000d2';
-  IF v_a2_kept < 1 THEN
-    RAISE EXCEPTION 'FAIL C7D — retracting batch A1''s notice cleared batch A2''s badges: % still point at A2''s own live notice.', v_a2_kept;
+    AND n.link_url IN (
+      '/cohort/f3a11000-0000-4000-8000-000000000001?announcement=f3a11000-0000-4000-8000-0000000000d2',
+      'cohort_announcement:f3a11000-0000-4000-8000-0000000000d2');
+  IF v_a2_kept <> 2 THEN
+    RAISE EXCEPTION 'FAIL C7D — retracting batch A1''s notice left % badges on A2''s private notice; expected exactly its two recipients, so either delivery was lost or another batch received it.', v_a2_kept;
   END IF;
 
   UPDATE public.cohort_announcements SET deleted_at = now()
    WHERE id = 'f3a11000-0000-4000-8000-0000000000d2';
 
   RAISE NOTICE 'PASS C7D — the retract arm is scoped by recipient, so one batch''s retraction leaves the other batch''s inbox alone.';
+END $$;
+
+
+----------------------------------------------------------------------
+-- C7F. A TRANSFERRED MEMBER NEVER RECEIVES THEIR REVOKED BATCH'S COPY.
+--      This is the critical disclosure regression. Transfer H receives an A1
+--      notice, moves to A2 (leaving active A2 + revoked A1 history), then holds
+--      A2's newer badge. Retracting A2 must not re-point that shipped inbox row
+--      to A1's private title/body merely because the revoked row still exists.
+----------------------------------------------------------------------
+UPDATE public.notifications
+SET is_read = true
+WHERE type = 'room_announcement'
+  AND link = '/cohort/f3a11000-0000-4000-8000-000000000001'
+  AND is_read = false;
+
+INSERT INTO public.cohort_room_members
+  (user_id, offering_id, batch_id, role, source, status)
+VALUES
+  ('f3a11000-0000-4000-8000-000000000018',
+   'f3a11000-0000-4000-8000-000000000001',
+   'f3a11000-0000-4000-8000-000000000002',
+   'member', 'derived', 'active');
+
+INSERT INTO public.cohort_announcements
+  (id, offering_id, batch_id, author_id, title, body, created_at)
+VALUES
+  ('f3a11000-0000-4000-8000-0000000000e1',
+   'f3a11000-0000-4000-8000-000000000001',
+   'f3a11000-0000-4000-8000-000000000002',
+   'f3a11000-0000-4000-8000-000000000010',
+   'A1 PRIVATE TRANSFER CANARY',
+   'A1_PRIVATE_BODY_MUST_NEVER_ENTER_TRANSFER_H_INBOX',
+   transaction_timestamp() + interval '40 seconds');
+
+-- The ordinary transfer shape: R0 revokes rather than deleting A1, then the
+-- destination membership becomes active.
+UPDATE public.cohort_room_members
+SET status = 'revoked'
+WHERE user_id = 'f3a11000-0000-4000-8000-000000000018'
+  AND offering_id = 'f3a11000-0000-4000-8000-000000000001'
+  AND batch_id = 'f3a11000-0000-4000-8000-000000000002';
+
+INSERT INTO public.cohort_room_members
+  (user_id, offering_id, batch_id, role, source, status)
+VALUES
+  ('f3a11000-0000-4000-8000-000000000018',
+   'f3a11000-0000-4000-8000-000000000001',
+   'f3a11000-0000-4000-8000-000000000003',
+   'member', 'derived', 'active');
+
+INSERT INTO public.cohort_announcements
+  (id, offering_id, batch_id, author_id, title, body, created_at)
+VALUES
+  ('f3a11000-0000-4000-8000-0000000000e2',
+   'f3a11000-0000-4000-8000-000000000001',
+   'f3a11000-0000-4000-8000-000000000003',
+   'f3a11000-0000-4000-8000-000000000010',
+   'A2 current notice', 'Transfer H may read this one.',
+   transaction_timestamp() + interval '41 seconds');
+
+UPDATE public.cohort_announcements SET deleted_at = clock_timestamp()
+WHERE id = 'f3a11000-0000-4000-8000-0000000000e2';
+
+DO $$
+DECLARE
+  v_leaks integer;
+BEGIN
+  SELECT count(*) INTO v_leaks
+  FROM public.notifications n
+  WHERE n.user_id = 'f3a11000-0000-4000-8000-000000000018'
+    AND n.type = 'room_announcement'
+    AND n.link = '/cohort/f3a11000-0000-4000-8000-000000000001'
+    AND n.is_read = false
+    AND (
+      n.title = 'A1 PRIVATE TRANSFER CANARY'
+      OR n.body = 'A1_PRIVATE_BODY_MUST_NEVER_ENTER_TRANSFER_H_INBOX'
+      OR n.link_url LIKE '%f3a11000-0000-4000-8000-0000000000e1%'
+    );
+
+  IF v_leaks <> 0 THEN
+    RAISE EXCEPTION 'FAIL C7F — Transfer H is active in A2 but their inbox contains % unread copy/copies of revoked A1''s private notice.', v_leaks;
+  END IF;
+  RAISE NOTICE 'PASS C7F — a transferred member''s revoked A1 row cannot re-point their active A2 inbox badge onto A1''s private title or body.';
+END $$;
+
+UPDATE public.cohort_announcements SET deleted_at = clock_timestamp()
+WHERE id = 'f3a11000-0000-4000-8000-0000000000e1';
+
+
+----------------------------------------------------------------------
+-- C7G. OFFERING-WIDE STAFF KEEP BATCH-SCOPED SURVIVORS.
+--      Host G is a non-author NULL-batch host. They receive both A1 notices;
+--      retracting the newer one must fall back to the older A1 notice, not an
+--      unrelated offering-wide notice and not deletion. This is the role arm
+--      the vulnerable survivor LATERAL omitted (`NULL = batch` is never true).
+----------------------------------------------------------------------
+UPDATE public.notifications
+SET is_read = true
+WHERE type = 'room_announcement'
+  AND link = '/cohort/f3a11000-0000-4000-8000-000000000001'
+  AND is_read = false;
+
+INSERT INTO public.cohort_room_members
+  (user_id, offering_id, batch_id, role, source, status)
+VALUES
+  ('f3a11000-0000-4000-8000-000000000017',
+   'f3a11000-0000-4000-8000-000000000001', NULL,
+   'host', 'manual', 'active');
+
+INSERT INTO public.cohort_announcements
+  (id, offering_id, batch_id, author_id, title, body, created_at)
+VALUES
+  ('f3a11000-0000-4000-8000-0000000000e3',
+   'f3a11000-0000-4000-8000-000000000001',
+   'f3a11000-0000-4000-8000-000000000002',
+   'f3a11000-0000-4000-8000-000000000010',
+   'Host-visible A1 survivor', 'Offering-wide staff must retain this.',
+   transaction_timestamp() + interval '42 seconds'),
+  ('f3a11000-0000-4000-8000-0000000000e4',
+   'f3a11000-0000-4000-8000-000000000001',
+   'f3a11000-0000-4000-8000-000000000002',
+   'f3a11000-0000-4000-8000-000000000010',
+   'Host-visible A1 current', 'This one is retracted.',
+   transaction_timestamp() + interval '43 seconds');
+
+UPDATE public.cohort_announcements SET deleted_at = clock_timestamp()
+WHERE id = 'f3a11000-0000-4000-8000-0000000000e4';
+
+DO $$
+DECLARE
+  v_kept integer;
+BEGIN
+  SELECT count(*) INTO v_kept
+  FROM public.notifications n
+  WHERE n.user_id = 'f3a11000-0000-4000-8000-000000000017'
+    AND n.type = 'room_announcement'
+    AND n.is_read = false
+    AND n.title = 'Host-visible A1 survivor'
+    AND n.link_url = '/cohort/f3a11000-0000-4000-8000-000000000001?announcement=f3a11000-0000-4000-8000-0000000000e3';
+
+  IF v_kept <> 1 THEN
+    RAISE EXCEPTION 'FAIL C7G — NULL-batch Host G kept % badge(s) for A1''s live survivor; expected exactly one.', v_kept;
+  END IF;
+  RAISE NOTICE 'PASS C7G — a NULL-batch host keeps the newest batch-scoped survivor they are entitled to read.';
+END $$;
+
+UPDATE public.cohort_announcements SET deleted_at = clock_timestamp()
+WHERE id = 'f3a11000-0000-4000-8000-0000000000e3';
+
+
+----------------------------------------------------------------------
+-- C7H. RETRACTION CLEANS UP RECIPIENTS WHO MOVED AFTER DELIVERY.
+--      The badge proves post-time eligibility. Cleanup must key on its identity,
+--      not re-evaluate the old recipient set after Transfer H moves to A2.
+----------------------------------------------------------------------
+UPDATE public.cohort_room_members SET status = 'active'
+WHERE user_id = 'f3a11000-0000-4000-8000-000000000018'
+  AND offering_id = 'f3a11000-0000-4000-8000-000000000001'
+  AND batch_id = 'f3a11000-0000-4000-8000-000000000002';
+UPDATE public.cohort_room_members SET status = 'revoked'
+WHERE user_id = 'f3a11000-0000-4000-8000-000000000018'
+  AND offering_id = 'f3a11000-0000-4000-8000-000000000001'
+  AND batch_id = 'f3a11000-0000-4000-8000-000000000003';
+
+UPDATE public.notifications
+SET is_read = true
+WHERE user_id = 'f3a11000-0000-4000-8000-000000000018'
+  AND type = 'room_announcement'
+  AND link = '/cohort/f3a11000-0000-4000-8000-000000000001'
+  AND is_read = false;
+
+INSERT INTO public.cohort_announcements
+  (id, offering_id, batch_id, author_id, title, body, created_at)
+VALUES
+  ('f3a11000-0000-4000-8000-0000000000e5',
+   'f3a11000-0000-4000-8000-000000000001',
+   'f3a11000-0000-4000-8000-000000000002',
+   'f3a11000-0000-4000-8000-000000000010',
+   'Delivered before transfer', 'Must disappear after retraction.',
+   transaction_timestamp() + interval '44 seconds');
+
+UPDATE public.cohort_room_members SET status = 'revoked'
+WHERE user_id = 'f3a11000-0000-4000-8000-000000000018'
+  AND offering_id = 'f3a11000-0000-4000-8000-000000000001'
+  AND batch_id = 'f3a11000-0000-4000-8000-000000000002';
+UPDATE public.cohort_room_members SET status = 'active'
+WHERE user_id = 'f3a11000-0000-4000-8000-000000000018'
+  AND offering_id = 'f3a11000-0000-4000-8000-000000000001'
+  AND batch_id = 'f3a11000-0000-4000-8000-000000000003';
+
+UPDATE public.cohort_announcements SET deleted_at = clock_timestamp()
+WHERE id = 'f3a11000-0000-4000-8000-0000000000e5';
+
+DO $$
+DECLARE
+  v_orphans integer;
+BEGIN
+  SELECT count(*) INTO v_orphans
+  FROM public.notifications n
+  WHERE n.user_id = 'f3a11000-0000-4000-8000-000000000018'
+    AND n.type = 'room_announcement'
+    AND n.is_read = false
+    AND (
+      n.title = 'Delivered before transfer'
+      OR n.link_url LIKE '%f3a11000-0000-4000-8000-0000000000e5%'
+    );
+  IF v_orphans <> 0 THEN
+    RAISE EXCEPTION 'FAIL C7H — Transfer H retained % unread badge(s) for a retracted A1 notice after moving to A2.', v_orphans;
+  END IF;
+  RAISE NOTICE 'PASS C7H — retraction cleans the badge delivered before a membership transfer instead of orphaning it.';
+END $$;
+
+
+----------------------------------------------------------------------
+-- C7I. AN ALREADY-READ NOTICE NEVER RESURFACES AS BRAND NEW.
+--      Read the older notice, receive a newer one, retract the newer one. The
+--      older badge remains one read history row; there must be no second unread
+--      copy floated to the top with a fresh timestamp.
+----------------------------------------------------------------------
+UPDATE public.notifications
+SET is_read = true
+WHERE type = 'room_announcement'
+  AND link = '/cohort/f3a11000-0000-4000-8000-000000000001'
+  AND is_read = false;
+
+INSERT INTO public.cohort_announcements
+  (id, offering_id, batch_id, author_id, title, body, created_at)
+VALUES
+  ('f3a11000-0000-4000-8000-0000000000e6',
+   'f3a11000-0000-4000-8000-000000000001', NULL,
+   'f3a11000-0000-4000-8000-000000000010',
+   'Already read notice', 'This history must stay read.',
+   transaction_timestamp() + interval '45 seconds');
+
+UPDATE public.notifications
+SET is_read = true
+WHERE type = 'room_announcement'
+  AND link = '/cohort/f3a11000-0000-4000-8000-000000000001'
+  AND is_read = false;
+
+INSERT INTO public.cohort_announcements
+  (id, offering_id, batch_id, author_id, title, body, created_at)
+VALUES
+  ('f3a11000-0000-4000-8000-0000000000e7',
+   'f3a11000-0000-4000-8000-000000000001', NULL,
+   'f3a11000-0000-4000-8000-000000000010',
+   'Retracted after read', 'Pull this current notice.',
+   transaction_timestamp() + interval '46 seconds');
+
+UPDATE public.cohort_announcements SET deleted_at = clock_timestamp()
+WHERE id = 'f3a11000-0000-4000-8000-0000000000e7';
+
+DO $$
+DECLARE
+  v_unread integer;
+  v_read   integer;
+BEGIN
+  SELECT count(*) INTO v_unread
+  FROM public.notifications n
+  WHERE n.user_id = 'f3a11000-0000-4000-8000-000000000011'
+    AND n.type = 'room_announcement'
+    AND n.link = '/cohort/f3a11000-0000-4000-8000-000000000001'
+    AND n.is_read = false;
+
+  SELECT count(*) INTO v_read
+  FROM public.notifications n
+  WHERE n.user_id = 'f3a11000-0000-4000-8000-000000000011'
+    AND n.type = 'room_announcement'
+    AND n.is_read = true
+    AND n.link_url = '/cohort/f3a11000-0000-4000-8000-000000000001?announcement=f3a11000-0000-4000-8000-0000000000e6';
+
+  IF v_unread <> 0 OR v_read <> 1 THEN
+    RAISE EXCEPTION 'FAIL C7I — member A has % unread room badges and % read rows for the older notice; expected 0 unread and exactly 1 read history row.', v_unread, v_read;
+  END IF;
+  RAISE NOTICE 'PASS C7I — retracting the current notice does not manufacture a second unread copy of an already-read older notice.';
+END $$;
+
+UPDATE public.cohort_announcements SET deleted_at = clock_timestamp()
+WHERE id = 'f3a11000-0000-4000-8000-0000000000e6';
+
+
+----------------------------------------------------------------------
+-- C7J. ONE PREDICATE, BOTH SEMANTICS AND WIRING.
+--      The semantic probes reproduce the two critical shapes directly. The
+--      catalogue probes prevent a fifth handwritten predicate from silently
+--      replacing the helper in RLS, fan-out, board reads or retraction.
+----------------------------------------------------------------------
+DO $$
+DECLARE
+  v_policy text;
+  v_targets text;
+  v_board text;
+  v_trigger text;
+  v_bad_links integer;
+BEGIN
+  IF public.room_announcement_user_can_read(
+       'f3a11000-0000-4000-8000-000000000018',
+       'f3a11000-0000-4000-8000-000000000001',
+       'f3a11000-0000-4000-8000-000000000002') THEN
+    RAISE EXCEPTION 'FAIL C7J — the canonical predicate admits Transfer H to revoked batch A1';
+  END IF;
+  IF NOT public.room_announcement_user_can_read(
+       'f3a11000-0000-4000-8000-000000000018',
+       'f3a11000-0000-4000-8000-000000000001',
+       'f3a11000-0000-4000-8000-000000000003') THEN
+    RAISE EXCEPTION 'FAIL C7J — the canonical predicate denies Transfer H their active batch A2';
+  END IF;
+  IF NOT public.room_announcement_user_can_read(
+       'f3a11000-0000-4000-8000-000000000017',
+       'f3a11000-0000-4000-8000-000000000001',
+       'f3a11000-0000-4000-8000-000000000002') THEN
+    RAISE EXCEPTION 'FAIL C7J — the canonical predicate denies NULL-batch Host G batch A1';
+  END IF;
+
+  SELECT pg_get_expr(p.polqual, p.polrelid) INTO v_policy
+  FROM pg_policy p
+  WHERE p.polname = 'ann_member_read'
+    AND p.polrelid = 'public.cohort_announcements'::regclass;
+  SELECT pg_get_functiondef('public.room_announcement_targets(uuid,uuid,uuid)'::regprocedure) INTO v_targets;
+  SELECT pg_get_functiondef('public.get_room_announcements(uuid,integer,integer)'::regprocedure) INTO v_board;
+  SELECT pg_get_functiondef('public.notify_room_on_announcement()'::regprocedure) INTO v_trigger;
+
+  IF v_policy NOT LIKE '%cohort_room_can_read_announcement%'
+     OR v_targets NOT LIKE '%room_announcement_read_grants%'
+     OR v_board NOT LIKE '%cohort_room_can_read_announcement%'
+     OR v_trigger NOT LIKE '%room_announcement_read_grants%' THEN
+    RAISE EXCEPTION 'FAIL C7J — at least one caller no longer delegates announcement visibility to the canonical grant relation';
+  END IF;
+
+  IF has_function_privilege('anon',
+       'public.room_announcement_user_can_read(uuid,uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('authenticated',
+       'public.room_announcement_user_can_read(uuid,uuid,uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL C7J — the arbitrary-user visibility helper is callable by a client role';
+  END IF;
+  IF has_table_privilege('anon',
+       'public.room_announcement_read_grants', 'SELECT')
+     OR has_table_privilege('authenticated',
+       'public.room_announcement_read_grants', 'SELECT')
+     OR has_any_column_privilege('anon',
+       'public.room_announcement_read_grants', 'SELECT')
+     OR has_any_column_privilege('authenticated',
+       'public.room_announcement_read_grants', 'SELECT') THEN
+    RAISE EXCEPTION 'FAIL C7J — the canonical grant relation is selectable by a client role';
+  END IF;
+
+  SELECT count(*) INTO v_bad_links
+  FROM public.notifications n
+  WHERE n.type = 'room_announcement'
+    AND (
+      n.link_url IS NULL
+      OR n.link_url NOT LIKE n.link || '?announcement=%'
+    );
+  IF v_bad_links <> 0 THEN
+    RAISE EXCEPTION 'FAIL C7J — % room notification identities are NULL or non-navigable pseudo-links', v_bad_links;
+  END IF;
+
+  RAISE NOTICE 'PASS C7J — revoked-batch and offering-wide staff semantics agree, every caller delegates to one grant relation, its table/resolver are unreachable by clients, and every stored identity is a valid room URL.';
 END $$;
 
 
@@ -969,7 +1356,7 @@ END $$;
 
 DO $$
 BEGIN
-  RAISE NOTICE 'ALL CASES PASSED — the announcement fan-out is correct, capped, batch-scoped and free of applicant copy; the board read is scoped, ordered, paged and refused to outsiders; and the roster enumerator behind the fan-out is reachable by no client role. Rolling the fixture world back now.';
+  RAISE NOTICE 'ALL CASES PASSED — fan-out and retraction share one visibility grant relation; transfers, revoked history, offering-wide staff and read history are safe; the volume cap is batch-scoped; the board read is scoped, ordered, paged and free of applicant copy; and internal roster/visibility helpers are unreachable by client roles. Rolling the fixture world back now.';
 END $$;
 
 ROLLBACK;

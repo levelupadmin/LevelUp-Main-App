@@ -194,10 +194,11 @@ END $$;
 --    notified about nothing, which matches every read policy in R0.
 --
 --    THE AUTHOR IS EXCLUDED. A mentor does not need a badge for their own post.
---    The `p_author IS NULL` arm matters twice: `author_id` is nullable with ON
---    DELETE SET NULL (20260729100100 §1) so a bare `m.user_id <> p_author` would
---    evaluate NULL for every row and notify nobody, AND §3's retract arm passes
---    NULL deliberately to reach EVERY recipient of the notice being pulled.
+--    The `p_author IS NULL` arm preserves fan-out after `author_id` becomes NULL
+--    through ON DELETE SET NULL (20260729100100 §1): a bare
+--    `m.user_id <> p_author` would evaluate NULL for every row and notify nobody.
+--    The retract arm below passes NEW.author_id, not NULL. Its current-membership
+--    scoping is superseded by 20260803120000's identity-only cleanup.
 --
 --    NOT REACHABLE BY ANY CLIENT ROLE, AND THAT TAKES TWO REVOKES. This is
 --    exactly 20260729100200's ungranted class: a SECURITY DEFINER function whose
@@ -377,11 +378,10 @@ BEGIN
   -- PREFIX. Two batches given the same templated notice, or two notices sharing
   -- an opening paragraph, were therefore the same row to the retract arm.
   --
-  -- `link_url` is the right home for this: it is nullable, no notifications
-  -- consumer reads it (NotificationDropdown navigates on `link`; useNotifications
-  -- never selects it), and the one other writer — 20260526180000's
-  -- submission_reviewed insert — is a different `type`, so the namespace prefix
-  -- keeps the two from ever being confused.
+  -- `link_url` is nullable and NotificationDropdown navigates on `link`, but
+  -- useNotifications selects `*`, so this raw value does ship to clients even
+  -- though no current component renders or navigates it. 20260803120000 replaces
+  -- the pseudo-scheme with a valid room URL while retaining the notice UUID.
   v_self  := 'cohort_announcement:' || NEW.id::text;
 
   IF TG_OP = 'UPDATE' THEN
