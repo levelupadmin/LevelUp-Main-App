@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global console, process, URL */
+/* global AbortSignal, console, fetch, process, URL */
 
 /**
  * One fail-fast release gate for the integrated cohort release candidate.
@@ -10,20 +10,36 @@
  * checkout is linked to the exact production ref. Nothing in this script
  * applies a production migration or deploys anything.
  *
- * The local room-access harness needs production-like relation grants; without
- * them PostgreSQL can deny at GRANT before RLS is exercised and yield a vacuous
- * green result. `shadow-grants.sql` both arms the matching defaults and grants
- * every relation already created by the full reset, so the attack runs against
- * that freshly replayed schema without attempting an unsafe second replay over
- * non-public state such as Storage buckets.
+ * Database QA uses a throwaway Supabase workdir and stack. Its empty local
+ * database is reset before any repo migration is visible, production-like
+ * default grants are armed, the full repo migration tree is applied exactly
+ * once, and the grants are completed afterward. That ordering is what makes the
+ * room RLS attack non-vacuous without replaying migrations over populated
+ * Storage/Auth state.
  */
 
-import { spawnSync } from "node:child_process";
-import { accessSync, constants, existsSync, readFileSync } from "node:fs";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import {
+  accessSync,
+  closeSync,
+  constants,
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const DISPOSABLE_PREFIX = join(tmpdir(), "levelup-release-gate-");
 const PROD_REF = "ivkvluezuiojovpotlyb";
 const IDENTITY_MARKER_SUBJECT = "fix(identity): gate intake provisioning per offering";
 const EXPECTED_PRODUCTION_MIGRATIONS = [
@@ -56,14 +72,17 @@ const SUPABASE = ["npx", ["-y", "supabase@latest"]];
 const REMOTE = process.env.RELEASE_GATE_REMOTE || "0";
 const startedAt = Date.now();
 let stepNumber = 0;
+let disposableWorkdir = null;
+let functionServer = null;
+let functionServerLogPath = null;
 
 class GateFailure extends Error {}
 
 function usage() {
   console.log(`Usage: npm run release:gate
 
-Runs the complete local release gate. The command starts the local Supabase
-stack when necessary and rebuilds its database, so local data is disposable.
+Runs the complete release gate. Database checks stop the repo's disposable
+local Supabase stack, delete its local volumes, and use a fresh temporary stack.
 
 Optional read-only production migration check:
   RELEASE_GATE_REMOTE=1 npm run release:gate
@@ -122,6 +141,26 @@ function redactAssignments(text) {
     .split(/\r?\n/)
     .filter((line) => !/^[A-Z_][A-Z0-9_]*=/.test(line.trim()))
     .join("\n")
+    .trim();
+}
+
+function functionServerLogExcerpt() {
+  let raw = "";
+  if (functionServerLogPath && existsSync(functionServerLogPath)) {
+    raw += readFileSync(functionServerLogPath, "utf8");
+  }
+  if (disposableWorkdir) {
+    const container = `supabase_edge_runtime_${basename(disposableWorkdir)}`;
+    const dockerLogs = capture("docker", ["logs", "--tail", "200", container]);
+    if (!dockerLogs.error && dockerLogs.status === 0) {
+      raw += `\n${dockerLogs.stdout || ""}\n${dockerLogs.stderr || ""}`;
+    }
+  }
+  if (!raw.trim()) return "";
+  raw = raw.slice(-16_000);
+  return redactAssignments(raw)
+    .replace(/\b[a-f0-9]{48,}\b/gi, "<redacted-hex>")
+    .replace(/\beyJ[A-Za-z0-9_-]{16,}(?:\.[A-Za-z0-9_-]{16,}){1,2}\b/g, "<redacted-jwt>")
     .trim();
 }
 
@@ -188,23 +227,13 @@ function localUrl(value, label) {
   }
 }
 
-function localSupabaseEnvironment() {
-  const label = "resolve the disposable local Supabase environment";
+function localSupabaseEnvironment(workdir) {
+  const label = "resolve the bare disposable Supabase environment";
   const start = begin(label);
-  let status = capture(SUPABASE[0], supabaseArgs(["status", "-o", "env"]));
-
-  if (status.status !== 0) {
-    console.log("Local Supabase is not running; starting it without printing development keys.");
-    const launch = capture(SUPABASE[0], supabaseArgs(["start", "-o", "env"]));
-    if (launch.error) {
-      throw new GateFailure(`local Supabase could not start: ${launch.error.message}`);
-    }
-    if (launch.status !== 0) {
-      const detail = redactAssignments(launch.stderr) || "Supabase CLI returned no diagnostic.";
-      throw new GateFailure(`local Supabase could not start (exit ${launch.status ?? "unknown"}): ${detail}`);
-    }
-    status = capture(SUPABASE[0], supabaseArgs(["status", "-o", "env"]));
-  }
+  const status = capture(
+    SUPABASE[0],
+    supabaseArgs(["status", "--workdir", workdir, "-o", "env"]),
+  );
 
   if (status.error) {
     throw new GateFailure(`supabase status could not start: ${status.error.message}`);
@@ -219,6 +248,75 @@ function localSupabaseEnvironment() {
   localUrl(env.DB_URL, "DB_URL");
   complete(label, start);
   return env;
+}
+
+function runCapturedSupabase(label, args) {
+  const start = begin(label);
+  const result = capture(SUPABASE[0], supabaseArgs(args));
+  if (result.error) {
+    throw new GateFailure(`${label} could not start: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const detail = redactAssignments(result.stderr) || "Supabase CLI returned no diagnostic.";
+    throw new GateFailure(`${label} failed (exit ${result.status ?? "unknown"}): ${detail}`);
+  }
+  complete(label, start);
+}
+
+function prepareIdentityFunctions(workdir) {
+  const source = join(ROOT, "supabase", "functions");
+  const destination = join(workdir, "supabase", "functions");
+  mkdirSync(destination, { recursive: true });
+  for (const name of [
+    "_shared",
+    "claim-application",
+    "tally-application-webhook",
+    "verify-email-otp",
+  ]) {
+    cpSync(join(source, name), join(destination, name), { recursive: true });
+  }
+
+  const tallySecret = randomBytes(32).toString("hex");
+  const otpPepper = randomBytes(32).toString("hex");
+  const envFile = join(workdir, "identity-functions.env");
+  writeFileSync(
+    envFile,
+    `TALLY_SIGNING_SECRET=${tallySecret}\nEMAIL_OTP_PEPPER=${otpPepper}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+  return { envFile, otpPepper, tallySecret };
+}
+
+function createBareLocalStack() {
+  run(
+    "stop and discard the repo's current local Supabase stack",
+    SUPABASE[0],
+    supabaseArgs(["stop", "--workdir", ROOT, "--no-backup"]),
+  );
+
+  const workdir = mkdtempSync(DISPOSABLE_PREFIX);
+  disposableWorkdir = workdir;
+  run(
+    "initialize a bare temporary Supabase workdir",
+    SUPABASE[0],
+    supabaseArgs(["init", "--workdir", workdir, "--yes"]),
+  );
+  const identity = prepareIdentityFunctions(workdir);
+
+  runCapturedSupabase("start the bare temporary Supabase stack", [
+    "start",
+    "--workdir",
+    workdir,
+    "-o",
+    "env",
+  ]);
+  run(
+    "full bare local Supabase reset (no repo migrations present)",
+    SUPABASE[0],
+    supabaseArgs(["db", "reset", "--workdir", workdir, "--local", "--no-seed"]),
+  );
+
+  return { ...identity, ...localSupabaseEnvironment(workdir), workdir };
 }
 
 function executable(path) {
@@ -269,6 +367,208 @@ function resolvePsql() {
   throw new GateFailure(
     "psql was not found. Install libpq or set RELEASE_GATE_PSQL to its executable path.",
   );
+}
+
+async function startIdentityFunctionServer(local) {
+  const label = "serve the three identity functions on the disposable stack";
+  const start = begin(label);
+  let launchError = null;
+  functionServerLogPath = join(local.workdir, "identity-functions.log");
+  const logFd = openSync(functionServerLogPath, "w", 0o600);
+  try {
+    functionServer = spawn(
+      SUPABASE[0],
+      supabaseArgs([
+        "functions",
+        "serve",
+        "verify-email-otp",
+        "--workdir",
+        local.workdir,
+        "--no-verify-jwt",
+        "--env-file",
+        local.envFile,
+      ]),
+      {
+        cwd: ROOT,
+        detached: true,
+        env: process.env,
+        stdio: ["ignore", logFd, logFd],
+      },
+    );
+  } finally {
+    closeSync(logFd);
+  }
+  functionServer.on("error", (error) => {
+    launchError = error;
+  });
+
+  const deadline = Date.now() + 120_000;
+  const readyMarker = "Serving functions on ";
+  const expectedRoutes = ["claim-application", "tally-application-webhook", "verify-email-otp"];
+  const assertRunning = () => {
+    if (launchError) {
+      throw new GateFailure(`${label} could not start: ${launchError.message}`);
+    }
+    if (functionServer.exitCode !== null || functionServer.signalCode !== null) {
+      const result = functionServer.signalCode
+        ? `signal ${functionServer.signalCode}`
+        : `exit ${functionServer.exitCode}`;
+      throw new GateFailure(
+        `${label} exited before it became ready (${result}); logs were suppressed.`,
+      );
+    }
+  };
+
+  while (Date.now() < deadline) {
+    assertRunning();
+    const log = readFileSync(functionServerLogPath, "utf8");
+    if (log.includes(readyMarker) && expectedRoutes.every((route) => log.includes(`/functions/v1/${route}`))) {
+      break;
+    }
+    await delay(100);
+  }
+  const announcedLog = readFileSync(functionServerLogPath, "utf8");
+  if (
+    !announcedLog.includes(readyMarker) ||
+    !expectedRoutes.every((route) => announcedLog.includes(`/functions/v1/${route}`))
+  ) {
+    throw new GateFailure(`${label} did not announce all three routes within 120 seconds.`);
+  }
+
+  const probes = [
+    {
+      body: {},
+      error: "missing_application_id",
+      name: "claim-application",
+      status: 400,
+    },
+    {
+      body: {},
+      error: "Invalid signature",
+      name: "tally-application-webhook",
+      status: 401,
+    },
+    {
+      body: {},
+      error: "invalid_email",
+      name: "verify-email-otp",
+      status: 400,
+    },
+  ];
+  const headers = {
+    apikey: local.ANON_KEY,
+    Authorization: `Bearer ${local.ANON_KEY}`,
+    "Content-Type": "application/json",
+  };
+
+  for (const probe of probes) {
+    let lastProbe = "no response";
+    let ready = false;
+    while (Date.now() < deadline) {
+      assertRunning();
+      try {
+        const logOffset = readFileSync(functionServerLogPath, "utf8").length;
+        const response = await fetch(`${local.API_URL}/functions/v1/${probe.name}`, {
+          body: JSON.stringify(probe.body),
+          headers,
+          method: "POST",
+          signal: AbortSignal.timeout(5_000),
+        });
+        const bodyText = await response.text();
+        let body = null;
+        try {
+          body = JSON.parse(bodyText);
+        } catch {
+          // A gateway or compiler response is not a handler-level readiness proof.
+        }
+        lastProbe = `HTTP ${response.status}: ${bodyText.slice(0, 300)}`;
+
+        const requestMarker = `serving the request with supabase/functions/${probe.name}`;
+        const markerDeadline = Math.min(deadline, Date.now() + 5_000);
+        let handledByThisLaunch = false;
+        while (Date.now() < markerDeadline) {
+          assertRunning();
+          const appendedLog = readFileSync(functionServerLogPath, "utf8").slice(logOffset);
+          if (appendedLog.includes(requestMarker)) {
+            handledByThisLaunch = true;
+            break;
+          }
+          await delay(50);
+        }
+
+        if (
+          handledByThisLaunch &&
+          response.status === probe.status &&
+          body?.error === probe.error
+        ) {
+          ready = true;
+          break;
+        }
+      } catch (error) {
+        lastProbe = error instanceof Error ? error.message : String(error);
+      }
+      await delay(500);
+    }
+    if (!ready) {
+      throw new GateFailure(`${label} did not warm ${probe.name} within 120 seconds; last probe was ${lastProbe}.`);
+    }
+    assertRunning();
+  }
+
+  assertRunning();
+  complete(label, start);
+}
+
+function stopIdentityFunctionServer() {
+  if (!functionServer) return;
+  if (functionServer.exitCode === null && functionServer.pid) {
+    try {
+      process.kill(-functionServer.pid, "SIGTERM");
+    } catch {
+      functionServer.kill("SIGTERM");
+    }
+  }
+  functionServer = null;
+}
+
+function safeDisposableWorkdir(workdir) {
+  return Boolean(workdir) && resolve(workdir).startsWith(resolve(DISPOSABLE_PREFIX));
+}
+
+function removeDisposableWorkdir(workdir) {
+  if (!safeDisposableWorkdir(workdir)) {
+    throw new GateFailure(`refusing to remove unexpected temporary path ${JSON.stringify(workdir)}.`);
+  }
+  rmSync(workdir, { force: true, recursive: true });
+}
+
+function disposeBareLocalStack() {
+  stopIdentityFunctionServer();
+  if (!disposableWorkdir) return;
+  const workdir = disposableWorkdir;
+  run(
+    "stop and discard the temporary Supabase stack",
+    SUPABASE[0],
+    supabaseArgs(["stop", "--workdir", workdir, "--no-backup"]),
+  );
+  removeDisposableWorkdir(workdir);
+  disposableWorkdir = null;
+}
+
+function cleanupBareLocalStackAfterFailure() {
+  stopIdentityFunctionServer();
+  if (!disposableWorkdir || !safeDisposableWorkdir(disposableWorkdir)) return;
+  const workdir = disposableWorkdir;
+  capture(
+    SUPABASE[0],
+    supabaseArgs(["stop", "--workdir", workdir, "--no-backup"]),
+  );
+  try {
+    removeDisposableWorkdir(workdir);
+  } catch {
+    // Keep the original gate failure as the actionable error.
+  }
+  disposableWorkdir = null;
 }
 
 function psqlFile(label, psql, dbUrl, file, variables = []) {
@@ -340,11 +640,17 @@ function identityStaticBase() {
     throw new GateFailure(`identity release marker ${markerCommit} has no resolvable first parent.`);
   }
 
-  return process.env.IDENTITY_SPINE_BASE_REF?.trim() || parent.stdout.trim();
+  return parent.stdout.trim();
 }
 
 function migrationVersions(output) {
-  return [...new Set(String(output || "").match(/\b20\d{12}\b/g) || [])].sort();
+  const versions = [];
+  const plainOutput = String(output || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+  const filename = /(?:^|[\s/•])((?:20)\d{12})_[A-Za-z0-9._-]+\.sql(?=$|\s)/g;
+  for (const match of plainOutput.matchAll(filename)) {
+    versions.push(match[1]);
+  }
+  return versions;
 }
 
 function productionMigrationDryRun(env) {
@@ -353,7 +659,7 @@ function productionMigrationDryRun(env) {
   const result = capture(
     SUPABASE[0],
     supabaseArgs(["db", "push", "--linked", "--dry-run", "--include-all", "--yes"]),
-    { env },
+    { env: { ...env, NO_COLOR: "1" } },
   );
   const versions = migrationVersions(`${result.stdout || ""}\n${result.stderr || ""}`);
 
@@ -368,12 +674,13 @@ function productionMigrationDryRun(env) {
     throw new GateFailure(`${label} failed (${exit}); raw CLI output was suppressed.`);
   }
 
-  const expected = [...EXPECTED_PRODUCTION_MIGRATIONS].sort();
-  const missing = expected.filter((version) => !versions.includes(version));
-  const extra = versions.filter((version) => !expected.includes(version));
-  if (missing.length || extra.length) {
+  const expected = EXPECTED_PRODUCTION_MIGRATIONS;
+  if (JSON.stringify(versions) !== JSON.stringify(expected)) {
+    const missing = expected.filter((version) => !versions.includes(version));
+    const extra = versions.filter((version) => !expected.includes(version));
+    const duplicates = versions.filter((version, index) => versions.indexOf(version) !== index);
     throw new GateFailure(
-      `${label} did not match the 24-version release plan; missing=[${missing.join(", ")}] extra=[${extra.join(", ")}].`,
+      `${label} did not match the ordered 24-version release plan; missing=[${missing.join(", ")}] extra=[${extra.join(", ")}] duplicates=[${duplicates.join(", ")}].`,
     );
   }
 
@@ -389,26 +696,73 @@ try {
   run("git staged whitespace check", "git", ["diff", "--cached", "--check"]);
   run("targeted release-script lint", "npx", ["eslint", "scripts/release-gate.mjs"]);
   run("Vitest suite", "npm", ["test"]);
-  run("integrated TypeScript check", "npx", ["tsc", "--noEmit"]);
+  run("application TypeScript check", "npx", [
+    "tsc",
+    "--noEmit",
+    "-p",
+    "tsconfig.app.json",
+    "--incremental",
+    "false",
+  ]);
   run("Supabase edge-function exact-baseline typecheck", "npm", ["run", "typecheck:functions"]);
   run("identity intake static controls", "node", ["qa-harness/identity-intake-controls.spec.mjs"]);
   run(
-    `identity-spine static suite (base ${identityBase.slice(0, 12)})`,
+    `phase-scoped identity static contract in integrated-release mode — not live sign-off (base ${identityBase.slice(0, 12)})`,
     "node",
     ["qa-harness/identity-spine.spec.mjs", "--static-only"],
-    { env: { ...process.env, IDENTITY_SPINE_BASE_REF: identityBase } },
+    {
+      env: {
+        ...process.env,
+        IDENTITY_SPINE_BASE_REF: identityBase,
+        IDENTITY_SPINE_INTEGRATED_RELEASE: "yes",
+      },
+    },
   );
   run("production Vite build", "npm", ["run", "build"]);
 
-  const local = localSupabaseEnvironment();
   const psql = resolvePsql();
   console.log(`Using psql at ${psql}`);
+  const local = createBareLocalStack();
+  psqlFile(
+    "arm production-like grants before any repo migration exists",
+    psql,
+    local.DB_URL,
+    "qa-harness/shadow-grants.sql",
+    [["ROOM_QA_SHADOW", "1"]],
+  );
+  run(
+    "apply the full repo migration tree exactly once",
+    SUPABASE[0],
+    supabaseArgs(["db", "push", "--db-url", local.DB_URL, "--include-all", "--yes"]),
+  );
+  psqlFile(
+    "complete production-like grants after repo migrations",
+    psql,
+    local.DB_URL,
+    "qa-harness/shadow-grants.sql",
+    [["ROOM_QA_SHADOW", "1"]],
+  );
+  run(
+    "temporary Supabase schema lint",
+    SUPABASE[0],
+    supabaseArgs([
+      "db",
+      "lint",
+      "--db-url",
+      local.DB_URL,
+      "--level",
+      "warning",
+      "--fail-on",
+      "error",
+    ]),
+  );
+
   const localQaEnv = {
     ...process.env,
     ROOM_QA_ANON_KEY: local.ANON_KEY,
     ROOM_QA_BASE_URL: local.API_URL,
     ROOM_QA_DB_URL: local.DB_URL,
-    ROOM_QA_DIFF_BASE: process.env.ROOM_QA_DIFF_BASE || "origin/main",
+    ROOM_QA_DIFF_BASE: "origin/main",
     ROOM_QA_KEEP: "0",
     ROOM_QA_LOCAL: "1",
     ROOM_QA_PROJECT_REF: "local",
@@ -416,20 +770,13 @@ try {
     ROOM_QA_SERVICE_KEY: local.SERVICE_ROLE_KEY,
   };
 
-  run("full local Supabase migration reset", SUPABASE[0], supabaseArgs(["db", "reset", "--local"]));
-  run(
-    "local Supabase schema lint",
-    SUPABASE[0],
-    supabaseArgs(["db", "lint", "--local", "--level", "warning", "--fail-on", "error"]),
-  );
+  psqlFile("release runtime-control SQL", psql, local.DB_URL, "qa-harness/runtime-controls.sql");
   psqlFile(
-    "apply local production-like grants before the room attack",
+    "Calendly application-binding SQL suite",
     psql,
     local.DB_URL,
-    "qa-harness/shadow-grants.sql",
-    [["ROOM_QA_SHADOW", "1"]],
+    "qa-harness/calendly-application-binding.sql",
   );
-  psqlFile("release runtime-control SQL", psql, local.DB_URL, "qa-harness/runtime-controls.sql");
   run("announcement fan-out SQL suite", "npm", ["run", "test:announcement-fanout"], { env: localQaEnv });
   run("room feed/resources SQL suite", "npm", ["run", "test:room-feed-resources"], { env: localQaEnv });
   run("room third-act SQL suite", "npm", ["run", "test:room-third-act"], { env: localQaEnv });
@@ -437,6 +784,30 @@ try {
   run("local adversarial room-access harness", "npm", ["run", "test:room-access"], {
     env: localQaEnv,
   });
+
+  await startIdentityFunctionServer(local);
+  run(
+    "identity-spine integrated-release disposable-stack live acceptance suite",
+    "node",
+    ["qa-harness/identity-spine.spec.mjs", "--require-live"],
+    {
+      env: {
+        ...process.env,
+        IDENTITY_SPINE_BASE_REF: identityBase,
+        IDENTITY_SPINE_INTEGRATED_RELEASE: "yes",
+        IDENTITY_SPINE_SHADOW_CONFIRM: "yes",
+        PATH: `${dirname(psql)}${delimiter}${process.env.PATH || ""}`,
+        SHADOW_ANON_KEY: local.ANON_KEY,
+        SHADOW_DB_URL: local.DB_URL,
+        SHADOW_EMAIL_OTP_PEPPER: local.otpPepper,
+        SHADOW_SERVICE_ROLE_KEY: local.SERVICE_ROLE_KEY,
+        SHADOW_SUPABASE_URL: local.API_URL,
+        SHADOW_TALLY_SIGNING_SECRET: local.tallySecret,
+      },
+    },
+  );
+
+  disposeBareLocalStack();
 
   if (REMOTE === "1") {
     const remoteEnv = {
@@ -447,10 +818,15 @@ try {
   }
 
   console.log(
-    `\nRELEASE GATE PASSED in ${elapsed(startedAt)} (${stepNumber} steps; remote dry-run ${REMOTE === "1" ? "included" : "not requested"}).`,
+    `\nRELEASE GATE PASSED in ${elapsed(startedAt)} (${stepNumber} steps; identity phase-static + disposable-stack live; remote dry-run ${REMOTE === "1" ? "included" : "not requested"}).`,
   );
 } catch (error) {
+  const functionLogs = functionServerLogExcerpt();
+  cleanupBareLocalStackAfterFailure();
   const message = error instanceof Error ? error.message : String(error);
+  if (functionLogs) {
+    console.error(`\nIdentity function server log tail (secrets redacted):\n${functionLogs}`);
+  }
   console.error(`\nRELEASE GATE FAILED after ${stepNumber} step(s): ${message}`);
-  process.exit(1);
+  process.exitCode = 1;
 }

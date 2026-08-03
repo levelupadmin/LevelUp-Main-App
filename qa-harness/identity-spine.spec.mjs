@@ -73,6 +73,12 @@
  *                                and the login path, so an unresolvable base
  *                                fails them closed rather than reporting
  *                                "no diff" after comparing nothing.
+ *   IDENTITY_SPINE_INTEGRATED_RELEASE=yes
+ *                                optional — keeps the payment pipeline frozen,
+ *                                but replaces PHASE SP's historical
+ *                                ApplicationStatus zero-diff/isIOS assertion
+ *                                with the integrated release's stricter native
+ *                                Reader Rule contract and regression artifact.
  *
  * NO NEW DEPENDENCIES. Node standard library only, matching
  * `scripts/typecheck-functions.mjs`. Nothing is installed, nothing is written
@@ -87,6 +93,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BASE_REF = process.env.IDENTITY_SPINE_BASE_REF || "main";
+const INTEGRATED_RELEASE = process.env.IDENTITY_SPINE_INTEGRATED_RELEASE === "yes";
 const STATIC_ONLY = process.argv.includes("--static-only");
 
 const IDENTITY_MODULE = "supabase/functions/_shared/identity.ts";
@@ -326,7 +333,7 @@ async function staticDiffBase() {
     claim(
       !!BASE.commit,
       `PROVEN: the diff base \`${BASE.ref}\` resolves to commit ${String(BASE.commit).slice(0, 12)} — every "ZERO diff" claim below is a real comparison against a real tree, not a git failure reported as silence.`,
-      `NOT PROVEN: ${BASE.error}. Every diff-zero rule in this suite (verify-msg91-otp, the payment pipeline, the isIOS() guard, the exempted signup page) is therefore UNEVALUATED and is reported as failed, not as passing.`,
+      `NOT PROVEN: ${BASE.error}. Every diff-zero rule in this suite (verify-msg91-otp, the payment pipeline, ${INTEGRATED_RELEASE ? "the integrated native Reader Rule's frozen payment baseline" : "the isIOS() guard"}, the exempted signup page) is therefore UNEVALUATED and is reported as failed, not as passing.`,
     );
     if (BASE.commit && BASE.ref !== BASE_REF) {
       note(
@@ -534,7 +541,13 @@ async function staticFrozenSurfaces() {
     );
   });
 
-  await runCase("S-STATIC-5", "static", "Inviolable rule 1: the payment pipeline and the isIOS() guard are untouched", () => {
+  await runCase(
+    "S-STATIC-5",
+    "static",
+    INTEGRATED_RELEASE
+      ? "Inviolable rule 1, integrated release: payment code is frozen and all native shells are Reader Rule-safe"
+      : "Inviolable rule 1: the payment pipeline and the isIOS() guard are untouched",
+    () => {
     const paymentPaths = [
       "supabase/functions/create-razorpay-order",
       "supabase/functions/verify-razorpay-payment",
@@ -555,13 +568,63 @@ async function staticFrozenSurfaces() {
       );
     }
 
-    const statusPath = "src/pages/ApplicationStatus.tsx";
-    const status = diffZero([statusPath]);
-    const src = readRepoFile(statusPath) || "";
-    const guards = grepText(src, /isIOS\(\)/);
-    if (!status.ok) {
-      claim(false, "", diffUnavailable(`${statusPath} (the isIOS() guard)`, status.error));
-    } else {
+      const statusPath = "src/pages/ApplicationStatus.tsx";
+      if (INTEGRATED_RELEASE) {
+        const statusCode = readRepoCode(statusPath);
+        const testPath = "src/pages/__tests__/ApplicationStatus.nativePayments.test.tsx";
+        const testCode = readRepoCode(testPath);
+        claim(
+          statusCode !== null,
+          `PROVEN: ${statusPath} exists, so the integrated Reader Rule contract was evaluated against current active code.`,
+          `NOT PROVEN: ${statusPath} is missing, so none of the integrated native payment guards can be evaluated.`,
+        );
+        if (statusCode !== null) {
+          const paymentGuards = [
+            ["reconciled payment CTA", /reconciledCta\.payment\s*&&\s*isNative\(\)/],
+            ["confirmation payment CTA", /step\.key\s*===\s*"confirmation_paid"[\s\S]{0,220}?isNative\(\)/],
+            ["balance payment CTA", /step\.key\s*===\s*"balance_paid"[\s\S]{0,220}?isNative\(\)/],
+          ];
+          const guarded = paymentGuards.filter(([, pattern]) => pattern.test(statusCode)).map(([name]) => name);
+          claim(
+            guarded.length === paymentGuards.length,
+            `PROVEN: all three payment-bearing branches use isNative() in active code (${guarded.join(", ")}) — Android and iOS shells share the Reader Rule wall while web retains checkout.`,
+            `NOT PROVEN: only ${guarded.length}/3 payment-bearing branches use isNative() (${guarded.join(", ") || "none"}). Every reconciled, confirmation and balance payment branch must be native-safe.`,
+          );
+          const legacyGuards = grepText(statusCode, /isIOS\(\)/);
+          claim(
+            legacyGuards.length === 0,
+            `PROVEN: ${statusPath} contains no active isIOS() call — no payment branch can leave Android outside the Reader Rule wall.`,
+            `NOT PROVEN: ${statusPath} still contains active isIOS() at ${legacyGuards.map((hit) => hit.line).join(", ")}; an Android shell could retain a payment entry point.`,
+          );
+        }
+
+        claim(
+          testCode !== null,
+          `PROVEN: ${testPath} exists — the integrated Reader Rule has a dedicated regression artifact.`,
+          `NOT PROVEN: ${testPath} is missing; the current-source guard has no dedicated runtime regression artifact.`,
+        );
+        if (testCode !== null) {
+          const webCases = /"web retains the %s checkout CTA"/.test(testCode);
+          const androidCases =
+            /\["android",\s*"accepted"/.test(testCode) &&
+            /\["android",\s*"confirmation_paid"/.test(testCode);
+          const iosCases =
+            /\["ios",\s*"accepted"/.test(testCode) &&
+            /\["ios",\s*"confirmation_paid"/.test(testCode);
+          claim(
+            webCases && androidCases && iosCases,
+            `PROVEN: ${testPath} contains web checkout retention plus Android and iOS denial cases for both staged payment states.`,
+            `NOT PROVEN: ${testPath} is incomplete (web=${webCases}, Android=${androidCases}, iOS=${iosCases}); all three runtimes and both staged payment states must be represented.`,
+          );
+        }
+      } else {
+        const status = diffZero([statusPath]);
+        const src = readRepoFile(statusPath) || "";
+        const guards = grepText(src, /isIOS\(\)/);
+        if (!status.ok) {
+          claim(false, "", diffUnavailable(`${statusPath} (the isIOS() guard)`, status.error));
+          return;
+        }
       claim(
         status.touched.length === 0 && guards.length > 0,
         `PROVEN: ${statusPath} has a ZERO diff against \`${BASE.ref}\` and still carries its isIOS() guard at ${guards.map((g) => g.line).join(", ")} — the App Store payment guard is exactly as shipped. (The brief cites lines 319/337; the guard has since moved to the lines listed here, so this suite asserts the file's diff and the guard's presence rather than a stale line number.)`,
@@ -569,8 +632,9 @@ async function staticFrozenSurfaces() {
           ? `NOT PROVEN: ${statusPath} is MODIFIED (${status.touched.join(", ")}) — the isIOS() guard is inside a file this phase was forbidden to touch.`
           : `NOT PROVEN: ${statusPath} no longer contains an isIOS() call at all; the App Store payment guard is gone.`,
       );
-    }
-  });
+      }
+    },
+  );
 }
 
 const POLL_HOST = "supabase/functions/tally-application-poll/index.ts";
@@ -1727,6 +1791,19 @@ async function signInAs(email) {
 const rpc = (name, args = {}) => sb(`/rest/v1/rpc/${name}`, { method: "POST", body: JSON.stringify(args) });
 const rest = (query) => sb(`/rest/v1/${query}`);
 
+async function waitForFixtureSchema() {
+  const deadline = Date.now() + 10_000;
+  let last = null;
+  do {
+    last = await rpc("identity_fixture_auth_user_count");
+    if (last.ok) return;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  } while (Date.now() < deadline);
+  throw new Error(
+    `PostgREST did not expose identity_fixture_auth_user_count after the fixture schema reload: HTTP ${last?.status} ${JSON.stringify(last?.body)}`,
+  );
+}
+
 async function authCount() {
   const r = await rpc("identity_fixture_auth_user_count");
   if (!r.ok) throw new Error(`identity_fixture_auth_user_count failed (${r.status}) — run qa-harness/identity-fixtures.sql against the shadow project first: ${JSON.stringify(r.body)}`);
@@ -1844,7 +1921,7 @@ async function clearIssuedCodes(email) {
   });
 }
 
-async function recoverIssuedCode(email) {
+async function recoverIssuedCode(email, storageKey = email) {
   if (!otpMod) throw new Error(`${OTP_MODULE} could not be loaded, so the issued code cannot be recovered`);
   if (!LIVE.pepper) {
     throw new Error(
@@ -1853,14 +1930,17 @@ async function recoverIssuedCode(email) {
   }
   const len = otpMod.OTP_LENGTH;
   const sample = "0".repeat(len - 1) + "7";
-  const real = await otpMod.hashOtpCode(sample, LIVE.pepper);
-  const fast = (code) => createHmac("sha256", LIVE.pepper).update(`${len}:${code}`).digest("hex");
+  const real = await otpMod.hashOtpCode(storageKey, sample, LIVE.pepper);
+  const fast = (code) =>
+    createHmac("sha256", LIVE.pepper)
+      .update(`${len}:${storageKey.length}:${storageKey}:${code}`)
+      .digest("hex");
   if (fast(sample) !== real) {
     throw new Error("the suite's fast hash does not agree with _shared/otp.ts hashOtpCode; refusing to guess the scheme");
   }
 
   const r = await rest(
-    `email_otp_codes?email=eq.${encodeURIComponent(email)}&select=id,code_hash,expires_at,consumed_at,attempt_count,created_at&order=created_at.desc&limit=1`,
+    `email_otp_codes?email=eq.${encodeURIComponent(storageKey)}&select=id,code_hash,expires_at,consumed_at,attempt_count,created_at&order=created_at.desc&limit=1`,
   );
   if (!r.ok) throw new Error(`email_otp_codes read failed (${r.status}): ${JSON.stringify(r.body)}`);
   const row = Array.isArray(r.body) ? r.body[0] : null;
@@ -1872,7 +1952,7 @@ async function recoverIssuedCode(email) {
     if (fast(candidate) === row.code_hash) return { row, code: candidate };
   }
   throw new Error(
-    `the stored code hash for ${email} matches no code in the ${len}-digit space under this pepper — SHADOW_EMAIL_OTP_PEPPER must be the shadow project's EMAIL_OTP_PEPPER byte for byte. There is no fallback to fall back to: verify-email-otp reads EMAIL_OTP_PEPPER and returns 503 otp_unconfigured when it is unset, so a code that was issued at all was issued under that exact value`,
+    `the stored code hash for ${email} (storage key ${storageKey}) matches no code in the ${len}-digit space under this pepper — SHADOW_EMAIL_OTP_PEPPER must be the shadow project's EMAIL_OTP_PEPPER byte for byte. There is no fallback to fall back to: verify-email-otp reads EMAIL_OTP_PEPPER and returns 503 otp_unconfigured when it is unset, so a code that was issued at all was issued under that exact value`,
   );
 }
 
@@ -2193,19 +2273,20 @@ async function liveClaim() {
       return { status: r.status, ok: r.ok, body: parsed };
     };
 
-    await clearIssuedCodes(FIXTURE.cross.email);
+    const claimStorageKey = `claim ${app.id} ${FIXTURE.cross.email}`;
+    await clearIssuedCodes(claimStorageKey);
     const sendA = await claimCall({ action: "send", channel: "email", email: FIXTURE.cross.email });
     claim(
       sendA.ok,
       `PROVEN: the claim endpoint issues a code on the SECOND channel (HTTP ${sendA.status}) — the claimant needs nothing but the app to finish.`,
       `NOT PROVEN: the claim's second-channel send failed (HTTP ${sendA.status}): ${JSON.stringify(sendA.body)}`,
     );
-    const { code: codeA } = await recoverIssuedCode(FIXTURE.cross.email);
+    const { code: codeA } = await recoverIssuedCode(FIXTURE.cross.email, claimStorageKey);
     if (!codeA) {
       claim(
         false,
         "",
-        `NOT PROVEN: no issued code for ${FIXTURE.cross.email} could be found in public.email_otp_codes after the claim's send, so the claim's happy path was not exercised. If claim-application stores its codes somewhere else, this suite cannot recover them and the positive claim case cannot be proven.`,
+        `NOT PROVEN: no issued code for ${FIXTURE.cross.email} could be found at claim-application's namespaced public.email_otp_codes key after the send, so the claim's happy path was not exercised.`,
       );
       return;
     }
@@ -2917,6 +2998,7 @@ async function runLiveLane() {
         ],
         { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
       );
+      await waitForFixtureSchema();
       console.log("fixtures: qa-harness/identity-fixtures.sql applied to the shadow project.\n");
     } catch (err) {
       console.error(`\nABORTED: qa-harness/identity-fixtures.sql failed to apply:\n${err.stdout || ""}${err.stderr || err.message}\n`);

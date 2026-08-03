@@ -380,3 +380,8 @@ BEGIN
   RAISE NOTICE 'identity-fixtures: ready. offering rows: % (must be 1, form IDFIXT01); incumbent accounts: % (must be 3: P/A/B).',
     v_offerings, v_incumbents;
 END $$;
+
+-- These helpers are created after the repo migrations have already caused
+-- PostgREST to build its schema cache. Publish them before the live harness's
+-- first service-role RPC instead of relying on an eventual cache refresh.
+NOTIFY pgrst, 'reload schema';
