@@ -10,11 +10,12 @@
  * checkout is linked to the exact production ref. Nothing in this script
  * applies a production migration or deploys anything.
  *
- * The local room-access harness needs production-like default grants to exist
- * before migrations create the room tables. A normal `supabase db reset` cannot
- * provide that ordering, so the gate first validates a full reset/lint, then
- * rebuilds the disposable local schema in the documented order: empty schema
- * -> shadow grants -> migration push -> shadow grants -> SQL suites -> attack.
+ * The local room-access harness needs production-like relation grants; without
+ * them PostgreSQL can deny at GRANT before RLS is exercised and yield a vacuous
+ * green result. `shadow-grants.sql` both arms the matching defaults and grants
+ * every relation already created by the full reset, so the attack runs against
+ * that freshly replayed schema without attempting an unsafe second replay over
+ * non-public state such as Storage buckets.
  */
 
 import { spawnSync } from "node:child_process";
@@ -421,36 +422,8 @@ try {
     SUPABASE[0],
     supabaseArgs(["db", "lint", "--local", "--level", "warning", "--fail-on", "error"]),
   );
-  run(
-    "empty local schema for grant-parity room attack",
-    psql,
-    [
-      "-X",
-      "--no-psqlrc",
-      "-v",
-      "ON_ERROR_STOP=1",
-      "-d",
-      local.DB_URL,
-      "-c",
-      "DROP SCHEMA public CASCADE; CREATE SCHEMA public;",
-      "-c",
-      "DELETE FROM supabase_migrations.schema_migrations;",
-    ],
-  );
   psqlFile(
-    "arm local production-like grants before migrations",
-    psql,
-    local.DB_URL,
-    "qa-harness/shadow-grants.sql",
-    [["ROOM_QA_SHADOW", "1"]],
-  );
-  run(
-    "reapply every migration onto the grant-armed local schema",
-    SUPABASE[0],
-    supabaseArgs(["db", "push", "--db-url", local.DB_URL, "--yes"]),
-  );
-  psqlFile(
-    "complete local production-like grants after migrations",
+    "apply local production-like grants before the room attack",
     psql,
     local.DB_URL,
     "qa-harness/shadow-grants.sql",
