@@ -42,7 +42,8 @@ const CertificateMoment = () => {
       offeringId: room.offering_id,
       userId: user.id,
       studentName: profile?.full_name?.trim() || user.user_metadata?.full_name || "LevelUp member",
-      memberNumber: profile?.member_number ?? null,
+      memberNumber:
+        profile?.member_number == null ? null : String(profile.member_number),
       courses: eligible,
     });
   }, [claim, data.data, profile, room.offering_id, user]);

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { createElement } from "react";
 import { render, waitFor } from "@testing-library/react";
 
@@ -134,7 +134,9 @@ const successCalls = () =>
 // count of offering_upsells queries equals the number of fetches that reached
 // their setOrder. Waiting on it is a deterministic "the refetch committed" gate.
 const orderFetchCommits = () =>
-  vi.mocked(supabase.from).mock.calls.filter(([t]) => t === "offering_upsells").length;
+  (supabase.from as unknown as Mock).mock.calls.filter(
+    ([table]) => table === "offering_upsells",
+  ).length;
 
 describe("ThankYou success haptic (P3 punch-list)", () => {
   beforeEach(() => {

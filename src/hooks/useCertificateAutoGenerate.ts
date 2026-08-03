@@ -1,6 +1,37 @@
 import { supabase } from "@/integrations/supabase/client";
 import { generateAndSaveCertificate, VariablePosition } from "@/lib/certificate-generator";
 
+const TEXT_ALIGNMENTS = new Set<CanvasTextAlign>([
+  "center",
+  "end",
+  "left",
+  "right",
+  "start",
+]);
+
+function isVariablePosition(value: unknown): value is VariablePosition {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const position = value as Record<string, unknown>;
+  return (
+    typeof position.key === "string" &&
+    typeof position.label === "string" &&
+    typeof position.x === "number" &&
+    typeof position.y === "number" &&
+    typeof position.fontSize === "number" &&
+    typeof position.fontFamily === "string" &&
+    typeof position.fontColor === "string" &&
+    typeof position.fontWeight === "string" &&
+    typeof position.textAlign === "string" &&
+    TEXT_ALIGNMENTS.has(position.textAlign as CanvasTextAlign) &&
+    typeof position.maxWidth === "number" &&
+    (position.value === undefined || typeof position.value === "string")
+  );
+}
+
+function parseVariablePositions(value: unknown): VariablePosition[] {
+  return Array.isArray(value) ? value.filter(isVariablePosition) : [];
+}
+
 /**
  * Checks if the student has reached the certificate threshold for a course
  * and auto-generates a certificate if conditions are met.
@@ -85,7 +116,7 @@ export async function checkAndGenerateCertificate(
     }
   }
 
-  const variablePositions = (template.variable_positions || []) as VariablePosition[];
+  const variablePositions = parseVariablePositions(template.variable_positions);
 
   try {
     const result = await generateAndSaveCertificate({

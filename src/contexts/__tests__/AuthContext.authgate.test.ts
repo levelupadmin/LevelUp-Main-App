@@ -681,8 +681,10 @@ describe("P6-T4 auth gate — role-downgrade", () => {
               path: "/admin",
               element: React.createElement(
                 RequireRole,
-                { role: "admin" },
-                React.createElement("div", null, "ADMIN CONTENT")
+                {
+                  role: "admin",
+                  children: React.createElement("div", null, "ADMIN CONTENT"),
+                },
               ),
             })
           )
@@ -723,8 +725,10 @@ describe("P6-T4 auth gate — role-downgrade", () => {
               path: "/admin",
               element: React.createElement(
                 RequireRole,
-                { role: "admin" },
-                React.createElement("div", null, "ADMIN CONTENT")
+                {
+                  role: "admin",
+                  children: React.createElement("div", null, "ADMIN CONTENT"),
+                },
               ),
             })
           )

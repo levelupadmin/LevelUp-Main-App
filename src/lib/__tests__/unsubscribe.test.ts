@@ -145,12 +145,21 @@ const fake = vi.hoisted(() => {
         hooks.beforeInsert?.();
         hooks.beforeInsert = null;
         if (faults.write) return { data: null, error: { message: faults.write } };
-        const next = inserting as StoredTokenRow;
+        if (!inserting?.id || !inserting.email) {
+          throw new Error("fake insert requires id and email");
+        }
+        const next: StoredTokenRow = {
+          id: inserting.id,
+          email: inserting.email,
+          token_hash: inserting.token_hash ?? null,
+          issued_at: inserting.issued_at ?? null,
+          used_at: inserting.used_at ?? null,
+        };
         if (rows.some((row) => row.email === next.email)) {
           // `email` is UNIQUE; this is the race the mint path adopts through.
           return { data: null, error: { message: "duplicate key", code: "23505" } };
         }
-        rows.push({ used_at: null, ...next });
+        rows.push(next);
         counters.writes++;
         return { data: null, error: null };
       }
@@ -240,10 +249,12 @@ const fake = vi.hoisted(() => {
 
 vi.mock("https://esm.sh/@supabase/supabase-js@2", () => ({ createClient: fake.createClient }));
 
-const { handler } = await import("../../../supabase/functions/email-unsubscribe/index.ts");
-const { ensureUnsubscribeCredential } = await import(
-  "../../../supabase/functions/cohort-reentry-cron/index.ts"
-);
+const emailUnsubscribeModule =
+  "../../../supabase/functions/email-unsubscribe/index.ts";
+const cohortReentryCronModule =
+  "../../../supabase/functions/cohort-reentry-cron/index.ts";
+const { handler } = await import(emailUnsubscribeModule);
+const { ensureUnsubscribeCredential } = await import(cohortReentryCronModule);
 
 const SECRET = "test-secret-that-is-long-enough-0123456789";
 const ROW_ID = "11111111-2222-3333-4444-555555555555";

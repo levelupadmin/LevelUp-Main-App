@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { isIOS } from "@/lib/platform";
+import { isNative } from "@/lib/platform";
 import { COHORT_INTERVIEW, DECISION_FLOW, flag } from "@/lib/flags";
 import { useFunnelStage } from "@/hooks/useFunnelStage";
 import { InterviewSlots } from "@/components/interview/SlotButtons";
@@ -169,8 +169,8 @@ const APPLICATION_COLUMNS =
    `"accepted"`, which fires its own experience in a later phase) are left
    unmapped, so the surface falls back to the status-driven view below — the
    same degrade path as an unreachable fn.
-   Payment CTAs reuse the existing checkout routes and stay hidden on iOS
-   (Apple anti-steering), mirroring the staged-payment guard below. */
+   Payment CTAs reuse the existing checkout routes and stay hidden in native
+   shells under the Reader Rule, mirroring the staged-payment guard below. */
 type ReconciledCta = { to: string; label: string; payment?: boolean };
 const RECONCILED_STAGE_UI: Record<
   string,
@@ -417,7 +417,7 @@ const ApplicationStatus = () => {
      reconciler flag ON stops an unresolvable fee-paid student from booking at
      all, which is the exact loss this phase exists to close.
      It renders BESIDE the payment pipeline, never through it: no step branch, no
-     `isIOS()` guard and no checkout route is touched, and an Apple anti-steering
+     native payment guard and no checkout route is touched, and a Reader Rule
      guard would be wrong here anyway — booking an interview moves no money.
      Flag off → `interviewPosition` is undefined, the ceiling is inert, and this is
      byte-identical to today; the embed's own hook never mounts, so no request is
@@ -662,10 +662,10 @@ const ApplicationStatus = () => {
           </Badge>
 
           {/* Single reconciled CTA (dark behind the flag). Payment CTAs stay
-              hidden on iOS per Apple anti-steering — same rule as the staged
+              hidden in native shells per the Reader Rule — same rule as the staged
               timeline guard, kept as its own branch here. */}
           {reconciledCta &&
-            (reconciledCta.payment && isIOS() ? (
+            (reconciledCta.payment && isNative() ? (
               <p className="mt-4 text-xs text-muted-foreground">
                 Complete this step from a web browser.
               </p>
@@ -859,13 +859,13 @@ const ApplicationStatus = () => {
                     </p>
                   )}
 
-                  {/* Pay buttons: hidden on iOS per Apple anti-steering
-                      (no in-app purchase entry points or external-pay links).
-                      Web + Android keep the existing checkout flow. */}
-                  {state === "current" &&
+                  {/* Pay buttons: hidden in every native shell per the Reader
+                      Rule (no in-app purchase entry points or external-pay
+                      links). Web keeps the existing checkout flow. */}
+                  {state === "upcoming" &&
                     step.key === "confirmation_paid" &&
                     application.status === "accepted" &&
-                    (isIOS() ? (
+                    (isNative() ? (
                       <p className="mt-2 text-xs text-muted-foreground">
                         Complete this step from a web browser.
                       </p>
@@ -880,10 +880,10 @@ const ApplicationStatus = () => {
                       </Link>
                     ))}
 
-                  {state === "current" &&
+                  {state === "upcoming" &&
                     step.key === "balance_paid" &&
                     application.status === "confirmation_paid" &&
-                    (isIOS() ? (
+                    (isNative() ? (
                       <p className="mt-2 text-xs text-muted-foreground">
                         Complete this step from a web browser.
                       </p>
@@ -919,7 +919,7 @@ const ApplicationStatus = () => {
             requirement exists to prevent. Already-installed native shells see
             nothing at all — that check is `isNative()` inside the hook, which
             asks "is this the installed app?" and is a different question from
-            the Apple anti-steering guards above, which this block does not
+            the native Reader Rule guards above, which this block does not
             touch. (The token those guards grep for is deliberately not repeated
             here, so the phase's verification grep stays a clean four hits.)
 

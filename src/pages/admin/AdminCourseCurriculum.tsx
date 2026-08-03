@@ -538,6 +538,7 @@ const AdminCourseCurriculum = () => {
     const sIdx = secs.findIndex((s) => s.id === localId);
     const sec = secs[sIdx];
     if (!sec) throw new Error("Section no longer exists");
+    if (!courseId) throw new Error("Course is missing from this page");
     if (!sec._isNew) return sec.id;
     const inflight = sectionInsertsRef.current[localId];
     if (inflight) return inflight;

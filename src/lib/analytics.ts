@@ -183,7 +183,7 @@ function loadPostHog(key: string, host: string) {
   // PostHog's official array-stub snippet, inlined (same treatment as the
   // pixel snippets above). Queues calls until static/array.js loads.
   /* eslint-disable */
-  !(function (t: any, e: any) {
+  (function (t: any, e: any) {
     var o, n, p, r;
     e.__SV ||
       ((window as any).posthog = e),

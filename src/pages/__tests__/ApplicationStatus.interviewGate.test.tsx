@@ -74,10 +74,9 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
-// Non-iOS: the staged-payment anti-steering guard is not what any assertion here
-// turns on, and booking an interview moves no money.
+// Web: the staged-payment Reader Rule guard is not what any assertion here turns
+// on, and booking an interview moves no money.
 vi.mock("@/lib/platform", () => ({
-  isIOS: () => false,
   isNative: () => false,
 }));
 

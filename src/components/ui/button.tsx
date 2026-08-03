@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
-import { motion, type HTMLMotionProps } from "framer-motion";
+import { motion, type HTMLMotionProps, type MotionProps } from "framer-motion";
 
 import { useFinePointer, useMotionSafe } from "@/lib/motion";
 import { tapTick } from "@/lib/haptics";
@@ -83,8 +83,10 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, keyof MotionProps>,
     VariantProps<typeof buttonVariants> {
+  children?: React.ReactNode;
+  style?: React.CSSProperties;
   asChild?: boolean;
   /**
    * Whether this button fires its own `tapTick()` selection haptic on activation
@@ -123,12 +125,6 @@ const resolveHoverLift = (
   };
 };
 
-// Motion props framer-motion adds on top of the native button props. We accept the
-// intersection so callers keep the exact shadcn `ButtonProps` surface while the
-// motion.button path forwards whileTap etc. internally.
-type MotionButtonProps = ButtonProps &
-  Pick<HTMLMotionProps<"button">, "onClick">;
-
 /**
  * shadcn Button with spring press physics. Renders a framer `motion.button` so
  * every button in the app inherits a snap-spring press-in (scale 0.97) plus a
@@ -148,7 +144,7 @@ type MotionButtonProps = ButtonProps &
  *   utility — translate and the press scale then compose in one system. The Slot
  *   path leaves the utility intact (framer never owns that element's transform).
  */
-const Button = React.forwardRef<HTMLButtonElement, MotionButtonProps>(
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, haptic = true, onClick, ...props }, ref) => {
     const motionSafe = useMotionSafe();
     const finePointer = useFinePointer();
