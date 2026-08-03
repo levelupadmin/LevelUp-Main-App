@@ -16,18 +16,230 @@
 -- running either against an ungranted shadow produces a green result that means
 -- nothing.
 --
--- USAGE: run AFTER `supabase start` and BEFORE any adversarial suite, so the
--- shadow gates on RLS exactly as production does:
---   psql "$SHADOW_DB_URL" -f qa-harness/shadow-grants.sql
+-- ═══ ORDERING — RUN THIS FILE TWICE, AND THE FIRST PASS IS THE ONE PEOPLE MISS ═══
 --
--- This file is GENERATED. Regenerate it from production rather than hand-editing,
--- so it cannot drift into asserting a grant model production does not have.
+--   0. If `db push` has EVER run against this shadow: EMPTY IT FIRST — and do NOT
+--      reach for `supabase db reset`, which is the wrong tool (see below).
+--        psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=1 \
+--          -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' \
+--          -c 'DELETE FROM supabase_migrations.schema_migrations;'
+--                                                    # or re-create the project
+--   1. psql "$SHADOW_DB_URL" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql  # BEFORE db push
+--   2. supabase db push --db-url "$SHADOW_DB_URL"                                 # build the schema
+--   3. psql "$SHADOW_DB_URL" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql  # AFTER db push
+--   4. …then, and only then, the adversarial suites.
+--
+-- ⚠️ STEP 0 IS NOT OPTIONAL, AND OMITTING IT IS WHY THE THREE-STEP RECIPE SILENTLY
+-- FAILED. SECTION A arms `ALTER DEFAULT PRIVILEGES`, which PostgreSQL consults at
+-- CREATE TABLE time and never again. On a shadow whose migrations are ALREADY
+-- applied — the normal case for every gate run after the first — `db push` is a
+-- no-op, the nine tables R0 creates already exist, and pass 1 has nothing left to
+-- affect. All three steps then succeed, print their NOTICEs, change nothing that
+-- matters, and leave exactly the state cohort-room-access.spec.mjs's PRECONDITION
+-- aborts on.
+--
+-- ⚠️ AND `supabase db reset` DOES NOT SATISFY STEP 0 — IT RE-CREATES THE FAILURE.
+-- It resets the target "with local migrations": it drops and re-creates the schema
+-- and then APPLIES everything in supabase/migrations/, recording it in
+-- supabase_migrations.schema_migrations. So it hands back a database in which the
+-- nine R0 tables already exist and the ledger is already full — pass 1 has nothing
+-- to arm, step 2 is a no-op, and step 3 cannot name tables SECTION B was generated
+-- before. What step 0 has to produce is an EMPTY database at the moment pass 1
+-- runs, which is the schema drop plus the ledger wipe with no migration apply in
+-- between, or a freshly created project.
+--
+-- ⚠️ THE ARMING IS SCHEMA-SCOPED, WHICH CUTS BOTH WAYS. pg_default_acl rows for
+-- `IN SCHEMA public` are dropped with the schema, so the DROP in step 0 clears any
+-- earlier arming — correct, and the reason pass 1 comes after it, never before.
+-- The same fact means ANY later drop of schema public (a `db reset`, a teardown
+-- script) silently un-arms a shadow that used to pass, with no error at the time.
+-- Re-run this recipe from step 0 after one.
+--
+-- ⚠️ $SHADOW_DB_URL IS THE SHADOW DATABASE, NEVER PRODUCTION (ivkvluezuiojovpotlyb).
+-- SECTION A permanently alters a database's grant model — it is the one statement
+-- in this file that does not merely re-state a grant production already has — and
+-- `db push` in step 2 writes schema. Both are irreversible against the wrong
+-- target. The `-v ROOM_QA_SHADOW=1` marker is therefore MANDATORY: the guard block
+-- below refuses to run without it, so this file cannot be executed by reflex or by
+-- a copy-pasted line that lost its target. The guard also refuses outright on any
+-- connection that identifies as the production project.
+--
+-- WHY BOTH PASSES ARE REQUIRED, AND WHY NEITHER ONE SUBSUMES THE OTHER.
+-- This file does two different things with opposite timing requirements:
+--   · SECTION A (hand-maintained) grants USAGE on schema public and arms
+--     `ALTER DEFAULT PRIVILEGES`. Default privileges apply ONLY to tables created
+--     AFTER the statement runs, so it is useless once `db push` has already
+--     created them. It must go FIRST.
+--   · SECTION B (generated) GRANTs on named tables. Every table it names is
+--     created BY the migrations, so on pass 1 it finds nothing and skips all of
+--     them by design (`to_regclass … IS NULL → SKIP`). It must go LAST.
+-- Both passes are idempotent, and a re-run costs a second. Running only pass 3
+-- leaves every table R0 creates outside this file's reach (see below); running
+-- only pass 1 leaves the 103 pre-existing tables ungranted.
+--
+-- THE GAP SECTION A EXISTS TO CLOSE. Section B was generated from prod on
+-- 2026-07-28 and therefore contains ONLY the tables that existed then. The nine
+-- tables PHASE R0 creates — cohort_room_configs, cohort_room_members and
+-- 20260729100100's seven content tables — are not in it and cannot be. Without
+-- Section A those nine get whatever the R0 migrations grant explicitly and
+-- nothing else, which sounds harmless and is not: the migrations' `REVOKE`
+-- statements exist specifically to take back what the platform bootstrap hands
+-- out, so on a shadow where the bootstrap never ran, a REVOKE that was never
+-- needed is indistinguishable from a REVOKE that worked. Any assertion of the
+-- form "the client role does NOT hold verb X on a room table" is then vacuous.
+-- cohort-room-access.spec.mjs's GRANT section asserts exactly that shape and
+-- carries its own arming control (GRANT.0) for exactly this reason.
+--
+-- This file is GENERATED, with one exception. Regenerate SECTION B from
+-- production rather than hand-editing it, so it cannot drift into asserting a
+-- grant model production does not have — and PRESERVE SECTION A verbatim when
+-- you do. Section A is not derivable from a `information_schema.role_table_grants`
+-- dump: default privileges live in pg_default_acl, describe tables that do not
+-- exist yet, and are the one part of prod's grant model a per-table snapshot
+-- structurally cannot capture.
 --
 -- NOTE: deliberately NO explicit BEGIN. psql autocommits each statement, and an
 -- earlier revision of this file opened a transaction the DO block never closed —
 -- so psql rolled everything back on exit while still printing "305 applied".
 -- A success message is not evidence; the grant query afterwards is.
 
+-- ════════════════════════════════════════════════════════════════════════════
+-- GUARD — HAND-MAINTAINED. NOT GENERATED. A REGENERATION MUST PRESERVE IT.
+--
+-- This file is handed to an agent by .claude/workflows/design-qa-gate.js, with a
+-- connection string the agent did not choose. Everything below writes: SECTION A
+-- creates a pg_default_acl entry that every future migration inherits, SECTION B
+-- issues ~300 GRANTs. Neither is undone by re-running anything, and the step this
+-- file sits between (`supabase db push`) writes schema. So the target is checked
+-- twice before a single statement runs:
+--
+--   1. AN EXPLICIT MARKER. `-v ROOM_QA_SHADOW=1` has to be passed on the psql
+--      command line. It is an affirmation, not a value — its presence is what is
+--      tested. A pasted command that lost its `-f` target, a stale $SHADOW_DB_URL
+--      or a half-remembered one-liner will not carry it.
+--   2. A PRODUCTION DENY-LIST. Supabase's pooled connections carry the project ref
+--      in the role name (`postgres.<ref>`), so a prod pooler string identifies
+--      itself. Any connection whose role, database or application_name mentions the
+--      production ref is refused outright, marker or no marker.
+--
+-- ON_ERROR_STOP makes both of these terminal rather than advisory: psql exits
+-- non-zero at the first failure and never reaches SECTION A.
+-- ════════════════════════════════════════════════════════════════════════════
+\set ON_ERROR_STOP on
+
+\if :{?ROOM_QA_SHADOW}
+\else
+DO $marker$
+BEGIN
+  RAISE EXCEPTION USING MESSAGE =
+    'shadow-grants: REFUSING TO RUN — the shadow marker is missing.
+
+This file permanently alters a database''s grant model (SECTION A writes a
+pg_default_acl entry that every future migration inherits) and is meant to be run
+only against a disposable SHADOW project, never against production
+(ivkvluezuiojovpotlyb). Re-run it naming the target deliberately:
+
+  psql "$SHADOW_DB_URL" -v ROOM_QA_SHADOW=1 -f qa-harness/shadow-grants.sql
+
+If you were about to run this against production: do not. Nothing here is needed
+there — production already has these grants, which is where they were copied from.';
+END
+$marker$;
+\endif
+
+DO $prodguard$
+DECLARE prod_ref CONSTANT text := 'ivkvluezuiojovpotlyb';
+        ident text;
+BEGIN
+  ident := concat_ws(' ',
+    current_user, session_user, current_database(),
+    current_setting('application_name', true));
+  IF ident ILIKE '%' || prod_ref || '%' THEN
+    RAISE EXCEPTION USING MESSAGE =
+      'shadow-grants: REFUSING TO RUN — this connection identifies as PRODUCTION ('
+      || prod_ref || ').
+
+Connection identity: ' || ident || '
+
+SECTION A would write a pg_default_acl entry under a second granting role that
+every future migration on this database would inherit, and the `supabase db push`
+this file is meant to bracket would write schema. Point $SHADOW_DB_URL at the
+shadow project and re-run.';
+  END IF;
+END
+$prodguard$;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- SECTION A — HAND-MAINTAINED. NOT GENERATED. A REGENERATION MUST PRESERVE IT.
+--
+-- Production's create-time bootstrap, reproduced. The hosted platform runs this
+-- once per project so that every table any migration later creates arrives with
+-- the client roles already holding the full verb list, and each migration then
+-- REVOKEs its way down to what that table actually needs. A shadow without it
+-- silently inverts the model: tables arrive with nothing, the REVOKEs are
+-- no-ops, and the end state coincidentally resembles the intended one while
+-- proving nothing about the statements that were supposed to produce it.
+--
+-- MUST RUN BEFORE `db push` — see the ORDERING block in the header. Running it
+-- after is harmless and useless.
+--
+-- Default privileges are recorded PER GRANTING ROLE, so this is applied for the
+-- roles that actually create objects here (`postgres` locally and on a hosted
+-- shadow, `supabase_admin` on the platform). Roles that do not exist, or that
+-- this connection is not a member of, are skipped with a NOTICE rather than
+-- aborting the file.
+--
+-- A.1 IS THE SCHEMA-LEVEL HALF OF THE SAME BOOTSTRAP, and it is here because of
+-- step 0. Emptying the shadow means `DROP SCHEMA public CASCADE; CREATE SCHEMA
+-- public;`, and a freshly created schema grants USAGE to its owner and to nobody
+-- else. Without this every request from a client role is refused ABOVE the table
+-- ACL — which reads exactly like the wall holding, and which SECTION B cannot
+-- repair because it grants on tables, not on the schema. Production grants this,
+-- so it is parity rather than a loosening. cohort-room-access.spec.mjs's
+-- PRECONDITION checks it separately for the same reason: has_table_privilege()
+-- cannot see it.
+-- ════════════════════════════════════════════════════════════════════════════
+DO $schemausage$
+DECLARE client_role text; granted int := 0;
+BEGIN
+  FOREACH client_role IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = client_role) THEN
+      EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', client_role);
+      granted := granted + 1;
+    ELSE
+      RAISE NOTICE 'shadow-grants: role % does not exist — schema USAGE not granted to it', client_role;
+    END IF;
+  END LOOP;
+  RAISE NOTICE 'shadow-grants: USAGE on schema public granted to % client role(s)', granted;
+END
+$schemausage$;
+
+DO $bootstrap$
+DECLARE owner_role text; armed int := 0;
+BEGIN
+  FOREACH owner_role IN ARRAY ARRAY['postgres', 'supabase_admin'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = owner_role) THEN
+      BEGIN
+        EXECUTE format(
+          'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public '
+          || 'GRANT ALL ON TABLES TO anon, authenticated, service_role', owner_role);
+        armed := armed + 1;
+        RAISE NOTICE 'shadow-grants: default privileges armed for creator role %', owner_role;
+      EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'shadow-grants: not a member of % — default privileges NOT armed for it', owner_role;
+      END;
+    END IF;
+  END LOOP;
+  IF armed = 0 THEN
+    RAISE WARNING 'shadow-grants: NO default privileges were armed — tables created after this point will not receive production''s create-time grants, and every "the client role does not hold verb X" assertion against them will be vacuous. Connect as the same role that runs db push.';
+  END IF;
+END
+$bootstrap$;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- SECTION B — GENERATED from production (ivkvluezuiojovpotlyb) on 2026-07-28.
+-- Regenerate this section; do not hand-edit it. MUST RUN AFTER `db push`.
+-- ════════════════════════════════════════════════════════════════════════════
 DO $shadow$
 DECLARE r record; skipped int := 0; applied int := 0;
 BEGIN
@@ -349,3 +561,102 @@ BEGIN
   RAISE NOTICE 'shadow-grants: % applied, % skipped', applied, skipped;
 END
 $shadow$;
+
+
+-- ===========================================================================
+-- SECTION C — DELIBERATELY EMPTY. Do not "restore" the column-level revokes.
+-- ===========================================================================
+--
+-- MEASURED AGAINST PRODUCTION (ivkvluezuiojovpotlyb) ON 2026-07-31, read-only:
+--
+--     role            zoom_link  venue_link  live_sessions(table)
+--     anon            true       true        true
+--     authenticated   true       true        true
+--   (has_column_privilege / has_table_privilege)
+--
+-- Two migrations ship a column-level revoke:
+--   20260408150800_event_venue_link_gating.sql        REVOKE SELECT (venue_link)
+--   20260408151600_live_sessions_zoom_link_gating.sql REVOKE SELECT (zoom_link)
+--
+-- BOTH ARE NO-OPS IN PRODUCTION, and this shadow reproduces that faithfully.
+-- In PostgreSQL a table-level grant and a column-level grant are separate
+-- privileges: `GRANT SELECT ON t` authorises EVERY column, and a later
+-- `REVOKE SELECT (c) ON t` removes only a column-level grant, which may never
+-- have existed. It raises no error and emits no warning. It simply changes
+-- nothing. Withholding one column requires holding NO table-level SELECT and
+-- granting the other columns individually, which is not what production does.
+--
+-- SO C2.3b AND C2.4 FAIL, AND THOSE FAILURES ARE REAL. The suite is not
+-- mis-provisioned; it is reporting that the zoom join link and the paid event's
+-- venue link are readable by any caller who names the column explicitly. Making
+-- them pass here means revoking the table-level SELECT on this shadow, which
+-- ALSO trips the PRECONDITION (it requires live_sessions to be anon-readable,
+-- correctly, because production grants it) and makes the shadow describe a
+-- database that does not exist. That was tried on 2026-07-31 and reverted.
+--
+-- The fix belongs in a migration, not here: keep the table-level SELECT off
+-- these two tables and grant the non-gated columns explicitly, or move both
+-- surfaces behind their `_safe` views. Either edits shipped objects with live
+-- Capacitor call sites, so it needs its own council and client-compat pass.
+--
+-- What the section below used to do (and must not do again):
+--
+-- THIS SECTION EXISTS BECAUSE SECTION B IS TABLE-WIDE AND POSTGRES HAS NO WAY
+-- TO SAY "EVERY COLUMN EXCEPT THIS ONE". `GRANT ALL ON public.live_sessions`
+-- grants SELECT on ALL of its columns, so it silently re-grants any column a
+-- migration had revoked. Two migrations ship exactly such a revoke:
+--
+--   20260408150800_event_venue_link_gating.sql     REVOKE SELECT (venue_link)
+--   20260408151600_live_sessions_zoom_link_gating.sql  REVOKE SELECT (zoom_link)
+--
+-- Both are the ONLY thing standing between an authenticated student and a paid
+-- event's venue link or a live class's join link. Section B runs AFTER `db push`
+-- by design (it has to, or the tables the migrations create get no grants at
+-- all), which means it runs after those revokes and wipes them every time.
+--
+-- WITHOUT THIS SECTION THE SHADOW IS NOT PRODUCTION. It is a shadow whose
+-- zoom_link wall is DOWN, and the suite says so: C2.3b and C2.4 both fail, C2.4
+-- reporting a real leak of LEAK_CANARY_ZOOM_A1 through an explicit
+-- `select=zoom_link`. Those failures are CORRECT — the column really is
+-- readable — but they are an artefact of provisioning, not of R0's code, and
+-- chasing them into the migrations would be chasing a bug that is not there.
+--
+-- Idempotent, and safe to run in pass 1 when the tables do not exist yet.
+-- DO $shadow_cols$
+-- DECLARE
+--   r        record;
+--   restored int := 0;
+-- BEGIN
+--   FOR r IN
+--     SELECT * FROM (VALUES
+--       ('events',        'venue_link'),
+--       ('live_sessions', 'zoom_link')
+--     ) AS t(tbl, col)
+--   LOOP
+--     IF to_regclass('public.' || quote_ident(r.tbl)) IS NULL THEN
+--       CONTINUE;
+--     END IF;
+--
+--     -- A COLUMN-LEVEL REVOKE CANNOT CUT THROUGH A TABLE-LEVEL GRANT. In Postgres
+--     -- the two are separate privileges: `GRANT SELECT ON t` authorises every
+--     -- column, and a later `REVOKE SELECT (c) ON t` removes only a column-level
+--     -- grant that may not even exist. It does not error and it does not warn —
+--     -- it simply changes nothing, which is why running the migration's own
+--     -- REVOKE here left `zoom_link` readable and the suite still leaking.
+--     --
+--     -- The only way to withhold ONE column is to hold no table-level SELECT at
+--     -- all and to grant the other columns individually. That is what this does,
+--     -- and it is what the migration's REVOKE silently depends on being true.
+--     EXECUTE format('REVOKE SELECT ON public.%I FROM anon, authenticated', r.tbl);
+--     EXECUTE format(
+--       'GRANT SELECT (%s) ON public.%I TO anon, authenticated',
+--       (SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position)
+--          FROM information_schema.columns
+--         WHERE table_schema = 'public' AND table_name = r.tbl
+--           AND column_name <> r.col),
+--       r.tbl);
+--     restored := restored + 1;
+--   END LOOP;
+--   RAISE NOTICE 'shadow-grants: % column-level revoke(s) restored', restored;
+-- END
+-- $shadow_cols$;

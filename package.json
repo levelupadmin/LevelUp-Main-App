@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "typecheck:functions": "node scripts/typecheck-functions.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:room-access": "node qa-harness/cohort-room-access.spec.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",
