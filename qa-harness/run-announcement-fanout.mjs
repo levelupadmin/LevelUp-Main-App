@@ -15,6 +15,7 @@ const LOCAL_DB = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 const ALLOWED_HARNESSES = new Set([
   "qa-harness/announcement-fanout.sql",
   "qa-harness/room-feed-resources.sql",
+  "qa-harness/room-third-act.sql",
 ]);
 
 function die(message, code = 2) {

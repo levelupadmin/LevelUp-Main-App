@@ -6283,6 +6283,10 @@ export type Database = {
         Args: { p_session_id: string }
         Returns: string
       }
+      admin_live_sessions_with_zoom_link: {
+        Args: never
+        Returns: string[]
+      }
       get_my_cohort_rooms: {
         Args: Record<string, never>
         Returns: {

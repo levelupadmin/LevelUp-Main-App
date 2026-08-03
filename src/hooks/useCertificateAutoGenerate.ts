@@ -18,7 +18,7 @@ export async function checkAndGenerateCertificate(
   const progressPct = Math.round((completedCount / totalCount) * 100);
 
   // Check if there's an active template with auto_generate enabled
-  const { data: template } = await (supabase as any)
+  const { data: template } = await supabase
     .from("certificate_templates")
     .select("id, background_image_url, variable_positions, completion_threshold, auto_generate, is_active")
     .eq("course_id", courseId)
@@ -30,7 +30,7 @@ export async function checkAndGenerateCertificate(
   if (progressPct < template.completion_threshold) return null;
 
   // Check if certificate already exists
-  const { data: existing } = await (supabase as any)
+  const { data: existing } = await supabase
     .from("certificates")
     .select("id")
     .eq("user_id", userId)
@@ -39,27 +39,11 @@ export async function checkAndGenerateCertificate(
 
   if (existing) return null;
 
-  // For live-cohort offerings, also require attendance >= attendance_threshold_pct.
-  // The user_is_certificate_eligible RPC encapsulates this; it returns true
-  // for self-paced offerings (threshold = 0) and only blocks when a staged-
-  // payment cohort is below the configured attendance bar. We check against
-  // every linked offering; if ANY one is eligible, allow the cert.
-  const { data: offerLinks } = await supabase
-    .from("offering_courses")
-    .select("offering_id")
-    .eq("course_id", courseId);
-  const linkedOfferings = (offerLinks || []).map((o) => o.offering_id).filter(Boolean);
-  if (linkedOfferings.length > 0) {
-    let anyEligible = false;
-    for (const offId of linkedOfferings) {
-      const { data: ok } = await supabase.rpc("user_is_certificate_eligible", {
-        p_user_id: userId,
-        p_offering_id: offId,
-      });
-      if (ok === true) { anyEligible = true; break; }
-    }
-    if (!anyEligible) return null;
-  }
+  // DL-061 / STANDING-1 (2026-07-18): v1 has one Completion certificate,
+  // issued on course completion with NO hard attendance gate by default.
+  // Attendance remains tracked and visible in the room, but does not block the
+  // artifact. The server-side issue_certificate RPC still verifies enrolment,
+  // template ownership and chapter completion before it can mint anything.
 
   // Get course name and batch info
   const { data: course } = await supabase

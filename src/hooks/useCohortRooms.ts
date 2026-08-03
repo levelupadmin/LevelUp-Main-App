@@ -210,6 +210,7 @@ export interface RoomConfigRow extends RoomConfigInput {
   batch_id?: string | null;
   slug?: string;
   phase?: string;
+  alumni_since?: string | null;
   theme?: unknown;
   vocab?: unknown;
   modules?: unknown;

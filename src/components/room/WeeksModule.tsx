@@ -6,7 +6,7 @@ import { ProgressRing } from "@/components/progress/ProgressRing";
 import { SkeletonLine } from "@/components/patterns";
 import { TimeStateBadge } from "@/components/live/TimeStateBadge";
 import { useAuth } from "@/contexts/AuthContext";
-import { moduleEnabled } from "@/lib/room";
+import { moduleEnabled, roomModuleEnabled } from "@/lib/room";
 import { cn } from "@/lib/utils";
 import {
   useRoomOutlet,
@@ -214,6 +214,11 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
   /* ── The per-cohort feature matrix (UX only, never a security gate) ── */
   const assignmentsEnabled = moduleEnabled(envelope.config, "assignments");
   const peerReviewEnabled = moduleEnabled(envelope.config, "peer_review");
+  const demoSession = envelope.sessions.find(
+    (session) => session.session_type?.trim().toLowerCase() === "demo_day",
+  );
+  const demoOpen = roomModuleEnabled(envelope.config, "demo_day", room.phase)
+    && (room.phase === "wrap" || room.phase === "alumni");
 
   /* ── Which week is on screen ──
    * The URL is the source of truth when it names a week. `pending` covers the
@@ -275,7 +280,7 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
     );
   }
 
-  const selectedSessions = sessionsForWeek(selected, sessionsByWeek);
+  const selectedSessions = room.phase === "alumni" ? [] : sessionsForWeek(selected, sessionsByWeek);
 
   return (
     <section className={cn("space-y-6", className)} aria-label="Weeks">
@@ -297,7 +302,13 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
         onSubmissionChange={handleSubmissionChange}
       />
 
-      <WeekRail weeks={weeks} activeWeekId={selected.week_id} onSelect={selectWeek} />
+      <WeekRail
+        weeks={weeks}
+        activeWeekId={selected.week_id}
+        onSelect={selectWeek}
+        finaleAt={demoSession?.scheduled_at}
+        finaleHref={demoOpen ? "../demo-day" : null}
+      />
 
       <WeeksFooter progress={progress} nextDue={nextDue} />
     </section>

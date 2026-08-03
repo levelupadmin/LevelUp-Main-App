@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import TimeStateBadge from "@/components/live/TimeStateBadge";
 import { addToCalendar } from "@/lib/calendar";
+import { track } from "@/lib/analytics";
 import { tapTick } from "@/lib/haptics";
 import { sessionTimeState } from "@/lib/room";
 import { toast } from "@/lib/toast";
@@ -216,7 +217,10 @@ export function SessionSlot({
         href={joinUrl}
         target="_blank"
         rel="noopener noreferrer"
-        onClick={() => void tapTick()}
+        onClick={() => {
+          void tapTick();
+          track({ name: "room_session_join_tapped", sessionId: session.id, state });
+        }}
         className={cn(
           ACTION_BASE,
           "px-5 font-medium",

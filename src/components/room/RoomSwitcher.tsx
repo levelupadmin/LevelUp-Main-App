@@ -7,6 +7,7 @@ import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { MorphSheet } from "@/components/motion/MorphSheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { tapTick } from "@/lib/haptics";
+import { track } from "@/lib/analytics";
 import { useMotionSafe } from "@/lib/motion";
 import { resolveTheme } from "@/lib/room";
 import { cn } from "@/lib/utils";
@@ -292,6 +293,7 @@ export function RoomSwitcher({ rooms, currentOfferingId, className }: RoomSwitch
       setOpen(false);
       if (option.isCurrent) return;
       void tapTick();
+      track({ name: "room_switched" });
       rememberLastRoom(option.slug);
       parkScroll();
       navigate(`/room/${encodeURIComponent(option.slug)}`);

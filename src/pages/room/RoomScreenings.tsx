@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRoomOutlet, type RoomSession } from "@/hooks/useCohortRooms";
 import { supabase } from "@/integrations/supabase/client";
 import { moduleEnabled, SESSION_DEFAULT_DURATION_MINUTES } from "@/lib/room";
+import { track } from "@/lib/analytics";
 
 /**
  * RoomScreenings — the Screening Shelf (`/room/:slug/screenings`).
@@ -521,6 +522,7 @@ const RoomScreenings = () => {
    */
   const onOpenLinkOut = useCallback(
     (row: ShelfRow) => {
+      track({ name: "room_recording_played", resumed: row.storedSeconds > 0 });
       setOpenedIds((prev) => (prev.includes(row.sessionId) ? prev : [...prev, row.sessionId]));
       record(row.sessionId, { position_seconds: row.storedSeconds, completed: true });
     },
@@ -641,9 +643,15 @@ const RoomScreenings = () => {
                   statusLabel={statusLabel}
                   href={row.href}
                   open={activeId === row.sessionId}
-                  onOpen={() =>
-                    row.href ? onOpenLinkOut(row) : openRow(row.sessionId)
-                  }
+                  onOpen={() => {
+                    if (row.href) onOpenLinkOut(row);
+                    else {
+                      if (activeId !== row.sessionId) {
+                        track({ name: "room_recording_played", resumed: row.positionSeconds > 0 });
+                      }
+                      openRow(row.sessionId);
+                    }
+                  }}
                 >
                   {row.embeddable && activeId === row.sessionId && (
                     <RecordingPlayer

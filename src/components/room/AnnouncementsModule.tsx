@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Megaphone, Pin, PinOff, Undo2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SkeletonLine } from "@/components/patterns";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/analytics";
 import {
   canPostAnnouncement,
   useAmendRoomAnnouncement,
@@ -437,6 +438,7 @@ const AnnouncementsModule = () => {
   const nowMs = useRoomClock();
 
   const query = useRoomAnnouncements(room.offering_id);
+  const trackedRoom = useRef<string | null>(null);
   const notices = useMemo(() => pinnedFirst(query.notices), [query.notices]);
   const canPost = canPostAnnouncement(envelope.role, profile?.role === "admin");
   const amend = useAmendRoomAnnouncement(room.offering_id);
@@ -448,6 +450,12 @@ const AnnouncementsModule = () => {
   // one case this component cannot: a cohort that runs no announcements module,
   // where nothing renders and there is nothing to be behind on.
   useRoomSeenWatermark(room.offering_id, { enabled: query.isSuccess });
+
+  useEffect(() => {
+    if (!query.isSuccess || trackedRoom.current === room.offering_id) return;
+    trackedRoom.current = room.offering_id;
+    track({ name: "room_announcement_seen" });
+  }, [query.isSuccess, room.offering_id]);
 
   return (
     <section aria-labelledby="room-noticeboard" className="space-y-3">

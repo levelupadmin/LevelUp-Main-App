@@ -527,7 +527,8 @@ describe("the rail past twelve weeks", () => {
     const track = screen.getByRole("list", { name: "Weeks" });
     expect(track.className).toContain("overflow-x-auto");
     expect(track.className).toContain("snap-x");
-    expect(track.children).toHaveLength(20);
+    // Twenty authored episodes plus R4's permanent anticipation tile.
+    expect(track.children).toHaveLength(21);
     for (const tile of Array.from(track.children)) {
       expect(tile.className).toContain("shrink-0");
       expect(tile.className).toContain("snap-start");

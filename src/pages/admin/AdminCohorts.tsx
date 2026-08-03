@@ -20,6 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, ChevronDown, ChevronRight, ArrowRightLeft } from "lucide-react";
 import CohortResourcesManager from "@/components/admin/CohortResourcesManager";
+import CohortPhaseControl from "@/components/admin/CohortPhaseControl";
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -515,6 +516,7 @@ const AdminCohorts = () => {
 
       {selectedOfferingId && (
         <>
+          <CohortPhaseControl key={`phase-${selectedOfferingId}`} offeringId={selectedOfferingId} />
           <nav aria-label="Cohort administration" className="mb-5 flex gap-2 border-b border-border pb-3">
             <button
               type="button"

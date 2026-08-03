@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Check, Lock } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
 import type { RoomWeekRow } from "@/hooks/useCohortRooms";
@@ -42,13 +43,17 @@ export interface WeekRailProps {
   /** `week_id` of the week the module is showing. */
   activeWeekId: string | null;
   onSelect: (week: RoomWeekRow) => void;
+  /** The authored Demo Day date. The finale tile renders even while this is null. */
+  finaleAt?: string | null;
+  /** Set only once the room is in wrap/alumni and Demo Day is enabled. */
+  finaleHref?: string | null;
   className?: string;
 }
 
 /** Fixed tile width: two-and-a-bit tiles at 360px, so the rail reads scrollable. */
 const TILE_WIDTH = "w-[13.5rem]";
 
-export function WeekRail({ weeks, activeWeekId, onSelect, className }: WeekRailProps) {
+export function WeekRail({ weeks, activeWeekId, onSelect, finaleAt, finaleHref, className }: WeekRailProps) {
   const trackRef = useRef<HTMLUListElement>(null);
   const activeRef = useRef<HTMLLIElement>(null);
 
@@ -197,6 +202,36 @@ export function WeekRail({ weeks, activeWeekId, onSelect, className }: WeekRailP
             </li>
           );
         })}
+        <li className={cn("snap-start", TILE_WIDTH, "shrink-0")}>
+          {finaleHref ? (
+            <Link
+              to={finaleHref}
+              className="focus-ring flex h-full min-h-[116px] w-full flex-col items-start rounded-xl border border-room-accent/35 bg-room-accent/[0.06] p-4 text-left transition-colors hover:bg-room-accent/10"
+            >
+              <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-room-accent-text">
+                The finale
+              </span>
+              <span className="mt-2 font-serif text-lg leading-snug text-foreground">Demo Day</span>
+              <span className="body-muted mt-auto pt-3 font-mono text-[11px]">
+                {finaleAt && Number.isFinite(parseMs(finaleAt))
+                  ? formatIstDayMonth(parseMs(finaleAt))
+                  : "Date coming soon"}
+              </span>
+            </Link>
+          ) : (
+            <div className="flex h-full min-h-[116px] w-full flex-col items-start rounded-xl border border-room-accent/25 bg-room-accent/[0.04] p-4 text-left">
+              <span className="flex w-full items-center gap-2 font-mono text-[11px] uppercase tracking-[0.24em] text-room-accent-text">
+                The finale <Lock size={11} strokeWidth={1.5} className="ml-auto" aria-hidden />
+              </span>
+              <span className="mt-2 font-serif text-lg leading-snug text-foreground">Demo Day</span>
+              <span className="body-muted mt-auto pt-3 font-mono text-[11px]">
+                {finaleAt && Number.isFinite(parseMs(finaleAt))
+                  ? formatIstDayMonth(parseMs(finaleAt))
+                  : "Date coming soon"}
+              </span>
+            </div>
+          )}
+        </li>
       </ul>
     </div>
   );

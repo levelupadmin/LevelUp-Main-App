@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { BookOpen, CalendarClock, Users } from "lucide-react";
-import { moduleEnabled, sessionTimeState, type RoomModuleKey } from "@/lib/room";
+import { BookOpen, CalendarClock, Film, Users } from "lucide-react";
+import { moduleEnabled, roomModuleEnabled, sessionTimeState, type RoomModuleKey } from "@/lib/room";
 import { SkeletonLine, SurfaceCard } from "@/components/patterns";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -23,6 +23,8 @@ import WeeksModule, {
   sessionsForWeek,
 } from "@/components/room/WeeksModule";
 import { useRoomClock } from "@/components/room/RoomClockProvider";
+import CertificateMoment from "@/components/room/CertificateMoment";
+import AlumniBanner from "@/components/room/AlumniBanner";
 
 /**
  * RoomHome — what a room opens onto.
@@ -136,7 +138,8 @@ const RoomHome = () => {
   // idle when the cohort runs no weeks, so neither pays for a query it cannot
   // render. `RoomShell` mounts the clock this reads, so one interval serves the
   // whole room.
-  const wantsHero = !isLobby && canSee("weeks");
+  const isAlumni = room.phase === "alumni";
+  const wantsHero = !isLobby && !isAlumni && canSee("weeks");
   const weeksQuery = useRoomWeeks(room.offering_id, { enabled: wantsHero });
   const nowMs = useRoomClock();
 
@@ -184,6 +187,8 @@ const RoomHome = () => {
 
   return (
     <div className="space-y-4">
+      {isAlumni && <AlumniBanner />}
+      {canSee("certificates") && <CertificateMoment />}
       {/*
         THE TOP SLOT, in one of three states.
 
@@ -246,7 +251,7 @@ const RoomHome = () => {
         </>
       ) : (
         <>
-          {canSee("sessions") && session && (
+          {canSee("sessions") && !isAlumni && session && (
             <SurfaceCard to="screenings" padding="md">
               <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
                 Next up
@@ -314,6 +319,18 @@ const RoomHome = () => {
           <p className="body-muted mt-1 text-sm">Files, links and recordings from the cohort team.</p>
         </SurfaceCard>
       )}
+
+      {roomModuleEnabled(envelope.config, "demo_day", room.phase) &&
+        (room.phase === "wrap" || room.phase === "alumni") && (
+          <SurfaceCard to="demo-day" padding="md">
+            <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
+              <Film size={12} strokeWidth={1.5} className="mr-2 inline align-[-1px]" />
+              The finale
+            </p>
+            <p className="mt-2 font-serif text-2xl text-foreground">Demo Day.</p>
+            <p className="body-muted mt-1 text-sm">The cohort&apos;s finished work, on one slate.</p>
+          </SurfaceCard>
+        )}
     </div>
   );
 };
@@ -358,9 +375,19 @@ const ModuleOffNote = ({ title }: { title: string }) => (
  * gate needs the shell's envelope, which `App.tsx` cannot read.
  */
 export const RoomWeeksRoute = () => {
-  const { envelope } = useRoomOutlet();
+  const { room, envelope } = useRoomOutlet();
 
   if (!moduleEnabled(envelope.config, "weeks")) return <ModuleOffNote title="Weeks" />;
 
-  return <WeeksModule renderAssignment={(props) => <AssignmentModule {...props} />} />;
+  return (
+    <WeeksModule
+      renderAssignment={(props) => (
+        <AssignmentModule
+          {...props}
+          roomPhase={room.phase}
+          alumniSince={envelope.config?.alumni_since ?? null}
+        />
+      )}
+    />
+  );
 };

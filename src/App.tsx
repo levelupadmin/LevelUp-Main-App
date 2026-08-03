@@ -118,6 +118,7 @@ const RoomPeople = lazy(() => import("@/pages/room/RoomPeople"));
 // resource binder until the member asks for one of them.
 const RoomFeed = lazy(() => import("@/pages/room/RoomFeed"));
 const RoomResources = lazy(() => import("@/pages/room/RoomResources"));
+const RoomDemoDay = lazy(() => import("@/pages/room/RoomDemoDay"));
 const CohortRoomRedirect = lazy(() =>
   import("@/pages/room/RoomShell").then((m) => ({ default: m.CohortRoomRedirect })),
 );
@@ -320,6 +321,7 @@ const App = () => {
                       <Route path="feed" element={roomModule(<RoomFeed />)} />
                       <Route path="people" element={roomModule(<RoomPeople />)} />
                       <Route path="resources" element={roomModule(<RoomResources />)} />
+                      <Route path="demo-day" element={roomModule(<RoomDemoDay />)} />
                     </Route>
                   </>
                 )}

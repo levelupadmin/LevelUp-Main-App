@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -12,7 +12,8 @@ import AssignmentSubmissionForm from "@/components/cohort/AssignmentSubmissionFo
 import AssignmentFeedbackView from "@/components/cohort/AssignmentFeedbackView";
 import PeerReviewBoard from "@/components/cohort/PeerReviewBoard";
 import { tapTick } from "@/lib/haptics";
-import { ROOM_MODULE_DEFAULTS } from "@/lib/room";
+import { alumniRevisionOpen, ROOM_MODULE_DEFAULTS, type RoomLifecyclePhase } from "@/lib/room";
+import { track } from "@/lib/analytics";
 import { useMotionSafe } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -279,6 +280,9 @@ export interface AssignmentModuleProps {
    * fallback is "your mentor" — see the note in the phase report.
    */
   mentorName?: string | null;
+  /** R4 alumni write window; omitted callers keep the pre-R4 live behaviour. */
+  roomPhase?: RoomLifecyclePhase;
+  alumniSince?: string | null;
   className?: string;
 }
 
@@ -288,6 +292,7 @@ export interface AssignmentModuleProps {
 
 export function AssignmentModule({
   weekId,
+  weekNumber,
   userId,
   prompt,
   dueAt,
@@ -300,6 +305,8 @@ export function AssignmentModule({
   batchId,
   peerReviewEnabled = ROOM_MODULE_DEFAULTS.peer_review,
   mentorName,
+  roomPhase = "live",
+  alumniSince,
   className,
 }: AssignmentModuleProps) {
   const motionSafe = useMotionSafe();
@@ -322,8 +329,21 @@ export function AssignmentModule({
     (!!submissionFeedback ||
       submissionStatus === "reviewed" ||
       submissionStatus === "cleared");
-  const showResubmit = !!submissionId && submissionStatus === "needs_revision";
+  const revisionOpen = alumniRevisionOpen(roomPhase, alumniSince, submissionStatus);
+  const canStartSubmission = roomPhase !== "alumni";
+  const showResubmit = !!submissionId && submissionStatus === "needs_revision" && revisionOpen;
   const hasRating = submissionRating !== null && submissionRating !== undefined;
+
+  const handleSubmitted = useCallback(async () => {
+    if (typeof weekNumber === "number") {
+      track({
+        name: "room_assignment_submitted",
+        weekN: weekNumber,
+        late: Number.isFinite(dueMs) && Date.now() > dueMs,
+      });
+    }
+    await onChange();
+  }, [dueMs, onChange, weekNumber]);
 
   // The peer lane needs BOTH: a batch to scope the board to, and a cohort that
   // has not switched `peer_review` off. The flag composes with the batch id, it
@@ -372,15 +392,18 @@ export function AssignmentModule({
 
           {/* The first-submission form is gated on the PROMPT, like the shipped
               page: with nothing asked for there is nothing to answer. */}
-          {!submissionId && (
+          {!submissionId && canStartSubmission && (
             <div className="mt-4">
               <AssignmentSubmissionForm
                 weekId={weekId}
                 userId={userId}
                 compact
-                onSubmitted={onChange}
+                onSubmitted={handleSubmitted}
               />
             </div>
+          )}
+          {!submissionId && !canStartSubmission && (
+            <p className="body-muted mt-4 text-sm">This assignment is read-only in the alumni room.</p>
           )}
         </>
       ) : (
@@ -435,9 +458,15 @@ export function AssignmentModule({
             weekId={weekId}
             userId={userId}
             existingSubmissionId={submissionId ?? undefined}
-            onSubmitted={onChange}
+            onSubmitted={handleSubmitted}
           />
         </div>
+      )}
+
+      {submissionStatus === "needs_revision" && !revisionOpen && (
+        <p className="body-muted mt-5 border-t border-border pt-5 text-sm">
+          The fourteen-day alumni revision window has closed. Your submitted work and feedback remain here.
+        </p>
       )}
 
       {peerBatchId && <PeerReviewLane batchId={peerBatchId} userId={userId} />}

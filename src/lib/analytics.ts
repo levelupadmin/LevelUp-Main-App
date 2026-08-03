@@ -60,6 +60,8 @@ let cached: AnalyticsSettings | null = null;
 export async function loadSettings(): Promise<AnalyticsSettings | null> {
   if (cached) return cached;
   const { data } = await supabase
+    // Generated types predate the singleton analytics_settings table.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from("analytics_settings" as any)
     .select(
       "clarity_project_id, meta_pixel_id, ga4_measurement_id, twitter_pixel_id, clarity_enabled, meta_pixel_enabled, ga4_enabled, twitter_pixel_enabled",
@@ -144,8 +146,8 @@ function loadGA4(measurementId: string) {
   if (window.gtag) return;
   injectScript(`https://www.googletagmanager.com/gtag/js?id=${measurementId}`, "ga4");
   window.dataLayer = window.dataLayer || [];
-  window.gtag = function () {
-    (window.dataLayer as unknown[]).push(arguments);
+  window.gtag = (...args: unknown[]) => {
+    (window.dataLayer as unknown[]).push(args);
   };
   window.gtag("js", new Date());
   window.gtag("config", measurementId, { send_page_view: true });
@@ -321,7 +323,15 @@ export type AnalyticsEvent =
   | { name: "pay_cta_tapped"; slug: string; surface: "hero" | "sticky" | "rail" }
   | { name: "checkout_loaded"; offeringId: string; guest: boolean }
   | { name: "payment_initiated"; orderId: string }
-  | { name: "purchase_completed"; orderId: string; valueInr: number };
+  | { name: "purchase_completed"; orderId: string; valueInr: number }
+  // ── Cohort-room v1 events (R4-T4; exactly seven) ──────────────────
+  | { name: "room_opened"; slug: string; phase: string }
+  | { name: "room_session_join_tapped"; sessionId: string; state: string }
+  | { name: "room_recording_played"; resumed: boolean }
+  | { name: "room_assignment_submitted"; weekN: number; late: boolean }
+  | { name: "room_announcement_seen" }
+  | { name: "room_demo_entry_submitted" }
+  | { name: "room_switched" };
 
 // Generate a stable, unique event ID for each track() call. Meta's
 // server-side CAPI (enabled via "Set up with Meta" in Events Manager)
@@ -434,6 +444,27 @@ export function track(event: AnalyticsEvent) {
         break;
       case "purchase_completed":
         captureFunnel("purchase_completed", { order_id: event.orderId, value_inr: event.valueInr });
+        break;
+      case "room_opened":
+        captureFunnel("room_opened", { slug: event.slug, phase: event.phase });
+        break;
+      case "room_session_join_tapped":
+        captureFunnel("room_session_join_tapped", { session_id: event.sessionId, state: event.state });
+        break;
+      case "room_recording_played":
+        captureFunnel("room_recording_played", { resumed: event.resumed });
+        break;
+      case "room_assignment_submitted":
+        captureFunnel("room_assignment_submitted", { week_n: event.weekN, late: event.late });
+        break;
+      case "room_announcement_seen":
+        captureFunnel("room_announcement_seen", {});
+        break;
+      case "room_demo_entry_submitted":
+        captureFunnel("room_demo_entry_submitted", {});
+        break;
+      case "room_switched":
+        captureFunnel("room_switched", {});
         break;
     }
   } catch (e) {

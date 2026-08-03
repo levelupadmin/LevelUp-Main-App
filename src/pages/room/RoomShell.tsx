@@ -1,6 +1,7 @@
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { NavLink, Navigate, Outlet, useParams } from "react-router-dom";
-import { moduleEnabled, resolveTheme, type RoomModuleKey } from "@/lib/room";
+import { moduleEnabled, resolveTheme, roomModuleEnabled, type RoomModuleKey } from "@/lib/room";
+import { track } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import usePageTitle from "@/hooks/usePageTitle";
 import {
@@ -48,6 +49,7 @@ const ROOM_TABS: ReadonlyArray<{ to: string; label: string; module: RoomModuleKe
   { to: "feed", label: "Feed", module: "feed" },
   { to: "people", label: "People", module: "roster" },
   { to: "resources", label: "Resources", module: "resources" },
+  { to: "demo-day", label: "Demo Day", module: "demo_day" },
 ];
 
 /**
@@ -70,6 +72,7 @@ const RoomShell = () => {
   const { slug } = useParams<{ slug: string }>();
   const { status, room, envelope, rooms, refetch } = useRoomView(slug);
   const meta = useRoomOfferingMeta(room?.offering_id ?? null);
+  const openedSlug = useRef<string | null>(null);
 
   // The config row is authoritative; the membership row carries the same jsonb
   // and covers the window before the envelope lands. Neither present (an
@@ -88,13 +91,23 @@ const RoomShell = () => {
     }
   }, [status, slug]);
 
+  useEffect(() => {
+    if (status !== "ready" || !slug || !room || openedSlug.current === slug) return;
+    openedSlug.current = slug;
+    track({ name: "room_opened", slug, phase: room.phase });
+  }, [room, slug, status]);
+
   const tabs = useMemo(() => {
     // The lobby's rail is empty by construction: every module it could link to
     // is redacted server-side for a pre_member, and a tab that opens an empty
     // page is exactly the "dead module" the brief forbids.
     if (!envelope || isLobbyEnvelope(envelope)) return [];
-    return ROOM_TABS.filter((tab) => moduleEnabled(envelope.config, tab.module));
-  }, [envelope]);
+    return ROOM_TABS.filter((tab) =>
+      tab.module === "demo_day"
+        ? roomModuleEnabled(envelope.config, tab.module, room?.phase ?? "pre_start")
+        : moduleEnabled(envelope.config, tab.module),
+    );
+  }, [envelope, room?.phase]);
 
   if (status === "loading") return <RoomLoadingState />;
   if (status === "denied") return <RoomPrivateState />;
@@ -196,7 +209,7 @@ export default RoomShell;
  * (backbone.sql:868-875), so every enrolled student of a cohort that has not
  * been given a room yet gets a `42501` from this RPC. Turning that into a
  * private wall would strand exactly the students R-D9 exists to protect. The
- * distinction that matters is kept — denied stops, empty falls through — it is
+ * access rule that matters is kept — denied stops, empty falls through — it is
  * just not spent on a wall.
  */
 export const CohortRoomRedirect = ({ fallback }: { fallback: ReactNode }) => {
