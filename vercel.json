@@ -1,10 +1,9 @@
 {
   "rewrites": [
     {
-      "source": "/.well-known/:path*",
-      "destination": "/.well-known/:path*"
-    },
-    { "source": "/(.*)", "destination": "/index.html" }
+      "source": "/((?!assets(?:/|$)|api(?:/|$)|\\.well-known(?:/|$)).*)",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
     {
