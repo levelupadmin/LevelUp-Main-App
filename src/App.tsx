@@ -1,11 +1,16 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { bootAnalytics } from "@/lib/analytics";
+import { DECISION_FLOW, flag } from "@/lib/flags";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { queryClient, persistOptions } from "@/lib/queryClient";
 import { toast as sonnerToast } from "sonner";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
+import {
+  CohortRoomsSurfaceProvider,
+  useCohortRoomsSurfaceValue,
+} from "@/contexts/CohortRoomsSurfaceContext";
 import RequireAuth from "@/components/guards/RequireAuth";
 import RequireRole from "@/components/guards/RequireRole";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -98,11 +103,94 @@ const AdminCohortSubmissions = lazy(() => import("@/pages/admin/AdminCohortSubmi
 const AdminCohortAttendance = lazy(() => import("@/pages/admin/AdminCohortAttendance"));
 const AdminNotifyRequests = lazy(() => import("@/pages/admin/AdminNotifyRequests"));
 const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
+// Interactive claim for an application provisioning parked (`pending_claim`).
+// Authenticated by definition: the claimant is holding a session when the row
+// surfaces. Route path is pinned — S-5's applicant card navigates to it.
+const ClaimApplication = lazy(() => import("@/pages/auth/ClaimApplication"));
+
+// ─── Phase DC — the decision experience (behind VITE_DECISION_FLOW) ───
+// Registered in one pass so the four decision surfaces + the public admission
+// page share a single route block. Every one of them is a READ path: the app
+// never writes a funnel status (SOR-1). With the flag off NONE of these routes
+// is rendered at all, so the paths fall through to the catch-all exactly as they
+// do today — flag-off is byte-identical, and the chunks are never fetched.
+const DecisionReveal = lazy(() => import("@/pages/decision/DecisionReveal"));
+const AcceptanceCard = lazy(() => import("@/pages/decision/AcceptanceCard"));
+const ClaimSeat = lazy(() => import("@/pages/decision/ClaimSeat"));
+const EnrollmentDetails = lazy(() => import("@/pages/decision/EnrollmentDetails"));
+const AdmissionPublic = lazy(() => import("@/pages/AdmissionPublic"));
+
+// ── Cohort rooms (R1), behind VITE_COHORT_ROOMS ──
+// Their own chunks: with the flag off none of them is referenced by a rendered
+// route, so the room code never enters a session's network graph.
+const MyCohortsPage = lazy(() => import("@/pages/MyCohortsPage"));
+const RoomShell = lazy(() => import("@/pages/room/RoomShell"));
+const RoomHome = lazy(() => import("@/pages/room/RoomHome"));
+// R2's two built modules. `RoomWeeksRoute` rides RoomHome's chunk (it is the
+// gate + the assignment seam around WeeksModule, and needs the shell's envelope
+// that this file cannot read); the Screening Shelf is a page of its own and gets
+// its own chunk, which keeps its player + progress-writer out of the room open.
+const RoomWeeksRoute = lazy(() =>
+  import("@/pages/room/RoomHome").then((m) => ({ default: m.RoomWeeksRoute })),
+);
+const RoomScreenings = lazy(() => import("@/pages/room/RoomScreenings"));
+// R3's roster module. Its own chunk for the same reason the shelf has one: it
+// carries the roster grid and its avatars, none of which a room open needs.
+const RoomPeople = lazy(() => import("@/pages/room/RoomPeople"));
+// R3's activity and reference surfaces each stay in their own route chunk.
+// Opening a room therefore does not ship the feed composer, reply UI or the
+// resource binder until the member asks for one of them.
+const RoomFeed = lazy(() => import("@/pages/room/RoomFeed"));
+const RoomResources = lazy(() => import("@/pages/room/RoomResources"));
+const RoomDemoDay = lazy(() => import("@/pages/room/RoomDemoDay"));
+const CohortRoomRedirect = lazy(() =>
+  import("@/pages/room/RoomShell").then((m) => ({ default: m.CohortRoomRedirect })),
+);
+
+/**
+ * What the module slot shows while a room module's chunk is in flight.
+ *
+ * 🔴 WHY THIS EXISTS. The nearest Suspense boundary above a room module is
+ * `StudentLayout`'s, which wraps the layout's whole `<Outlet/>` — so a module
+ * whose chunk is NOT resident makes React 18 unmount the room's chrome
+ * (switcher, masthead, module rail) and paint the generic app skeleton instead.
+ * Navigations here are synchronous (`<BrowserRouter>`, no `v7_startTransition`),
+ * so the blank is real, not theoretical. R2 split `screenings` into its own
+ * chunk, which made that reachable from inside a painted room in BOTH
+ * directions (home/weeks → screenings and screenings → home/weeks), so the
+ * boundary is per-module rather than only on the one new page.
+ *
+ * Written with plain elements and the global `skeleton-shimmer` class ON
+ * PURPOSE: importing the room's own loading states here would pull room code
+ * into the main bundle, which is exactly what the lazy boundaries above buy.
+ */
+const RoomModuleFallback = () => (
+  <div className="space-y-4" role="status" aria-busy="true">
+    <span className="sr-only">Loading…</span>
+    <div className="h-40 rounded-xl skeleton-shimmer" />
+    <div className="h-24 rounded-xl skeleton-shimmer" />
+  </div>
+);
+
+/** A room module route element, with its own boundary so the chrome survives. */
+const roomModule = (element: ReactNode) => (
+  <Suspense fallback={<RoomModuleFallback />}>{element}</Suspense>
+);
 
 // The QueryClient + its localStorage persister live in @/lib/queryClient so the
 // sign-out path can purge the persisted cache without importing this app root.
 
-const App = () => {
+const AppContent = () => {
+  // Phase DC's routes exist ONLY when the flag is on (see the lazy imports
+  // above). Read once per render so the whole decision block appears or
+  // disappears atomically.
+  const decisionFlow = flag(DECISION_FLOW);
+
+  // One server-authoritative value drives both this route table and the nested
+  // StudentLayout nav. Local intent alone can never expose a shipped native
+  // room surface; the provider resolves local intent AND the fresh RPC answer.
+  const { enabled: roomsEnabled, pending: roomsPending } = useCohortRoomsSurfaceValue();
+
   // Fire-and-forget analytics boot. Reads analytics_settings from the
   // DB and injects whichever platform scripts are enabled. Skips on
   // localhost so dev work doesn't pollute production funnels (the
@@ -161,8 +249,11 @@ const App = () => {
     return () => { remove?.(); };
   }, []);
 
+  // Only opted-in clients wait here, and the RPC reader fails closed after a
+  // bounded three seconds. Flag-off clients never make the request or see this.
+  if (roomsPending) return <RouteFallback />;
+
   return (
-  <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
     <AuthProvider>
       <ErrorBoundary>
         <BrowserRouter>
@@ -204,6 +295,13 @@ const App = () => {
               */}
               <Route path="/delete-account" element={<DeleteAccount />} />
 
+              {/* The public admission page (REQ-DEC-6) — a RECIPIENT view for a
+                  shared admission link, keyed on `admission_page_slug`. It sits
+                  in the PUBLIC block on purpose: the whole point is that a
+                  logged-out recipient can open it. It renders only whitelisted
+                  fields, and an unpublished record 404s. */}
+              {decisionFlow && <Route path="/admission/:slug" element={<AdmissionPublic />} />}
+
               {/* Browse merged into Home, keep old deep links working. */}
               <Route path="/browse" element={<Navigate to="/" replace />} />
               {/* Friendly alias for the sessions tab. */}
@@ -223,7 +321,58 @@ const App = () => {
                 <Route path="/events" element={<Navigate to="/learn?seg=calendar" replace />} />
                 <Route path="/events/:eventId" element={<EventDetail />} />
                 <Route path="/my-application/:applicationId" element={<ApplicationStatus />} />
-                <Route path="/cohort/:offeringId" element={<CohortDashboard />} />
+                <Route path="/claim/:applicationId" element={<ClaimApplication />} />
+                {/*
+                  /cohort/:offeringId is LINKED FROM ALREADY-SENT NOTIFICATION
+                  EMAILS (R-D9). With the flag off this element expression is
+                  literally <CohortDashboard />, exactly as it has always been.
+                  With the flag on, the shim tries to resolve a room slug and
+                  <Navigate replace/>s to it — and falls back to this very page
+                  whenever it cannot, so the link never dead-ends.
+                */}
+                <Route
+                  path="/cohort/:offeringId"
+                  element={
+                    roomsEnabled
+                      ? <CohortRoomRedirect fallback={<CohortDashboard />} />
+                      : <CohortDashboard />
+                  }
+                />
+                {roomsEnabled && (
+                  <>
+                    <Route path="/rooms" element={<MyCohortsPage />} />
+                    {/* Every element below goes through `roomModule()`, which
+                        adds the Suspense boundary the room subtree otherwise
+                        lacks — see RoomModuleFallback. */}
+                    <Route path="/room/:slug" element={<RoomShell />}>
+                      <Route index element={roomModule(<RoomHome />)} />
+                      {/* The rail links `weeks/:n` (RoomShell.tsx `weeksHref`);
+                          the bare path is what a typed URL and a stale
+                          bookmark hit, and WeeksModule already resolves its own
+                          default week when the route names none. */}
+                      <Route path="weeks" element={roomModule(<RoomWeeksRoute />)} />
+                      <Route path="weeks/:n" element={roomModule(<RoomWeeksRoute />)} />
+                      {/* RoomScreenings owns the `recordings` gate itself, so
+                          the route does not add a second config decision. */}
+                      <Route path="screenings" element={roomModule(<RoomScreenings />)} />
+                      {/* Every built module owns its own config and lobby gate,
+                          so a typed URL cannot bypass the room's matrix. */}
+                      <Route path="feed" element={roomModule(<RoomFeed />)} />
+                      <Route path="people" element={roomModule(<RoomPeople />)} />
+                      <Route path="resources" element={roomModule(<RoomResources />)} />
+                      <Route path="demo-day" element={roomModule(<RoomDemoDay />)} />
+                    </Route>
+                  </>
+                )}
+                {/* Claim + details are transactional reading screens, so they
+                    keep the student shell (a way back out). The two cinematic
+                    surfaces above them run full-bleed — see below. */}
+                {decisionFlow && (
+                  <>
+                    <Route path="/decision/:applicationId/claim" element={<ClaimSeat />} />
+                    <Route path="/decision/:applicationId/details" element={<EnrollmentDetails />} />
+                  </>
+                )}
               </Route>
 
               {/* ChapterViewer runs full-bleed (no student nav) but stays auth-guarded */}
@@ -231,6 +380,22 @@ const App = () => {
                 path="/chapters/:chapterId"
                 element={<RequireAuth><ErrorBoundary><ChapterViewer /></ErrorBoundary></RequireAuth>}
               />
+
+              {/* The reveal and the acceptance card are full-viewport moments
+                  (REQ-DEC-2): nav chrome under a decision reveal breaks it. Same
+                  full-bleed + auth-guarded shape as ChapterViewer. */}
+              {decisionFlow && (
+                <>
+                  <Route
+                    path="/decision/:applicationId"
+                    element={<RequireAuth><ErrorBoundary><DecisionReveal /></ErrorBoundary></RequireAuth>}
+                  />
+                  <Route
+                    path="/decision/:applicationId/accepted"
+                    element={<RequireAuth><ErrorBoundary><AcceptanceCard /></ErrorBoundary></RequireAuth>}
+                  />
+                </>
+              )}
 
               {/* ─── Admin routes share a single persistent admin layout ─── */}
               <Route element={<RequireAuth><RequireRole role="admin"><AdminLayout /></RequireRole></RequireAuth>}>
@@ -293,8 +458,15 @@ const App = () => {
       <SonnerToaster theme="dark" />
       <OfflineBanner />
     </AuthProvider>
-  </PersistQueryClientProvider>
   );
 };
+
+const App = () => (
+  <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
+    <CohortRoomsSurfaceProvider>
+      <AppContent />
+    </CohortRoomsSurfaceProvider>
+  </PersistQueryClientProvider>
+);
 
 export default App;

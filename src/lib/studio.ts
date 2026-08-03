@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 
 export type Reel = Database["public"]["Tables"]["cb_reels"]["Row"];
+type ReelUpdate = Database["public"]["Tables"]["cb_reels"]["Update"];
 export type Folder = Database["public"]["Tables"]["cb_folders"]["Row"];
 export type Bucket = "learn" | "adapt" | "saved";
 
@@ -91,7 +92,7 @@ export async function updateReel(
 ): Promise<void> {
   // "Acted" = moved to adapt OR a note was added. Stamp it for the Revisit engine.
   const acted = patch.bucket === "adapt" || (typeof patch.note === "string" && patch.note.trim().length > 0);
-  const body: Record<string, unknown> = { ...patch };
+  const body: ReelUpdate = { ...patch };
   if (acted) body.acted_at = new Date().toISOString();
   const { error } = await supabase.from("cb_reels").update(body).eq("id", id);
   if (error) throw error;

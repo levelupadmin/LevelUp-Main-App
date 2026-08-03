@@ -18,9 +18,9 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
  *
  * useFunnelStage + useAuth + the supabase client are mocked so the page renders
  * without the flag/edge-fn/network, mirroring the isolation of
- * CheckoutPage.phonePayload.test.tsx. isIOS() is forced false so a payment CTA
- * WOULD render if it weren't suppressed — proving the suppression is the v1
- * money-stage rule, not the Apple anti-steering guard.
+ * CheckoutPage.phonePayload.test.tsx. isNative() is forced false so a payment
+ * CTA WOULD render if it weren't suppressed — proving the suppression is the
+ * v1 money-stage rule, not the native Reader Rule guard.
  */
 
 const TEST_UID = "user-1";
@@ -38,10 +38,10 @@ vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({ user: { id: TEST_UID } }),
 }));
 
-// Non-iOS so a payment CTA WOULD render if it weren't suppressed — proving the
-// suppression is the v1 money-stage rule, not the Apple anti-steering guard.
+// Web so a payment CTA WOULD render if it weren't suppressed — proving the
+// suppression is the v1 money-stage rule, not the native Reader Rule guard.
 vi.mock("@/lib/platform", () => ({
-  isIOS: () => false,
+  isNative: () => false,
 }));
 
 // The page reads its one application row via

@@ -56,6 +56,23 @@ export async function enqueueEmail(
     label: string;
     idempotencyKey: string;
     messageId: string;
+    /**
+     * Per-recipient opt-out credential (PHASE RE, U-1). OPTIONAL, and omitted
+     * from the payload entirely when absent, so every existing producer queues a
+     * byte-identical message to the one it queued before this field existed.
+     *
+     * The only producer that sets this field today is `cohort-reentry-cron`,
+     * whose rendered bodies also carry the link itself — `_shared/unsubscribe.ts`
+     * mints it and `email-unsubscribe` consumes it.
+     *
+     * NO CLAIM IS MADE about what the sender does with it. Nothing in this repo
+     * emits a `List-Unsubscribe` / `List-Unsubscribe-Post` header, so RFC 8058
+     * one-click from the inbox is UNVERIFIED and nothing depends on it. The
+     * load-bearing path is the link inside the rendered body. Keeping the
+     * credential on the queue payload lets DLQ/audit tooling retain the same
+     * evidence without asserting a provider capability that is not configured.
+     */
+    unsubscribeToken?: string;
   },
 ) {
   const payload = {
@@ -70,6 +87,7 @@ export async function enqueueEmail(
     label: opts.label,
     idempotency_key: opts.idempotencyKey,
     message_id: opts.messageId,
+    ...(opts.unsubscribeToken ? { unsubscribe_token: opts.unsubscribeToken } : {}),
     queued_at: new Date().toISOString(),
   };
   return admin.rpc("enqueue_email", { queue_name: "transactional_emails", payload });

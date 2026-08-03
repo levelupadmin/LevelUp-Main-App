@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QA — Room Masthead Harness (R1-T3)</title>
+    <style>
+      html, body { background:#000; color-scheme: dark; margin:0; }
+    </style>
+    <script>
+      // Armed BEFORE React so the entrance's own frames and any shift it causes
+      // are inside the measurement window.
+      window.__cls = 0;
+      window.__shifts = [];
+      try {
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (!entry.hadRecentInput) {
+              window.__cls += entry.value;
+              window.__shifts.push({ value: entry.value, at: Math.round(entry.startTime) });
+            }
+          }
+        }).observe({ type: "layout-shift", buffered: true });
+      } catch (e) { window.__clsError = String(e); }
+
+      // Frame-interval trace (ms between rAF callbacks) for the fps read.
+      window.__frames = [];
+      (function () {
+        var last = performance.now();
+        var start = last;
+        function tick(now) {
+          window.__frames.push({ t: now, d: now - last });
+          last = now;
+          if (now - start < 5000) requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      })();
+
+      // `?reduced=1` forces the reduced-motion branch when the driver cannot
+      // emulate the media query itself. Installed before React reads matchMedia.
+      if (new URLSearchParams(location.search).get("reduced") === "1") {
+        var realMatchMedia = window.matchMedia.bind(window);
+        window.matchMedia = function (query) {
+          if (String(query).indexOf("prefers-reduced-motion") !== -1) {
+            return {
+              matches: true, media: query, onchange: null,
+              addListener: function () {}, removeListener: function () {},
+              addEventListener: function () {}, removeEventListener: function () {},
+              dispatchEvent: function () { return false; },
+            };
+          }
+          return realMatchMedia(query);
+        };
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./room-masthead.tsx"></script>
+  </body>
+</html>

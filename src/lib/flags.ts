@@ -15,9 +15,101 @@
 /** The reconciler flag. Default off — the whole reconciler path is inert. */
 export const FUNNEL_RECON = "VITE_FUNNEL_RECON";
 
+/**
+ * The additive Email sign-in tab (PHASE SP). Default off, so the MSG91 phone
+ * form is the only login surface until this is switched on: the tab dark-ships
+ * and inviolable rule 2 ("phone-OTP stays byte-identical to production") holds
+ * by construction while it is unset. Lives here rather than next to the claim
+ * hook so the Tier-1 login page depends on the registry, not on a Phase-SP
+ * feature module, to learn the flag's name.
+ */
+export const EMAIL_OTP_TAB = "VITE_EMAIL_OTP_TAB";
+
+/**
+ * The interview-cluster flag (PHASE IV). Default off — the slot buttons,
+ * interviewer card and reschedule control stay dark. (The batch ledger this
+ * docblock used to list was deleted in c656232: it could only ever hide.)
+ *
+ * TWO SURFACES ARE BEHIND IT, NOT ONE. `ApplicationStatus` renders for real
+ * applicants today, and `ThankYou` is the ₹400 post-payment screen — so the
+ * whole cluster ships behind this before any of it is switched on. `ThankYou`
+ * additionally keeps main's Calendly iframe as its flag-off branch, so turning
+ * this off restores the surface that shipped rather than falling through to the
+ * new component's own fallback ladder.
+ */
+export const COHORT_INTERVIEW = "VITE_COHORT_INTERVIEW";
+
+/**
+ * The decision-experience flag (Phase DC). Default off — the sealed reveal, the
+ * acceptance card, the claim flow and the public admission page are all inert,
+ * and an `accepted` application falls back to today's TeleCRM-managed admin +
+ * email path with no in-app reveal.
+ *
+ * It gates a READ path only: the app never writes a funnel status (SOR-1), and
+ * there is no in-app admin decision RPC. Because the `accepted` signal is
+ * sourced from `useFunnelStage`, which is itself gated on `FUNNEL_RECON`, the
+ * reveal needs BOTH flags on to fire.
+ */
+export const DECISION_FLOW = "VITE_DECISION_FLOW";
+
+/**
+ * The re-entry reminder ladder. Default off (PHASE RE, Δ3 — enabling it is
+ * Rahul's switch, not ours).
+ *
+ * ⚠️ THIS FLAG GATES THE CLIENT ONLY, AND THE CLIENT IS NOT WHERE THE MESSAGES
+ * COME FROM. The ladder runs as a Deno edge function on pg_cron
+ * (`supabase/functions/cohort-reentry-cron`), and `import.meta.env` — which
+ * every value below is resolved through — does not exist in Deno. So this flag
+ * cannot and does not gate a single outbound message. The switch that does is
+ * the server-side env var `REMINDER_LADDER_ENABLED` on that function, which is
+ * fail-closed and unset. Turning this one on lights up any future client
+ * surface for the ladder; it does not start the sending.
+ *
+ * SCOPE: the ladder, and only the ladder. The install nudge built in the same
+ * phase is NOT under this flag — it has its own switch, `INSTALL_NUDGE` below,
+ * for the reasons stated there.
+ */
+export const REMINDER_LADDER = "VITE_REMINDER_LADDER";
+
+/**
+ * The install nudge at the two application value moments (PHASE RE, E-3 —
+ * REQ-INSTALL-1/2). Default off, and OFF MEANS INERT: with this flag down the
+ * `beforeinstallprompt` listener is never attached, the browser's own
+ * mini-infobar is never `preventDefault()`ed, and neither <InstallNudge> mount
+ * renders anything. Flag-off is byte-identical to the app before E-3 existed.
+ *
+ * It is deliberately a SECOND flag rather than a reuse of REMINDER_LADDER. That
+ * one is Rahul's switch for "start messaging applicants"; this one decides
+ * whether we take over install promotion in the browser, which lands on every
+ * web visitor including people who never applied. Different blast radius,
+ * different decision, different day — so they turn on independently, and the
+ * ladder docblock above stays true.
+ */
+export const INSTALL_NUDGE = "VITE_INSTALL_NUDGE";
+
+/**
+ * The cohort-rooms SURFACE flag. Default off — `/rooms` and `/room/*` do not
+ * exist as routes, and `/cohort/:offeringId` behaves exactly as it did before
+ * R1 (no slug resolution, no redirect).
+ *
+ * ⚠️ SURFACE ONLY, NEVER AUTHORISATION (NFR-CONFIG-2). Because `flag()` reads
+ * localStorage BEFORE the compiled env (see the resolution order above), any
+ * visitor can turn this on for their own device. That is fine and intended: R0's
+ * RLS and the three room RPCs gate the DATA regardless, and each RPC asserts
+ * access first and RAISEs `42501` for a caller who does not hold it. Nothing in
+ * the room stack may read this flag to decide what a user is allowed to see.
+ */
+export const COHORT_ROOMS = "VITE_COHORT_ROOMS";
+
 /** Known flags and their default when neither localStorage nor env speaks. */
 const REGISTRY: Record<string, boolean> = {
   [FUNNEL_RECON]: false,
+  [EMAIL_OTP_TAB]: false,
+  [COHORT_INTERVIEW]: false,
+  [DECISION_FLOW]: false,
+  [REMINDER_LADDER]: false,
+  [INSTALL_NUDGE]: false,
+  [COHORT_ROOMS]: false,
 };
 
 function truthy(value: unknown): boolean {

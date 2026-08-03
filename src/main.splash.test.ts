@@ -34,7 +34,7 @@ import {
 // Hoisted so the vi.mock factories (which are hoisted above imports) can close
 // over the same spies we assert on.
 const h = vi.hoisted(() => ({
-  hide: vi.fn(() => Promise.resolve()),
+  hide: vi.fn((_options?: { fadeOutDuration?: number }) => Promise.resolve()),
   render: vi.fn(),
   createRoot: vi.fn(),
   isNativePlatform: vi.fn(() => true),
@@ -55,7 +55,9 @@ vi.mock("@capacitor/core", () => ({
 // The dynamic `import("@capacitor/splash-screen")` inside hide() resolves to
 // this — the module cache means the repeated import per hide() is cheap.
 vi.mock("@capacitor/splash-screen", () => ({
-  SplashScreen: { hide: (...args: unknown[]) => h.hide(...args) },
+  SplashScreen: {
+    hide: (options?: { fadeOutDuration?: number }) => h.hide(options),
+  },
 }));
 
 // App renders nothing; index.css / sentry are irrelevant to the handoff.

@@ -38,6 +38,44 @@ CREATE INDEX cohort_weeks_status_idx ON public.cohort_weeks (status) WHERE statu
 ----------------------------------------------------------------------
 -- 2. live_sessions <-> cohort_weeks FK (column already exists)
 ----------------------------------------------------------------------
+-- THE COLUMN EXISTS BUT NOT AS THE RIGHT TYPE, AND THIS FILE ASSUMED IT DID.
+--
+-- 20260413100000:77 created it as `week_id text`; cohort_weeks.id is uuid. So
+-- the ADD CONSTRAINT below is a type mismatch and CANNOT be created on a fresh
+-- database — Postgres rejects an FK between text and uuid outright.
+--
+-- Production does not hit it because production's column IS uuid: somebody
+-- converted it out-of-band (SQL editor, most likely) and the conversion was
+-- never captured as a migration. Verified on prod 2026-07-28
+-- (ivkvluezuiojovpotlyb): live_sessions.week_id = uuid, cohort_weeks.id = uuid,
+-- live_sessions_week_id_fkey present. So prod and the migration history had
+-- silently disagreed for two months.
+--
+-- CONSEQUENCE, and why this is worth fixing rather than working around: the
+-- repo could not build a working database FROM SCRATCH. Every fresh
+-- environment — a local `supabase start`, a shadow project, a disaster
+-- recovery — died right here. It surfaced the first time anyone actually tried
+-- (2026-07-28, standing up a local stack to run the adversarial suites), which
+-- is exactly the kind of defect that hides until the moment you need it most.
+--
+-- The conversion is guarded on the CURRENT type, so it is a no-op on
+-- production and on any database already carrying uuid. Empty strings become
+-- NULL rather than failing the cast — `text` allowed '' and uuid does not.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'live_sessions'
+      AND column_name = 'week_id'
+      AND data_type <> 'uuid'
+  ) THEN
+    ALTER TABLE public.live_sessions
+      ALTER COLUMN week_id TYPE uuid
+      USING NULLIF(btrim(week_id), '')::uuid;
+  END IF;
+END $$;
+
 ALTER TABLE public.live_sessions
   DROP CONSTRAINT IF EXISTS live_sessions_week_id_fkey;
 ALTER TABLE public.live_sessions

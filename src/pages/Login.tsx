@@ -11,7 +11,10 @@ import LevelUpWordmark from "@/components/LevelUpWordmark";
 import usePageTitle from "@/hooks/usePageTitle";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
+import { OtpTabs, EmailSignInPanel, type OtpTab } from "@/components/auth/OtpTabs";
 import { InstructorProof } from "@/components/auth/InstructorProof";
+import { type EmailOtpSession } from "@/hooks/useClaimApplication";
+import { EMAIL_OTP_TAB, flag } from "@/lib/flags";
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
 import { isNative } from "@/lib/platform";
 import { hapticImpact } from "@/lib/haptics";
@@ -41,6 +44,33 @@ const resolvePostAuthDestination = async (
     return "/onboarding";
   }
 };
+
+// PHASE SP — WHY THE PARKED-APPLICATION CLAIM IS NOT SURFACED FROM THIS FILE.
+//
+// A collision leaves a `cohort_applications` row with `user_id` NULL +
+// `pending_claim`, and the human who just signed in is the only party who can
+// resolve it. An earlier revision routed them straight there by replacing the
+// default /home landing. That is withdrawn, for two independent reasons:
+//
+//   1. SECURITY. A parked row can be manufactured by anyone who types a
+//      stranger's email into the PUBLIC Tally form (the `email_taken`
+//      collision is exactly that), and the S-2 RLS policy then makes the row
+//      discoverable by that stranger. A forced interstitial therefore lets an
+//      attacker replace any user's landing page — at every sign-in, forever,
+//      with a masked phone number they have never seen — for an application
+//      that user never made.
+//   2. TIER 1. It put a blocking Supabase read between "session minted" and
+//      "route painted" on the proven MSG91 path for 100% of existing users,
+//      unflagged, on the slowest surfaces we ship to (Android System WebView,
+//      iOS WKWebView), for a feature almost none of them will ever touch.
+//
+// S-5's applicant card on Home already surfaces the identical claim, from the
+// screen every sign-in lands on, as a dismissible card linking to
+// `claimRoute(applicationId)`. It buys the same reachability at the same one
+// read, off the login path, and cannot be aimed at anyone. So the ONLY change
+// this file carries for PHASE SP is the additive, flag-gated Email tab below;
+// the phone branch's behaviour, network calls and navigation targets are
+// untouched.
 
 type Step = "phone" | "otp" | "email_input" | "email_sent";
 
@@ -127,6 +157,10 @@ const Login = () => {
   }, []);
 
   const [step, setStep] = useState<Step>(EMAIL_ONLY_AUTH ? "email_input" : "phone");
+  // Which sign-in channel the (additive, dark-shippable) tab bar is showing.
+  // Always starts on "phone": the MSG91 flow is the proven path and stays the
+  // default first paint whether or not the email tab is switched on.
+  const [authTab, setAuthTab] = useState<OtpTab>("phone");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [channel, setChannel] = useState<"sms" | "whatsapp">("sms");
@@ -300,6 +334,38 @@ const Login = () => {
     }
   };
 
+  // Email tab (PHASE SP): verify-email-otp has already minted a session for the
+  // uid `find_login_identity` resolved, so all that is left is the same
+  // set-session → resolve-destination → bounded-paint tail the phone path runs.
+  // Deliberately a SEPARATE function rather than a refactor of handleVerify:
+  // the phone path is the proven login for every existing user and must stay
+  // byte-identical, so these lines are duplicated instead of hoisted.
+  const handleEmailSession = async (
+    session: EmailOtpSession,
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    // Open the success window BEFORE setSession flips `user`, exactly as the
+    // phone path does, so the reactive /home effect stands down while the real
+    // destination resolves. A failure restores the instant nav.
+    celebratingRef.current = true;
+    const { data: sessionData, error: setErr } = await supabase.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+    });
+    if (setErr) {
+      celebratingRef.current = false;
+      return { ok: false, error: setErr.message };
+    }
+    const uid = sessionData.user?.id;
+    const dest = uid
+      ? await resolvePostAuthDestination(uid, redirectTarget)
+      : redirectTarget;
+    navTimerRef.current = window.setTimeout(
+      () => navigate(dest, { replace: true }),
+      prefersReducedMotion() ? 0 : otpSuccess.windowMs,
+    );
+    return { ok: true };
+  };
+
   const handleSwitchToWA = async (): Promise<{ ok: boolean; error?: string }> => {
     const res = await sendSmsOtp(true);
     if (res.ok) setChannel("whatsapp");
@@ -342,45 +408,75 @@ const Login = () => {
   };
 
   const native = isNative();
-  const stepNum = step === "phone" ? 1 : step === "otp" ? 2 : null;
+
+  // PHASE SP: the Email tab is additive and dark-shipped. Resolution order is
+  // localStorage override → compiled VITE_EMAIL_OTP_TAB → off, so with the flag
+  // unset this whole branch is inert and the phone form renders exactly as it
+  // does in production today.
+  const emailTabEnabled = flag(EMAIL_OTP_TAB);
+  const onEmailTab = emailTabEnabled && step === "phone" && authTab === "email";
+
+  // "Step N of 2" counts the PHONE flow's two steps, and `step` stays "phone"
+  // for the whole email flow — so the counter would sit on "Step 1 of 2" while
+  // the user is entering their emailed code. The email panel owns its own two
+  // stages internally and this divider cannot see them, so the honest thing is
+  // to show no count on that tab rather than a wrong one.
+  const stepNum = onEmailTab ? null : step === "phone" ? 1 : step === "otp" ? 2 : null;
+
+  // The phone step, unchanged. Extracted to a const ONLY so it can be handed to
+  // OtpTabs as the Phone tab's content; with the flag off it renders in the same
+  // place, with the same markup, driving the same handlers.
+  const phoneStep = (
+    <>
+      <h1 className="text-[28px] sm:text-[30px] font-semibold tracking-[-0.015em] leading-[1.1] mb-2">
+        What's your <span className="font-serif-italic text-cream">number</span>?
+      </h1>
+      <p className="text-sm text-muted-foreground mb-6">
+        We'll text a code. No password to remember.
+      </p>
+
+      <form
+        onSubmit={(e) => { e.preventDefault(); handleSendOtp(); }}
+        className="space-y-4"
+      >
+        <div className="space-y-2">
+          <Label htmlFor="phone" className="text-xs text-muted-foreground">Phone number</Label>
+          <PhoneInput value={phone} onChange={setPhone} autoFocus={!native} />
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading || !phone}
+          className="btn-champagne pressable w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
+        >
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          Send code
+          {!loading && <ArrowRight className="h-4 w-4" />}
+        </button>
+      </form>
+
+      <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+        <ShieldCheck className="h-3.5 w-3.5 text-success" />
+        Secure &amp; private
+      </div>
+    </>
+  );
 
   const stepContent = (
     <>
-      {step === "phone" && (
-        <>
-          <h1 className="text-[28px] sm:text-[30px] font-semibold tracking-[-0.015em] leading-[1.1] mb-2">
-            What's your <span className="font-serif-italic text-cream">number</span>?
-          </h1>
-          <p className="text-sm text-muted-foreground mb-6">
-            We'll text a code. No password to remember.
-          </p>
-
-          <form
-            onSubmit={(e) => { e.preventDefault(); handleSendOtp(); }}
-            className="space-y-4"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="phone" className="text-xs text-muted-foreground">Phone number</Label>
-              <PhoneInput value={phone} onChange={setPhone} autoFocus={!native} />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !phone}
-              className="btn-champagne pressable w-full h-12 flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:pointer-events-none"
-            >
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Send code
-              {!loading && <ArrowRight className="h-4 w-4" />}
-            </button>
-          </form>
-
-          <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <ShieldCheck className="h-3.5 w-3.5 text-success" />
-            Secure &amp; private
-          </div>
-        </>
-      )}
+      {step === "phone" &&
+        (emailTabEnabled ? (
+          <OtpTabs
+            value={authTab}
+            onValueChange={setAuthTab}
+            phone={phoneStep}
+            email={
+              <EmailSignInPanel autoFocus={!native} onSession={handleEmailSession} />
+            }
+          />
+        ) : (
+          phoneStep
+        ))}
 
       {step === "otp" && (
         <OtpEntryStep
@@ -473,11 +569,15 @@ const Login = () => {
   );
 
   // ── Reusable composition fragments ──────────────────────────────────
-  const stepDivider = stepNum ? (
+  // The rule itself stays on the email tab (dropping it would shift the card up
+  // on every tab switch); only the count it can no longer speak for is omitted.
+  const stepDivider = stepNum || onEmailTab ? (
     <div className="flex items-center gap-3 mb-4">
       <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Sign in</span>
       <span className="h-px flex-1 bg-border/70" />
-      <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Step {stepNum} of 2</span>
+      {stepNum && (
+        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Step {stepNum} of 2</span>
+      )}
     </div>
   ) : null;
 

@@ -2,7 +2,7 @@ import Reveal from "@/components/motion/Reveal";
 
 const STEPS = [
   "Request an invite via the application form",
-  "Pay a refundable application fee",
+  "Pay the non-refundable application review fee",
   "Sit for an interview with our admissions team",
   "Get a decision within 12–48 hours",
   "Confirm your seat if selected",

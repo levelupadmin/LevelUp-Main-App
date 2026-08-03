@@ -7,8 +7,9 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  // Retained from the production type contract. The local Postgres-meta image
+  // does not emit this hint, but supabase-js uses it to select the matching
+  // PostgREST protocol types.
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
@@ -306,6 +307,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      app_runtime_config: {
+        Row: {
+          cohort_rooms_enabled: boolean
+          singleton: boolean
+          updated_at: string
+        }
+        Insert: {
+          cohort_rooms_enabled?: boolean
+          singleton?: boolean
+          updated_at?: string
+        }
+        Update: {
+          cohort_rooms_enabled?: boolean
+          singleton?: boolean
+          updated_at?: string
+        }
+        Relationships: []
       }
       assignment_submissions: {
         Row: {
@@ -1392,24 +1411,111 @@ export type Database = {
           },
         ]
       }
+      cohort_announcements: {
+        Row: {
+          author_id: string | null
+          batch_id: string | null
+          body: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          is_pinned: boolean
+          offering_id: string
+          title: string | null
+        }
+        Insert: {
+          author_id?: string | null
+          batch_id?: string | null
+          body: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_pinned?: boolean
+          offering_id: string
+          title?: string | null
+        }
+        Update: {
+          author_id?: string | null
+          batch_id?: string | null
+          body?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_pinned?: boolean
+          offering_id?: string
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_announcements_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_announcements_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_announcements_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_announcements_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_announcements_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cohort_applications: {
         Row: {
+          accepted_at: string | null
+          admission_page_published_at: string | null
+          admission_page_slug: string | null
           app_fee_paid_at: string | null
           app_fee_payment_id: string | null
           balance_payment_id: string | null
           bio: string | null
+          calendly_booked_at: string | null
+          calendly_canceled_at: string | null
+          calendly_event_uri: string | null
           city: string | null
+          completed_no_fee: boolean
           confirmation_payment_id: string | null
+          contactable_partial: boolean
           created_at: string
           email: string
           full_name: string
           id: string
           interview_date: string | null
+          interview_interviewer_name: string | null
+          interview_modality: string | null
           interview_notes: string | null
           occupation: string | null
           offering_id: string
+          pending_claim: boolean
           phone: string | null
+          reconciled_at: string | null
+          reconciled_key: string | null
+          reconciled_stage: string | null
           rejection_reason: string | null
+          reschedule_count: number
           status: string
           tally_data: Json | null
           tally_response_id: string | null
@@ -1417,22 +1523,37 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          accepted_at?: string | null
+          admission_page_published_at?: string | null
+          admission_page_slug?: string | null
           app_fee_paid_at?: string | null
           app_fee_payment_id?: string | null
           balance_payment_id?: string | null
           bio?: string | null
+          calendly_booked_at?: string | null
+          calendly_canceled_at?: string | null
+          calendly_event_uri?: string | null
           city?: string | null
+          completed_no_fee?: boolean
           confirmation_payment_id?: string | null
+          contactable_partial?: boolean
           created_at?: string
           email: string
           full_name: string
           id?: string
           interview_date?: string | null
+          interview_interviewer_name?: string | null
+          interview_modality?: string | null
           interview_notes?: string | null
           occupation?: string | null
           offering_id: string
+          pending_claim?: boolean
           phone?: string | null
+          reconciled_at?: string | null
+          reconciled_key?: string | null
+          reconciled_stage?: string | null
           rejection_reason?: string | null
+          reschedule_count?: number
           status?: string
           tally_data?: Json | null
           tally_response_id?: string | null
@@ -1440,22 +1561,37 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          accepted_at?: string | null
+          admission_page_published_at?: string | null
+          admission_page_slug?: string | null
           app_fee_paid_at?: string | null
           app_fee_payment_id?: string | null
           balance_payment_id?: string | null
           bio?: string | null
+          calendly_booked_at?: string | null
+          calendly_canceled_at?: string | null
+          calendly_event_uri?: string | null
           city?: string | null
+          completed_no_fee?: boolean
           confirmation_payment_id?: string | null
+          contactable_partial?: boolean
           created_at?: string
           email?: string
           full_name?: string
           id?: string
           interview_date?: string | null
+          interview_interviewer_name?: string | null
+          interview_modality?: string | null
           interview_notes?: string | null
           occupation?: string | null
           offering_id?: string
+          pending_claim?: boolean
           phone?: string | null
+          reconciled_at?: string | null
+          reconciled_key?: string | null
+          reconciled_stage?: string | null
           rejection_reason?: string | null
+          reschedule_count?: number
           status?: string
           tally_data?: Json | null
           tally_response_id?: string | null
@@ -1557,6 +1693,107 @@ export type Database = {
             columns: ["offering_id"]
             isOneToOne: false
             referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_calendly_bindings: {
+        Row: {
+          application_id: string
+          created_at: string
+          token: string
+        }
+        Insert: {
+          application_id: string
+          created_at?: string
+          token?: string
+        }
+        Update: {
+          application_id?: string
+          created_at?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_calendly_bindings_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: true
+            referencedRelation: "cohort_applications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_demo_entries: {
+        Row: {
+          batch_id: string
+          created_at: string
+          description: string | null
+          file_urls: string[]
+          id: string
+          offering_id: string
+          title: string
+          updated_at: string
+          user_id: string
+          work_url: string | null
+        }
+        Insert: {
+          batch_id: string
+          created_at?: string
+          description?: string | null
+          file_urls?: string[]
+          id?: string
+          offering_id: string
+          title: string
+          updated_at?: string
+          user_id: string
+          work_url?: string | null
+        }
+        Update: {
+          batch_id?: string
+          created_at?: string
+          description?: string | null
+          file_urls?: string[]
+          id?: string
+          offering_id?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+          work_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_demo_entries_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_demo_entries_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_demo_entries_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_demo_entries_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_demo_entries_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
             referencedColumns: ["id"]
           },
         ]
@@ -1683,6 +1920,484 @@ export type Database = {
           },
           {
             foreignKeyName: "cohort_notifications_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_recording_progress: {
+        Row: {
+          completed: boolean
+          live_session_id: string
+          position_seconds: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed?: boolean
+          live_session_id: string
+          position_seconds?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed?: boolean
+          live_session_id?: string
+          position_seconds?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_recording_progress_live_session_id_fkey"
+            columns: ["live_session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_recording_progress_live_session_id_fkey"
+            columns: ["live_session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions_safe"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_recording_progress_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_recording_progress_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_recording_progress_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_resources: {
+        Row: {
+          added_by: string | null
+          batch_id: string | null
+          cohort_week_id: string | null
+          created_at: string
+          id: string
+          kind: string
+          offering_id: string
+          sort_order: number
+          title: string
+          url: string
+        }
+        Insert: {
+          added_by?: string | null
+          batch_id?: string | null
+          cohort_week_id?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          offering_id: string
+          sort_order?: number
+          title: string
+          url: string
+        }
+        Update: {
+          added_by?: string | null
+          batch_id?: string | null
+          cohort_week_id?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          offering_id?: string
+          sort_order?: number
+          title?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_resources_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_resources_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_resources_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_resources_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_resources_cohort_week_id_fkey"
+            columns: ["cohort_week_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_weeks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_resources_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_room_configs: {
+        Row: {
+          alumni_since: string | null
+          batch_id: string | null
+          created_at: string
+          id: string
+          modules: Json
+          offering_id: string
+          phase: string
+          slug: string
+          theme: Json
+          updated_at: string
+          vocab: Json
+        }
+        Insert: {
+          alumni_since?: string | null
+          batch_id?: string | null
+          created_at?: string
+          id?: string
+          modules?: Json
+          offering_id: string
+          phase?: string
+          slug: string
+          theme?: Json
+          updated_at?: string
+          vocab?: Json
+        }
+        Update: {
+          alumni_since?: string | null
+          batch_id?: string | null
+          created_at?: string
+          id?: string
+          modules?: Json
+          offering_id?: string
+          phase?: string
+          slug?: string
+          theme?: Json
+          updated_at?: string
+          vocab?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_room_configs_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_configs_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "room_config_batch_belongs_to_offering"
+            columns: ["batch_id", "offering_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_batches"
+            referencedColumns: ["id", "offering_id"]
+          },
+        ]
+      }
+      cohort_room_members: {
+        Row: {
+          batch_id: string | null
+          created_at: string
+          id: string
+          offering_id: string
+          role: string
+          source: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          batch_id?: string | null
+          created_at?: string
+          id?: string
+          offering_id: string
+          role?: string
+          source?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          batch_id?: string | null
+          created_at?: string
+          id?: string
+          offering_id?: string
+          role?: string
+          source?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_room_members_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_members_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_room_post_replies: {
+        Row: {
+          author_id: string
+          body: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          is_mentor_answer: boolean
+          post_id: string
+        }
+        Insert: {
+          author_id: string
+          body: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_mentor_answer?: boolean
+          post_id: string
+        }
+        Update: {
+          author_id?: string
+          body?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_mentor_answer?: boolean
+          post_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_room_post_replies_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_post_replies_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_post_replies_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_post_replies_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_room_posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_room_posts: {
+        Row: {
+          author_id: string
+          batch_id: string
+          body: string
+          channel_key: string
+          cohort_week_id: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          kind: string
+          last_activity_at: string
+          legacy_post_id: string | null
+          media: Json
+          offering_id: string
+          reply_count: number
+        }
+        Insert: {
+          author_id: string
+          batch_id: string
+          body: string
+          channel_key?: string
+          cohort_week_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          kind?: string
+          last_activity_at?: string
+          legacy_post_id?: string | null
+          media?: Json
+          offering_id: string
+          reply_count?: number
+        }
+        Update: {
+          author_id?: string
+          batch_id?: string
+          body?: string
+          channel_key?: string
+          cohort_week_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          kind?: string
+          last_activity_at?: string
+          legacy_post_id?: string | null
+          media?: Json
+          offering_id?: string
+          reply_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_room_posts_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_posts_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_posts_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "users_segmented"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_posts_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_posts_cohort_week_id_fkey"
+            columns: ["cohort_week_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_weeks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_posts_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_room_seen: {
+        Row: {
+          offering_id: string
+          seen_at: string
+          user_id: string
+        }
+        Insert: {
+          offering_id: string
+          seen_at?: string
+          user_id: string
+        }
+        Update: {
+          offering_id?: string
+          seen_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_room_seen_offering_id_fkey"
+            columns: ["offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_seen_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_seen_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_room_seen_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users_segmented"
@@ -2922,6 +3637,36 @@ export type Database = {
           },
         ]
       }
+      email_otp_codes: {
+        Row: {
+          attempt_count: number
+          code_hash: string
+          consumed_at: string | null
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+        }
+        Insert: {
+          attempt_count?: number
+          code_hash: string
+          consumed_at?: string | null
+          created_at?: string
+          email: string
+          expires_at: string
+          id?: string
+        }
+        Update: {
+          attempt_count?: number
+          code_hash?: string
+          consumed_at?: string | null
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+        }
+        Relationships: []
+      }
       email_send_log: {
         Row: {
           created_at: string
@@ -3029,21 +3774,27 @@ export type Database = {
           created_at: string
           email: string
           id: string
-          token: string
+          issued_at: string
+          token: string | null
+          token_hash: string | null
           used_at: string | null
         }
         Insert: {
           created_at?: string
           email: string
           id?: string
-          token: string
+          issued_at?: string
+          token?: string | null
+          token_hash?: string | null
           used_at?: string | null
         }
         Update: {
           created_at?: string
           email?: string
           id?: string
-          token?: string
+          issued_at?: string
+          token?: string | null
+          token_hash?: string | null
           used_at?: string | null
         }
         Relationships: []
@@ -3789,6 +4540,13 @@ export type Database = {
             referencedRelation: "courses"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "live_sessions_week_id_fkey"
+            columns: ["week_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_weeks"
+            referencedColumns: ["id"]
+          },
         ]
       }
       notification_preferences: {
@@ -4052,15 +4810,18 @@ export type Database = {
           gst_rate: number | null
           highlights: Json | null
           id: string
+          identity_spine_enabled: boolean
           instructor_avatar_url: string | null
           instructor_name: string | null
           instructor_title: string | null
+          intake_opens_at: string | null
           is_public: boolean | null
           meta_pixel_id: string | null
           mrp_inr: number | null
           page_coupon_code: string | null
           payment_mode: string | null
           price_inr: number
+          product_tier: string
           razorpay_plan_id: string | null
           refund_policy_days: number | null
           seats_total: number | null
@@ -4109,15 +4870,18 @@ export type Database = {
           gst_rate?: number | null
           highlights?: Json | null
           id?: string
+          identity_spine_enabled?: boolean
           instructor_avatar_url?: string | null
           instructor_name?: string | null
           instructor_title?: string | null
+          intake_opens_at?: string | null
           is_public?: boolean | null
           meta_pixel_id?: string | null
           mrp_inr?: number | null
           page_coupon_code?: string | null
           payment_mode?: string | null
           price_inr: number
+          product_tier?: string
           razorpay_plan_id?: string | null
           refund_policy_days?: number | null
           seats_total?: number | null
@@ -4166,15 +4930,18 @@ export type Database = {
           gst_rate?: number | null
           highlights?: Json | null
           id?: string
+          identity_spine_enabled?: boolean
           instructor_avatar_url?: string | null
           instructor_name?: string | null
           instructor_title?: string | null
+          intake_opens_at?: string | null
           is_public?: boolean | null
           meta_pixel_id?: string | null
           mrp_inr?: number | null
           page_coupon_code?: string | null
           payment_mode?: string | null
           price_inr?: number
+          product_tier?: string
           razorpay_plan_id?: string | null
           refund_policy_days?: number | null
           seats_total?: number | null
@@ -4844,6 +5611,50 @@ export type Database = {
             columns: ["quiz_id"]
             isOneToOne: false
             referencedRelation: "chapter_quizzes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reentry_notifications_log: {
+        Row: {
+          application_id: string
+          attempts: number
+          channel: string
+          claimed_at: string
+          dispatched_at: string | null
+          id: string
+          ist_day: string | null
+          last_error: string | null
+          template_key: string
+        }
+        Insert: {
+          application_id: string
+          attempts?: number
+          channel: string
+          claimed_at?: string
+          dispatched_at?: string | null
+          id?: string
+          ist_day?: string | null
+          last_error?: string | null
+          template_key: string
+        }
+        Update: {
+          application_id?: string
+          attempts?: number
+          channel?: string
+          claimed_at?: string
+          dispatched_at?: string | null
+          id?: string
+          ist_day?: string | null
+          last_error?: string | null
+          template_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reentry_notifications_log_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_applications"
             referencedColumns: ["id"]
           },
         ]
@@ -6088,6 +6899,14 @@ export type Database = {
           },
         ]
       }
+      room_announcement_read_grants: {
+        Row: {
+          batch_id: string | null
+          offering_id: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       users_segmented: {
         Row: {
           active_enrolment_count: number | null
@@ -6144,6 +6963,10 @@ export type Database = {
       }
     }
     Functions: {
+      _room_balance_outstanding: {
+        Args: { p_offering: string; p_user: string }
+        Returns: boolean
+      }
       admin_dashboard_combined: {
         Args: { p_from: string; p_to: string }
         Returns: {
@@ -6169,6 +6992,30 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_grant_room_member: {
+        Args: { p_offering: string; p_role: string; p_user: string }
+        Returns: string
+      }
+      admin_live_sessions_with_zoom_link: { Args: never; Returns: string[] }
+      admin_revoke_room_member: {
+        Args: { p_offering: string; p_user: string }
+        Returns: number
+      }
+      admin_upsert_room_config: {
+        Args: {
+          p_batch?: string
+          p_modules?: Json
+          p_offering: string
+          p_phase?: string
+          p_slug?: string
+          p_theme?: Json
+          p_vocab?: Json
+        }
+        Returns: string
+      }
+      auth_identity_email: { Args: never; Returns: string }
+      auth_identity_phone10: { Args: never; Returns: string }
+      bump_email_otp_attempt: { Args: { p_id: string }; Returns: number }
       check_and_increment_rate_limit: {
         Args: { p_key: string; p_max_count: number; p_window_seconds: number }
         Returns: boolean
@@ -6182,6 +7029,8 @@ export type Database = {
         }
         Returns: string
       }
+      claim_my_purchases: { Args: never; Returns: Json }
+      claim_purchases_for_user: { Args: { p_user_id: string }; Returns: Json }
       cleanup_deleted_users: {
         Args: never
         Returns: {
@@ -6189,6 +7038,76 @@ export type Database = {
           deleted_user_id: string
         }[]
       }
+      cohort_live_session_can_access: {
+        Args: { p_course_id: string; p_week_id: string }
+        Returns: boolean
+      }
+      cohort_room_allowed_channels: {
+        Args: { p_batch: string; p_offering: string }
+        Returns: string[]
+      }
+      cohort_room_caller_scope: {
+        Args: { p_offering: string }
+        Returns: {
+          batch_id: string
+          member_role: string
+          offering_wide: boolean
+        }[]
+      }
+      cohort_room_can_access: {
+        Args: { p_batch: string; p_offering: string }
+        Returns: boolean
+      }
+      cohort_room_can_post_announcement: {
+        Args: { p_offering: string }
+        Returns: boolean
+      }
+      cohort_room_can_read_announcement: {
+        Args: { p_batch: string; p_offering: string }
+        Returns: boolean
+      }
+      cohort_room_in_lobby:
+        | { Args: { p_offering: string }; Returns: boolean }
+        | { Args: { p_batch: string; p_offering: string }; Returns: boolean }
+      cohort_room_is_member: { Args: { p_offering: string }; Returns: boolean }
+      cohort_room_is_offering_wide: {
+        Args: { p_offering: string }
+        Returns: boolean
+      }
+      cohort_room_phase: {
+        Args: { p_batch: string; p_offering: string }
+        Returns: string
+      }
+      cohort_room_post_write: {
+        Args: {
+          p_batch?: string
+          p_body: string
+          p_channel_key?: string
+          p_cohort_week_id?: string
+          p_kind?: string
+          p_media?: Json
+          p_offering: string
+        }
+        Returns: string
+      }
+      cohort_room_reconcile: { Args: never; Returns: undefined }
+      cohort_room_recording_accessible: {
+        Args: { p_session: string }
+        Returns: boolean
+      }
+      cohort_room_reply_write: {
+        Args: { p_body: string; p_is_mentor_answer?: boolean; p_post: string }
+        Returns: string
+      }
+      cohort_room_resolve_user: { Args: { p_user: string }; Returns: undefined }
+      cohort_room_roster_ids: {
+        Args: { p_all: boolean; p_batch: string; p_offering: string }
+        Returns: {
+          role: string
+          user_id: string
+        }[]
+      }
+      cohort_rooms_surface_enabled: { Args: never; Returns: boolean }
       create_team_api_key: {
         Args: {
           p_created_by?: string
@@ -6238,6 +7157,13 @@ export type Database = {
           phone: string
         }[]
       }
+      get_admission_page: {
+        Args: { p_slug: string }
+        Returns: {
+          admitted_name: string
+          program_title: string
+        }[]
+      }
       get_attendance_pct: {
         Args: { p_offering_id: string; p_user_id: string }
         Returns: number
@@ -6270,6 +7196,7 @@ export type Database = {
           week_status: string
         }[]
       }
+      get_cohort_room: { Args: { p_offering: string }; Returns: Json }
       get_event_registration_count: {
         Args: { p_event_id: string }
         Returns: number
@@ -6279,15 +7206,83 @@ export type Database = {
         Args: { p_session_id: string }
         Returns: string
       }
-      admin_live_sessions_with_zoom_link: {
+      get_my_cohort_rooms: {
         Args: never
-        Returns: string[]
+        Returns: {
+          batch_id: string
+          batch_name: string
+          current_week: number
+          modules: Json
+          next_due_at: string
+          next_session_at: string
+          offering_id: string
+          offering_title: string
+          phase: string
+          role: string
+          room_slug: string
+          theme: Json
+          total_weeks: number
+          unseen_announcements: number
+        }[]
+      }
+      get_my_pending_claim: {
+        Args: never
+        Returns: {
+          application_id: string
+          claim_channel: string
+          masked_target: string
+          offering_id: string
+          offering_title: string
+        }[]
+      }
+      get_room_announcements: {
+        Args: { p_limit?: number; p_offering: string; p_offset?: number }
+        Returns: {
+          author_id: string
+          author_name: string
+          author_role: string
+          batch_id: string
+          body: string
+          created_at: string
+          id: string
+          is_pinned: boolean
+          offering_id: string
+          title: string
+        }[]
+      }
+      get_room_feed: {
+        Args: {
+          p_batch?: string
+          p_before_activity?: string
+          p_before_id?: string
+          p_channel?: string
+          p_limit?: number
+          p_offering: string
+        }
+        Returns: Json
+      }
+      get_room_resources: {
+        Args: { p_batch?: string; p_offering: string }
+        Returns: Json
+      }
+      get_room_roster: {
+        Args: { p_offering: string }
+        Returns: {
+          avatar_url: string
+          city: string
+          full_name: string
+          occupation: string
+          role: string
+          user_id: string
+        }[]
       }
       has_course_access: { Args: { p_course_id: string }; Returns: boolean }
+      has_offering_access: { Args: { p_offering_id: string }; Returns: boolean }
       has_offering_learnings_access: {
         Args: { p_offering_id: string }
         Returns: boolean
       }
+      intake_provisioning_gate_ok: { Args: never; Returns: boolean }
       is_admin: { Args: never; Returns: boolean }
       is_offering_active: { Args: { p_offering_id: string }; Returns: boolean }
       is_owner: { Args: never; Returns: boolean }
@@ -6323,6 +7318,7 @@ export type Database = {
             }
             Returns: number
           }
+      new_admission_page_slug: { Args: never; Returns: string }
       next_certificate_number: { Args: never; Returns: string }
       offering_performance_in_range: {
         Args: { p_from: string; p_to: string }
@@ -6341,6 +7337,11 @@ export type Database = {
           total_revenue_in_window: number
         }[]
       }
+      publish_admission_page: {
+        Args: { p_application_id: string }
+        Returns: string
+      }
+      purge_expired_email_otp_codes: { Args: never; Returns: undefined }
       purge_old_rate_limits: { Args: never; Returns: undefined }
       read_email_batch:
         | {
@@ -6410,6 +7411,16 @@ export type Database = {
           total_paid_inr: number
         }[]
       }
+      room_announcement_targets: {
+        Args: { p_author: string; p_batch: string; p_offering: string }
+        Returns: {
+          user_id: string
+        }[]
+      }
+      room_announcement_user_can_read: {
+        Args: { p_batch: string; p_offering: string; p_user: string }
+        Returns: boolean
+      }
       set_onboarding_profile: {
         Args: { p_email: string; p_full_name: string }
         Returns: undefined
@@ -6427,6 +7438,10 @@ export type Database = {
           paid_inr: number
           rows_count: number
         }[]
+      }
+      unpublish_admission_page: {
+        Args: { p_application_id: string }
+        Returns: boolean
       }
       user_is_certificate_eligible: {
         Args: { p_offering_id: string; p_user_id: string }

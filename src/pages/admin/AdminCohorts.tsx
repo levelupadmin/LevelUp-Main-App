@@ -19,6 +19,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, ChevronDown, ChevronRight, ArrowRightLeft } from "lucide-react";
+import CohortResourcesManager from "@/components/admin/CohortResourcesManager";
+import CohortPhaseControl from "@/components/admin/CohortPhaseControl";
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -58,6 +60,7 @@ const AdminCohorts = () => {
   // Offering picker
   const [offerings, setOfferings] = useState<Offering[]>([]);
   const [selectedOfferingId, setSelectedOfferingId] = useState("");
+  const [adminView, setAdminView] = useState<"batches" | "resources">("batches");
 
   // Batches for selected offering
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -502,7 +505,10 @@ const AdminCohorts = () => {
         <SearchableSelect
           options={offerings.map((o) => ({ value: o.id, label: o.title }))}
           value={selectedOfferingId}
-          onValueChange={setSelectedOfferingId}
+          onValueChange={(value) => {
+            setSelectedOfferingId(value);
+            setAdminView("batches");
+          }}
           placeholder="Pick an offering..."
           searchPlaceholder="Search offerings..."
         />
@@ -510,6 +516,36 @@ const AdminCohorts = () => {
 
       {selectedOfferingId && (
         <>
+          <CohortPhaseControl key={`phase-${selectedOfferingId}`} offeringId={selectedOfferingId} />
+          <nav aria-label="Cohort administration" className="mb-5 flex gap-2 border-b border-border pb-3">
+            <button
+              type="button"
+              onClick={() => setAdminView("batches")}
+              aria-pressed={adminView === "batches"}
+              className={`min-h-11 rounded-full border px-4 text-sm transition-colors ${
+                adminView === "batches"
+                  ? "border-cream/40 bg-cream/10 text-cream"
+                  : "border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Batches
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminView("resources")}
+              aria-pressed={adminView === "resources"}
+              className={`min-h-11 rounded-full border px-4 text-sm transition-colors ${
+                adminView === "resources"
+                  ? "border-cream/40 bg-cream/10 text-cream"
+                  : "border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Resources
+            </button>
+          </nav>
+
+          {adminView === "batches" ? (
+            <>
           {/* Unassigned count */}
           <div className="mb-4 flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
@@ -661,6 +697,14 @@ const AdminCohorts = () => {
                 </div>
               ))}
             </div>
+          )}
+            </>
+          ) : (
+            <CohortResourcesManager
+              key={selectedOfferingId}
+              offeringId={selectedOfferingId}
+              batches={batches}
+            />
           )}
         </>
       )}

@@ -1297,7 +1297,11 @@ const ChapterViewer = () => {
                   >
                     {(chapter.thumbnail_url || chapter.vdocipher_thumbnail_url) && (
                       <img
-                        src={chapter.thumbnail_url || chapter.vdocipher_thumbnail_url}
+                        src={
+                          chapter.thumbnail_url ||
+                          chapter.vdocipher_thumbnail_url ||
+                          undefined
+                        }
                         alt=""
                         aria-hidden
                         className="h-full w-full object-cover"

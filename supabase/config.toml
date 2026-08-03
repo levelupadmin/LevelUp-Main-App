@@ -25,6 +25,27 @@ project_id = "twqagwleffjggoemzfqs"
     verify_jwt = false
   [functions.verify-msg91-otp]
     verify_jwt = false
+  # verify-email-otp: the EMAIL half of passwordless sign-in, and like every
+  # other auth entry point above (verify-msg91-otp, check-user-exists,
+  # guest-create-order) it is UNAUTHENTICATED BY DEFINITION — the caller has no
+  # session yet; getting one is the entire point of the call. verify_jwt = true
+  # would make the gateway 401 every sign-in attempt before the function ran.
+  # What protects it is inside the handler: the send path only ever issues a
+  # code for an address that already resolves to an auth user AND whose
+  # public.users mirror holds that same address (it never writes that mirror,
+  # so an anonymous call cannot trip the legacy-entitlement trigger), the code
+  # is hashed at rest per address and single-use, and failed guesses spend a
+  # per-address budget a resend cannot reset. Every limit goes through the
+  # existing public.check_and_increment_rate_limit RPC: keyed on the IP for
+  # request-shaped caps, and on the address only for things an attacker has to
+  # pay for (a delivered code, a failed guess) so that knowing someone's email
+  # is not enough to lock them out of it.
+  # REQUIRED SECRET: EMAIL_OTP_PEPPER (HMAC key for the at-rest code hash —
+  # `npx supabase secrets set EMAIL_OTP_PEPPER=<32+ random bytes>`). There is no
+  # fallback: while it is unset the function fails closed with 503 and email
+  # login is simply off. Phone login is unaffected either way.
+  [functions.verify-email-otp]
+    verify_jwt = false
   [functions.register-for-event]
     verify_jwt = true
   # reconcile-funnel-stage: a normal client-authenticated invoke (reads the
@@ -50,12 +71,138 @@ project_id = "twqagwleffjggoemzfqs"
   # verify_jwt = true is NOT what makes this function safe: it only proves the
   # caller holds SOME valid project JWT, and the anon key qualifies. The real
   # gate is in the handler, which compares the bearer token BYTE FOR BYTE
-  # (constant-time) against SUPABASE_SERVICE_ROLE_KEY before spending any Tally
-  # API quota — unforgeable without the key, and it holds even if this flag is
-  # flipped or the function is deployed with --no-verify-jwt. verify_jwt = true
-  # stays on as defense in depth only. See tally-application-poll/index.ts for
-  # the full rationale and the pg_cron/vault-secret coupling it depends on.
+  # (constant-time) against POLL_AUTH_TOKEN before spending any Tally API quota.
+  # That token is synchronized to the Vault credential pg_cron sends; the
+  # injected service-role key is only a fallback for projects where both
+  # representations are identical. verify_jwt = true stays on as defense in
+  # depth only. See tally-application-poll/index.ts for the full rationale.
   [functions.tally-application-poll]
     verify_jwt = true
+  # cohort-reentry-cron is invoked by pg_cron with a service bearer. The
+  # handler's constant-time comparison against POLL_AUTH_TOKEN remains the
+  # primary authorization boundary; gateway JWT verification is defense in
+  # depth and must stay explicit so a config merge cannot silently weaken it.
+  [functions.cohort-reentry-cron]
+    verify_jwt = true
+  # claim-application: the server half of the interactive claim (PHASE SP/S-4).
+  # UNLIKE the two OTP entry points above, this one is the OPPOSITE case — the
+  # caller is signed in BY DEFINITION (the claim only exists to bind a parked
+  # application to the session they are already holding), and the handler
+  # resolves that JWT to an auth row and derives the unproven channel from it.
+  # verify_jwt = true so an anonymous request is rejected at the gateway rather
+  # than reaching a handler that has nothing to decide against.
+  [functions.claim-application]
+    verify_jwt = true
   [functions.generate-invoice-pdf]
+    verify_jwt = false
+  # calendly-webhook: Calendly delivers server-to-server with NO Supabase JWT, so
+  # verify_jwt = true would make the gateway reject EVERY delivery with 401
+  # UNAUTHORIZED_NO_AUTH_HEADER before the function could run — the exact failure
+  # tally-application-webhook hit live on 2026-07-22. It self-authenticates via
+  # HMAC exactly like razorpay-webhook: HMAC-SHA256 of `${t}.${rawBody}` with
+  # CALENDLY_SIGNING_KEY, hex, constant-time compare. It is FAIL-CLOSED — a bad,
+  # absent or malformed `Calendly-Webhook-Signature` returns 401 with no detail
+  # and writes nothing, and it rejects everything outright while
+  # CALENDLY_SIGNING_KEY is unset.
+  # DEPLOY REQUIREMENT — it needs a SECOND env value, CALENDLY_INTERVIEW_EVENT_TYPE
+  # (config, not a credential): the interview event type on the one org-level
+  # Calendly account (INTEG-CAL-1); comma-separated for more than one. A Calendly
+  # subscription is org/user-scoped and cannot be narrowed to one event type, so
+  # every OTHER booking on that account is delivered here too and this allowlist is
+  # the only thing keeping a sales call from overwriting an applicant's interview.
+  # It is fail-closed: unset → the receiver mirrors nothing and says so at error
+  # level on every delivery.
+  #
+  # SET IT TO ONE OF THESE THREE FORMS — they are what a v2 delivery actually
+  # carries, and nothing else is reliable:
+  #   1. the API URI      https://api.calendly.com/event_types/<uuid>
+  #   2. the bare uuid    <uuid>
+  #   3. the event type's NAME, exactly as Calendly spells it
+  #      ("LevelUp Cohort Interview")
+  #
+  # DO NOT USE THE HOSTED SCHEDULING LINK (https://calendly.com/levelup/
+  # interview-30min). It reads like the obvious value — it is the link the app
+  # embeds — but a v2 webhook payload names the event type as an API URI
+  # (`payload.scheduled_event.event_type`) and carries NO SLUG anywhere, so a
+  # link-shaped allowlist matches nothing and EVERY booking is silently dropped
+  # with a 200. That is a total no-op that looks healthy from the outside, which is
+  # precisely why this warning is here rather than in a commit message.
+  #
+  # IF IT IS WRONG, THE RECEIVER TELLS YOU. Every dropped delivery logs, at WARN,
+  # the identity tokens it answered to alongside the tokens configured, and echoes
+  # the delivered ones in the 200 body — so Calendly's own webhook delivery log
+  # shows the exact string to paste here. Fix by copying one of them.
+  #
+  # READ THE CONTENT OF THOSE LINES, NOT THEIR LEVEL. A drop is NOT by itself a
+  # fault: the subscription is org-wide, so sales and onboarding bookings arrive
+  # here too and are turned away by design, and there is no log level that can tell
+  # those apart from a wrong allowlist — both are "a delivery arrived and was not
+  # mirrored". What tells them apart is the `delivered=[…] configured=[…]` pair
+  # printed on every drop. So the check after deploying is: book ONE real interview
+  # and look for the `mirrored` line. If instead you see a DROPPED line whose
+  # `delivered` tokens describe that interview, the allowlist is wrong — paste one
+  # of them in. (An earlier revision tried to escalate "this instance has matched
+  # nothing yet" to ERROR. It could not work: that state is per-isolate and resets
+  # on every cold start, so a perfectly configured deployment raised it too.)
+  #
+  # ERROR from this function is reserved for what IS unambiguous whatever the
+  # traffic: CALENDLY_INTERVIEW_EVENT_TYPE unset (nothing is mirrored at all), and
+  # an ambiguous identity (several applications answer to one booking, so it
+  # refuses to bind rather than risk the wrong applicant's row).
+  [functions.calendly-webhook]
+    verify_jwt = false
+
+  # calendly-slots: the availability reader behind the three-soonest-slot buttons
+  # (PHASE IV Q-1, REQ-INT-0 reinstated 2026-07-28 — see 04-INTEGRATION-CONTRACTS
+  # §6.4). verify_jwt = false because the caller is frequently a GUEST: an
+  # applicant who paid the ₹400 through the hosted intake chain often has no app
+  # session at all yet, and that person is the exact reason this surface exists
+  # (see the `useInterviewSlots.ts` header). With verify_jwt = true the gateway
+  # would 401 them before the function ran, and the CRO surface at peak intent
+  # would be dark for the population it was built for.
+  #
+  # THE OPEN POSTURE COSTS NOTHING IT NEED NOT. The request carries one public
+  # offering id and the response carries public booking availability — no session,
+  # no personal data, and nothing an unauthenticated caller could not already read
+  # off the offering's own hosted Calendly page. CALENDLY_TOKEN never appears in a
+  # response; it is used only on outbound calls to api.calendly.com.
+  #
+  # What the open posture DOES cost is call volume, and that is bounded inside the
+  # function rather than at the gateway: a per-offering cache (90s), a floor under
+  # the on-tap `fresh` re-check (8s), and a token-wide backoff on a Calendly 429.
+  [functions.calendly-slots]
+    verify_jwt = false
+
+  # email-unsubscribe: an UNAUTHENTICATED LINK IN AN EMAIL. The person clicking
+  # it is in a mail client and holds no Supabase session, and there is no key we
+  # could put in the URL that would not itself be public — so verify_jwt = false
+  # for the same reason as razorpay-webhook / auth-email-hook /
+  # tally-application-webhook: the caller cannot present a project JWT and the
+  # real gate lives inside the handler.
+  #
+  # And it is the same KIND of gate those webhooks use — an HMAC checked in
+  # constant time BEFORE the database is touched. The link carries
+  # "<token>.<tag>", where tag = HMAC-SHA256(UNSUBSCRIBE_TOKEN_SECRET,
+  # "v1:tag:<token>"); a credential that fails it is rejected with no client
+  # built and no query issued, so a guessed string cannot buy an unauthenticated
+  # service-role SELECT. Past the gate the 256-bit token is matched against a
+  # stored SHA-256, never against anything readable from the database.
+  #
+  # The endpoint reads no applicant, no payment, no user and not even the
+  # address: the worst a valid credential can do is stamp used_at on its own
+  # token row, which stops the re-entry reminder ladder for that address and
+  # NOTHING else. It deliberately does not write suppressed_emails, which would
+  # have killed that person's receipts too — so it also does not stop a bulk
+  # campaign, and both pages it renders say so and point at support. GET only
+  # renders a confirmation page (mail scanners prefetch links); nothing is
+  # written until the POST.
+  #
+  # SECRETS, BY NAME. UNSUBSCRIBE_TOKEN_SECRET is required (the same key
+  # cohort-reentry-cron mints with). UNSUBSCRIBE_TOKEN_SECRET_PREVIOUS is
+  # OPTIONAL and read only here: one key drives both the token and the tag, so
+  # rotating it invalidates every link already in an inbox. Set PREVIOUS to the
+  # outgoing key in the SAME change that sets the new one, keep it for at least
+  # one ladder window (14 days), then drop it. Full procedure and the residual
+  # cost are in supabase/functions/_shared/unsubscribe.ts.
+  [functions.email-unsubscribe]
     verify_jwt = false
