@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { isIOS } from "@/lib/platform";
-import { COHORT_INTERVIEW, flag } from "@/lib/flags";
+import { COHORT_INTERVIEW, DECISION_FLOW, flag } from "@/lib/flags";
 import { useFunnelStage } from "@/hooks/useFunnelStage";
 import { InterviewSlots } from "@/components/interview/SlotButtons";
 import { InterviewerCard } from "@/components/interview/InterviewerCard";
@@ -116,7 +116,7 @@ interface ApplicationData {
   /* ── The Calendly booking facts (`20260728100000`, `20260728130000`) ──
      Mirrored onto this row by `calendly-webhook` under the service role and read
      back here through the existing `students_read_own_applications` policy; the
-     page's `select("*")` already returns them. Facts only — none of them is a
+     explicit column list below returns them. Facts only — none of them is a
      funnel stage, and nothing here derives one from them (SOR-1). */
   interview_date: string | null;
   interview_modality: string | null;
@@ -130,6 +130,32 @@ interface ApplicationData {
     confirmation_amount_inr: number | null;
   } | null;
 }
+
+/**
+ * The EXPLICIT column list this page reads. Never `*` — NFR-COPY-1.
+ *
+ * `select("*")` here shipped the WHOLE row to the browser: `bio` (the applicant's
+ * 100-word essay, which no client is ever allowed to receive), `tally_data` (the
+ * raw submission, essay included) and `interview_notes` (internal reviewer prose
+ * ABOUT the applicant). None of the three was ever rendered — which is precisely
+ * why it went unnoticed for so long: the leak was in the network response, legible
+ * to the applicant themselves from their own devtools, not on the screen.
+ *
+ * The list mirrors `ApplicationData` one-to-one, so a field added to the render
+ * has to be added here deliberately. Everything reconciled comes from
+ * `useFunnelStage`, not from this row, so no reconciler mirror column is read.
+ * Contact fields (email, phone) are omitted too: this page prints neither.
+ *
+ * Shaped as a named constant, like `DECISION_COLUMNS` in `src/hooks/useDecision.ts`,
+ * so the list is greppable as a unit — and the repo-wide guard in
+ * `src/lib/__tests__/admissionPublicPolicy.test.ts` §12 fails the suite if any
+ * client surface reverts this table to a wildcard select.
+ */
+const APPLICATION_COLUMNS =
+  "id, user_id, offering_id, status, created_at, rejection_reason, " +
+  "interview_date, interview_modality, interview_interviewer_name, " +
+  "reschedule_count, calendly_canceled_at, " +
+  "offerings(title, price_inr, app_fee_inr, confirmation_amount_inr)";
 
 /* ── Reconciled funnel stage → home chip + single CTA (RC-T4) ──
    Consumed ONLY under `VITE_FUNNEL_RECON`, from the useFunnelStage/edge-fn
@@ -228,9 +254,7 @@ const ApplicationStatus = () => {
       setLoading(true);
       const { data, error } = await (supabase as any)
         .from("cohort_applications")
-        .select(
-          "*, offerings(title, price_inr, app_fee_inr, confirmation_amount_inr)"
-        )
+        .select(APPLICATION_COLUMNS)
         .eq("id", applicationId)
         .single();
 
@@ -533,6 +557,41 @@ const ApplicationStatus = () => {
      before at that rung. */
   const showRebookPrompt = showInterviewEmbed && interviewRungPending;
 
+  /* ── Phase DC beat 1: "Your decision is ready" (REQ-DEC-1) ──
+     This is the surface the comment on RECONCILED_STAGE_UI pointed at: the
+     `accepted` stage is deliberately unmapped there because it fires its own
+     experience, and this is it. Purely a READ — the app never writes a funnel
+     status (SOR-1); the announcement appears because the reconciler OBSERVED
+     TeleCRM flip to `accepted`. The verdict itself stays sealed behind
+     /decision/:id, so nothing here (and no notification payload) reveals it.
+     Gated on BOTH flags by construction: `reconciledStage` is only ever set
+     under VITE_FUNNEL_RECON, and VITE_DECISION_FLOW gates the beat itself, so
+     with either off this is `false` and nothing renders — byte-identical to
+     today.
+
+     BOTH floors from the reconciled chip apply here too, because this beat leads
+     to a money CTA and the chip only leads to a label:
+       1. `currentStepIndex >= 0` — the non-progressing-status floor: a
+          rejected/withdrawn/waitlisted row can never show it.
+       2. `currentStepIndex <= STATUS_TO_STEP.accepted` — the ladder floor. The
+          derived `accepted` stage sits at step 3, so it must not render behind a
+          local status already past it. The reconciler's stage is NOT a reliable
+          "has not paid yet" signal: `deriveStage` only advances past `accepted`
+          when it can SEE the seat-confirm in Razorpay under the join key, so a
+          ₹8k paid from another phone/email — or any run where Razorpay is
+          unavailable and the fn fail-softs — falls through to `accepted` for a
+          `confirmation_paid`/`balance_paid`/`enrolled` row. Without this floor
+          that student is shown "Your decision is ready" over an "Enrolled" badge
+          and walked back into the confirmation checkout: a pay-twice chase.
+          `cohort_applications.status` is first-party truth (the app's own
+          payment webhook writes it), so it wins. `useDecision` applies the same
+          floor, which is what keeps the reveal and the claim page in step. */
+  const decisionReady =
+    flag(DECISION_FLOW) &&
+    reconciledStage === "accepted" &&
+    currentStepIndex >= 0 &&
+    currentStepIndex <= STATUS_TO_STEP.accepted;
+
   /* Determine which step was "failed" at, for rejected/withdrawn */
   // For rejected, show failure at the step after the last completed step
   const failedAtIndex = isFailed
@@ -618,6 +677,26 @@ const ApplicationStatus = () => {
                 </Link>
               </div>
             ))}
+
+          {/* Beat 1 of the three kept beats (REQ-DEC-1), verbatim. The verdict
+              is NOT here — it stays sealed until "Open your decision" on
+              /decision/:id. Dark behind VITE_DECISION_FLOW. */}
+          {decisionReady && (
+            <div className="mt-6 rounded-lg border border-[hsl(var(--cream))]/30 bg-surface p-4">
+              <p className="text-sm font-medium text-foreground">
+                Your decision is ready
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Sealed until you open it.
+              </p>
+              <Link to={`/decision/${application.id}`}>
+                <Button size="sm" className="mt-3">
+                  Open your decision
+                  <ArrowRight className="h-4 w-4 ml-1" />
+                </Button>
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* The note for a student the funnel calls scheduled while this row holds

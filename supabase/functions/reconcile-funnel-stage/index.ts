@@ -144,6 +144,62 @@ function jsonRes(body: unknown, req: Request, status = 200): Response {
   });
 }
 
+/**
+ * Driver error text is NOT safe to log verbatim, which is the whole reason this
+ * exists: Deno reports a transport failure as `error sending request for url
+ * (<full PostgREST URL>)`, and that URL's query string carries the join filters —
+ * `user_id=eq.<uuid>&offering_id=eq.<uuid>`. Logging the raw message would put
+ * exactly the UUIDs the logger below promises are absent into the drain. Strip
+ * query strings, bare UUIDs and anything email-shaped, then cap the length so a
+ * stack trace can't flood the drain either.
+ */
+function redactDriverText(value: unknown): string | null {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return null;
+  const scrubbed = raw
+    .replace(/\?[^\s)"']*/g, "?<redacted>")
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<uuid>")
+    .replace(/[^\s<>()"']+@[^\s<>()"']+/g, "<email>");
+  return scrubbed.length > 300 ? `${scrubbed.slice(0, 300)}...` : scrubbed;
+}
+
+/**
+ * postgrest-js never leaves `code` unset: it shims a fetch/transport rejection
+ * into `{ code: "" }`, a STRING, so `code ?? null` never fires and the log reads
+ * `"code":""` with nothing else to go on. Blank means "the driver gave us none".
+ */
+function errorCode(err: unknown): string | null {
+  const code = (err as { code?: unknown } | null)?.code;
+  const text = typeof code === "string" ? code.trim() : "";
+  return text === "" ? null : text;
+}
+
+/**
+ * Structured ERROR for a failed `cohort_applications` pre-read (the status floor
+ * and the held-seat anchor). supabase-js resolves `{ data: null, error }` instead
+ * of throwing, so an unknown column (`42703`) or a transport failure is otherwise
+ * INVISIBLE — and a silent pre-read failure is exactly what would switch the
+ * terminal floor off. This makes schema drift loud AND keeps the far more common
+ * transport failure readable: `code` is null rather than `""` when the driver had
+ * none, and `detail` carries the redacted driver text, so a 5xx, a DNS failure and
+ * an RLS denial are told apart instead of collapsing into one contentless record.
+ * UUID-free by contract: no user_id, no application_id, no row contents — the
+ * driver text is redacted before it lands, never passed through raw.
+ */
+function logPreReadFailure(event: string, message: string, err: unknown, stage: string) {
+  const source = err as { message?: unknown; details?: unknown } | null;
+  console.error(
+    JSON.stringify({
+      level: "error",
+      event,
+      message,
+      code: errorCode(err),
+      detail: redactDriverText(source?.message) ?? redactDriverText(source?.details),
+      stage,
+    }),
+  );
+}
+
 function encodeBasic(user: string, pass: string): string {
   return btoa(`${user}:${pass}`);
 }
@@ -716,33 +772,154 @@ Deno.serve(async (req) => {
     // (`rejected`/`withdrawn`/`waitlisted` — the client `STATUS_TO_STEP` = -1 set),
     // the application has no forward progress: the mirror must NOT stamp a progress
     // stage or outreach markers, so a later outreach job keyed on `reconciled_*`
-    // can't fire on a dead row. Best-effort: a failed read leaves the derived write
-    // intact (preserves today's behaviour rather than silently nulling).
+    // can't fire on a dead row.
+    //
+    // THE READ ASKS FOR `status` AND NOTHING ELSE — deliberately. Every extra
+    // column widens the floor's failure surface: supabase-js does NOT throw on a
+    // query error, it resolves `{ data: null, error }`, so one column that a
+    // pending migration has not added yet (`42703`) would resolve the whole select
+    // to null, leave `applicationTerminal` false, and silently fail the floor OPEN
+    // — outreach markers on a dead row, `mirrored: true`, nothing logged. The
+    // held-seat anchor therefore reads separately, below.
+    //
+    // FAIL SAFE, NOT FAIL OPEN: the error is captured explicitly, and ANY failure
+    // (schema drift, RLS, transport) leaves the status UNKNOWN, which takes the
+    // RETRACTING write below — never the progress write. See the mirror block for
+    // why an unverifiable row must be retracted rather than merely left alone.
+    //
+    // NO `.maybeSingle()`: nothing in the schema forbids a duplicate
+    // (user_id, offering_id) pair, and against one `maybeSingle()` resolves
+    // `PGRST116` with `data: null` — which would wedge this caller's mirror on
+    // every run, permanently, with no recovery short of manual row cleanup.
+    // Reading the SET instead matches the mirror UPDATE's own scope (it hits every
+    // matching row), so the floor answers for exactly the rows it is about to
+    // write: ANY terminal row in the set makes the whole write terminal.
     let applicationTerminal = false;
+    let applicationStatusUnknown = false;
     try {
-      const { data: appRow } = await admin
+      const { data: appRows, error: appError } = await admin
         .from("cohort_applications")
         .select("status")
         .eq("user_id", user.id)
-        .eq("offering_id", offeringId)
-        .maybeSingle();
-      const appStatus =
-        appRow && typeof appRow.status === "string" ? appRow.status.trim().toLowerCase() : null;
-      applicationTerminal = appStatus != null && TERMINAL_NEGATIVE_STATUSES.has(appStatus);
-    } catch {
-      applicationTerminal = false;
+        .eq("offering_id", offeringId);
+      if (appError) {
+        applicationStatusUnknown = true;
+        logPreReadFailure(
+          "reconcile.application_status.read_failed",
+          "status pre-read failed; treating the application as terminal and retracting the mirror",
+          appError,
+          derived.stage,
+        );
+      } else {
+        const rows = Array.isArray(appRows) ? appRows : [];
+        applicationTerminal = rows.some((row) => {
+          const appStatus =
+            row && typeof row.status === "string" ? row.status.trim().toLowerCase() : null;
+          return appStatus != null && TERMINAL_NEGATIVE_STATUSES.has(appStatus);
+        });
+        if (rows.length > 1) {
+          // Not fatal — the floor and the mirror both cover the whole set — but the
+          // duplicate is a data defect worth seeing. UUID-free: only the count.
+          console.warn(
+            JSON.stringify({
+              level: "warn",
+              event: "reconcile.application_status.duplicate_rows",
+              message: "more than one application row for this caller and offering",
+              rows: rows.length,
+              stage: derived.stage,
+            }),
+          );
+        }
+      }
+    } catch (statusErr) {
+      applicationStatusUnknown = true;
+      logPreReadFailure(
+        "reconcile.application_status.read_threw",
+        "status pre-read threw; treating the application as terminal and retracting the mirror",
+        statusErr,
+        derived.stage,
+      );
+    }
+
+    // ── The held-seat anchor (REQ-DEC-5, migration 20260728120000) ──
+    // `accepted_at` is stamped ONCE — the first time this application is observed
+    // at the derived `accepted` stage — and never again. It is what the client's
+    // "seat held · closes {countdown}" is dated from, and it is the ONLY column
+    // here that is not a read-through mirror: re-stamping it would slide the
+    // student's deadline forward on every reconcile run, which is exactly why
+    // `reconciled_at` cannot be used for this. It is never cleared either, not
+    // even on a later terminal-negative read — the acceptance stays valid for the
+    // next batch even after the seat releases. Still not a status write: SOR-1
+    // holds, this only records WHEN WE FIRST SAW the flip TeleCRM authored.
+    //
+    // Its pre-read is SEPARATE from the status floor above and runs only when the
+    // answer can change anything — a live row at the derived `accepted` stage. If
+    // this function is live before `20260728120000` lands (or after its documented
+    // reversal), the column is missing and this read fails: the anchor stays
+    // unstamped, the failure is logged loudly, and the floor and the progress
+    // mirror carry on untouched.
+    let stampAcceptedAt = false;
+    if (!applicationStatusUnknown && !applicationTerminal && derived.stage === "accepted") {
+      try {
+        const { data: anchorRows, error: anchorError } = await admin
+          .from("cohort_applications")
+          .select("accepted_at")
+          .eq("user_id", user.id)
+          .eq("offering_id", offeringId);
+        if (anchorError) {
+          logPreReadFailure(
+            "reconcile.accepted_at.read_failed",
+            "held-seat anchor pre-read failed; leaving accepted_at unstamped",
+            anchorError,
+            derived.stage,
+          );
+        } else {
+          // Only rows we actually READ can be known to be unstamped — a failed read
+          // leaves this false, so the anchor is never stamped on a guess. The set is
+          // read (not `.maybeSingle()`) for the same reason the status floor reads
+          // it, and one already-stamped row VETOES the stamp: the write below covers
+          // every matching row, and re-stamping even one would slide that student's
+          // deadline forward, which is the exact failure this column exists to end.
+          const rows = Array.isArray(anchorRows) ? anchorRows : [];
+          stampAcceptedAt = rows.length > 0 && rows.every((row) => row?.accepted_at == null);
+        }
+      } catch (anchorErr) {
+        logPreReadFailure(
+          "reconcile.accepted_at.read_threw",
+          "held-seat anchor pre-read threw; leaving accepted_at unstamped",
+          anchorErr,
+          derived.stage,
+        );
+      }
     }
 
     // Mirror the derived stage onto the app-owned columns via the service-role
     // client. Fail-soft: a mirror-write failure never fails the read response.
     // Scoped to `offering_id` (guaranteed present), so the stage lands ONLY on
     // this application — never a sibling (cross-offering contamination). Writes
-    // ONLY the five reconciled_* mirror columns — never `status`, never `accepted`.
-    // A terminal-negative application gets a NULLED progress write (no stage, no
-    // markers) — the data-layer floor above.
+    // ONLY the five reconciled_* mirror columns, plus the once-ever `accepted_at`
+    // anchor above — never `status`, never `accepted`.
+    //
+    // TWO payloads, and the RETRACTION is the fail-safe one. A terminal-negative
+    // application gets a NULLED progress write (no stage, no markers) — the
+    // data-layer floor above. An application whose status could NOT be read takes
+    // the SAME retraction, deliberately, because merely skipping the write does not
+    // close the hole the floor exists for: this function is the only writer AND the
+    // only retractor of the mirror set, and it runs only when that user opens the
+    // app, so a skip leaves whatever an earlier run stamped sitting on a row we can
+    // no longer verify is alive. A student accepted on Monday and rejected in
+    // TeleCRM on Tuesday would keep `reconciled_stage='accepted'` and its markers
+    // for as long as the pre-read keeps failing — and a rejected applicant usually
+    // never opens the app again, so there is no guaranteed later run to fix it.
+    // Retracting is recoverable (the next successful run rewrites the derived stage
+    // from scratch); stale markers on a possibly-dead row are not.
+    //
+    // `mirrored` therefore means "the mirror write for this run landed" — true for
+    // a retraction too. It is NOT a claim that the derived stage was stored.
     let mirrored = false;
+    const retractMirror = applicationTerminal || applicationStatusUnknown;
     try {
-      const mirrorPayload = applicationTerminal
+      const mirrorPayload = retractMirror
         ? {
             reconciled_stage: null,
             reconciled_key: null,
@@ -756,6 +933,10 @@ Deno.serve(async (req) => {
             completed_no_fee: derived.markers.completedNoFee,
             contactable_partial: derived.markers.contactablePartial,
             reconciled_at: new Date().toISOString(),
+            // Present in the payload ONLY on the first observation of `accepted`;
+            // omitted on every other run, so the column is written once and then
+            // left alone forever.
+            ...(stampAcceptedAt ? { accepted_at: new Date().toISOString() } : {}),
           };
       const { error: mirrorError } = await admin
         .from("cohort_applications")

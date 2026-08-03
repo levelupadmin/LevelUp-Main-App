@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { bootAnalytics } from "@/lib/analytics";
+import { DECISION_FLOW, flag } from "@/lib/flags";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { queryClient, persistOptions } from "@/lib/queryClient";
 import { toast as sonnerToast } from "sonner";
@@ -103,10 +104,27 @@ const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
 // surfaces. Route path is pinned — S-5's applicant card navigates to it.
 const ClaimApplication = lazy(() => import("@/pages/auth/ClaimApplication"));
 
+// ─── Phase DC — the decision experience (behind VITE_DECISION_FLOW) ───
+// Registered in one pass so the four decision surfaces + the public admission
+// page share a single route block. Every one of them is a READ path: the app
+// never writes a funnel status (SOR-1). With the flag off NONE of these routes
+// is rendered at all, so the paths fall through to the catch-all exactly as they
+// do today — flag-off is byte-identical, and the chunks are never fetched.
+const DecisionReveal = lazy(() => import("@/pages/decision/DecisionReveal"));
+const AcceptanceCard = lazy(() => import("@/pages/decision/AcceptanceCard"));
+const ClaimSeat = lazy(() => import("@/pages/decision/ClaimSeat"));
+const EnrollmentDetails = lazy(() => import("@/pages/decision/EnrollmentDetails"));
+const AdmissionPublic = lazy(() => import("@/pages/AdmissionPublic"));
+
 // The QueryClient + its localStorage persister live in @/lib/queryClient so the
 // sign-out path can purge the persisted cache without importing this app root.
 
 const App = () => {
+  // Phase DC's routes exist ONLY when the flag is on (see the lazy imports
+  // above). Read once per render so the whole decision block appears or
+  // disappears atomically.
+  const decisionFlow = flag(DECISION_FLOW);
+
   // Fire-and-forget analytics boot. Reads analytics_settings from the
   // DB and injects whichever platform scripts are enabled. Skips on
   // localhost so dev work doesn't pollute production funnels (the
@@ -208,6 +226,13 @@ const App = () => {
               */}
               <Route path="/delete-account" element={<DeleteAccount />} />
 
+              {/* The public admission page (REQ-DEC-6) — a RECIPIENT view for a
+                  shared admission link, keyed on `admission_page_slug`. It sits
+                  in the PUBLIC block on purpose: the whole point is that a
+                  logged-out recipient can open it. It renders only whitelisted
+                  fields, and an unpublished record 404s. */}
+              {decisionFlow && <Route path="/admission/:slug" element={<AdmissionPublic />} />}
+
               {/* Browse merged into Home, keep old deep links working. */}
               <Route path="/browse" element={<Navigate to="/" replace />} />
               {/* Friendly alias for the sessions tab. */}
@@ -229,6 +254,15 @@ const App = () => {
                 <Route path="/my-application/:applicationId" element={<ApplicationStatus />} />
                 <Route path="/claim/:applicationId" element={<ClaimApplication />} />
                 <Route path="/cohort/:offeringId" element={<CohortDashboard />} />
+                {/* Claim + details are transactional reading screens, so they
+                    keep the student shell (a way back out). The two cinematic
+                    surfaces above them run full-bleed — see below. */}
+                {decisionFlow && (
+                  <>
+                    <Route path="/decision/:applicationId/claim" element={<ClaimSeat />} />
+                    <Route path="/decision/:applicationId/details" element={<EnrollmentDetails />} />
+                  </>
+                )}
               </Route>
 
               {/* ChapterViewer runs full-bleed (no student nav) but stays auth-guarded */}
@@ -236,6 +270,22 @@ const App = () => {
                 path="/chapters/:chapterId"
                 element={<RequireAuth><ErrorBoundary><ChapterViewer /></ErrorBoundary></RequireAuth>}
               />
+
+              {/* The reveal and the acceptance card are full-viewport moments
+                  (REQ-DEC-2): nav chrome under a decision reveal breaks it. Same
+                  full-bleed + auth-guarded shape as ChapterViewer. */}
+              {decisionFlow && (
+                <>
+                  <Route
+                    path="/decision/:applicationId"
+                    element={<RequireAuth><ErrorBoundary><DecisionReveal /></ErrorBoundary></RequireAuth>}
+                  />
+                  <Route
+                    path="/decision/:applicationId/accepted"
+                    element={<RequireAuth><ErrorBoundary><AcceptanceCard /></ErrorBoundary></RequireAuth>}
+                  />
+                </>
+              )}
 
               {/* ─── Admin routes share a single persistent admin layout ─── */}
               <Route element={<RequireAuth><RequireRole role="admin"><AdminLayout /></RequireRole></RequireAuth>}>

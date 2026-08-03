@@ -113,6 +113,31 @@ interface OfferingOption {
   title: string;
 }
 
+/**
+ * The EXPLICIT column list this console reads. Never `*` — NFR-COPY-1.
+ *
+ * This surface is NOT ApplicationStatus, and the difference is deliberate rather
+ * than an exemption. An admin reviewing an application legitimately renders the
+ * two columns a student surface must never receive:
+ *   • `interview_notes` — the reviewer's own prose, shown as the Interview column
+ *     badge and edited in the notes dialog;
+ *   • `tally_data` — the raw submission, printed key-by-key in the Tally dialog.
+ * Both stay, because removing them would break the console's reason to exist.
+ *
+ * `bio` does NOT stay. Nothing here renders it, so the wildcard was shipping the
+ * applicant's 100-word essay to a page that never printed it — and `tally_data`
+ * already carries the submission for the one dialog that needs it.
+ *
+ * The list mirrors `ApplicationRow` one-to-one, so widening what this page
+ * receives means widening the declared row shape first. The repo-wide guard in
+ * `src/lib/__tests__/admissionPublicPolicy.test.ts` §12 fails the suite if any
+ * client surface reverts this table to a wildcard select.
+ */
+const APPLICATION_ROW_COLUMNS =
+  "id, user_id, offering_id, status, created_at, full_name, email, phone, " +
+  "tally_data, interview_notes, rejection_reason, app_fee_paid_at, " +
+  "offerings(title)";
+
 const PAGE_SIZE = 20;
 
 const AdminApplications = () => {
@@ -188,7 +213,7 @@ const AdminApplications = () => {
     fetchPage: async ({ from, to }) => {
       let query = (supabase as any)
         .from("cohort_applications")
-        .select("*, offerings(title)", { count: "exact" });
+        .select(APPLICATION_ROW_COLUMNS, { count: "exact" });
 
       if (search.trim()) {
         const escaped = search.trim().replace(/%/g, "\\%").replace(/_/g, "\\_");
