@@ -1,6 +1,7 @@
 # LevelUp Cohort Product — Build Handoff
 
-**Written 2026-07-30. For a fresh session taking this over completely.**
+**Written 2026-07-30; implementation status refreshed 2026-08-03. For a fresh
+session taking this over completely.**
 Read this whole file before touching anything. Several traps below have already
 cost real hours; they are documented so they are not rediscovered.
 
@@ -24,18 +25,23 @@ Offering id `449056b9-9269-4bc5-ba8b-4c079c2104ee`.
 
 ## 2. Current state — everything is safe
 
-**Updated 2026-08-01.** All eight branches: 0 uncommitted, 0 unpushed.
+**Updated 2026-08-03.** Every implementation train is committed and pushed on
+its own feature branch. The exact test evidence for the final rounds is in the
+shared `WORK-DONE-2026-08-03-*.md` handoffs.
 
-| Worktree | Branch | Tests | Note |
+| Worktree | Branch | Final implementation commit | Note |
 |---|---|---|---|
-| `LevelUp-cohort` | `design/cohort-sp` | 558 | |
-| `LevelUp-iv` | `design/cohort-iv` | 683 | council REVISE → both blockers closed |
-| `LevelUp-dc` | `design/cohort-dc` | 841 | |
-| `LevelUp-re` | `design/cohort-re` | 697 | council REVISE → B1/B2 closed |
-| `LevelUp-r0` | `design/cohort-r0` | 539 | adversarial suite EXECUTED: 163/163 |
-| `LevelUp-r1` | `design/cohort-r1` | 577 | |
-| `LevelUp-r2` | `design/cohort-r2` | 701 | wiring confirmed landed |
-| `LevelUp-linkgate` | `design/cohort-linkgate` | 493 | the production link leak, §6 |
+| `LevelUp-cohort` | `design/cohort-sp` | `54021fdb` | dead gate removed; forward-only probe added |
+| `LevelUp-iv` | `design/cohort-iv` | `a7eeffb4` | durable app-to-Calendly binding closed |
+| `LevelUp-dc` | `design/cohort-dc` | `a36bdd06` | complete |
+| `LevelUp-re` | `design/cohort-re` | `db537cf4` | all review follow-ups closed |
+| `LevelUp-r0` | `design/cohort-r0` | this handoff refresh | adversarial suite executed: 163/163 |
+| `LevelUp-r1` | `design/cohort-r1` | `2120ea35` | complete |
+| `LevelUp-r2` | `design/cohort-r2` | `0f628533` | real modules wired and verified |
+| `LevelUp-r3` | `design/cohort-r3` | `1fa22e42` | announcements, roster, feed, resources complete |
+| `LevelUp-r4` | `design/cohort-r4` | `131aa47b` | demo day, certificates, alumni complete |
+| `LevelUp-room-access-gaps` | `design/cohort-room-access-gaps` | `cb7bf8cf` | legacy gaps and migration collision closed |
+| `LevelUp-linkgate` | `design/cohort-linkgate` | `afe2ba14` | production link leak fix, §6 |
 
 **⚠️ THE PREVIOUS VERSION OF THIS FILE CLAIMED ALL SEVEN BRANCHES WERE PUSHED.
 `design/cohort-r2` WAS NOT ON ORIGIN AT ALL** — ~5,300 lines existed only on this
@@ -294,54 +300,57 @@ it. Every fresh build died there.
 
 ---
 
-## 7. What is outstanding, per phase
+## 7. Final status, per phase
 
 ### SP — identity spine (`LevelUp-cohort`)
-Green. Council passed after a fix round that closed a **net-new account
-takeover** (intake wrote an unproven phone into `auth.users.phone`, the phone-OTP
-login key).
-- **Dead code to remove:** SP's Part 3 gate is now inert — main's
-  `claim_at_signin` empties the function it guards. Harmless, worth deleting.
-- Live-lane suite: 17/26 cases, 86 properties proven. The failures are **local
-  edge functions lacking secrets** (`TALLY_SIGNING_SECRET`, `EMAIL_OTP_PEPPER`),
-  not defects. Needs `supabase/functions/.env` for the local stack.
+**Complete and pushed at `54021fdb`.** Council passed after a fix round that
+closed a net-new account takeover. The obsolete Part 3 claim body is removed,
+and a new forward migration proves the already-applied claim function is the
+exact no-op before exposing the poller's service-only provisioning probe.
+Static acceptance is 15/15 cases and 73/73 properties; the SQL contract, full
+558-test client suite, TypeScript and build all pass. The credentialed live lane
+was not rerun because its named shadow-project environment is absent locally;
+that is release validation, not an open implementation defect.
 
 ### IV — the interview (`LevelUp-iv`)
-Green. **🔴 NEEDS A VERIFICATION COUNCIL** — one was launched and died on the
-session limit with zero agents completing. It has had a fix round AND Rahul's
-slot-buttons reversal land since its only council.
-- Deploy needs a `CALENDLY_SIGNING_KEY` edge secret AND a Calendly-side webhook
-  subscription. **Neither exists yet.**
-- Calendly facts (verified live): `event_type_available_times` returns real
-  slots each carrying a `scheduling_url` deep-link to that exact slot, which
-  resolves 200 bare and with `?name=&email=` prefill. **Calendly has NO API to
-  create a booking** — the final confirm must happen on their surface.
-- The pilot's `offerings.calendly_url` is now set to the Creators Academy
-  interview link. **All other offerings still have NULL** — set one per cohort.
+**Complete and pushed at `a7eeffb4`.** The verification follow-up is closed:
+authenticated app bookings receive a short-lived, service-only application
+binding carried through Calendly's documented `utm_content`/webhook tracking
+path, so identity no longer depends on invitee-typed phone/email alone. The
+implementation deliberately retains Calendly's hosted confirmation surface; an
+older claim that Calendly has no invitee-creation API was corrected. Focused
+145/145 and full 687/687 tests, SQL contract, TypeScript, build and changed edge
+functions pass.
+
+Release configuration still needs `CALENDLY_SIGNING_KEY`, a Calendly-side
+webhook subscription, and a scheduling URL for every offering that should use
+interviews. Those external changes were not performed.
 
 ### DC — the decision (`LevelUp-dc`)
-Green, two councils, two fix rounds, last one verified directly. Closest to
-shippable. Its second council found the **Android Reader-Rule violation** that
-its own first fix round created — the reason IV and RE need their re-councils.
+**Complete and pushed at `a36bdd06`.** Two councils, two fix rounds, and the last
+one verified directly. Its second council found the Android Reader-Rule
+violation that its own first fix round created; the same cross-platform class
+was included in the completed IV and RE follow-ups above.
 
 ### RE — re-entry (`LevelUp-re`)
-Green. **🔴 NEEDS A VERIFICATION COUNCIL** for the same reason.
-- **TWO switches, not one:** `VITE_REMINDER_LADDER` (client) AND
-  `REMINDER_LADDER_ENABLED` (server). The client flag cannot gate a Deno cron —
-  `import.meta.env` does not exist there.
-- **Nothing has ever been sent.** Proven against prod: ledger table absent, 0
-  cron jobs, 0 templates, 0 tokens minted, 0 of 4 migrations applied.
-- **OPEN DECISION:** unsubscribe stops the ladder but NOT bulk marketing.
-  `suppressed_emails` is append-only and gates every transactional send, so
-  writing there would kill payment receipts. Both pages state the limit and
-  offer support@. A true global opt-out needs a category column or a second list.
+**Complete and pushed at `db537cf4`.** The verification follow-up closed the
+unsafe rollback guidance, the Android staged-checkout dead end, and the ladder's
+dependence on default-off client reconciliation. The service reconciler is
+application/offering scoped, fail-closed on unavailable payment evidence, and
+scheduled behind its own exact-string server flag. Focused 238/238 and full
+709/709 tests, the SQL migration, TypeScript, build and changed functions pass.
+
+Rollout still has separate server reconciler and reminder-ladder flags; nothing
+has been sent. The 26-hour evidence maximum remains an explicit product/ops
+policy decision. Unsubscribe is category-scoped to this ladder, as documented,
+because the existing global suppression list also gates transactional receipts.
 
 ### R0 — room backbone (`LevelUp-r0`)
-The heaviest phase: RLS on the enrolment path. Two councils, two fix rounds, plus
-a residuals round whose integrate step died.
-- **🔴 THE ADVERSARIAL SUITE HAS NEVER BEEN EXECUTED.** It needs a shadow with
-  grant parity — apply `qa-harness/shadow-grants.sql` AFTER `supabase start`, or
-  every assertion passes vacuously.
+**Complete.** The heaviest phase: RLS on the enrolment path. Two councils, two
+fix rounds, and a residual audit. The adversarial suite was executed against a
+grant-parity shadow: 163/163, exit 0. A current-shell rerun still requires the
+named shadow credentials; exit 2 from missing credentials is not a product
+failure and is not presented as a new pass.
 - **THE RESIDUALS LIST ABOVE WAS ITSELF STALE — audited 2026-08-01.** Two of the
   three were already fixed, and the code's own comments were more accurate than
   this file:
@@ -357,9 +366,13 @@ a residuals round whose integrate step died.
   - Fixed: the stale "4s lock_timeout" prose in the suite is now 1s. Note the
     handoff cited `:1649,1712` and the real sites were `:1907,1970` — **line
     numbers in this file drift; grep for the symbol** (lesson 3).
-- Still open: the grant-layer documentation in
-  `design/cohorts/docs/05-ACCESS-SECURITY.md` has **zero** mentions of TRUNCATE
-  while `design-qa-gate.js` names its §7 as the authority.
+- **The grant-layer documentation was already closed; this handoff line was
+  stale.** Audited again 2026-08-03: `design/cohorts/docs/05-ACCESS-SECURITY.md`
+  contains eight explicit `TRUNCATE` mentions. Its §7.1 explains the platform's
+  seven-verb default grant, why `TRUNCATE` bypasses RLS, the exact per-table end
+  state, the shadow arming order, and the post-push verification obligation.
+  `qa-harness/cohort-room-access.spec.mjs` independently asserts the same ACL
+  contract in `GRANT.0a`–`GRANT.2`.
 - **The adversarial suite now RUNS: 163/163, exit 0** (§10 for the recipe). It
   found the §6b production leak.
 
@@ -369,23 +382,23 @@ and the nav slot. `useActiveCohort` was deliberately KEPT — the backlog claims
 one consumer; there are three, and one drives the community feed's batch scoping.
 
 ### R2 — the season (`LevelUp-r2`)
-Modules built (~5,300 lines) and correct. **The wiring round died mid-flight.**
-- `src/App.tsx` still routes R1's placeholders, so **the modules may still be
-  unreachable** — verify. `RoomHome.tsx` may still render "{title} opens here."
-- Y-1 reportedly mounted `SessionSlot` and removed the duplicate `SessionRow`;
-  **confirm on disk**, since the integrate step never ran.
-- **`App.tsx` is Tier 1** (routing root) — it needs the council + cross-platform
-  verify, not a tier-2 pass.
-- **R2-T5 (retire `/cohort`, flip the flag default) is Rahul's call**, gated on
-  his own Android + iOS device pass.
+**Complete and pushed at `0f628533`.** The real modules are routed in `App.tsx`,
+`SessionSlot` is mounted in `ThisWeekCard`, and the remaining
+`{title} opens here.` text is the intentional fallback for unknown module paths.
+R2-T5 (retire `/cohort` and flip the flag default) remains a release decision
+gated on real Android and iOS device validation.
 
-### R3, R4 — NOT STARTED
-R3 (announcements, roster, feed, resources — 4 tasks) and R4 (demo day,
-certificates, alumni — 4 tasks). Sections are in `ROOMS-BACKLOG.md`.
+### R3 and R4 — the rest of the room
+**Complete and pushed.** R3's announcements, roster, feed and resources finish
+at `1fa22e42`. R4's demo day, certificates and alumni finish at `131aa47b`.
+The separate room-access-gap train at `cb7bf8cf` closes the inherited curriculum
+revocation, exact-batch session/link access, lobby exclusion and authoritative
+progress-definition gaps. Its grant-parity adversarial run passes 175/175 with
+zero carried gaps.
 
 ---
 
-## 7b. ⚠️ MERGE-BLOCKING FOR R0 — two migrations define one function
+## 7b. R0 migration collision — closed on the room-access-gap train
 
 `public.get_cohort_progress` is defined **twice**, and the later timestamp wins:
 
@@ -401,21 +414,22 @@ R0 will apply afterwards and win. **Prod and a from-scratch build therefore
 diverge**, which is the same class as the already-once-fixed "the repo could not
 build a database from scratch".
 
-Fix it as part of the R0 merge: one authoritative definition in a migration dated
-after both. **Do not leave two copies of the body** — that is the
-last-writer-wins landmine that already bit once this week. It was deliberately
-NOT fixed on 2026-08-01 because installing R0's LATERAL on prod is a behavioural
-change to the shipped `CohortDashboard`, which belongs to R0's merge rather than
-to a security patch.
+Fixed at `cb7bf8cf` by the forward migration
+`20260803160000_close_cohort_room_legacy_access_gaps.sql`, dated after both old
+definitions. It installs the single authoritative behavior together with the
+remaining exact-batch/revocation policy corrections and executable compatibility
+checks. Keep the access-gap train in the R0–R4 integration stack; omitting it
+would reintroduce both the fresh-build divergence and the carried access gaps.
 
 ---
 
 ## 8. The deploy sequence — ordering is not obvious
 
-1. **Migrations BEFORE functions.** The poller probes
-   `intake_provisioning_gate_ok` and mints nothing without it. Deploy the
-   function first and ordinary rows mint intake-tagged auth users while the gate
-   is absent — and that stamping is irreversible.
+1. **Migrations BEFORE functions.** Apply through the new forward migration
+   `20260803190000_identity_intake_probe_after_claim_neuter.sql` before deploying
+   the poller. The migration refuses to expose the service-only probe unless the
+   signup-time claim is the expected exact no-op. The poller fails closed while
+   that probe is absent.
 2. **For DC:** migration → reconciler deploy → client ship, in that order.
 3. **R0's backbone takes ACCESS EXCLUSIVE on `cohort_batches` during apply**, and
    the shipped dashboard reads that table. The apply window is a brief
@@ -487,37 +501,33 @@ fix round → **re-council** (fix rounds are where regressions get born).
 
 ---
 
-## 11. What is left — updated 2026-08-01
+## 11. What is left — updated 2026-08-03
 
 **The previous list of five is DONE.** Checkpoint loop re-armed; R0/R1/R2 gates
 re-run green; R2's wiring confirmed; the IV and RE councils ran (both REVISE,
 every blocker since closed); R0's suite executed for the first time at 163/163.
 
-Outstanding, roughly in value order:
+All implementation follow-ups are now pushed on their own branches:
 
-1. ~~Apply the §6b migration~~ — **DONE, live and verified 2026-08-01.** Still
-   open for Rahul: tune `REENTRY_FEE_EVIDENCE_MAX_AGE_HOURS`; the 26h default is
-   a policy number and how much reach it costs depends on how often the
-   reconciler actually runs.
-2. **R3 round 1 (announcements + roster) is BUILT and green** on
-   `design/cohort-r3` — 772 tests, build clean, `typecheck:functions` 0 new
-   failures. Its council is running. Round 2 is the feed and resources: Rahul
-   ruled on 2026-08-01 to **build the feed now** rather than wait on the
-   community-v2 direction, and to rebuild the main community later to match.
-   Useful context he gave: a teammate has LOCKED the main community because it is
-   not built out, so the room feed may be the only live community surface —
-   verify its state before briefing the legacy copy step.
-   **R4 (demo day, certificates, alumni) — NOT STARTED**, 4 tasks in
-   `ROOMS-BACKLOG.md`.
-3. **The council follow-ups nobody has picked up:** IV's durable webhook fix (an
-   opaque per-application token on `scheduling_url`, so identity stops resting on
-   a field the invitee types), and RE's B3/B4/B5 — the rollback that strips the
-   unsubscribe link, the fee CTA dead-ending in the Android shell, and the ladder
-   input possibly being structurally empty because `FUNNEL_RECON` defaults false.
-4. **SP's dead Part-3 gate**, and R0's residuals: the unguarded `CREATE INDEX` on
-   `live_sessions`, the half-guarded DO block in `content.sql`, and the stale "4s
-   lock_timeout" prose in the suite (all six sites are 1s).
-5. Then the merge-and-deploy sequence in §8, with Rahul.
+- R3 `1fa22e42`, R4 `131aa47b`, and the room access-gap train `cb7bf8cf`;
+- IV's durable Calendly binding `a7eeffb4`;
+- RE's council follow-ups `db537cf4`;
+- SP's dead Part-3 removal and forward-only probe `54021fdb`;
+- R0's former residuals were already closed; this update removes the final stale
+  handoff claims.
+
+What remains is decision/release work, not another implementation round:
+
+1. Rahul may tune `REENTRY_FEE_EVIDENCE_MAX_AGE_HOURS`; the 26h default is a
+   policy number and how much reach it costs depends on reconciler cadence.
+2. Phase AB remains deliberately parked because it changes live Tally forms and
+   requires Rahul's product/production approval.
+3. Release validation/configuration still includes real-device native checks,
+   Calendly webhook secret/subscription + per-offering URLs, and the separate
+   decision to rebuild the locked main-community route to match the room feed.
+4. Then the merge-and-deploy sequence in §8, with Rahul. No assistant should
+   infer approval to merge branches, apply production migrations, deploy edge
+   functions, set production secrets, or flip user-reaching flags.
 
 **Nothing from any cohort branch is merged, applied or deployed.** RC and TP
 remain the only things live.
