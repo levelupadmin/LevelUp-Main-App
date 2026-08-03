@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,45 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, ChevronUp, ChevronDown, Trash2, GripVertical } from "lucide-react";
 import VdoCipherUploader from "@/components/admin/VdoCipherUploader";
 import ProtectedVideoUploader from "@/components/admin/ProtectedVideoUploader";
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCorners,
+  type DragEndEvent,
+  type DragOverEvent,
+} from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, arrayMove, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+/** Generic sortable wrapper — hands the drag handle props to its child via a
+ *  render prop so sections and chapter rows can place the grip wherever fits. */
+function Sortable({ id, children }: {
+  id: string;
+  children: (args: {
+    setNodeRef: (el: HTMLElement | null) => void;
+    style: React.CSSProperties;
+    handleProps: Record<string, unknown>;
+  }) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <>
+      {children({
+        setNodeRef,
+        style: {
+          transform: CSS.Transform.toString(transform),
+          transition,
+          opacity: isDragging ? 0.4 : 1,
+          position: "relative",
+          zIndex: isDragging ? 50 : undefined,
+        },
+        handleProps: { ...attributes, ...listeners, style: { cursor: "grab", touchAction: "none" } },
+      })}
+    </>
+  );
+}
 
 interface Chapter {
   id: string;
@@ -41,6 +80,10 @@ interface Section {
   _isNew?: boolean;
 }
 
+// Monotonic suffix for local "new-…" ids — Date.now() alone can collide when
+// two Add clicks land in the same millisecond.
+let newIdSeq = 0;
+
 const AdminCourseCurriculum = () => {
   const { courseId } = useParams();
   const navigate = useNavigate();
@@ -49,9 +92,12 @@ const AdminCourseCurriculum = () => {
   const [courseTitle, setCourseTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  // Bumped when a video upload attaches a key; an effect below auto-saves the
-  // curriculum so the admin never has to click Save just for an upload.
-  const [autoSaveTick, setAutoSaveTick] = useState(0);
+  // Always-fresh mirror of `sections` for async callbacks (upload persistence
+  // fires long after the render that captured its closure).
+  const sectionsRef = useRef<Section[]>([]);
+  // De-dupes concurrent section inserts: two uploads landing in the same
+  // brand-new section must share ONE insert, not create it twice.
+  const sectionInsertsRef = useRef<Record<string, Promise<string>>>({});
   const [editingChapter, setEditingChapter] = useState<{ sectionIdx: number; chapterIdx: number } | null>(null);
   const [courseDefaultVideoType, setCourseDefaultVideoType] = useState("standard");
   const [vdoUploadMode, setVdoUploadMode] = useState<Record<string, "upload" | "existing">>({});
@@ -117,12 +163,14 @@ const AdminCourseCurriculum = () => {
   }, [courseId]);
 
   useEffect(() => { load(); }, [load]);
+  // Keep the async-callback mirror in sync every render.
+  sectionsRef.current = sections;
 
   const addSection = () => {
     setSections((prev) => [
       ...prev,
       {
-        id: `new-${Date.now()}`,
+        id: `new-${Date.now()}-${newIdSeq++}`,
         title: "New Section",
         sort_order: prev.length,
         chapters: [],
@@ -139,7 +187,7 @@ const AdminCourseCurriculum = () => {
         chapters: [
           ...updated[sectionIdx].chapters,
           {
-            id: `new-${Date.now()}`,
+            id: `new-${Date.now()}-${newIdSeq++}`,
             title: "New Chapter",
             content_type: "video",
             description: "",
@@ -161,6 +209,104 @@ const AdminCourseCurriculum = () => {
       };
       return updated;
     });
+  };
+
+  // ── Drag-and-drop ──────────────────────────────────────────────────────────
+  // Sections and chapters share one DndContext; ids are namespaced
+  // ("sec:<id>" / "ch:<id>") so the handlers can tell them apart.
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  const findSectionIdxByChapter = (prefixedChId: string, list: Section[]) =>
+    list.findIndex((s) => s.chapters.some((c) => `ch:${c.id}` === prefixedChId));
+
+  // Live cross-section move while dragging a chapter over another section.
+  const onDragOver = ({ active, over }: DragOverEvent) => {
+    if (!over) return;
+    const a = String(active.id);
+    const o = String(over.id);
+    if (!a.startsWith("ch:")) return;
+    setSections((prev) => {
+      const fromIdx = findSectionIdxByChapter(a, prev);
+      const toIdx = o.startsWith("ch:")
+        ? findSectionIdxByChapter(o, prev)
+        : o.startsWith("sec:")
+        ? prev.findIndex((s) => `sec:${s.id}` === o)
+        : -1;
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return prev;
+      const moving = prev[fromIdx].chapters.find((c) => `ch:${c.id}` === a)!;
+      const insertAt = o.startsWith("ch:")
+        ? prev[toIdx].chapters.findIndex((c) => `ch:${c.id}` === o)
+        : prev[toIdx].chapters.length;
+      const next = [...prev];
+      next[fromIdx] = { ...next[fromIdx], chapters: next[fromIdx].chapters.filter((c) => `ch:${c.id}` !== a) };
+      const target = [...next[toIdx].chapters];
+      target.splice(insertAt < 0 ? target.length : insertAt, 0, moving);
+      next[toIdx] = { ...next[toIdx], chapters: target };
+      return next;
+    });
+  };
+
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over) return;
+    const a = String(active.id);
+    const o = String(over.id);
+    let next: Section[] | null = null;
+    if (a.startsWith("sec:") && o.startsWith("sec:") && a !== o) {
+      setSections((prev) => {
+        const from = prev.findIndex((s) => `sec:${s.id}` === a);
+        const to = prev.findIndex((s) => `sec:${s.id}` === o);
+        if (from === -1 || to === -1) return prev;
+        next = arrayMove(prev, from, to).map((s, i) => ({ ...s, sort_order: i }));
+        return next;
+      });
+    } else if (a.startsWith("ch:")) {
+      setSections((prev) => {
+        const sIdx = findSectionIdxByChapter(a, prev);
+        if (sIdx === -1) return prev;
+        const chapters = prev[sIdx].chapters;
+        const from = chapters.findIndex((c) => `ch:${c.id}` === a);
+        const to = o.startsWith("ch:") ? chapters.findIndex((c) => `ch:${c.id}` === o) : from;
+        const arr = [...prev];
+        arr[sIdx] = {
+          ...arr[sIdx],
+          chapters: (from !== -1 && to !== -1 && from !== to ? arrayMove(chapters, from, to) : chapters)
+            .map((c, i) => ({ ...c, sort_order: i })),
+        };
+        next = arr;
+        return arr;
+      });
+    }
+    // Persist the new order right away for rows that already exist in the DB —
+    // arranging the flow shouldn't be lost to a forgotten Save. Unsaved
+    // ("new-…") rows keep their position on the next manual Save.
+    if (next) void persistOrder(next);
+  };
+
+  // Fire-and-forget order writer: sort_order for sections, sort_order +
+  // section_id for chapters (covers cross-section moves). Saved rows only.
+  const persistOrder = async (list: Section[]) => {
+    try {
+      const jobs: PromiseLike<unknown>[] = [];
+      list.forEach((sec, sIdx) => {
+        if (!sec._isNew) {
+          jobs.push(supabase.from("sections").update({ sort_order: sIdx }).eq("id", sec.id));
+          sec.chapters.forEach((ch, cIdx) => {
+            if (!ch._isNew) {
+              jobs.push(
+                supabase.from("chapters").update({ sort_order: cIdx, section_id: sec.id }).eq("id", ch.id)
+              );
+            }
+          });
+        }
+      });
+      await Promise.all(jobs);
+    } catch {
+      toast({
+        title: "Couldn't save the new order",
+        description: "Click Save Curriculum to persist it.",
+        variant: "destructive",
+      });
+    }
   };
 
   const moveSection = (idx: number, dir: -1 | 1) => {
@@ -294,26 +440,19 @@ const AdminCourseCurriculum = () => {
   const handleSave = async () => {
     if (!courseId) return;
 
-    // Validate chapter video fields before saving
+    // Validate chapter video fields before saving. NOTE: a standard-video
+    // chapter with no media yet is fine — it's a placeholder the admin will
+    // upload into later. Blocking the ENTIRE save on it once cost us two
+    // uploaded recordings; never make an unrelated chapter veto a save.
     for (const sec of sections) {
       for (const ch of sec.chapters) {
-        if (ch.content_type === "video") {
-          if (ch.video_type === "vdocipher" && !ch.vdocipher_video_id?.trim()) {
-            toast({
-              title: "Validation Error",
-              description: `Chapter "${ch.title}" in "${sec.title}" uses VdoCipher but has no Video ID.`,
-              variant: "destructive",
-            });
-            return;
-          }
-          if (ch.video_type === "standard" && !ch.media_url?.trim()) {
-            toast({
-              title: "Validation Error",
-              description: `Chapter "${ch.title}" in "${sec.title}" uses standard video but has no media URL.`,
-              variant: "destructive",
-            });
-            return;
-          }
+        if (ch.content_type === "video" && ch.video_type === "vdocipher" && !ch.vdocipher_video_id?.trim()) {
+          toast({
+            title: "Validation Error",
+            description: `Chapter "${ch.title}" in "${sec.title}" uses VdoCipher but has no Video ID.`,
+            variant: "destructive",
+          });
+          return;
         }
       }
     }
@@ -380,15 +519,101 @@ const AdminCourseCurriculum = () => {
     setSaving(false);
   };
 
-  // Auto-save whenever an upload attaches a video key (autoSaveTick bump). Runs
-  // AFTER the media_url is in `sections`, so the freshly-uploaded chapter is
-  // persisted without a manual Save. Editing a title/description still needs the
-  // manual Save button.
-  useEffect(() => {
-    if (autoSaveTick > 0) handleSave();
-    // Intentionally only on the tick — handleSave closes over current sections.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSaveTick]);
+  // ───────────────────────────────────────────────────────────────────────────
+  // Targeted persistence for uploads. When a video upload attaches a key, we
+  // save ONLY that chapter's row (inserting it — and its section — if brand
+  // new), then swap the real UUIDs into local state IN PLACE.
+  //
+  // Deliberately NOT handleSave(): a full save (a) validates every chapter, so
+  // an unrelated half-filled chapter would silently abort persisting the
+  // upload, (b) re-inserts every _isNew row (double-insert races between
+  // parallel uploads), and (c) reload()s state from the DB, wiping in-progress
+  // edits mid-typing — the combination that caused the 2026-08-03 lost-
+  // recordings incident. Title/description edits still use the manual Save.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  // Insert a brand-new section exactly once even if two uploads race into it.
+  const ensureSectionSaved = useCallback(async (localId: string): Promise<string> => {
+    const secs = sectionsRef.current;
+    const sIdx = secs.findIndex((s) => s.id === localId);
+    const sec = secs[sIdx];
+    if (!sec) throw new Error("Section no longer exists");
+    if (!sec._isNew) return sec.id;
+    const inflight = sectionInsertsRef.current[localId];
+    if (inflight) return inflight;
+    const p = (async () => {
+      const { data, error } = await supabase
+        .from("sections")
+        .insert({ course_id: courseId, title: sec.title, sort_order: sIdx })
+        .select("id")
+        .single();
+      if (error) throw error;
+      setSections((prev) => prev.map((s) => (s.id === localId ? { ...s, id: data.id, _isNew: false } : s)));
+      return data.id as string;
+    })();
+    sectionInsertsRef.current[localId] = p;
+    p.catch(() => { delete sectionInsertsRef.current[localId]; });
+    return p;
+  }, [courseId]);
+
+  // Persist the uploaded chapter; returns its REAL id (for the background
+  // completion patch) or undefined on failure. Looks the chapter up by its
+  // local id — indices captured in closures go stale across renders.
+  const persistUploadedChapter = useCallback(async (chapterLocalId: string, key: string): Promise<string | undefined> => {
+    const media = { media_url: key, media_provider: "supabase-signed", video_type: "standard" } as const;
+    // Reflect the upload in local state immediately (by id, never by index).
+    setSections((prev) => prev.map((s) => ({
+      ...s,
+      chapters: s.chapters.map((c) => (c.id === chapterLocalId ? { ...c, ...media } : c)),
+    })));
+    try {
+      const secs = sectionsRef.current;
+      const sec = secs.find((s) => s.chapters.some((c) => c.id === chapterLocalId));
+      if (!sec || !courseId) throw new Error("Chapter no longer exists on this page");
+      const ch = sec.chapters.find((c) => c.id === chapterLocalId)!;
+      const sectionId = await ensureSectionSaved(sec.id);
+
+      if (ch._isNew) {
+        const cIdx = sec.chapters.findIndex((c) => c.id === chapterLocalId);
+        const { data, error } = await supabase
+          .from("chapters")
+          .insert({
+            section_id: sectionId,
+            title: ch.title,
+            content_type: ch.content_type || "video",
+            description: ch.description || null,
+            ...media,
+            embed_url: ch.embed_url || null,
+            article_body: ch.article_body || null,
+            duration_seconds: ch.duration_seconds || 0,
+            make_free: ch.make_free,
+            sort_order: cIdx,
+            thumbnail_url: ch.thumbnail_url || null,
+          } as any)
+          .select("id")
+          .single();
+        if (error) throw error;
+        setSections((prev) => prev.map((s) => ({
+          ...s,
+          chapters: s.chapters.map((c) => (c.id === chapterLocalId ? { ...c, id: data.id, _isNew: false } : c)),
+        })));
+        toast({ title: "Video attached & saved", description: ch.title });
+        return data.id as string;
+      }
+
+      const { error } = await supabase.from("chapters").update(media as any).eq("id", ch.id);
+      if (error) throw error;
+      toast({ title: "Video attached & saved", description: ch.title });
+      return ch.id;
+    } catch (err: any) {
+      toast({
+        title: "Couldn't auto-save the chapter",
+        description: `${err.message}. The file itself is safe in storage — click Save Curriculum to attach it.`,
+        variant: "destructive",
+      });
+      return undefined;
+    }
+  }, [courseId, ensureSectionSaved, toast]);
 
   const ec = editingChapter;
 
@@ -407,11 +632,17 @@ const AdminCourseCurriculum = () => {
         </div>
       ) : (
         <div className="space-y-4 max-w-3xl">
+          <DndContext sensors={dndSensors} collisionDetection={closestCorners} onDragOver={onDragOver} onDragEnd={onDragEnd}>
+          <SortableContext items={sections.map((s) => `sec:${s.id}`)} strategy={verticalListSortingStrategy}>
           {sections.map((sec, sIdx) => (
-            <div key={sec.id} className="bg-card border border-border rounded-xl">
+            <Sortable key={sec.id} id={`sec:${sec.id}`}>
+            {({ setNodeRef, style, handleProps }) => (
+            <div ref={setNodeRef} style={style} className="bg-card border border-border rounded-xl">
               {/* Section header */}
               <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-                <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span {...handleProps} title="Drag to reorder section">
+                  <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+                </span>
                 <Input
                   value={sec.title}
                   onChange={(e) => updateSectionTitle(sIdx, e.target.value)}
@@ -432,12 +663,18 @@ const AdminCourseCurriculum = () => {
 
               {/* Chapters */}
               <div className="p-3 space-y-2">
+                <SortableContext items={sec.chapters.map((c) => `ch:${c.id}`)} strategy={verticalListSortingStrategy}>
                 {sec.chapters.map((ch, cIdx) => (
-                  <div key={ch.id}>
+                  <Sortable key={ch.id} id={`ch:${ch.id}`}>
+                  {({ setNodeRef: setChRef, style: chStyle, handleProps: chHandle }) => (
+                  <div ref={setChRef} style={chStyle}>
                     <div
                       className="flex items-center gap-3 px-3 py-2 rounded-lg bg-secondary/30 hover:bg-secondary/50 cursor-pointer"
                       onClick={() => setEditingChapter(ec?.sectionIdx === sIdx && ec?.chapterIdx === cIdx ? null : { sectionIdx: sIdx, chapterIdx: cIdx })}
                     >
+                      <span {...chHandle} title="Drag to reorder — drop on another section to move it there" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                        <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      </span>
                       <span className="text-xs font-mono text-muted-foreground w-6">{cIdx + 1}</span>
                       <span className="text-sm flex-1">{ch.title}</span>
                       <span className="text-xs font-mono text-muted-foreground">{ch.content_type}</span>
@@ -498,15 +735,12 @@ const AdminCourseCurriculum = () => {
                                 chapterId={ch.id}
                                 label={`${ch.title || "Untitled chapter"}${courseTitle ? " · " + courseTitle : ""}`}
                                 alreadyProtected={ch.media_provider === "supabase-signed"}
-                                onUploaded={(key) => {
-                                  updateChapter(sIdx, cIdx, {
-                                    media_url: key,
-                                    media_provider: "supabase-signed",
-                                    video_type: "standard",
-                                  });
-                                  // Persist immediately — no manual Save needed for uploads.
-                                  setAutoSaveTick((t) => t + 1);
-                                }}
+                                onUploaded={(key) =>
+                                  // Targeted save of just this chapter (inserts
+                                  // it if new); returns the real id so the
+                                  // background completion patch can find it.
+                                  persistUploadedChapter(ch.id, key)
+                                }
                               />
                               <p className="text-[11px] text-muted-foreground mt-1">
                                 Goes to a private bucket — no public link, download disabled. The upload runs in the background and saves automatically.
@@ -703,7 +937,10 @@ const AdminCourseCurriculum = () => {
                       </div>
                     )}
                   </div>
+                  )}
+                  </Sortable>
                 ))}
+                </SortableContext>
                 <button
                   onClick={() => addChapter(sIdx)}
                   className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground px-3 py-2"
@@ -712,7 +949,11 @@ const AdminCourseCurriculum = () => {
                 </button>
               </div>
             </div>
+            )}
+            </Sortable>
           ))}
+          </SortableContext>
+          </DndContext>
 
           <button
             onClick={addSection}

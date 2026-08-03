@@ -4,8 +4,9 @@ import { ShieldCheck, UploadCloud } from "lucide-react";
 
 interface Props {
   /** Called immediately with the storage key. The caller sets the chapter's
-   *  media_url = key and media_provider = 'supabase-signed'. */
-  onUploaded: (key: string) => void;
+   *  media_url = key and media_provider = 'supabase-signed', persists the row,
+   *  and may return the real chapter id (used for the completion patch). */
+  onUploaded: (key: string) => void | string | Promise<string | void>;
   courseId?: string;
   /** The chapter's id. If it's a saved id (not "new-…"), the background upload
    *  also patches the row on completion, so the video attaches even if the admin

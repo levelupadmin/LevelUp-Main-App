@@ -29,8 +29,11 @@ interface StartOpts {
   /** Shown under the filename in the dock ("→ Chapter 3 · VEA-06"). */
   label?: string;
   /** Called immediately with the storage key, before the bytes finish, so the
-   *  caller can wire the chapter to it right away. */
-  onKey?: (key: string) => void;
+   *  caller can wire the chapter to it right away. If it returns a chapter id
+   *  (e.g. the caller just INSERTED the chapter row to persist the key), that
+   *  id replaces `chapterId` for the completion patch — this is how a chapter
+   *  that was brand-new ("new-…") at upload start still gets patched. */
+  onKey?: (key: string) => void | string | Promise<string | void>;
 }
 
 interface UploadCtx {
@@ -81,7 +84,16 @@ export function UploadProvider({ children }: { children: ReactNode }) {
           throw new Error("Couldn't start the upload. Are you signed in as an admin?");
         }
         // Wire the chapter to the key immediately (before the bytes land).
-        onKey?.(signed.path);
+        // The caller persists the chapter row here and hands back its real id;
+        // a failure there must NOT abort the byte transfer (the file is still
+        // recoverable from storage), so it's contained.
+        let effectiveChapterId = chapterId;
+        try {
+          const returned = await onKey?.(signed.path);
+          if (typeof returned === "string" && returned) effectiveChapterId = returned;
+        } catch {
+          /* caller surfaces its own error toast */
+        }
         patch(id, { status: "uploading" });
 
         await new Promise<void>((resolve, reject) => {
@@ -100,11 +112,11 @@ export function UploadProvider({ children }: { children: ReactNode }) {
         });
 
         // Attach to the chapter server-side so it survives navigation without a save.
-        if (chapterId && !chapterId.startsWith("new-")) {
+        if (effectiveChapterId && !effectiveChapterId.startsWith("new-")) {
           await supabase
             .from("chapters")
             .update({ media_url: signed.path, media_provider: "supabase-signed", video_type: "standard" })
-            .eq("id", chapterId);
+            .eq("id", effectiveChapterId);
         }
 
         // No auto-dismiss: the green tick stays in the dock (Drive-style) until

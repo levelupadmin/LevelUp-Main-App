@@ -215,7 +215,9 @@ const AdminOfferings = () => {
               filtered.map((o) => (
                 <tr
                   key={o.id}
-                  className="border-b border-border last:border-0 hover:bg-secondary/30"
+                  onClick={() => navigate(`/admin/offerings/${o.id}/edit`)}
+                  className="border-b border-border last:border-0 hover:bg-secondary/30 cursor-pointer"
+                  title="Click to edit"
                 >
                   <td className="px-5 py-3">
                     <span className="font-medium">{o.title}</span>
@@ -260,21 +262,21 @@ const AdminOfferings = () => {
                         </button>
                       )}
                       <button
-                        onClick={() => navigate(`/admin/offerings/${o.id}/edit`)}
+                        onClick={(e) => { e.stopPropagation(); navigate(`/admin/offerings/${o.id}/edit`); }}
                         className="p-1.5 rounded hover:bg-secondary"
                         title="Edit offering"
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => toggleArchive(o)}
+                        onClick={(e) => { e.stopPropagation(); toggleArchive(o); }}
                         className="p-1.5 rounded hover:bg-secondary text-muted-foreground"
                         title={o.status === "archived" ? "Restore offering" : "Archive offering"}
                       >
                         <Archive className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => setDeleteId(o.id)}
+                        onClick={(e) => { e.stopPropagation(); setDeleteId(o.id); }}
                         className="p-1.5 rounded hover:bg-secondary text-destructive"
                         title="Delete offering"
                       >

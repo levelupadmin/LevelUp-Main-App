@@ -421,7 +421,17 @@ function CourseCardComponent({
   onReviews: () => void;
 }) {
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden group relative card-hover">
+    // The whole card opens the editor — no need to hunt for the three-dot
+    // menu. Student Preview / Delete stay in the kebab; inner controls
+    // stopPropagation so they don't also trigger the edit.
+    <div
+      onClick={onEdit}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter") onEdit(); }}
+      className="bg-card border border-border rounded-2xl overflow-hidden group relative card-hover cursor-pointer"
+      title="Click to edit"
+    >
       {/* Thumbnail */}
       <div className="aspect-video bg-secondary relative">
         {c.thumbnail_url ? (
@@ -467,19 +477,22 @@ function CourseCardComponent({
             {c.title}
           </h3>
 
-          {/* Three-dot menu */}
+          {/* Three-dot menu (card body itself opens the editor) */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="p-1 rounded hover:bg-secondary shrink-0 -mt-0.5">
+              <button
+                onClick={(e) => e.stopPropagation()}
+                className="p-1 rounded hover:bg-secondary shrink-0 -mt-0.5"
+              >
                 <MoreVertical className="h-4 w-4 text-muted-foreground" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="h-4 w-4 mr-2" /> Edit
-              </DropdownMenuItem>
+            <DropdownMenuContent align="end" className="w-44" onClick={(e) => e.stopPropagation()}>
               <DropdownMenuItem onClick={onPreview}>
                 <Eye className="h-4 w-4 mr-2" /> Student Preview
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onEdit}>
+                <Pencil className="h-4 w-4 mr-2" /> Edit
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
@@ -516,7 +529,7 @@ function CourseCardComponent({
               {c.chapter_count} ch.
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             <Globe className="h-3.5 w-3.5 text-muted-foreground" />
             <Switch
               checked={c.show_on_browse}
