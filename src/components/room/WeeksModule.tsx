@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Clock } from "lucide-react";
 
 import { ProgressRing } from "@/components/progress/ProgressRing";
-import { SkeletonLine } from "@/components/patterns";
+import { ErrorState, SkeletonLine } from "@/components/patterns";
 import { TimeStateBadge } from "@/components/live/TimeStateBadge";
 import { useAuth } from "@/contexts/AuthContext";
 import { moduleEnabled, roomModuleEnabled } from "@/lib/room";
 import { cn } from "@/lib/utils";
 import {
   useRoomOutlet,
+  useRoomWeekBatches,
   useRoomWeeks,
   type RoomSession,
   type RoomWeekRow,
@@ -30,7 +31,7 @@ import WeekRail from "./WeekRail";
  *
  *   · WEEK METADATA (theme, assignment, `feedback_session_at`, week status,
  *     the caller's submission) comes from `useRoomWeeks` — the room-scoped
- *     `get_cohort_progress` hook in `useCohortRooms.ts`. The room ENVELOPE
+ *     `get_room_weeks` hook in `useCohortRooms.ts`. The room ENVELOPE
  *     carries no week metadata at all, so there is nothing to read it from.
  *
  *   · SESSIONS come from the envelope's `sessions` array, grouped by
@@ -200,12 +201,48 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
   const { user } = useAuth();
   const { slug, n } = useParams<{ slug: string; n: string }>();
   const navigate = useNavigate();
-  const weeksQuery = useRoomWeeks(room.offering_id);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  /* ── Which cohort batch is on screen ──
+   * A member's envelope already contains the one server-resolved batch they
+   * are allowed to read. An offering-wide host/admin has a NULL envelope batch,
+   * so the metadata-only companion RPC supplies authorized choices first. The
+   * curriculum RPC is disabled until one of those choices is explicit. */
+  const needsBatchCatalog = envelope.batch_id === null;
+  const batchesQuery = useRoomWeekBatches(room.offering_id, {
+    enabled: needsBatchCatalog,
+  });
+  const batches = useMemo(
+    () => envelope.batch_id
+      ? [{ batch_id: envelope.batch_id, batch_label: room.batch_name ?? "Your cohort" }]
+      : (batchesQuery.data ?? []),
+    [batchesQuery.data, envelope.batch_id, room.batch_name],
+  );
+  const requestedBatchId = searchParams.get("batch");
+  const selectedBatch = envelope.batch_id
+    ? batches[0] ?? null
+    : batches.find((batch) => batch.batch_id === requestedBatchId) ?? batches[0] ?? null;
+  const selectedBatchId = selectedBatch?.batch_id ?? null;
+
+  const weeksQuery = useRoomWeeks(room.offering_id, {
+    batchId: selectedBatchId,
+    enabled: !!selectedBatchId,
+  });
 
   const weeks = useMemo(() => weeksQuery.data ?? [], [weeksQuery.data]);
+  const selectedWeekIds = useMemo(
+    () => new Set(weeks.map((week) => week.week_id)),
+    [weeks],
+  );
+  const batchSessions = useMemo(
+    () => envelope.sessions.filter(
+      (session) => !!session.week_id && selectedWeekIds.has(session.week_id),
+    ),
+    [envelope.sessions, selectedWeekIds],
+  );
   const sessionsByWeek = useMemo(
-    () => groupSessionsByWeek(envelope.sessions),
-    [envelope.sessions],
+    () => groupSessionsByWeek(batchSessions),
+    [batchSessions],
   );
 
   /* ── The room's clock, not a second one ── */
@@ -214,7 +251,8 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
   /* ── The per-cohort feature matrix (UX only, never a security gate) ── */
   const assignmentsEnabled = moduleEnabled(envelope.config, "assignments");
   const peerReviewEnabled = moduleEnabled(envelope.config, "peer_review");
-  const demoSession = envelope.sessions.find(
+  const isParticipant = room.role === "member" || room.role === "alumni";
+  const demoSession = batchSessions.find(
     (session) => session.session_type?.trim().toLowerCase() === "demo_day",
   );
   const demoOpen = roomModuleEnabled(envelope.config, "demo_day", room.phase)
@@ -230,14 +268,61 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
   const selected =
     weeks.find((week) => week.week_number === requested) ?? defaultWeek(weeks);
 
+  // A multi-batch staff URL always names its batch. This makes refreshes and
+  // copied links stable, and replaces an invalid/stale id with the first
+  // server-authorized choice without ever sending the stale id to the weeks
+  // reader.
+  useEffect(() => {
+    if (batches.length <= 1 || !selectedBatchId || requestedBatchId === selectedBatchId) return;
+    const next = new URLSearchParams(searchParams);
+    next.set("batch", selectedBatchId);
+    setSearchParams(next, { replace: true });
+  }, [batches.length, requestedBatchId, searchParams, selectedBatchId, setSearchParams]);
+
+  // If the selected batch does not author the week number from the previous
+  // batch, canonicalize the route once its rows arrive instead of showing week
+  // 1 under a `/weeks/4` address.
+  useEffect(() => {
+    if (!slug || !selected || !Number.isFinite(routeWeek)) return;
+    if (weeks.some((week) => week.week_number === routeWeek)) return;
+    const next = new URLSearchParams(searchParams);
+    if (batches.length > 1 && selectedBatchId) next.set("batch", selectedBatchId);
+    const query = next.toString();
+    navigate(
+      `/room/${slug}/weeks/${selected.week_number}${query ? `?${query}` : ""}`,
+      { replace: true },
+    );
+  }, [batches.length, navigate, routeWeek, searchParams, selected, selectedBatchId, slug, weeks]);
+
   const selectWeek = (week: RoomWeekRow) => {
     setPending(week.week_number);
-    if (slug) navigate(`/room/${slug}/weeks/${week.week_number}`);
+    if (!slug) return;
+    const next = new URLSearchParams(searchParams);
+    if (batches.length > 1 && selectedBatchId) next.set("batch", selectedBatchId);
+    const query = next.toString();
+    navigate(`/room/${slug}/weeks/${week.week_number}${query ? `?${query}` : ""}`);
+  };
+
+  const selectBatch = (batchId: string) => {
+    if (!slug || batchId === selectedBatchId) return;
+    const next = new URLSearchParams(searchParams);
+    next.set("batch", batchId);
+    const query = next.toString();
+    const routeNumber = Number.isFinite(routeWeek) ? routeWeek : (room.current_week ?? 1);
+    setPending(null);
+    navigate(`/room/${slug}/weeks/${routeNumber}?${query}`);
   };
 
   /* ── The footer's numbers ── */
-  const progress = useMemo(() => weeksProgress(weeks, room.total_weeks), [weeks, room.total_weeks]);
-  const nextDue = useMemo(() => nextOpenDue(weeks, nowMs), [weeks, nowMs]);
+  // The room summary's total is DISTINCT week numbers across the offering for
+  // an offering-wide caller. Once staff narrow to one batch, this RPC's
+  // one-row-per-authored-week payload is the honest denominator for that batch.
+  const progressTotal = needsBatchCatalog ? weeks.length : room.total_weeks;
+  const progress = useMemo(() => weeksProgress(weeks, progressTotal), [weeks, progressTotal]);
+  const nextDue = useMemo(
+    () => (isParticipant ? nextOpenDue(weeks, nowMs) : null),
+    [isParticipant, weeks, nowMs],
+  );
 
   /* ── After a submission, re-read the weeks ──
    * Kept in a ref so the callback handed down the tree is stable and the
@@ -250,17 +335,38 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
     void refetchRef.current();
   }, []);
 
-  if (weeksQuery.isPending) {
+  const catalogPending = needsBatchCatalog && batchesQuery.isPending;
+  if (catalogPending || (!!selectedBatchId && weeksQuery.isPending)) {
     return (
       <div className={cn("space-y-4", className)} role="status" aria-busy="true">
         <span className="sr-only">Loading weeks</span>
         <SkeletonLine width="40%" height="12px" />
         <div className="h-48 rounded-xl border border-border bg-surface" />
-        <div className="flex gap-3">
-          <div className="h-28 w-[13.5rem] shrink-0 rounded-xl border border-border bg-surface" />
-          <div className="h-28 w-[13.5rem] shrink-0 rounded-xl border border-border bg-surface" />
+        <div data-testid="weeks-loading-rail" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="h-28 min-w-0 rounded-xl border border-border bg-surface" />
+          <div className="hidden h-28 min-w-0 rounded-xl border border-border bg-surface sm:block" />
         </div>
       </div>
+    );
+  }
+
+  if ((needsBatchCatalog && batchesQuery.isError) || weeksQuery.isError) {
+    const catalogFailed = needsBatchCatalog && batchesQuery.isError;
+    const denied = catalogFailed ? batchesQuery.denied : weeksQuery.denied;
+    return (
+      <ErrorState
+        variant="inline"
+        className={className}
+        title={denied ? "These weeks are no longer available" : "The weeks didn't load"}
+        description={
+          denied
+            ? "Your access changed while this room was open. Return to My Cohorts to refresh your rooms."
+            : "Check your connection and try again."
+        }
+        onRetry={denied
+          ? undefined
+          : () => void (catalogFailed ? batchesQuery.refetch() : weeksQuery.refetch())}
+      />
     );
   }
 
@@ -284,13 +390,37 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
 
   return (
     <section className={cn("space-y-6", className)} aria-label="Weeks">
+      {batches.length > 1 && selectedBatchId && (
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
+          <label
+            htmlFor="room-weeks-batch"
+            className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground"
+          >
+            Cohort batch
+          </label>
+          <select
+            id="room-weeks-batch"
+            value={selectedBatchId}
+            onChange={(event) => selectBatch(event.target.value)}
+            className="focus-ring min-h-11 w-full min-w-0 rounded-lg border border-border bg-canvas px-3 text-sm text-foreground sm:w-auto sm:min-w-56"
+          >
+            {batches.map((batch) => (
+              <option key={batch.batch_id} value={batch.batch_id}>
+                {batch.batch_label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <ThisWeekCard
         week={selected}
         sessions={selectedSessions}
         userId={user?.id ?? null}
-        batchId={envelope.batch_id}
+        batchId={selectedBatchId}
         nowMs={nowMs}
         assignmentsEnabled={assignmentsEnabled}
+        assignmentUrgency={isParticipant}
         peerReviewEnabled={peerReviewEnabled}
         // RELATIVE, and correct from this route only: React Router resolves `..`
         // against the ROUTE tree, so from `weeks/:n` this is
@@ -310,7 +440,7 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
         finaleHref={demoOpen ? "../demo-day" : null}
       />
 
-      <WeeksFooter progress={progress} nextDue={nextDue} />
+      <WeeksFooter progress={progress} nextDue={nextDue} personal={isParticipant} />
     </section>
   );
 }
@@ -327,9 +457,11 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
 function WeeksFooter({
   progress,
   nextDue,
+  personal,
 }: {
   progress: WeeksProgress;
   nextDue: { at: string; ms: number; days: number } | null;
+  personal: boolean;
 }) {
   const dueLabel = nextDue
     ? nextDue.days === 0
@@ -359,10 +491,12 @@ function WeeksFooter({
             <Clock size={12} strokeWidth={1.5} className="shrink-0" aria-hidden="true" />
             {dueLabel}
           </p>
-        ) : (
+        ) : personal ? (
           <p className="body-muted mt-0.5 truncate text-xs">
             No assignments due, you&apos;re all caught up.
           </p>
+        ) : (
+          <p className="body-muted mt-0.5 truncate text-xs">Batch curriculum progress.</p>
         )}
       </div>
       {nextDue && <TimeStateBadge date={nextDue.at} className="shrink-0" />}

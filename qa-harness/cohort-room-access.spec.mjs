@@ -463,6 +463,7 @@ const INVENTORY = [
   ["R3F/R3R", "feed/resource RPC scope, bounded pagination, safe projection, and resource-week integrity"],
   ["L1/L2", "revoking an enrolment removes access; re-granting restores it"],
   ["PROG", "get_cohort_progress — the one shipped-client surface R0 redefines"],
+  ["ROOMWEEKS", "room-scoped weeks preserve student progress and admit authorized staff without enrolment"],
   ["TOTAL", "unfiltered enumeration: every actor asks each table for everything"],
   ["GAP-1", "revocation closes cohort_weeks as well as room-owned surfaces"],
   ["GAP-2", "week resolution makes live_sessions and its link RPC batch-precise"],
@@ -2737,6 +2738,117 @@ section("PROG — get_cohort_progress", "the only shipped-client surface this ph
     `${anonProg.describe}; curriculum sentinel present=${anonProg.text.includes(CANARY.CURRIC_A1)}`);
 }
 
+// ── ROOMWEEKS — room authorization without mutating legacy progress ────────
+//
+// The shipped progress RPC is intentionally enrolment-backed. Room staff are
+// appointed through cohort_room_members instead, so the room UI needs a reader
+// that understands both contracts without widening the native/student API.
+section("ROOMWEEKS — room-scoped week metadata",
+  "students retain get_cohort_progress semantics; authorized staff discover permitted batches, then read exactly one selected batch");
+{
+  const studentRoom = await rpc("member_A1", "get_room_weeks",
+    { p_offering: ids.offering_a, p_batch: ids.batch_a1 },
+    "get_room_weeks(A, A1) as member_A1");
+  const studentProgress = await rpc("member_A1", "get_cohort_progress",
+    { p_user_id: session.member_A1.id, p_offering_id: ids.offering_a },
+    "get_cohort_progress(self, A) comparison for room weeks");
+  const studentRoomRows = Array.isArray(studentRoom.json) ? studentRoom.json : [];
+  const studentProgressRows = Array.isArray(studentProgress.json) ? studentProgress.json : [];
+
+  prove("ROOMWEEKS.1",
+    "a batch-scoped member receives the canonical student progress rows unchanged — submission, attendance, representative-session and link-window behaviour stay owned by get_cohort_progress rather than being reimplemented differently for the room",
+    studentRoom.ok && studentProgress.ok &&
+      JSON.stringify(studentRoomRows) === JSON.stringify(studentProgressRows),
+    `room=${studentRoom.describe}; progress=${studentProgress.describe}; byte-equal JSON=${JSON.stringify(studentRoomRows) === JSON.stringify(studentProgressRows)}`);
+
+  const studentCrossBatch = await rpc("member_A1", "get_room_weeks",
+    { p_offering: ids.offering_a, p_batch: ids.batch_a2 },
+    "get_room_weeks(A, A2) as member_A1");
+  prove("ROOMWEEKS.2",
+    "a batch-A1 member cannot point the room-weeks RPC at sibling batch A2 — the target batch is compared with the server-resolved caller scope before any week row is read",
+    studentCrossBatch.raised &&
+      !studentCrossBatch.text.includes(CANARY.CURRIC_A2) &&
+      !studentCrossBatch.text.includes(CANARY.ASSIGN_A2),
+    `${studentCrossBatch.describe}; batch-A2 curriculum present=${studentCrossBatch.text.includes(CANARY.CURRIC_A2)}`);
+
+  const studentBatchChoices = await rpc("member_A1", "get_room_week_batches",
+    { p_offering: ids.offering_a },
+    "get_room_week_batches(A) as member_A1");
+  const studentBatchRows = Array.isArray(studentBatchChoices.json) ? studentBatchChoices.json : [];
+  prove("ROOMWEEKS.2b",
+    "the batch chooser is scoped by the same server membership as the curriculum reader — a batch-A1 student sees A1 as their only choice and cannot enumerate sibling batch A2",
+    studentBatchChoices.ok && studentBatchRows.length === 1 &&
+      studentBatchRows[0]?.batch_id === ids.batch_a1 &&
+      !studentBatchChoices.text.includes(ids.batch_a2),
+    `${studentBatchChoices.describe}; choices=${studentBatchRows.map((row) => row.batch_id).join(", ") || "none"}`);
+
+  const mentorA1 = await rpc("mentor_A", "get_room_weeks",
+    { p_offering: ids.offering_a, p_batch: ids.batch_a1 },
+    "get_room_weeks(A, A1) as offering-wide mentor_A");
+  const mentorA1Rows = Array.isArray(mentorA1.json) ? mentorA1.json : [];
+  const mentorA1WeekIds = new Set(mentorA1Rows.map((r) => r.week_id));
+  prove("ROOMWEEKS.3",
+    "an appointed mentor with no student enrolment receives batch A1's authored weeks — staff authority comes from cohort_room_members — and receives no sibling-batch row",
+    mentorA1.ok && mentorA1Rows.length > 0 &&
+      mentorA1WeekIds.has(ids.week_a1) && !mentorA1WeekIds.has(ids.week_a2) &&
+      mentorA1.text.includes(CANARY.CURRIC_A1) &&
+      mentorA1.text.includes(CANARY.ASSIGN_A1) &&
+      !mentorA1.text.includes(CANARY.CURRIC_A2),
+    `${mentorA1.describe}; week ids=${[...mentorA1WeekIds].join(", ") || "none"}; A1 curriculum=${mentorA1.text.includes(CANARY.CURRIC_A1)}; A2 curriculum=${mentorA1.text.includes(CANARY.CURRIC_A2)}`);
+
+  const mentorA2 = await rpc("mentor_A", "get_room_weeks",
+    { p_offering: ids.offering_a, p_batch: ids.batch_a2 },
+    "get_room_weeks(A, A2) as offering-wide mentor_A");
+  const mentorA2Rows = Array.isArray(mentorA2.json) ? mentorA2.json : [];
+  const mentorA2WeekIds = new Set(mentorA2Rows.map((r) => r.week_id));
+  prove("ROOMWEEKS.4",
+    "the same offering-wide mentor can deliberately select batch A2, and that response contains A2 only — staff breadth is explicit batch selection, never a duplicate week-number fan-in",
+    mentorA2.ok && mentorA2Rows.length > 0 &&
+      mentorA2WeekIds.has(ids.week_a2) && !mentorA2WeekIds.has(ids.week_a1) &&
+      mentorA2.text.includes(CANARY.CURRIC_A2) &&
+      !mentorA2.text.includes(CANARY.CURRIC_A1),
+    `${mentorA2.describe}; week ids=${[...mentorA2WeekIds].join(", ") || "none"}; A2 curriculum=${mentorA2.text.includes(CANARY.CURRIC_A2)}; A1 curriculum=${mentorA2.text.includes(CANARY.CURRIC_A1)}`);
+
+  const mentorBatchChoices = await rpc("mentor_A", "get_room_week_batches",
+    { p_offering: ids.offering_a },
+    "get_room_week_batches(A) as offering-wide mentor_A");
+  const mentorBatchRows = Array.isArray(mentorBatchChoices.json) ? mentorBatchChoices.json : [];
+  const mentorBatchIds = new Set(mentorBatchRows.map((r) => r.batch_id));
+  prove("ROOMWEEKS.5",
+    "the metadata-only batch chooser returns both offering-A batches to offering-wide staff — the client can make an explicit selection without broadening the curriculum RPC or guessing an identifier",
+    mentorBatchChoices.ok && mentorBatchRows.length === 2 &&
+      mentorBatchIds.has(ids.batch_a1) && mentorBatchIds.has(ids.batch_a2) &&
+      !mentorBatchChoices.text.includes(CANARY.CURRIC_A1) &&
+      !mentorBatchChoices.text.includes(CANARY.CURRIC_A2) &&
+      !mentorBatchChoices.text.includes(CANARY.ASSIGN_A1) &&
+      !mentorBatchChoices.text.includes(CANARY.ASSIGN_A2),
+    `${mentorBatchChoices.describe}; batch ids=${[...mentorBatchIds].join(", ") || "none"}; curriculum canary present=${mentorBatchChoices.text.includes(CANARY.CURRIC_A1) || mentorBatchChoices.text.includes(CANARY.CURRIC_A2)}`);
+
+  const mentorAmbiguous = await rpc("mentor_A", "get_room_weeks",
+    { p_offering: ids.offering_a },
+    "get_room_weeks(A, no batch) as offering-wide mentor_A");
+  prove("ROOMWEEKS.5b",
+    "after discovery, an offering-wide staff caller must still choose one batch when the offering has two — the curriculum RPC refuses an ambiguous all-batches rail instead of emitting duplicate `/weeks/:n` identities",
+    mentorAmbiguous.raised && /batch selection required/i.test(mentorAmbiguous.message),
+    mentorAmbiguous.describe);
+
+  for (const actor of ["accepted_A", "pre_member_A1", "outsider", "anon"]) {
+    const refused = await rpc(actor, "get_room_weeks",
+      { p_offering: ids.offering_a, p_batch: ids.batch_a1 },
+      `get_room_weeks(A, A1) as ${actor}`);
+    const refusedChoices = await rpc(actor, "get_room_week_batches",
+      { p_offering: ids.offering_a },
+      `get_room_week_batches(A) as ${actor}`);
+    prove(`ROOMWEEKS.6.${actor}`,
+      `${actor} is refused by both the batch chooser and the curriculum reader and receives no batch metadata, curriculum or assignment body — a denied room is never misreported as an authored-empty schedule`,
+      refused.raised && refusedChoices.raised &&
+        !refused.text.includes(CANARY.CURRIC_A1) &&
+        !refused.text.includes(CANARY.ASSIGN_A1) &&
+        !refusedChoices.text.includes(ids.batch_a1),
+      `weeks=${refused.describe}; choices=${refusedChoices.describe}; curriculum present=${refused.text.includes(CANARY.CURRIC_A1)}`);
+  }
+}
+
 // ── W6b — the lobby is read-only ───────────────────────────────────────────
 section("W6b — pre_member community write", "the lobby can listen; it cannot speak until it is enrolled");
 {
@@ -3723,6 +3835,19 @@ section("L1 / L2 — lifecycle", "the exact regression the resolver exists to pr
     `${revokedProgress.describe}; ${revokedRows.length} week row(s); ` +
       `progress/link sentinels received: ${progressResidue.join(", ") || "none"}; ` +
       `cross-scope sentinels received: ${progressBeyond.join(", ") || "none"}`);
+
+  const revokedRoomWeeks = await rpc("member_A1", "get_room_weeks",
+    { p_offering: ids.offering_a, p_batch: ids.batch_a1 },
+    "get_room_weeks(A, A1) as revoked member_A1");
+  prove("GAP-3b",
+    "the room-specific weeks reader closes at the same revocation boundary — the resolver retracts room membership and the RPC raises before touching curriculum, while the legacy progress probe above independently proves the active-enrolment fallback",
+    revokedRoomWeeks.raised &&
+      !revokedRoomWeeks.text.includes(CANARY.CURRIC_A1) &&
+      !revokedRoomWeeks.text.includes(CANARY.ASSIGN_A1) &&
+      !revokedRoomWeeks.text.includes(CANARY.FEEDBACK_A1),
+    `${revokedRoomWeeks.describe}; curriculum/assignment/feedback present=${[
+      CANARY.CURRIC_A1, CANARY.ASSIGN_A1, CANARY.FEEDBACK_A1,
+    ].filter((n) => revokedRoomWeeks.text.includes(n)).join(", ") || "none"}`);
 
   await sql(
     `UPDATE public.enrolments SET status = 'active', revoked_at = NULL

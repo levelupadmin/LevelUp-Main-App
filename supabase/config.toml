@@ -206,3 +206,29 @@ project_id = "twqagwleffjggoemzfqs"
   # cost are in supabase/functions/_shared/unsubscribe.ts.
   [functions.email-unsubscribe]
     verify_jwt = false
+
+  # notify-cohort is private even though gateway JWT verification is disabled.
+  # Its scheduled caller presents the dedicated opaque
+  # NOTIFY_COHORT_AUTH_TOKEN, which the handler checks in constant time before
+  # constructing a service-role client. The token is intentionally not a
+  # Supabase JWT, so enabling gateway JWT verification would reject the valid
+  # cron request before the handler could apply its purpose-specific gate.
+  [functions.notify-cohort]
+    verify_jwt = false
+
+  # queue-transactional-email is a server-to-server worker. New Supabase
+  # service credentials use the opaque sb_secret_* format, so the gateway
+  # cannot JWT-verify them. The handler still requires an exact, constant-time
+  # match against SUPABASE_SERVICE_ROLE_KEY before constructing its admin
+  # client; disabling the JWT layer makes that existing application gate
+  # reachable and does not make the endpoint public.
+  [functions.queue-transactional-email]
+    verify_jwt = false
+
+  # validate-coupon is intentionally callable by guests before sign-in. It is
+  # read-only, returns only the narrow checkout preview, revalidates redemption
+  # in the payment path, and caps probes at 20 per 15 minutes per IP/offering.
+  # Modern publishable keys are opaque rather than gateway-verifiable JWTs, so
+  # this public handler must own the reachability/rate-limit boundary.
+  [functions.validate-coupon]
+    verify_jwt = false

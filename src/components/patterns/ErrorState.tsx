@@ -47,7 +47,7 @@ export function ErrorState({
       {onRetry && (
         <button
           onClick={onRetry}
-          className="focus-ring press-scale inline-flex items-center justify-center gap-2 mt-5 h-10 px-4 rounded-lg bg-surface-2 border border-border text-foreground font-medium text-sm hover:bg-surface transition-colors"
+          className="focus-ring press-scale mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-border bg-surface-2 px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface"
         >
           <RefreshCw className="h-4 w-4" />
           {retryLabel}

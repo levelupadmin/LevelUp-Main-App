@@ -49,6 +49,8 @@ export interface RoomMastheadProps {
   title?: string | null;
   /** Applied to the outer block (e.g. `rounded-none border-x-0` for a full-bleed shell). */
   className?: string;
+  /** A shallower nameplate for nested room routes, where the module is primary. */
+  compact?: boolean;
 }
 
 /**
@@ -127,6 +129,7 @@ const RoomMasthead = ({
   startsAt,
   title,
   className,
+  compact = false,
 }: RoomMastheadProps) => {
   // A provider above us owns the beat when present; otherwise we own it. Both
   // hooks run unconditionally, but the local one stays inert (no ledger read or
@@ -187,7 +190,12 @@ const RoomMasthead = ({
       {/* ── Nameplate ── the block's height comes from here. */}
       <motion.div
         data-testid="room-masthead-plate"
-        className="relative z-10 transform-gpu px-5 pb-6 pt-32 sm:px-8 sm:pb-8 sm:pt-44"
+        className={cn(
+          "relative z-10 transform-gpu px-5",
+          compact
+            ? "pb-5 pt-14 sm:px-6 sm:pb-6 sm:pt-16"
+            : "pb-6 pt-32 sm:px-8 sm:pb-8 sm:pt-44",
+        )}
         {...entrance.plate}
       >
         {phase === "alumni" && (
@@ -213,7 +221,7 @@ const RoomMasthead = ({
           )}
         </div>
 
-        {theme.tagline && (
+        {!compact && theme.tagline && (
           <p className="mt-2 font-serif-italic text-[18px] leading-snug text-cream/75 sm:text-[22px]">
             {theme.tagline}
           </p>

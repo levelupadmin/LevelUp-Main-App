@@ -60,6 +60,8 @@ vi.mock("@/integrations/supabase/client", () => {
   usersBuilder.eq = vi.fn(() => usersBuilder);
   usersBuilder.single = vi.fn(async () => ({ data: { craft_interests: ["film"] }, error: null }));
   return {
+    supabaseUrl: "https://test-project.supabase.co",
+    supabasePublishableKey: "sb_publishable_test_public_key_1234567890",
     supabase: {
       from: vi.fn(() => usersBuilder),
       auth: {

@@ -97,7 +97,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FunctionsHttpError } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  supabase,
+  supabasePublishableKey,
+  supabaseUrl,
+} from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp } from "@/lib/msg91-widget";
 
@@ -138,7 +142,7 @@ type InvokeOutcome =
 // wrong project), and this is an unauthenticated login endpoint, so it is
 // called with the publishable key rather than the session.
 const VERIFY_EMAIL_OTP_URL =
-  "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-email-otp";
+  `${supabaseUrl}/functions/v1/verify-email-otp`;
 
 /** Which channel a claim still needs proof on. */
 export type ClaimChannel = "email" | "phone";
@@ -300,7 +304,7 @@ async function postEmailOtp(body: Record<string, unknown>): Promise<Response> {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      apikey: supabasePublishableKey,
     },
     body: JSON.stringify(body),
   });

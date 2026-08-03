@@ -31,9 +31,15 @@ const OUT = OUT_ARG ? path.resolve(OUT_ARG.slice(6)) : path.join(ROOT, "public",
 fs.mkdirSync(OUT, { recursive: true });
 
 const BASE = "http://localhost:8080";
-const SUPABASE_URL = "https://ivkvluezuiojovpotlyb.supabase.co";
-const SRK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2a3ZsdWV6dWlvam92cG90bHliIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTM3OTI5MiwiZXhwIjoyMDk0OTU1MjkyfQ.p_BLoeh92rtMXxgtwwTjo_3dTzo63ATQCA-xWxK_AZk";
+const SUPABASE_URL = process.env.SUPABASE_URL ?? "https://ivkvluezuiojovpotlyb.supabase.co";
+const SRK = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 const ADMIN_EMAIL = "ceo@leveluplearning.in";
+
+if (!SRK) {
+  throw new Error(
+    "SUPABASE_SERVICE_ROLE_KEY is required. Pass it in the environment; never commit it to this script.",
+  );
+}
 
 const ARGS = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith("--")).map(a => {
   const [k, v] = a.slice(2).split("=");

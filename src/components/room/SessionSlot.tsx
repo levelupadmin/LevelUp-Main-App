@@ -294,7 +294,7 @@ export function SessionSlot({
       // Read by the room's tests (and useful in a device audit) so the state
       // ladder can be asserted without depending on locale-formatted copy.
       data-session-state={cancelled ? "cancelled" : state}
-      className={cn("surface-card p-4 sm:p-5", className)}
+      className={cn("surface-card min-w-0 p-4 sm:p-5", className)}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -305,7 +305,7 @@ export function SessionSlot({
           )}
           <Heading
             className={cn(
-              "mt-1 font-serif text-lg leading-snug text-foreground sm:text-xl",
+              "mt-1 break-words font-serif text-lg leading-snug text-foreground sm:text-xl",
               cancelled && "text-muted-foreground line-through",
             )}
           >

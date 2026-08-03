@@ -35,6 +35,7 @@ DECLARE
   v_resources           jsonb;
   v_announcement_count  integer;
   v_roster_count        integer;
+  v_week_count          integer;
   v_direct_session_count integer;
 BEGIN
   SELECT count(*)::integer
@@ -130,6 +131,18 @@ BEGIN
     RAISE EXCEPTION 'Member roster does not contain member + host';
   END IF;
 
+  SELECT count(*)::integer
+    INTO v_week_count
+  FROM public.get_room_weeks(
+    '449056b9-9269-4bc5-ba8b-4c079c2104ee',
+    '1a1908de-fb07-32de-fba0-f850eff82dc6'
+  );
+
+  IF v_week_count <> 2 THEN
+    RAISE EXCEPTION 'Member room weeks returned % rows, expected 2',
+      v_week_count;
+  END IF;
+
   -- This is deliberately a direct RLS table read, not only a SECURITY DEFINER
   -- RPC. It proves the hardened live_sessions policy admits the exact pilot
   -- batch to the member identity.
@@ -148,6 +161,45 @@ BEGIN
 END
 $verify_member$;
 
+-- The host is authorized through cohort_room_members rather than a student
+-- enrolment. This is the production regression the room-scoped weeks RPC was
+-- added to close: the legacy get_cohort_progress contract correctly returns no
+-- student rows for this identity, while get_room_weeks must return curriculum.
+RESET ROLE;
+SELECT set_config(
+  'request.jwt.claim.sub',
+  '614e5085-e98c-48f0-86dd-9df5f3147b39',
+  true
+);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SELECT set_config(
+  'request.jwt.claims',
+  '{"sub":"614e5085-e98c-48f0-86dd-9df5f3147b39","role":"authenticated"}',
+  true
+);
+SET LOCAL ROLE authenticated;
+
+DO $verify_host$
+DECLARE
+  v_week_count integer;
+  v_prompt_count integer;
+BEGIN
+  SELECT count(*)::integer,
+         (count(*) FILTER (WHERE assignment_prompt IS NOT NULL))::integer
+    INTO v_week_count, v_prompt_count
+  FROM public.get_room_weeks(
+    '449056b9-9269-4bc5-ba8b-4c079c2104ee',
+    '1a1908de-fb07-32de-fba0-f850eff82dc6'
+  );
+
+  IF v_week_count <> 2 OR v_prompt_count <> 2 THEN
+    RAISE EXCEPTION
+      'Host room weeks mismatch: rows %, authored prompts % (expected 2/2)',
+      v_week_count, v_prompt_count;
+  END IF;
+END
+$verify_host$;
+
 SELECT jsonb_build_object(
   'member_rls', 'pass',
   'user_id', 'e35895f3-a13b-4cda-ba2d-703d4874cda9',
@@ -155,6 +207,7 @@ SELECT jsonb_build_object(
   'room_slug', 'creator-academy-edition-2',
   'batch_id', '1a1908de-fb07-32de-fba0-f850eff82dc6',
   'weeks', 2,
+  'host_weeks', 2,
   'sessions', 2,
   'announcements', 1,
   'resources', 1,

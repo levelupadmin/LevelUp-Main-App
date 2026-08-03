@@ -7197,6 +7197,41 @@ export type Database = {
         }[]
       }
       get_cohort_room: { Args: { p_offering: string }; Returns: Json }
+      get_room_week_batches: {
+        Args: { p_offering: string }
+        Returns: {
+          batch_id: string
+          batch_label: string
+        }[]
+      }
+      get_room_weeks: {
+        Args: { p_batch?: string; p_offering: string }
+        Returns: {
+          assignment_due_at: string
+          assignment_prompt: string
+          attendance_marked: boolean
+          attended: boolean
+          batch_label: string
+          cohort_batch_id: string
+          description: string
+          ends_on: string
+          feedback_session_at: string
+          live_session_at: string
+          live_session_id: string
+          live_session_title: string
+          live_session_zoom_link: string
+          starts_on: string
+          submission_feedback: string
+          submission_id: string
+          submission_rating: number
+          submission_status: string
+          submission_submitted_at: string
+          theme: string
+          week_id: string
+          week_number: number
+          week_status: string
+        }[]
+      }
       get_event_registration_count: {
         Args: { p_event_id: string }
         Returns: number

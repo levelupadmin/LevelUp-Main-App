@@ -545,7 +545,7 @@ const RoomScreenings = () => {
     return (
       <p className="body-muted py-10 text-center text-sm">
         This cohort doesn&apos;t use screenings.{" "}
-        <Link to="." className="text-room-accent underline-offset-4 hover:underline">
+        <Link to=".." className="text-room-accent underline-offset-4 hover:underline">
           Back to the room
         </Link>
       </p>

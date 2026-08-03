@@ -1,4 +1,4 @@
-import { Suspense, useState, useEffect, useMemo } from "react";
+import { Suspense, useState, useEffect, useMemo, useRef } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import PageMotion from "@/components/motion/PageMotion";
@@ -52,7 +52,7 @@ interface Props {
 // the shell. The top bar + tab bar are already painted by the layout, so this
 // only fills the content area, reads as "content arriving", not "app frozen".
 const ContentSuspenseFallback = () => (
-  <div className="px-4 md:px-8 py-6 space-y-6 max-w-5xl mx-auto w-full" role="status" aria-busy="true">
+  <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6" role="status" aria-busy="true">
     <span className="sr-only">Loading…</span>
     <div className="h-44 rounded-2xl skeleton-shimmer" />
     <div className="space-y-3">
@@ -76,6 +76,9 @@ const StudentLayout = ({ children }: Props) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const mobileSidebarRef = useRef<HTMLElement | null>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuCloseRef = useRef<HTMLButtonElement | null>(null);
 
   // Hardware back / Esc closes any open hand-rolled overlay first. The native
   // back button (App.tsx) dispatches a synthetic Escape when it detects an
@@ -92,6 +95,50 @@ const StudentLayout = ({ children }: Props) => {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [sidebarOpen, dropdownOpen, notifOpen]);
+
+  // The mobile drawer is modal in both appearance and behaviour: move focus
+  // into it, keep keyboard navigation inside it, and return focus to the
+  // trigger after it closes. This also covers keyboard users in a narrow
+  // desktop window, not only touch devices.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : menuTriggerRef.current;
+    const frame = window.requestAnimationFrame(() => menuCloseRef.current?.focus());
+
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const drawer = mobileSidebarRef.current;
+      if (!drawer) return;
+      const focusable = Array.from(
+        drawer.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => !element.hasAttribute("hidden"));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        drawer.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", trapFocus);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", trapFocus);
+      previouslyFocused?.focus?.();
+    };
+  }, [sidebarOpen]);
   const { notifications, unreadCount, loading: notifLoading, markRead, markAllRead } = useNotifications();
   // Called unconditionally in BOTH surface states so hook order never shifts,
   // and still the only cohort read while rooms are disabled (`RoomNavSlot`
@@ -251,6 +298,7 @@ const StudentLayout = ({ children }: Props) => {
             className="fixed inset-0 z-50 md:hidden"
           >
             <motion.div
+              aria-hidden="true"
               className="absolute inset-0 bg-black/60"
               onClick={() => setSidebarOpen(false)}
               initial={{ opacity: 0 }}
@@ -259,7 +307,12 @@ const StudentLayout = ({ children }: Props) => {
               transition={motionSafe.springs.glide}
             />
             <motion.aside
-              className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex flex-col safe-top safe-bottom"
+              ref={mobileSidebarRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Main menu"
+              tabIndex={-1}
+              className="absolute left-0 top-0 bottom-0 w-[280px] bg-canvas border-r border-border flex min-h-0 flex-col safe-top safe-bottom"
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
@@ -267,12 +320,12 @@ const StudentLayout = ({ children }: Props) => {
             >
             <div className="flex items-center justify-between p-6">
               <LevelUpWordmark className="h-8 w-auto text-foreground" />
-              <button aria-label="Close menu" onClick={() => { void tapTick(); setSidebarOpen(false); }} className="-mr-1.5 h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl text-muted-foreground">
+              <button ref={menuCloseRef} aria-label="Close menu" onClick={() => { void tapTick(); setSidebarOpen(false); }} className="-mr-1.5 h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl text-muted-foreground">
                 <X className="h-6 w-6" />
               </button>
             </div>
             <LayoutGroup id="mobile-sidebar">
-            <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1">
+            <nav aria-label="Main navigation" className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-4">
               {navItems.map((item) => {
                 const active = location.pathname === item.path || location.pathname.startsWith(item.path + "/");
                 return (
@@ -351,7 +404,7 @@ const StudentLayout = ({ children }: Props) => {
             the logo). */}
         <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 border-b border-border bg-canvas/90 backdrop-blur-md safe-top min-h-16">
           <div className="flex items-center gap-2">
-            <button aria-label="Open menu" className="md:hidden -ml-1.5 text-muted-foreground h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl" onClick={() => { void tapTick(); setSidebarOpen(true); }}>
+            <button ref={menuTriggerRef} aria-label="Open menu" aria-haspopup="dialog" aria-expanded={sidebarOpen} className="md:hidden -ml-1.5 text-muted-foreground h-11 w-11 flex items-center justify-center focus-ring press-scale rounded-xl" onClick={() => { void tapTick(); setSidebarOpen(true); }}>
               <Menu className="h-6 w-6" />
             </button>
             <Link to="/home" aria-label="LevelUp home" className="md:hidden flex items-center min-h-[44px] min-w-[44px]">
@@ -392,7 +445,7 @@ const StudentLayout = ({ children }: Props) => {
                 aria-label="Account menu"
                 aria-haspopup="menu"
                 aria-expanded={dropdownOpen}
-                className="flex items-center justify-center gap-2 focus-ring press-scale rounded-md px-1"
+                className="flex min-h-11 min-w-11 items-center justify-center gap-2 focus-ring press-scale rounded-md px-1"
               >
                 <InitialsAvatar name={profile?.full_name ?? "U"} photoUrl={profile?.avatar_url} size={32} interactive />
                 <ChevronDown className="h-3 w-3 text-muted-foreground hidden sm:block" />

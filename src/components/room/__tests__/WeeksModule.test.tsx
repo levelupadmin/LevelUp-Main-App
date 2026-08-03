@@ -1,14 +1,14 @@
 import { type ReactNode } from "react";
-import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * WeeksModule — the acceptances that would otherwise be a manual check.
  *
  * The load-bearing one is the TWO-SESSIONS-IN-ONE-WEEK fixture. The week row
- * from `get_cohort_progress` carries exactly ONE session by design (the RPC's
+ * from `get_room_weeks` carries exactly ONE session by design (the RPC's
  * LEFT JOIN LATERAL … LIMIT 1, 20260729100200_cohort_room_rpcs.sql:990-1003),
  * so a module that renders sessions off the week row silently drops the second
  * class of a two-class week and looks perfectly fine doing it. The fixture
@@ -44,6 +44,7 @@ const { weekLead, submissionStatusTone, weekStatusTone } = await import(
 const { default: WeekRail } = await import("@/components/room/WeekRail");
 const { default: RoomClockProvider } = await import("@/components/room/RoomClockProvider");
 type RoomWeekRow = import("@/hooks/useCohortRooms").RoomWeekRow;
+type RoomWeekBatch = import("@/hooks/useCohortRooms").RoomWeekBatch;
 type RoomSession = import("@/hooks/useCohortRooms").RoomSession;
 type CohortRoomEnvelope = import("@/hooks/useCohortRooms").CohortRoomEnvelope;
 type CohortRoomSummary = import("@/hooks/useCohortRooms").CohortRoomSummary;
@@ -97,10 +98,12 @@ const session = (over: Partial<RoomSession> = {}): RoomSession => ({
 const envelopeFor = (
   sessions: RoomSession[],
   config: RoomConfigRow | null = null,
+  batchId: string | null = "batch-1",
+  role = "member",
 ): CohortRoomEnvelope => ({
   offering_id: OFFERING,
-  batch_id: "batch-1",
-  role: "member",
+  batch_id: batchId,
+  role,
   access: "member",
   config,
   roster_count: 12,
@@ -132,6 +135,11 @@ const roomFor = (over: Partial<CohortRoomSummary> = {}): CohortRoomSummary =>
     ...over,
   }) as CohortRoomSummary;
 
+const LocationProbe = () => {
+  const location = useLocation();
+  return <output data-testid="room-location">{location.pathname}{location.search}</output>;
+};
+
 function renderModule({
   rows,
   sessions = [session()],
@@ -139,6 +147,11 @@ function renderModule({
   config = null,
   path = "/room/the-forge/weeks/4",
   renderAssignment,
+  queryState = "success",
+  batchRows = [],
+  envelopeBatchId = "batch-1",
+  batchQueryState = "success",
+  rowsByBatch,
 }: {
   rows: RoomWeekRow[];
   sessions?: RoomSession[];
@@ -146,12 +159,31 @@ function renderModule({
   config?: RoomConfigRow | null;
   path?: string;
   renderAssignment?: (props: RoomAssignmentSlotProps) => ReactNode;
+  queryState?: "success" | "pending" | "error";
+  batchRows?: RoomWeekBatch[];
+  envelopeBatchId?: string | null;
+  batchQueryState?: "success" | "pending" | "error";
+  rowsByBatch?: Record<string, RoomWeekRow[]>;
 }) {
-  rpc.mockResolvedValue({ data: rows, error: null });
+  rpc.mockImplementation((fn: string, args: Record<string, unknown>) => {
+    if (fn === "get_room_week_batches") {
+      if (batchQueryState === "pending") return new Promise(() => {});
+      if (batchQueryState === "error") {
+        return Promise.resolve({ data: null, error: { code: "500", message: "network" } });
+      }
+      return Promise.resolve({ data: batchRows, error: null });
+    }
+    if (queryState === "pending") return new Promise(() => {});
+    if (queryState === "error") {
+      return Promise.resolve({ data: null, error: { code: "500", message: "network" } });
+    }
+    const batchRowsForCall = rowsByBatch?.[String(args.p_batch)] ?? rows;
+    return Promise.resolve({ data: batchRowsForCall, error: null });
+  });
 
   const context = {
     room,
-    envelope: envelopeFor(sessions, config),
+    envelope: envelopeFor(sessions, config, envelopeBatchId, room.role ?? "member"),
     theme: null as never,
     rooms: [room],
     refetch: () => {},
@@ -173,7 +205,12 @@ function renderModule({
           <Route path="/room/:slug" element={<Outlet context={context} />}>
             <Route
               path="weeks/:n"
-              element={<WeeksModule renderAssignment={renderAssignment} />}
+              element={(
+                <>
+                  <WeeksModule renderAssignment={renderAssignment} />
+                  <LocationProbe />
+                </>
+              )}
             />
           </Route>
         </Routes>
@@ -266,6 +303,12 @@ describe("today-first precedence", () => {
     expect(lead.line).toContain("Feedback session");
   });
 
+  it("keeps assignment urgency personal while staff retain the authored date", () => {
+    const lead = weekLead(base, [], NOW, false);
+    expect(lead.kind).toBe("feedback");
+    expect(lead.line).toContain("Feedback session");
+  });
+
   it("counts a running class as live and an imminent one in minutes", () => {
     expect(weekLead(base, [session({ scheduled_at: "2026-08-05T06:00:00Z" })], NOW).line).toBe(
       "Live right now.",
@@ -345,7 +388,155 @@ describe("footer parity", () => {
   });
 });
 
+describe("offering-wide batch selection", () => {
+  const batches: RoomWeekBatch[] = [
+    { batch_id: "batch-1", batch_label: "Batch A1" },
+    { batch_id: "batch-2", batch_label: "Batch A2" },
+  ];
+  const staffRoom = roomFor({
+    batch_id: null,
+    batch_name: null,
+    role: "mentor",
+    total_weeks: 12,
+    current_week: 1,
+  });
+  const a1 = weekRow({
+    cohort_batch_id: "batch-1",
+    batch_label: "Batch A1",
+    week_id: "a1-week-1",
+    week_number: 1,
+    theme: "A1 curriculum",
+    assignment_prompt: "A1 assignment",
+    week_status: "completed",
+  });
+  const a2 = weekRow({
+    cohort_batch_id: "batch-2",
+    batch_label: "Batch A2",
+    week_id: "a2-week-1",
+    week_number: 1,
+    theme: "A2 curriculum",
+    assignment_prompt: "A2 assignment",
+    week_status: "active",
+  });
+
+  it("waits for authorized batch metadata before requesting curriculum", async () => {
+    renderModule({
+      rows: [],
+      room: staffRoom,
+      envelopeBatchId: null,
+      batchQueryState: "pending",
+    });
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith(
+      "get_room_week_batches",
+      { p_offering: OFFERING },
+    ));
+    expect(rpc.mock.calls.map((call) => call[0])).toEqual(["get_room_week_batches"]);
+    expect(screen.getByText("Loading weeks")).toBeInTheDocument();
+  });
+
+  it("renders only the queried batch and passes its id to the assignment seam", async () => {
+    const seen: RoomAssignmentSlotProps[] = [];
+    renderModule({
+      rows: [],
+      rowsByBatch: { "batch-1": [a1], "batch-2": [a2] },
+      batchRows: batches,
+      room: staffRoom,
+      envelopeBatchId: null,
+      path: "/room/the-forge/weeks/1?batch=batch-2",
+      sessions: [
+        session({ id: "a1-session", week_id: "a1-week-1", title: "A1 session" }),
+        session({ id: "a2-session", week_id: "a2-week-1", title: "A2 session" }),
+      ],
+      renderAssignment: (props) => {
+        seen.push(props);
+        return <p>A2 assignment renderer</p>;
+      },
+    });
+
+    const selector = await screen.findByRole("combobox", { name: "Cohort batch" });
+    expect(selector).toHaveValue("batch-2");
+    expect(screen.getByText("A2 curriculum")).toBeInTheDocument();
+    expect(screen.queryByText("A1 curriculum")).toBeNull();
+    expect(screen.getByText("A2 session")).toBeInTheDocument();
+    expect(screen.queryByText("A1 session")).toBeNull();
+    expect(seen.at(-1)).toMatchObject({ batchId: "batch-2", weekId: "a2-week-1" });
+    expect(screen.getByText("Week 1 of 1")).toBeInTheDocument();
+    expect(screen.getByText("Batch curriculum progress.")).toBeInTheDocument();
+    expect(screen.queryByText(/you.re all caught up/i)).toBeNull();
+    expect(rpc).toHaveBeenCalledWith("get_room_weeks", {
+      p_offering: OFFERING,
+      p_batch: "batch-2",
+    });
+  });
+
+  it("resets the visible week and preserves the selected batch in navigation", async () => {
+    renderModule({
+      rows: [],
+      rowsByBatch: { "batch-1": [a1], "batch-2": [a2] },
+      batchRows: batches,
+      room: staffRoom,
+      envelopeBatchId: null,
+      path: "/room/the-forge/weeks/1?batch=batch-1",
+      sessions: [],
+    });
+
+    const selector = await screen.findByRole("combobox", { name: "Cohort batch" });
+    expect(screen.getByText("A1 curriculum")).toBeInTheDocument();
+    fireEvent.change(selector, { target: { value: "batch-2" } });
+
+    await waitFor(() => expect(screen.getByText("A2 curriculum")).toBeInTheDocument());
+    expect(screen.queryByText("A1 curriculum")).toBeNull();
+    expect(screen.getByTestId("room-location")).toHaveTextContent(
+      "/room/the-forge/weeks/1?batch=batch-2",
+    );
+    expect(rpc).toHaveBeenCalledWith("get_room_weeks", {
+      p_offering: OFFERING,
+      p_batch: "batch-2",
+    });
+  });
+
+  it("does not render a selector for a member's single resolved batch", async () => {
+    renderModule({ rows: [weekRow()] });
+    await screen.findByText("Blocking and coverage");
+    expect(screen.queryByRole("combobox", { name: "Cohort batch" })).toBeNull();
+  });
+});
+
 describe("edge cases", () => {
+  it("wraps unbroken week copy instead of widening the hero", async () => {
+    const longDescription = "D".repeat(200);
+    const longPrompt = "P".repeat(200);
+    renderModule({
+      rows: [weekRow({ description: longDescription, assignment_prompt: longPrompt })],
+    });
+
+    expect(await screen.findByText(longDescription)).toHaveClass("break-words");
+    expect(screen.getByText(longPrompt)).toHaveClass("break-words");
+    expect(screen.getByRole("region", { name: "Live sessions" })).toHaveClass("min-w-0");
+    expect(screen.getByRole("region", { name: "Assignment" })).toHaveClass("min-w-0");
+  });
+
+  it("keeps the loading placeholders inside a responsive grid", () => {
+    renderModule({ rows: [], queryState: "pending" });
+    const rail = screen.getByTestId("weeks-loading-rail");
+    expect(rail.className).toContain("grid-cols-1");
+    expect(rail.className).toContain("sm:grid-cols-2");
+    expect(rail.innerHTML).not.toContain("w-[13.5rem]");
+  });
+
+  it("shows a retryable error instead of claiming a failed request is an empty schedule", async () => {
+    renderModule({ rows: [], queryState: "error" });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(await screen.findByText("The weeks didn't load")).toBeInTheDocument();
+    expect(screen.queryByText("The schedule is being set.")).toBeNull();
+    const callsBeforeRetry = rpc.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(rpc.mock.calls.length).toBeGreaterThan(callsBeforeRetry));
+  });
+
   it("renders the serif holding line when a live room has no weeks", async () => {
     renderModule({ rows: [] });
     expect(await screen.findByText("The schedule is being set.")).toBeInTheDocument();
@@ -559,12 +750,13 @@ describe("the status token map", () => {
 });
 
 describe("the weeks query", () => {
-  it("asks get_cohort_progress for the caller's own rows, once", async () => {
+  it("asks the room-scoped RPC for the envelope batch, once", async () => {
     renderModule({ rows: [weekRow()] });
     await waitFor(() => expect(rpc).toHaveBeenCalled());
-    expect(rpc).toHaveBeenCalledWith("get_cohort_progress", {
-      p_user_id: "user-1",
-      p_offering_id: OFFERING,
+    expect(rpc).toHaveBeenCalledWith("get_room_weeks", {
+      p_batch: "batch-1",
+      p_offering: OFFERING,
     });
+    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty("p_user_id");
   });
 });

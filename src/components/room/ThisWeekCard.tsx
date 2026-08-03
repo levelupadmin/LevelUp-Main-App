@@ -307,6 +307,7 @@ export function weekLead(
   week: RoomWeekRow,
   sessions: RoomSession[],
   nowMs: number,
+  includeAssignmentUrgency = true,
 ): WeekLead {
   const pending = sessions
     .map((session) => ({ session, state: sessionTimeState(session, nowMs), ms: parseMs(session.scheduled_at) }))
@@ -346,7 +347,7 @@ export function weekLead(
   }
 
   const dueMs = parseMs(week.assignment_due_at);
-  if (Number.isFinite(dueMs)) {
+  if (includeAssignmentUrgency && Number.isFinite(dueMs)) {
     if (dueMs < nowMs) {
       // An overdue deadline only shouts while the work is still outstanding.
       // Once it is in, the deadline is history and the week moves on.
@@ -443,6 +444,12 @@ export interface ThisWeekCardProps {
    * default so the card is still correct when mounted without a config in hand.
    */
   assignmentsEnabled?: boolean;
+  /**
+   * Whether the hero's timed lead should treat the assignment as this caller's
+   * personal deadline. Hosts/mentors still see the authored prompt and date in
+   * the read-only column, but do not receive overdue/due-now participant copy.
+   */
+  assignmentUrgency?: boolean;
   /** `moduleEnabled(config, "peer_review")`, forwarded to the assignment slot. */
   peerReviewEnabled?: boolean;
   /**
@@ -477,6 +484,7 @@ export function ThisWeekCard({
   batchId,
   nowMs: nowMsProp,
   assignmentsEnabled = ROOM_MODULE_DEFAULTS.assignments,
+  assignmentUrgency = true,
   peerReviewEnabled = ROOM_MODULE_DEFAULTS.peer_review,
   recordingHref,
   calendarNote,
@@ -490,7 +498,7 @@ export function ThisWeekCard({
   const clockMs = useRoomClock();
   const nowMs = nowMsProp ?? clockMs;
 
-  const lead = weekLead(week, sessions, nowMs);
+  const lead = weekLead(week, sessions, nowMs, assignmentUrgency);
   const startsMs = parseMs(week.starts_on);
   const endsMs = parseMs(week.ends_on);
   const feedbackMs = parseMs(week.feedback_session_at);
@@ -512,7 +520,7 @@ export function ThisWeekCard({
 
   return (
     <article
-      className={cn("overflow-hidden rounded-xl border border-border bg-surface", className)}
+      className={cn("min-w-0 overflow-hidden rounded-xl border border-border bg-surface", className)}
     >
       <header className="border-b border-border p-5">
         <div className="flex items-start justify-between gap-3">
@@ -543,7 +551,7 @@ export function ThisWeekCard({
         )}
 
         {week.description && (
-          <p className="body-muted mt-3 max-w-prose text-sm leading-relaxed">{week.description}</p>
+          <p className="body-muted mt-3 max-w-prose break-words text-sm leading-relaxed">{week.description}</p>
         )}
       </header>
 
@@ -552,12 +560,12 @@ export function ThisWeekCard({
           "grid grid-cols-1 divide-y divide-border",
           // A room with assignments switched off has one column, and it takes
           // the whole width instead of leaving half the card empty.
-          assignmentsEnabled && "md:grid-cols-2 md:divide-x md:divide-y-0",
+          assignmentsEnabled && "lg:grid-cols-2 lg:divide-x lg:divide-y-0",
         )}
       >
         {/* ── Sessions ── every session the week holds, not the elected one,
             each one R2-T2's slot with its full doors-open choreography. */}
-        <section className="p-5" aria-label="Live sessions">
+        <section className="min-w-0 p-5" aria-label="Live sessions">
           <div className="flex items-center gap-2">
             <Video size={14} strokeWidth={1.5} className="shrink-0 text-room-accent" aria-hidden="true" />
             <h3 className={EYEBROW}>Live sessions</h3>
@@ -609,7 +617,7 @@ export function ThisWeekCard({
             assignments at all: `modules.assignments === false` renders NOTHING,
             per §5's "a disabled module is absent". */}
         {assignmentsEnabled && (
-          <section className="p-5" aria-label="Assignment">
+          <section className="min-w-0 p-5" aria-label="Assignment">
             <div className="flex flex-wrap items-center gap-2">
               <Clock size={14} strokeWidth={1.5} className="shrink-0 text-room-accent" aria-hidden="true" />
               <h3 className={EYEBROW}>Assignment</h3>
@@ -649,7 +657,7 @@ export function ThisWeekCard({
                     onChange: handleChange,
                   })
                 ) : (
-                  <p className="line-clamp-4 text-sm text-foreground">{week.assignment_prompt}</p>
+                  <p className="line-clamp-4 break-words text-sm text-foreground">{week.assignment_prompt}</p>
                 )}
               </div>
             ) : (

@@ -222,7 +222,7 @@ const RoomFeed = () => {
 
       <nav
         aria-label="Feed channels"
-        className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0"
+        className="-mx-4 flex scroll-px-4 gap-2 overflow-x-auto overscroll-x-contain px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
       >
         {channels.map((item) => (
           <button

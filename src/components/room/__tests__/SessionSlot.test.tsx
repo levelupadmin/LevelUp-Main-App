@@ -140,6 +140,14 @@ describe("SessionSlot — the six-state walk", () => {
 /* ── The gaps the local row in ThisWeekCard used to cover ─────────────────── */
 
 describe("SessionSlot — a session with no date yet", () => {
+  it("wraps an unbroken session title instead of widening the slot", () => {
+    const longTitle = "S".repeat(200);
+    renderSlot({ session: session({ title: longTitle }) });
+
+    expect(screen.getByRole("heading", { name: longTitle }).className).toContain("break-words");
+    expect(slot().className).toContain("min-w-0");
+  });
+
   it("states the fact rather than rendering a title and nothing else", () => {
     renderSlot({ session: session({ scheduled_at: null }) });
 

@@ -59,7 +59,7 @@ const ResourceRow = ({ resource }: { resource: RoomResource }) => {
         <span className="block break-words text-sm font-medium text-foreground">
           {resource.title}
         </span>
-        <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+        <span className="mt-0.5 block break-words font-mono text-xs leading-relaxed tracking-normal text-muted-foreground">
           {roomResourceDomain(resource.url)} ·{" "}
           {resource.batch_name ?? "All batches"} · {resource.kind} · added by{" "}
           {resource.added_by_name}
