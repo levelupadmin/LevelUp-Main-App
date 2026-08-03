@@ -4821,6 +4821,7 @@ export type Database = {
           page_coupon_code: string | null
           payment_mode: string | null
           price_inr: number
+          product_tier: string
           razorpay_plan_id: string | null
           refund_policy_days: number | null
           seats_total: number | null
@@ -4880,6 +4881,7 @@ export type Database = {
           page_coupon_code?: string | null
           payment_mode?: string | null
           price_inr: number
+          product_tier?: string
           razorpay_plan_id?: string | null
           refund_policy_days?: number | null
           seats_total?: number | null
@@ -4939,6 +4941,7 @@ export type Database = {
           page_coupon_code?: string | null
           payment_mode?: string | null
           price_inr?: number
+          product_tier?: string
           razorpay_plan_id?: string | null
           refund_policy_days?: number | null
           seats_total?: number | null
