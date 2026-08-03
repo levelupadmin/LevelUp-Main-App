@@ -52,7 +52,8 @@ export type ApplicantStageView =
  * The projection of the row this hook reads. `pending_claim` is deliberately
  * absent: a row this query can see is a row the caller already owns, so the
  * flag has nothing left to decide (see `deriveApplicantStage`). The query below
- * still selects `*` so it never depends on S-2's column existing yet.
+ * names only the four fields this surface renders, so later sensitive intake or
+ * reviewer columns cannot silently enter the Home response.
  */
 export interface ApplicantApplicationRow {
   id: string;
@@ -291,13 +292,13 @@ export function useApplicantStage(): {
     refetchOnMount: "always",
     queryFn: async () => {
       if (!uid) return null;
-      // `select("*")` on purpose: `pending_claim` is S-2's column (and S-2 owns
-      // its `types.ts` entry), so naming it explicitly would both fail to type
-      // here and 400 the whole read — blanking the card — on any client that
-      // runs ahead of the migration. Mirrors ApplicationStatus's own read.
+      // Explicit projection: this owned-row read does not consume
+      // `pending_claim` (the discovery RPC owns that decision), so no migration-
+      // order fallback requires a wildcard and no future sensitive column can
+      // silently ride this Home request.
       const { data, error } = await supabase
         .from("cohort_applications")
-        .select("*, offerings(title)")
+        .select("id, offering_id, status, offerings(title)")
         .eq("user_id", uid)
         .order("created_at", { ascending: false })
         .limit(1)

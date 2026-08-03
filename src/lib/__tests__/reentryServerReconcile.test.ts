@@ -72,9 +72,8 @@ describe("server-owned re-entry reconciliation", () => {
   });
 
   it("couples live messaging to the server reconciler fail-closed", () => {
-    expect(ladder).toContain(
-      'const REENTRY_RECONCILE_ENABLED = Deno.env.get("REENTRY_RECONCILE_ENABLED") === "true"',
-    );
+    expect(ladder).toContain("const REENTRY_RECONCILE_ENABLED =");
+    expect(ladder).toContain('get("REENTRY_RECONCILE_ENABLED") === "true"');
     expect(ladder).toContain('if (LADDER_ENABLED && !requestedDryRun && !REENTRY_RECONCILE_ENABLED)');
     expect(ladder).toContain("refusing to run ladder");
   });
