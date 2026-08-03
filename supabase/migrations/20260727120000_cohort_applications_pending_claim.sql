@@ -9,20 +9,15 @@
 --
 -- That is a brand-new thing in this system: an `auth.users` row minted from an
 -- UNAUTHENTICATED PUBLIC FORM, whose email and phone nobody has proven. So this
--- migration is in five parts, and only the first is about the column:
+-- migration is in four parts, and only the first is about the column:
 --
 --   1. `pending_claim` — the flag for the collisions intake refuses to resolve.
 --   2. A DISCOVERY RPC so the CLAIMANT (and only the claimant) can find their
 --      parked row — and learns from it only that it exists, never its contents.
---   3. A gate on `claim_legacy_enrolments_for_user` so an unproven intake
---      identity is granted NOTHING. Without it, provisioning is a paywall
---      bypass (see part 3's header).
---   4. `sync_confirmed_phone_to_users` — a CONFIRMED phone reaches the mirror,
---      which is what lets the phone-keyed claim run with proof.
---   5. `claim_legacy_enrolments_on_email_confirm` — the email-keyed claim runs
---      when the email is finally confirmed. Parts 4 and 5 are the two halves of
---      "the gate lifts by itself"; without 5 the email arm never fires again
---      (it is INSERT-only, and the INSERT is the event part 3 suppresses).
+--   3. `sync_confirmed_phone_to_users` — a CONFIRMED phone reaches the mirror.
+--   4. An explicit record that the proposed email-confirmation claim is NOT
+--      shipped. Purchase claiming now belongs exclusively to the later
+--      `20260727220000_claim_at_signin.sql` verified-sign-in migration.
 --
 -- DEPLOY ORDER: apply this BEFORE deploying tally-application-poll /
 -- tally-application-webhook. Ordinary application rows never name
@@ -348,165 +343,7 @@ COMMENT ON FUNCTION public.get_my_pending_claim() IS
 DROP POLICY IF EXISTS "claimants_read_pending_applications" ON public.cohort_applications;
 
 -- ════════════════════════════════════════════════════════════════════════
--- 3. THE GATE — an unproven intake identity is granted NOTHING
--- ════════════════════════════════════════════════════════════════════════
---
--- WHY THIS IS HERE AND NOT OPTIONAL. `users_claim_legacy_enrolments` fires
--- AFTER INSERT OR UPDATE OF (phone, email) on `public.users`, and in the live
--- body `v_email_claims_ok := (TG_OP = 'INSERT')`. Migration 20260611130000 set
--- that INSERT-only carve-out on a premise it states plainly: an INSERT into
--- `public.users` "only ever follows a verified auth flow" (magic-link signup
--- mirrors a confirmed address; phone signups mirror a synthetic one that can
--- never match a legacy row). It even added `app.suppress_legacy_claim` so the
--- one path that writes an UNVERIFIED email — the onboarding RPC — could opt
--- out.
---
--- Intake provisioning breaks that premise. It is a brand-new INSERT path driven
--- entirely by an unauthenticated public form:
---   tally poller -> auth.admin.createUser({ email: <raw form field> })
---     -> handle_new_user() -> INSERT INTO public.users
---       -> users_claim_legacy_enrolments with v_email_claims_ok = TRUE
--- Ungated, anyone who submits the public Tally form with a paying TagMango
--- customer's address gets every unclaimed `legacy_enrolments` row for that
--- address inserted as an ACTIVE enrolment on THEIR uid, and
--- `claimed_by_user_id` stamped so the real customer can never claim them
--- again. That is the whole paid catalogue, for free, with no credentials — the
--- exact class 20260531000000 and 20260611130000 were written to kill.
---
--- WHY NOT THE EXISTING GUC. `app.suppress_legacy_claim` is transaction-local,
--- and the INSERT happens inside GoTrue's own transaction on its own connection.
--- An edge function calling `auth.admin.createUser` has no way to set it. So the
--- signal has to travel ON THE ROW, and `raw_app_meta_data` is the right
--- carrier: `app_metadata` is writable only by the service role (a user can
--- never set it, unlike `user_metadata`), so it is trustworthy as a claim about
--- provenance.
---
--- WHY THE GATE IS NARROW. It suppresses ONLY rows this intake itself marked,
--- and only while NEITHER channel is confirmed. Every pre-existing path is
--- byte-for-byte unaffected: no other caller writes the flag, so for every one
--- of them the EXISTS is false and the body below is the 20260611130000 body
--- unchanged.
---
--- THE GATE STOPS APPLYING once a channel is confirmed — but "stops applying"
--- is not the same as "the claim re-runs", and this function only ever runs when
--- something writes `public.users`. Both arms therefore need a partner:
---   • PHONE — part 4 mirrors a CONFIRMED `auth.users.phone` into
---     `public.users.phone`; that UPDATE re-enters this function with the gate
---     lifted and the phone arm matches.
---   • EMAIL — the email arm is INSERT-only (`v_email_claims_ok := (TG_OP =
---     'INSERT')`, inherited verbatim from 20260611130000), and that INSERT is
---     precisely the event this gate returns early from. Nothing ever re-inserts
---     the row, so without help the email-keyed claim would be suppressed
---     FOREVER — a paying TagMango customer whose legacy row carries an email
---     would apply, sign in, and receive nothing. Part 5 is the help: it runs
---     the email-keyed claim once, when `email_confirmed_at` first lands on an
---     intake-tagged row.
---
--- KNOWN RESIDUAL, stated rather than papered over: a legacy row keyed ONLY by a
--- phone still needs `phone_confirmed_at`, and for an identity intake already
--- created, `verify-msg91-otp` takes its EXISTING-USER branch (find_login_identity
--- matches the phone intake wrote) and mints a session without ever confirming
--- the phone. Part 4 therefore does not fire for that user. Fixing it means
--- confirming the phone on that branch, which is a change to `verify-msg91-otp`
--- — the one file phase SP requires to stay byte-identical. Flagged for its own
--- task, not folded into this one.
---
--- Note this gate covers BOTH channels, not just the email one. Intake writes no
--- `user_metadata.phone` today (an unproven number in `public.users.phone` would
--- fire a phone-keyed claim on somebody else's number AND squat the UNIQUE
--- column against its real owner), so the phone arm is defence in depth against
--- a future caller that does.
-
-CREATE OR REPLACE FUNCTION public.claim_legacy_enrolments_for_user()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_phone_norm text;
-  v_email_claims_ok boolean := (TG_OP = 'INSERT');
-BEGIN
-  -- Caller opted out for this transaction (e.g. the onboarding RPC
-  -- writes an UNVERIFIED email; it must not claim entitlements).
-  IF current_setting('app.suppress_legacy_claim', true) = 'on' THEN
-    RETURN NEW;
-  END IF;
-
-  -- PHASE SP: an identity minted by unauthenticated intake, with nothing yet
-  -- proven, claims nothing on either channel. See the header above.
-  -- `auth.users` is schema-qualified so this needs no change to search_path.
-  IF EXISTS (
-    SELECT 1
-    FROM auth.users au
-    WHERE au.id = NEW.id
-      AND au.raw_app_meta_data ->> 'levelup_unverified_intake' = 'true'
-      AND au.email_confirmed_at IS NULL
-      AND au.phone_confirmed_at IS NULL
-  ) THEN
-    RETURN NEW;
-  END IF;
-
-  -- Normalise the incoming phone to +91XXXXXXXXXX so it matches the
-  -- format we store in legacy_enrolments. The CSV ingest also
-  -- normalises - both sides agree on this canonical form.
-  IF NEW.phone IS NOT NULL THEN
-    v_phone_norm := regexp_replace(NEW.phone, '\D', '', 'g');
-    IF length(v_phone_norm) = 10 THEN
-      v_phone_norm := '+91' || v_phone_norm;
-    ELSIF length(v_phone_norm) = 12 AND v_phone_norm LIKE '91%' THEN
-      v_phone_norm := '+' || v_phone_norm;
-    ELSE
-      v_phone_norm := NEW.phone;  -- leave as-is for non-Indian numbers
-    END IF;
-  END IF;
-
-  -- The INSERT/UPDATE pair below (and the normalisation above it) is
-  -- 20260611130000'S BODY, VERBATIM — reproduced rather than improved so this
-  -- CREATE OR REPLACE changes exactly one thing: the gate above. That
-  -- verbatim-ness includes source='tagmango_migration',
-  -- which 20260603120000's header says enrolments_source_check rejects (its
-  -- fix to 'migration' was lost when 20260611100000/130000 re-declared the
-  -- function). Correcting it here would be an unrelated, unreviewed change to
-  -- which legacy claims succeed, on a constraint whose live definition this
-  -- tree cannot see — it is flagged for its own fix, not folded into this one.
-  INSERT INTO public.enrolments (user_id, offering_id, payment_order_id, status, source)
-  SELECT NEW.id, le.offering_id, NULL, 'active', 'tagmango_migration'
-  FROM public.legacy_enrolments le
-  WHERE le.claimed_by_user_id IS NULL
-    AND (
-      (v_phone_norm IS NOT NULL AND le.phone = v_phone_norm)
-      OR (v_email_claims_ok AND NEW.email IS NOT NULL AND le.email = NEW.email)
-    )
-    AND NOT EXISTS (
-      SELECT 1 FROM public.enrolments e
-      WHERE e.user_id = NEW.id AND e.offering_id = le.offering_id
-    )
-  ON CONFLICT DO NOTHING;
-
-  UPDATE public.legacy_enrolments le
-  SET claimed_by_user_id = NEW.id,
-      claimed_at = now()
-  WHERE le.claimed_by_user_id IS NULL
-    AND (
-      (v_phone_norm IS NOT NULL AND le.phone = v_phone_norm)
-      OR (v_email_claims_ok AND NEW.email IS NOT NULL AND le.email = NEW.email)
-    );
-
-  RETURN NEW;
-END;
-$$;
-
-COMMENT ON FUNCTION public.claim_legacy_enrolments_for_user() IS
-  'Grants unclaimed TagMango entitlements to a user. Email-keyed claims run '
-  'only on INSERT (20260611130000); NEITHER channel claims for an auth row '
-  'tagged levelup_unverified_intake while no channel is confirmed (phase SP) — '
-  'that tag marks an identity minted from an unauthenticated public form. Once '
-  'a channel IS confirmed the claim is re-driven by sync_confirmed_phone_to_users '
-  '(phone) and claim_legacy_enrolments_on_email_confirm (email).';
-
--- ════════════════════════════════════════════════════════════════════════
--- 4. A CONFIRMED PHONE REACHES THE MIRROR (and only a confirmed one)
+-- 3. A CONFIRMED PHONE REACHES THE MIRROR (and only a confirmed one)
 -- ════════════════════════════════════════════════════════════════════════
 --
 -- WHAT THIS REPAIRS. `handle_new_user` reads the mirror phone from
@@ -516,28 +353,14 @@ COMMENT ON FUNCTION public.claim_legacy_enrolments_for_user() IS
 -- phone — and every later path that PROVES a number writes `auth.users` only:
 -- verify-msg91-otp's legacy recovery branch is `updateUserById(existing.id,
 -- { phone, phone_confirm: true })`, and nothing anywhere back-fills the mirror.
--- The phone-keyed arm of `claim_legacy_enrolments_for_user` then never has a
--- phone to match, and a paying TagMango customer whose legacy row carried ONLY
--- a phone receives zero entitlements. (Before intake provisioning, that login
--- CREATED the user, with the phone in metadata, and the trigger granted them.)
+-- This mirror remains useful to authenticated application code. Purchase
+-- claiming itself no longer runs from it: 20260727220000 makes the signup
+-- trigger a no-op and exposes `claim_my_purchases()` at verified sign-in.
 --
 -- The naive fix — have intake write the phone into `user_metadata` — puts an
--- UNPROVEN number into the UNIQUE `public.users.phone`, which fires the
--- phone-keyed claim against somebody else's number and squats the column so its
--- real owner loses both their mirror phone and their entitlements. So the phone
--- is mirrored HERE instead: after GoTrue has recorded `phone_confirmed_at`,
--- i.e. after an OTP actually proved it. That UPDATE then fires the existing
--- `users_claim_legacy_enrolments` trigger, whose UPDATE arm is the OTP-verified
--- phone match 20260611130000 describes — the claim lands with proof.
---
--- WHAT IT DOES NOT REPAIR, and the honest limit of "the gate lifts by itself":
--- intake now writes the applicant's phone onto `auth.users` (unconfirmed), so
--- their later MSG91 login resolves through `find_login_identity` and takes
--- verify-msg91-otp's EXISTING-USER branch, which mints a session WITHOUT
--- setting `phone_confirmed_at`. This trigger does not fire for them. Their
--- email-keyed entitlements still arrive via part 5 (the magiclink that mints
--- that session confirms the email); a legacy row keyed only by a phone waits
--- for the verify-msg91-otp change flagged in part 3.
+-- UNPROVEN number into the UNIQUE `public.users.phone`, squatting the column
+-- against its real owner. So the phone is mirrored HERE instead: after GoTrue
+-- has recorded `phone_confirmed_at`, i.e. after an OTP actually proved it.
 --
 -- CONSERVATIVE BY CONSTRUCTION: it only ever fills a NULL (never overwrites a
 -- mirror phone), it refuses a number another mirror row already owns (the
@@ -580,9 +403,9 @@ $$;
 
 COMMENT ON FUNCTION public.sync_confirmed_phone_to_users() IS
   'Mirrors an OTP-CONFIRMED auth.users.phone into public.users.phone when that '
-  'column is still NULL, so the phone-keyed legacy-entitlement claim can run '
-  'with proof. Never overwrites, never steals a number another row owns, never '
-  'raises into the auth transaction.';
+  'column is still NULL. Never overwrites, never steals a number another row '
+  'owns, never raises into the auth transaction. Legacy purchase claiming is '
+  'handled separately by claim_my_purchases() at verified sign-in.';
 
 DROP TRIGGER IF EXISTS auth_users_sync_confirmed_phone ON auth.users;
 CREATE TRIGGER auth_users_sync_confirmed_phone
@@ -592,7 +415,7 @@ CREATE TRIGGER auth_users_sync_confirmed_phone
   EXECUTE FUNCTION public.sync_confirmed_phone_to_users();
 
 -- ════════════════════════════════════════════════════════════════════════
--- 5. THE EMAIL-KEYED CLAIM — DELIBERATELY NOT SHIPPED
+-- 4. THE EMAIL-KEYED CLAIM — DELIBERATELY NOT SHIPPED
 -- ════════════════════════════════════════════════════════════════════════
 --
 -- An earlier revision of this migration added
@@ -630,8 +453,7 @@ CREATE TRIGGER auth_users_sync_confirmed_phone
 -- verifyOtp). The full chain was: submit this form with {a paying customer's
 -- address, your own number} → one OTP on your own number → their entire
 -- unclaimed catalogue, with `claimed_by_user_id` stamped so they can never
--- recover it. Shipping a gate (part 3) and its bypass in one file is not a
--- defensible state.
+-- recover it. Shipping that trigger is not a defensible state.
 --
 -- WHAT REPLACES IT. Nothing here. Claiming on PROOF belongs to the
 -- claim-at-verified-sign-in work (branch feat/student-entitlements,
@@ -640,47 +462,14 @@ CREATE TRIGGER auth_users_sync_confirmed_phone
 -- one claim path, gated on a channel the server itself confirmed, rather than
 -- two paths disagreeing about what counts as proof.
 --
--- THE ACCEPTED COST, stated plainly: an intake-provisioned identity that is
--- also a legacy customer receives no automatic entitlement until that work
--- lands. A stuck entitlement is recoverable by a scripted claim; a stolen one,
--- with `claimed_by_user_id` stamped, is not.
+-- The verified-sign-in work now exists later in this same migration sequence.
+-- There is therefore no accepted gap: `20260727220000_claim_at_signin.sql`
+-- neuters the signup-time trigger, then the forward-only
+-- `20260803190000_identity_intake_probe_after_claim_neuter.sql` verifies that
+-- no-op and installs the service-role-only probe the poller requires.
 
 -- ════════════════════════════════════════════════════════════════════════
--- 6. THE DEPLOY-ORDER PROBE
--- ════════════════════════════════════════════════════════════════════════
---
--- `tally-application-poll` is a LIVE cron function. If it is deployed before
--- this migration is applied, it mints intake-tagged auth users while part 3's
--- gate does not yet exist — and the email-keyed claim in
--- `claim_legacy_enrolments_for_user` then runs on an address nobody proved and
--- stamps `claimed_by_user_id` PERMANENTLY. That is the one irreversible step in
--- the whole sequence, and "apply the migration first" is a runbook line, not a
--- control.
---
--- This is the control. The poller calls this RPC once per invocation and mints
--- NOTHING unless it returns true. It exists only in this migration, so a
--- missing function (PGRST202) and an erroring one are the same answer — the
--- probe fails CLOSED, and applications still insert unlinked, which is the
--- recoverable outcome.
-
-CREATE OR REPLACE FUNCTION public.intake_provisioning_gate_ok()
-RETURNS boolean
-LANGUAGE sql
-IMMUTABLE
-AS $$ SELECT true $$;
-
-REVOKE ALL ON FUNCTION public.intake_provisioning_gate_ok() FROM public;
-GRANT EXECUTE ON FUNCTION public.intake_provisioning_gate_ok() TO service_role;
-
-COMMENT ON FUNCTION public.intake_provisioning_gate_ok() IS
-  'Existence probe, service_role only. Returns true iff '
-  '20260727120000_cohort_applications_pending_claim.sql is applied, which is '
-  'what tells tally-application-poll that part 3''s gate is in place and it is '
-  'safe to mint an intake identity. Deliberately trivial: the ANSWER is its '
-  'existence, not its body.';
-
--- ════════════════════════════════════════════════════════════════════════
--- 4a. PROMOTE THE STASHED INTAKE PHONE — ONLY ONCE IT IS PROVEN
+-- 3a. PROMOTE THE STASHED INTAKE PHONE — ONLY ONCE IT IS PROVEN
 -- ════════════════════════════════════════════════════════════════════════
 --
 -- The poller stashes the applicant's number in
@@ -752,11 +541,8 @@ NOTIFY pgrst, 'reload schema';
 -- ── Reversal (kept for reference; do not run in the forward migration) ──
 -- DROP TRIGGER IF EXISTS auth_users_sync_intake_phone ON auth.users;
 -- DROP FUNCTION IF EXISTS public.sync_intake_phone_on_confirm();
--- DROP FUNCTION IF EXISTS public.intake_provisioning_gate_ok();
 -- DROP TRIGGER IF EXISTS auth_users_sync_confirmed_phone ON auth.users;
 -- DROP FUNCTION IF EXISTS public.sync_confirmed_phone_to_users();
--- (claim_legacy_enrolments_for_user: re-apply the body from
---  20260611130000_unbrick_onboarding_for_shipped_clients.sql to drop the gate.)
 -- DROP FUNCTION IF EXISTS public.get_my_pending_claim();
 -- (`claimants_read_pending_applications` needs NOTHING here: the forward
 --  migration DROPs it and never creates it, so there is nothing to undo. Do not

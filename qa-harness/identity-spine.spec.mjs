@@ -961,28 +961,46 @@ async function staticProvisioningWiring() {
       );
       claim(
         !/user_metadata\s*:\s*\{[^}]*\bphone\b/.test(code),
-        `PROVEN: ${path} keeps the unproven number out of user_metadata.phone — a DIFFERENT field from the one above. handle_new_user mirrors raw_user_meta_data->>'phone' (never NEW.phone) into the UNIQUE public.users.phone, where an unproven value both fires the PHONE-keyed legacy-entitlement claim and squats the column against its real owner. The mirror is written later, by sync_confirmed_phone_to_users, and only once GoTrue has recorded phone_confirmed_at.`,
-        `NOT PROVEN: ${path} writes an unproven phone into user_metadata, which handle_new_user mirrors into the UNIQUE public.users.phone — squatting the column and firing a phone-keyed entitlement claim on somebody else's number.`,
+        `PROVEN: ${path} keeps the unproven number out of user_metadata.phone — a DIFFERENT field from the one above. handle_new_user mirrors raw_user_meta_data->>'phone' (never NEW.phone) into the UNIQUE public.users.phone, where an unproven value squats the column against its real owner. The mirror is written later, by sync_confirmed_phone_to_users, and only once GoTrue has recorded phone_confirmed_at.`,
+        `NOT PROVEN: ${path} writes an unproven phone into user_metadata, which handle_new_user mirrors into the UNIQUE public.users.phone — squatting the column against the number's real owner.`,
       );
       claim(
         /app_metadata\s*:\s*\{[\s\S]{0,80}?INTAKE_APP_METADATA/.test(code) &&
           /levelup_unverified_intake\s*:\s*true/.test(code),
-        `PROVEN: ${path} stamps app_metadata.levelup_unverified_intake = true on every account it mints. app_metadata is service-role-only (a user can never write it, unlike user_metadata), which is what makes it usable as a TRUST SIGNAL travelling on the row itself.`,
-        `NOT PROVEN: ${path} does not stamp levelup_unverified_intake on the accounts it mints, so nothing downstream can tell an intake-provisioned identity from one whose owner proved a channel.`,
+        `PROVEN: ${path} stamps app_metadata.levelup_unverified_intake = true on every account it mints. app_metadata is service-role-only (a user can never write it, unlike user_metadata), so the identity retains durable server-owned intake provenance.`,
+        `NOT PROVEN: ${path} does not stamp levelup_unverified_intake on the accounts it mints, so downstream operations lose the server-owned provenance that distinguishes intake-created identities.`,
       );
     }
 
-    // The trust signal is only worth stamping if something READS it. This is
-    // what stops a minted-but-unproven identity from collecting entitlements.
+    // The older SP migration used to re-declare the complete signup-time legacy
+    // claim just to add a temporary intake gate. Main later made that function a
+    // universal no-op and moved purchases to verified sign-in, so the old body
+    // is now both dead and dangerous during a partial migration rollout.
     const pendingMigName = readdirSync(join(ROOT, "supabase/migrations")).find((f) => f.startsWith("20260727120000"));
-    const gateSrc = pendingMigName ? readRepoFile(`supabase/migrations/${pendingMigName}`) : null;
+    const pendingSrc = pendingMigName ? readRepoFile(`supabase/migrations/${pendingMigName}`) : null;
+    const claimMigName = readdirSync(join(ROOT, "supabase/migrations")).find((f) => f.startsWith("20260727220000"));
+    const claimSrc = claimMigName ? readRepoFile(`supabase/migrations/${claimMigName}`) : null;
+    const probeMigName = readdirSync(join(ROOT, "supabase/migrations")).find((f) => f.startsWith("20260803190000"));
+    const probeSrc = probeMigName ? readRepoFile(`supabase/migrations/${probeMigName}`) : null;
+    const claimBody = claimSrc?.match(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.claim_legacy_enrolments_for_user\(\)[\s\S]*?AS\s+\$\$([\s\S]*?)\$\$;/i,
+    )?.[1];
+    const bareClaimBody = stripSqlComments(claimBody || "").replace(/\s+/g, " ").trim();
+    const pendingBare = stripSqlComments(pendingSrc || "");
     claim(
-      !!gateSrc &&
-        /levelup_unverified_intake'\s*=\s*'true'[\s\S]{0,200}?email_confirmed_at IS NULL[\s\S]{0,120}?phone_confirmed_at IS NULL/.test(
-          gateSrc,
+      !!pendingSrc &&
+        !/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.claim_legacy_enrolments_for_user\s*\(/i.test(pendingBare) &&
+        bareClaimBody === "BEGIN RETURN NEW; END;" &&
+        /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.intake_provisioning_gate_ok\s*\(/i.test(
+          stripSqlComments(probeSrc || ""),
+        ) &&
+        !/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.intake_provisioning_gate_ok\s*\(/i.test(pendingBare) &&
+        /prosrc[\s\S]{0,300}?RETURN\[\[:space:\]\]\+NEW/i.test(probeSrc || "") &&
+        /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.intake_provisioning_gate_ok\(\)\s+FROM\s+public\s*,\s*anon\s*,\s*authenticated/i.test(
+          stripSqlComments(probeSrc || ""),
         ),
-      `PROVEN: supabase/migrations/${pendingMigName} gates claim_legacy_enrolments_for_user on that stamp — an identity tagged levelup_unverified_intake with NEITHER channel confirmed is granted NOTHING. So minting both identifiers up front hands out no entitlement until an OTP actually proves a channel.`,
-      "NOT PROVEN: no migration gates the legacy-entitlement claim on levelup_unverified_intake with both channels unconfirmed. An account minted from unauthenticated form text could collect a paying customer's entitlements before anyone proved a channel.",
+      `PROVEN: supabase/migrations/${pendingMigName} no longer re-declares the legacy signup claim; supabase/migrations/${claimMigName} reduces it exactly to \`BEGIN RETURN NEW; END;\`; and the later forward migration ${probeMigName} verifies that no-op before installing intake_provisioning_gate_ok() with explicit PUBLIC/anon/authenticated revokes. A partial db push therefore leaves the poller closed, while a complete push makes every signup-time legacy claim inert regardless of intake metadata.`,
+      `NOT PROVEN: the old SP migration still declares a signup-time claim, the final claim body is not the exact no-op, or ${probeMigName} does not verify the no-op and revoke browser-role execution before installing the poller probe (pending migration: ${pendingMigName}; claim migration: ${claimMigName}; final body: ${JSON.stringify(bareClaimBody)}).`,
     );
 
     // WHY auth.users.phone IS THE ONE COLUMN INTAKE MAY NOT WRITE, read out of
@@ -1311,10 +1329,11 @@ async function staticAuthorisationSurfaces() {
     //   `legacy_enrolments.claimed_by_user_id`, which is a PERMANENT write. The
     //   victim never touched the form.
     //
-    // The shipped design instead GATES the legacy claim on
-    // `levelup_unverified_intake` with neither channel confirmed (asserted in
-    // S-STATIC-6B), and arms nothing on confirmation. If you are here because
-    // "applicants don't get their legacy enrolments", that is the design.
+    // The shipped design instead makes the signup-time legacy claim a universal
+    // no-op (asserted in S-STATIC-6B), moves purchase claiming to verified
+    // sign-in, and arms nothing on email confirmation. If you are here because
+    // "applicants don't get their legacy enrolments at signup", that is the
+    // design.
     //
     // A DROP or a comment naming the function is fine and expected — this asserts
     // that nothing CREATES it. Comment-stripped, so prose about why it is gone
@@ -1924,30 +1943,27 @@ async function liveProvisionIdempotency() {
     const user = minted[0];
     if (!user) return;
 
-    // WHAT THE MINTED ROW CARRIES — BOTH IDENTIFIERS, observed as a fact on a
-    // real project rather than read off the source. S-STATIC-6B asserts the
-    // same contract statically; this is the half that source cannot establish,
-    // because "the row GoTrue actually stored" is an effect, not a reading.
-    // The expected number is the fixture's phone as mintablePhone() renders it
-    // (normalizePhone -> last 10 digits -> "+91" prefix), which is what makes
-    // this a claim about the value written and not merely about nullness.
+    // WHAT THE MINTED ROW CARRIES — EMAIL ONLY, with the phone stashed in
+    // service-owned metadata. S-STATIC-6B asserts the same contract statically;
+    // this is the half source cannot establish, because "the row GoTrue actually
+    // stored" is an effect, not a reading.
     const expectedPhone = `+91${FIXTURE.fresh.phone.replace(/\D/g, "").slice(-10)}`;
-    const gotPhone = String(user.phone || "");
+    const appMetadata = user.app_metadata || user.raw_app_meta_data || {};
     claim(
-      !!user.email && gotPhone.replace(/\D/g, "") === expectedPhone.replace(/\D/g, ""),
-      `PROVEN: the minted auth user carries BOTH identifiers on ONE row — email ${user.email} and auth.users.phone ${gotPhone}, the applicant's number normalised to ${expectedPhone}. This is REQ-IDENT-2's precondition observed rather than assumed: because auth.users.phone is the column find_login_identity matches, a later MSG91 OTP on this number can only resolve to THIS uid, which S-LIVE-2 then measures directly.`,
-      `NOT PROVEN: the minted row does not carry both identifiers (email ${JSON.stringify(user.email)}, phone ${JSON.stringify(user.phone)}; expected ${expectedPhone}). Without the phone on the auth row, the applicant's Phone tab misses in find_login_identity, verify-msg91-otp answers 404 signup_requires_email_and_name, and they are pushed at the signup screen this phase promises they will never see.`,
+      !!user.email && (user.phone === null || user.phone === "") && appMetadata.levelup_intake_phone === expectedPhone,
+      `PROVEN: the minted auth user is keyed by email ${user.email}, carries NO auth.users.phone login key, and preserves the submitted number as service-owned app_metadata.levelup_intake_phone ${expectedPhone}. The applicant can use the email CTA immediately; the phone key remains unavailable until that number is actually proven.`,
+      `NOT PROVEN: the minted row did not preserve the safe email-only shape (email ${JSON.stringify(user.email)}, auth.users.phone ${JSON.stringify(user.phone)}, stashed phone ${JSON.stringify(appMetadata.levelup_intake_phone)}; expected stash ${expectedPhone}).`,
     );
     claim(
       !user.email_confirmed_at && !user.phone_confirmed_at,
-      "PROVEN: NEITHER channel is confirmed on the minted row — both identifiers are still nothing but unauthenticated form text, so the account is inert (the 20260727120000 gate grants it no legacy entitlement) until a real OTP proves a channel.",
-      `NOT PROVEN: the minted row arrived pre-confirmed (email_confirmed_at ${JSON.stringify(user.email_confirmed_at)}, phone_confirmed_at ${JSON.stringify(user.phone_confirmed_at)}). A public form would be treated as proof of identity, and the entitlement gate that keys on "neither channel confirmed" would not hold it back.`,
+      "PROVEN: NEITHER channel is confirmed on the minted row — the email and stashed phone are still nothing but unauthenticated form text. Separately, the signup-time legacy claim is a universal no-op, so creating this row cannot grant a purchase.",
+      `NOT PROVEN: the minted row arrived pre-confirmed (email_confirmed_at ${JSON.stringify(user.email_confirmed_at)}, phone_confirmed_at ${JSON.stringify(user.phone_confirmed_at)}). A public form would be treated as proof of identity.`,
     );
     claim(
       user.app_metadata?.levelup_unverified_intake === true ||
         user.raw_app_meta_data?.levelup_unverified_intake === true,
-      "PROVEN: the minted row carries the service-role-only app_metadata stamp levelup_unverified_intake = true — the trust signal the entitlement gate reads, present on the real row and not just in the source that writes it.",
-      `NOT PROVEN: the minted row has no levelup_unverified_intake stamp (app_metadata ${JSON.stringify(user.app_metadata ?? user.raw_app_meta_data ?? null)}). The entitlement gate keys on that stamp, so without it an intake-minted identity is indistinguishable from one whose owner proved a channel.`,
+      "PROVEN: the minted row carries the service-role-only app_metadata stamp levelup_unverified_intake = true — durable server-owned provenance, present on the real row and not just in the source that writes it.",
+      `NOT PROVEN: the minted row has no levelup_unverified_intake stamp (app_metadata ${JSON.stringify(user.app_metadata ?? user.raw_app_meta_data ?? null)}), so downstream operations cannot distinguish an intake-created identity by server-owned provenance.`,
     );
     claim(
       app.user_id === user.id,
@@ -1989,8 +2005,8 @@ async function liveProvisionIdempotency() {
   });
 }
 
-async function liveBothIdentifierBind() {
-  await runCase("S-LIVE-2", "live", "Both-identifier bind: either channel resolves to the SAME uid — measured, not assumed", async () => {
+async function liveEmailOnlyBind() {
+  await runCase("S-LIVE-2", "live", "Email bind succeeds while the unproven phone resolves nowhere — measured, not assumed", async () => {
     const apps = await applicationFor(FIXTURE.fresh.responseId);
     const uid = apps[0]?.user_id;
     if (!uid) {
@@ -1998,23 +2014,22 @@ async function liveBothIdentifierBind() {
       return;
     }
 
-    // find_login_identity IS the production resolver — the one verify-msg91-otp
-    // calls on every phone login, and the one verify-email-otp calls on every
-    // email login. Asking it directly is the closest a suite can get to "a later
-    // OTP" without MSG91 in the loop.
+    // find_login_identity IS the production resolver used by both login hosts.
+    // Asking it directly proves the deliberate asymmetry: email resolves now;
+    // the phone stays out of the login namespace until it is proven.
     const byPhone = await rpc("find_login_identity", { p_phone: FIXTURE.fresh.phone.slice(-10), p_email: null });
-    const phoneRow = Array.isArray(byPhone.body) ? byPhone.body[0] : byPhone.body;
+    const phoneRows = Array.isArray(byPhone.body) ? byPhone.body : byPhone.body ? [byPhone.body] : [];
     claim(
-      byPhone.ok && phoneRow?.id === uid,
-      `PROVEN: a later PHONE OTP resolves to the SAME uid the application is stamped with (${uid}) — REQ-IDENT-2 holds on the phone channel, MEASURED through find_login_identity, the production resolver verify-msg91-otp calls on every phone login. The applicant who signs in on the Phone tab lands on the identity intake already created for them; no second account is minted and no signup screen is reached.`,
-      `NOT PROVEN — THIS IS REQ-IDENT-2 FAILING, AND IT LOCKS APPLICANTS OUT. find_login_identity(phone) returned ${JSON.stringify(phoneRow ?? null)}, not uid ${uid}: the number intake wrote to auth.users is not resolving, so the applicant's phone reaches NOTHING. On the Phone tab verify-msg91-otp therefore misses, falls through to its "no auth user for this phone" branch and answers 404 signup_requires_email_and_name — which src/pages/Login.tsx renders as "No account with this number. Sign up first.", pushing the applicant at the one screen this phase promises they will never see. It cannot be patched inside verify-msg91-otp (inviolable rule 2, diff = 0); the fix belongs in what intake writes. Read S-STATIC-6B, which asserts the same contract on source: if that case passed and this one failed, the write is happening and the RESOLVER is the problem.`,
+      byPhone.ok && phoneRows.length === 0,
+      `PROVEN: find_login_identity(phone) resolves to NO auth row before proof. The public form did not pre-bind the applicant's number to uid ${uid}, closing the account-takeover path.`,
+      `NOT PROVEN — ACCOUNT TAKEOVER IS OPEN: find_login_identity(phone) returned ${JSON.stringify(phoneRows)}. Intake must not make unauthenticated form text a phone-OTP login key.`,
     );
 
     const byEmail = await rpc("find_login_identity", { p_phone: null, p_email: FIXTURE.fresh.email });
     const emailRow = Array.isArray(byEmail.body) ? byEmail.body[0] : byEmail.body;
     claim(
       byEmail.ok && emailRow?.id === uid,
-      `PROVEN: the EMAIL channel resolves to that same uid (${uid}) — one auth row, two doors, no divergence.`,
+      `PROVEN: the EMAIL channel resolves to the application uid (${uid}), so the confirmation-mail CTA opens the identity intake created.`,
       `NOT PROVEN: find_login_identity(email) returned ${JSON.stringify(emailRow)} instead of ${uid}.`,
     );
 
@@ -2025,8 +2040,8 @@ async function liveBothIdentifierBind() {
         String(u.phone || "").replace(/\D/g, "").endsWith(FIXTURE.fresh.phone.slice(-10)),
     );
     claim(
-      carrying.length === 1,
-      `PROVEN: exactly ONE auth row carries either of the applicant's identifiers (uid ${carrying[0]?.id}) — and it carries BOTH, so the email door and the phone door open the same account. One human, one identity, no phone-keyed twin beside it: that single row is what makes "a later OTP on either channel resolves to the same auth.uid" true rather than aspirational.`,
+      carrying.length === 1 && carrying[0]?.id === uid && (carrying[0]?.phone === null || carrying[0]?.phone === ""),
+      `PROVEN: exactly ONE auth row carries either identifier (uid ${uid}), and it carries only the email. No phone-keyed twin exists and the unproven number remains outside the login namespace.`,
       `NOT PROVEN: ${carrying.length} auth rows carry one of the applicant's identifiers: ${JSON.stringify(carrying)}. One human, two identities.`,
     );
   });
@@ -2405,7 +2420,7 @@ async function liveIntakeMintsNoLoginKey() {
       );
       claim(
         meta.levelup_unverified_intake === true,
-        "PROVEN: the row is stamped levelup_unverified_intake = true, so the entitlement gate can tell an identity minted from form text from one whose owner proved a channel.",
+        "PROVEN: the row is stamped levelup_unverified_intake = true, preserving service-owned provenance that it was minted from form text.",
         `NOT PROVEN: app_metadata is ${JSON.stringify(meta)} — the unverified-intake stamp is missing, so nothing downstream can tell this identity apart from a proven one.`,
       );
       claim(
@@ -2425,11 +2440,11 @@ async function liveIntakeMintsNoLoginKey() {
 /**
  * S-LIVE-7 — the gate the poller refuses to provision without.
  *
- * `intake_provisioning_gate_ok()` is the poller's proof that the hardening
- * migration is actually applied before it mints anything (tally-application-poll
- * `intakeGateInstalled`). It is a SERVICE-ROLE probe: nothing a browser holds
- * should be able to call it, and a gate an anonymous caller can execute is a
- * gate an anonymous caller can study.
+ * `intake_provisioning_gate_ok()` is installed by a forward migration only
+ * after that migration verifies the signup-time legacy claim is a no-op. It is
+ * therefore the poller's proof that hardening is actually applied before minting
+ * (tally-application-poll `intakeGateInstalled`). It is a SERVICE-ROLE probe:
+ * nothing a browser holds should be able to call it.
  */
 async function liveIntakeGate() {
   await runCase("S-LIVE-7", "live", "intake_provisioning_gate_ok() exists and is service_role-only", async () => {
@@ -2445,8 +2460,8 @@ async function liveIntakeGate() {
     `);
     claim(
       rows.length === 1,
-      "PROVEN: public.intake_provisioning_gate_ok() exists exactly once. The poller probes it every tick and SKIPS provisioning entirely when it is absent, so its existence is what lets intake mint at all.",
-      `NOT PROVEN: public.intake_provisioning_gate_ok() resolves to ${rows.length} function(s). The poller treats an absent gate as "migration not applied" and provisions NOTHING, so intake is silently off.`,
+      "PROVEN: public.intake_provisioning_gate_ok() exists exactly once. It is installed only after the signup-time claim becomes a no-op; the poller probes it every tick and SKIPS provisioning entirely when it is absent.",
+      `NOT PROVEN: public.intake_provisioning_gate_ok() resolves to ${rows.length} function(s). The poller treats an absent probe as "hardening migration not applied" and provisions NOTHING, so intake is silently off.`,
     );
     if (rows.length !== 1) return;
     const fn = rows[0];
@@ -2553,11 +2568,11 @@ async function liveIntakePhonePromotion() {
  * which is a PERMANENT write. The victim is a paying customer who never touched
  * the form.
  *
- * The safe shape is the one that shipped: the legacy claim is GATED on
- * `levelup_unverified_intake` with neither channel confirmed, and no
- * confirmation trigger re-arms it. If you are here because "the legacy claim
- * doesn't fire for applicants", that is the DESIGN, and the fix is not this
- * function.
+ * The safe shape is the one that shipped: the signup-time legacy claim is a
+ * universal no-op, purchase claiming runs only after verified sign-in, and no
+ * email-confirmation trigger re-arms the old path. If you are here because "the
+ * legacy claim doesn't fire for applicants at signup", that is the DESIGN, and
+ * the fix is not this function.
  */
 async function liveNoLegacyClaimOnConfirm() {
   await runCase("S-LIVE-9", "live", "claim_legacy_enrolments_on_email_confirm DOES NOT EXIST (entitlement theft, by design absent)", async () => {
@@ -2910,7 +2925,7 @@ async function runLiveLane() {
   }
 
   await liveProvisionIdempotency();
-  await liveBothIdentifierBind();
+  await liveEmailOnlyBind();
   await liveCollisionDefers();
   await liveClaim();
   await liveEmailOtpParity();
@@ -2966,7 +2981,7 @@ function report(liveRan, liveMissing) {
   if (!liveRan) {
     console.log(
       `\nPARTIAL PROOF — THIS IS NOT A SIGN-OFF RUN.\n` +
-        `The live lane did not run, so provisioning idempotency, both-identifier binding, collision deferral,\n` +
+        `The live lane did not run, so provisioning idempotency, email-only binding, collision deferral,\n` +
         `the claim, and email-OTP behaviour are UNPROVEN by this transcript. They are effects on auth.users and\n` +
         `cannot be established by reading source.\n` +
         `NOR ARE THE AUTHORISATION SURFACES (S-LIVE-6..11), which is the sharpest gap in a static-only run:\n` +

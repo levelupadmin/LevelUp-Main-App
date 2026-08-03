@@ -109,12 +109,10 @@ function mintablePhone(raw: string | null): string | null {
 }
 
 /**
- * Service-role-only `app_metadata` marking an identity whose email and phone
- * are still nothing but unauthenticated form text.
- * `claim_legacy_enrolments_for_user` (hardened in 20260727120000) grants
- * NOTHING while this is set and no channel is confirmed — without it, minting
- * a user here fires the INSERT-only legacy-entitlement claim on an unverified
- * email and hands a stranger a real TagMango customer's paid catalogue.
+ * Service-role-only `app_metadata` preserving that this identity was minted
+ * from unauthenticated form text. Purchase safety does not depend on the stamp:
+ * 20260727220000 makes the signup-time claim a universal no-op and moves
+ * purchase claiming to verified sign-in.
  */
 const INTAKE_APP_METADATA = {
   levelup_unverified_intake: true,
@@ -132,22 +130,19 @@ interface ProvisionResult {
  * application is bound to an `auth.uid` before insert and the applicant never
  * meets a signup screen.
  *
- * A minted account carries BOTH identifiers, both unconfirmed, plus
- * `INTAKE_APP_METADATA` — that is the phase requirement (a later OTP on either
- * channel must resolve to the same uid; an email-only row dead-ends the phone
- * tab and mints a second account through signup). It carries no
- * `user_metadata.phone`, which is the separate field `handle_new_user` mirrors
- * into the UNIQUE `public.users.phone`; that one waits for
- * `sync_confirmed_phone_to_users` and a real `phone_confirmed_at`.
+ * A minted account is keyed by email only. The applicant's unproven phone is
+ * stashed in service-owned app_metadata, never in `auth.users.phone` (the phone
+ * OTP login key) or `user_metadata.phone` (which handle_new_user mirrors into
+ * the UNIQUE public.users.phone). The stash is retired only after the same
+ * number is proven.
  *
  * ALL THREE collision reasons — `email_taken`, `phone_taken`, `cross_linked` —
  * write NOTHING and defer to `pending_claim`. Nothing at intake proves the
  * email, so stamping an `email_taken` row would let an unauthenticated form
  * attach an application to a stranger's account.
  *
- * See `provisionApplicant` in tally-application-poll for the full reasoning,
- * including the accepted residual risk of pre-binding an unproven phone; this
- * mirrors it verbatim.
+ * See `provisionApplicant` in tally-application-poll for the full reasoning;
+ * this mirrors it exactly.
  */
 async function provisionApplicant(
   admin: AdminClient,

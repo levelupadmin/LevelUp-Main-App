@@ -7,8 +7,8 @@
  * shared HMAC secret to be safe, and no secret was set — so it is fail-closed
  * and inert. This function is the replacement: instead of Tally pushing into a
  * publicly-writable path, the app pulls with a key it already holds
- * (`TALLY_API_KEY`). The webhook stays deployed and UNMODIFIED as the
- * instant-delivery option if a signing secret is ever set.
+ * (`TALLY_API_KEY`). The webhook stays deployed, fail-closed, and mirrors this
+ * host's identity policy if a signing secret is ever set.
  *
  * THE HARD REQUIREMENT — THE INTAKE WINDOW, BOUNDED AT BOTH ENDS. One Tally
  * form is reused across editions (form `81dRPA` carries 880 historical
@@ -85,9 +85,9 @@
  * belongs to an account, the phone belongs to an account, or the two belong to
  * different accounts — is a collision, which defers to an interactive claim
  * (`pending_claim`), never a silent join on the strength of a form answer.
- * The account it mints carries BOTH identifiers, both UNCONFIRMED, and is
- * tagged as unverified intake so it grants no entitlements until a real OTP
- * proves a channel (see `provisionApplicant`).
+ * The account it mints is email-keyed and unconfirmed; the unproven phone is
+ * stashed in service-owned metadata rather than made a login key. It is tagged
+ * as unverified intake for durable provenance (see `provisionApplicant`).
  *
  * DEPLOY ORDER — MIGRATION FIRST. The collision path names `pending_claim`, so
  * this function must not be deployed ahead of
@@ -396,8 +396,8 @@ async function findIdentityByEmail(
  *
  * `normalizePhone` accepts only a 10-digit subscriber number or a 12-digit
  * `91`-prefixed one and returns the 10 digits, which we render as
- * `+91XXXXXXXXXX` — the canonical form `legacy_enrolments`, verify-msg91-otp
- * and `claim_legacy_enrolments_for_user` all agree on. Deliberately NOT
+ * `+91XXXXXXXXXX` — the canonical form `legacy_enrolments` and
+ * verify-msg91-otp agree on. Deliberately NOT
  * `e164()`: that only prepends a `+`, so raw form text of "9788385577" would
  * mint the auth row with "+9788385577", a number that exists nowhere and that
  * no MSG91 login could ever present.
@@ -413,28 +413,11 @@ function mintablePhone(raw: string | null): string | null {
 
 /**
  * `app_metadata` stamped on every account this intake mints. `app_metadata` is
- * service-role-only (a user can never write it, unlike `user_metadata`), which
- * is what makes it usable as a TRUST SIGNAL: it marks an identity whose email
- * and phone are still nothing but unauthenticated form text.
- *
- * `claim_legacy_enrolments_for_user` (hardened in
- * 20260727120000_cohort_applications_pending_claim.sql) reads this flag and
- * grants NOTHING while it is set and no channel is confirmed. Without it,
- * minting a user here fires the legacy-entitlement claim on an unverified
- * email and hands a stranger a real TagMango customer's paid catalogue —
- * `handle_new_user` → `public.users` INSERT → `users_claim_legacy_enrolments`
- * with `v_email_claims_ok = (TG_OP = 'INSERT') = true`. That INSERT-only
- * carve-out was written on the assumption that an INSERT into `public.users`
- * only ever follows a VERIFIED auth path; this function is the first intake
- * that breaks the assumption, so it must announce itself.
- *
- * The flag is never cleared. The gate stops applying the moment GoTrue records
- * a `phone_confirmed_at`/`email_confirmed_at` on the row — i.e. when a real OTP
- * finally proves a channel — and parts 4 and 5 of that migration are what
- * actually re-drive the withheld claim at that point (the phone arm on the
- * mirror write, the email arm on first email confirmation). Neither arm can
- * fire off the gate alone: this function's own INSERT is the only event the
- * email-keyed claim was ever allowed to run on.
+ * service-role-only (a user can never write it, unlike `user_metadata`), so it
+ * is durable provenance that the identity was minted from unauthenticated form
+ * text. Purchase safety no longer depends on this flag: 20260727220000 makes
+ * the signup-time legacy trigger a universal no-op and moves claiming to
+ * `claim_my_purchases()` after verified sign-in.
  */
 const INTAKE_APP_METADATA = {
   levelup_unverified_intake: true,
@@ -460,22 +443,20 @@ const INTAKE_APP_METADATA = {
 const PROVISION_APPLICANTS = (Deno.env.get("PROVISION_APPLICANTS") ?? "").trim().toLowerCase() === "true";
 
 /**
- * Is the migration that gates an unproven intake identity actually applied?
+ * Is the migration that proves signup-time purchase claiming is inert applied?
  *
  * THE HAZARD THIS CLOSES is deploy ORDER, and it is the one irreversible step
- * in the sequence. If this function ships before
- * 20260727120000_cohort_applications_pending_claim.sql, ordinary rows still
- * mint intake-tagged auth users while the gate in
- * `claim_legacy_enrolments_for_user` does not yet exist — so the email-keyed
- * legacy claim runs on an address nobody proved and stamps
- * `claimed_by_user_id` permanently. One 15-minute tick in the wrong order
- * cannot be undone. Ordering is a runbook instruction, and a runbook is not a
- * control; this is.
+ * in the sequence. The probe is installed by the forward-only
+ * 20260803190000 migration only after it verifies that
+ * `claim_legacy_enrolments_for_user()` is the exact no-op from 20260727220000.
+ * One 15-minute tick against the old signup claim could stamp
+ * `claimed_by_user_id` permanently. Ordering is a runbook instruction; this is
+ * the executable control.
  *
  * FAILS CLOSED BY CONSTRUCTION: the probe is an RPC that only exists once the
- * migration has run, so "not applied" and "cannot tell" are the same answer —
- * a missing function returns PGRST202, which lands in the same `false` as an
- * outright error. Checked once per invocation, not per row.
+ * hardening migration has run, so "not applied" and "cannot tell" are the same
+ * answer — a missing function returns PGRST202, which lands in the same `false`
+ * as an outright error. Checked once per invocation, not per row.
  */
 async function intakeGateInstalled(admin: AdminClient): Promise<boolean> {
   try {
@@ -484,7 +465,7 @@ async function intakeGateInstalled(admin: AdminClient): Promise<boolean> {
       log("error", "provision_gate_absent", {
         code: (error as { code?: string }).code ?? null,
         message: error.message,
-        note: "the pending_claim migration is not applied, so minting an identity here would let the email-keyed legacy claim run unproven and stamp claimed_by_user_id permanently; provisioning is SKIPPED this tick and applications still insert unlinked",
+        note: "the post-claim intake probe is absent, so the signup-time legacy claim cannot be proven inert; provisioning is SKIPPED this tick and applications still insert unlinked",
       });
       return false;
     }
@@ -518,16 +499,14 @@ interface ProvisionResult {
  * deliberately refuses to own, and does the one write that is left.
  *
  * ── WHAT A MINTED ACCOUNT CARRIES ───────────────────────────────────────────
- * BOTH identifiers, BOTH unconfirmed, plus `INTAKE_APP_METADATA`. Carrying
- * both is the whole point of the phase — "one passwordless `auth.users` row
- * carries both phone and email, so a later OTP on EITHER channel resolves to
- * the same `auth.uid`" — and it is what keeps the applicant away from a signup
- * screen. Minting email-only would dead-end the phone tab: `find_login_identity`
- * would find no row for the number, `verify-msg91-otp` would return
- * `signup_requires_email_and_name`, Login.tsx would say "No account with this
- * number. Sign up first.", and the ensuing signup would mint a SECOND account
- * on `syntheticEmail(phone)` — one human, two identities, and the application
- * stamped on the one they are not signed into.
+ * EMAIL only, unconfirmed, plus `INTAKE_APP_METADATA`. The confirmation mail's
+ * CTA is the immediate entry path. The phone tab deliberately does not resolve
+ * until the applicant proves that number: making unauthenticated form text a
+ * phone-OTP login key is the account-takeover vector described below. The
+ * accepted cost is that using the phone tab too early can reach the legacy
+ * signup prompt and a repeated application under another email can create a
+ * second email-keyed identity; both are recoverable data/support problems, not
+ * irreversible identity theft.
  *
  *  • `email_confirm: false` / `phone_confirm: false` — the
  *    guest-create-order/index.ts:247-255 reasoning. Both values are
@@ -560,10 +539,9 @@ interface ProvisionResult {
  *  • NO `user_metadata.phone`, which is a DIFFERENT field from the above.
  *    `handle_new_user` mirrors `NEW.raw_user_meta_data->>'phone'` (never
  *    `NEW.phone`) into the UNIQUE `public.users.phone`, where an unproven value
- *    both feeds `claim_legacy_enrolments_for_user`'s PHONE-keyed arm and squats
- *    the column against its real owner. The mirror phone is written later, by
- *    `sync_confirmed_phone_to_users` (20260727120000), and only once GoTrue has
- *    recorded a `phone_confirmed_at` — i.e. only with proof.
+ *    squats the column against its real owner. The mirror phone is written
+ *    later, by `sync_confirmed_phone_to_users` (20260727120000), and only once
+ *    GoTrue has recorded a `phone_confirmed_at` — i.e. only with proof.
  *
  * ── INTAKE POLICY ON THE THREE COLLISION REASONS ────────────────────────────
  * All three are handled IDENTICALLY: insert with `user_id` NULL +
@@ -657,7 +635,7 @@ async function provisionApplicant(
         // which is the harmless surface; the magic-link path it would have
         // gated has been in production for months.
         //
-        // The number is not lost. `sync_intake_phone_on_confirm` (part 4a of
+        // The number is not lost. `sync_intake_phone_on_confirm` (part 3a of
         // 20260727120000) promotes it onto `auth.users.phone` the moment a
         // `phone_confirmed_at` lands on THIS row by any route — i.e. once the
         // applicant has actually proven the number. Unproven, it is inert
