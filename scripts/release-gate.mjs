@@ -5,10 +5,11 @@
  * One fail-fast release gate for the integrated cohort release candidate.
  *
  * The default path is entirely local. Set RELEASE_GATE_REMOTE=1 to append the
- * one permitted production operation:
- * `supabase db push --linked --dry-run --include-all`, after verifying that the
- * checkout is linked to the exact production ref. Nothing in this script
- * applies a production migration or deploys anything.
+ * permitted production reads:
+ * `supabase db push --linked --dry-run --include-all` and, after cutover,
+ * `supabase migration list --linked`, after verifying that the checkout is
+ * linked to the exact production ref. Nothing in this script applies a
+ * production migration or deploys anything.
  *
  * Database QA uses a throwaway Supabase workdir and stack. Its empty local
  * database is reset before any repo migration is visible, production-like
@@ -87,8 +88,10 @@ local Supabase stack, delete its local volumes, and use a fresh temporary stack.
 Optional read-only production migration check:
   RELEASE_GATE_REMOTE=1 npm run release:gate
 
-The remote lane requires this checkout to already be linked to ${PROD_REF} and
-runs only \`supabase db push --linked --dry-run --include-all\`.`);
+The remote lane requires this checkout to already be linked to ${PROD_REF}. It
+runs \`supabase db push --linked --dry-run --include-all\`; when that correctly
+returns zero after cutover, it also reads \`supabase migration list --linked\`
+to prove all 24 release versions are already applied.`);
 }
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
@@ -653,6 +656,60 @@ function migrationVersions(output) {
   return versions;
 }
 
+function migrationHistory(output) {
+  const plainOutput = String(output || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+  for (const line of plainOutput.split(/\r?\n/).reverse()) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{") || !trimmed.includes('"migrations"')) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed?.migrations)) return parsed.migrations;
+    } catch {
+      // Keep looking: CLI status lines may contain braces without being JSON.
+    }
+  }
+  throw new GateFailure("linked production migration history did not contain a migrations payload.");
+}
+
+function verifyAppliedProductionMigrations(env, label) {
+  const result = capture(
+    SUPABASE[0],
+    supabaseArgs(["migration", "list", "--linked"]),
+    { env: { ...env, NO_COLOR: "1" } },
+  );
+  if (result.error) {
+    throw new GateFailure(`${label} history check could not start: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const exit = result.signal ? `signal ${result.signal}` : `exit ${result.status ?? "unknown"}`;
+    throw new GateFailure(`${label} history check failed (${exit}); raw CLI output was suppressed.`);
+  }
+
+  const rows = migrationHistory(`${result.stdout || ""}\n${result.stderr || ""}`);
+  const expected = EXPECTED_PRODUCTION_MIGRATIONS;
+  const expectedSet = new Set(expected);
+  const releaseRows = rows.filter((row) => expectedSet.has(String(row?.remote || "")));
+  const applied = releaseRows.map((row) => String(row.remote));
+  const duplicates = applied.filter((version, index) => applied.indexOf(version) !== index);
+  const localMismatches = releaseRows
+    .filter((row) => String(row?.local || "") !== String(row?.remote || ""))
+    .map((row) => `${row?.local || "missing"}->${row?.remote || "missing"}`);
+
+  if (
+    JSON.stringify(applied) !== JSON.stringify(expected) ||
+    duplicates.length > 0 ||
+    localMismatches.length > 0
+  ) {
+    const missing = expected.filter((version) => !applied.includes(version));
+    throw new GateFailure(
+      `${label} returned zero pending migrations but production history did not prove the ordered release plan; missing=[${missing.join(", ")}] duplicates=[${duplicates.join(", ")}] localMismatches=[${localMismatches.join(", ")}].`,
+    );
+  }
+
+  console.log(`Post-cutover production history versions (${applied.length}):`);
+  for (const version of applied) console.log(`  ${version}`);
+}
+
 function productionMigrationDryRun(env) {
   const label = `linked production migration dry-run (${PROD_REF}; read-only)`;
   const start = begin(label);
@@ -675,7 +732,9 @@ function productionMigrationDryRun(env) {
   }
 
   const expected = EXPECTED_PRODUCTION_MIGRATIONS;
-  if (JSON.stringify(versions) !== JSON.stringify(expected)) {
+  if (versions.length === 0) {
+    verifyAppliedProductionMigrations(env, label);
+  } else if (JSON.stringify(versions) !== JSON.stringify(expected)) {
     const missing = expected.filter((version) => !versions.includes(version));
     const extra = versions.filter((version) => !expected.includes(version));
     const duplicates = versions.filter((version, index) => versions.indexOf(version) !== index);
