@@ -377,8 +377,22 @@ ON CONFLICT (template_key) DO UPDATE SET
   updated_at = now();
 
 -- ── Reversal (kept for reference; do not run in the forward migration) ──
--- The copy reverts by re-running 20260730100200_reentry_email_templates.sql,
--- which restates the same six rows with the reply-to-us opt-out.
+-- DO NOT re-run 20260730100200_reentry_email_templates.sql as a rollback. It
+-- replaces all six working one-click links with the old reply-to-us sentence,
+-- while a still-enabled ladder can continue sending those downgraded bodies.
+--
+-- Safe rollback is operational and ordered:
+--   1. unset REMINDER_LADDER_ENABLED and verify a scheduled tick reports OFF;
+--   2. leave these six templates in place (a working opt-out is forward- and
+--      backward-compatible copy, not something the schema rollback must undo);
+--   3. retain email_unsubscribe_tokens while any delivered link may still be
+--      clicked. Its TTL is enforced by the endpoint, and the table is inert
+--      while the ladder is disabled.
+--
+-- The column-drop statements below are therefore forensic reference only. They
+-- are not a safe live rollback plan and must not be run while links exist in
+-- inboxes. A later retention migration may remove the table after the final
+-- issued credential has expired and operations has confirmed the ladder is off.
 --
 -- DROP INDEX IF EXISTS public.email_unsub_tokens_token_hash_key;
 -- ALTER TABLE public.email_unsubscribe_tokens DROP COLUMN IF EXISTS token_hash;

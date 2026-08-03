@@ -44,16 +44,11 @@ export type LadderPool = "fee" | "interview";
  * ELSE. This is the most consequential rule in the file, and it was written the
  * other way once, so the reasoning is recorded rather than assumed.
  *
- * The temptation is obvious. `reconciled_stage` has exactly one writer,
- * `reconcile-funnel-stage`, which authenticates the caller with
- * `userClient.auth.getUser()` and mirrors its reading with
- * `.update(...).eq("user_id", user.id)`. A stage therefore exists ONLY for an
- * applicant who has an account, signed in and opened the app — the complement
- * of the drop-off population this ladder was commissioned for. Deriving the
- * pool from the application's own `status` / `app_fee_paid_at` wherever the
- * reconciler is silent looks like the way to reach everyone else.
+ * The temptation is obvious: derive the pool from the application's own
+ * `status` / `app_fee_paid_at` wherever the reconciler is silent.
  *
- * IT IS NOT, BECAUSE THOSE COLUMNS ARE NEVER WRITTEN FOR THAT POPULATION.
+ * THAT IS NOT EVIDENCE, BECAUSE THOSE COLUMNS ARE NEVER WRITTEN FOR THE
+ * OFF-APP POPULATION.
  * `tally-application-poll` writes `status = 'submitted'` on INSERT and never
  * updates it. A `user_id`-NULL row cannot be touched by the reconciler
  * (`.eq("user_id", …)`), and cannot be touched by `razorpay-webhook` either:
@@ -72,12 +67,12 @@ export type LadderPool = "fee" | "interview";
  * enrolled entirely off-app — the worst output this system has, and one that no
  * cap, silence or ledger can undo after the fact.
  *
- * So the ladder accepts the narrower population, exactly as the brief specifies
- * ("driven off the reconciled stage, never off a local guess"): where the
- * reconciler has never spoken the decision is `unreconciled` and the answer is
- * silence. Permanent silence is the cheaper error. Reaching the rest requires a
- * reconciler that can read an application with no user — a different task, not
- * a guess made here — or TeleCRM, which already owns that outreach (Δ1).
+ * So the ladder remains "driven off the reconciled stage, never off a local
+ * guess": where the reconciler has never spoken the answer is silence. The
+ * follow-up schedule in `20260803173000_reentry_server_reconciliation.sql`
+ * closes the reach gap correctly by invoking `reconcile-funnel-stage` under a
+ * service-only, application-scoped contract for `user_id`-NULL rows. That path
+ * reads the same external authorities; it does not weaken this decision rule.
  */
 
 const MINUTE_MS = 60_000;
@@ -410,7 +405,7 @@ export function reconciledPoolFor(stage: string | null): LadderPool | null {
  *
  * WHY THE FEE LADDER MUST CONSULT IT. Those two writers do NOT touch
  * `reconciled_stage` or `completed_no_fee`, whose only writer is the
- * user-authenticated reconciler. So "stage says completed-no-fee, marker still
+ * reconciler (browser- or server-invoked). So "stage says completed-no-fee, marker still
  * true, and this row was stamped paid ten minutes ago" is a routine, reachable
  * state — pay, close the app, the webhook lands afterwards — and the stage
  * stays stale until the applicant next opens the app. Without this check the
@@ -481,9 +476,9 @@ export function resolvePool(input: LadderInput): PoolResolution {
     // stay empty and `feeAlreadyPaid` is false no matter how long ago they paid.
     //
     // `completed_no_fee` does not save it either: the reconciler is that column's
-    // only writer and it runs when the applicant OPENS THE APP. Open the app once,
-    // get stamped `completed-no-fee`, pay by link, never reopen — and the marker
-    // says "owes ₹400" forever. Before this check the ladder read that stale
+    // only writer, and every external mirror is necessarily a point-in-time read.
+    // Get stamped `completed-no-fee`, pay by link before the next server refresh,
+    // and the marker temporarily still says "owes ₹400". Before this check the ladder read that stale
     // marker and sent all three rungs. Three "Complete the ₹400 step" emails to
     // somebody who paid, unrecallable, which this file itself calls "the worst
     // output this system has".

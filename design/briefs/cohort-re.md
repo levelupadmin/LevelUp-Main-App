@@ -78,3 +78,30 @@ It edits the Home surface, which phase SP already owns (`ApplicantStageCard`, `u
 - Everything behind `VITE_REMINDER_LADDER`, default OFF; flag-off = byte-identical to today.
 - **Nothing was sent to a real person.** Say so explicitly, and say how you know.
 - Do NOT deploy, apply migrations, enable the flag, or merge.
+
+---
+
+## 2026-08-03 review follow-up (B3/B4/B5)
+
+Three post-build findings are now part of the phase contract:
+
+1. **Unsubscribe rollback:** never restore
+   `20260730100200_reentry_email_templates.sql`; that copy removes the working
+   link. Safe rollback disables `REMINDER_LADDER_ENABLED`, retains the linked
+   templates, and retains token rows until delivered credentials have expired.
+2. **Android staged checkout:** the native Continue-on-web handoff preserves
+   `/checkout/:offering?type=<stage>&app=<application>`. Falling back to `/p/:slug`
+   discards the application fee destination and is not an acceptable handoff.
+3. **Server-owned ladder input:** `VITE_FUNNEL_RECON` remains default OFF for the
+   client UI, but it is no longer the only producer of `reconciled_*`. Migration
+   `20260803173000_reentry_server_reconciliation.sql` schedules a bounded,
+   service-only application refresh behind `REENTRY_RECONCILE_ENABLED`. A live
+   ladder must refuse to run unless that server flag is also on. The worker may
+   read TeleCRM/Razorpay and write only the app-owned mirror; it still performs
+   zero writes to Tally, TeleCRM, or Razorpay and never infers missing payment
+   from `status='submitted'`.
+
+The rollout order is fixed: deploy dark, enable the server reconciler and
+observe `reconciled_at`, run a dry preview, then seek Rahul's explicit approval
+before enabling real reminders. This branch does none of those production
+actions.

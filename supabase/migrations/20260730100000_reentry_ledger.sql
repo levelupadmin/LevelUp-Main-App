@@ -15,12 +15,11 @@
 -- the APPLICATION. Same shape, same discipline, correct key.
 --
 -- WHICH ROWS ACTUALLY LAND HERE, STATED PLAINLY SO NOBODY READS MORE INTO AN
--- EMPTY TABLE THAN IT SAYS. Only applications the reconciler has read. The same
--- `user_id` NULL that rules out `cohort_notifications_log` also rules out
--- `reconciled_stage`: its only writer, `reconcile-funnel-stage`, authenticates
--- the caller and mirrors with `.update(...).eq("user_id", user.id)`, so a
--- `user_id`-NULL application can never acquire a stage, and `_shared/ladder.ts`
--- reads the pool off that column and nothing else.
+-- EMPTY TABLE THAN IT SAYS. Only applications the reconciler has read. The
+-- original browser-only writer could not reach `user_id`-NULL rows; follow-up
+-- migration 20260803173000 adds a service-only, application-scoped refresh for
+-- those completed applications. `_shared/ladder.ts` still reads the pool only
+-- from the reconciled mirror and never guesses from local status defaults.
 --
 -- Deriving the pool from the application's own `status` / `app_fee_paid_at`
 -- where the reconciler is silent was tried and REMOVED, because those columns

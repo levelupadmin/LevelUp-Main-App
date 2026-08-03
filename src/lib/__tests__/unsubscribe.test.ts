@@ -796,6 +796,14 @@ describe("the wiring the ladder cannot survive without", () => {
     for (const body of bodies) expect(body).toContain("{{unsubscribe_url}}");
   });
 
+  it("never documents an unsubscribe-free template rollback", () => {
+    const reversal = migration.split("Reversal (kept for reference")[1] ?? "";
+    expect(reversal).toContain("DO NOT re-run 20260730100200_reentry_email_templates.sql");
+    expect(reversal).toContain("unset REMINDER_LADDER_ENABLED");
+    expect(reversal).toContain("leave these six templates in place");
+    expect(reversal).not.toContain("The copy reverts by re-running");
+  });
+
   it("promises only what the mechanism delivers: the reminders, not all email", () => {
     // The copy is the contract. `used_at` on one token row stops this ladder and
     // nothing else, so no body may imply a global opt-out.

@@ -601,10 +601,14 @@ export function deriveStage(
     (tally.available && tally.partial && !tally.completed) || (s === "new" && !essayPresent);
 
   // --- Markers (§7.2) ---
-  // completed-no-fee: essay present anywhere AND no matching captured app fee. An
-  // ambiguous app-fee match (a ₹400 we couldn't attribute) suppresses it — see
-  // `appFeeAmbiguous` — so a possibly-paid caller is never queued for the fee chase.
-  const completedNoFee = essayPresent && !hasAppFee && !appFeeAmbiguous;
+  // completed-no-fee: essay present anywhere AND a REACHABLE money authority
+  // reported no matching captured app fee. Unavailable Razorpay is not evidence
+  // of non-payment; the stage may still describe where the form sits, but the
+  // outreach marker stays false and the ladder fails closed (`marker-disagrees`).
+  // An ambiguous app-fee match (a ₹400 we couldn't attribute) also suppresses it
+  // so a possibly-paid caller is never queued for the fee chase.
+  const completedNoFee =
+    essayPresent && razorpay.available && !hasAppFee && !appFeeAmbiguous;
   // contactable-partial (§7.2): a *phone+email* partial with no completion and no
   // fee — a known lead we can reach on BOTH channels who never finished. Likewise
   // held back by an ambiguous app-fee match (they may already have paid).

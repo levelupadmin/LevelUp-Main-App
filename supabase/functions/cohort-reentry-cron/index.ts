@@ -18,29 +18,22 @@
  * copy availability reach the decision as INPUTS (`suppressedChannels`,
  * `channelTemplates`), not as skips bolted on afterwards.
  *
- * ── WHO THIS CAN ACTUALLY REACH, AND WHO IT DELIBERATELY CANNOT ─────────────
- * ONLY applications the reconciler has read. `reconciled_stage` has exactly one
- * writer in this repo — `reconcile-funnel-stage`, which authenticates the
- * caller and mirrors with `.eq("user_id", user.id)` — so an application
- * inserted by `tally-application-poll` with `user_id` NULL never acquires a
- * stage, and this cron never messages it. That is a real and known limitation:
- * it excludes part of the drop-off population this phase is about.
+ * ── WHO THIS CAN ACTUALLY REACH ─────────────────────────────────────────────
+ * ONLY applications the reconciler has read. That rule stays strict because
+ * deriving non-payment from local `status='submitted'` / NULL timestamps would
+ * dun people who paid off-app. The missing producer is now supplied by
+ * `20260803173000_reentry_server_reconciliation.sql`: a bounded service-only
+ * caller refreshes completed applications, including `user_id`-NULL rows, by
+ * reading TeleCRM and Razorpay and mirroring the result onto the app-owned
+ * `reconciled_*` columns. It never writes an external system.
  *
- * It is still the correct behaviour, and the alternative was tried. Deriving
- * the pool from the application's own `status` / `app_fee_paid_at` where the
- * reconciler is silent reaches those rows by ASSERTING something no column in
- * this database supports: `tally-application-poll` writes `status='submitted'`
- * on insert and never updates it, and neither the reconciler nor
- * `razorpay-webhook` (which keys on a `payment_orders` row only a signed-in
- * user can create) can touch a `user_id`-NULL row. Their `status` is
- * permanently 'submitted' and their `app_fee_paid_at` permanently NULL whether
- * they ignored us or paid, interviewed and enrolled off-app — and off-app is
- * the norm, which is why the reconciler matches raw Razorpay captures and
- * TeleCRM statuses instead of reading `payment_orders`. Silence for those rows
- * is a smaller error than mailing "complete your ₹400" to someone who is
- * already enrolled. The reasoning is recorded in full above `POOL_STAGE` in
- * `_shared/ladder.ts`; the `unreconciled` skip counter below is how a run that
- * reaches nobody says so out loud instead of looking healthy.
+ * The server refresh has its own exact-string switch,
+ * `REENTRY_RECONCILE_ENABLED`. A live ladder refuses to run unless both that
+ * switch and `REMINDER_LADDER_ENABLED` are true, so the default-off browser
+ * `VITE_FUNNEL_RECON` flag can no longer leave a nominally-enabled ladder with
+ * a structurally empty population. Rows still fail closed as `unreconciled` or
+ * `fee-evidence-stale` when the worker has not produced sufficiently fresh
+ * evidence; local defaults never become proof that payment is missing.
  *
  * ── THE SWITCH IS SERVER-SIDE, AND IT IS NOT THE VITE FLAG ──────────────────
  * `VITE_REMINDER_LADDER` (registered in `src/lib/flags.ts`, default OFF) gates
@@ -270,6 +263,14 @@ const POLL_AUTH_TOKEN = Deno.env.get("POLL_AUTH_TOKEN") ?? "";
  * how a stray environment value turns into outbound mail.
  */
 const LADDER_ENABLED = Deno.env.get("REMINDER_LADDER_ENABLED") === "true";
+
+/**
+ * The ladder's candidate mirror must have a server-side producer. The browser
+ * flag defaults off and cannot populate anonymous applications, so a live run
+ * refuses to send unless the scheduled reconciler has also been intentionally
+ * enabled. This couples the two rollout actions fail-closed.
+ */
+const REENTRY_RECONCILE_ENABLED = Deno.env.get("REENTRY_RECONCILE_ENABLED") === "true";
 
 /**
  * How old a fee-pool reading may be and still be allowed to dun somebody, in
@@ -1427,6 +1428,19 @@ Deno.serve(async (req) => {
   if (!LADDER_ENABLED && !requestedDryRun) {
     log("info", "ladder_disabled", { reason: "REMINDER_LADDER_ENABLED not 'true'" });
     return jsonRes({ ok: true, enabled: false, skipped: "REMINDER_LADDER_ENABLED not set" });
+  }
+
+  // A live ladder with no server-side reconciler has a structurally empty (or
+  // permanently stale) candidate pool. Refuse that rollout combination rather
+  // than reporting a healthy zero-send cron while `VITE_FUNNEL_RECON` stays off.
+  if (LADDER_ENABLED && !requestedDryRun && !REENTRY_RECONCILE_ENABLED) {
+    log("error", "reconciler_disabled", {
+      reason: "REENTRY_RECONCILE_ENABLED not 'true'",
+    });
+    return jsonRes(
+      { error: "server-side funnel reconciliation is not enabled; refusing to run ladder" },
+      503,
+    );
   }
 
   // An explicit dry run IS allowed through the disabled switch, because a
