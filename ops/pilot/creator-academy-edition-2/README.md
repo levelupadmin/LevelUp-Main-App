@@ -47,9 +47,19 @@ and rollback stay isolated.
 
 5. Add only verified real meeting/recording URLs through the admin surface.
    The seed intentionally stores no fake Zoom URL.
-6. Activate/publicize the offering in a separate observable transaction only
-   after the member smoke test is green. Offering activation is deliberately
-   outside this seed and therefore has an independent rollback.
+6. Activate/publicize the offering only after the member smoke test is green.
+   `activate.sql` is a separate, observable transaction that requires the
+   offering to be exactly draft/private and the deterministic room seed to be
+   present:
+
+   ```sh
+   psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+     -f ops/pilot/creator-academy-edition-2/activate.sql
+   ```
+
+   The result reports only the offering ID, slug, visibility state, and the
+   independent `identity_spine_enabled` state. The script never changes that
+   identity-spine switch.
 
 ## Idempotency check
 
@@ -58,9 +68,24 @@ must not create a second enrolment, room member, notification, week, session,
 announcement, resource, or post. A natural-key collision owned by another row
 aborts the entire transaction.
 
-## Rollback
+## Visibility rollback
 
-Run `rollback.sql` only when withdrawing this pilot:
+To remove the pilot from the public storefront while preserving all seeded
+room data, run `deactivate.sql` while the offering is exactly active/public:
+
+```sh
+psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+  -f ops/pilot/creator-academy-edition-2/deactivate.sql
+```
+
+This returns the offering to draft/private and deliberately leaves
+`identity_spine_enabled` unchanged. Re-running either visibility script after
+it has succeeded is rejected because its expected pre-state no longer holds.
+
+## Full pilot rollback
+
+When withdrawing seeded pilot data, first run `deactivate.sql` if the offering
+is active/public. Confirm its draft/private result, then run `rollback.sql`:
 
 ```sh
 psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
@@ -72,7 +97,9 @@ or repurposed (including adding a meeting or recording URL), or after the
 batch/course gains any non-seed member, session, assignment, attendance mark,
 reply, demo entry, recording progress, resource, post, announcement, course
 content, review, or other dependent row. It deletes only the deterministic pilot
-data and preserves the offering plus both existing identities.
+data and preserves the now-draft/private offering plus both existing
+identities. If the offering was already draft/private, do not run
+`deactivate.sql` again; proceed directly to `rollback.sql`.
 
 ## Seeded schedule
 
