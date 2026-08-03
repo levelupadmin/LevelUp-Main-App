@@ -74,11 +74,16 @@ export const SurfaceCard = forwardRef<HTMLElement, SurfaceCardProps>(
     ref,
   ) {
     const interactive = variant === "interactive";
+    const routed = "to" in rest && Boolean(rest.to);
     // The spring path (MotionCard) replaces the old .card-hover/.press-scale
     // behaviour for interactive cards; keep .focus-ring + cursor for affordance.
     const classes = cn(
       baseClasses(variant),
       interactive && "focus-ring cursor-pointer",
+      // A routed surface needs a real box. Keep this before className so a
+      // caller can deliberately choose another block-level display such as
+      // flex or grid without tailwind-merge replacing it with `block`.
+      routed && "block w-full min-w-0",
       flush && "rounded-none",
       paddingClass[padding],
       className,

@@ -29,10 +29,14 @@ const {
   isRoomAccessDenied,
   resolveRoomOffering,
   resolveRoomSlug,
+  roomWeekBatchesKey,
+  roomWeeksKey,
   useCohortRoom,
   useMyCohortRooms,
   useRoomFeed,
   useRoomResources,
+  useRoomWeekBatches,
+  useRoomWeeks,
   useRoomView,
 } = await import("@/hooks/useCohortRooms");
 
@@ -315,6 +319,110 @@ describe("feed and resource envelopes", () => {
     const second = renderHook(() => useRoomResources(OFFERING, { batchId: "b-1" }), { wrapper });
     await waitFor(() => expect(second.result.current.isError).toBe(true));
     expect(second.result.current.denied).toBe(true);
+  });
+});
+
+describe("useRoomWeeks", () => {
+  const week = {
+    cohort_batch_id: "b-1",
+    batch_label: "Batch A1",
+    week_id: "week-1",
+    week_number: 1,
+    theme: "Find the signal",
+    description: null,
+    starts_on: "2026-08-03",
+    ends_on: "2026-08-09",
+    assignment_prompt: "Publish one useful idea.",
+    assignment_due_at: null,
+    feedback_session_at: null,
+    week_status: "active",
+    live_session_id: null,
+    live_session_title: null,
+    live_session_at: null,
+    live_session_zoom_link: null,
+    submission_id: null,
+    submission_status: null,
+    submission_rating: null,
+    submission_feedback: null,
+    submission_submitted_at: null,
+    attended: false,
+    attendance_marked: false,
+  };
+
+  it("reads the server-authorized room batch without a client-supplied user id", async () => {
+    rpc.mockResolvedValue({ data: [week], error: null });
+    const { result } = renderHook(
+      () => useRoomWeeks(OFFERING, { batchId: "b-1" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0]).toMatchObject({
+      cohort_batch_id: "b-1",
+      week_id: "week-1",
+      week_status: "active",
+    });
+    expect(rpc).toHaveBeenCalledWith("get_room_weeks", {
+      p_offering: OFFERING,
+      p_batch: "b-1",
+    });
+    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty("p_user_id");
+  });
+
+  it("keeps batch and user identity in the cache key", () => {
+    expect(roomWeeksKey(OFFERING, "b-1", "user-1")).not.toEqual(
+      roomWeeksKey(OFFERING, "b-2", "user-1"),
+    );
+    expect(roomWeeksKey(OFFERING, "b-1", "user-1")).not.toEqual(
+      roomWeeksKey(OFFERING, "b-1", "user-2"),
+    );
+  });
+
+  it("distinguishes a room denial from a legitimate empty schedule", async () => {
+    rpc.mockResolvedValueOnce({ data: [], error: null });
+    const empty = renderHook(
+      () => useRoomWeeks(OFFERING, { batchId: "b-1" }),
+      { wrapper },
+    );
+    await waitFor(() => expect(empty.result.current.isSuccess).toBe(true));
+    expect(empty.result.current.data).toEqual([]);
+    expect(empty.result.current.denied).toBe(false);
+    empty.unmount();
+
+    rpc.mockResolvedValue({ data: null, error: denial() });
+    const refused = renderHook(
+      () => useRoomWeeks(OFFERING, { batchId: "b-1" }),
+      { wrapper },
+    );
+    await waitFor(() => expect(refused.result.current.isError).toBe(true));
+    expect(refused.result.current.denied).toBe(true);
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("useRoomWeekBatches", () => {
+  it("reads only the server-authorized metadata choices", async () => {
+    rpc.mockResolvedValue({
+      data: [
+        { batch_id: "b-1", batch_label: "Batch A1" },
+        { batch_id: "b-2", batch_label: "Batch A2" },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => useRoomWeekBatches(OFFERING), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([
+      { batch_id: "b-1", batch_label: "Batch A1" },
+      { batch_id: "b-2", batch_label: "Batch A2" },
+    ]);
+    expect(rpc).toHaveBeenCalledWith("get_room_week_batches", { p_offering: OFFERING });
+  });
+
+  it("keeps caller identity in the batch-choice cache key", () => {
+    expect(roomWeekBatchesKey(OFFERING, "user-1")).not.toEqual(
+      roomWeekBatchesKey(OFFERING, "user-2"),
+    );
   });
 });
 

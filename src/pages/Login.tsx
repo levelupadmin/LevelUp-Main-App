@@ -1,7 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  supabase,
+  supabasePublishableKey,
+  supabaseUrl,
+} from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,7 +86,7 @@ type Step = "phone" | "otp" | "email_input" | "email_sent";
 const EMAIL_ONLY_AUTH = false;
 
 const VERIFY_MSG91_OTP_URL =
-  "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
+  `${supabaseUrl}/functions/v1/verify-msg91-otp`;
 
 // STEAL-8 (P4-T9): the bounded window the OTP success choreography plays before
 // the client route paints lives in the shared motion token `otpSuccess.windowMs`
@@ -297,7 +301,7 @@ const Login = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          apikey: supabasePublishableKey,
         },
         body: JSON.stringify(
           isReviewLogin ? { phone, reviewCode: otp } : { phone, accessToken: token }

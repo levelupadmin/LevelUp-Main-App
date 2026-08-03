@@ -34,7 +34,7 @@ const RoomDemoDay = () => {
   if (!moduleOn) {
     return (
       <p className="body-muted py-10 text-center text-sm">
-        This cohort doesn&apos;t use Demo Day. <Link to="." className="text-room-accent">Back to the room</Link>
+        This cohort doesn&apos;t use Demo Day. <Link to=".." className="text-room-accent">Back to the room</Link>
       </p>
     );
   }

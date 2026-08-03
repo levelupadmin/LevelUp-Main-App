@@ -3,7 +3,8 @@
  *
  * Every room surface in R1–R4 reads through this module. Nothing else in the
  * client may call `supabase.rpc("get_my_cohort_rooms" | "get_cohort_room" |
- * "get_room_roster" | "get_room_announcements")` directly: the four RPCs each
+ * "get_room_roster" | "get_room_announcements" | "get_room_weeks")` directly:
+ * the room RPCs each
  * assert access FIRST and RAISE `42501` for a caller who does not hold it, so
  * "denied" and "empty" are genuinely different answers, and five hand-rolled
  * call sites would end up with five different opinions about which is which.
@@ -409,7 +410,7 @@ export interface RoomOfferingMeta {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Weeks — `get_cohort_progress`, the ONLY source of week metadata
+ * Weeks — `get_room_weeks`, the room-authorized source of week metadata
  * ──────────────────────────────────────────────────────────────────────────── */
 
 /** `cohort_weeks.status` — the CHECK constraint, verbatim. */
@@ -429,7 +430,7 @@ export function asRoomWeekStatus(value: unknown): RoomWeekStatus {
 }
 
 /**
- * One row of `get_cohort_progress(p_user_id, p_offering_id)` — the week
+ * One row of `get_room_weeks(p_offering, p_batch)` — the week
  * metadata (theme, assignment, `feedback_session_at`, status) and the caller's
  * own submission and attendance for it.
  *
@@ -474,6 +475,12 @@ export interface RoomWeekRow {
   submission_submitted_at: string | null;
   attended: boolean;
   attendance_marked: boolean;
+}
+
+/** One server-authorized choice returned by `get_room_week_batches`. */
+export interface RoomWeekBatch {
+  batch_id: string;
+  batch_label: string;
 }
 
 /** True when the envelope is a lobby (`pre_member`) one. */
@@ -540,8 +547,30 @@ export const roomResourcesKey = (
  */
 export const roomWeeksKey = (
   offeringId: string | null | undefined,
+  batchId: string | null | undefined,
   userId: string | null | undefined,
-) => [COHORT_ROOMS_QUERY_ROOT, "weeks", offeringId ?? "none", userId ?? "anon"] as const;
+) => [
+  COHORT_ROOMS_QUERY_ROOT,
+  "weeks",
+  offeringId ?? "none",
+  batchId ?? "auto-batch",
+  userId ?? "anon",
+] as const;
+
+/**
+ * Batch labels are caller-scoped too: an offering-wide staff member sees all
+ * offering batches, while a member sees only their own. Keep user identity in
+ * this cache key for the same account-switch reason as the week rows.
+ */
+export const roomWeekBatchesKey = (
+  offeringId: string | null | undefined,
+  userId: string | null | undefined,
+) => [
+  COHORT_ROOMS_QUERY_ROOT,
+  "week-batches",
+  offeringId ?? "none",
+  userId ?? "anon",
+] as const;
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Coercion — untrusted jsonb in, render-safe values out
@@ -817,13 +846,16 @@ async function fetchRoomOfferingMeta(offeringId: string): Promise<RoomOfferingMe
   };
 }
 
-async function fetchRoomWeeks(userId: string, offeringId: string): Promise<RoomWeekRow[]> {
-  const { data, error } = await supabase.rpc("get_cohort_progress", {
-    p_user_id: userId,
-    p_offering_id: offeringId,
+async function fetchRoomWeeks(
+  offeringId: string,
+  batchId: string | null,
+): Promise<RoomWeekRow[]> {
+  const { data, error } = await supabase.rpc("get_room_weeks", {
+    p_offering: offeringId,
+    p_batch: batchId ?? undefined,
   });
-  // Same posture as the room RPCs: throw the PostgrestError itself. This one
-  // raises 42501 too — it asserts own-user-or-admin (rpcs.sql:1075-1078).
+  // Throw the PostgrestError itself so the room RPC's 42501 remains distinct
+  // from a legitimate authored-empty batch.
   if (error) throw error;
 
   return (data ?? []).map((row) => ({
@@ -851,6 +883,18 @@ async function fetchRoomWeeks(userId: string, offeringId: string): Promise<RoomW
     attended: asBool(row.attended),
     attendance_marked: asBool(row.attendance_marked),
   }));
+}
+
+async function fetchRoomWeekBatches(offeringId: string): Promise<RoomWeekBatch[]> {
+  const { data, error } = await supabase.rpc("get_room_week_batches", {
+    p_offering: offeringId,
+  });
+  if (error) throw error;
+
+  return (data ?? []).map((row) => ({
+    batch_id: asString(row.batch_id) ?? "",
+    batch_label: asString(row.batch_label) ?? "Cohort",
+  })).filter((batch) => batch.batch_id);
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -1381,8 +1425,8 @@ export function useRoomOfferingMeta(
  * The room's weeks: theme, assignment, `feedback_session_at`, week status, and
  * the caller's own submission and attendance per week.
  *
- * THIS IS THE ONLY WEEK READ IN THE CLIENT. `get_cohort_progress` is the only
- * place week metadata exists — the room envelope carries none of it — and the
+ * THIS IS THE ONLY ROOM WEEK READ IN THE CLIENT. `get_room_weeks` is the room-
+ * authorized source — the envelope carries no week metadata — and the
  * weeks module (R2-T1) and the assignment module (R2-T4) both need it, so it is
  * ONE hook on ONE key rather than two call sites that would fetch the same rows
  * twice and disagree about the answer the second time a submission lands.
@@ -1395,13 +1439,35 @@ export function useRoomOfferingMeta(
  */
 export function useRoomWeeks(
   offeringId: string | null | undefined,
-  options?: { enabled?: boolean },
+  options?: { batchId?: string | null; enabled?: boolean },
 ): RoomQueryResult<RoomWeekRow[]> {
+  const { user } = useAuth();
+  const batchId = options?.batchId ?? null;
+  return withDenied(
+    useQuery({
+      queryKey: roomWeeksKey(offeringId, batchId, user?.id),
+      queryFn: () => fetchRoomWeeks(offeringId as string, batchId),
+      enabled: !!offeringId && !!user?.id && options?.enabled !== false,
+      staleTime: ENVELOPE_STALE_MS,
+      retry: retryUnlessDenied,
+    }),
+  );
+}
+
+/**
+ * The choices an offering-wide Weeks reader may narrow to. This companion RPC
+ * returns identifiers and labels only; the curriculum RPC remains fail-closed
+ * until the client supplies one explicit authorized batch.
+ */
+export function useRoomWeekBatches(
+  offeringId: string | null | undefined,
+  options?: { enabled?: boolean },
+): RoomQueryResult<RoomWeekBatch[]> {
   const { user } = useAuth();
   return withDenied(
     useQuery({
-      queryKey: roomWeeksKey(offeringId, user?.id),
-      queryFn: () => fetchRoomWeeks(user!.id, offeringId as string),
+      queryKey: roomWeekBatchesKey(offeringId, user?.id),
+      queryFn: () => fetchRoomWeekBatches(offeringId as string),
       enabled: !!offeringId && !!user?.id && options?.enabled !== false,
       staleTime: ENVELOPE_STALE_MS,
       retry: retryUnlessDenied,

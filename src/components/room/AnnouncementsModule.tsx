@@ -200,6 +200,7 @@ const NoticeControls = ({
             type="button"
             size="sm"
             variant="destructive"
+            className="min-h-11"
             disabled={disabled}
             onClick={() => {
               setConfirming(false);
@@ -212,6 +213,7 @@ const NoticeControls = ({
             type="button"
             size="sm"
             variant="ghost"
+            className="min-h-11"
             onClick={() => setConfirming(false)}
           >
             Keep it
@@ -227,6 +229,7 @@ const NoticeControls = ({
         type="button"
         size="sm"
         variant="ghost"
+        className="min-h-11"
         disabled={disabled}
         aria-label={`${notice.is_pinned ? "Unpin" : "Pin"} ${label}`}
         onClick={() => onPin(!notice.is_pinned)}
@@ -242,6 +245,7 @@ const NoticeControls = ({
         type="button"
         size="sm"
         variant="ghost"
+        className="min-h-11"
         disabled={disabled}
         aria-label={`Retract ${label}`}
         onClick={() => setConfirming(true)}
@@ -354,7 +358,7 @@ const Composer = ({
       <Button
         type="button"
         variant="outline"
-        className="w-full justify-start"
+        className="min-h-11 w-full justify-start"
         onClick={() => setOpen(true)}
       >
         <Megaphone size={14} strokeWidth={1.5} className="mr-2" aria-hidden />
@@ -417,10 +421,10 @@ const Composer = ({
       )}
 
       <div className="flex items-center gap-2">
-        <Button type="submit" disabled={!body.trim() || post.isPending}>
+        <Button type="submit" className="min-h-11" disabled={!body.trim() || post.isPending}>
           {post.isPending ? "Posting..." : "Post"}
         </Button>
-        <Button type="button" variant="ghost" onClick={reset} disabled={post.isPending}>
+        <Button type="button" variant="ghost" className="min-h-11" onClick={reset} disabled={post.isPending}>
           Cancel
         </Button>
       </div>
@@ -537,7 +541,7 @@ const AnnouncementsModule = () => {
           <button
             type="button"
             onClick={() => void query.refetch()}
-            className="text-room-accent underline-offset-4 hover:underline"
+            className="focus-ring inline-flex min-h-11 items-center text-room-accent underline-offset-4 hover:underline"
           >
             Try again
           </button>

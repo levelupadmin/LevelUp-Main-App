@@ -1,6 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  supabase,
+  supabasePublishableKey,
+  supabaseUrl,
+} from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,7 +35,7 @@ import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 const EMAIL_ONLY_AUTH = false;
 
 const VERIFY_MSG91_OTP_URL =
-  "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
+  `${supabaseUrl}/functions/v1/verify-msg91-otp`;
 
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
 
@@ -173,7 +177,7 @@ const Signup = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          apikey: supabasePublishableKey,
         },
         body: JSON.stringify({
           phone,

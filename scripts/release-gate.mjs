@@ -6,10 +6,11 @@
  *
  * The default path is entirely local. Set RELEASE_GATE_REMOTE=1 to append the
  * permitted production reads:
- * `supabase db push --linked --dry-run --include-all` and, after cutover,
+ * `supabase db push --linked --dry-run --include-all` plus
  * `supabase migration list --linked`, after verifying that the checkout is
- * linked to the exact production ref. Nothing in this script applies a
- * production migration or deploys anything.
+ * linked to the exact production ref. Together they must form one exact plan:
+ * an already-applied prefix followed by the dry-run's pending suffix. Nothing
+ * in this script applies a production migration or deploys anything.
  *
  * Database QA uses a throwaway Supabase workdir and stack. Its empty local
  * database is reset before any repo migration is visible, production-like
@@ -38,6 +39,9 @@ import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+
+import { selectIdentityMarker } from "./release-gate-identity.mjs";
+import { validateProductionMigrationPlan } from "./release-gate-migrations.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DISPOSABLE_PREFIX = join(tmpdir(), "levelup-release-gate-");
@@ -68,6 +72,8 @@ const EXPECTED_PRODUCTION_MIGRATIONS = [
   "20260803190000",
   "20260803200000",
   "20260803201000",
+  "20260803210000",
+  "20260803220000",
 ];
 const SUPABASE = ["npx", ["-y", "supabase@latest"]];
 const REMOTE = process.env.RELEASE_GATE_REMOTE || "0";
@@ -89,9 +95,10 @@ Optional read-only production migration check:
   RELEASE_GATE_REMOTE=1 npm run release:gate
 
 The remote lane requires this checkout to already be linked to ${PROD_REF}. It
-runs \`supabase db push --linked --dry-run --include-all\`; when that correctly
-returns zero after cutover, it also reads \`supabase migration list --linked\`
-to prove all 24 release versions are already applied.`);
+runs \`supabase db push --linked --dry-run --include-all\` and reads
+\`supabase migration list --linked\`. Applied versions must be an ordered prefix
+of the ${EXPECTED_PRODUCTION_MIGRATIONS.length}-version release plan, and the dry-run must be exactly its
+remaining suffix (including the empty suffix after cutover).`);
 }
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
@@ -610,28 +617,49 @@ function verifyProductionLink() {
 }
 
 function identityStaticBase() {
-  const history = capture("git", ["log", "--first-parent", "--format=%H%x09%s", "HEAD"]);
-  if (history.error) {
-    throw new GateFailure(`identity marker lookup could not start: ${history.error.message}`);
-  }
-  if (history.status !== 0) {
-    throw new GateFailure("identity marker lookup failed.");
-  }
-
-  let markerCommit = "";
-  for (const line of history.stdout.split(/\r?\n/)) {
-    const tab = line.indexOf("\t");
-    if (tab === -1) continue;
-    if (line.slice(tab + 1) === IDENTITY_MARKER_SUBJECT) {
-      markerCommit = line.slice(0, tab);
-      break;
-    }
-  }
-  if (!markerCommit) {
+  const firstParentHistory = capture("git", [
+    "log",
+    "--first-parent",
+    "--format=%H%x09%s",
+    "HEAD",
+  ]);
+  if (firstParentHistory.error) {
     throw new GateFailure(
-      `first-parent history does not contain the identity release marker ${JSON.stringify(IDENTITY_MARKER_SUBJECT)}.`,
+      `identity first-parent marker lookup could not start: ${firstParentHistory.error.message}`,
     );
   }
+  if (firstParentHistory.status !== 0) {
+    throw new GateFailure("identity first-parent marker lookup failed.");
+  }
+
+  const ancestryHistory = capture("git", ["log", "--format=%H%x09%s", "HEAD"]);
+  if (ancestryHistory.error) {
+    throw new GateFailure(
+      `identity ancestry marker lookup could not start: ${ancestryHistory.error.message}`,
+    );
+  }
+  if (ancestryHistory.status !== 0) {
+    throw new GateFailure("identity ancestry marker lookup failed.");
+  }
+
+  let marker;
+  try {
+    marker = selectIdentityMarker({
+      firstParentHistory: firstParentHistory.stdout,
+      ancestryHistory: ancestryHistory.stdout,
+      subject: IDENTITY_MARKER_SUBJECT,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new GateFailure(`identity release marker lookup failed: ${detail}`);
+  }
+
+  const markerCommit = marker.commit;
+  console.log(
+    marker.source === "first-parent"
+      ? `Identity release marker resolved on first-parent history at ${markerCommit.slice(0, 12)}.`
+      : `Identity release marker is not on first-parent history; using the unique exact-subject HEAD ancestor ${markerCommit.slice(0, 12)}.`,
+  );
 
   const parent = capture("git", [
     "rev-parse",
@@ -671,7 +699,7 @@ function migrationHistory(output) {
   throw new GateFailure("linked production migration history did not contain a migrations payload.");
 }
 
-function verifyAppliedProductionMigrations(env, label) {
+function productionMigrationHistory(env, label) {
   const result = capture(
     SUPABASE[0],
     supabaseArgs(["migration", "list", "--linked"]),
@@ -685,29 +713,7 @@ function verifyAppliedProductionMigrations(env, label) {
     throw new GateFailure(`${label} history check failed (${exit}); raw CLI output was suppressed.`);
   }
 
-  const rows = migrationHistory(`${result.stdout || ""}\n${result.stderr || ""}`);
-  const expected = EXPECTED_PRODUCTION_MIGRATIONS;
-  const expectedSet = new Set(expected);
-  const releaseRows = rows.filter((row) => expectedSet.has(String(row?.remote || "")));
-  const applied = releaseRows.map((row) => String(row.remote));
-  const duplicates = applied.filter((version, index) => applied.indexOf(version) !== index);
-  const localMismatches = releaseRows
-    .filter((row) => String(row?.local || "") !== String(row?.remote || ""))
-    .map((row) => `${row?.local || "missing"}->${row?.remote || "missing"}`);
-
-  if (
-    JSON.stringify(applied) !== JSON.stringify(expected) ||
-    duplicates.length > 0 ||
-    localMismatches.length > 0
-  ) {
-    const missing = expected.filter((version) => !applied.includes(version));
-    throw new GateFailure(
-      `${label} returned zero pending migrations but production history did not prove the ordered release plan; missing=[${missing.join(", ")}] duplicates=[${duplicates.join(", ")}] localMismatches=[${localMismatches.join(", ")}].`,
-    );
-  }
-
-  console.log(`Post-cutover production history versions (${applied.length}):`);
-  for (const version of applied) console.log(`  ${version}`);
+  return migrationHistory(`${result.stdout || ""}\n${result.stderr || ""}`);
 }
 
 function productionMigrationDryRun(env) {
@@ -731,17 +737,25 @@ function productionMigrationDryRun(env) {
     throw new GateFailure(`${label} failed (${exit}); raw CLI output was suppressed.`);
   }
 
-  const expected = EXPECTED_PRODUCTION_MIGRATIONS;
-  if (versions.length === 0) {
-    verifyAppliedProductionMigrations(env, label);
-  } else if (JSON.stringify(versions) !== JSON.stringify(expected)) {
-    const missing = expected.filter((version) => !versions.includes(version));
-    const extra = versions.filter((version) => !expected.includes(version));
-    const duplicates = versions.filter((version, index) => versions.indexOf(version) !== index);
+  const historyRows = productionMigrationHistory(env, label);
+  let plan;
+  try {
+    plan = validateProductionMigrationPlan({
+      expectedVersions: EXPECTED_PRODUCTION_MIGRATIONS,
+      historyRows,
+      pendingVersions: versions,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
     throw new GateFailure(
-      `${label} did not match the ordered 24-version release plan; missing=[${missing.join(", ")}] extra=[${extra.join(", ")}] duplicates=[${duplicates.join(", ")}].`,
+      `${label} did not match the ordered ${EXPECTED_PRODUCTION_MIGRATIONS.length}-version release plan: ${detail}`,
     );
   }
+
+  console.log(`Applied production release prefix (${plan.appliedVersions.length}):`);
+  for (const version of plan.appliedVersions) console.log(`  ${version}`);
+  console.log(`Pending production release suffix (${plan.pendingVersions.length}):`);
+  for (const version of plan.pendingVersions) console.log(`  ${version}`);
 
   complete(label, start);
 }
@@ -753,7 +767,28 @@ try {
   run("committed release whitespace check", "git", ["diff", "--check", "origin/main...HEAD"]);
   run("git unstaged whitespace check", "git", ["diff", "--check"]);
   run("git staged whitespace check", "git", ["diff", "--cached", "--check"]);
-  run("targeted release-script lint", "npx", ["eslint", "scripts/release-gate.mjs"]);
+  run("release migration-plan contract", "node", [
+    "--test",
+    "scripts/release-gate-migrations.test.mjs",
+  ]);
+  run("release identity-marker contract", "node", [
+    "--test",
+    "scripts/release-gate-identity.test.mjs",
+  ]);
+  run("client build-environment contract", "node", [
+    "--test",
+    "scripts/validate-client-build-env.test.mjs",
+  ]);
+  run("targeted release-script lint", "npx", [
+    "eslint",
+    "scripts/release-gate.mjs",
+    "scripts/release-gate-migrations.mjs",
+    "scripts/release-gate-migrations.test.mjs",
+    "scripts/release-gate-identity.mjs",
+    "scripts/release-gate-identity.test.mjs",
+    "scripts/validate-client-build-env.mjs",
+    "scripts/validate-client-build-env.test.mjs",
+  ]);
   run("Vitest suite", "npm", ["test"]);
   run("application TypeScript check", "npx", [
     "tsc",

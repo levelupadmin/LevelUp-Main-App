@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { BookOpen, CalendarClock, Film, Users } from "lucide-react";
 import { moduleEnabled, roomModuleEnabled, sessionTimeState, type RoomModuleKey } from "@/lib/room";
 import { SkeletonLine, SurfaceCard } from "@/components/patterns";
@@ -10,6 +10,7 @@ import {
   useRoomOutlet,
   useRoomResources,
   useRoomSeenWatermark,
+  useRoomWeekBatches,
   useRoomWeeks,
   type RoomSession,
 } from "@/hooks/useCohortRooms";
@@ -106,6 +107,7 @@ const IST_DATE = new Intl.DateTimeFormat("en-IN", {
 const RoomHome = () => {
   const { room, envelope, refetch } = useRoomOutlet();
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   // `cohort_start_date` / `whatsapp_group_link` live on `offerings`, not in the
   // room envelope. Same query key as the shell's, so this is a cache hit.
   const meta = useRoomOfferingMeta(room.offering_id);
@@ -139,16 +141,52 @@ const RoomHome = () => {
   // render. `RoomShell` mounts the clock this reads, so one interval serves the
   // whole room.
   const isAlumni = room.phase === "alumni";
+  const isParticipant = room.role === "member" || room.role === "alumni";
   const wantsHero = !isLobby && !isAlumni && canSee("weeks");
-  const weeksQuery = useRoomWeeks(room.offering_id, { enabled: wantsHero });
+  const needsBatchCatalog = envelope.batch_id === null;
+  const batchesQuery = useRoomWeekBatches(room.offering_id, {
+    enabled: wantsHero && needsBatchCatalog,
+  });
+  const weekBatches = useMemo(
+    () => envelope.batch_id
+      ? [{ batch_id: envelope.batch_id, batch_label: room.batch_name ?? "Your cohort" }]
+      : (batchesQuery.data ?? []),
+    [batchesQuery.data, envelope.batch_id, room.batch_name],
+  );
+  const requestedBatchId = searchParams.get("batch");
+  // A wide caller gets a hero only when the choice is unambiguous: an explicit
+  // valid query parameter or the catalog's single batch. With several choices
+  // and no selection, Home invites them into Weeks instead of silently picking
+  // a cohort and presenting its assignments as though it were "the" room.
+  const heroBatch = envelope.batch_id
+    ? weekBatches[0] ?? null
+    : weekBatches.find((batch) => batch.batch_id === requestedBatchId)
+      ?? (weekBatches.length === 1 ? weekBatches[0] : null)
+      ?? null;
+  const weeksQuery = useRoomWeeks(room.offering_id, {
+    batchId: heroBatch?.batch_id ?? null,
+    enabled: wantsHero && !!heroBatch,
+  });
   const nowMs = useRoomClock();
 
   const weeks = useMemo(() => weeksQuery.data ?? [], [weeksQuery.data]);
   const heroWeek = useMemo(() => (wantsHero ? defaultWeek(weeks) : null), [wantsHero, weeks]);
+  const heroWeekIds = useMemo(() => new Set(weeks.map((week) => week.week_id)), [weeks]);
   const heroSessions = useMemo(
-    () => (heroWeek ? sessionsForWeek(heroWeek, groupSessionsByWeek(envelope.sessions)) : []),
-    [heroWeek, envelope.sessions],
+    () => heroWeek
+      ? sessionsForWeek(
+          heroWeek,
+          groupSessionsByWeek(envelope.sessions.filter(
+            (candidate) => !!candidate.week_id && heroWeekIds.has(candidate.week_id),
+          )),
+        )
+      : [],
+    [heroWeek, envelope.sessions, heroWeekIds],
   );
+  const heroBatchQuery = weekBatches.length > 1 && heroBatch
+    ? `?batch=${encodeURIComponent(heroBatch.batch_id)}`
+    : "";
+  const heroTotalWeeks = needsBatchCatalog ? weeks.length : room.total_weeks;
 
   const session = nextSession(envelope.sessions, nowMs);
 
@@ -206,7 +244,10 @@ const RoomHome = () => {
         `/weeks/:n` — making home stricter than the weeks tab about the same week
         would be a bug, not a gate.
       */}
-      {wantsHero && weeksQuery.isPending ? (
+      {wantsHero && (
+        (needsBatchCatalog && batchesQuery.isPending)
+        || (!!heroBatch && weeksQuery.isPending)
+      ) ? (
         <div
           className="space-y-3 rounded-xl border border-border bg-surface p-5"
           role="status"
@@ -223,11 +264,12 @@ const RoomHome = () => {
             week={heroWeek}
             sessions={heroSessions}
             userId={user?.id ?? null}
-            batchId={envelope.batch_id}
+            batchId={heroBatch?.batch_id ?? null}
             // The room's own clock, already read above for the fallback card, so
             // the hero and everything else on this page agree on one instant.
             nowMs={nowMs}
             assignmentsEnabled={canSee("assignments")}
+            assignmentUrgency={isParticipant}
             peerReviewEnabled={canSee("peer_review")}
             // RELATIVE, and correct from the INDEX route only: `weeks/:n` passes
             // `"../screenings"` for the same target. No `renderAssignment` — see
@@ -235,17 +277,23 @@ const RoomHome = () => {
             recordingHref="screenings"
             calendarNote={room.offering_title}
           />
-          <SurfaceCard to={`weeks/${heroWeek.week_number}`} padding="md">
+          <SurfaceCard
+            to={`weeks/${heroWeek.week_number}${heroBatchQuery}`}
+            padding="md"
+          >
             <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
               Curriculum
+              {weekBatches.length > 1 && heroBatch ? ` · ${heroBatch.batch_label}` : ""}
             </p>
             <p className="mt-2 text-base text-foreground">
-              Week {heroWeek.week_number} of {room.total_weeks || weeks.length}
+              Week {heroWeek.week_number} of {heroTotalWeeks || weeks.length}
             </p>
             <p className="body-muted mt-1 text-sm">
-              {heroWeek.assignment_prompt && !heroWeek.submission_id
+              {isParticipant && heroWeek.assignment_prompt && !heroWeek.submission_id
                 ? "Open the week to submit."
-                : "Every week of the season."}
+                : isParticipant
+                  ? "Every week of the season."
+                  : "Open the week to review the curriculum."}
             </p>
           </SurfaceCard>
         </>
@@ -266,13 +314,15 @@ const RoomHome = () => {
             </SurfaceCard>
           )}
 
-          {canSee("weeks") && room.total_weeks > 0 && (
+          {canSee("weeks") && (room.total_weeks > 0 || weekBatches.length > 1) && (
             <SurfaceCard to={`weeks/${room.current_week ?? 1}`} padding="md">
               <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
                 Curriculum
               </p>
               <p className="mt-2 text-base text-foreground">
-                {room.current_week
+                {weekBatches.length > 1 && !heroBatch
+                  ? "Choose a cohort batch"
+                  : room.current_week
                   ? `Week ${room.current_week} of ${room.total_weeks}`
                   : `${room.total_weeks} weeks`}
               </p>
@@ -348,7 +398,7 @@ export default RoomHome;
 const ModuleOffNote = ({ title }: { title: string }) => (
   <p className="body-muted py-10 text-center text-sm">
     This cohort doesn&apos;t use {title.toLowerCase()}.{" "}
-    <Link to="." className="text-room-accent underline-offset-4 hover:underline">
+    <Link to=".." className="text-room-accent underline-offset-4 hover:underline">
       Back to the room
     </Link>
   </p>
@@ -365,10 +415,10 @@ const ModuleOffNote = ({ title }: { title: string }) => (
  *     mounted directly and only `weeks` needs wrapping.
  *  2. **The assignment seam.** `renderAssignment` is injected from outside by
  *     contract (`WeeksModuleProps`), so this call site is the ONLY reason R2-T4's
- *     submission loop reaches a student at all. It is passed UNCONDITIONALLY:
- *     `WeeksModule` reads `assignments` and `peer_review` off the envelope itself
- *     and stops the column upstream of the renderer, so re-deciding it here would
- *     be a second copy of one gate.
+ *     submission loop reaches a student at all. Members and alumni receive the
+ *     renderer; mentors/hosts receive the same authored prompt read-only. The
+ *     module flags still live in `WeeksModule` and decide whether the assignment
+ *     column exists at all.
  *
  * It lives in this file rather than its own because it is the same "a module tab
  * is only ever reached from the home it renders beside" chunk, and because the
@@ -376,18 +426,21 @@ const ModuleOffNote = ({ title }: { title: string }) => (
  */
 export const RoomWeeksRoute = () => {
   const { room, envelope } = useRoomOutlet();
+  const canSubmitAssignments = room.role === "member" || room.role === "alumni";
 
   if (!moduleEnabled(envelope.config, "weeks")) return <ModuleOffNote title="Weeks" />;
 
   return (
     <WeeksModule
-      renderAssignment={(props) => (
-        <AssignmentModule
-          {...props}
-          roomPhase={room.phase}
-          alumniSince={envelope.config?.alumni_since ?? null}
-        />
-      )}
+      renderAssignment={canSubmitAssignments
+        ? (props) => (
+            <AssignmentModule
+              {...props}
+              roomPhase={room.phase}
+              alumniSince={envelope.config?.alumni_since ?? null}
+            />
+          )
+        : undefined}
     />
   );
 };

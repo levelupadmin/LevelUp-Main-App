@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
-import { NavLink, Navigate, Outlet, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { NavLink, Navigate, Outlet, useLocation, useParams } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 import { moduleEnabled, resolveTheme, roomModuleEnabled, type RoomModuleKey } from "@/lib/room";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
@@ -73,6 +74,9 @@ const RoomShell = () => {
   const { status, room, envelope, rooms, refetch } = useRoomView(slug);
   const meta = useRoomOfferingMeta(room?.offering_id ?? null);
   const openedSlug = useRef<string | null>(null);
+  const tabRail = useRef<HTMLElement | null>(null);
+  const [tabRailCanScrollRight, setTabRailCanScrollRight] = useState(false);
+  const location = useLocation();
 
   // The config row is authoritative; the membership row carries the same jsonb
   // and covers the window before the envelope lands. Neither present (an
@@ -109,6 +113,41 @@ const RoomShell = () => {
     );
   }, [envelope, room?.phase]);
 
+  // A deep link can land on a tab that begins outside a phone-sized rail.
+  // Reveal the active item, and keep the edge cue in sync with the remaining
+  // horizontal distance. At md+ the rail wraps and the cue is hidden.
+  useEffect(() => {
+    const rail = tabRail.current;
+    if (!rail) {
+      setTabRailCanScrollRight(false);
+      return;
+    }
+
+    const updateCue = () => {
+      setTabRailCanScrollRight(
+        rail.scrollWidth - rail.clientWidth - rail.scrollLeft > 1,
+      );
+    };
+    const active = rail.querySelector<HTMLElement>('[aria-current="page"]');
+    if (rail.scrollWidth > rail.clientWidth) {
+      active?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    }
+    updateCue();
+
+    rail.addEventListener("scroll", updateCue, { passive: true });
+    window.addEventListener("resize", updateCue);
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(updateCue);
+    resizeObserver?.observe(rail);
+
+    return () => {
+      rail.removeEventListener("scroll", updateCue);
+      window.removeEventListener("resize", updateCue);
+      resizeObserver?.disconnect();
+    };
+  }, [location.pathname, tabs.length]);
+
   if (status === "loading") return <RoomLoadingState />;
   if (status === "denied") return <RoomPrivateState />;
   // A dropped request is not an answer about access — offer the retry rather
@@ -118,17 +157,21 @@ const RoomShell = () => {
 
   const outletContext: RoomOutletContext = { room, envelope, theme, rooms, refetch };
   const weeksHref = `weeks/${room.current_week ?? 1}`;
+  const roomRoot = `/room/${slug ?? ""}`.replace(/\/+$/, "");
+  const isRoomHome = location.pathname.replace(/\/+$/, "") === roomRoot;
 
   return (
     // The provider contributes no box of its own — the shell's layout classes
     // ride on it, so theming costs zero extra elements.
     <RoomThemeProvider
       config={config}
-      className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8"
+      className="mx-auto w-full min-w-0 max-w-5xl space-y-5 sm:space-y-6"
     >
-      {/* R1-T5 owns the single-vs-many behaviour: one membership renders the
-          nameplate as static text, more than one turns it into a menu. */}
-      <RoomSwitcher rooms={rooms} currentOfferingId={room.offering_id} />
+      {/* The masthead already names a single room. Only mount the switcher when
+          there is somewhere else to go, avoiding a duplicate static label. */}
+      {rooms.length > 1 && (
+        <RoomSwitcher rooms={rooms} currentOfferingId={room.offering_id} />
+      )}
 
       {/* R1-T3: one entrance for the whole subtree, played once per session per
           room. The masthead runs its own when there is no provider; hoisting it
@@ -142,27 +185,42 @@ const RoomShell = () => {
           weekCount={room.total_weeks}
           startsAt={meta.data?.cohort_start_date ?? null}
           title={room.offering_title}
+          compact={!isRoomHome}
         />
       </RoomEntrance>
 
       {tabs.length > 0 && (
-        <nav
-          aria-label="Room sections"
-          className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0"
-        >
-          <NavLink to="." end className={tabClasses}>
-            Home
-          </NavLink>
-          {tabs.map((tab) => (
-            <NavLink
-              key={tab.to}
-              to={tab.to === "weeks" ? weeksHref : tab.to}
-              className={tabClasses}
-            >
-              {tab.label}
+        <div className="relative -mx-4 md:mx-0">
+          <nav
+            ref={tabRail}
+            aria-label="Room sections"
+            className="flex scroll-pl-4 scroll-pr-12 gap-2 overflow-x-auto overscroll-x-contain pb-1 pl-4 pr-12 md:flex-wrap md:overflow-visible md:px-0"
+          >
+            <NavLink to="." end className={tabClasses}>
+              Home
             </NavLink>
-          ))}
-        </nav>
+            {tabs.map((tab) => (
+              <NavLink
+                key={tab.to}
+                to={tab.to === "weeks" ? weeksHref : tab.to}
+                className={tabClasses}
+              >
+                {tab.label}
+              </NavLink>
+            ))}
+          </nav>
+          {tabRailCanScrollRight && (
+            <div
+              data-testid="room-tabs-scroll-cue"
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-end bg-gradient-to-r from-transparent to-canvas pr-1 md:hidden"
+            >
+              <span className="grid h-7 w-6 place-items-center rounded-full border border-border bg-canvas/95 text-muted-foreground shadow-sm">
+                <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
+              </span>
+            </div>
+          )}
+        </div>
       )}
 
       {/* R2-T2: ONE ticking clock for the whole room. Every timed surface below

@@ -84,7 +84,7 @@ const RoomComposer = ({
           Add to the room
         </p>
         {!forcedKind && (
-          <div className="flex flex-wrap gap-1" aria-label="Post type">
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Post type">
             {POST_KINDS.map(({ value, label, icon: Icon }) => (
               <button
                 key={value}
@@ -108,6 +108,7 @@ const RoomComposer = ({
       </div>
 
       <Textarea
+        aria-label="Post content"
         value={body}
         onChange={(event) => setBody(event.target.value)}
         maxLength={20_000}

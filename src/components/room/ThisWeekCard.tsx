@@ -307,6 +307,7 @@ export function weekLead(
   week: RoomWeekRow,
   sessions: RoomSession[],
   nowMs: number,
+  includeAssignmentUrgency = true,
 ): WeekLead {
   const pending = sessions
     .map((session) => ({ session, state: sessionTimeState(session, nowMs), ms: parseMs(session.scheduled_at) }))
@@ -346,7 +347,7 @@ export function weekLead(
   }
 
   const dueMs = parseMs(week.assignment_due_at);
-  if (Number.isFinite(dueMs)) {
+  if (includeAssignmentUrgency && Number.isFinite(dueMs)) {
     if (dueMs < nowMs) {
       // An overdue deadline only shouts while the work is still outstanding.
       // Once it is in, the deadline is history and the week moves on.
@@ -443,6 +444,12 @@ export interface ThisWeekCardProps {
    * default so the card is still correct when mounted without a config in hand.
    */
   assignmentsEnabled?: boolean;
+  /**
+   * Whether the hero's timed lead should treat the assignment as this caller's
+   * personal deadline. Hosts/mentors still see the authored prompt and date in
+   * the read-only column, but do not receive overdue/due-now participant copy.
+   */
+  assignmentUrgency?: boolean;
   /** `moduleEnabled(config, "peer_review")`, forwarded to the assignment slot. */
   peerReviewEnabled?: boolean;
   /**
@@ -477,6 +484,7 @@ export function ThisWeekCard({
   batchId,
   nowMs: nowMsProp,
   assignmentsEnabled = ROOM_MODULE_DEFAULTS.assignments,
+  assignmentUrgency = true,
   peerReviewEnabled = ROOM_MODULE_DEFAULTS.peer_review,
   recordingHref,
   calendarNote,
@@ -490,7 +498,7 @@ export function ThisWeekCard({
   const clockMs = useRoomClock();
   const nowMs = nowMsProp ?? clockMs;
 
-  const lead = weekLead(week, sessions, nowMs);
+  const lead = weekLead(week, sessions, nowMs, assignmentUrgency);
   const startsMs = parseMs(week.starts_on);
   const endsMs = parseMs(week.ends_on);
   const feedbackMs = parseMs(week.feedback_session_at);
@@ -552,7 +560,7 @@ export function ThisWeekCard({
           "grid grid-cols-1 divide-y divide-border",
           // A room with assignments switched off has one column, and it takes
           // the whole width instead of leaving half the card empty.
-          assignmentsEnabled && "md:grid-cols-2 md:divide-x md:divide-y-0",
+          assignmentsEnabled && "lg:grid-cols-2 lg:divide-x lg:divide-y-0",
         )}
       >
         {/* ── Sessions ── every session the week holds, not the elected one,

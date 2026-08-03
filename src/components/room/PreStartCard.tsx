@@ -409,7 +409,7 @@ export function PreStartCard({
       node: (
         <div className="rounded-xl border border-border bg-surface p-5">
           <BlockHeading icon={Users} eyebrow="Your cohort" />
-          <div className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-6">
+          <div className="mt-4 grid grid-cols-4 gap-3 lg:grid-cols-6">
             {[0, 1, 2, 3].map((slot) => (
               <div key={slot} className="flex flex-col items-center gap-2">
                 <SkeletonLine className="rounded-full" width={48} height={48} />
@@ -429,7 +429,7 @@ export function PreStartCard({
       node: (
         <div className="rounded-xl border border-border bg-surface p-5">
           <BlockHeading icon={Users} eyebrow="Your cohort" aside={`${people.length} in the room`} />
-          <ul className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-6">
+          <ul className="mt-4 grid grid-cols-4 gap-3 lg:grid-cols-6">
             {shown.map((person) => {
               const staff = STAFF_ROLES.has(person.role);
               return (
@@ -496,11 +496,11 @@ export function PreStartCard({
             aside={Number.isFinite(noticeMs) ? noticeDateFormat.format(noticeMs) : undefined}
           />
           {announcement.title && (
-            <h3 className="mt-2 font-serif text-lg leading-snug text-foreground">
+            <h3 className="mt-2 break-words font-serif text-lg leading-snug text-foreground">
               {announcement.title}
             </h3>
           )}
-          <p className="body-muted mt-2 whitespace-pre-line text-sm leading-relaxed line-clamp-6">
+          <p className="body-muted mt-2 whitespace-pre-line break-words text-sm leading-relaxed line-clamp-6">
             {announcement.body}
           </p>
         </div>

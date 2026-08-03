@@ -183,7 +183,7 @@ const RoomPostCard = ({
               <span className="body-muted text-xs">Posting...</span>
             )}
           </div>
-          <div className="mt-1 flex flex-wrap gap-x-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <div className="mt-1 flex flex-wrap gap-x-2 font-mono text-xs leading-relaxed tracking-normal text-muted-foreground">
             {post.week_number && <span>Week {post.week_number}</span>}
             <span>{post.batch_name}</span>
             {stamp && <time dateTime={post.created_at}>{stamp}</time>}

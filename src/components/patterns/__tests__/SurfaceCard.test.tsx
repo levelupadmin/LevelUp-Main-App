@@ -37,6 +37,26 @@ describe("SurfaceCard — interactive Link", () => {
     expect(link).not.toHaveAttribute("tabindex", "-1");
   });
 
+  it("owns a full-width block box so card children cannot escape the link surface", () => {
+    renderInRouter(
+      <SurfaceCard to="/foo">
+        <div>Block child</div>
+      </SurfaceCard>,
+    );
+    const link = screen.getByRole("link", { name: "Block child" });
+    expect(link.className).toContain("block");
+    expect(link.className).toContain("w-full");
+    expect(link.className).toContain("min-w-0");
+  });
+
+  it("lets callers use another block-level layout without forcing it back to block", () => {
+    renderInRouter(<SurfaceCard to="/foo" className="flex">Flex card</SurfaceCard>);
+    const link = screen.getByRole("link", { name: "Flex card" });
+    expect(link.className).toContain("flex");
+    expect(link.className).not.toMatch(/(?:^|\s)block(?:\s|$)/);
+    expect(link.className).toContain("w-full");
+  });
+
   it("does NOT preventDefault on Enter, so the browser's synthesized click navigates", () => {
     renderInRouter(<SurfaceCard to="/foo">Go</SurfaceCard>);
     const link = screen.getByRole("link", { name: "Go" });

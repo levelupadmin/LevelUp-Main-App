@@ -18,13 +18,18 @@
  * Idempotency is enforced via cohort_notifications_log's UNIQUE constraint
  * on (template_key, user_id, related_kind, related_id), so re-runs are safe.
  *
- * Auth: service_role token only (called by pg_cron via supabase.net).
+ * Auth: exact dedicated NOTIFY_COHORT_AUTH_TOKEN only. pg_cron reads the same
+ * opaque value from the `cohort_notify_auth_token` Vault secret.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { notifyCohortAuthMatches } from "./auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const INTERAKT_KEY = Deno.env.get("INTERAKT_API_KEY") ?? "";
+
+const createAdminClient = () => createClient(SUPABASE_URL, SERVICE_KEY);
+type AdminClient = ReturnType<typeof createAdminClient>;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,30 +50,19 @@ interface Counters {
   errors: string[];
 }
 
-Deno.serve(async (req) => {
+export async function handleNotifyCohort(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  // Auth: service_role only.
-  // We can't do a strict string equality on SERVICE_KEY because the deployed
-  // function's SUPABASE_SERVICE_ROLE_KEY env var occasionally returns a
-  // different representation than what's stored in the vault (Supabase
-  // sometimes re-issues internal JWTs without rotating the dashboard key).
-  // Instead: parse the JWT and require role=service_role. That's the same
-  // guarantee with no surface for impersonation since only callers holding
-  // the service role can mint such a JWT in the first place.
-  const authHeader = req.headers.get("Authorization") ?? "";
-  if (!authHeader.toLowerCase().startsWith("bearer ")) {
+  // Fail closed before constructing a service-role client. A JWT payload is
+  // attacker-controlled until its signature is verified, so role claims are
+  // never decoded or trusted here. This endpoint accepts one purpose-specific
+  // opaque credential and compares it byte-for-byte in constant time.
+  const expectedToken = Deno.env.get("NOTIFY_COHORT_AUTH_TOKEN") ?? "";
+  if (!notifyCohortAuthMatches(req.headers.get("Authorization"), expectedToken)) {
     return jsonRes({ error: "Unauthorized" }, 401);
   }
-  const token = authHeader.slice(7).trim();
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1] ?? ""));
-    if (payload.role !== "service_role") return jsonRes({ error: "Forbidden" }, 403);
-  } catch {
-    return jsonRes({ error: "Invalid token" }, 401);
-  }
 
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+  const admin = createAdminClient();
   const counters: Counters = { assignment_due: 0, session_reminders: 0, submissions_missed: 0, errors: [] };
 
   try {
@@ -80,7 +74,7 @@ Deno.serve(async (req) => {
   }
 
   return jsonRes({ ok: true, counters });
-});
+}
 
 /* ─────────── Helpers ─────────── */
 
@@ -91,23 +85,57 @@ interface BatchMember {
   full_name: string | null;
 }
 
-async function getBatchMembers(admin: any, batchId: string): Promise<BatchMember[]> {
+interface BatchMemberRow {
+  enrolments?: {
+    user_id?: string | null;
+    users?: {
+      email?: string | null;
+      phone?: string | null;
+      full_name?: string | null;
+    } | null;
+  } | null;
+}
+
+interface CohortWeekRow {
+  id: string;
+  cohort_batch_id: string;
+  theme: string;
+  assignment_prompt: string | null;
+  cohort_batches?: { offering_id?: string | null } | null;
+}
+
+interface SessionReminderRow {
+  id: string;
+  title: string | null;
+  zoom_link: string | null;
+  cohort_weeks?: { cohort_batch_id?: string | null } | null;
+}
+
+interface SubmissionRow {
+  user_id: string;
+}
+
+function rowsOf<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
+}
+
+async function getBatchMembers(admin: AdminClient, batchId: string): Promise<BatchMember[]> {
   const { data } = await admin
     .from("cohort_batch_members")
     .select("enrolments:enrolment_id (user_id, users:user_id (email, phone, full_name))")
     .eq("batch_id", batchId);
-  return (data || [])
-    .map((row: any) => ({
-      user_id: row.enrolments?.user_id,
-      email: row.enrolments?.users?.email,
-      phone: row.enrolments?.users?.phone,
-      full_name: row.enrolments?.users?.full_name,
+  return rowsOf<BatchMemberRow>(data)
+    .map((row: BatchMemberRow) => ({
+      user_id: row.enrolments?.user_id ?? "",
+      email: row.enrolments?.users?.email ?? null,
+      phone: row.enrolments?.users?.phone ?? null,
+      full_name: row.enrolments?.users?.full_name ?? null,
     }))
-    .filter((m: BatchMember) => m.user_id);
+    .filter((member: BatchMember) => member.user_id.length > 0);
 }
 
 async function alreadyNotified(
-  admin: any,
+  admin: AdminClient,
   templateKey: string,
   userId: string,
   relatedKind: string,
@@ -125,7 +153,7 @@ async function alreadyNotified(
 }
 
 async function logNotification(
-  admin: any,
+  admin: AdminClient,
   templateKey: string,
   userId: string,
   relatedKind: string,
@@ -145,7 +173,6 @@ async function logNotification(
 }
 
 async function queueEmail(
-  admin: any,
   templateKey: string,
   userId: string,
   vars: Record<string, string>
@@ -212,7 +239,7 @@ function excerpt(s: string | null | undefined, max = 200): string {
 
 /* ─────────── Event handlers ─────────── */
 
-async function processAssignmentDueIn24h(admin: any, counters: Counters) {
+async function processAssignmentDueIn24h(admin: AdminClient, counters: Counters) {
   // Window: due_at in [now+22h, now+26h]. The 4-hour slop tolerates the
   // 15-min cron cadence + clock drift.
   const now = Date.now();
@@ -226,14 +253,16 @@ async function processAssignmentDueIn24h(admin: any, counters: Counters) {
     .lte("assignment_due_at", hi)
     .not("assignment_prompt", "is", null);
 
-  for (const w of weeks || []) {
+  for (const w of rowsOf<CohortWeekRow>(weeks)) {
     const members = await getBatchMembers(admin, w.cohort_batch_id);
     // Pull submissions for this week; if a user already submitted, skip
     const { data: subs } = await admin
       .from("cohort_week_submissions")
       .select("user_id")
       .eq("cohort_week_id", w.id);
-    const submittedIds = new Set((subs || []).map((s: any) => s.user_id));
+    const submittedIds = new Set(
+      rowsOf<SubmissionRow>(subs).map((submission) => submission.user_id),
+    );
 
     for (const m of members) {
       if (submittedIds.has(m.user_id)) continue;
@@ -245,7 +274,7 @@ async function processAssignmentDueIn24h(admin: any, counters: Counters) {
         assignment_prompt: excerpt(w.assignment_prompt),
         offering_id: w.cohort_batches?.offering_id ?? "",
       };
-      const emailOk = m.email ? await queueEmail(admin, "cohort_assignment_due_24h", m.user_id, vars) : false;
+      const emailOk = m.email ? await queueEmail("cohort_assignment_due_24h", m.user_id, vars) : false;
       const waOk = m.phone
         ? await sendWhatsApp(m.phone, "cohort_assignment_due_24h", [
             vars.first_name, vars.week_theme,
@@ -262,7 +291,7 @@ async function processAssignmentDueIn24h(admin: any, counters: Counters) {
   }
 }
 
-async function processSessionRemindersIn1h(admin: any, counters: Counters) {
+async function processSessionRemindersIn1h(admin: AdminClient, counters: Counters) {
   // Window: scheduled_at in [now+50min, now+70min]
   const now = Date.now();
   const lo = new Date(now + 50 * 60 * 1000).toISOString();
@@ -275,7 +304,7 @@ async function processSessionRemindersIn1h(admin: any, counters: Counters) {
     .lte("scheduled_at", hi)
     .not("week_id", "is", null);
 
-  for (const s of sessions || []) {
+  for (const s of rowsOf<SessionReminderRow>(sessions)) {
     const batchId = s.cohort_weeks?.cohort_batch_id;
     if (!batchId) continue;
     const members = await getBatchMembers(admin, batchId);
@@ -286,7 +315,7 @@ async function processSessionRemindersIn1h(admin: any, counters: Counters) {
         session_title: s.title || "Your cohort session",
         zoom_link: s.zoom_link || "https://app.leveluplearning.in/my-sessions",
       };
-      const emailOk = m.email ? await queueEmail(admin, "cohort_session_reminder_1h", m.user_id, vars) : false;
+      const emailOk = m.email ? await queueEmail("cohort_session_reminder_1h", m.user_id, vars) : false;
       const waOk = m.phone
         ? await sendWhatsApp(m.phone, "cohort_session_reminder_1h", [
             vars.first_name, vars.session_title,
@@ -303,7 +332,7 @@ async function processSessionRemindersIn1h(admin: any, counters: Counters) {
   }
 }
 
-async function processMissedAssignments(admin: any, counters: Counters) {
+async function processMissedAssignments(admin: AdminClient, counters: Counters) {
   // Weeks whose due_at was 24-48h ago. One-time nudge per user per week.
   const now = Date.now();
   const lo = new Date(now - 48 * 60 * 60 * 1000).toISOString();
@@ -316,13 +345,15 @@ async function processMissedAssignments(admin: any, counters: Counters) {
     .lte("assignment_due_at", hi)
     .not("assignment_prompt", "is", null);
 
-  for (const w of weeks || []) {
+  for (const w of rowsOf<CohortWeekRow>(weeks)) {
     const members = await getBatchMembers(admin, w.cohort_batch_id);
     const { data: subs } = await admin
       .from("cohort_week_submissions")
       .select("user_id")
       .eq("cohort_week_id", w.id);
-    const submittedIds = new Set((subs || []).map((s: any) => s.user_id));
+    const submittedIds = new Set(
+      rowsOf<SubmissionRow>(subs).map((submission) => submission.user_id),
+    );
 
     for (const m of members) {
       if (submittedIds.has(m.user_id)) continue;
@@ -333,7 +364,7 @@ async function processMissedAssignments(admin: any, counters: Counters) {
         week_theme: w.theme,
         offering_id: w.cohort_batches?.offering_id ?? "",
       };
-      const emailOk = m.email ? await queueEmail(admin, "cohort_assignment_missed", m.user_id, vars) : false;
+      const emailOk = m.email ? await queueEmail("cohort_assignment_missed", m.user_id, vars) : false;
       const channels: string[] = [];
       if (emailOk) channels.push("email");
       if (channels.length > 0) {
@@ -343,3 +374,5 @@ async function processMissedAssignments(admin: any, counters: Counters) {
     }
   }
 }
+
+if (import.meta.main) Deno.serve(handleNotifyCohort);

@@ -276,7 +276,7 @@ const RosterGrid = ({ entries, phase, pageSize = ROSTER_PAGE_SIZE, className }: 
           type="button"
           data-testid="roster-show-more"
           onClick={() => setRevealed((current) => current + pageSize)}
-          className="focus-ring pressable w-full rounded-xl border border-border bg-surface py-3 font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground"
+          className="focus-ring pressable min-h-11 w-full rounded-xl border border-border bg-surface py-3 font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground"
         >
           Show {Math.min(pageSize, remaining)} more
         </button>

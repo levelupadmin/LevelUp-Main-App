@@ -198,7 +198,7 @@ const MyCohortsPage = () => {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-6 md:px-8">
+    <div className="mx-auto w-full min-w-0 max-w-3xl space-y-8">
       {live.length > 0 && (
         <section aria-labelledby="rooms-live" className="space-y-3">
           <h1
