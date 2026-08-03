@@ -4,15 +4,18 @@
 // enrolments_source_check, the FK graph, handle_new_user, and the live
 // users_claim_legacy_enrolments trigger) without a shadow project.
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const PAT = process.env.SUPABASE_PAT;
 if (!PAT) { console.error('SUPABASE_PAT is required (source it from the LevelUp Core vault .env.supabase).'); process.exit(2); }
 const REF = 'ivkvluezuiojovpotlyb';
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // Both migrations, in the order db push applies them, so the suite tests the
 // end state that actually exists on prod rather than an intermediate one.
 const MIGRATIONS = [
-  '/Users/rahulsrinivas/Claude/LevelUp-Main-App/supabase/migrations/20260727220000_claim_at_signin.sql',
-  '/Users/rahulsrinivas/Claude/LevelUp-Main-App/supabase/migrations/20260728030000_claim_server_side_for_native.sql',
+  resolve(REPO_ROOT, 'supabase/migrations/20260727220000_claim_at_signin.sql'),
+  resolve(REPO_ROOT, 'supabase/migrations/20260728030000_claim_server_side_for_native.sql'),
 ];
 
 async function run(sql) {

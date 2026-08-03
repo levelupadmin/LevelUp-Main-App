@@ -11,7 +11,8 @@
 # The password is in 1Password ("LevelUp Android upload keystore"), with a
 # backup in your ceo@leveluplearning.in Drafts.
 
-PROJECT_DIR="/Users/rahulsrinivas/Claude/LevelUp-Main-App"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$SCRIPT_DIR"
 KEYSTORE="/Users/rahulsrinivas/Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/keystores/upload-keystore.jks"
 JBR="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 

@@ -78,6 +78,12 @@ project_id = "twqagwleffjggoemzfqs"
   # the full rationale and the pg_cron/vault-secret coupling it depends on.
   [functions.tally-application-poll]
     verify_jwt = true
+  # cohort-reentry-cron is invoked by pg_cron with a service bearer. The
+  # handler's constant-time comparison against POLL_AUTH_TOKEN remains the
+  # primary authorization boundary; gateway JWT verification is defense in
+  # depth and must stay explicit so a config merge cannot silently weaken it.
+  [functions.cohort-reentry-cron]
+    verify_jwt = true
   # claim-application: the server half of the interactive claim (PHASE SP/S-4).
   # UNLIKE the two OTP entry points above, this one is the OPPOSITE case — the
   # caller is signed in BY DEFINITION (the claim only exists to bind a parked
