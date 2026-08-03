@@ -1398,6 +1398,9 @@ export type Database = {
           app_fee_payment_id: string | null
           balance_payment_id: string | null
           bio: string | null
+          calendly_booked_at: string | null
+          calendly_canceled_at: string | null
+          calendly_event_uri: string | null
           city: string | null
           confirmation_payment_id: string | null
           created_at: string
@@ -1405,12 +1408,15 @@ export type Database = {
           full_name: string
           id: string
           interview_date: string | null
+          interview_interviewer_name: string | null
+          interview_modality: string | null
           interview_notes: string | null
           occupation: string | null
           offering_id: string
           pending_claim: boolean
           phone: string | null
           rejection_reason: string | null
+          reschedule_count: number
           status: string
           tally_data: Json | null
           tally_response_id: string | null
@@ -1422,6 +1428,9 @@ export type Database = {
           app_fee_payment_id?: string | null
           balance_payment_id?: string | null
           bio?: string | null
+          calendly_booked_at?: string | null
+          calendly_canceled_at?: string | null
+          calendly_event_uri?: string | null
           city?: string | null
           confirmation_payment_id?: string | null
           created_at?: string
@@ -1429,12 +1438,15 @@ export type Database = {
           full_name: string
           id?: string
           interview_date?: string | null
+          interview_interviewer_name?: string | null
+          interview_modality?: string | null
           interview_notes?: string | null
           occupation?: string | null
           offering_id: string
           pending_claim?: boolean
           phone?: string | null
           rejection_reason?: string | null
+          reschedule_count?: number
           status?: string
           tally_data?: Json | null
           tally_response_id?: string | null
@@ -1446,6 +1458,9 @@ export type Database = {
           app_fee_payment_id?: string | null
           balance_payment_id?: string | null
           bio?: string | null
+          calendly_booked_at?: string | null
+          calendly_canceled_at?: string | null
+          calendly_event_uri?: string | null
           city?: string | null
           confirmation_payment_id?: string | null
           created_at?: string
@@ -1453,12 +1468,15 @@ export type Database = {
           full_name?: string
           id?: string
           interview_date?: string | null
+          interview_interviewer_name?: string | null
+          interview_modality?: string | null
           interview_notes?: string | null
           occupation?: string | null
           offering_id?: string
           pending_claim?: boolean
           phone?: string | null
           rejection_reason?: string | null
+          reschedule_count?: number
           status?: string
           tally_data?: Json | null
           tally_response_id?: string | null

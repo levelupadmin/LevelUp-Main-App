@@ -25,10 +25,25 @@ export const FUNNEL_RECON = "VITE_FUNNEL_RECON";
  */
 export const EMAIL_OTP_TAB = "VITE_EMAIL_OTP_TAB";
 
+/**
+ * The interview-cluster flag (PHASE IV). Default off — the slot buttons,
+ * interviewer card and reschedule control stay dark. (The batch ledger this
+ * docblock used to list was deleted in c656232: it could only ever hide.)
+ *
+ * TWO SURFACES ARE BEHIND IT, NOT ONE. `ApplicationStatus` renders for real
+ * applicants today, and `ThankYou` is the ₹400 post-payment screen — so the
+ * whole cluster ships behind this before any of it is switched on. `ThankYou`
+ * additionally keeps main's Calendly iframe as its flag-off branch, so turning
+ * this off restores the surface that shipped rather than falling through to the
+ * new component's own fallback ladder.
+ */
+export const COHORT_INTERVIEW = "VITE_COHORT_INTERVIEW";
+
 /** Known flags and their default when neither localStorage nor env speaks. */
 const REGISTRY: Record<string, boolean> = {
   [FUNNEL_RECON]: false,
   [EMAIL_OTP_TAB]: false,
+  [COHORT_INTERVIEW]: false,
 };
 
 function truthy(value: unknown): boolean {
