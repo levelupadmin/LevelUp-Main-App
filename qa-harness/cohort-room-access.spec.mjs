@@ -1215,7 +1215,15 @@ section(
 
   // Patterns are assembled from fragments so this file never contains the
   // literal strings it forbids (it would otherwise flag its own diff).
-  const TIER = `\\b(dis${"tinction"}|${"me"}rit)\\b`;
+  // Match the retired CERTIFICATE/TIER concept, not ordinary prose using the
+  // word "distinction" (for example, distinguishing two funnel states). The
+  // quoted-token arm still catches enum/CHECK values, and the tag arm catches
+  // a standalone UI badge or heading.
+  const TIER =
+    `((['"])(dis${"tinction"}|${"me"}rit)\\2|` +
+    `\\b(dis${"tinction"}|${"me"}rit)\\s+(tier|certificate|award|standing|grade)\\b|` +
+    `\\b(tier|certificate|award|standing|grade)\\s+(of\\s+)?(dis${"tinction"}|${"me"}rit)\\b|` +
+    `>\\s*(dis${"tinction"}|${"me"}rit)\\s*<)`;
   const CREDIT =
     `(tuition ${"cred"}it|${"cred"}ited (towards?|against)|adjusted against the (fee|tuition)|` +
     `${"cred"}it towards? (the )?(tuition|balance|fee))`;
