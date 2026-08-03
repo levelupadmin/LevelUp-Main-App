@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "release:gate": "node scripts/release-gate.mjs",
     "typecheck:functions": "node scripts/typecheck-functions.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
