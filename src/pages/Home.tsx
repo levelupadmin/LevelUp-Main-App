@@ -1,7 +1,8 @@
-import { useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useState } from "react";
+import { useIsRestoring, useQueryClient } from "@tanstack/react-query";
 import {
   ENROLLED_PROGRESS_QUERY_KEY,
+  enrolledProgressKey,
   useEnrolledProgress,
 } from "@/hooks/useEnrolledProgress";
 import { motion, useScroll, useTransform } from "framer-motion";
@@ -9,7 +10,12 @@ import usePageTitle from "@/hooks/usePageTitle";
 import PullIndicator from "@/components/patterns/PullIndicator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMotionSafe } from "@/lib/motion";
+import {
+  APPLICANT_STAGE_REFRESH_KEYS,
+  useApplicantStage,
+} from "@/hooks/useApplicantStage";
 import Reveal from "@/components/motion/Reveal";
+import ApplicantStageCard from "@/components/home/ApplicantStageCard";
 import FeaturedHero from "@/components/home/FeaturedHero";
 import QuickPick from "@/components/home/QuickPick";
 import ContinueLearning from "@/components/home/ContinueLearning";
@@ -33,6 +39,26 @@ import {
   ENROLLED_OFFERINGS_QUERY_KEY,
 } from "@/components/catalog/useCatalog";
 
+// The applicant card's reserved slot: its own BOX, not a guessed height. Same
+// rounded-2xl surface and px/py as ApplicantStageCard, with one placeholder per
+// element that card actually renders (chip, title, a two-line body, the 48px lg
+// button) at each element's own type metrics. A single fixed height cannot
+// serve this slot — the body wraps to two or three lines depending on variant
+// and viewport — but mirroring the box tracks the real card to within one line
+// on a 360px phone, where a flat number under-reserved every variant.
+const ApplicantCardSkeleton = () => (
+  <div
+    aria-hidden
+    className="rounded-2xl bg-surface ring-1 ring-white/5 px-4 py-4 sm:px-5 sm:py-5"
+  >
+    <SkeletonLine width="38%" height="22px" className="rounded-full" />
+    <SkeletonLine width="62%" height="24px" className="mt-3" />
+    <SkeletonLine width="100%" height="16px" className="mt-2" />
+    <SkeletonLine width="72%" height="16px" className="mt-1.5" />
+    <SkeletonBlock height={48} className="mt-4 w-full sm:w-44" />
+  </div>
+);
+
 // Feed-shaped placeholder for the first paint: the above-the-fold block plus
 // the catalog header + card grid. Built from the shared skeleton primitives and
 // sized to mirror the real feed's above-the-fold block so the LoadingSwap
@@ -49,8 +75,21 @@ import {
 // swaps once `isFeedLoading` is false, which requires the persisted
 // `enrolled-progress` query resolved, so the skeleton's final frame always
 // matches the real feed (no flash-of-wrong-shape at the handoff).
-const HomeFeedSkeleton = ({ hasEnrolments }: { hasEnrolments: boolean }) => (
+//
+// `hasApplicantCard` rides the same guarantee on a COLD open, where the gate
+// also waits for the applicant read AND holds one render past it (see
+// `isFeedLoading` below): the applicant card leads the feed, so without a
+// matching slot it would inject the card's height ABOVE the hero after the
+// crossfade and push the whole page down.
+const HomeFeedSkeleton = ({
+  hasEnrolments,
+  hasApplicantCard,
+}: {
+  hasEnrolments: boolean;
+  hasApplicantCard: boolean;
+}) => (
   <div className="space-y-10" aria-busy="true" aria-live="polite">
+    {hasApplicantCard && <ApplicantCardSkeleton />}
     {hasEnrolments ? (
       <div className="space-y-3">
         <SkeletonLine width="42%" height="20px" />
@@ -112,7 +151,65 @@ const Home = () => {
   const { isLoading: catalogLoading } = useCatalog();
   useEnrolledOfferingIds();
   const hasEnrolments = !!enrolledProgress?.hasEnrolments;
-  const isFeedLoading = catalogLoading || progressLoading;
+
+  // Applicant stage card (SP-5 / REQ-IDENT-4). `view` is null for anyone
+  // without a live application — and for a terminal one — so the card is
+  // ABSENT rather than empty, the same self-hiding contract every other
+  // section on this feed follows. The hook fails soft (no throw, no spinner
+  // lock), so a failed read or an unreachable reconciler is just "no card".
+  const { view: applicantStage, isLoading: applicantLoading } = useApplicantStage();
+
+  // Did this open have to FETCH the feed's own data (cold), or was it restored
+  // from the persisted cache (warm)? Captured on the first render, so it stays a
+  // stable property of the open rather than of time.
+  //
+  // It asks the CACHE directly rather than reading `isLoading`. During
+  // PersistQueryClientProvider's restore window react-query pins every observer
+  // to `fetchStatus: "idle"`, so `isLoading` is false for a cold open and a warm
+  // one alike — a discriminator built on it happens to work today only because
+  // Home is lazy-loaded (App.tsx) and therefore mounts after restore resolves,
+  // and would silently invert if Home were ever eagerly imported, preloaded, or
+  // mounted over a slow localStorage read in an Android WebView. Cached data for
+  // the two persisted queries the feed's above-the-fold reads is the direct
+  // signal, and `useIsRestoring` covers the one case where the cache cannot
+  // answer yet. Both unknowns resolve to COLD, which is the safe direction: a
+  // cold open reserves the applicant slot and waits for a read the feed is
+  // fetching anyway (both probes are queries that gate the crossfade regardless),
+  // so a false "cold" costs nothing while a false "warm" would drop the gate.
+  const isRestoring = useIsRestoring();
+  const [coldOpen] = useState(
+    () =>
+      isRestoring ||
+      queryClient.getQueryData(CATALOG_QUERY_KEY) === undefined ||
+      queryClient.getQueryData(enrolledProgressKey(user?.id)) === undefined,
+  );
+
+  // The applicant card is UNLIKE the other above-the-fold sections: its query
+  // is not persisted, so it cannot resolve before first paint on a warm open.
+  // Waiting for it unconditionally would put a network round-trip back in the
+  // critical path of every warm open and silently defeat the persisted cache
+  // (the exact regression the `enrolled-offering-ids` note above records). So
+  // it joins the gate ONLY on a cold open, where the skeleton is on screen
+  // anyway: the card then paints WITH the feed, in the slot the skeleton
+  // reserved for it, instead of injecting above the hero afterwards.
+  //
+  // The release is deferred by ONE render on purpose. AnimatePresence renders an
+  // EXITING child from the element it last held, so the skeleton crossfades out
+  // with whatever props it had on the render BEFORE the swap. Dropping the gate
+  // in the same render that the applicant read settles would therefore exit a
+  // skeleton that never saw the answer — when the applicant query is the last of
+  // the three to settle, the reserved slot would never paint at all and the feed
+  // would still gain the card's height at the crossfade. Flipping this from an
+  // effect guarantees one committed render where the read is settled and the
+  // skeleton is still mounted, so it re-renders with the final shape first and
+  // then exits with it.
+  const [applicantGateReleased, setApplicantGateReleased] = useState(false);
+  useEffect(() => {
+    if (!applicantLoading) setApplicantGateReleased(true);
+  }, [applicantLoading]);
+
+  const isFeedLoading =
+    catalogLoading || progressLoading || (coldOpen && !applicantGateReleased);
 
   const handleRefresh = useCallback(async () => {
     // Every Home section now reads through react-query (P6-T1), so a refresh is
@@ -128,6 +225,16 @@ const Home = () => {
       queryClient.invalidateQueries({ queryKey: ["popular-community"] }),
       queryClient.invalidateQueries({ queryKey: ["upcoming-events"] }),
       queryClient.invalidateQueries({ queryKey: ["new-members"] }),
+      // The applicant card too: an applicant who pays the app fee in the
+      // external Razorpay browser comes back to a Home that was never
+      // remounted, and with refetchOnWindowFocus off this pull is their only
+      // way to move the card off its last-read stage. ALL THREE of its roots
+      // (see APPLICANT_STAGE_REFRESH_KEYS) — with the reconciler on, the
+      // funnel-stage query is the only one that sees that external capture, so
+      // invalidating the application row alone leaves the card frozen.
+      ...APPLICANT_STAGE_REFRESH_KEYS.map((queryKey) =>
+        queryClient.invalidateQueries({ queryKey: [...queryKey] }),
+      ),
     ]);
   }, [queryClient]);
 
@@ -232,9 +339,22 @@ const Home = () => {
       <LoadingSwap
         className="mt-10"
         loading={isFeedLoading}
-        skeleton={<HomeFeedSkeleton hasEnrolments={hasEnrolments} />}
+        skeleton={
+          <HomeFeedSkeleton
+            hasEnrolments={hasEnrolments}
+            hasApplicantCard={!!applicantStage}
+          />
+        }
       >
       <div className="space-y-10 anim-rise">
+      {/* The applicant's one line: label chip + a single primary action, or
+          the claim step for a row that is not proven to be theirs yet. Leads
+          the feed because for an applicant it IS the open loop; renders
+          nothing at all for everyone else. On a cold open the crossfade has
+          already waited for this read and the skeleton held its slot, so it
+          arrives WITH the feed rather than pushing the hero down. */}
+      {applicantStage && <ApplicantStageCard view={applicantStage} />}
+
       {/* Your-Week glance strip — most-active course ring, lessons completed,
           next-lesson resume. Gated on hasEnrolments (mirrors ContinueLearning);
           renders nothing for zero-enrolment users. */}

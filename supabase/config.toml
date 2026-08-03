@@ -25,6 +25,27 @@ project_id = "twqagwleffjggoemzfqs"
     verify_jwt = false
   [functions.verify-msg91-otp]
     verify_jwt = false
+  # verify-email-otp: the EMAIL half of passwordless sign-in, and like every
+  # other auth entry point above (verify-msg91-otp, check-user-exists,
+  # guest-create-order) it is UNAUTHENTICATED BY DEFINITION — the caller has no
+  # session yet; getting one is the entire point of the call. verify_jwt = true
+  # would make the gateway 401 every sign-in attempt before the function ran.
+  # What protects it is inside the handler: the send path only ever issues a
+  # code for an address that already resolves to an auth user AND whose
+  # public.users mirror holds that same address (it never writes that mirror,
+  # so an anonymous call cannot trip the legacy-entitlement trigger), the code
+  # is hashed at rest per address and single-use, and failed guesses spend a
+  # per-address budget a resend cannot reset. Every limit goes through the
+  # existing public.check_and_increment_rate_limit RPC: keyed on the IP for
+  # request-shaped caps, and on the address only for things an attacker has to
+  # pay for (a delivered code, a failed guess) so that knowing someone's email
+  # is not enough to lock them out of it.
+  # REQUIRED SECRET: EMAIL_OTP_PEPPER (HMAC key for the at-rest code hash —
+  # `npx supabase secrets set EMAIL_OTP_PEPPER=<32+ random bytes>`). There is no
+  # fallback: while it is unset the function fails closed with 503 and email
+  # login is simply off. Phone login is unaffected either way.
+  [functions.verify-email-otp]
+    verify_jwt = false
   [functions.register-for-event]
     verify_jwt = true
   # reconcile-funnel-stage: a normal client-authenticated invoke (reads the
@@ -56,6 +77,15 @@ project_id = "twqagwleffjggoemzfqs"
   # stays on as defense in depth only. See tally-application-poll/index.ts for
   # the full rationale and the pg_cron/vault-secret coupling it depends on.
   [functions.tally-application-poll]
+    verify_jwt = true
+  # claim-application: the server half of the interactive claim (PHASE SP/S-4).
+  # UNLIKE the two OTP entry points above, this one is the OPPOSITE case — the
+  # caller is signed in BY DEFINITION (the claim only exists to bind a parked
+  # application to the session they are already holding), and the handler
+  # resolves that JWT to an auth row and derives the unproven channel from it.
+  # verify_jwt = true so an anonymous request is rejected at the gateway rather
+  # than reaching a handler that has nothing to decide against.
+  [functions.claim-application]
     verify_jwt = true
   [functions.generate-invoice-pdf]
     verify_jwt = false

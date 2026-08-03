@@ -142,6 +142,21 @@ export interface CohortApplicationRow {
   status: "submitted";
   tally_response_id: string;
   tally_data: unknown;
+  /**
+   * Set true ONLY by the intake's identity-provisioning step (phase SP), and
+   * for ALL THREE collision shapes — the email belongs to an existing account
+   * (`email_taken`), the phone does (`phone_taken`), or the two belong to
+   * DIFFERENT accounts (`cross_linked`). Intake proves neither identifier, so
+   * every one of them would be a merge on the strength of a form answer. The
+   * row is inserted with `user_id` NULL and waits for an interactive
+   * second-channel OTP claim; nothing is minted and nothing is joined.
+   *
+   * Optional because `toApplicationRow` never sets it: the column defaults to
+   * false, so an ordinary row omits it entirely. That keeps ORDINARY inserts
+   * working against a database where the column has not landed — a collision
+   * row does name it, so the migration must precede the function deploy.
+   */
+  pending_claim?: boolean;
 }
 
 /**

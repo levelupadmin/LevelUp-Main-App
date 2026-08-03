@@ -33,7 +33,7 @@
 
 LevelUp is running a real, revenue-generating cohort business *right now* — ~30 students per Live cohort, three-payment journeys (₹400 → ₹8k → balance), interviews on Calendly, delivery over ~12 weeks, a community that lives on WhatsApp (`COHORT-LOGIC.md` §1). We are not building on a greenfield; we are re-platforming a funnel with money and humans flowing through it today. Three doctrines govern every step:
 
-1. **The pipeline is sacred and untouched.** The staged checkout (`type=app_fee|confirmation|balance`), the server-side payment verification, the `cohort_applications` status writer, and — critically — the `ApplicationStatus.tsx:319,337` `isIOS()` staged-payment revenue guard are do-not-touch (`COHORT-LOGIC.md` "Standing guard"; PRD §4.4 / NFR-SEC-5). This plan **adds surfaces beside** the pipeline; it never modifies it. `🔴 Tier 1 (do-not-touch)`
+1. **The pipeline is sacred and untouched.** The staged checkout (`type=app_fee|confirmation|balance`), the server-side payment verification, the `cohort_applications` status writer, and — critically — the `ApplicationStatus.tsx`'s `isIOS()` guards `isIOS()` staged-payment revenue guard are do-not-touch (`COHORT-LOGIC.md` "Standing guard"; PRD §4.4 / NFR-SEC-5). This plan **adds surfaces beside** the pipeline; it never modifies it. `🔴 Tier 1 (do-not-touch)`
 
 2. **New surfaces ship dark, then to a new batch, then wide.** No new surface reaches a running batch on its first push. It is deployed behind a flag (dark), enabled for one *new* batch as a pilot, watched, then rolled to all batches. This is the PRD's funnel-first / rooms-last slicing (§4.0) expressed as a rollout, not just a build order.
 
@@ -284,7 +284,7 @@ Reversibility is a *precondition* of shipping a Tier-1 surface, not an afterthou
 | `get_cohort_progress` recreate | Re-apply the **prior definition held verbatim in the runbook** | Two-sessions-in-one-week fixture behaves as before; `/cohort` page still works | R0-T3 / R0-T5 |
 | Room routing (`VITE_COHORT_ROOMS`) | Flag off (env + server-config for native) | `/cohort/*` byte-identical old page; visual spot-check zero diff | R1-T1 |
 | `/cohort` retire (R2-T5) | Flag off restores the old `CohortDashboard` (still compiles against post-R0-T3 RPC) | Old deep links land on the old page; 48h Sentry clean | R2-T5 |
-| Payment pipeline | **N/A — never touched, so never rolled back** | `ApplicationStatus.tsx:319,337` diff = 0 (grep) | PRD §4.4 / NFR-SEC-5 |
+| Payment pipeline | **N/A — never touched, so never rolled back** | `ApplicationStatus.tsx`'s `isIOS()` guards diff = 0 (grep) | PRD §4.4 / NFR-SEC-5 |
 
 **The two non-negotiables of any rollback here:** (1) it never touches the payment pipeline (there is nothing to roll back because nothing changed it); (2) it never deletes data — the alumni flip, legacy post copy, and config seed are all additive, so "undo" means "stop using the new surface," not "restore lost rows."
 

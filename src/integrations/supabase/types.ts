@@ -1408,6 +1408,7 @@ export type Database = {
           interview_notes: string | null
           occupation: string | null
           offering_id: string
+          pending_claim: boolean
           phone: string | null
           rejection_reason: string | null
           status: string
@@ -1431,6 +1432,7 @@ export type Database = {
           interview_notes?: string | null
           occupation?: string | null
           offering_id: string
+          pending_claim?: boolean
           phone?: string | null
           rejection_reason?: string | null
           status?: string
@@ -1454,6 +1456,7 @@ export type Database = {
           interview_notes?: string | null
           occupation?: string | null
           offering_id?: string
+          pending_claim?: boolean
           phone?: string | null
           rejection_reason?: string | null
           status?: string
@@ -6282,6 +6285,16 @@ export type Database = {
       admin_live_sessions_with_zoom_link: {
         Args: never
         Returns: string[]
+      }
+      get_my_pending_claim: {
+        Args: never
+        Returns: {
+          application_id: string
+          claim_channel: string
+          masked_target: string
+          offering_id: string
+          offering_title: string
+        }[]
       }
       has_course_access: { Args: { p_course_id: string }; Returns: boolean }
       has_offering_learnings_access: {

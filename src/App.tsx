@@ -98,6 +98,10 @@ const AdminCohortSubmissions = lazy(() => import("@/pages/admin/AdminCohortSubmi
 const AdminCohortAttendance = lazy(() => import("@/pages/admin/AdminCohortAttendance"));
 const AdminNotifyRequests = lazy(() => import("@/pages/admin/AdminNotifyRequests"));
 const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
+// Interactive claim for an application provisioning parked (`pending_claim`).
+// Authenticated by definition: the claimant is holding a session when the row
+// surfaces. Route path is pinned — S-5's applicant card navigates to it.
+const ClaimApplication = lazy(() => import("@/pages/auth/ClaimApplication"));
 
 // The QueryClient + its localStorage persister live in @/lib/queryClient so the
 // sign-out path can purge the persisted cache without importing this app root.
@@ -223,6 +227,7 @@ const App = () => {
                 <Route path="/events" element={<Navigate to="/learn?seg=calendar" replace />} />
                 <Route path="/events/:eventId" element={<EventDetail />} />
                 <Route path="/my-application/:applicationId" element={<ApplicationStatus />} />
+                <Route path="/claim/:applicationId" element={<ClaimApplication />} />
                 <Route path="/cohort/:offeringId" element={<CohortDashboard />} />
               </Route>
 
