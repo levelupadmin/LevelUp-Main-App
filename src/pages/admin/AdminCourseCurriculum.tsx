@@ -482,6 +482,7 @@ const AdminCourseCurriculum = () => {
                               </label>
                               <ProtectedVideoUploader
                                 courseId={courseId || undefined}
+                                chapterId={ch.id}
                                 alreadyProtected={ch.media_provider === "supabase-signed"}
                                 onUploaded={(key) =>
                                   updateChapter(sIdx, cIdx, {

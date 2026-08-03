@@ -1,95 +1,70 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
-import { Loader2, ShieldCheck, UploadCloud } from "lucide-react";
+import { useUploads } from "@/contexts/UploadContext";
+import { ShieldCheck, UploadCloud } from "lucide-react";
 
 interface Props {
-  /** Called with the stored object key once the upload finishes. The caller
-   *  should set the chapter's media_url = key and media_provider = 'supabase-signed'. */
+  /** Called immediately with the storage key. The caller sets the chapter's
+   *  media_url = key and media_provider = 'supabase-signed'. */
   onUploaded: (key: string) => void;
   courseId?: string;
+  /** The chapter's id. If it's a saved id (not "new-…"), the background upload
+   *  also patches the row on completion, so the video attaches even if the admin
+   *  navigated away without saving. */
+  chapterId?: string;
   /** true once this chapter already holds a protected upload */
   alreadyProtected?: boolean;
 }
 
 /**
- * Uploads a video straight into the PRIVATE protected-video bucket via a
- * one-time signed upload URL (minted by the admin-only get-video-upload-url
- * function). The file never gets a public URL, so it's download-protected from
- * the moment it lands — playback later goes through get-video-src. This is the
- * default path that makes "upload a video" mean "protected video".
+ * Starts a BACKGROUND upload into the private protected-video bucket and returns
+ * immediately — progress shows in the floating UploadDock and keeps running as
+ * the admin moves around the app. The file never gets a public URL.
  */
-export default function ProtectedVideoUploader({ onUploaded, courseId, alreadyProtected }: Props) {
-  const { toast } = useToast();
+export default function ProtectedVideoUploader({ onUploaded, courseId, chapterId, alreadyProtected }: Props) {
+  const { startVideoUpload } = useUploads();
   const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [done, setDone] = useState(false);
+  const [started, setStarted] = useState(false);
 
-  const upload = async () => {
+  const upload = () => {
     if (!file) return;
-    setUploading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("get-video-upload-url", {
-        body: { filename: file.name, course_id: courseId },
-      });
-      const signed = (data as { signedUrl?: string; token?: string; path?: string } | null) || null;
-      if (error || !signed?.token || !signed?.path) {
-        throw new Error("Couldn't start the upload. Are you signed in as an admin?");
-      }
-
-      const { error: upErr } = await supabase.storage
-        .from("protected-video")
-        .uploadToSignedUrl(signed.path, signed.token, file);
-      if (upErr) throw upErr;
-
-      setDone(true);
-      onUploaded(signed.path);
-      toast({ title: "Video uploaded — download-protected" });
-    } catch (e) {
-      toast({
-        title: "Upload failed",
-        description: e instanceof Error ? e.message : "Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setUploading(false);
-    }
+    startVideoUpload({ file, chapterId, courseId, onKey: onUploaded });
+    setStarted(true);
+    setFile(null);
   };
 
   return (
     <div className="space-y-2">
-      {(alreadyProtected || done) && (
+      {(alreadyProtected || started) && (
         <div className="flex items-center gap-1.5 text-xs text-emerald-500">
           <ShieldCheck className="h-3.5 w-3.5" />
-          Protected video attached (no public link, download blocked)
+          {started && !alreadyProtected
+            ? "Upload started — it continues in the corner while you work"
+            : "Protected video attached (no public link, download blocked)"}
         </div>
       )}
       <div className="flex items-center gap-2">
         <input
           type="file"
           accept="video/*"
-          disabled={uploading}
           onChange={(e) => {
             setFile(e.target.files?.[0] || null);
-            setDone(false);
+            setStarted(false);
           }}
           className="text-xs"
         />
         <button
           type="button"
           onClick={upload}
-          disabled={!file || uploading}
+          disabled={!file}
           className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded bg-primary text-primary-foreground disabled:opacity-50"
         >
-          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud className="h-3.5 w-3.5" />}
-          {uploading ? "Uploading…" : "Upload protected"}
+          <UploadCloud className="h-3.5 w-3.5" />
+          Upload protected
         </button>
       </div>
-      {uploading && (
-        <p className="text-xs text-muted-foreground">
-          Uploading privately… large files can take a few minutes — keep this tab open.
-        </p>
-      )}
+      <p className="text-xs text-muted-foreground">
+        The upload runs in the background — you can leave this page. Keep the tab open, and Save the curriculum to keep the chapter.
+      </p>
     </div>
   );
 }

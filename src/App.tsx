@@ -11,6 +11,8 @@ import RequireRole from "@/components/guards/RequireRole";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import OfflineBanner from "@/components/OfflineBanner";
 import FloatingSupport from "@/components/FloatingSupport";
+import { UploadProvider } from "@/contexts/UploadContext";
+import UploadDock from "@/components/UploadDock";
 import ScrollToTop from "@/components/ScrollToTop";
 import NativeDeepLinks from "@/components/NativeDeepLinks";
 import StudentLayout from "@/components/layout/StudentLayout";
@@ -164,6 +166,7 @@ const App = () => {
     <AuthProvider>
       <ErrorBoundary>
         <BrowserRouter>
+         <UploadProvider>
           {/*
             Routing architecture:
             - Public pages: flat routes.
@@ -280,6 +283,8 @@ const App = () => {
           <ScrollToTop />
           <NativeDeepLinks />
           <FloatingSupport />
+          <UploadDock />
+         </UploadProvider>
         </BrowserRouter>
       </ErrorBoundary>
       {/* Sonner is the app's single toast renderer. Position/duration/surface
