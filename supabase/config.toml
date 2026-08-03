@@ -166,3 +166,37 @@ project_id = "twqagwleffjggoemzfqs"
   # the on-tap `fresh` re-check (8s), and a token-wide backoff on a Calendly 429.
   [functions.calendly-slots]
     verify_jwt = false
+
+  # email-unsubscribe: an UNAUTHENTICATED LINK IN AN EMAIL. The person clicking
+  # it is in a mail client and holds no Supabase session, and there is no key we
+  # could put in the URL that would not itself be public — so verify_jwt = false
+  # for the same reason as razorpay-webhook / auth-email-hook /
+  # tally-application-webhook: the caller cannot present a project JWT and the
+  # real gate lives inside the handler.
+  #
+  # And it is the same KIND of gate those webhooks use — an HMAC checked in
+  # constant time BEFORE the database is touched. The link carries
+  # "<token>.<tag>", where tag = HMAC-SHA256(UNSUBSCRIBE_TOKEN_SECRET,
+  # "v1:tag:<token>"); a credential that fails it is rejected with no client
+  # built and no query issued, so a guessed string cannot buy an unauthenticated
+  # service-role SELECT. Past the gate the 256-bit token is matched against a
+  # stored SHA-256, never against anything readable from the database.
+  #
+  # The endpoint reads no applicant, no payment, no user and not even the
+  # address: the worst a valid credential can do is stamp used_at on its own
+  # token row, which stops the re-entry reminder ladder for that address and
+  # NOTHING else. It deliberately does not write suppressed_emails, which would
+  # have killed that person's receipts too — so it also does not stop a bulk
+  # campaign, and both pages it renders say so and point at support. GET only
+  # renders a confirmation page (mail scanners prefetch links); nothing is
+  # written until the POST.
+  #
+  # SECRETS, BY NAME. UNSUBSCRIBE_TOKEN_SECRET is required (the same key
+  # cohort-reentry-cron mints with). UNSUBSCRIBE_TOKEN_SECRET_PREVIOUS is
+  # OPTIONAL and read only here: one key drives both the token and the tag, so
+  # rotating it invalidates every link already in an inbox. Set PREVIOUS to the
+  # outgoing key in the SAME change that sets the new one, keep it for at least
+  # one ladder window (14 days), then drop it. Full procedure and the residual
+  # cost are in supabase/functions/_shared/unsubscribe.ts.
+  [functions.email-unsubscribe]
+    verify_jwt = false

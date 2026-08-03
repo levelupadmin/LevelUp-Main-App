@@ -117,6 +117,20 @@ describe("deriveStage — §6 stage→CTA table (all six rows, offering-scoped)"
     expect(d.markers.completedNoFee).toBe(true);
   });
 
+  it("does not assert completed-no-fee while the money authority is unavailable", () => {
+    const d = deriveStage(
+      LIVE_OFFERING,
+      tallyCompleted("phone"),
+      telecrmStatus("Fee Link Sent"),
+      razorpayUnavailable(),
+      BOTH_KEYS,
+    );
+    // The form stage remains descriptive, but the outreach marker is permission
+    // to tell somebody they have not paid. An outage cannot grant that permission.
+    expect(d.stage).toBe("completed-no-fee");
+    expect(d.markers.completedNoFee).toBe(false);
+  });
+
   it("row 3 — `Application Fee Paid`, no `Interview Scheduled` → fee-paid-no-interview (book interview)", () => {
     // Fee captured in Razorpay (₹400) and TeleCRM stalled at the fee-paid status.
     const d = deriveStage(

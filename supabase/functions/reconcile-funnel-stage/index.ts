@@ -1,9 +1,11 @@
 /**
- * reconcile-funnel-stage — the app's first first-party read of a logged-in
- * user's funnel stage (REQ-RECON-1, `04-INTEGRATION-CONTRACTS.md` §7).
+ * reconcile-funnel-stage — the app's first first-party funnel-stage read
+ * (REQ-RECON-1, `04-INTEGRATION-CONTRACTS.md` §7).
  *
- * Flow: authenticate the caller (user-scoped JWT), read their phone + email,
- * REQUIRE an `offering_id` (every real caller has an application context), load
+ * Browser flow: authenticate the caller (user-scoped JWT), read their phone +
+ * email. Re-entry worker flow: authenticate the cron token, require a named
+ * application, and read that completed application's contacts even when its
+ * `user_id` is NULL. Both REQUIRE an `offering_id`, load
  * that offering's amount bands + code-level `product_1` map, then READ the three
  * external systems the app can query — Tally, TeleCRM, Razorpay — keyed on phone
  * (primary) → email (fallback). The pure, OFFERING-SCOPED `deriveStage`
@@ -25,6 +27,7 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeadersFor } from "../_shared/cors.ts";
+import { timingSafeEqual } from "../_shared/crypto.ts";
 import { last10, normalizePhone } from "../_shared/phone.ts";
 import {
   amountToProduct,
@@ -54,6 +57,14 @@ type Admin = SupabaseClient<any, any, any>; // eslint-disable-line @typescript-e
 const TELECRM_BASE = "https://next.telecrm.in/autoupdate/v2";
 const RAZORPAY_BASE = "https://api.razorpay.com/v1";
 const TALLY_BASE = "https://api.tally.so";
+
+/**
+ * Server-side reconciliation is independent of the browser's
+ * `VITE_FUNNEL_RECON` flag. The scheduled caller remains inert until operations
+ * explicitly enables this alongside the reminder ladder.
+ */
+const REENTRY_RECONCILE_ENABLED = Deno.env.get("REENTRY_RECONCILE_ENABLED") === "true";
+const INTERNAL_AUTH_TOKEN = Deno.env.get("POLL_AUTH_TOKEN") ?? "";
 
 // Razorpay `/payments` has NO server-side contact/email filter — matching is
 // client-side — and returns at most 100 rows/page, newest-first. At LevelUp's
@@ -91,10 +102,10 @@ const ORPHAN_MIN_SAMPLE = 25;
 let reconRuns = 0;
 let reconOrphans = 0;
 
-// Per-user+offering short-TTL cache. A warm instance serving repeated logins for
-// the same caller returns the last computed body instead of re-scanning the
-// shared external quota. Bounded in size so it can't grow unbounded on a
-// long-lived instance.
+// Per-subject+offering short-TTL cache. A warm instance serving a repeated
+// browser login or cron retry returns the last computed body instead of
+// re-scanning the shared external quota. Bounded in size so it cannot grow
+// unbounded on a long-lived instance.
 const RECON_CACHE_TTL_MS = 30_000;
 const RECON_CACHE_MAX = 500;
 const reconCache = new Map<string, { at: number; body: Record<string, unknown> }>();
@@ -616,39 +627,84 @@ Deno.serve(async (req) => {
     // `offering_id` is REQUIRED: every real caller has an application context and
     // the derivation is offering-scoped (a global stage stamped on every sibling
     // application is the council's headline defect). Absent/blank → 400.
-    let offeringId: string | null = null;
-    try {
-      const body = await req.json();
-      const rawId = body?.offering_id ?? body?.offeringId;
-      offeringId = typeof rawId === "string" && rawId.trim() ? rawId.trim() : null;
-    } catch {
-      offeringId = null;
-    }
+    const body = await req.json().catch(() => null);
+    const payload = body && typeof body === "object" ? body as Record<string, unknown> : {};
+    const rawOfferingId = payload.offering_id ?? payload.offeringId;
+    const offeringId =
+      typeof rawOfferingId === "string" && rawOfferingId.trim() ? rawOfferingId.trim() : null;
     if (!offeringId) return jsonRes({ error: "offering_id is required" }, req, 400);
+
+    const rawApplicationId = payload.application_id ?? payload.applicationId;
+    const applicationId =
+      typeof rawApplicationId === "string" && rawApplicationId.trim()
+        ? rawApplicationId.trim()
+        : null;
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // User-scoped client: authenticate the caller (JWT from the Authorization header).
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const {
-      data: { user },
-      error: userError,
-    } = await userClient.auth.getUser();
-    if (userError || !user) return jsonRes({ error: "Invalid token" }, req, 401);
+    const token = authHeader.toLowerCase().startsWith("bearer ")
+      ? authHeader.slice(7).trim()
+      : "";
+    const internalExpected = INTERNAL_AUTH_TOKEN || serviceKey;
 
-    // Per-user+offering short-TTL cache — bound the shared external quota against
-    // a caller that reloads repeatedly (login-adjacent).
-    const cacheKey = `${user.id}:${offeringId}`;
+    interface InternalApplication {
+      id: string;
+      offering_id: string;
+      user_id: string | null;
+      email: string;
+      phone: string | null;
+      status: string | null;
+    }
+
+    const admin = createClient(supabaseUrl, serviceKey);
+    let internalApplication: InternalApplication | null = null;
+    let user: { id: string; phone?: string | null; email?: string | null } | null = null;
+
+    if (applicationId) {
+      // Naming an application selects the cron-only contract. A normal user may
+      // not name another application and inherit the service-role read path.
+      if (!internalExpected || !token || !timingSafeEqual(token, internalExpected)) {
+        return jsonRes({ error: "Unauthorized" }, req, 401);
+      }
+      if (!REENTRY_RECONCILE_ENABLED) {
+        return jsonRes(
+          { ok: true, enabled: false, skipped: "REENTRY_RECONCILE_ENABLED not set" },
+          req,
+        );
+      }
+
+      const { data: appRow, error: appError } = await admin
+        .from("cohort_applications")
+        .select("id, offering_id, user_id, email, phone, status")
+        .eq("id", applicationId)
+        .eq("offering_id", offeringId)
+        .maybeSingle();
+      if (appError) return jsonRes({ error: appError.message }, req, 500);
+      if (!appRow) return jsonRes({ error: "Unknown application" }, req, 404);
+      internalApplication = appRow as InternalApplication;
+    } else {
+      // Browser contract: authenticate the caller and retain the original
+      // per-user scope.
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const {
+        data: { user: authenticatedUser },
+        error: userError,
+      } = await userClient.auth.getUser();
+      if (userError || !authenticatedUser) return jsonRes({ error: "Invalid token" }, req, 401);
+      user = authenticatedUser;
+    }
+
+    // Per-subject+offering short-TTL cache. Anonymous applications are keyed by
+    // id rather than their nullable user_id.
+    const cacheKey = internalApplication
+      ? `application:${internalApplication.id}:${offeringId}`
+      : `user:${user!.id}:${offeringId}`;
     const cached = cacheGet(cacheKey);
     if (cached) return jsonRes({ ...cached, cached: true }, req);
-
-    // Service-role client — used ONLY to read offerings / payment_orders and to
-    // write the app-owned mirror. It NEVER writes `status` and NEVER writes `accepted`.
-    const admin = createClient(supabaseUrl, serviceKey);
 
     // Load the target offering: its OWN amount bands + a code-level product_1 map
     // (offerings has no product_1 column; the map is built in `_shared/reconcile`).
@@ -683,22 +739,25 @@ Deno.serve(async (req) => {
       }),
     };
 
-    // Read the caller's phone + email. Prefer the app `users` row, fall back to
-    // the auth identity, so a phone-only (synthetic-email) account still joins.
-    let phone: string | null = user.phone ?? null;
-    let email: string | null = user.email ?? null;
-    try {
-      const { data: profile } = await admin
-        .from("users")
-        .select("phone, email")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (profile) {
-        phone = (profile.phone as string) ?? phone;
-        email = (profile.email as string) ?? email;
+    // Cron reconciliation reads the completed application's own contacts,
+    // including user_id-NULL rows the browser contract can never reach.
+    // Browser reconciliation keeps its profile-first behaviour.
+    let phone: string | null = internalApplication?.phone ?? user?.phone ?? null;
+    let email: string | null = internalApplication?.email ?? user?.email ?? null;
+    if (!internalApplication && user) {
+      try {
+        const { data: profile } = await admin
+          .from("users")
+          .select("phone, email")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (profile) {
+          phone = (profile.phone as string) ?? phone;
+          email = (profile.email as string) ?? email;
+        }
+      } catch {
+        // profile lookup best-effort — the auth identity is the fallback join key.
       }
-    } catch {
-      // profile lookup best-effort — the auth identity is the fallback join key.
     }
     // Normalize the raw phone into last-10 for the join (defensive; joinKeys re-normalizes).
     const normPhone = phone ? normalizePhone(phone) ?? phone : null;
@@ -706,11 +765,28 @@ Deno.serve(async (req) => {
 
     // Read the three externals — READ-ONLY, phone-first→email-fallback, fail-soft.
     // The app-owned payment_orders lookup runs alongside as a SUPPLEMENTARY signal.
+    // An application row is created only from a completed Tally submission, so
+    // the cron path does not re-scan every Tally form merely to prove the row
+    // that triggered it exists. Money and funnel status remain fresh external
+    // reads; no payment state is inferred from local defaults.
+    const completedApplicationTally: TallyRead = {
+      available: true,
+      resolvedKey: keys.phone ? "phone" : keys.email ? "email" : null,
+      completed: true,
+      partial: false,
+      essayPresent: true,
+      furthestQuestion: null,
+    };
+    const subjectUserId = internalApplication?.user_id ?? user?.id ?? null;
     const [tally, telecrm, razorpayExternal, firstParty] = await Promise.all([
-      readTally(keys, admin).catch(() => TALLY_UNAVAILABLE),
+      internalApplication
+        ? Promise.resolve(completedApplicationTally)
+        : readTally(keys, admin).catch(() => TALLY_UNAVAILABLE),
       readTeleCrm(keys).catch(() => TELECRM_UNAVAILABLE),
       readRazorpay(keys, offering).catch(() => RAZORPAY_UNAVAILABLE),
-      readPaymentOrders(admin, user.id, offering).catch(() => ({ products: [], confirmed: false })),
+      subjectUserId
+        ? readPaymentOrders(admin, subjectUserId, offering).catch(() => ({ products: [], confirmed: false }))
+        : Promise.resolve({ products: [], confirmed: false }),
     ]);
 
     // Merge the supplementary first-party evidence into the money signal. It does
@@ -796,49 +872,72 @@ Deno.serve(async (req) => {
     // write: ANY terminal row in the set makes the whole write terminal.
     let applicationTerminal = false;
     let applicationStatusUnknown = false;
-    try {
-      const { data: appRows, error: appError } = await admin
-        .from("cohort_applications")
-        .select("status")
-        .eq("user_id", user.id)
-        .eq("offering_id", offeringId);
-      if (appError) {
-        applicationStatusUnknown = true;
+    if (internalApplication) {
+      // The cron contract has already performed an error-checked, id + offering
+      // scoped service-role read above. Reuse that exact row instead of widening
+      // the floor to another applicant with the same contact. A missing/non-string
+      // status is unknown, not live: retracting is the same recoverable fail-safe
+      // used for a failed browser pre-read.
+      const appStatus =
+        typeof internalApplication.status === "string"
+          ? internalApplication.status.trim().toLowerCase()
+          : null;
+      applicationStatusUnknown = !appStatus;
+      applicationTerminal =
+        appStatus != null && TERMINAL_NEGATIVE_STATUSES.has(appStatus);
+      if (applicationStatusUnknown) {
         logPreReadFailure(
-          "reconcile.application_status.read_failed",
-          "status pre-read failed; treating the application as terminal and retracting the mirror",
-          appError,
+          "reconcile.application_status.missing",
+          "named application has no readable status; retracting the mirror",
+          { code: "APPLICATION_STATUS_MISSING", message: "application status missing" },
           derived.stage,
         );
-      } else {
-        const rows = Array.isArray(appRows) ? appRows : [];
-        applicationTerminal = rows.some((row) => {
-          const appStatus =
-            row && typeof row.status === "string" ? row.status.trim().toLowerCase() : null;
-          return appStatus != null && TERMINAL_NEGATIVE_STATUSES.has(appStatus);
-        });
-        if (rows.length > 1) {
-          // Not fatal — the floor and the mirror both cover the whole set — but the
-          // duplicate is a data defect worth seeing. UUID-free: only the count.
-          console.warn(
-            JSON.stringify({
-              level: "warn",
-              event: "reconcile.application_status.duplicate_rows",
-              message: "more than one application row for this caller and offering",
-              rows: rows.length,
-              stage: derived.stage,
-            }),
-          );
-        }
       }
-    } catch (statusErr) {
-      applicationStatusUnknown = true;
-      logPreReadFailure(
-        "reconcile.application_status.read_threw",
-        "status pre-read threw; treating the application as terminal and retracting the mirror",
-        statusErr,
-        derived.stage,
-      );
+    } else {
+      try {
+        const { data: appRows, error: appError } = await admin
+          .from("cohort_applications")
+          .select("status")
+          .eq("user_id", user!.id)
+          .eq("offering_id", offeringId);
+        if (appError) {
+          applicationStatusUnknown = true;
+          logPreReadFailure(
+            "reconcile.application_status.read_failed",
+            "status pre-read failed; retracting the mirror",
+            appError,
+            derived.stage,
+          );
+        } else {
+          const rows = Array.isArray(appRows) ? appRows : [];
+          applicationTerminal = rows.some((row) => {
+            const appStatus =
+              row && typeof row.status === "string" ? row.status.trim().toLowerCase() : null;
+            return appStatus != null && TERMINAL_NEGATIVE_STATUSES.has(appStatus);
+          });
+          if (rows.length > 1) {
+            // Not fatal — the floor and the mirror both cover the whole set — but the
+            // duplicate is a data defect worth seeing. UUID-free: only the count.
+            console.warn(
+              JSON.stringify({
+                level: "warn",
+                event: "reconcile.application_status.duplicate_rows",
+                message: "more than one application row for this caller and offering",
+                rows: rows.length,
+                stage: derived.stage,
+              }),
+            );
+          }
+        }
+      } catch (statusErr) {
+        applicationStatusUnknown = true;
+        logPreReadFailure(
+          "reconcile.application_status.read_threw",
+          "status pre-read threw; retracting the mirror",
+          statusErr,
+          derived.stage,
+        );
+      }
     }
 
     // ── The held-seat anchor (REQ-DEC-5, migration 20260728120000) ──
@@ -861,11 +960,14 @@ Deno.serve(async (req) => {
     let stampAcceptedAt = false;
     if (!applicationStatusUnknown && !applicationTerminal && derived.stage === "accepted") {
       try {
-        const { data: anchorRows, error: anchorError } = await admin
+        let anchorQuery = admin
           .from("cohort_applications")
           .select("accepted_at")
-          .eq("user_id", user.id)
           .eq("offering_id", offeringId);
+        anchorQuery = internalApplication
+          ? anchorQuery.eq("id", internalApplication.id)
+          : anchorQuery.eq("user_id", user!.id);
+        const { data: anchorRows, error: anchorError } = await anchorQuery;
         if (anchorError) {
           logPreReadFailure(
             "reconcile.accepted_at.read_failed",
@@ -938,11 +1040,14 @@ Deno.serve(async (req) => {
             // left alone forever.
             ...(stampAcceptedAt ? { accepted_at: new Date().toISOString() } : {}),
           };
-      const { error: mirrorError } = await admin
+      let mirrorQuery = admin
         .from("cohort_applications")
         .update(mirrorPayload)
-        .eq("user_id", user.id)
         .eq("offering_id", offeringId);
+      mirrorQuery = internalApplication
+        ? mirrorQuery.eq("id", internalApplication.id)
+        : mirrorQuery.eq("user_id", user!.id);
+      const { error: mirrorError } = await mirrorQuery;
       if (mirrorError) {
         console.error("[reconcile] mirror write failed:", mirrorError.message);
       } else {

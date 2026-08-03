@@ -4,6 +4,28 @@ import App from "./App.tsx";
 import "./index.css";
 import { initSentry } from "./lib/sentry";
 import { durationsMs } from "./lib/motion";
+import {
+  isInstallNudgeEnabled,
+  registerInstallCapture,
+} from "./hooks/useInstallMoment";
+
+// Capture `beforeinstallprompt` from the ENTRY, not from a route. The browser
+// fires that event once per page load, shortly after its installability check
+// finishes, and never re-fires it on SPA navigation. The only surface that
+// offers an install today is a lazily-loaded route (`/my-application/:id`),
+// whose chunk arrives minutes later — so a listener registered there would be
+// attached to an event that already came and went, and the offer would never
+// appear. Registering here costs nothing measurable (the module is a few hundred
+// bytes and pulls in only `@capacitor/core`, already in this entry) and is the
+// difference between the feature working and the feature being dead. Idempotent.
+//
+// GATED, and gated HERE as well as inside the function, because this is the app
+// entry: what the listener does is `preventDefault()` the browser's own install
+// mini-infobar for every web visitor, so the one file that runs for all of them
+// should say out loud that the feature is dark. `VITE_INSTALL_NUDGE` defaults
+// off (src/lib/flags.ts), and with it off this line is the whole difference
+// between the entry as it is today and the entry as it was before E-3.
+if (isInstallNudgeEnabled()) registerInstallCapture();
 
 // Kick off error reporting. This is cheap and non-blocking: it schedules the
 // @sentry/react load for first idle (so Sentry stays off the entry chunk and

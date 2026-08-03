@@ -30,6 +30,7 @@ import { isAndroid, isNative } from "@/lib/platform";
 import { hapticImpact, hapticSelection, tapTick } from "@/lib/haptics";
 import { track } from "@/lib/analytics";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
+import { checkoutWebPath, type CheckoutPaymentType } from "@/lib/checkoutWebPath";
 
 /* -- Razorpay global type -- */
 declare global {
@@ -238,7 +239,7 @@ export default function CheckoutPage() {
   const { user, loading: authLoading } = useAuth();
   const [searchParams] = useSearchParams();
   // Staged payment params
-  const paymentType = (searchParams.get("type") as "full" | "app_fee" | "confirmation" | "balance") || "full";
+  const paymentType = (searchParams.get("type") as CheckoutPaymentType) || "full";
   const applicationId = searchParams.get("app") || null;
   usePageTitle(
     paymentType === "app_fee" ? "Application Fee" :
@@ -701,10 +702,17 @@ export default function CheckoutPage() {
 
   // Path B / Google Play Reader Rule: the Android shell must NEVER expose a
   // Razorpay-driven checkout page. Replace the entire pay UI with a
-  // Continue-on-web card that deep-links to the same offering on the public
-  // web origin. Slug-aware so we land the user exactly where they tapped.
+  // Continue-on-web card on the public web origin. A staged payment keeps its
+  // application-scoped checkout query; dropping it to the offering page makes
+  // an application-fee reminder impossible to complete from the Android shell.
+  // Full purchases still use the normal public offering journey.
   if (isNative()) {
-    const webPath = offering.slug ? `/p/${offering.slug}` : "/browse";
+    const webPath = checkoutWebPath({
+      offeringId,
+      offeringSlug: offering.slug,
+      paymentType,
+      applicationId,
+    });
     return (
       <div className="min-h-screen bg-canvas flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-[480px]">
