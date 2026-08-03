@@ -31,6 +31,8 @@ const {
   resolveRoomSlug,
   useCohortRoom,
   useMyCohortRooms,
+  useRoomFeed,
+  useRoomResources,
   useRoomView,
 } = await import("@/hooks/useCohortRooms");
 
@@ -248,6 +250,71 @@ describe("useCohortRoom", () => {
   it("does not fire while the offering id is unknown", () => {
     renderHook(() => useCohortRoom(null), { wrapper });
     expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("feed and resource envelopes", () => {
+  it("normalises one feed page and keeps the server cursor explicit", async () => {
+    rpc.mockResolvedValue({
+      data: {
+        posts: [{
+          id: "post-1",
+          offering_id: OFFERING,
+          batch_id: "b-1",
+          batch_name: "Batch A1",
+          author_id: "user-2",
+          author_name: "Meera",
+          kind: "question",
+          body: "Where should I start?",
+          media: [],
+          channel_key: "this_week",
+          cohort_week_id: "week-4",
+          week_number: 4,
+          reply_count: 1,
+          last_activity_at: "2026-08-03T10:00:00Z",
+          created_at: "2026-08-03T09:00:00Z",
+          replies: [{ id: "reply-1", author_id: "mentor-1", author_name: "Priya", body: "Start here.", is_mentor_answer: true, created_at: "2026-08-03T10:00:00Z" }],
+          replies_truncated: false,
+        }],
+        batches: [{ id: "b-1", name: "Batch A1", channels: ["this_week", "general"], channel_labels: { ai_tools: "AI Tools" }, weeks: [{ id: "week-4", week_number: 4, theme: "Movement", status: "active" }] }],
+        selected_batch_id: "b-1",
+        has_more: true,
+        next_cursor: { activity: "2026-08-03T10:00:00Z", id: "post-1" },
+      },
+      error: null,
+    });
+    const { result } = renderHook(() => useRoomFeed(OFFERING, { batchId: "b-1", channel: "this_week" }), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.posts[0]).toMatchObject({ kind: "question", week_number: 4 });
+    expect(result.current.posts[0]?.replies[0]).toMatchObject({ is_mentor_answer: true });
+    expect(result.current.batches[0]?.channels).toEqual(["this_week", "general"]);
+    expect(result.current.batches[0]?.channel_labels).toEqual({ ai_tools: "AI Tools" });
+    expect(result.current.hasNextPage).toBe(true);
+    expect(rpc).toHaveBeenCalledWith("get_room_feed", expect.objectContaining({
+      p_offering: OFFERING,
+      p_batch: "b-1",
+      p_channel: "this_week",
+      p_before_activity: null,
+      p_before_id: null,
+    }));
+  });
+
+  it("keeps an empty binder successful and a 42501 binder refused", async () => {
+    rpc.mockResolvedValueOnce({
+      data: { resources: [], batches: [{ id: "b-1", name: "Batch A1" }], selected_batch_id: "b-1", truncated: false },
+      error: null,
+    });
+    const first = renderHook(() => useRoomResources(OFFERING, { batchId: "b-1" }), { wrapper });
+    await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
+    expect(first.result.current.data?.resources).toEqual([]);
+    expect(first.result.current.denied).toBe(false);
+    first.unmount();
+
+    rpc.mockResolvedValue({ data: null, error: denial() });
+    const second = renderHook(() => useRoomResources(OFFERING, { batchId: "b-1" }), { wrapper });
+    await waitFor(() => expect(second.result.current.isError).toBe(true));
+    expect(second.result.current.denied).toBe(true);
   });
 });
 

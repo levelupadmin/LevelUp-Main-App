@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:room-access": "node qa-harness/cohort-room-access.spec.mjs",
-    "test:announcement-fanout": "node qa-harness/run-announcement-fanout.mjs"
+    "test:announcement-fanout": "node qa-harness/run-announcement-fanout.mjs qa-harness/announcement-fanout.sql",
+    "test:room-feed-resources": "node qa-harness/run-announcement-fanout.mjs qa-harness/room-feed-resources.sql"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",

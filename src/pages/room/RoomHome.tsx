@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { CalendarClock, Users } from "lucide-react";
+import { BookOpen, CalendarClock, Users } from "lucide-react";
 import { moduleEnabled, sessionTimeState, type RoomModuleKey } from "@/lib/room";
 import { SkeletonLine, SurfaceCard } from "@/components/patterns";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,6 +8,7 @@ import {
   isLobbyEnvelope,
   useRoomOfferingMeta,
   useRoomOutlet,
+  useRoomResources,
   useRoomSeenWatermark,
   useRoomWeeks,
   type RoomSession,
@@ -50,6 +51,10 @@ import { useRoomClock } from "@/components/room/RoomClockProvider";
  * array is capped at ten rows and carries no author, so `AnnouncementsModule`
  * reads `get_room_announcements` instead. The lobby pays it too, and that is a
  * decision rather than an oversight — see "the lobby gets the whole board".
+ * R3 round 2 adds one CONDITIONAL binder read on the member branch, only while
+ * the resources module is enabled. It exists solely to avoid drawing a dead
+ * home card for an empty binder, shares the route's cache key, and stays idle
+ * in the lobby.
  *
  * There is also exactly ONE WRITE on open — the `cohort_room_seen` watermark,
  * which is what clears the unseen dot on `/rooms`. It is written by whichever
@@ -120,6 +125,12 @@ const RoomHome = () => {
   // lobby lands here whatever the phase says: `phase` and `access` are
   // independent axes, and a pre_member of a LIVE room is still in the lobby.
   const isLobby = room.phase === "pre_start" || isLobbyEnvelope(envelope);
+  // Unlike the feed, an empty binder must not leave a dead summary card on
+  // home. This bounded read is idle in the lobby and when the module is off.
+  const resourcesQuery = useRoomResources(room.offering_id, {
+    batchId: envelope.batch_id,
+    enabled: !isLobby && canSee("resources"),
+  });
 
   // The hero's data. Idle in the lobby (whose envelope is redacted anyway) and
   // idle when the cohort runs no weeks, so neither pays for a query it cannot
@@ -289,6 +300,20 @@ const RoomHome = () => {
           </p>
         </SurfaceCard>
       )}
+
+      {canSee("resources") && (resourcesQuery.data?.resources.length ?? 0) > 0 && (
+        <SurfaceCard to="resources" padding="md">
+          <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
+            <BookOpen size={12} strokeWidth={1.5} className="mr-2 inline align-[-1px]" />
+            Reference binder
+          </p>
+          <p className="mt-2 text-base text-foreground">
+            {resourcesQuery.data?.resources.length}{" "}
+            {resourcesQuery.data?.resources.length === 1 ? "resource" : "resources"}
+          </p>
+          <p className="body-muted mt-1 text-sm">Files, links and recordings from the cohort team.</p>
+        </SurfaceCard>
+      )}
     </div>
   );
 };
@@ -338,41 +363,4 @@ export const RoomWeeksRoute = () => {
   if (!moduleEnabled(envelope.config, "weeks")) return <ModuleOffNote title="Weeks" />;
 
   return <WeeksModule renderAssignment={(props) => <AssignmentModule {...props} />} />;
-};
-
-/**
- * The nested module routes still waiting on their module (`feed`, `people`,
- * `resources`).
- *
- * R1 gives each one its own address, its own heading and the room's own data;
- * the phase that builds it replaces the body. `weeks` and `screenings` have
- * graduated out of here — see `RoomWeeksRoute` above and `RoomScreenings`. A
- * module the cohort has switched OFF is not reachable by typing its URL either:
- * `moduleEnabled` decides here exactly as it decides in the rail, so a disabled
- * module reads as absent rather than as an empty page.
- */
-export const RoomModuleRoute = ({
-  module,
-  title,
-}: {
-  module: RoomModuleKey;
-  title: string;
-}) => {
-  const { envelope, room } = useRoomOutlet();
-
-  if (!moduleEnabled(envelope.config, module)) return <ModuleOffNote title={title} />;
-
-  return (
-    <section aria-labelledby={`room-module-${module}`} className="space-y-4">
-      <h2
-        id={`room-module-${module}`}
-        className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground"
-      >
-        {title}
-      </h2>
-      <p className="body-muted text-sm">
-        {room.offering_title} · {title} opens here.
-      </p>
-    </section>
-  );
 };

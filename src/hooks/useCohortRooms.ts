@@ -99,10 +99,10 @@ interface UntypedTable {
 
 const roomDb = supabase as unknown as {
   from: (table: string) => UntypedTable;
-  rpc: (
+  rpc: <T>(
     fn: string,
     args: Record<string, unknown>,
-  ) => PromiseLike<UntypedResult<Record<string, unknown>[]>>;
+  ) => PromiseLike<UntypedResult<T>>;
 };
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -313,6 +313,92 @@ export interface RoomRosterEntry {
   role: string;
 }
 
+export type RoomPostKind = "post" | "question" | "win";
+
+export interface RoomFeedReply {
+  id: string;
+  author_id: string;
+  author_name: string;
+  author_avatar_url: string | null;
+  body: string;
+  is_mentor_answer: boolean;
+  created_at: string;
+}
+
+export interface RoomFeedPost {
+  id: string;
+  offering_id: string;
+  batch_id: string;
+  batch_name: string;
+  author_id: string;
+  author_name: string;
+  author_avatar_url: string | null;
+  author_role: string | null;
+  kind: RoomPostKind;
+  body: string;
+  media: unknown[];
+  channel_key: string;
+  cohort_week_id: string | null;
+  week_number: number | null;
+  reply_count: number;
+  last_activity_at: string;
+  created_at: string;
+  replies: RoomFeedReply[];
+  replies_truncated: boolean;
+}
+
+export interface RoomFeedWeek {
+  id: string;
+  week_number: number;
+  theme: string | null;
+  status: string | null;
+}
+
+export interface RoomFeedBatch {
+  id: string;
+  name: string;
+  channels: string[];
+  channel_labels: Record<string, string>;
+  weeks: RoomFeedWeek[];
+}
+
+export interface RoomFeedCursor {
+  activity: string;
+  id: string;
+}
+
+export interface RoomFeedPage {
+  posts: RoomFeedPost[];
+  batches: RoomFeedBatch[];
+  selected_batch_id: string | null;
+  has_more: boolean;
+  next_cursor: RoomFeedCursor | null;
+}
+
+export interface RoomResource {
+  id: string;
+  offering_id: string;
+  batch_id: string | null;
+  batch_name: string | null;
+  cohort_week_id: string | null;
+  week_number: number | null;
+  week_theme: string | null;
+  title: string;
+  kind: "link" | "file" | "video";
+  url: string;
+  sort_order: number;
+  created_at: string;
+  added_by: string | null;
+  added_by_name: string;
+}
+
+export interface RoomResourcesPayload {
+  resources: RoomResource[];
+  batches: Array<{ id: string; name: string }>;
+  selected_batch_id: string | null;
+  truncated: boolean;
+}
+
 /** The two `offerings` columns the room needs that no room RPC returns. */
 export interface RoomOfferingMeta {
   /** `offerings.cohort_start_date` — the "doors open" date. */
@@ -427,6 +513,25 @@ export const roomAnnouncementsKey = (
   limit: number,
 ) => [COHORT_ROOMS_QUERY_ROOT, "announcements", offeringId ?? "none", limit] as const;
 
+export const roomFeedKey = (
+  offeringId: string | null | undefined,
+  channel: string,
+  batchId: string | null | undefined,
+  limit: number,
+) => [
+  COHORT_ROOMS_QUERY_ROOT,
+  "feed",
+  offeringId ?? "none",
+  channel,
+  batchId ?? "all-batches",
+  limit,
+] as const;
+
+export const roomResourcesKey = (
+  offeringId: string | null | undefined,
+  batchId: string | null | undefined,
+) => [COHORT_ROOMS_QUERY_ROOT, "resources", offeringId ?? "none", batchId ?? "all-batches"] as const;
+
 /**
  * The week list is per-USER as well as per-offering (it carries that user's own
  * submissions), so the caller's id is part of the key — two accounts on one
@@ -529,7 +634,7 @@ async function fetchRoomAnnouncements(
   limit: number,
   offset: number,
 ): Promise<RoomAnnouncementDetail[]> {
-  const { data, error } = await roomDb.rpc("get_room_announcements", {
+  const { data, error } = await roomDb.rpc<Record<string, unknown>[]>("get_room_announcements", {
     p_offering: offeringId,
     p_limit: limit,
     p_offset: offset,
@@ -550,6 +655,152 @@ async function fetchRoomAnnouncements(
     author_name: asString(row.author_name),
     author_role: asString(row.author_role),
   }));
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asPostKind(value: unknown): RoomPostKind {
+  return value === "question" || value === "win" ? value : "post";
+}
+
+function asResourceKind(value: unknown): RoomResource["kind"] {
+  return value === "file" || value === "video" ? value : "link";
+}
+
+function asRoomFeedReply(value: unknown): RoomFeedReply {
+  const row = asRecord(value);
+  return {
+    id: asString(row.id) ?? "",
+    author_id: asString(row.author_id) ?? "",
+    author_name: asString(row.author_name) ?? "Member",
+    author_avatar_url: asString(row.author_avatar_url),
+    body: typeof row.body === "string" ? row.body : "",
+    is_mentor_answer: asBool(row.is_mentor_answer),
+    created_at: asString(row.created_at) ?? "",
+  };
+}
+
+function asRoomFeedPost(value: unknown): RoomFeedPost {
+  const row = asRecord(value);
+  return {
+    id: asString(row.id) ?? "",
+    offering_id: asString(row.offering_id) ?? "",
+    batch_id: asString(row.batch_id) ?? "",
+    batch_name: asString(row.batch_name) ?? "Cohort",
+    author_id: asString(row.author_id) ?? "",
+    author_name: asString(row.author_name) ?? "Member",
+    author_avatar_url: asString(row.author_avatar_url),
+    author_role: asString(row.author_role),
+    kind: asPostKind(row.kind),
+    body: typeof row.body === "string" ? row.body : "",
+    media: asArray(row.media),
+    channel_key: asString(row.channel_key) ?? "general",
+    cohort_week_id: asString(row.cohort_week_id),
+    week_number: asNullableNumber(row.week_number),
+    reply_count: asCount(row.reply_count),
+    last_activity_at: asString(row.last_activity_at) ?? "",
+    created_at: asString(row.created_at) ?? "",
+    replies: asArray(row.replies).map(asRoomFeedReply).filter((reply) => reply.id),
+    replies_truncated: asBool(row.replies_truncated),
+  };
+}
+
+function asRoomFeedBatch(value: unknown): RoomFeedBatch {
+  const row = asRecord(value);
+  const rawLabels = asRecord(row.channel_labels);
+  return {
+    id: asString(row.id) ?? "",
+    name: asString(row.name) ?? "Cohort",
+    channels: asArray(row.channels).filter((item): item is string => typeof item === "string"),
+    channel_labels: Object.fromEntries(
+      Object.entries(rawLabels).filter(
+        (entry): entry is [string, string] =>
+          typeof entry[1] === "string" && entry[1].trim().length > 0,
+      ),
+    ),
+    weeks: asArray(row.weeks).map((item) => {
+      const week = asRecord(item);
+      return {
+        id: asString(week.id) ?? "",
+        week_number: asCount(week.week_number),
+        theme: asString(week.theme),
+        status: asString(week.status),
+      };
+    }).filter((week) => week.id),
+  };
+}
+
+async function fetchRoomFeed(
+  offeringId: string,
+  channel: string,
+  batchId: string | null,
+  cursor: RoomFeedCursor | null,
+  limit: number,
+): Promise<RoomFeedPage> {
+  const { data, error } = await roomDb.rpc<Record<string, unknown>>("get_room_feed", {
+    p_offering: offeringId,
+    p_channel: channel,
+    p_batch: batchId,
+    p_before_activity: cursor?.activity ?? null,
+    p_before_id: cursor?.id ?? null,
+    p_limit: limit,
+  });
+  if (error) throw error;
+
+  const payload = asRecord(data);
+  const next = asRecord(payload.next_cursor);
+  const nextActivity = asString(next.activity);
+  const nextId = asString(next.id);
+
+  return {
+    posts: asArray(payload.posts).map(asRoomFeedPost).filter((post) => post.id),
+    batches: asArray(payload.batches).map(asRoomFeedBatch).filter((batch) => batch.id),
+    selected_batch_id: asString(payload.selected_batch_id),
+    has_more: asBool(payload.has_more),
+    next_cursor: nextActivity && nextId ? { activity: nextActivity, id: nextId } : null,
+  };
+}
+
+async function fetchRoomResources(
+  offeringId: string,
+  batchId: string | null,
+): Promise<RoomResourcesPayload> {
+  const { data, error } = await roomDb.rpc<Record<string, unknown>>("get_room_resources", {
+    p_offering: offeringId,
+    p_batch: batchId,
+  });
+  if (error) throw error;
+
+  const payload = asRecord(data);
+  return {
+    resources: asArray(payload.resources).map((value) => {
+      const row = asRecord(value);
+      return {
+        id: asString(row.id) ?? "",
+        offering_id: asString(row.offering_id) ?? offeringId,
+        batch_id: asString(row.batch_id),
+        batch_name: asString(row.batch_name),
+        cohort_week_id: asString(row.cohort_week_id),
+        week_number: asNullableNumber(row.week_number),
+        week_theme: asString(row.week_theme),
+        title: asString(row.title) ?? "Resource",
+        kind: asResourceKind(row.kind),
+        url: asString(row.url) ?? "",
+        sort_order: asCount(row.sort_order),
+        created_at: asString(row.created_at) ?? "",
+        added_by: asString(row.added_by),
+        added_by_name: asString(row.added_by_name) ?? "The team",
+      };
+    }).filter((resource) => resource.id),
+    batches: asArray(payload.batches).map((value) => {
+      const row = asRecord(value);
+      return { id: asString(row.id) ?? "", name: asString(row.name) ?? "Cohort" };
+    }).filter((batch) => batch.id),
+    selected_batch_id: asString(payload.selected_batch_id),
+    truncated: asBool(payload.truncated),
+  };
 }
 
 async function fetchRoomOfferingMeta(offeringId: string): Promise<RoomOfferingMeta> {
@@ -751,6 +1002,137 @@ export function useRoomAnnouncements(
     denied: query.isError && isRoomAccessDenied(query.error),
     notices,
   });
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The room feed + resource binder (R3 round 2)
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export const ROOM_FEED_PAGE_SIZE = 12;
+
+export type RoomFeedResult = UseInfiniteQueryResult<
+  InfiniteData<RoomFeedPage>,
+  Error
+> & {
+  denied: boolean;
+  posts: RoomFeedPost[];
+  batches: RoomFeedBatch[];
+};
+
+export function useRoomFeed(
+  offeringId: string | null | undefined,
+  options?: {
+    channel?: string;
+    batchId?: string | null;
+    enabled?: boolean;
+    pageSize?: number;
+  },
+): RoomFeedResult {
+  const channel = options?.channel ?? "all";
+  const batchId = options?.batchId ?? null;
+  const pageSize = options?.pageSize ?? ROOM_FEED_PAGE_SIZE;
+
+  const query = useInfiniteQuery({
+    queryKey: roomFeedKey(offeringId, channel, batchId, pageSize),
+    queryFn: ({ pageParam }: { pageParam: RoomFeedCursor | null }) =>
+      fetchRoomFeed(offeringId as string, channel, batchId, pageParam, pageSize),
+    initialPageParam: null as RoomFeedCursor | null,
+    getNextPageParam: (lastPage: RoomFeedPage) => lastPage.next_cursor ?? undefined,
+    enabled: !!offeringId && options?.enabled !== false,
+    staleTime: ENVELOPE_STALE_MS,
+    retry: retryUnlessDenied,
+  });
+
+  const pages = useMemo(() => query.data?.pages ?? [], [query.data]);
+  const posts = useMemo(() => {
+    const seen = new Set<string>();
+    return pages.flatMap((page) => page.posts).filter((post) => {
+      if (seen.has(post.id)) return false;
+      seen.add(post.id);
+      return true;
+    });
+  }, [pages]);
+
+  return Object.assign(query, {
+    denied: query.isError && isRoomAccessDenied(query.error),
+    posts,
+    batches: pages[0]?.batches ?? [],
+  });
+}
+
+export interface RoomPostDraft {
+  body: string;
+  kind: RoomPostKind;
+  channelKey: string;
+  batchId: string | null;
+  cohortWeekId: string | null;
+}
+
+export function usePostRoomPost(
+  offeringId: string | null | undefined,
+): UseMutationResult<string, Error, RoomPostDraft> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (draft: RoomPostDraft) => {
+      const { data, error } = await roomDb.rpc<string>("cohort_room_post_write", {
+        p_offering: offeringId,
+        p_body: draft.body,
+        p_kind: draft.kind,
+        p_channel_key: draft.channelKey,
+        p_cohort_week_id: draft.cohortWeekId,
+        p_media: [],
+        p_batch: draft.batchId,
+      });
+      if (error) throw error;
+      return typeof data === "string" ? data : "";
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: [COHORT_ROOMS_QUERY_ROOT, "feed", offeringId ?? "none"],
+      });
+    },
+  });
+}
+
+export interface RoomReplyDraft {
+  postId: string;
+  body: string;
+}
+
+export function useReplyToRoomPost(
+  offeringId: string | null | undefined,
+): UseMutationResult<string, Error, RoomReplyDraft> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (draft: RoomReplyDraft) => {
+      const { data, error } = await roomDb.rpc<string>("cohort_room_reply_write", {
+        p_post: draft.postId,
+        p_body: draft.body,
+        p_is_mentor_answer: false,
+      });
+      if (error) throw error;
+      return typeof data === "string" ? data : "";
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: [COHORT_ROOMS_QUERY_ROOT, "feed", offeringId ?? "none"],
+      });
+    },
+  });
+}
+
+export function useRoomResources(
+  offeringId: string | null | undefined,
+  options?: { batchId?: string | null; enabled?: boolean },
+): RoomQueryResult<RoomResourcesPayload> {
+  const batchId = options?.batchId ?? null;
+  return withDenied(useQuery({
+    queryKey: roomResourcesKey(offeringId, batchId),
+    queryFn: () => fetchRoomResources(offeringId as string, batchId),
+    enabled: !!offeringId && options?.enabled !== false,
+    staleTime: MEMBERSHIPS_STALE_MS,
+    retry: retryUnlessDenied,
+  }));
 }
 
 /**

@@ -98,15 +98,10 @@ const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
 
 // ── Cohort rooms (R1), behind VITE_COHORT_ROOMS ──
 // Their own chunks: with the flag off none of them is referenced by a rendered
-// route, so the room code never enters a session's network graph. `RoomHome`
-// and `RoomModuleRoute` share one module (and therefore one chunk) because a
-// module tab is only ever reached from the home it renders beside.
+// route, so the room code never enters a session's network graph.
 const MyCohortsPage = lazy(() => import("@/pages/MyCohortsPage"));
 const RoomShell = lazy(() => import("@/pages/room/RoomShell"));
 const RoomHome = lazy(() => import("@/pages/room/RoomHome"));
-const RoomModuleRoute = lazy(() =>
-  import("@/pages/room/RoomHome").then((m) => ({ default: m.RoomModuleRoute })),
-);
 // R2's two built modules. `RoomWeeksRoute` rides RoomHome's chunk (it is the
 // gate + the assignment seam around WeeksModule, and needs the shell's envelope
 // that this file cannot read); the Screening Shelf is a page of its own and gets
@@ -118,6 +113,11 @@ const RoomScreenings = lazy(() => import("@/pages/room/RoomScreenings"));
 // R3's roster module. Its own chunk for the same reason the shelf has one: it
 // carries the roster grid and its avatars, none of which a room open needs.
 const RoomPeople = lazy(() => import("@/pages/room/RoomPeople"));
+// R3's activity and reference surfaces each stay in their own route chunk.
+// Opening a room therefore does not ship the feed composer, reply UI or the
+// resource binder until the member asks for one of them.
+const RoomFeed = lazy(() => import("@/pages/room/RoomFeed"));
+const RoomResources = lazy(() => import("@/pages/room/RoomResources"));
 const CohortRoomRedirect = lazy(() =>
   import("@/pages/room/RoomShell").then((m) => ({ default: m.CohortRoomRedirect })),
 );
@@ -312,27 +312,14 @@ const App = () => {
                           default week when the route names none. */}
                       <Route path="weeks" element={roomModule(<RoomWeeksRoute />)} />
                       <Route path="weeks/:n" element={roomModule(<RoomWeeksRoute />)} />
-                      {/* Mounted DIRECTLY, not through RoomModuleRoute:
-                          RoomScreenings owns the `recordings` gate itself, and
-                          double-gating it would be one cohort setting with two
-                          empty states. */}
+                      {/* RoomScreenings owns the `recordings` gate itself, so
+                          the route does not add a second config decision. */}
                       <Route path="screenings" element={roomModule(<RoomScreenings />)} />
-                      <Route
-                        path="feed"
-                        element={roomModule(<RoomModuleRoute module="feed" title="Feed" />)}
-                      />
-                      {/* Mounted DIRECTLY for the same reason `screenings` is:
-                          RoomPeople owns the `roster` gate itself. `feed` and
-                          `resources` stay on RoomModuleRoute, because their
-                          modules do not exist yet and a slot with no module
-                          must keep saying so. */}
+                      {/* Every built module owns its own config and lobby gate,
+                          so a typed URL cannot bypass the room's matrix. */}
+                      <Route path="feed" element={roomModule(<RoomFeed />)} />
                       <Route path="people" element={roomModule(<RoomPeople />)} />
-                      <Route
-                        path="resources"
-                        element={roomModule(
-                          <RoomModuleRoute module="resources" title="Resources" />,
-                        )}
-                      />
+                      <Route path="resources" element={roomModule(<RoomResources />)} />
                     </Route>
                   </>
                 )}

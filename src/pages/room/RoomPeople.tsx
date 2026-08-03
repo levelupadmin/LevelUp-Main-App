@@ -18,9 +18,8 @@ import { moduleEnabled } from "@/lib/room";
  * RoomPeople — who is in the room (`/room/:slug/people`).
  *
  * Mentors and hosts on top, then the cohort-mate grid and a count line in mono.
- * It replaces the `RoomModuleRoute module="roster"` placeholder for THIS slot
- * only: `feed` and `resources` keep saying they open here, because they do not
- * open anywhere yet, and a slot with no module must keep saying so.
+ * The page owns the complete roster slot; the room no longer carries generic
+ * placeholder routes for modules that have not been built.
  *
  * ── One data source, six columns ──────────────────────────────────────────
  * `useRoomRoster` → `get_room_roster(p_offering)`, whose `RETURNS TABLE` is
@@ -32,8 +31,8 @@ import { moduleEnabled } from "@/lib/room";
  * appear nowhere in the room surfaces at all.
  *
  * ── The gate lives here ───────────────────────────────────────────────────
- * Mounted DIRECTLY in `App.tsx`, not through `RoomModuleRoute`, so this file
- * owns the `roster` gate exactly as `RoomScreenings` owns `recordings`. The
+ * Mounted directly in `App.tsx`, so this file owns the `roster` gate exactly as
+ * `RoomScreenings` owns `recordings`. The
  * off-note sentence below is that component's, word for word (its LINK is not:
  * see the note on `ModuleOff`): one cohort setting must not produce two empty
  * states. (`ModuleOffNote` in `RoomHome.tsx` is the third copy of the same

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Safe runner for announcement-fanout.sql.
+ * Safe runner for the local room SQL harnesses.
  *
  * Defaults to the local Supabase database. A non-local URL requires an explicit
  * shadow project ref, and the production ref is refused through either input.
@@ -12,6 +12,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 
 const PROD_REF = "ivkvluezuiojovpotlyb";
 const LOCAL_DB = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+const ALLOWED_HARNESSES = new Set([
+  "qa-harness/announcement-fanout.sql",
+  "qa-harness/room-feed-resources.sql",
+]);
 
 function die(message, code = 2) {
   console.error(`announcement-fanout: ${message}`);
@@ -21,6 +25,11 @@ function die(message, code = 2) {
 const ref = process.env.ROOM_QA_PROJECT_REF || process.env.SUPABASE_SHADOW_REF || "";
 const configuredUrl = process.env.ROOM_QA_DB_URL || "";
 const dbUrl = configuredUrl || LOCAL_DB;
+const harness = process.argv[2] || "qa-harness/announcement-fanout.sql";
+
+if (!ALLOWED_HARNESSES.has(harness)) {
+  die(`unknown harness ${JSON.stringify(harness)}; allowed files: ${[...ALLOWED_HARNESSES].join(", ")}.`);
+}
 
 let host = "";
 try {
@@ -66,7 +75,7 @@ if (!psql) {
 
 const child = spawnSync(
   psql,
-  [dbUrl, "-v", "ON_ERROR_STOP=1", "-f", "qa-harness/announcement-fanout.sql"],
+  [dbUrl, "-v", "ON_ERROR_STOP=1", "-f", harness],
   { stdio: "inherit" },
 );
 

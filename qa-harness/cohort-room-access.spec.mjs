@@ -455,6 +455,7 @@ const INVENTORY = [
   ["W6b", "pre_member community write is rejected"],
   ["W8", "forged channel_key is rejected by the write RPC"],
   ["W9", "client-set is_mentor_answer is overridden; raw feed INSERT is revoked"],
+  ["R3F/R3R", "feed/resource RPC scope, bounded pagination, safe projection, and resource-week integrity"],
   ["L1/L2", "revoking an enrolment removes access; re-granting restores it"],
   ["PROG", "get_cohort_progress — the one shipped-client surface R0 redefines"],
   ["TOTAL", "unfiltered enumeration: every actor asks each table for everything"],
@@ -2408,6 +2409,139 @@ section("W8 / W9 — channel + mentor-answer forgery", "the two controls that ca
       mentorAnswer.ok && mentorRow?.is_mentor_answer === true,
       mentorAnswer.ok ? `stored is_mentor_answer=${mentorRow?.is_mentor_answer}` : mentorAnswer.describe);
   }
+}
+
+// ── R3F / R3R — the built feed and binder read envelopes ───────────────────
+section("R3F / R3R — feed + resource binder", "one bounded page, exact batch scope, no applicant or contact data");
+{
+  // Add one positive win through the real write path. The seed already has a
+  // general question and W8 added a second valid post, so a page size of one is
+  // now guaranteed to have a next page for a non-vacuous keyset test.
+  const postSig = await signature("cohort_room_post_write");
+  const win = postSig
+    ? await rpc("member_A1", "cohort_room_post_write", bind(postSig, {
+        offering: ids.offering_a,
+        batch: ids.batch_a1,
+        channel: "general",
+        body: "ROOM QA win for the pagination control",
+        kind: "win",
+      }), "create a real A1 win before reading the feed")
+    : null;
+
+  const feedArgs = {
+    p_offering: ids.offering_a,
+    p_channel: "all",
+    p_batch: null,
+    p_before_activity: null,
+    p_before_id: null,
+    p_limit: 40,
+  };
+  const feedA1 = await rpc("member_A1", "get_room_feed", feedArgs, "get_room_feed(A) as member_A1");
+  const postsA1 = Array.isArray(feedA1.json?.posts) ? feedA1.json.posts : [];
+  const feedKeys = new Set(postsA1.flatMap((post) => Object.keys(post ?? {})));
+  const replyKeys = new Set(postsA1.flatMap((post) =>
+    Array.isArray(post?.replies) ? post.replies.flatMap((reply) => Object.keys(reply ?? {})) : []));
+  const forbiddenKeys = ["email", "phone", "bio", "tally_data", "content_text"];
+
+  prove("R3F.1",
+    "a batch-A1 member receives their own feed rows and inline replies through one RPC, including the planted A1 canary, while batch A2 and offering B remain absent",
+    feedA1.ok && postsA1.length >= 2 && feedA1.text.includes(CANARY.A1) &&
+      !feedA1.text.includes(CANARY.A2) && !feedA1.text.includes(CANARY.B1),
+    feedA1.ok
+      ? `${postsA1.length} post(s); A1=${feedA1.text.includes(CANARY.A1)} A2=${feedA1.text.includes(CANARY.A2)} B1=${feedA1.text.includes(CANARY.B1)}`
+      : feedA1.describe);
+
+  prove("R3F.2",
+    "the feed projection contains no contact, applicant-essay, raw-community or tally field on either posts or replies",
+    feedA1.ok && forbiddenKeys.every((key) => !feedKeys.has(key) && !replyKeys.has(key)),
+    `post keys: ${[...feedKeys].sort().join(", ")}; reply keys: ${[...replyKeys].sort().join(", ")}`);
+
+  const wins = await rpc("member_A1", "get_room_feed", { ...feedArgs, p_channel: "wins" }, "get_room_feed(A,wins)");
+  const winRows = Array.isArray(wins.json?.posts) ? wins.json.posts : [];
+  prove("R3F.3",
+    "the Wins standing channel is a real kind-filtered view, not a free-text channel alias: the control win is returned and every returned row has kind=win",
+    !!win?.ok && wins.ok && winRows.length > 0 && winRows.every((post) => post.kind === "win"),
+    wins.ok ? `${winRows.length} win row(s), kinds=${[...new Set(winRows.map((post) => post.kind))].join(",")}` : wins.describe);
+
+  const page1 = await rpc("member_A1", "get_room_feed", { ...feedArgs, p_limit: 1 }, "get_room_feed page 1");
+  const cursor = page1.json?.next_cursor;
+  const firstRows = Array.isArray(page1.json?.posts) ? page1.json.posts : [];
+  const page2 = cursor
+    ? await rpc("member_A1", "get_room_feed", {
+        ...feedArgs,
+        p_limit: 1,
+        p_before_activity: cursor.activity,
+        p_before_id: cursor.id,
+      }, "get_room_feed page 2")
+    : null;
+  const secondRows = Array.isArray(page2?.json?.posts) ? page2.json.posts : [];
+  prove("R3F.4",
+    "keyset pagination exposes an explicit next cursor, advances to a different post, and therefore gives the client a real terminus instead of a silent fixed limit",
+    page1.ok && page1.json?.has_more === true && !!cursor && firstRows.length === 1 &&
+      !!page2?.ok && secondRows.length === 1 && firstRows[0].id !== secondRows[0].id,
+    `page1=${firstRows[0]?.id ?? "none"}, has_more=${page1.json?.has_more}, cursor=${!!cursor}, page2=${secondRows[0]?.id ?? "none"}`);
+
+  const resourcesA1 = await rpc("member_A1", "get_room_resources", {
+    p_offering: ids.offering_a,
+    p_batch: null,
+  }, "get_room_resources(A) as member_A1");
+  const resourceRows = Array.isArray(resourcesA1.json?.resources) ? resourcesA1.json.resources : [];
+  const resourceKeys = new Set(resourceRows.flatMap((resource) => Object.keys(resource ?? {})));
+  prove("R3R.1",
+    "the binder returns batch-A1's week-grouped resources and mentor material, never batch A2 or offering B, with no contact/applicant/tally fields",
+    resourcesA1.ok && resourceRows.length >= 2 && resourcesA1.text.includes(CANARY.A1) &&
+      resourcesA1.text.includes(CANARY.MENTORDOC_A1) && !resourcesA1.text.includes(CANARY.A2) &&
+      !resourcesA1.text.includes(CANARY.B1) && forbiddenKeys.every((key) => !resourceKeys.has(key)),
+    resourcesA1.ok
+      ? `${resourceRows.length} resource(s); week numbers=${resourceRows.map((r) => r.week_number).join(",")}; keys=${[...resourceKeys].sort().join(",")}`
+      : resourcesA1.describe);
+
+  const deniedActors = ["member_B", "accepted_A", "pre_member_A1", "outsider", "anon"];
+  const deniedReads = [];
+  for (const actor of deniedActors) {
+    deniedReads.push([
+      actor,
+      await rpc(actor, "get_room_feed", feedArgs, `get_room_feed(A) as ${actor}`),
+      await rpc(actor, "get_room_resources", { p_offering: ids.offering_a, p_batch: null }, `get_room_resources(A) as ${actor}`),
+    ]);
+  }
+  const escaped = deniedReads.filter(([, feed, resources]) => !feed.raised || !resources.raised);
+  prove("R3F/R3R.2",
+    "another offering's member, an unpaid accepted applicant, a pre-member lobby occupant, an outsider and anon are all raised at by both read RPCs rather than handed empty or cross-room content",
+    escaped.length === 0,
+    escaped.length === 0
+      ? deniedReads.map(([actor, feed, resources]) => `${actor}:feed ${feed.status}/resources ${resources.status}`).join(" · ")
+      : `ESCAPED: ${escaped.map(([actor, feed, resources]) => `${actor}(feed raised=${feed.raised}, resources raised=${resources.raised})`).join(", ")}`);
+
+  // The mentor is offering-wide and has INSERT on resources. Give the trigger
+  // the exact forgery the old policy admitted: A1 resource, A2 week.
+  const crossWeek = await write("mentor_A", "cohort_resources", "POST", {
+    offering_id: ids.offering_a,
+    batch_id: ids.batch_a1,
+    cohort_week_id: ids.week_a2,
+    title: "forged cross-batch week",
+    kind: "link",
+    url: "https://files.test/cross-week",
+    added_by: session.mentor_A.id,
+  }, "resource under batch A1 pointing at batch A2's week");
+  prove("R3R.3",
+    "the table boundary rejects a resource whose week belongs to another batch, so week grouping can never carry another cohort's title through an otherwise readable resource row",
+    crossWeek.rejected,
+    crossWeek.describe);
+
+  const memberResource = await write("member_A1", "cohort_resources", "POST", {
+    offering_id: ids.offering_a,
+    batch_id: ids.batch_a1,
+    cohort_week_id: null,
+    title: "member-forged binder row",
+    kind: "link",
+    url: "https://files.test/member-forge",
+    added_by: session.member_A1.id,
+  }, "plain member attempting to write the resource binder");
+  prove("R3R.4",
+    "a plain cohort member cannot INSERT into the resource binder; the admin resource tab is convenience over a table boundary that still grants writes only to admin/room staff",
+    memberResource.rejected,
+    memberResource.describe);
 }
 
 // ── C2 — the T-60 zoom gate ────────────────────────────────────────────────
