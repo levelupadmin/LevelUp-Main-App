@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { bootAnalytics } from "@/lib/analytics";
-import { DECISION_FLOW, flag } from "@/lib/flags";
+import { COHORT_ROOMS, DECISION_FLOW, flag } from "@/lib/flags";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { queryClient, persistOptions } from "@/lib/queryClient";
 import { toast as sonnerToast } from "sonner";
@@ -116,6 +116,21 @@ const ClaimSeat = lazy(() => import("@/pages/decision/ClaimSeat"));
 const EnrollmentDetails = lazy(() => import("@/pages/decision/EnrollmentDetails"));
 const AdmissionPublic = lazy(() => import("@/pages/AdmissionPublic"));
 
+// ── Cohort rooms (R1), behind VITE_COHORT_ROOMS ──
+// Their own chunks: with the flag off none of them is referenced by a rendered
+// route, so the room code never enters a session's network graph. `RoomHome`
+// and `RoomModuleRoute` share one module (and therefore one chunk) because a
+// module tab is only ever reached from the home it renders beside.
+const MyCohortsPage = lazy(() => import("@/pages/MyCohortsPage"));
+const RoomShell = lazy(() => import("@/pages/room/RoomShell"));
+const RoomHome = lazy(() => import("@/pages/room/RoomHome"));
+const RoomModuleRoute = lazy(() =>
+  import("@/pages/room/RoomHome").then((m) => ({ default: m.RoomModuleRoute })),
+);
+const CohortRoomRedirect = lazy(() =>
+  import("@/pages/room/RoomShell").then((m) => ({ default: m.CohortRoomRedirect })),
+);
+
 // The QueryClient + its localStorage persister live in @/lib/queryClient so the
 // sign-out path can purge the persisted cache without importing this app root.
 
@@ -124,6 +139,13 @@ const App = () => {
   // above). Read once per render so the whole decision block appears or
   // disappears atomically.
   const decisionFlow = flag(DECISION_FLOW);
+
+  // The cohort-rooms SURFACE flag (VITE_COHORT_ROOMS, default off). Read once
+  // per render so the route table is decided in one place: with it off, /rooms
+  // and /room/* are not registered at all — they fall through to the existing
+  // catch-all 404 — and /cohort/:offeringId keeps its original element. The flag
+  // gates which ROUTES exist and nothing else; R0's RLS is what gates the data.
+  const roomsEnabled = flag(COHORT_ROOMS);
 
   // Fire-and-forget analytics boot. Reads analytics_settings from the
   // DB and injects whichever platform scripts are enabled. Skips on
@@ -253,7 +275,47 @@ const App = () => {
                 <Route path="/events/:eventId" element={<EventDetail />} />
                 <Route path="/my-application/:applicationId" element={<ApplicationStatus />} />
                 <Route path="/claim/:applicationId" element={<ClaimApplication />} />
-                <Route path="/cohort/:offeringId" element={<CohortDashboard />} />
+                {/*
+                  /cohort/:offeringId is LINKED FROM ALREADY-SENT NOTIFICATION
+                  EMAILS (R-D9). With the flag off this element expression is
+                  literally <CohortDashboard />, exactly as it has always been.
+                  With the flag on, the shim tries to resolve a room slug and
+                  <Navigate replace/>s to it — and falls back to this very page
+                  whenever it cannot, so the link never dead-ends.
+                */}
+                <Route
+                  path="/cohort/:offeringId"
+                  element={
+                    roomsEnabled
+                      ? <CohortRoomRedirect fallback={<CohortDashboard />} />
+                      : <CohortDashboard />
+                  }
+                />
+                {roomsEnabled && (
+                  <>
+                    <Route path="/rooms" element={<MyCohortsPage />} />
+                    <Route path="/room/:slug" element={<RoomShell />}>
+                      <Route index element={<RoomHome />} />
+                      <Route
+                        path="weeks/:n"
+                        element={<RoomModuleRoute module="weeks" title="Weeks" />}
+                      />
+                      <Route
+                        path="screenings"
+                        element={<RoomModuleRoute module="recordings" title="Screenings" />}
+                      />
+                      <Route path="feed" element={<RoomModuleRoute module="feed" title="Feed" />} />
+                      <Route
+                        path="people"
+                        element={<RoomModuleRoute module="roster" title="People" />}
+                      />
+                      <Route
+                        path="resources"
+                        element={<RoomModuleRoute module="resources" title="Resources" />}
+                      />
+                    </Route>
+                  </>
+                )}
                 {/* Claim + details are transactional reading screens, so they
                     keep the student shell (a way back out). The two cinematic
                     surfaces above them run full-bleed — see below. */}

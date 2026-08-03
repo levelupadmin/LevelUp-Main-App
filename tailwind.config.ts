@@ -75,6 +75,15 @@ export default {
           violet: "hsl(var(--accent-violet))",
           "violet-deep": "hsl(var(--accent-violet-deep))",
         },
+        // The per-cohort room accent, same two-token shape as the crimson/indigo
+        // pairs above (fill + a small-text lightness). Flat rather than nested
+        // under `accent` on purpose: Tailwind flattens nested groups with a dash,
+        // so nesting would spell the utility `text-accent-room-accent` while the
+        // room spec (design/briefs/cohort-r1.md R1-T2) is `text-room-accent`.
+        // The vars default to cream on :root and are overridden per room by
+        // RoomThemeProvider, so these resolve outside a room too.
+        "room-accent": "hsl(var(--room-accent))",
+        "room-accent-text": "hsl(var(--room-accent-text))",
         popover: {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))",

@@ -296,6 +296,8 @@
        258 90% 60% white computes 5.62:1, clearing AA with margin while staying
        recognizably violet. Used by TierBadge live_cohort. */
     --accent-violet-deep: 258 90% 60%;
+    --room-accent: var(--cream);          /* RoomThemeProvider overrides per room; unthemed = the system's cream */
+    --room-accent-text: var(--cream);     /* accent-on-dark small text (the --accent-*-text pattern), NOT --cream-text */
 
     --sidebar-background: 0 0% 0%;
     --sidebar-foreground: 240 4% 46%;
