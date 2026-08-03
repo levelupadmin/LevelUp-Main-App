@@ -33,15 +33,15 @@ shared `WORK-DONE-2026-08-03-*.md` handoffs.
 |---|---|---|---|
 | `LevelUp-cohort` | `design/cohort-sp` | `54021fdb` | dead gate removed; forward-only probe added |
 | `LevelUp-iv` | `design/cohort-iv` | `a7eeffb4` | durable app-to-Calendly binding closed |
-| `LevelUp-dc` | `design/cohort-dc` | `a36bdd06` | complete |
+| `LevelUp-dc` | `design/cohort-dc` | `a36bdd02` | complete |
 | `LevelUp-re` | `design/cohort-re` | `db537cf4` | all review follow-ups closed |
-| `LevelUp-r0` | `design/cohort-r0` | this handoff refresh | adversarial suite executed: 163/163 |
-| `LevelUp-r1` | `design/cohort-r1` | `2120ea35` | complete |
-| `LevelUp-r2` | `design/cohort-r2` | `0f628533` | real modules wired and verified |
+| `LevelUp-r0` | `design/cohort-r0` | `82b46a91` | final product-code state; this handoff has later docs only |
+| `LevelUp-r1` | `design/cohort-r1` | `2120ea3c` | complete |
+| `LevelUp-r2` | `design/cohort-r2` | `0f62853b` | real modules wired and verified |
 | `LevelUp-r3` | `design/cohort-r3` | `1fa22e42` | announcements, roster, feed, resources complete |
 | `LevelUp-r4` | `design/cohort-r4` | `131aa47b` | demo day, certificates, alumni complete |
 | `LevelUp-room-access-gaps` | `design/cohort-room-access-gaps` | `cb7bf8cf` | legacy gaps and migration collision closed |
-| `LevelUp-linkgate` | `design/cohort-linkgate` | `afe2ba14` | production link leak fix, §6 |
+| `LevelUp-linkgate` | `design/cohort-linkgate` | `afe2ba1e` | production link leak fix, §6 |
 
 **⚠️ THE PREVIOUS VERSION OF THIS FILE CLAIMED ALL SEVEN BRANCHES WERE PUSHED.
 `design/cohort-r2` WAS NOT ON ORIGIN AT ALL** — ~5,300 lines existed only on this
@@ -327,7 +327,7 @@ webhook subscription, and a scheduling URL for every offering that should use
 interviews. Those external changes were not performed.
 
 ### DC — the decision (`LevelUp-dc`)
-**Complete and pushed at `a36bdd06`.** Two councils, two fix rounds, and the last
+**Complete and pushed at `a36bdd02`.** Two councils, two fix rounds, and the last
 one verified directly. Its second council found the Android Reader-Rule
 violation that its own first fix round created; the same cross-platform class
 was included in the completed IV and RE follow-ups above.
@@ -382,7 +382,7 @@ and the nav slot. `useActiveCohort` was deliberately KEPT — the backlog claims
 one consumer; there are three, and one drives the community feed's batch scoping.
 
 ### R2 — the season (`LevelUp-r2`)
-**Complete and pushed at `0f628533`.** The real modules are routed in `App.tsx`,
+**Complete and pushed at `0f62853b`.** The real modules are routed in `App.tsx`,
 `SessionSlot` is mounted in `ThisWeekCard`, and the remaining
 `{title} opens here.` text is the intentional fallback for unknown module paths.
 R2-T5 (retire `/cohort` and flip the flag default) remains a release decision
