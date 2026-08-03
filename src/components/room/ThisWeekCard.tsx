@@ -520,7 +520,7 @@ export function ThisWeekCard({
 
   return (
     <article
-      className={cn("overflow-hidden rounded-xl border border-border bg-surface", className)}
+      className={cn("min-w-0 overflow-hidden rounded-xl border border-border bg-surface", className)}
     >
       <header className="border-b border-border p-5">
         <div className="flex items-start justify-between gap-3">
@@ -551,7 +551,7 @@ export function ThisWeekCard({
         )}
 
         {week.description && (
-          <p className="body-muted mt-3 max-w-prose text-sm leading-relaxed">{week.description}</p>
+          <p className="body-muted mt-3 max-w-prose break-words text-sm leading-relaxed">{week.description}</p>
         )}
       </header>
 
@@ -565,7 +565,7 @@ export function ThisWeekCard({
       >
         {/* ── Sessions ── every session the week holds, not the elected one,
             each one R2-T2's slot with its full doors-open choreography. */}
-        <section className="p-5" aria-label="Live sessions">
+        <section className="min-w-0 p-5" aria-label="Live sessions">
           <div className="flex items-center gap-2">
             <Video size={14} strokeWidth={1.5} className="shrink-0 text-room-accent" aria-hidden="true" />
             <h3 className={EYEBROW}>Live sessions</h3>
@@ -617,7 +617,7 @@ export function ThisWeekCard({
             assignments at all: `modules.assignments === false` renders NOTHING,
             per §5's "a disabled module is absent". */}
         {assignmentsEnabled && (
-          <section className="p-5" aria-label="Assignment">
+          <section className="min-w-0 p-5" aria-label="Assignment">
             <div className="flex flex-wrap items-center gap-2">
               <Clock size={14} strokeWidth={1.5} className="shrink-0 text-room-accent" aria-hidden="true" />
               <h3 className={EYEBROW}>Assignment</h3>
@@ -657,7 +657,7 @@ export function ThisWeekCard({
                     onChange: handleChange,
                   })
                 ) : (
-                  <p className="line-clamp-4 text-sm text-foreground">{week.assignment_prompt}</p>
+                  <p className="line-clamp-4 break-words text-sm text-foreground">{week.assignment_prompt}</p>
                 )}
               </div>
             ) : (

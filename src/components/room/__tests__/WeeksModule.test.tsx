@@ -504,6 +504,19 @@ describe("offering-wide batch selection", () => {
 });
 
 describe("edge cases", () => {
+  it("wraps unbroken week copy instead of widening the hero", async () => {
+    const longDescription = "D".repeat(200);
+    const longPrompt = "P".repeat(200);
+    renderModule({
+      rows: [weekRow({ description: longDescription, assignment_prompt: longPrompt })],
+    });
+
+    expect(await screen.findByText(longDescription)).toHaveClass("break-words");
+    expect(screen.getByText(longPrompt)).toHaveClass("break-words");
+    expect(screen.getByRole("region", { name: "Live sessions" })).toHaveClass("min-w-0");
+    expect(screen.getByRole("region", { name: "Assignment" })).toHaveClass("min-w-0");
+  });
+
   it("keeps the loading placeholders inside a responsive grid", () => {
     renderModule({ rows: [], queryState: "pending" });
     const rail = screen.getByTestId("weeks-loading-rail");

@@ -108,6 +108,43 @@ describe("R4 produced moments", () => {
     expect(screen.getByRole("link", { name: /film.pdf/i })).toHaveAttribute("href", "https://example.invalid/signed");
   });
 
+  it("contains unbroken Demo Day copy and file names inside the card", () => {
+    const longTitle = "T".repeat(200);
+    const longDescription = "D".repeat(200);
+    const longFileName = `${"F".repeat(200)}.pdf`;
+
+    render(
+      <DemoEntryCard
+        memberName="Asha Rao"
+        city="Pune"
+        entry={{
+          id: "demo-long",
+          offering_id: "offering-1",
+          batch_id: "batch-1",
+          user_id: "user-1",
+          title: longTitle,
+          description: longDescription,
+          work_url: null,
+          file_urls: ["user-1/demo/long.pdf"],
+          files: [{
+            path: "user-1/demo/long.pdf",
+            name: longFileName,
+            signedUrl: "https://example.invalid/long",
+          }],
+          created_at: "2026-08-01T00:00:00.000Z",
+          updated_at: "2026-08-01T00:00:00.000Z",
+        }}
+      />,
+    );
+
+    expect(screen.getByText(longTitle).className).toContain("break-words");
+    expect(screen.getByText(longDescription).className).toContain("break-words");
+    const fileName = screen.getByText(longFileName);
+    expect(fileName.className).toContain("min-w-0");
+    expect(fileName.className).toContain("break-words");
+    expect(fileName.closest("a")?.className).toContain("max-w-full");
+  });
+
   it("renders the single completion moment and celebrates it once per user", () => {
     const { unmount } = render(<CertificateMoment />);
     expect(screen.getByText("You finished.")).toBeInTheDocument();

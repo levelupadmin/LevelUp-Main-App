@@ -234,6 +234,15 @@ describe("assignmentTimeline", () => {
  * ──────────────────────────────────────────────────────────────────────────── */
 
 describe("AssignmentModule — the submit → review → resubmit loop", () => {
+  it("wraps an unbroken assignment prompt instead of widening the room card", () => {
+    const longPrompt = "P".repeat(200);
+    render(<AssignmentModule {...baseProps} prompt={longPrompt} />);
+
+    const prompt = screen.getByText(longPrompt);
+    expect(prompt.className).toContain("break-words");
+    expect(prompt.closest("section")?.className).toContain("min-w-0");
+  });
+
   it("offers the first-submission form when nothing has been submitted", () => {
     render(<AssignmentModule {...baseProps} submissionId={null} submissionStatus={null} />);
     expect(screen.getByRole("button", { name: /submit assignment/i })).toBeInTheDocument();

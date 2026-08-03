@@ -354,7 +354,7 @@ export function AssignmentModule({
   const peerBatchId = peerReviewEnabled ? batchId || null : null;
 
   return (
-    <section className={cn("rounded-xl border border-border bg-surface p-5", className)}>
+    <section className={cn("min-w-0 break-words rounded-xl border border-border bg-surface p-5", className)}>
       <div className="flex items-center gap-2">
         <ClipboardCheck
           size={14}
@@ -379,7 +379,7 @@ export function AssignmentModule({
 
       {prompt ? (
         <>
-          <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-foreground">
+          <p className="mt-3 whitespace-pre-line break-words text-sm leading-relaxed text-foreground">
             {prompt}
           </p>
 
