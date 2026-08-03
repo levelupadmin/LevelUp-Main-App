@@ -77,6 +77,15 @@ const EXPECTED_PRODUCTION_MIGRATIONS = [
 ];
 const SUPABASE = ["npx", ["-y", "supabase@latest"]];
 const REMOTE = process.env.RELEASE_GATE_REMOTE || "0";
+const COMPILED_ROLLOUT_FLAGS = [
+  "VITE_COHORT_INTERVIEW",
+  "VITE_COHORT_ROOMS",
+  "VITE_DECISION_FLOW",
+  "VITE_EMAIL_OTP_TAB",
+  "VITE_FUNNEL_RECON",
+  "VITE_INSTALL_NUDGE",
+  "VITE_REMINDER_LADDER",
+];
 const startedAt = Date.now();
 let stepNumber = 0;
 let disposableWorkdir = null;
@@ -144,6 +153,16 @@ function run(label, command, args, options = {}) {
   }
 
   complete(label, start);
+}
+
+function testEnvironment() {
+  // The production build below deliberately consumes Vercel's rollout values.
+  // Unit tests for flags.ts instead prove the SOURCE defaults stay dark, so
+  // inherited VITE_* rollout values would change the premise of those tests
+  // and make a correctly configured release fail for the wrong reason.
+  const environment = { ...process.env };
+  for (const name of COMPILED_ROLLOUT_FLAGS) delete environment[name];
+  return environment;
 }
 
 function redactAssignments(text) {
@@ -789,7 +808,7 @@ try {
     "scripts/validate-client-build-env.mjs",
     "scripts/validate-client-build-env.test.mjs",
   ]);
-  run("Vitest suite", "npm", ["test"]);
+  run("Vitest suite", "npm", ["test"], { env: testEnvironment() });
   run("application TypeScript check", "npx", [
     "tsc",
     "--noEmit",
