@@ -2,6 +2,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { hmacSha256Base64, timingSafeEqual } from "../_shared/crypto.ts";
 import { decideProvision, identityKeys, type ProvisionOutcome } from "../_shared/identity.ts";
 import { normalizePhone } from "../_shared/phone.ts";
+import {
+  formIdFromTallyUrl,
+  isInIntakeWindow,
+  resolveIntakeWindow,
+} from "../_shared/tally.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -19,15 +24,97 @@ function createAdminClient() {
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+interface WebhookOfferingRow {
+  id: string;
+  title: string | null;
+  payment_mode: string | null;
+  tally_form_url: string | null;
+  intake_opens_at: string | null;
+  application_deadline: string | null;
+  created_at: string;
+  identity_spine_enabled?: boolean | null;
+}
+
+/** Mailbox identity is case-insensitive throughout the intake path. */
+export function normalizeApplicantEmail(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+/**
+ * The response creation instant, not the webhook delivery instant. Returning
+ * null is intentional when the wire shape is absent or unreadable: guessing
+ * would let a delayed Edition 1 retry enter Edition 2.
+ */
+export function signedResponseTimestamp(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const data = (payload as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return null;
+  const value = (data as { createdAt?: unknown }).createdAt;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed && Number.isFinite(Date.parse(trimmed)) ? trimmed : null;
+}
+
+function instantOrFloor(value: string | null | undefined): number {
+  const parsed = typeof value === "string" ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * Resolve a shared Tally form to exactly one edition using the response time
+ * carried inside the signed webhook body. Never use server "now": Tally may
+ * retry or re-fire an old response after another edition has opened.
+ *
+ * Candidates are ordered newest intake first, then newest offering row, then
+ * id. The final id tie-break makes the choice total and repeatable even when a
+ * cloned offering copied both timestamps.
+ */
+export function selectOfferingForSignedResponse(
+  offerings: readonly WebhookOfferingRow[],
+  formId: string,
+  signedResponseCreatedAt: unknown,
+): WebhookOfferingRow | null {
+  if (typeof signedResponseCreatedAt !== "string") return null;
+  const responseTime = signedResponseCreatedAt.trim();
+  if (!responseTime || !Number.isFinite(Date.parse(responseTime))) return null;
+
+  return [...offerings]
+    .filter((offering) => {
+      if (formIdFromTallyUrl(offering.tally_form_url) !== formId) return false;
+      const { windowStart, windowEnd, skipReason } = resolveIntakeWindow(offering);
+      return !skipReason && isInIntakeWindow(responseTime, windowStart, windowEnd);
+    })
+    .sort((a, b) => {
+      const byIntake = instantOrFloor(b.intake_opens_at) - instantOrFloor(a.intake_opens_at);
+      if (byIntake !== 0) return byIntake;
+      const byCreated = instantOrFloor(b.created_at) - instantOrFloor(a.created_at);
+      if (byCreated !== 0) return byCreated;
+      return b.id.localeCompare(a.id);
+    })[0] ?? null;
+}
+
+/** The offering switch is strict: absent/null/strings all remain off. */
+export function webhookProvisioningConfigured(offeringFlag: unknown): boolean {
+  return offeringFlag === true;
+}
+
+function safeErrorMessage(error: unknown): string {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === "object" && error && "message" in error
+    ? String((error as { message?: unknown }).message ?? "unknown error")
+    : String(error);
+  return message
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .replace(/\+?\d[\d\s().-]{8,}\d/g, "[redacted-phone]");
+}
+
 /* ───────────────────────── identity provisioning (phase SP, REQ-IDENT-1) ────
- * KEPT DELIBERATELY IDENTICAL TO tally-application-poll. This function is
- * fail-closed and INERT today — no TALLY_SIGNING_SECRET is set, so every
- * request is rejected at the signature check above and none of this runs. The
- * poller is the live intake host and is where provisioning actually happens.
- * It is duplicated here so that if a signing secret is ever set, an applicant
- * arriving through the webhook is provisioned by the SAME sequence and lands in
- * the same state — the intake host has already changed once, and an applicant's
- * identity must not depend on which door they came through.
+ * KEPT DELIBERATELY IDENTICAL TO tally-application-poll. The signature is the
+ * request-authentication gate; the selected offering's strict opt-in and the
+ * database probe are the provisioning gates. An applicant arriving through
+ * either host must land in the same identity state — the intake host has
+ * already changed once, and identity cannot depend on which door ran first.
  *
  * The decision itself is the shared pure module (`_shared/identity.ts`); only
  * the two lookups and the one write live here. Fail-soft: any error leaves
@@ -119,10 +206,51 @@ const INTAKE_APP_METADATA = {
   provisioned_by: "tally_intake",
 } as const;
 
-interface ProvisionResult {
+export interface ProvisionResult {
   userId: string | null;
   pendingClaim: boolean;
   status: ProvisionOutcome["status"] | "error";
+}
+
+/**
+ * The database probe is deliberately independent of the offering switch. An
+ * opted-in offering still provisions nothing when the hardening migration is
+ * absent, unreadable, or returns anything other than literal true.
+ */
+export async function webhookIntakeGateInstalled(admin: AdminClient): Promise<boolean> {
+  try {
+    const { data, error } = await admin.rpc("intake_provisioning_gate_ok");
+    if (error) {
+      console.error("[tally-webhook] intake provisioning probe unavailable:", {
+        code: (error as { code?: string }).code ?? null,
+      });
+      return false;
+    }
+    return data === true;
+  } catch (error) {
+    console.error("[tally-webhook] intake provisioning probe failed:", safeErrorMessage(error));
+    return false;
+  }
+}
+
+/**
+ * Preserve the pre-spine behavior when provisioning is dark: an application
+ * is still linked to an existing public.users row by normalized email, while
+ * the provisioning callback (and therefore createUser) is unreachable.
+ */
+export async function resolveWebhookIdentity(
+  provisioningEnabled: boolean,
+  legacyUserId: string | null,
+  provision: () => Promise<ProvisionResult>,
+): Promise<ProvisionResult> {
+  if (!provisioningEnabled) {
+    return {
+      userId: legacyUserId,
+      pendingClaim: false,
+      status: "skipped",
+    };
+  }
+  return await provision();
 }
 
 /**
@@ -181,13 +309,10 @@ async function provisionApplicant(
         // EMAIL-ONLY, mirroring the poller exactly. See the long note at
         // tally-application-poll/index.ts's createUser for the full reasoning.
         //
-        // WHY THIS FILE MATTERS EVEN THOUGH IT IS INERT. This handler is
-        // fail-closed today: no TALLY_SIGNING_SECRET is set, so it rejects
-        // every delivery. That makes the vector LATENT, not absent — setting a
-        // signing secret is a one-line operator action that would silently arm
-        // it. A dormant account-takeover path is still an account-takeover
-        // path, and this file's own header promises it stays identical to the
-        // poller, so the two must not diverge on the one line that matters.
+        // WHY BOTH HOSTS MUST MATCH. The webhook is authenticated, but the
+        // fields remain unauthenticated applicant assertions. A delivery path
+        // changing cannot be allowed to change which values become login keys,
+        // so this file and the poller must not diverge on the line that matters.
         //
         // THE VECTOR: `auth.users.phone` is the phone-OTP login key
         // (`find_login_identity`, 20260603120000, matches it on the last 10
@@ -228,7 +353,7 @@ async function provisionApplicant(
     // not. Logged at ERROR because nothing re-runs provisioning for this row.
     console.error(
       "[tally-webhook] provisioning failed; application still inserted with user_id NULL:",
-      err instanceof Error ? err.message : String(err),
+      safeErrorMessage(err),
     );
     return { userId: null, pendingClaim: false, status: "error" };
   }
@@ -246,8 +371,7 @@ async function mirroredUserId(admin: AdminClient, userId: string): Promise<strin
   if (error) throw new Error(`users mirror check failed: ${error.message}`);
   if (data) return userId;
   console.error(
-    "[tally-webhook] auth user has no public.users mirror row; user_id left NULL:",
-    userId,
+    "[tally-webhook] auth user has no public.users mirror row; user_id left NULL",
   );
   return null;
 }
@@ -271,7 +395,7 @@ function extractField(fields: any[], label: string): string {
   return "";
 }
 
-Deno.serve(async (req) => {
+export async function handleTallyApplicationWebhook(req: Request): Promise<Response> {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
@@ -299,9 +423,20 @@ Deno.serve(async (req) => {
     const fields = payload.data?.fields || [];
     const formId = payload.data?.formId || "";
     const responseId = payload.data?.responseId || "";
+    // `data.createdAt` is the response's creation instant inside the signed
+    // body. The root event timestamp can be a later retry and must not route an
+    // old response into whichever edition happens to be open at delivery time.
+    const signedResponseCreatedAt = signedResponseTimestamp(payload);
+
+    if (!signedResponseCreatedAt) {
+      return new Response(JSON.stringify({ error: "Missing or invalid signed response timestamp" }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     const fullName = extractField(fields, "name") || extractField(fields, "full name");
-    const email = extractField(fields, "email");
+    const email = normalizeApplicantEmail(extractField(fields, "email"));
     const phone = extractField(fields, "phone") || extractField(fields, "mobile") || extractField(fields, "whatsapp");
     const city = extractField(fields, "city") || extractField(fields, "location");
     const occupation = extractField(fields, "occupation") || extractField(fields, "profession") || extractField(fields, "work");
@@ -316,22 +451,68 @@ Deno.serve(async (req) => {
 
     const supabase = createAdminClient();
 
-    // Find matching offering by tally_form_url containing the formId
-    const { data: offerings } = await supabase
+    // A form may be shared by multiple editions. Read every candidate in the
+    // same total order used by the poller, then bind the signed response time
+    // to one explicit intake window. No matching window is a retryable/fixable
+    // configuration error, never permission to write against an arbitrary row.
+    const { data: offeringData, error: offeringsError } = await supabase
       .from("offerings")
-      .select("id, title, payment_mode, tally_form_url")
+      .select(
+        "id, title, payment_mode, tally_form_url, intake_opens_at, application_deadline, created_at, identity_spine_enabled",
+      )
       .eq("payment_mode", "staged")
-      .not("tally_form_url", "is", null);
+      .not("tally_form_url", "is", null)
+      .order("intake_opens_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
 
-    const offering = (offerings || []).find(
-      (o: any) => o.tally_form_url && o.tally_form_url.includes(formId)
+    if (offeringsError) {
+      console.error("[tally-webhook] offering lookup failed:", safeErrorMessage(offeringsError));
+      return new Response(JSON.stringify({ error: "Offering lookup failed" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const offering = selectOfferingForSignedResponse(
+      (offeringData ?? []) as WebhookOfferingRow[],
+      formId,
+      signedResponseCreatedAt,
     );
 
     if (!offering) {
-      return new Response(JSON.stringify({ error: "No matching offering found" }), {
-        status: 404,
+      return new Response(JSON.stringify({ error: "No matching offering intake window" }), {
+        status: 409,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    // A replay can carry edited fields (including a different email). Absorb
+    // the globally-unique response id before ANY identity work so such a replay
+    // cannot mint an orphan auth user and then lose its application insert to
+    // the unique index.
+    if (responseId) {
+      const { data: existingResponse, error: responseLookupError } = await supabase
+        .from("cohort_applications")
+        .select("id")
+        .eq("tally_response_id", responseId)
+        .maybeSingle();
+      if (responseLookupError) {
+        console.error(
+          "[tally-webhook] response-id lookup failed:",
+          safeErrorMessage(responseLookupError),
+        );
+        return new Response(JSON.stringify({ error: "Application lookup failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (existingResponse?.id) {
+        return new Response(
+          JSON.stringify({ ok: true, deduped: true, application_id: existingResponse.id }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
     }
 
     // Existing user by email (optional, used to link + enrich the profile).
@@ -340,9 +521,10 @@ Deno.serve(async (req) => {
       .from("users")
       .select("id")
       .eq("email", email)
+      .is("deleted_at", null)
       .maybeSingle();
     if (userLookupErr) {
-      console.error("[tally-webhook] user lookup failed:", userLookupErr.message);
+      console.error("[tally-webhook] user lookup failed:", safeErrorMessage(userLookupErr));
     }
 
     // Re-submission by the same email updates the existing application. A retry
@@ -355,7 +537,7 @@ Deno.serve(async (req) => {
       .eq("email", email)
       .maybeSingle();
     if (appLookupErr) {
-      console.error("[tally-webhook] application lookup failed:", appLookupErr.message);
+      console.error("[tally-webhook] application lookup failed:", safeErrorMessage(appLookupErr));
       return new Response(JSON.stringify({ error: "Application lookup failed" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
@@ -377,8 +559,8 @@ Deno.serve(async (req) => {
         .eq("id", existingApp.id);
 
       if (updErr) {
-        console.error("[tally-webhook] application update failed:", updErr.message);
-        return new Response(JSON.stringify({ error: updErr.message }), {
+        console.error("[tally-webhook] application update failed:", safeErrorMessage(updErr));
+        return new Response(JSON.stringify({ error: "Application update failed" }), {
           status: 500,
           headers: { "Content-Type": "application/json" },
         });
@@ -389,16 +571,24 @@ Deno.serve(async (req) => {
       });
     }
 
-    // IDENTITY FIRST, THEN THE INSERT (phase SP). Only on the CREATE path: a
-    // re-submission that updated an existing application above already has
-    // whatever identity that row was given, and re-provisioning it could mint a
-    // second account for the same person. The `existingUser` read above stays
-    // exactly as it was — it feeds the profile enrichment below, not `user_id`.
-    const provisioned = await provisionApplicant(supabase, {
-      email,
-      phone: phone || null,
-      fullName: fullName || email.split("@")[0],
-    });
+    // IDENTITY FIRST, THEN THE INSERT (phase SP). Provisioning needs BOTH the
+    // per-offering switch and the post-migration probe. Any false/absent/error
+    // path preserves the pre-spine behavior: link an existing public.users row
+    // by normalized email, otherwise insert unlinked, and never call createUser.
+    const offeringOptedIn = webhookProvisioningConfigured(offering.identity_spine_enabled);
+    const provisioningEnabled = offeringOptedIn && await webhookIntakeGateInstalled(supabase);
+    if (!offeringOptedIn) {
+      console.log("[tally-webhook] identity provisioning disabled for selected offering");
+    }
+    const provisioned = await resolveWebhookIdentity(
+      provisioningEnabled,
+      existingUser?.id ?? null,
+      () => provisionApplicant(supabase, {
+        email,
+        phone: phone || null,
+        fullName: fullName || email.split("@")[0],
+      }),
+    );
 
     // Create new application. `pending_claim` is only ever SET, never written
     // as `false` — byte-for-byte the poller's write shape, and for the same
@@ -444,8 +634,8 @@ Deno.serve(async (req) => {
           headers: { "Content-Type": "application/json" },
         });
       }
-      console.error("[tally-webhook] application insert failed:", appError.message);
-      return new Response(JSON.stringify({ error: appError.message }), {
+      console.error("[tally-webhook] application insert failed:", safeErrorMessage(appError));
+      return new Response(JSON.stringify({ error: "Application insert failed" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
@@ -467,9 +657,12 @@ Deno.serve(async (req) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
+    console.error("[tally-webhook] unhandled request failure:", safeErrorMessage(err));
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
   }
-});
+}
+
+if (import.meta.main) Deno.serve(handleTallyApplicationWebhook);

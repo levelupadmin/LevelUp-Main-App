@@ -120,9 +120,10 @@ DELETE FROM public.email_otp_codes WHERE email LIKE '%@identity-fixture.invalid'
 DELETE FROM public.public_rate_limits WHERE key LIKE 'email-otp-%';
 
 -- ── 3. The fixture offering ────────────────────────────────────────────────
--- `tally-application-webhook` matches an offering by `tally_form_url`
--- CONTAINING the envelope's formId, and only considers `payment_mode = 'staged'`
--- rows — so those two columns are load-bearing, not decoration.
+-- `tally-application-webhook` matches the exact Tally form id and signed
+-- response timestamp against the offering's intake window, and only considers
+-- `payment_mode = 'staged'` rows. `identity_spine_enabled = true` is also
+-- load-bearing: the production default is false and must remain fail-closed.
 -- `intake_opens_at` is backdated so the poller's window resolution
 -- (`_shared/tally.ts` resolveIntakeWindow) would accept the same submission
 -- too; `application_deadline` is left NULL (no ceiling). `status = 'draft'` so
@@ -130,7 +131,8 @@ DELETE FROM public.public_rate_limits WHERE key LIKE 'email-otp-%';
 INSERT INTO public.offerings (
   title, slug, type, price_inr, status, payment_mode,
   app_fee_inr, confirmation_amount_inr,
-  tally_form_url, intake_opens_at, application_deadline
+  tally_form_url, intake_opens_at, application_deadline,
+  identity_spine_enabled
 ) VALUES (
   'IDENTITY FIXTURE — cohort (qa-harness, never for sale)',
   'identity-fixture-cohort',
@@ -142,7 +144,8 @@ INSERT INTO public.offerings (
   1,
   'https://tally.so/r/IDFIXT01',
   now() - interval '30 days',
-  NULL
+  NULL,
+  true
 );
 
 -- ── 4. THE COLLISION PRECONDITIONS ─────────────────────────────────────────

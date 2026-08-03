@@ -3,12 +3,10 @@
  * schedule (`design/briefs/cohort-tally-poll.md` TP-2). Runs every 15 minutes
  * via pg_cron.
  *
- * WHY THIS EXISTS. The webhook path (`tally-application-webhook`) needs a
- * shared HMAC secret to be safe, and no secret was set — so it is fail-closed
- * and inert. This function is the replacement: instead of Tally pushing into a
- * publicly-writable path, the app pulls with a key it already holds
- * (`TALLY_API_KEY`). The webhook stays deployed, fail-closed, and mirrors this
- * host's identity policy if a signing secret is ever set.
+ * WHY THIS EXISTS. It gives intake a read-only pull path authenticated with the
+ * Tally API key, independent of webhook delivery. The signed webhook remains a
+ * second host, so both paths share the same identity policy and both are dark
+ * unless their server-side provisioning controls explicitly allow a mint.
  *
  * THE HARD REQUIREMENT — THE INTAKE WINDOW, BOUNDED AT BOTH ENDS. One Tally
  * form is reused across editions (form `81dRPA` carries 880 historical
@@ -69,9 +67,8 @@
  * IDENTITY PROVISIONING — WHY IT LIVES HERE AND NOT IN THE WEBHOOK (phase SP,
  * REQ-IDENT-1). An applicant must become an app user WITHOUT ever seeing a
  * signup screen, so intake provisions the `auth.users` row itself. The PRD
- * writes that against the webhook; the webhook is fail-closed and inert (no
- * `TALLY_SIGNING_SECRET`), so provisioning built there would never run. This
- * function is the live host. The decision itself is pure and shared
+ * writes that against the webhook; this poller is the scheduled host. The
+ * decision itself is pure and shared
  * (`_shared/identity.ts`), and the webhook calls the SAME sequence, so
  * behaviour is identical if a signing secret is ever set.
  *
@@ -143,6 +140,8 @@ const TALLY_MAX_PAGES = 20;
 const EXISTING_PAGE_SIZE = 1000;
 /** Runaway guard on that read. Exceeding it throws into the per-form fail-soft. */
 const EXISTING_MAX_PAGES = 20;
+/** Keep PostgREST `.in(...)` request lines comfortably below proxy limits. */
+const USER_LOOKUP_CHUNK = 50;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -164,6 +163,17 @@ function log(level: "info" | "warn" | "error", event: string, fields: Record<str
   else console.log(line);
 }
 
+function safeErrorMessage(error: unknown): string {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === "object" && error && "message" in error
+    ? String((error as { message?: unknown }).message ?? "unknown error")
+    : String(error);
+  return message
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .replace(/\+?\d[\d\s().-]{8,}\d/g, "[redacted-phone]");
+}
+
 /**
  * The offering columns the scan reads. `created_at` is deliberately NOT among
  * them: FX-2.1 removed the cutoff fallback, and not selecting the column is the
@@ -177,6 +187,8 @@ interface OfferingRow {
   tally_form_url: string | null;
   intake_opens_at: string | null;
   application_deadline: string | null;
+  /** Strict per-offering provisioning opt-in; database default is false. */
+  identity_spine_enabled?: boolean | null;
 }
 
 /**
@@ -298,7 +310,7 @@ async function loadExistingKeys(
 
     const rows = (data ?? []) as { email: string | null; tally_response_id: string | null }[];
     for (const row of rows) {
-      if (row.email) emails.add(row.email.toLowerCase());
+      if (row.email) emails.add(normalizePolledApplicantEmail(row.email));
       if (row.tally_response_id) responseIds.add(row.tally_response_id);
     }
     if (rows.length < EXISTING_PAGE_SIZE) return { emails, responseIds };
@@ -307,6 +319,46 @@ async function loadExistingKeys(
   throw new Error(
     `existing application read exceeded ${EXISTING_MAX_PAGES} pages for offering ${offeringId}`,
   );
+}
+
+/** The same mailbox normalization used by identityKeys and the webhook. */
+export function normalizePolledApplicantEmail(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+/**
+ * Pre-spine behavior for a dark/off offering: link existing public.users by
+ * normalized email in bounded bulk reads, but never create an auth identity.
+ * A failed chunk degrades to an unlinked application rather than losing it.
+ */
+async function lookupLegacyUserIds(
+  admin: AdminClient,
+  emails: readonly string[],
+): Promise<Map<string, string>> {
+  const byEmail = new Map<string, string>();
+  const normalized = [...new Set(emails.map(normalizePolledApplicantEmail).filter(Boolean))];
+
+  for (let i = 0; i < normalized.length; i += USER_LOOKUP_CHUNK) {
+    const chunk = normalized.slice(i, i + USER_LOOKUP_CHUNK);
+    const { data, error } = await admin
+      .from("users")
+      .select("id, email")
+      .in("email", chunk)
+      .is("deleted_at", null);
+    if (error) {
+      log("error", "legacy_user_lookup_failed", {
+        chunkSize: chunk.length,
+        note: "applications in this chunk still insert unlinked; no identity is provisioned",
+      });
+      continue;
+    }
+    for (const user of (data ?? []) as { id: string; email: string | null }[]) {
+      const email = normalizePolledApplicantEmail(user.email);
+      if (email) byEmail.set(email, user.id);
+    }
+  }
+
+  return byEmail;
 }
 
 /**
@@ -442,6 +494,14 @@ const INTAKE_APP_METADATA = {
  */
 const PROVISION_APPLICANTS = (Deno.env.get("PROVISION_APPLICANTS") ?? "").trim().toLowerCase() === "true";
 
+/** All non-literal values (including a missing column in a test fixture) are off. */
+export function pollerProvisioningConfigured(
+  globalSwitch: boolean,
+  offeringFlag: unknown,
+): boolean {
+  return globalSwitch === true && offeringFlag === true;
+}
+
 /**
  * Is the migration that proves signup-time purchase claiming is inert applied?
  *
@@ -458,21 +518,21 @@ const PROVISION_APPLICANTS = (Deno.env.get("PROVISION_APPLICANTS") ?? "").trim()
  * answer — a missing function returns PGRST202, which lands in the same `false`
  * as an outright error. Checked once per invocation, not per row.
  */
-async function intakeGateInstalled(admin: AdminClient): Promise<boolean> {
+export async function intakeGateInstalled(admin: AdminClient): Promise<boolean> {
   try {
     const { data, error } = await admin.rpc("intake_provisioning_gate_ok");
     if (error) {
       log("error", "provision_gate_absent", {
         code: (error as { code?: string }).code ?? null,
-        message: error.message,
-        note: "the post-claim intake probe is absent, so the signup-time legacy claim cannot be proven inert; provisioning is SKIPPED this tick and applications still insert unlinked",
+        message: safeErrorMessage(error),
+        note: "the post-claim intake probe is absent, so provisioning is SKIPPED; applications retain legacy normalized-email linking and no auth user is created",
       });
       return false;
     }
     return data === true;
   } catch (err) {
     log("error", "provision_gate_probe_failed", {
-      message: err instanceof Error ? err.message : String(err),
+      message: safeErrorMessage(err),
       note: "could not prove the gate is installed; treating as absent and skipping provisioning",
     });
     return false;
@@ -487,6 +547,25 @@ interface ProvisionResult {
   pendingClaim: boolean;
   /** `created | existing | collision | skipped | error`, for the summary. */
   status: ProvisionOutcome["status"] | "error";
+}
+
+/**
+ * Make the no-createUser guarantee executable: while any gate is off the
+ * callback is unreachable and the legacy public.users link is retained.
+ */
+export async function resolvePolledIdentity(
+  provisioningEnabled: boolean,
+  legacyUserId: string | null,
+  provision: () => Promise<ProvisionResult>,
+): Promise<ProvisionResult> {
+  if (!provisioningEnabled) {
+    return {
+      userId: legacyUserId,
+      pendingClaim: false,
+      status: "skipped",
+    };
+  }
+  return await provision();
 }
 
 /**
@@ -687,7 +766,7 @@ async function provisionApplicant(
     }
   } catch (err) {
     log("error", "provision_failed", {
-      message: err instanceof Error ? err.message : String(err),
+      message: safeErrorMessage(err),
       note: "the application is still inserted, with user_id NULL and pending_claim TRUE so it stays reachable; the poller never updates, so it is resolved by the interactive claim or by hand",
     });
     // pendingClaim TRUE, not false. A failure here can land AFTER createUser
@@ -718,7 +797,6 @@ async function mirroredUserId(admin: AdminClient, userId: string): Promise<strin
   if (error) throw new Error(`users mirror check failed: ${error.message}`);
   if (data) return userId;
   log("error", "provisioned_user_not_mirrored", {
-    userId,
     note: "auth user exists but public.users has no row with that id; user_id left NULL rather than risking the FK and losing the application",
   });
   return null;
@@ -764,7 +842,7 @@ async function countOfferingsWithoutCutoff(
 
   if (error) {
     log("error", "no_cutoff_count_failed", {
-      message: error.message,
+      message: safeErrorMessage(error),
       note: "cannot report how many staged offerings are un-pollable for want of intake_opens_at; ingest itself is unaffected",
     });
     return { count: null, labels: [] };
@@ -793,7 +871,7 @@ async function fetchPage(formId: string, page: number, apiKey: string): Promise<
   return (await res.json()) as TallyEnvelope;
 }
 
-Deno.serve(async (req) => {
+export async function handleTallyApplicationPoll(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   // Auth: the caller must present the SERVICE-ROLE KEY ITSELF, byte for byte
@@ -923,7 +1001,9 @@ Deno.serve(async (req) => {
   // NULLs-last tie-break is gone with the rows it sorted.)
   const { data: offeringData, error: offeringsErr } = await admin
     .from("offerings")
-    .select("id, title, slug, tally_form_url, intake_opens_at, application_deadline")
+    .select(
+      "id, title, slug, tally_form_url, intake_opens_at, application_deadline, identity_spine_enabled",
+    )
     .eq("payment_mode", "staged")
     .not("tally_form_url", "is", null)
     .not("intake_opens_at", "is", null)
@@ -932,7 +1012,7 @@ Deno.serve(async (req) => {
     .order("id", { ascending: false });
 
   if (offeringsErr) {
-    log("error", "offerings_query_failed", { message: offeringsErr.message });
+    log("error", "offerings_query_failed", { message: safeErrorMessage(offeringsErr) });
     return jsonRes({ error: offeringsErr.message }, 500);
   }
 
@@ -1113,27 +1193,44 @@ Deno.serve(async (req) => {
       const existing = await loadExistingKeys(admin, offering.id);
       const fresh: CohortApplicationRow[] = [];
       for (const row of candidates) {
-        const emailKey = row.email.toLowerCase();
+        const emailKey = normalizePolledApplicantEmail(row.email);
+        if (!emailKey) {
+          summary.skipped++;
+          continue;
+        }
         if (existing.emails.has(emailKey) || existing.responseIds.has(row.tally_response_id)) {
           summary.skipped++;
           continue;
         }
+        row.email = emailKey;
         existing.emails.add(emailKey);
         existing.responseIds.add(row.tally_response_id);
         fresh.push(row);
       }
 
       let insertFailed = 0;
-      // BOTH gates, resolved ONCE per form rather than per row: the operator's
-      // deliberate switch, and proof that the migration this depends on is
-      // actually applied. Either one false means every row this tick inserts
-      // exactly as it did before phase SP — unlinked, never lost.
-      const provisioningEnabled = PROVISION_APPLICANTS && (await intakeGateInstalled(admin));
+      // ALL THREE gates, resolved once per form: the global operator switch,
+      // this offering's strict opt-in, and proof that the hardening migration
+      // landed. Any false/error path keeps legacy normalized-email linking but
+      // makes createUser unreachable.
+      const provisioningConfigured = pollerProvisioningConfigured(
+        PROVISION_APPLICANTS,
+        offering.identity_spine_enabled,
+      );
+      const provisioningEnabled = provisioningConfigured && (await intakeGateInstalled(admin));
       if (!PROVISION_APPLICANTS) {
         log("info", "provisioning_disabled", {
-          note: "PROVISION_APPLICANTS is not 'true'; applications insert with user_id NULL exactly as they did before phase SP",
+          note: "PROVISION_APPLICANTS is not 'true'; applications retain legacy email linking and no auth user is created",
+        });
+      } else if (offering.identity_spine_enabled !== true) {
+        log("info", "offering_provisioning_disabled", {
+          offeringId: offering.id,
+          note: "identity_spine_enabled is not true; applications retain legacy email linking and no auth user is created",
         });
       }
+      const legacyUserIds = provisioningEnabled
+        ? new Map<string, string>()
+        : await lookupLegacyUserIds(admin, fresh.map((row) => row.email));
 
       let lastInsertError = "";
       let provisionCreated = 0;
@@ -1149,13 +1246,15 @@ Deno.serve(async (req) => {
         // single key could only ever LINK an account that happened to exist,
         // whereas this also creates the missing one and refuses to guess when
         // the two keys disagree.
-        const provisioned = provisioningEnabled
-          ? await provisionApplicant(admin, {
+        const provisioned = await resolvePolledIdentity(
+          provisioningEnabled,
+          legacyUserIds.get(normalizePolledApplicantEmail(row.email)) ?? null,
+          () => provisionApplicant(admin, {
               email: row.email,
               phone: row.phone,
               fullName: row.full_name,
-            })
-          : ({ userId: null, pendingClaim: false, status: "skipped" } as ProvisionResult);
+            }),
+        );
         if (!provisioningEnabled) provisionSkipped++;
         row.user_id = provisioned.userId;
         // Only ever SET, never cleared: the column defaults to false, so an
@@ -1206,11 +1305,11 @@ Deno.serve(async (req) => {
           // see the note on FormSummary.insertFailed. Still fail-soft — the
           // remaining rows are attempted — but it is surfaced on the summary.
           insertFailed++;
-          lastInsertError = insertErr.message;
+          lastInsertError = safeErrorMessage(insertErr);
           log("error", "application_insert_failed", {
             formId,
             responseId: row.tally_response_id,
-            message: insertErr.message,
+            message: safeErrorMessage(insertErr),
           });
           continue;
         }
@@ -1252,7 +1351,7 @@ Deno.serve(async (req) => {
       });
     } catch (err) {
       // Fail-soft per form: record and move on to the next offering.
-      summary.error = err instanceof Error ? err.message : String(err);
+      summary.error = safeErrorMessage(err);
       log("error", "form_failed", { formId, offering: label, message: summary.error });
     }
   }
@@ -1269,4 +1368,6 @@ Deno.serve(async (req) => {
   const body: Record<string, unknown> = { ok: true, forms, skippedNoCutoff: noCutoff.count };
   if (pageCapHit) body.pageCapHit = true;
   return jsonRes(body);
-});
+}
+
+if (import.meta.main) Deno.serve(handleTallyApplicationPoll);
