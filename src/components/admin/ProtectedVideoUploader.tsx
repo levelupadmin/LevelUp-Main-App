@@ -11,6 +11,8 @@ interface Props {
    *  also patches the row on completion, so the video attaches even if the admin
    *  navigated away without saving. */
   chapterId?: string;
+  /** Shown in the upload dock so parallel uploads are tellable-apart. */
+  label?: string;
   /** true once this chapter already holds a protected upload */
   alreadyProtected?: boolean;
 }
@@ -20,14 +22,14 @@ interface Props {
  * immediately — progress shows in the floating UploadDock and keeps running as
  * the admin moves around the app. The file never gets a public URL.
  */
-export default function ProtectedVideoUploader({ onUploaded, courseId, chapterId, alreadyProtected }: Props) {
+export default function ProtectedVideoUploader({ onUploaded, courseId, chapterId, label, alreadyProtected }: Props) {
   const { startVideoUpload } = useUploads();
   const [file, setFile] = useState<File | null>(null);
   const [started, setStarted] = useState(false);
 
   const upload = () => {
     if (!file) return;
-    startVideoUpload({ file, chapterId, courseId, onKey: onUploaded });
+    startVideoUpload({ file, chapterId, courseId, label, onKey: onUploaded });
     setStarted(true);
     setFile(null);
   };
@@ -63,7 +65,7 @@ export default function ProtectedVideoUploader({ onUploaded, courseId, chapterId
         </button>
       </div>
       <p className="text-xs text-muted-foreground">
-        The upload runs in the background — you can leave this page. Keep the tab open, and Save the curriculum to keep the chapter.
+        Runs in the background and saves automatically — you can leave this page (keep the tab open).
       </p>
     </div>
   );

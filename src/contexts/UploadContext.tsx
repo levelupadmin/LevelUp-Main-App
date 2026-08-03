@@ -13,6 +13,9 @@ import { toast } from "@/lib/toast";
 export interface UploadItem {
   id: string;
   filename: string;
+  /** Where this upload is going, e.g. the chapter title — so eight parallel
+   *  uploads across different courses stay tellable-apart in the dock. */
+  label?: string;
   progress: number; // 0–100
   status: "preparing" | "uploading" | "done" | "error";
   error?: string;
@@ -23,6 +26,8 @@ interface StartOpts {
   /** Real (saved) chapter id → the row is patched on completion. Omit / "new-…" to skip the patch. */
   chapterId?: string;
   courseId?: string;
+  /** Shown under the filename in the dock ("→ Chapter 3 · VEA-06"). */
+  label?: string;
   /** Called immediately with the storage key, before the bytes finish, so the
    *  caller can wire the chapter to it right away. */
   onKey?: (key: string) => void;
@@ -32,6 +37,8 @@ interface UploadCtx {
   uploads: UploadItem[];
   startVideoUpload: (opts: StartOpts) => void;
   dismiss: (id: string) => void;
+  /** Clear every finished (done/error) item — the dock's "Close" once idle. */
+  clearFinished: () => void;
 }
 
 const Ctx = createContext<UploadCtx | null>(null);
@@ -56,11 +63,15 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     (id: string) => setUploads((list) => list.filter((it) => it.id !== id)),
     []
   );
+  const clearFinished = useCallback(
+    () => setUploads((list) => list.filter((it) => it.status === "preparing" || it.status === "uploading")),
+    []
+  );
 
   const startVideoUpload = useCallback(
-    async ({ file, chapterId, courseId, onKey }: StartOpts) => {
+    async ({ file, chapterId, courseId, label, onKey }: StartOpts) => {
       const id = `up-${seq++}`;
-      setUploads((list) => [...list, { id, filename: file.name, progress: 0, status: "preparing" }]);
+      setUploads((list) => [...list, { id, filename: file.name, label, progress: 0, status: "preparing" }]);
       try {
         const { data, error } = await supabase.functions.invoke("get-video-upload-url", {
           body: { filename: file.name, course_id: courseId },
@@ -96,16 +107,17 @@ export function UploadProvider({ children }: { children: ReactNode }) {
             .eq("id", chapterId);
         }
 
+        // No auto-dismiss: the green tick stays in the dock (Drive-style) until
+        // the admin closes it, so a batch of 8 uploads reads as a checklist.
         patch(id, { status: "done", progress: 100 });
         toast.success(`"${file.name}" uploaded — protected`);
-        setTimeout(() => dismiss(id), 6000);
       } catch (e) {
         patch(id, { status: "error", error: e instanceof Error ? e.message : "Upload failed" });
         toast.error(e instanceof Error ? e.message : "Upload failed");
       }
     },
-    [patch, dismiss]
+    [patch]
   );
 
-  return <Ctx.Provider value={{ uploads, startVideoUpload, dismiss }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ uploads, startVideoUpload, dismiss, clearFinished }}>{children}</Ctx.Provider>;
 }

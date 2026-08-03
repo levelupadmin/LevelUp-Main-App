@@ -49,6 +49,9 @@ const AdminCourseCurriculum = () => {
   const [courseTitle, setCourseTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Bumped when a video upload attaches a key; an effect below auto-saves the
+  // curriculum so the admin never has to click Save just for an upload.
+  const [autoSaveTick, setAutoSaveTick] = useState(0);
   const [editingChapter, setEditingChapter] = useState<{ sectionIdx: number; chapterIdx: number } | null>(null);
   const [courseDefaultVideoType, setCourseDefaultVideoType] = useState("standard");
   const [vdoUploadMode, setVdoUploadMode] = useState<Record<string, "upload" | "existing">>({});
@@ -377,6 +380,16 @@ const AdminCourseCurriculum = () => {
     setSaving(false);
   };
 
+  // Auto-save whenever an upload attaches a video key (autoSaveTick bump). Runs
+  // AFTER the media_url is in `sections`, so the freshly-uploaded chapter is
+  // persisted without a manual Save. Editing a title/description still needs the
+  // manual Save button.
+  useEffect(() => {
+    if (autoSaveTick > 0) handleSave();
+    // Intentionally only on the tick — handleSave closes over current sections.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSaveTick]);
+
   const ec = editingChapter;
 
   return (
@@ -483,17 +496,20 @@ const AdminCourseCurriculum = () => {
                               <ProtectedVideoUploader
                                 courseId={courseId || undefined}
                                 chapterId={ch.id}
+                                label={`${ch.title || "Untitled chapter"}${courseTitle ? " · " + courseTitle : ""}`}
                                 alreadyProtected={ch.media_provider === "supabase-signed"}
-                                onUploaded={(key) =>
+                                onUploaded={(key) => {
                                   updateChapter(sIdx, cIdx, {
                                     media_url: key,
                                     media_provider: "supabase-signed",
                                     video_type: "standard",
-                                  })
-                                }
+                                  });
+                                  // Persist immediately — no manual Save needed for uploads.
+                                  setAutoSaveTick((t) => t + 1);
+                                }}
                               />
                               <p className="text-[11px] text-muted-foreground mt-1">
-                                The file goes to a private bucket — no public link, download disabled. Remember to Save.
+                                Goes to a private bucket — no public link, download disabled. The upload runs in the background and saves automatically.
                               </p>
                             </div>
                             <div>
