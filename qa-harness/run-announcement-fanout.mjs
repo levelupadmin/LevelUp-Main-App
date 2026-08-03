@@ -16,6 +16,7 @@ const ALLOWED_HARNESSES = new Set([
   "qa-harness/announcement-fanout.sql",
   "qa-harness/room-feed-resources.sql",
   "qa-harness/room-third-act.sql",
+  "qa-harness/room-legacy-access-gaps.sql",
 ]);
 
 function die(message, code = 2) {

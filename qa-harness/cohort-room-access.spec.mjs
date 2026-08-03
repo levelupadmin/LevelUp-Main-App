@@ -91,31 +91,23 @@
  *   below refuses to run the suite in either state rather than hand back a green
  *   summary that means nothing.
  *
- * A NOTE FOR R1–R4 — live_sessions HAS NO BATCH DIMENSION
+ * A NOTE FOR R1–R4 — live_sessions HAS NO PHYSICAL BATCH COLUMN
  *   The table hangs off course_id and reaches a batch only through
  *   week_id → cohort_weeks → cohort_batch_id. No policy on live_sessions can
- *   draw a batch boundary, so EVERY batch boundary in this phase is drawn in an
- *   RPC standing above tables that do not know batches exist — and the same
- *   root cause surfaces three times in this one diff (R8.2's envelope
- *   predicate, GAP-2's table read + link RPC, GAP-3's progress lateral). Every
- *   new surface R1–R4 puts over live_sessions needs its own hand-written
- *   scoping and its own case here; nothing underneath it will scope for you.
- *   It has no TIER dimension either — the April policies on it ask only "is
- *   there an ACTIVE enrolment for this offering?", which a staged lobby row
- *   satisfies while the room tier says pre_member. That is GAP-4.
+ *   draw a batch boundary without resolving week_id through the cohort batch.
+ *   The August hardening helper performs that resolution for both the table
+ *   policy and link RPC; R8.2 still independently proves the room envelope.
+ *   Every future surface over live_sessions needs its own case here so a caller
+ *   cannot bypass the shared helper through a new SECURITY DEFINER path.
  *
  * READING THE OUTPUT
  *   Every line states WHAT IT PROVES, not that something passed. A green run is
  *   a paragraph of security claims you can hand to the council verbatim.
  *
- *   PASS / FAIL are the wall R0 owns. A third verdict, CARRIED, exists for a
- *   hole this suite MEASURES in a wall R0 does not own — a pre-existing policy
- *   on a table outside the room-content set. A carried gap keeps the exit code
- *   at 0 (R0's own wall is intact) but is reprinted in full above the verdict
- *   and is raised as a finding by the design-qa-gate lens, so "green" never
- *   quietly means "nothing left to fix". If the residue grows past its stated
- *   boundary it stops being carried and fails like any other leak; if it is
- *   closed, the run says so and tells you to retire the entry.
+ *   PASS / FAIL cover every measured wall. GAP-1 through GAP-4 used to be
+ *   non-blocking carried observations; after the scoped August hardening they
+ *   are ordinary blocking regressions. A green run now means no known measured
+ *   access gap remains in this suite.
  */
 
 import { readFileSync } from "node:fs";
@@ -364,15 +356,15 @@ const CANARY_LEDGER = {
   // No STUDENT may ever hold this one — it is the withheld link. The admin
   // path is what proves the column is a real string rather than NULL, which is
   // the difference between "the gate held" and "there was nothing to hand out".
-  ZOOM_A1: { observedBy: "admin", hunt: "member_A1 / member_A2 / member_B / outsider — nobody entitled to the room before T-60 (the two LOBBY shapes are measured as GAP-4, not asserted)" },
-  ZOOMNEAR_A1: { observedBy: "member_A1", hunt: "member_B / outsider / accepted_A via the link RPC; both lobby shapes measured as GAP-4" },
+  ZOOM_A1: { observedBy: "admin", hunt: "member_A1 / member_A2 / member_B / outsider — nobody entitled to the room before T-60; both lobby shapes are asserted in GAP-4" },
+  ZOOMNEAR_A1: { observedBy: "member_A1", hunt: "member_B / outsider / accepted_A via the link RPC; both lobby shapes asserted in GAP-4" },
   ZOOMLIVE_A1: { observedBy: "member_A1", hunt: "member_B / outsider / accepted_A via the link RPC and the envelope; lobby shapes → GAP-4" },
   ZOOMCANCEL_A1: { observedBy: "admin", hunt: "member_A1 first of all — the entitled student of a class that was called off — then every other tier" },
   ZOOM_A2: { observedBy: "member_A2", hunt: "member_B / outsider / accepted_A / anon via the link RPC" },
   ZOOM_B1: { observedBy: "member_B", hunt: "member_A1 / member_A2 / outsider via the link RPC" },
   CONFIG_A: { observedBy: "member_A1", hunt: "outsider / accepted_A / anon" },
   CONFIG_A2: { observedBy: "member_A2", hunt: "member_A1 (the one intra-offering boundary the config policy draws)" },
-  REC_A1: { observedBy: "member_A1", hunt: "member_B / outsider / anon / accepted_A — the two lobby shapes are measured as GAP-4 (live_sessions is April policy, not R0's wall)" },
+  REC_A1: { observedBy: "member_A1", hunt: "member_B / outsider / anon / accepted_A — both lobby shapes are asserted in GAP-4" },
   RECPROG_A1: { observedBy: "member_A1", hunt: "member_A2 / accepted_A / pre_member / outsider" },
   SEEN_A1: { observedBy: "member_A1", hunt: "member_A2 / accepted_A / outsider" },
   ATTEND_A1: { observedBy: "member_A1", hunt: "member_A2 / accepted_A / pre_member / outsider" },
@@ -396,15 +388,12 @@ const ACTORS = {
   mentor_A: "room-qa-mentor-a@leveluptest.invalid",
   accepted_A: "room-qa-accepted-a@leveluptest.invalid",
   pre_member_A1: "room-qa-pre-member-a1@leveluptest.invalid",
-  // THE SECOND LOBBY SHAPE, and the reason GAP-4 is a measurement rather than
-  // prose. pre_member_A1 is the application-only lobby occupant (no enrolments
-  // row at all). staged_lobby_A1 is the one the STAGED payment path actually
-  // mints: the same `pre_member` room tier, reached with an ACTIVE enrolment
-  // that still owes a balance (R-1 contract note 3). Every April-era policy on
-  // live_sessions asks "is there an active enrolment for this offering?" and
-  // gets a YES from this actor and a NO from the other — so a fixture carrying
-  // only the first proves the lobby redaction against the shape where it is
-  // free, and says nothing about the shape where it costs something.
+  // THE SECOND LOBBY SHAPE makes GAP-4 falsifiable. pre_member_A1 is the
+  // application-only occupant (no enrolments row). staged_lobby_A1 is the shape
+  // the staged payment path actually mints: the same room tier with an ACTIVE
+  // enrolment that still owes a balance. The latter used to satisfy the April
+  // course-level session rule, so the hardened room-tier predicate must deny it
+  // explicitly rather than passing on the easier application-only fixture.
   staged_lobby_A1: "room-qa-staged-lobby-a1@leveluptest.invalid",
   outsider: "room-qa-outsider@leveluptest.invalid",
 };
@@ -445,41 +434,6 @@ function prove(id, claim, ok, evidence) {
   return ok;
 }
 
-/**
- * A gap this suite MEASURES but R0 does not OWN — a pre-existing policy on a
- * table outside the room-content set that R0 deliberately does not widen (and
- * therefore does not narrow either).
- *
- * Three outcomes, and none of them is silence:
- *   open+unchanged → CARRIED. Printed in the verdict, exit stays 0, and the
- *                    design-qa-gate lens is instructed to raise every carried
- *                    gap as a finding, so it cannot be swallowed by a green run.
- *   widened        → FAIL. The residue grew past its documented boundary; that
- *                    is a leak like any other.
- *   closed         → PASS, plus an explicit "retire this entry" instruction, so
- *                    a fix does not leave a stale pin behind rotting.
- */
-const carriedGaps = [];
-function carryGap(id, { claim, closedClaim, open, widened, evidence, closing }) {
-  if (widened) {
-    failures.push({ id, claim, evidence });
-    console.log(`${C.r}FAIL${C.x} ${id}  ${claim}`);
-    console.log(`${C.r}       ↳ RESIDUE WIDENED: ${evidence}${C.x}`);
-    return false;
-  }
-  if (!open) {
-    passed++;
-    console.log(`${C.g}PASS${C.x} ${id}  ${closedClaim}`);
-    console.log(`${C.d}       ↳ the gap is CLOSED — ${evidence}. Retire this entry from the suite.${C.x}`);
-    return true;
-  }
-  carriedGaps.push({ id, evidence, closing });
-  console.log(`${C.y}CARRIED${C.x} ${id}  ${claim}`);
-  console.log(`${C.d}       ↳ ${evidence}${C.x}`);
-  console.log(`${C.d}       ↳ closing it: ${closing}${C.x}`);
-  return true;
-}
-
 function die(msg, code = 2) {
   console.error(`\n${C.r}✖ ${msg}${C.x}`);
   process.exit(code);
@@ -497,7 +451,7 @@ const INVENTORY = [
   ["R8/R9/C3", "cross-batch isolation inside one offering (A1 vs A2), config override included"],
   ["R10", "accepted_A holds zero room read grant, and there is no preview RPC"],
   ["R11", "pre_member_A1 sees the whitelist only, and is redacted out of the surfaces R0's wall owns"],
-  ["GAP-4", "the measured live_sessions/join-link residue of the STAGED lobby shape (April policy, not R0's)"],
+  ["GAP-4", "both lobby shapes are denied live_sessions rows and join links"],
   ["MYROOMS", "the room-LIST RPC is self-scoped and carries the lobby redaction"],
   ["W1/W2/W5/W6/W7", "write attacks on announcements, demo entries and the feed"],
   ["W3/W4", "membership and config are server-derived, never client-claimed"],
@@ -510,9 +464,9 @@ const INVENTORY = [
   ["L1/L2", "revoking an enrolment removes access; re-granting restores it"],
   ["PROG", "get_cohort_progress — the one shipped-client surface R0 redefines"],
   ["TOTAL", "unfiltered enumeration: every actor asks each table for everything"],
-  ["GAP-1", "the measured residue revocation leaves outside R0's own surfaces"],
-  ["GAP-2", "the measured cross-batch residue on live_sessions (no batch column)"],
-  ["GAP-3", "the measured residue get_cohort_progress leaves (links + revocation)"],
+  ["GAP-1", "revocation closes cohort_weeks as well as room-owned surfaces"],
+  ["GAP-2", "week resolution makes live_sessions and its link RPC batch-precise"],
+  ["GAP-3", "get_cohort_progress stands down after revocation"],
   ["C1", "roster ships the safe column set only — no phone, no email"],
   ["C2", "the T-60 zoom gate holds server-side, in the envelope AND in the link RPC"],
   ["NFR-CONFIG-2", "flipping every module flag ON changes no row count anywhere"],
@@ -1718,11 +1672,11 @@ const MEMBER_PRIVATE_A = [
  * R0 owns the six room-content tables plus cohort_room_configs: all of them
  * route through cohort_room_can_access() / the membership row the resolver
  * retracts. cohort_weeks does NOT — it is governed by the pre-existing
- * `cohort_weeks_student_read` (20260526180000:322), which R-2's own header says
- * neither R-1 nor R-2 widens, and which R0 therefore also does not narrow. That
- * asymmetry is measured as GAP-1 rather than asserted away in either direction.
- * live_sessions is likewise pre-existing, but its policies DO carry
- * `status = 'active'`, so revocation closes it and it stays in the owned set.
+ * `cohort_weeks_student_read` (20260526180000:322), now amended by the scoped
+ * August follow-up. It remains separate so GAP-1 independently proves its
+ * active-status predicate. live_sessions is likewise pre-existing, but now
+ * routes through cohort_live_session_can_access(), so revocation closes it and
+ * it stays in the primary lifecycle set.
  */
 const R0_OWNED_SURFACES = SURFACES_A.filter(([name]) => name !== "cohort_weeks");
 const LEGACY_SURFACES = SURFACES_A.filter(([name]) => name === "cohort_weeks");
@@ -1776,18 +1730,16 @@ const LEGACY_SURFACES = SURFACES_A.filter(([name]) => name === "cohort_weeks");
   // THE SECOND LOBBY SHAPE. Same tier, different truth underneath it: an ACTIVE
   // enrolment that still owes a balance. R-1 branch (a2) stands down on
   // _room_balance_outstanding() and branch (b) claims the row instead, so the
-  // room tier is identical — while every April-era policy that asks only "is
-  // there an active enrolment?" now answers YES. Both halves are asserted
-  // because GAP-4's whole meaning depends on them: a lobby row proves the tier,
-  // the active enrolment proves the residue is not simply this actor being an
-  // ordinary member.
+  // room tier is identical — while the legacy course-level condition "is there
+  // an active enrolment?" answers YES. Both halves are asserted because GAP-4
+  // must prove the new room-tier condition overrides that legacy fallback.
   const staged = by("room-qa-staged-lobby")[0];
   const stagedEnrol = await sqlOne(
     `SELECT count(*)::int AS n FROM public.enrolments
       WHERE user_id = ${lit(session.staged_lobby_A1.id)}
         AND offering_id = ${lit(ids.offering_a)} AND status = 'active'`);
   prove("PRE.5b",
-    "staged_lobby_A1 holds the SAME `pre_member` room tier while carrying an ACTIVE enrolment with an outstanding balance — the shape the staged payment path actually mints, and the one R-1's own header (20260729100000:906-918) flags as the un-closed hole in the April live_sessions policies. The room resolver refuses to promote them (branch (a2) is gated on the balance, not on the enrolments table), so anything they reach through live_sessions is reached in spite of the tier, not because of it",
+    "staged_lobby_A1 holds the SAME `pre_member` room tier while carrying an ACTIVE enrolment with an outstanding balance — the exact shape that formerly slipped through the April course-level session rules. The resolver correctly refuses to promote them, arming GAP-4's proof that the new shared helper follows the room tier instead of the enrolment alone",
     staged?.role === "pre_member" && staged?.status === "active" && stagedEnrol?.n === 1,
     staged ? `role=${staged.role} source=${staged.source} status=${staged.status} batch=${staged.batch_id ?? "NULL"}; active enrolments in offering A: ${stagedEnrol?.n}`
            : `no membership row for the staged lobby actor; active enrolments in offering A: ${stagedEnrol?.n}`);
@@ -2289,16 +2241,14 @@ section("R8 / R9 / C3 — cross-batch isolation", "batch A1 and batch A2 share a
     leaked.length === 0 ? results.map(([n, r]) => `${n}:${r.ok ? "0 rows" : r.status}`).join(" · ")
       : `LEAKED ${leaked.map(([n, r]) => `${n} → ${r.describe}`).join("; ")}`);
 
-  // The schedule is the one batch boundary RLS cannot draw: live_sessions is
-  // course-scoped, never batch-scoped, so both batches of offering A can read
-  // each other's session ROWS at the table by pre-existing design. R-3's
-  // envelope predicate is the only thing that makes the schedule batch-precise,
-  // which makes this the assertion that carries the claim — not a table probe.
+  // The room envelope has its own batch predicate and must remain independently
+  // precise even though GAP-2 now proves the base-table helper as well. Two
+  // enforcement layers are two regressions, so neither substitutes for the other.
   const envA2 = await rpc("member_A2", "get_cohort_room", { p_offering: ids.offering_a }, "get_cohort_room(A) as member_A2");
   const a2Sessions = envA2.json?.sessions ?? [];
   const foreignSessions = a2Sessions.filter((s) => (s.title || "").includes("A1"));
   prove("R8.2",
-    "member_A2's room envelope lists their own batch's session and not one of batch A1's — because live_sessions itself is course-scoped, the RPC's batch predicate is the ONLY thing standing between two batches of one offering and each other's schedule, so this is where that boundary has to be proven",
+    "member_A2's room envelope lists their own batch's session and not one of batch A1's — the RPC preserves its own exact-batch predicate independently of the hardened live_sessions table policy",
     envA2.ok && a2Sessions.length > 0 && foreignSessions.length === 0,
     envA2.ok
       ? `${a2Sessions.length} session(s): ${a2Sessions.map((s) => s.title).join(", ") || "none"}; batch-A1 sessions present: ${foreignSessions.length}`
@@ -2339,8 +2289,8 @@ section("R8 / R9 / C3 — cross-batch isolation", "batch A1 and batch A2 share a
     "no batch-A1 sentinel appears anywhere in what the server handed member_A2 — the noticeboard, the library, the mentor-materials file, the feed, the gallery, the curriculum, the assignment brief, the mentor's feedback, the attendance mark, the resume position and the seen watermark are all absent from every response, not just the ones we thought to assert on",
     before);
 
-  // ── GAP-2. The cross-batch residue on live_sessions, measured rather than
-  //    avoided. Two probes, both aimed straight at the surface R8.1 leaves out.
+  // ── GAP-2. The former cross-batch residue on live_sessions. Two blocking
+  //    probes, both aimed straight at the surface R8.1 leaves out.
   const a2ReadsA1Sessions = await read("member_A2",
     `live_sessions?title=like.ROOM%20QA%20A1*&select=id,title,scheduled_at,status,recording_url,week_id`,
     "batch-A1 sessions as member_A2 [GAP-2 probe]");
@@ -2352,20 +2302,13 @@ section("R8 / R9 / C3 — cross-batch isolation", "batch A1 and batch A2 share a
   const gap2Beyond = ALL_A_SECRETS
     .filter((n) => !sessionBorne.includes(n))
     .filter((n) => gap2Text.includes(n));
-  carryGap("GAP-2", {
-    claim:
-      "batch precision stops at live_sessions: a batch-A2 member reads batch A1's session rows — titles, times and recording URLs — and can pull batch A1's join link out of get_live_session_zoom_link, because that table has no batch column and that RPC gates on any active enrolment in the OFFERING",
-    closedClaim:
-      "the schedule is now batch-precise at the table and in the older link RPC as well as in the envelope — a batch-A2 member reads none of batch A1's sessions and cannot pull their join link",
-    open: (a2ReadsA1Sessions.ok && a2ReadsA1Sessions.rows > 0) || gap2Residue.length > 0,
-    widened: gap2Beyond.length > 0,
-    evidence: gap2Beyond.length > 0
-      ? `the cross-batch session path now also carries ${gap2Beyond.join(", ")} — that is past the boundary this gap is carried within`
-      : `member_A2 read ${a2ReadsA1Sessions.rows} batch-A1 session row(s) and the link RPC answered ${a2PullsA1Link.returnedNull ? "NULL" : "a link"}; sentinels reaching them: ${gap2Residue.join(", ") || "none"}. ` +
-        "live_sessions hangs off course_id and reaches a batch only through week_id → cohort_weeks → cohort_batch_id, so neither live_sessions_read (has_course_access) nor get_live_session_zoom_link (20260408151600:76-84, `active enrolment in an offering mapped to the course`) has a batch to compare against — both predate R0 by four months. R0 draws the batch line where it CAN be drawn, in R-3's envelope (R8.2), and neither widens nor narrows the April policy. What leaks is the schedule and the join link of a sibling batch of the same programme, never its noticeboard, curriculum, assignments, feedback, attendance or people — R8.1 and R9.1 above assert exactly that, on nine surfaces.",
-    closing:
-      "give the link RPC and live_sessions_student_read the batch dimension the table lacks: resolve week_id → cohort_weeks → cohort_batch_id and require the caller's cohort_batch_members row to match, falling through to the course-level check only for batch-less (legacy/workshop) sessions. That edits a pre-existing April policy and a pre-existing RPC, both outside R0's file set, so it belongs to a scoped follow-up with its own council pass and its own cross-client regression check — the shipped CohortDashboard calls that RPC.",
-  });
+  prove("GAP-2",
+    "the schedule is batch-precise at the table and in the older link RPC as well as in the envelope — a batch-A2 member reads none of batch A1's sessions and cannot pull their join link",
+    a2ReadsA1Sessions.blocked && a2PullsA1Link.returnedNull &&
+      gap2Residue.length === 0 && gap2Beyond.length === 0,
+    `member_A2 session read: ${a2ReadsA1Sessions.describe}; link RPC: ${a2PullsA1Link.describe}; ` +
+      `session/link sentinels received: ${gap2Residue.join(", ") || "none"}; ` +
+      `unrelated batch-A1 sentinels received: ${gap2Beyond.join(", ") || "none"}`);
 }
 
 {
@@ -2513,17 +2456,11 @@ section("R11 — pre_member redaction whitelist", "confirmation_paid buys the lo
   // (ownership AND room access); their sentinels are swept for in R11.b1, which
   // is where the stronger claim lives.
   //
-  // 🔴 WHAT IS NO LONGER PROBED HERE, AND WHY. live_sessions and
-  // get_live_session_zoom_link used to be in this set, and their results were
-  // printed as pre_member redaction PASSes. They are not R0's wall: both are
-  // gated by April policies that ask only "is there an ACTIVE enrolment in an
-  // offering mapped to this course?", and R-1's header (20260729100000:906-918)
-  // forbids re-asserting a pre_member's zero on live_sessions until the
-  // follow-up lands. This fixture's original lobby occupant has no enrolment at
-  // all, so its zero was a property of the fixture, not of the tier. Both lobby
-  // shapes — this one and the staged actor who DOES hold an active enrolment —
-  // are probed against those two surfaces in GAP-4 immediately below, and the
-  // result is carried rather than certified.
+  // live_sessions and get_live_session_zoom_link are intentionally not folded
+  // into this set: their August room-tier follow-up has a dedicated, blocking
+  // two-shape assertion in GAP-4 immediately below. Keeping that probe separate
+  // prevents the application-only lobby control from hiding a staged caller
+  // whose active enrolment would have satisfied the older April rules.
   const curriculum = await read("pre_member_A1", `cohort_weeks?cohort_batch_id=eq.${ids.batch_a1}&select=*`, "curriculum detail as pre_member");
   const assignments = await read("pre_member_A1", `cohort_week_submissions?select=*`, "assignments as pre_member");
   const mentorDocs = await read("pre_member_A1", `cohort_resources?offering_id=eq.${ids.offering_a}&select=*`, "mentor materials as pre_member");
@@ -2547,33 +2484,24 @@ section("R11 — pre_member redaction whitelist", "confirmation_paid buys the lo
     before);
 
   prove("R11.b2",
-    "each redacted surface R0 OWNS individually returns zero rows or a denial to pre_member_A1 — every one of them was proven readable to a real member first, so the redaction is enforced per-surface and not by one lucky filter or an empty table. The word 'owns' is doing work: the recordings and join-link surfaces that used to sit in this list are governed by an April policy this phase does not touch, and they are measured as GAP-4 rather than counted here",
+    "each redacted room-owned surface individually returns zero rows or a denial to pre_member_A1 — every one was proven readable to a real member first, while the separately hardened session table and join-link RPC are asserted on both lobby shapes in GAP-4",
     denied.every(([, r]) => r.blocked),
     denied.map(([n, r]) => `${n}:${r.ok ? `${r.rows} row(s)` : r.status}`).join(" · "));
 }
 
-// ── GAP-4 — the lobby's live_sessions residue, on BOTH lobby shapes ─────────
+// ── GAP-4 — the lobby's live_sessions wall, on BOTH lobby shapes ─────────────
 //
-// THE HOLE R-1's OWN HEADER NAMES, MEASURED INSTEAD OF CERTIFIED AWAY.
-// 20260729100000:906-918 marks the staged lobby shape — ACTIVE enrolment +
-// outstanding balance, resolver branch (b) — as a KNOWN, ESCALATED, NOT-CLOSED
-// hole, because that shape satisfies `live_sessions_student_read`
-// (20260408140000:54) and `get_live_session_zoom_link`'s enrolment test
-// (20260408151600:74-86) while the room tier says lobby. It ends: do not
-// re-assert "a pre_member reads zero rows from live_sessions" anywhere until
-// the follow-up lands. This suite did re-assert it, three ways, and went green
-// because its only lobby occupant was the OTHER shape.
+// The staged lobby shape — ACTIVE enrolment + outstanding balance — used to
+// satisfy the April course-level policies while the room tier said pre_member.
+// The scoped August follow-up has landed, so this is now a blocking assertion.
 //
 // So both shapes are attacked, side by side, with the same probes:
-//   pre_member_A1     application stamp, NO enrolment  → the April policies deny
-//   staged_lobby_A1   the same tier, ACTIVE enrolment  → the April policies admit
-// The delta between those two rows IS the gap, and it is a measurement rather
-// than a claim. What R0 DOES own for the staged shape is asserted normally
-// right after (GAP-4.1): every redacted body on a table R0's wall governs stays
-// shut for it too, so the residue below is a boundary of this phase and not a
-// hole inside it.
-section("GAP-4 — the staged lobby's live_sessions residue",
-  "the one place the room tier and the April enrolment policies disagree — measured on both lobby shapes");
+//   pre_member_A1     application stamp, NO enrolment  → must deny
+//   staged_lobby_A1   the same tier, ACTIVE enrolment  → must ALSO deny
+// Both shapes must now agree with the room tier. GAP-4.1 independently keeps
+// the redacted room-owned bodies in the same blocking window.
+section("GAP-4 — the staged lobby's live_sessions wall",
+  "the room tier governs the April session table and link RPC on both lobby shapes");
 {
   const LINKS = [
     ["FAR (T+3h)", ids.session_far_a1, CANARY.ZOOM_A1],
@@ -2600,7 +2528,7 @@ section("GAP-4 — the staged lobby's live_sessions residue",
   const staged = await probeLobby("staged_lobby_A1");
 
   // The redacted bodies R0 DOES own, for the staged shape. Probed before the
-  // carryGap so the sweep below has a window that could have carried them.
+  // blocking GAP-4 assertion so the sweep below has a live window.
   const stagedBefore = mark("staged_lobby_A1");
   for (const [name, path] of [
     ["cohort_weeks", `cohort_weeks?cohort_batch_id=eq.${ids.batch_a1}&select=*`],
@@ -2619,21 +2547,16 @@ section("GAP-4 — the staged lobby's live_sessions residue",
   const beyond = A_SECRETS_TABLE_BORNE
     .filter((n) => n !== CANARY.REC_A1)
     .filter((n) => staged.text.includes(n));
-  carryGap("GAP-4", {
-    claim:
-      "the LOBBY tier stops at the room's own tables: a staged lobby occupant — `pre_member` in cohort_room_members, with an ACTIVE enrolment that still owes a balance — reads batch A1's session rows straight off live_sessions, recording_url included, and pulls the join link of every session inside its window out of get_live_session_zoom_link",
-    closedClaim:
-      "both lobby shapes now read zero rows from live_sessions and are handed no join link at any distance — the April policies have caught up with the room tier and the pre_member redaction is finally true on every surface",
-    open: stagedSessions > 0 || staged.handed.length > 0,
-    widened: beyond.length > 0,
-    evidence: beyond.length > 0
-      ? `the staged lobby path now also carries ${beyond.join(", ")} — that is past the live_sessions boundary this gap is carried within, and it is a failure of R0's own wall rather than of the April one`
-      : `staged_lobby_A1 (active enrolment, balance outstanding) read ${stagedSessions} batch-A1 session row(s) and was handed ${staged.handed.length} of 4 join links (${staged.handed.map(([w]) => w).join(", ") || "none"}); ` +
-        `the application-only lobby occupant read ${applicationOnly.table.ok ? applicationOnly.table.rows : 0} row(s) and ${applicationOnly.handed.length} link(s). ` +
-        "The delta between those two lines is the whole gap: both hold the identical `pre_member` room row, and the only difference between them is an enrolments row that live_sessions_student_read (20260408140000:54) and get_live_session_zoom_link (20260408151600:74-86) test for while knowing nothing about rooms, batches or tiers. R-1's own header (20260729100000:906-918) flags this shape as KNOWN, ESCALATED and NOT CLOSED by R0, and forbids re-asserting the zero. This suite therefore does not: it reports what each shape actually receives.",
-    closing:
-      "add the room tier to the two April objects — `live_sessions_student_read` and `get_live_session_zoom_link` must require a membership row whose role is not `pre_member` (or, equivalently, `NOT _room_balance_outstanding(...)`) on top of the enrolment test. Both are shipped objects CohortDashboard reads through, so it is the same scoped follow-up as GAP-2, with its own council pass and its own client-compat check.",
-  });
+  const applicationSessions = applicationOnly.table.ok ? applicationOnly.table.rows : 0;
+  const allLinksWithheld = [...applicationOnly.links, ...staged.links]
+    .every(([, r]) => r.returnedNull);
+  prove("GAP-4",
+    "both lobby shapes read zero rows from live_sessions and are handed no join link at any distance — the session policy and link RPC enforce the room tier even when the staged caller has an active enrolment",
+    applicationOnly.table.blocked && staged.table.blocked && allLinksWithheld &&
+      applicationOnly.handed.length === 0 && staged.handed.length === 0 && beyond.length === 0,
+    `application-only lobby: ${applicationSessions} session row(s), ${applicationOnly.handed.length}/4 links; ` +
+      `staged active-enrolment lobby: ${stagedSessions} session row(s), ${staged.handed.length}/4 links; ` +
+      `unrelated redacted sentinels received: ${beyond.join(", ") || "none"}`);
 }
 
 // ── MYROOMS — the OTHER client-callable room read RPC ──────────────────────
@@ -3751,10 +3674,9 @@ section("L1 / L2 — lifecycle", "the exact regression the resolver exists to pr
     "across every response the former member received from the surfaces R0 owns — the noticeboard, the library, the feed, the replies, the gallery, the schedule, the room skin, their own resume position and seen watermark, the envelope and the link RPC — not one sentinel those surfaces carry appears",
     after);
 
-  // ── GAP-1. Measured, not assumed, and deliberately not swept into L1.4's
-  //    window above: cohort_weeks sits OUTSIDE R0's owned set and the residue it
-  //    leaves has to be reported as itself rather than blended into a green
-  //    lifecycle result or hidden behind a narrower assertion.
+  // ── GAP-1. Deliberately not swept into L1.4's window above: cohort_weeks
+  //    has its own blocking regression because its legacy policy previously
+  //    trusted a historical roster row after the enrolment was revoked.
   const [legacyName, legacyPath] = LEGACY_SURFACES[0];
   const weeks = await read("member_A1", legacyPath, `${legacyName}(A) as revoked member_A1 [legacy wall]`);
   const weeksText = weeks.text || "";
@@ -3764,28 +3686,18 @@ section("L1 / L2 — lifecycle", "the exact regression the resolver exists to pr
   const beyondBoundary = ALL_A_SECRETS
     .filter((n) => !expectedResidue.includes(n))
     .filter((n) => weeksText.includes(n));
-  carryGap("GAP-1", {
-    claim:
-      "R0's revocation wall stops at cohort_weeks: a revoked member still reads their old batch's week rows, and the residue is exactly week metadata — curriculum body and assignment brief — and nothing beyond it",
-    closedClaim:
-      "revocation now closes cohort_weeks too — the curriculum body and assignment brief of a batch a refunded student has left are no longer readable by them, so the last surface outside R0's own wall has caught up with it",
-    open: weeks.ok && weeks.rows > 0,
-    widened: beyondBoundary.length > 0,
-    evidence: beyondBoundary.length > 0
-      ? `cohort_weeks now also carries ${beyondBoundary.join(", ")} to a revoked member`
-      : weeks.ok && weeks.rows > 0
-        ? `${weeks.rows} week row(s) still readable, carrying ${expectedResidue.filter((n) => weeksText.includes(n)).join(", ") || "no sentinel"}. ` +
-          "cohort_weeks_student_read (20260526180000:322) tests only that a cohort_batch_members row joins to an enrolments row — it never checks e.status — and revocation flips the enrolment without touching the batch roster, so the policy still answers TRUE. R-2's header states plainly that neither R-1 nor R-2 widens cohort_weeks; the same ruling is why R0 does not narrow it either."
-        : "cohort_weeks returned nothing to the revoked member",
-    closing:
-      "add `AND e.status = 'active'` to cohort_weeks_student_read, or have the revocation path retract the cohort_batch_members row. Both are edits to a pre-existing policy outside R0's file set, so they belong to a scoped follow-up with its own council pass, not to this phase.",
-  });
+  prove("GAP-1",
+    "revocation closes cohort_weeks too — the curriculum body and assignment brief of a batch a refunded student has left are no longer readable by them",
+    weeks.blocked && beyondBoundary.length === 0 &&
+      expectedResidue.every((n) => !weeksText.includes(n)),
+    `${weeks.describe}; curriculum/assignment sentinels received: ` +
+      `${expectedResidue.filter((n) => weeksText.includes(n)).join(", ") || "none"}; ` +
+      `unrelated sentinels received: ${beyondBoundary.join(", ") || "none"}`);
 
-  // ── GAP-2's sibling on the RPC side, and the reason this probe is placed
+  // ── GAP-3 on the progress RPC side, and the reason this probe is placed
   //    AFTER L1.4 rather than inside it: get_cohort_progress is not one of the
-  //    surfaces R0's revocation wall covers, and folding its response into
-  //    L1.4's sweep would either fail a case for a hole R0 does not own or,
-  //    worse, tempt someone to narrow L1.4's needle list until it passed.
+  //    surfaces L1.4 enumerates. Keeping it separate makes a progress-function
+  //    regression fail by name instead of being buried in an aggregate sweep.
   const revokedProgress = await rpc("member_A1", "get_cohort_progress",
     { p_user_id: session.member_A1.id, p_offering_id: ids.offering_a },
     "get_cohort_progress(self, A) as revoked member_A1 [GAP-3 probe]");
@@ -3796,22 +3708,13 @@ section("L1 / L2 — lifecycle", "the exact regression the resolver exists to pr
     .filter((n) => progressText.includes(n));
   const progressBeyond = [...ALL_B_SECRETS, ...CROSS_BATCH_A2_FORBIDDEN]
     .filter((n) => progressText.includes(n));
-  carryGap("GAP-3", {
-    claim:
-      "get_cohort_progress does not read enrolment STATUS and applies no join-link window: a student whose enrolment has just been revoked still receives their old batch's curriculum body, assignment brief and mentor feedback from it — and the join link of the class running right now",
-    closedClaim:
-      "get_cohort_progress now stands down on a revoked enrolment — the last read path a refunded student held into their old batch's curriculum and join link is closed",
-    open: revokedProgress.ok && revokedRows.length > 0,
-    widened: progressBeyond.length > 0,
-    evidence: progressBeyond.length > 0
-      ? `get_cohort_progress now also carries ${progressBeyond.join(", ")} to this caller — another batch's or another offering's material, which is past this gap's boundary`
-      : revokedProgress.ok && revokedRows.length > 0
-        ? `${revokedRows.length} week row(s) still returned after revocation, carrying ${progressResidue.join(", ") || "no sentinel"}${revokedProgressLink ? ", including a live join link" : ""}. ` +
-          "Its FROM clause is `cohort_batch_members → enrolments` with no `e.status = 'active'` anywhere (20260526180000:236-238, unchanged by R0 — amendment C1 authorised the per-week collapse and the four columns staying, nothing else), and revocation flips the enrolment without touching the batch roster. The same root cause as GAP-1: the roster row, not the enrolment, is what these older reads trust. R0 neither widens this nor narrows it, and every surface R0 DOES own closed on the same revocation two assertions above."
-        : "get_cohort_progress returned nothing to the revoked member",
-    closing:
-      "add `AND e.status = 'active'` to get_cohort_progress's join, and gate live_session_zoom_link on the same window get_cohort_room already applies (T-60 → end + 1h). Both are edits to a function two shipped Capacitor call sites depend on, so they need the client-compat pass a room migration does not get: same follow-up as GAP-1, same council.",
-  });
+  prove("GAP-3",
+    "get_cohort_progress stands down on a revoked enrolment — the last read path a refunded student held into their old batch's curriculum and join link is closed",
+    revokedProgress.ok && revokedRows.length === 0 && !revokedProgressLink &&
+      progressResidue.length === 0 && progressBeyond.length === 0,
+    `${revokedProgress.describe}; ${revokedRows.length} week row(s); ` +
+      `progress/link sentinels received: ${progressResidue.join(", ") || "none"}; ` +
+      `cross-scope sentinels received: ${progressBeyond.join(", ") || "none"}`);
 
   await sql(
     `UPDATE public.enrolments SET status = 'active', revoked_at = NULL
@@ -3920,24 +3823,8 @@ if (process.env.ROOM_QA_KEEP === "1") {
 }
 
 console.log("");
-if (carriedGaps.length) {
-  // Printed before the verdict, every run, green or not. A carried gap is a
-  // measured hole in a wall R0 does not own — it is not a pass, and the
-  // design-qa-gate room-access-leak lens is instructed to raise each one as a
-  // finding so it reaches the chair rather than dying in this log.
-  console.log(`${C.y}${C.b}⚠ ${carriedGaps.length} KNOWN GAP(S) CARRIED — measured, outside R0's own surfaces, NOT fixed${C.x}`);
-  for (const g of carriedGaps) {
-    console.log(`${C.y}   ${g.id}  ${g.evidence}${C.x}`);
-    console.log(`${C.y}       closing it: ${g.closing}${C.x}`);
-  }
-  console.log("");
-}
-
 if (failures.length === 0) {
   console.log(`${C.g}${C.b}✅ ROOM ACCESS WALL HOLDS — ${passed} security properties proven on ${REF}.${C.x}`);
-  if (carriedGaps.length) {
-    console.log(`${C.y}   …with ${carriedGaps.length} carried gap(s) above. The wall R0 built holds; the gaps are in walls it does not own.${C.x}`);
-  }
   process.exit(0);
 }
 console.log(`${C.r}${C.b}❌ ${failures.length} of ${passed + failures.length} properties FAILED — this is a leak, not a flake.${C.x}`);
