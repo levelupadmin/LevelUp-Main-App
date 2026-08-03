@@ -874,9 +874,9 @@ async function fetchPage(formId: string, page: number, apiKey: string): Promise<
 export async function handleTallyApplicationPoll(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  // Auth: the caller must present the SERVICE-ROLE KEY ITSELF, byte for byte
-  // (FX-3). `verify_jwt = true` (config.toml:58-59) only proves the caller holds
-  // SOME valid project JWT — the anon key qualifies — so it cannot be the gate.
+  // Auth: the caller must present the explicit Vault-synchronized worker token,
+  // byte for byte (FX-3). `verify_jwt = true` only proves the caller holds SOME
+  // valid project JWT — the anon key qualifies — so it cannot be the gate.
   //
   // WHY A KEY COMPARE AND NOT A CLAIM PARSE. The gate this replaces base64URL-
   // decoded the bearer token's payload and required `role=service_role` WITHOUT
@@ -886,38 +886,21 @@ export async function handleTallyApplicationPoll(req: Request): Promise<Response
   // opens. It survived only because `verify_jwt` happened to be on — and this
   // repo's own deploy docs (src/docs/content/tech.ts:119-120) present
   // `--no-verify-jwt` as the standard flag, one deploy away from reducing the
-  // gate to a forgeable string. Comparing against SUPABASE_SERVICE_ROLE_KEY is
-  // unforgeable without the key and holds regardless of `verify_jwt` or any
-  // deploy flag; `verify_jwt = true` stays as defense in depth. This is the
-  // guarantee process-email-queue/index.ts:109-117 already relies on.
-  //
-  // REBUTTING notify-cohort/index.ts:52-55. That comment asserts a byte compare
-  // is UNWORKABLE here — "the deployed function's SUPABASE_SERVICE_ROLE_KEY env
-  // var occasionally returns a different representation than what's stored in
-  // the vault (Supabase sometimes re-issues internal JWTs without rotating the
-  // dashboard key)" — and uses that to justify the claim parse. If it were true
-  // this gate would 401 the cron at some arbitrary later date. It is not
-  // supported by this repo's own production evidence:
-  // process-email-queue/index.ts:115-117 performs the IDENTICAL byte compare
-  // against SUPABASE_SERVICE_ROLE_KEY, and its pg_cron caller sends the SAME
-  // vault secret this poll's cron sends (`email_queue_service_role_key` — see
-  // 20260722140100_tally_poll_cron.sql:35-37,46, which reuses the email
-  // worker's secret by name). That compare has been live and passing in
-  // production, so the divergence notify-cohort describes is not something this
-  // deployment exhibits. Two contradictory comments in one codebase are how a
-  // 401 debug session gets stranded, so: if this gate ever rejects the cron,
-  // read THIS paragraph first and go compare the two values (see the coupling
-  // note below) rather than reaching for the claim parse.
+  // gate to a forgeable string. A constant-time compare against POLL_AUTH_TOKEN
+  // is unforgeable without that token and holds regardless of `verify_jwt` or
+  // any deploy flag; `verify_jwt = true` stays as defense in depth. The explicit
+  // token matters on projects where Vault still holds a legacy service-role JWT
+  // but the function runtime injects SUPABASE_SERVICE_ROLE_KEY as sb_secret_*.
   //
   // ⚠️ COUPLED TO THE VAULT SECRET — VERIFY BEFORE DEPLOYING. The only
   // production caller is the pg_cron job
   // (supabase/migrations/20260722140100_tally_poll_cron.sql:44-47), which sends
   // `Bearer ' || vault.decrypted_secrets['email_queue_service_role_key']`. This
-  // gate passes ONLY if that vault secret is byte-identical to this function's
-  // SUPABASE_SERVICE_ROLE_KEY. If it was stored with a trailing newline, or is a
-  // separately-minted worker JWT rather than the literal key, intake dies
-  // silently every 15 minutes. The `.trim()` below absorbs stray whitespace the
-  // header itself picks up; it cannot fix a genuinely different secret.
+  // gate passes ONLY if that Vault secret is byte-identical to POLL_AUTH_TOKEN
+  // (or, on projects without the explicit token, to the service-key fallback).
+  // If one is rotated without the other, intake fails closed every 15 minutes.
+  // The `.trim()` below absorbs stray whitespace the header itself picks up; it
+  // cannot fix genuinely different credentials.
   //
   // The pre-deploy comparison of those two values is necessary but NOT
   // sufficient: it runs once, and a later key rotation that misses the vault

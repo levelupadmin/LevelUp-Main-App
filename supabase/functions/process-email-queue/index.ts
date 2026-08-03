@@ -1,6 +1,6 @@
-import { sendLovableEmail } from 'npm:@lovable.dev/email-js'
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
-import { timingSafeEqual } from '../_shared/crypto.ts'
+import { sendBrevoEmail } from '../_shared/brevo.ts'
+import { workerAuthMatches } from './auth.ts'
 
 // Permissive client type: the supabase-js generic schema param defaults differ
 // between a call site and a bare `ReturnType<typeof createClient>`, so spell out
@@ -86,9 +86,15 @@ async function moveToDlq(
 }
 
 Deno.serve(async (req) => {
-  const apiKey = Deno.env.get('LOVABLE_API_KEY')
+  const apiKey = Deno.env.get('BREVO_API_KEY')
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  // pg_cron sends the legacy service-role JWT stored in Vault, while newer
+  // projects can inject SUPABASE_SERVICE_ROLE_KEY in the sb_secret_* format.
+  // POLL_AUTH_TOKEN is deliberately synchronized with that Vault value and is
+  // the stable worker-call contract. Keep the injected key as a fallback for
+  // projects where both representations are identical.
+  const workerAuthToken = Deno.env.get('POLL_AUTH_TOKEN') ?? ''
 
   if (!apiKey || !supabaseUrl || !supabaseServiceKey) {
     console.error('Missing required environment variables')
@@ -108,13 +114,11 @@ Deno.serve(async (req) => {
 
   // Defense in depth: don't trust the JWT claims without verifying the
   // signature. parseJwtClaims is base64-decode only and an attacker could
-  // craft `{"role":"service_role"}` and call this function directly. We
-  // require the caller to supply the actual SUPABASE_SERVICE_ROLE_KEY
-  // (which is itself a signed JWT) byte-for-byte. constant-time compare
-  // to avoid timing leaks.
+  // craft `{"role":"service_role"}` and call this function directly. Require
+  // the explicit Vault-synchronized worker token (or the injected service key
+  // fallback) byte-for-byte, in constant time.
   const token = authHeader.slice('Bearer '.length).trim()
-  const expectedToken = supabaseServiceKey
-  if (!timingSafeEqual(token, expectedToken)) {
+  if (!workerAuthMatches(token, workerAuthToken, supabaseServiceKey)) {
     // Sanity-check the parsed claim too; service_role is the only
     // accepted caller. If a future change rotates the key without
     // restarting this function, fail closed.
@@ -125,9 +129,8 @@ Deno.serve(async (req) => {
         { status: 403, headers: { 'Content-Type': 'application/json' } }
       )
     }
-    // Token is not the current service key but claims service_role:
-    // refuse. The only legitimate caller is pg_cron which uses the
-    // current service_role key.
+    // Token is not the configured worker credential but claims service_role:
+    // refuse. The only legitimate caller is pg_cron with the exact Vault token.
     return new Response(
       JSON.stringify({ error: 'Forbidden' }),
       { status: 403, headers: { 'Content-Type': 'application/json' } }
@@ -269,25 +272,20 @@ Deno.serve(async (req) => {
       }
 
       try {
-        await sendLovableEmail(
+        await sendBrevoEmail(
           {
-            run_id: payload.run_id,
             to: payload.to,
             from: payload.from,
-            sender_domain: payload.sender_domain,
+            senderDomain: payload.sender_domain,
             subject: payload.subject,
             html: payload.html,
             text: payload.text,
-            purpose: payload.purpose,
-            label: payload.label,
-            idempotency_key: payload.idempotency_key,
-            unsubscribe_token: payload.unsubscribe_token,
-            message_id: payload.message_id,
+            idempotencyKey: payload.idempotency_key,
+            messageId: payload.message_id,
           },
-          // sendUrl is optional; when LOVABLE_SEND_URL is not set, the library
-          // falls back to the default Lovable API endpoint (https://api.lovable.dev).
-          // Set LOVABLE_SEND_URL as a Supabase secret to override (e.g. for local dev).
-          { apiKey, sendUrl: Deno.env.get('LOVABLE_SEND_URL') }
+          // Production uses Brevo's v3 endpoint. The override exists only for
+          // an operator-controlled integration test endpoint.
+          { apiKey, sendUrl: Deno.env.get('BREVO_SEND_URL') }
         )
 
         // Log success

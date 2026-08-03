@@ -122,9 +122,8 @@
  *     has always forwarded and that nothing has ever set. Every other producer
  *     of that helper queues a byte-identical message to before. NO claim is made
  *     about what the provider does with it: nothing in this repo emits a
- *     `List-Unsubscribe` header and `npm:@lovable.dev/email-js` (the sender
- *     `process-email-queue` imports) is absent from this repo's package.json,
- *     so the in-body link is the only path anything relies on.
+ *     `List-Unsubscribe` header, so the in-body link is the only path anything
+ *     relies on.
  *   • the link resolves to the public `email-unsubscribe` function, which stamps
  *     `email_unsubscribe_tokens.used_at`. THAT is the opt-out record, and this
  *     file reads it in the same two places it reads `suppressed_emails`:
