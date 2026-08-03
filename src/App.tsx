@@ -1,12 +1,16 @@
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { bootAnalytics } from "@/lib/analytics";
-import { COHORT_ROOMS, DECISION_FLOW, flag } from "@/lib/flags";
+import { DECISION_FLOW, flag } from "@/lib/flags";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { queryClient, persistOptions } from "@/lib/queryClient";
 import { toast as sonnerToast } from "sonner";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
+import {
+  CohortRoomsSurfaceProvider,
+  useCohortRoomsSurfaceValue,
+} from "@/contexts/CohortRoomsSurfaceContext";
 import RequireAuth from "@/components/guards/RequireAuth";
 import RequireRole from "@/components/guards/RequireRole";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -176,18 +180,16 @@ const roomModule = (element: ReactNode) => (
 // The QueryClient + its localStorage persister live in @/lib/queryClient so the
 // sign-out path can purge the persisted cache without importing this app root.
 
-const App = () => {
+const AppContent = () => {
   // Phase DC's routes exist ONLY when the flag is on (see the lazy imports
   // above). Read once per render so the whole decision block appears or
   // disappears atomically.
   const decisionFlow = flag(DECISION_FLOW);
 
-  // The cohort-rooms SURFACE flag (VITE_COHORT_ROOMS, default off). Read once
-  // per render so the route table is decided in one place: with it off, /rooms
-  // and /room/* are not registered at all — they fall through to the existing
-  // catch-all 404 — and /cohort/:offeringId keeps its original element. The flag
-  // gates which ROUTES exist and nothing else; R0's RLS is what gates the data.
-  const roomsEnabled = flag(COHORT_ROOMS);
+  // One server-authoritative value drives both this route table and the nested
+  // StudentLayout nav. Local intent alone can never expose a shipped native
+  // room surface; the provider resolves local intent AND the fresh RPC answer.
+  const { enabled: roomsEnabled, pending: roomsPending } = useCohortRoomsSurfaceValue();
 
   // Fire-and-forget analytics boot. Reads analytics_settings from the
   // DB and injects whichever platform scripts are enabled. Skips on
@@ -247,8 +249,11 @@ const App = () => {
     return () => { remove?.(); };
   }, []);
 
+  // Only opted-in clients wait here, and the RPC reader fails closed after a
+  // bounded three seconds. Flag-off clients never make the request or see this.
+  if (roomsPending) return <RouteFallback />;
+
   return (
-  <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
     <AuthProvider>
       <ErrorBoundary>
         <BrowserRouter>
@@ -453,8 +458,15 @@ const App = () => {
       <SonnerToaster theme="dark" />
       <OfflineBanner />
     </AuthProvider>
-  </PersistQueryClientProvider>
   );
 };
+
+const App = () => (
+  <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
+    <CohortRoomsSurfaceProvider>
+      <AppContent />
+    </CohortRoomsSurfaceProvider>
+  </PersistQueryClientProvider>
+);
 
 export default App;

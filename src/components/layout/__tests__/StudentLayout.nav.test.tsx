@@ -17,8 +17,9 @@ import type { CohortRoomSummary } from "@/hooks/useCohortRooms";
  * Zero diff includes the NETWORK: `useMyCohortRooms()` is argument-less and
  * `enabled: !!user.id`, so calling it from the layout would fire
  * `get_my_cohort_rooms()` for every signed-in student on every page load with the
- * flag down. `RoomNavSlot` owns that call and is mounted only when the flag is
- * up, so `h.roomQueryCalls` is the proof: 0 with the flag off. (`useCohortRooms.ts`
+ * surface down. `RoomNavSlot` owns that call and is mounted only when the
+ * shared server-authoritative context is enabled, so `h.roomQueryCalls` is the
+ * proof: 0 while disabled. (`useCohortRooms.ts`
  * is by contract the ONLY caller of that RPC, so not calling the hook is not
  * calling the RPC.)
  *
@@ -44,6 +45,8 @@ const h = vi.hoisted(() => ({
   roomQueryCalls: 0,
   /** The legacy `useActiveCohort` answer. */
   activeCohortId: null as string | null,
+  /** The one resolved context value shared with App's route table. */
+  roomsSurfaceEnabled: false,
 }));
 
 vi.mock("@/contexts/AuthContext", () => ({
@@ -68,6 +71,10 @@ vi.mock("@/hooks/useStudio", () => ({ useStudioEnabled: () => ({ data: false }) 
 
 vi.mock("@/hooks/useActiveCohort", () => ({
   useActiveCohort: () => ({ offeringId: h.activeCohortId, loading: false }),
+}));
+
+vi.mock("@/contexts/CohortRoomsSurfaceContext", () => ({
+  useCohortRoomsSurfaceValue: () => ({ enabled: h.roomsSurfaceEnabled, pending: false }),
 }));
 
 // The ONE room data boundary. Counting calls here is what makes the "no query
@@ -111,39 +118,6 @@ const makeRoom = (over: Partial<CohortRoomSummary> = {}): CohortRoomSummary => (
   ...over,
 });
 
-const FLAG = "VITE_COHORT_ROOMS";
-
-/**
- * This jsdom build ships without a working `localStorage` (the same gap
- * `src/lib/__tests__/flags.test.ts` papers over), and `flag()` reads
- * localStorage BEFORE the compiled env — so the flag can only be flipped here
- * through a memory-backed stand-in. Installed locally rather than in
- * `src/test/setup.ts`, which every other suite shares.
- */
-function installLocalStorageMock() {
-  const store = new Map<string, string>();
-  const mem = {
-    getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
-    setItem: (key: string, value: string) => void store.set(key, String(value)),
-    removeItem: (key: string) => void store.delete(key),
-    clear: () => store.clear(),
-    key: (index: number) => Array.from(store.keys())[index] ?? null,
-    get length() {
-      return store.size;
-    },
-  };
-  Object.defineProperty(globalThis, "localStorage", {
-    value: mem,
-    configurable: true,
-    writable: true,
-  });
-  Object.defineProperty(window, "localStorage", {
-    value: mem,
-    configurable: true,
-    writable: true,
-  });
-}
-
 const renderLayout = (path = "/profile") =>
   render(
     <MemoryRouter initialEntries={[path]}>
@@ -164,17 +138,14 @@ const openDrawer = async () => {
 const desktopNav = () => screen.getAllByRole("navigation", { name: "Main navigation" })[0];
 
 beforeEach(() => {
-  installLocalStorageMock();
   h.rooms = [];
   h.roomQueryCalls = 0;
   h.activeCohortId = null;
+  h.roomsSurfaceEnabled = false;
 });
 
 afterEach(() => {
   cleanup();
-  // The flag lives in localStorage, which is shared with every other suite in
-  // the run — leaving it set would turn the room routes on everywhere else.
-  localStorage.removeItem(FLAG);
   vi.clearAllMocks();
 });
 
@@ -237,7 +208,7 @@ describe("StudentLayout nav — flag OFF is byte-identical", () => {
 
 describe("StudentLayout nav — flag ON", () => {
   beforeEach(() => {
-    localStorage.setItem(FLAG, "true");
+    h.roomsSurfaceEnabled = true;
   });
 
   it("hides the slot entirely for 0 rooms — including the legacy link", () => {

@@ -14,7 +14,7 @@ import {
   Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2, Sparkles, Brain
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { COHORT_ROOMS, flag } from "@/lib/flags";
+import { useCohortRoomsSurfaceValue } from "@/contexts/CohortRoomsSurfaceContext";
 import RoomNavSlot from "@/components/layout/RoomNavSlot";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
 import { useStudioEnabled } from "@/hooks/useStudio";
@@ -93,12 +93,12 @@ const StudentLayout = ({ children }: Props) => {
     return () => document.removeEventListener("keydown", onKey);
   }, [sidebarOpen, dropdownOpen, notifOpen]);
   const { notifications, unreadCount, loading: notifLoading, markRead, markAllRead } = useNotifications();
-  // Called unconditionally in BOTH flag states so hook order never shifts, and
-  // still the only cohort read with the flag down (`RoomNavSlot` owns the room
-  // query and is not mounted at all until the flag is up).
+  // Called unconditionally in BOTH surface states so hook order never shifts,
+  // and still the only cohort read while rooms are disabled (`RoomNavSlot`
+  // owns the room query and is not mounted until the shared gate is enabled).
   const { offeringId: activeCohortId } = useActiveCohort();
   const { data: studioEnabled } = useStudioEnabled();
-  const roomsEnabled = flag(COHORT_ROOMS);
+  const { enabled: roomsEnabled } = useCohortRoomsSurfaceValue();
 
   // Studio only appears for active cohort members; everyone else sees the
   // unchanged bar (additive — never orphans a route).
