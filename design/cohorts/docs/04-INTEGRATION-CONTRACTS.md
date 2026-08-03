@@ -405,6 +405,9 @@ Calendly delivers `invitee.created` and `invitee.canceled`. The receiver reads:
   "payload": {
     "email": "…",                      // join key (secondary, §2.2)
     "text_reminder_number": "+91…",     // join key (primary, §2.2) when present
+    "tracking": {
+      "utm_content": "levelup_application_<opaque uuid>" // app path only; owner-gated primary identity
+    },
     "scheduled_event": {
       "start_time": "2026-07-20T13:00:00Z",   // → cohort_applications.interview_date
       "location": {
@@ -432,7 +435,7 @@ Calendly delivers `invitee.created` and `invitee.canceled`. The receiver reads:
 >
 > The park above is overridden. **Rahul wants a good-looking native UI at this step, not a third-party iframe.** The app now presents the **three soonest slots as one-tap buttons**, read from Calendly's availability API through a new server-side reader (`supabase/functions/calendly-slots`, `verify_jwt = false`, `CALENDLY_TOKEN` never leaving the function). The inline embed is **demoted to the fallback**.
 >
-> **What the park was protecting is still protected, and by a stronger mechanism than an iframe.** Calendly's API has **no create-a-booking call**, so the app *cannot* hold a slot: each button opens `scheduling_url`, Calendly's deep link to that exact slot, and **Calendly confirms it on its own surface**. The calendar keeps exactly one writer, so double-booking remains impossible *by construction* — the same property the embed had, obtained the same way (Calendly decides), not by our list being trusted. The residual risk a self-rendered list *does* carry is being **stale**, and that is closed where it actually happens: **every tap re-checks availability before it opens anything**, and a slot that has gone re-offers the new three rather than dead-ending. `calendly-webhook` (§6.5) still records the booking fact either way, so the reconcilable data is unchanged.
+> **What the park was protecting is still protected, and by a stronger mechanism than an iframe.** This integration deliberately makes **no invitee-creation API call**, so the app *cannot* hold a slot: each button opens `scheduling_url`, Calendly's deep link to that exact slot, and **the applicant confirms it on Calendly's own surface**. The hosted Calendly flow remains this product's only booking writer — the same property the embed had, obtained the same way (Calendly decides), not by our list being trusted. The residual risk a self-rendered list *does* carry is being **stale**, and that is closed where it actually happens: **every tap re-checks availability before it opens anything**, and a slot that has gone re-offers the new three rather than dead-ending. `calendly-webhook` (§6.5) still records the booking fact either way, so the reconcilable data is unchanged.
 >
 > **What is unchanged by this reversal:**
 > - **INTEG-PAY-1 stands in full.** The app still inserts **nothing** into the intake chain: no Tally change, no app-owned ₹400 payment screen, no app-originated payment. This surface renders *after* the fee is paid, on `/thank-you/:paymentOrderId` and on the application-status page, and it hands the applicant to the **same Calendly event type** the hosted chain already uses (`offerings.calendly_url`). Slot buttons are a better door onto the existing step, not a new step.
@@ -451,8 +454,8 @@ Calendly delivers `invitee.created` and `invitee.canceled`. The receiver reads:
 > **RULED — INTEG-CAL-1 (Rahul, 2026-07-18): org-level subscription, ONE existing account in v1.** `🔴 Tier 1`
 > - **Subscription scope: a single ORG-LEVEL Calendly subscription** — plug in ONE existing Calendly account (one signing key, all interviewers). Per-user subscriptions are not v1.
 > - **v1 uses exactly one Calendly account.** LevelUp has TWO; the **availability-based switch between the two accounts is FAST-FOLLOW**, not v1.
-> - **Slot rendering:** ~~the interview is booked through the existing hosted Calendly in the intake chain (§6.4); an **optional in-app inline embed** is a nice-to-have that inherits Calendly's own availability truth (so we never double-book) and must yield identical flow + data. App-native buttons over the availability API are parked (fast-follow, with CRO-1).~~ ⚠️ **SUPERSEDED 2026-07-28 (see §6.4's reversal):** app-native buttons over the availability API are **shipped**; the inline embed is the fallback. The no-double-booking property is unchanged and holds for the same reason — Calendly's API cannot create a booking, so the confirm always happens on Calendly's surface and the calendar keeps one writer. Identical flow + data still required, and now enforced by both entry points mounting one component.
-> - Signature verification is mandatory. The receiver **writes `interview_scheduled` + `interview_date` + `interview_modality` onto the app's own `cohort_applications` mirror** — a read-into-mirror, consistent with SOR-1 (it does **not** write back to Calendly or TeleCRM). This gives the intermediate interview state the mirror record it has lacked (`FUNNEL-DATA-AUDIT.md` §2), without the app becoming a funnel-status writer to any master system.
+> - **Slot rendering:** ~~the interview is booked through the existing hosted Calendly in the intake chain (§6.4); an **optional in-app inline embed** is a nice-to-have that inherits Calendly's own availability truth (so we never double-book) and must yield identical flow + data. App-native buttons over the availability API are parked (fast-follow, with CRO-1).~~ ⚠️ **SUPERSEDED 2026-07-28 (see §6.4's reversal):** app-native buttons over the availability API are **shipped**; the inline embed is the fallback. The no-double-booking property is unchanged because this integration never calls the invitee-creation API: confirmation happens on Calendly's surface and the hosted flow remains this product's only booking writer. Identical flow + data still required, and now enforced by both entry points mounting one component.
+> - Signature verification is mandatory. The receiver writes **booking facts only** (`interview_date`, `interview_modality`, interviewer/event identity, delivery ordering and cancellation facts) onto the app's own `cohort_applications` mirror. It does **not** write `cohort_applications.status`, Calendly, or TeleCRM; the reconciler alone derives the funnel stage (SOR-1).
 
 ### 6.5 What the receiver records into the app's mirror (read-only mirror, SOR-1)
 
@@ -468,13 +471,14 @@ sequenceDiagram
     S->>Cal: books a slot, picks modality (Meet | phone)
     Cal->>WH: invitee.created (Calendly-Webhook-Signature)
     WH->>WH: verify HMAC(t.body, CALENDLY_SIGNING_KEY)
-    WH->>DB: join by phone (then email) → mirror interview_scheduled,\ninterview_date, interview_modality
-    Note over Cal,WH: invitee.canceled → mirror back to app_fee_paid\n(or 'Need to reschedule'); one reschedule allowed (REQ-INT-3)
+    WH->>DB: resolve owner-gated opaque token, then evidence-gated phone/email fallback
+    WH->>DB: mirror interview_date, modality and booking identity facts only
+    Note over Cal,WH: invitee.canceled → clear/tombstone booking facts; reconciler derives stage
 ```
 
-- `invitee.created` → mirror `status='interview_scheduled'`, set `interview_date`, `interview_modality` **on the app's own `cohort_applications`** (no write back to Calendly or TeleCRM).
-- `invitee.canceled` → revert the mirror to `app_fee_paid` / flag reschedule; **one** reschedule allowed, and the word "free" never appears near it (PRD REQ-INT-3, NFR-COPY-4).
-- Join to `user_id` by phone (primary), email (fallback) (§2.2); if unresolved, park + surface in the orphan-rate health metric (§7) rather than silently dropping.
+- `invitee.created` → set `interview_date`, `interview_modality`, the event URI, delivery watermark and single delivered interviewer name **on the app's own `cohort_applications`**. It never writes `status`; the reconciler derives `interview-scheduled` from the fact.
+- `invitee.canceled` → clear/tombstone the held booking facts without writing a funnel status; **one** reschedule is counted from Calendly's replacement delivery, and the word "free" never appears near it (PRD REQ-INT-3, NFR-COPY-4).
+- App-originated links resolve first through the random token in the service-role-only `cohort_calendly_bindings` table. Guest/legacy links fall back to phone-primary/email-fallback (§2.2), but a public-form phone alone is never sufficient evidence. If unresolved or ambiguous, park + surface in the orphan-rate health metric (§7) rather than guessing.
 
 ---
 
@@ -562,7 +566,7 @@ Note the deliberate split: Tally is base64, both hex ones use **different** secr
 - **The phone label must contain `phone`/`mobile`/`whatsapp`.** Phone is THE hard identity key (§2); `extractField` silently returns `""` if the existing Tally form's phone field is labelled otherwise, weakening every phone-primary join. *Forward:* per INTEG-PAY-1 the forms are untouched in v1, so we **cannot** fix the label via form work now — instead verify the existing label already matches, and where it doesn't the reconciler falls back to email and the orphan-rate metric (§7.3) surfaces the loss. Tightening the label rides with the parked REQ-APP-3 fast-follow. `🟢 Tier 3`.
 - **~10% cross-system orphans are structural**, not a bug to eliminate — they are the ~10% who switch email/phone between form and payment page (`FUNNEL-DATA-AUDIT.md` §5 gap 1). *Mitigation:* §2 binds both identifiers at the source; §7.3 measures the residue. `🔴 Tier 1` (metric integrity).
 - **TeleCRM collapses confirm/full into `Converted`** (§5.2). The ₹8k-vs-full money distinction is **unreadable from TeleCRM alone** and needs Razorpay amounts (confirm/full). ⚠️ **Acceptance is no longer an app-writer gap (reversed by SOR-1, 2026-07-18):** acceptance is TeleCRM-sourced — the sales team sets it, the app READS the flip. The remaining work is (a) confirming the exact TeleCRM representation of `accepted` and (b) delivering it promptly (webhook preferred, poll fallback, §5.2). There is **no** app-side acceptance writer and no admin decision RPC. *Until the money-stage split is resolved, the interview-ledger row hides rather than invents numbers* (PRD REQ-INT-3).
-- **Calendly is entirely net-new** (§6). Under-planning it as "a webhook write" is the failure mode the PRD explicitly warns against (REQ-INT-1). It needs a receiver + signature + subscription + a schema column before any interview UI can honour the modality choice.
+- **Calendly was entirely net-new** (§6); the branch implementation now includes the receiver, signature verification, availability reader, booking-fact schema, owner-gated opaque identity and interview UI. Release still requires applying the migrations, deploying both functions with their configured secrets/event-type allowlist, creating/verifying the org subscription, and completing real-device/webhook acceptance before the flag is enabled.
 - **The existing in-form Razorpay links** (0/199 app-linked, §4.4) are **kept** in v1 — INTEG-PAY-1 (RULED 2026-07-18) is now the decision NOT to touch the intake chain, so the reconciler absorbs the ₹400 and ₹8k by phone (primary) / email (fallback). A first-party keyed intake payment is parked as a fast-follow that needs the Tally/link changes Rahul has deferred; it is **not** begun in v1. `🔴 Tier 1 (revenue)`.
 - **Do-not-touch surfaces** (`verify-*`, `razorpay-webhook` core, the `isIOS()` guard, the staged-order math) stay byte-for-byte. Every forward change here is *additive* — new receivers, new read paths, new `notes` propagation, new columns — never a rewrite of the money core (PRD §4.4, NFR-SEC-5, Risk R7).
 

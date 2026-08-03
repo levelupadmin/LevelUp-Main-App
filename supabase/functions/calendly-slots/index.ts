@@ -13,8 +13,8 @@
  *      echoed into any response body, header, or log line — not even on error.
  *      Nothing under `src/` can import it, which is what makes the "token in no
  *      bundle" grep hold by construction rather than by care.
- *   2. IT CANNOT BOOK, AND THAT IS THE POINT. Calendly's API has no
- *      create-a-booking call, so the confirm always happens on Calendly's own
+ *   2. IT CANNOT BOOK, AND THAT IS THE POINT. This integration never calls
+ *      Calendly's invitee-creation API, so the confirm happens on Calendly's own
  *      surface. We hand out `scheduling_url`, Calendly's per-slot deep link, and
  *      Calendly stays the single writer of its own calendar: double-booking is
  *      impossible by construction, and `calendly-webhook` still records the fact.
@@ -69,6 +69,12 @@ type SlotsReason = "no_slots" | "not_configured" | "rate_limited" | "unavailable
 interface SlotsPayload {
   slots: CalendlySlot[];
   reason: SlotsReason | null;
+  /**
+   * App-minted opaque identity for Calendly's tracking field. Present only when
+   * this request carried a valid user JWT and named that user's own application.
+   * It is a random UUID, never the application id.
+   */
+  applicationToken: string | null;
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -143,13 +149,101 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function json(req: Request, body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeadersFor(req), "Content-Type": "application/json" },
+    // Applicant-scoped responses can carry a capability token. POST responses
+    // are not normally cached, but make the privacy boundary explicit for every
+    // browser, WebView and intermediary; the isolate's cache above remains the
+    // only shared cache and stores applicant-agnostic payloads with token=null.
+    headers: {
+      ...corsHeadersFor(req),
+      "Content-Type": "application/json",
+      "Cache-Control": "private, no-store",
+    },
   });
 }
 
 /** Every soft failure answers 200 with an empty list. See rule 3. */
-function soft(req: Request, reason: SlotsReason): Response {
-  return json(req, { slots: [], reason } satisfies SlotsPayload);
+function soft(req: Request, reason: SlotsReason, applicationToken: string | null = null): Response {
+  return json(req, { slots: [], reason, applicationToken } satisfies SlotsPayload);
+}
+
+/** Add the request-scoped token to a cache-safe, applicant-agnostic payload. */
+function forApplicant(payload: SlotsPayload, applicationToken: string | null): SlotsPayload {
+  return { ...payload, applicationToken };
+}
+
+function bearerToken(req: Request): string | null {
+  const match = /^Bearer\s+(.+)$/i.exec(req.headers.get("Authorization")?.trim() ?? "");
+  return match?.[1]?.trim() || null;
+}
+
+/**
+ * Mint/read the opaque token only for the signed-in owner of this application.
+ *
+ * `verify_jwt=false` must stay on because guest applicants need availability.
+ * Consequently a body-supplied application id is NEVER authority: the bearer is
+ * verified with GoTrue, then the application is constrained by BOTH offering and
+ * user id. Invalid/guest requests simply keep the established email/phone
+ * reconciliation path and receive no token.
+ */
+async function applicationTokenFor(
+  // deno-lint-ignore no-explicit-any
+  admin: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  req: Request,
+  offeringId: string,
+  applicationId: unknown,
+): Promise<string | null> {
+  if (typeof applicationId !== "string" || !UUID_RE.test(applicationId)) return null;
+  const bearer = bearerToken(req);
+  if (!bearer) return null;
+
+  const { data: authData, error: authError } = await admin.auth.getUser(bearer);
+  if (authError || !authData?.user?.id) return null;
+
+  const { data: owned, error: ownedError } = await admin
+    .from("cohort_applications")
+    .select("id")
+    .eq("id", applicationId)
+    .eq("offering_id", offeringId)
+    .eq("user_id", authData.user.id)
+    .maybeSingle();
+  if (ownedError) {
+    console.error("[calendly-slots] application ownership check failed");
+    return null;
+  }
+  if (!owned) return null;
+
+  const { data: existing, error: existingError } = await admin
+    .from("cohort_calendly_bindings")
+    .select("token")
+    .eq("application_id", applicationId)
+    .maybeSingle();
+  if (existingError) {
+    console.error("[calendly-slots] application binding read failed");
+    return null;
+  }
+  if (typeof existing?.token === "string" && UUID_RE.test(existing.token)) return existing.token;
+
+  const { data: inserted, error: insertError } = await admin
+    .from("cohort_calendly_bindings")
+    .insert({ application_id: applicationId })
+    .select("token")
+    .maybeSingle();
+  if (!insertError && typeof inserted?.token === "string" && UUID_RE.test(inserted.token)) {
+    return inserted.token;
+  }
+
+  // Two simultaneous mounts can race on the primary key. The winner's token is
+  // the durable answer; re-read it instead of rotating or surfacing the race.
+  if (insertError?.code === "23505") {
+    const { data: raced } = await admin
+      .from("cohort_calendly_bindings")
+      .select("token")
+      .eq("application_id", applicationId)
+      .maybeSingle();
+    if (typeof raced?.token === "string" && UUID_RE.test(raced.token)) return raced.token;
+  }
+  console.error("[calendly-slots] application binding mint failed");
+  return null;
 }
 
 /**
@@ -320,21 +414,13 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => null);
   const offeringId = (body as { offeringId?: unknown } | null)?.offeringId;
+  const applicationId = (body as { applicationId?: unknown } | null)?.applicationId;
   const wantsFresh = (body as { fresh?: unknown } | null)?.fresh === true;
   if (typeof offeringId !== "string" || !UUID_RE.test(offeringId)) {
     return json(req, { error: "Bad request" }, 400);
   }
 
   const now = Date.now();
-
-  // A cached answer serves the render storm AND bounds `fresh`: a re-check may
-  // outrun the normal TTL, but not the floor.
-  const ttl = wantsFresh ? FRESH_FLOOR_MS : SLOT_TTL_MS;
-  const cached = cacheGet(slotCache, offeringId, ttl, now);
-  if (cached) return json(req, cached);
-
-  // The whole token is throttled. Say so without adding to the throttling.
-  if (now < backoffUntil) return soft(req, "rate_limited");
 
   if (!calendlyToken || !supabaseUrl || !serviceKey) {
     // Misconfiguration, not an outage — and the student must never see the
@@ -343,13 +429,29 @@ Deno.serve(async (req) => {
     return soft(req, "unavailable");
   }
 
+  const admin = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const applicationToken = await applicationTokenFor(
+    admin,
+    req,
+    offeringId,
+    applicationId,
+  );
+
+  // A cached answer serves the render storm AND bounds `fresh`: a re-check may
+  // outrun the normal TTL, but not the floor.
+  const ttl = wantsFresh ? FRESH_FLOOR_MS : SLOT_TTL_MS;
+  const cached = cacheGet(slotCache, offeringId, ttl, now);
+  if (cached) return json(req, forApplicant(cached, applicationToken));
+
+  // The whole token is throttled. Say so without adding to the throttling.
+  if (now < backoffUntil) return soft(req, "rate_limited", applicationToken);
+
   // The offering's own link is the ONLY accepted input. A client-supplied URL
   // would let any caller point this token's availability lookup wherever they
   // liked, and would decouple the two entry points from the one row that makes
   // them the same event type (ENTRY-PARITY-1).
-  const admin = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
   const { data: offering, error } = await admin
     .from("offerings")
     .select("calendly_url, thankyou_show_calendly")
@@ -358,7 +460,7 @@ Deno.serve(async (req) => {
 
   if (error) {
     console.error(`[calendly-slots] offering read failed: ${error.message}`);
-    return soft(req, "unavailable");
+    return soft(req, "unavailable", applicationToken);
   }
 
   // No booking surface configured at all. Cached like any other answer so a
@@ -368,31 +470,31 @@ Deno.serve(async (req) => {
     offering.thankyou_show_calendly !== true ||
     !isCalendlySchedulingUrl(offering.calendly_url)
   ) {
-    const payload: SlotsPayload = { slots: [], reason: "not_configured" };
+    const payload: SlotsPayload = { slots: [], reason: "not_configured", applicationToken: null };
     cacheSet(slotCache, offeringId, payload, now);
-    return json(req, payload);
+    return json(req, forApplicant(payload, applicationToken));
   }
 
   const lookup = await resolveEventTypeUri(offering.calendly_url as string, now);
   if (lookup.kind === "rate_limited") {
     backoffUntil = Date.now() + 60_000;
-    return soft(req, "rate_limited");
+    return soft(req, "rate_limited", applicationToken);
   }
   // An OUTAGE on the two upstream calls, not a verdict about this offering. Same
   // rule as the availability call below: `unavailable`, and `soft` caches nothing,
   // so Calendly's recovery is visible on the next request rather than ninety
   // seconds later. See `EventTypeLookup`.
-  if (lookup.kind === "failed") return soft(req, "unavailable");
+  if (lookup.kind === "failed") return soft(req, "unavailable", applicationToken);
   if (lookup.kind === "no_match") {
-    const payload: SlotsPayload = { slots: [], reason: "not_configured" };
+    const payload: SlotsPayload = { slots: [], reason: "not_configured", applicationToken: null };
     cacheSet(slotCache, offeringId, payload, now);
-    return json(req, payload);
+    return json(req, forApplicant(payload, applicationToken));
   }
 
   const { slots, rateLimited, failed } = await fetchSlots(lookup.uri, now);
   if (rateLimited && slots.length === 0) {
     backoffUntil = Date.now() + 60_000;
-    return soft(req, "rate_limited");
+    return soft(req, "rate_limited", applicationToken);
   }
 
   // Calendly answered the availability call with an error or did not answer at
@@ -404,12 +506,13 @@ Deno.serve(async (req) => {
   // recovered Calendly behind ninety seconds of a stale outage, and `soft` is
   // the one response builder that caches nothing. Both branches still land the
   // student on the hosted calendar, so nothing about the fallback changes.
-  if (failed && slots.length === 0) return soft(req, "unavailable");
+  if (failed && slots.length === 0) return soft(req, "unavailable", applicationToken);
 
   const payload: SlotsPayload = {
     slots,
     reason: slots.length > 0 ? null : "no_slots",
+    applicationToken: null,
   };
   cacheSet(slotCache, offeringId, payload, now);
-  return json(req, payload);
+  return json(req, forApplicant(payload, applicationToken));
 });

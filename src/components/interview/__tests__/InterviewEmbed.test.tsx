@@ -13,8 +13,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
  * task touches no file it does not own.)
  *
  * 1. THE SLOTS MUST BE REAL, AND THEY MUST OPEN CALENDLY'S OWN PAGE. The app
- *    cannot book: Calendly's API has no create call, so a button that does not
- *    open `scheduling_url` books nothing at all. The deep link must also carry
+ *    cannot book: this integration never calls Calendly's invitee-creation API,
+ *    so a button that does not open `scheduling_url` books nothing at all. The deep link must also carry
  *    the SAME two prefill fields as every other route to Calendly, or the
  *    receiver reconciles the booking on a different join key (INTEG-KEY-1).
  * 2. A TAP MUST RE-CHECK. A slot can be taken between render and tap; sending
@@ -138,6 +138,7 @@ vi.mock("@/lib/platform", () => ({
 }));
 
 import { InterviewSlots } from "@/components/interview/SlotButtons";
+import { CALENDLY_APPLICATION_TOKEN_PREFIX } from "@shared/calendly";
 import {
   CALENDLY_BOOKED_TTL_MS,
   CALENDLY_EMBED_TYPE,
@@ -152,6 +153,8 @@ import {
 } from "@/hooks/useInterviewSlots";
 
 const OFFERING_ID = "off_interview_1";
+const APPLICATION_ID = "11111111-2222-4333-8444-555555555555";
+const APPLICATION_TOKEN = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const CALENDLY_ORIGIN = "https://calendly.com";
 /** The marker is scoped to the invitee email the booking link is prefilled with. */
 const IDENTITY = "asha@example.com";
@@ -204,6 +207,7 @@ function renderSurface(props: Record<string, unknown> = {}) {
         { client },
         createElement(InterviewSlots, {
           offeringId: OFFERING_ID,
+          applicationId: APPLICATION_ID,
           name: "Asha Iyer",
           email: IDENTITY,
           ...props,
@@ -326,6 +330,20 @@ describe("calendlyBookingUrl — the top-level link is NOT an embed", () => {
     expect(url.searchParams.get("embed_domain")).toBeNull();
     expect(url.searchParams.get("embed_type")).toBeNull();
   });
+
+  it("carries the opaque application token in Calendly tracking, never the application id", () => {
+    const url = new URL(
+      calendlyBookingUrl(
+        "https://calendly.com/levelup/interview",
+        { email: IDENTITY },
+        { applicationToken: APPLICATION_TOKEN },
+      ),
+    );
+    expect(url.searchParams.get("utm_content")).toBe(
+      `${CALENDLY_APPLICATION_TOKEN_PREFIX}${APPLICATION_TOKEN}`,
+    );
+    expect(url.toString()).not.toContain(APPLICATION_ID);
+  });
 });
 
 describe("parseSlotsResponse — the client pins every link it is handed", () => {
@@ -333,6 +351,7 @@ describe("parseSlotsResponse — the client pins every link it is handed", () =>
     expect(parseSlotsResponse({ slots: [slot(SLOT_A)], reason: null })).toEqual({
       slots: [slot(SLOT_A)],
       reason: null,
+      applicationToken: null,
     });
   });
 
@@ -349,6 +368,23 @@ describe("parseSlotsResponse — the client pins every link it is handed", () =>
       reason: null,
     });
     expect(payload.slots).toEqual([slot(SLOT_C)]);
+  });
+
+  it("accepts only UUID-shaped binding tokens from the edge response", () => {
+    expect(
+      parseSlotsResponse({
+        slots: [slot(SLOT_A)],
+        reason: null,
+        applicationToken: APPLICATION_TOKEN,
+      }).applicationToken,
+    ).toBe(APPLICATION_TOKEN);
+    expect(
+      parseSlotsResponse({
+        slots: [slot(SLOT_A)],
+        reason: null,
+        applicationToken: APPLICATION_ID + "?application_id=raw",
+      }).applicationToken,
+    ).toBeNull();
   });
 
   it("reads an unreadable answer as unavailable, not as an empty calendar", () => {
@@ -443,7 +479,9 @@ describe("ENTRY-PARITY-1 — both entry points render one component off one row"
     // vitest-importable (esm.sh + a top-level `Deno.serve`), so this is asserted
     // structurally, like the token grep above.
     const fn = await readSource("supabase/functions/calendly-slots/index.ts");
-    expect(fn).toMatch(/if \(failed && slots\.length === 0\) return soft\(req, "unavailable"\)/);
+    expect(fn).toMatch(
+      /if \(failed && slots\.length === 0\) return soft\(req, "unavailable", applicationToken\)/,
+    );
     // `soft` is the one builder that writes nothing to `slotCache`.
     expect(fn).toMatch(/function soft\([\s\S]*?\n\}/);
     expect(fn.match(/function soft\([\s\S]*?\n\}/)?.[0]).not.toContain("cacheSet");
@@ -480,6 +518,39 @@ describe("ENTRY-PARITY-1 — both entry points render one component off one row"
     const hook = await readSource("src/hooks/useInterviewSlots.ts");
     expect(hook).toContain('supabase.functions.invoke("calendly-slots"');
   });
+
+  it("mints tracking identity only after bearer ownership, in a client-inaccessible table", async () => {
+    const fn = await readSource("supabase/functions/calendly-slots/index.ts");
+    const auth = fn.indexOf("admin.auth.getUser(bearer)");
+    const owner = fn.indexOf('.eq("user_id", authData.user.id)');
+    const mint = fn.indexOf('.from("cohort_calendly_bindings")');
+    expect(auth).toBeGreaterThan(0);
+    expect(owner).toBeGreaterThan(auth);
+    expect(mint).toBeGreaterThan(owner);
+    expect(fn).toContain('"Cache-Control": "private, no-store"');
+    expect(fn).toMatch(/cacheSet\(slotCache,[\s\S]*?applicationToken: null/);
+
+    // The client cache must be applicant-scoped too. Otherwise signing out and
+    // opening the same offering as another person can reuse the first person's
+    // capability even though the server did every ownership check correctly.
+    const hook = await readSource("src/hooks/useInterviewSlots.ts");
+    expect(hook).toContain('["interview", "slots", offeringId, applicationId]');
+
+    const receiver = await readSource("supabase/functions/calendly-webhook/index.ts");
+    expect(receiver.indexOf("booking.applicationToken")).toBeLessThan(
+      receiver.indexOf("booking.inviteePhone"),
+    );
+
+    const migration = await readSource(
+      "supabase/migrations/20260803170000_cohort_calendly_bindings.sql",
+    );
+    expect(migration).toContain(
+      "REVOKE ALL ON TABLE public.cohort_calendly_bindings FROM PUBLIC, anon, authenticated",
+    );
+    expect(migration).toContain(
+      "GRANT SELECT, INSERT ON TABLE public.cohort_calendly_bindings TO service_role",
+    );
+  });
 });
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -499,6 +570,14 @@ describe("the three soonest slots", () => {
   });
 
   it("opens Calendly's own deep link for that slot, prefilled", async () => {
+    slotsResponses.queue = [{
+      data: {
+        slots: [slot(SLOT_A), slot(SLOT_B), slot(SLOT_C)],
+        reason: null,
+        applicationToken: APPLICATION_TOKEN,
+      },
+      error: null,
+    }];
     renderSurface();
     const buttons = await slotButtons();
     act(() => {
@@ -515,11 +594,15 @@ describe("the three soonest slots", () => {
     expect(href.searchParams.get("name")).toBe("Asha Iyer");
     expect(href.searchParams.get("email")).toBe(IDENTITY);
     // Same field set as every other route to Calendly (INTEG-KEY-1).
-    expect([...href.searchParams.keys()].sort()).toEqual(["email", "name"]);
+    expect(href.searchParams.get("utm_content")).toBe(
+      `${CALENDLY_APPLICATION_TOKEN_PREFIX}${APPLICATION_TOKEN}`,
+    );
+    expect([...href.searchParams.keys()].sort()).toEqual(["email", "name", "utm_content"]);
     // The tab is opened INSIDE the gesture and navigated after the re-check; a
     // window opened after an await is a popup and is blocked.
     expect(openSpy).toHaveBeenCalledWith("", "_blank");
     expect(openedTab.opener).toBeNull();
+    expect(slotsResponses.calls[0]).toMatchObject({ applicationId: APPLICATION_ID });
   });
 
   it("re-checks availability before it opens anything", async () => {

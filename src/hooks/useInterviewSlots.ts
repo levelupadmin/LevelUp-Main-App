@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { CALENDLY_APPLICATION_TOKEN_PREFIX } from "@shared/calendly";
 
 /**
  * useInterviewSlots.ts — the reader behind the interview booking surface: the
@@ -14,9 +15,10 @@ import { supabase } from "@/integrations/supabase/client";
  * now reads TWO things instead of one.
  *
  * THE REVERSAL DOES NOT REOPEN THE DOUBLE-BOOKING HAZARD, because the surface
- * still cannot book. Calendly's API has no create-a-booking call, so every slot
- * button opens `scheduling_url` — Calendly's own deep link to THAT EXACT SLOT —
- * and Calendly confirms it on its own page. Our list is only ever an OFFER; the
+ * still cannot book. This integration never calls Calendly's invitee-creation
+ * API: every slot button opens `scheduling_url` — Calendly's own deep link to
+ * THAT EXACT SLOT — and the applicant confirms it on Calendly's page. Our list
+ * is only ever an OFFER; the
  * calendar has exactly one writer, as before. What the park was really protecting
  * against is a stale offer, and that is handled where it actually happens: the
  * list is re-checked on tap (`useInterviewSlots().recheck`) so a slot taken
@@ -183,6 +185,19 @@ export interface CalendlyPrefill {
   email?: string | null;
 }
 
+export interface CalendlyTrackingOptions {
+  /**
+   * Random per-application UUID minted by `calendly-slots` after verifying the
+   * signed-in owner. Calendly returns it in the reserved
+   * `tracking.utm_content` value, giving the webhook an identity the invitee did
+   * not type.
+   */
+  applicationToken?: string | null;
+}
+
+const APPLICATION_TOKEN_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /**
  * Calendly's documented prefill query params — `name` and `email`, and nothing
  * else.
@@ -201,6 +216,16 @@ export interface CalendlyPrefill {
 function applyPrefill(url: URL, fields: CalendlyPrefill): void {
   if (fields.name) url.searchParams.set("name", fields.name);
   if (fields.email) url.searchParams.set("email", fields.email);
+}
+
+function applyTracking(url: URL, options: CalendlyTrackingOptions): void {
+  const token = options.applicationToken?.trim();
+  if (token && APPLICATION_TOKEN_RE.test(token)) {
+    url.searchParams.set(
+      "utm_content",
+      `${CALENDLY_APPLICATION_TOKEN_PREFIX}${token.toLowerCase()}`,
+    );
+  }
 }
 
 /**
@@ -253,10 +278,12 @@ function currentEmbedDomain(): string | null {
 export function calendlyBookingUrl(
   bookingUrl: string,
   fields: CalendlyPrefill = {},
+  options: CalendlyTrackingOptions = {},
 ): string {
   try {
     const url = new URL(bookingUrl);
     applyPrefill(url, fields);
+    applyTracking(url, options);
     return url.toString();
   } catch {
     // Prefill is a convenience, never a requirement: an unparseable URL falls
@@ -284,11 +311,12 @@ export function calendlyBookingUrl(
 export function calendlyEmbedUrl(
   bookingUrl: string,
   fields: CalendlyPrefill = {},
-  options: { embedDomain?: string | null } = {},
+  options: CalendlyTrackingOptions & { embedDomain?: string | null } = {},
 ): string {
   try {
     const url = new URL(bookingUrl);
     applyPrefill(url, fields);
+    applyTracking(url, options);
     const domain = options.embedDomain ?? currentEmbedDomain();
     if (domain) url.searchParams.set("embed_domain", domain);
     url.searchParams.set("embed_type", CALENDLY_EMBED_TYPE);
@@ -938,10 +966,15 @@ export type InterviewSlotsReason =
 export interface InterviewSlotsPayload {
   slots: InterviewSlot[];
   reason: InterviewSlotsReason | null;
+  applicationToken: string | null;
 }
 
 /** The fail-soft payload. Empty list, fallback reason, never a thrown query. */
-const SLOTS_UNAVAILABLE: InterviewSlotsPayload = { slots: [], reason: "unavailable" };
+const SLOTS_UNAVAILABLE: InterviewSlotsPayload = {
+  slots: [],
+  reason: "unavailable",
+  applicationToken: null,
+};
 
 /**
  * The reasons that mean "we did not get a straight answer", as opposed to "we got
@@ -981,7 +1014,7 @@ function futureSlots(payload: InterviewSlotsPayload, now: number): InterviewSlot
  */
 export function parseSlotsResponse(data: unknown): InterviewSlotsPayload {
   if (!data || typeof data !== "object") return SLOTS_UNAVAILABLE;
-  const raw = (data as { slots?: unknown; reason?: unknown });
+  const raw = data as { slots?: unknown; reason?: unknown; applicationToken?: unknown };
 
   const slots: InterviewSlot[] = [];
   if (Array.isArray(raw.slots)) {
@@ -1005,11 +1038,15 @@ export function parseSlotsResponse(data: unknown): InterviewSlotsPayload {
     typeof reason === "string" && (known as string[]).includes(reason)
       ? (reason as InterviewSlotsReason)
       : null;
+  const token = typeof raw.applicationToken === "string" &&
+      APPLICATION_TOKEN_RE.test(raw.applicationToken.trim())
+    ? raw.applicationToken.trim().toLowerCase()
+    : null;
 
   // A response that carried neither slots nor a reason we understand is not an
   // empty calendar, it is a response we could not read.
   if (slots.length === 0 && parsedReason === null) return SLOTS_UNAVAILABLE;
-  return { slots, reason: slots.length > 0 ? null : parsedReason };
+  return { slots, reason: slots.length > 0 ? null : parsedReason, applicationToken: token };
 }
 
 /**
@@ -1021,16 +1058,19 @@ export function parseSlotsResponse(data: unknown): InterviewSlotsPayload {
  */
 export const INTERVIEW_SLOTS_STALE_MS = 60_000;
 
-const slotsQueryKey = (offeringId: string | undefined) =>
-  ["interview", "slots", offeringId] as const;
+const slotsQueryKey = (
+  offeringId: string | undefined,
+  applicationId: string | undefined,
+) => ["interview", "slots", offeringId, applicationId] as const;
 
 /** One call to the function. Resolves on every failure; never throws. */
 async function readSlots(
   offeringId: string,
+  applicationId: string | undefined,
   fresh: boolean,
 ): Promise<InterviewSlotsPayload> {
   const { data, error } = await supabase.functions.invoke("calendly-slots", {
-    body: { offeringId, fresh },
+    body: { offeringId, applicationId, fresh },
   });
   if (error) return SLOTS_UNAVAILABLE;
   return parseSlotsResponse(data);
@@ -1039,6 +1079,7 @@ async function readSlots(
 export interface UseInterviewSlotsResult {
   slots: InterviewSlot[];
   reason: InterviewSlotsReason | null;
+  applicationToken: string | null;
   /** A request is out. Gates the skeleton, and nothing else. */
   isWaiting: boolean;
   isFetching: boolean;
@@ -1069,13 +1110,13 @@ export interface UseInterviewSlotsResult {
  */
 export function useInterviewSlots(
   offeringId: string | undefined,
-  options: { enabled?: boolean } = {},
+  options: { enabled?: boolean; applicationId?: string } = {},
 ): UseInterviewSlotsResult {
   const enabled = !!offeringId && (options.enabled ?? true);
   const queryClient = useQueryClient();
 
   const query = useQuery<InterviewSlotsPayload>({
-    queryKey: slotsQueryKey(offeringId),
+    queryKey: slotsQueryKey(offeringId, options.applicationId),
     enabled,
     staleTime: INTERVIEW_SLOTS_STALE_MS,
     // Availability moves, so a student returning to the tab should not be shown
@@ -1104,29 +1145,36 @@ export function useInterviewSlots(
      * truth, and the fallback below it is the hosted calendar, never a dead end.
      */
     queryFn: async () => {
-      const answer = await readSlots(offeringId as string, false);
+      const answer = await readSlots(offeringId as string, options.applicationId, false);
       if (isTrustworthySlotsAnswer(answer)) return answer;
       const previous = queryClient.getQueryData<InterviewSlotsPayload>(
-        slotsQueryKey(offeringId),
+        slotsQueryKey(offeringId, options.applicationId),
       );
       if (!previous) return answer;
       const kept = futureSlots(previous, Date.now());
-      return kept.length > 0 ? { slots: kept, reason: null } : answer;
+      return kept.length > 0
+        ? {
+            slots: kept,
+            reason: null,
+            applicationToken: previous.applicationToken ?? answer.applicationToken,
+          }
+        : answer;
     },
   });
 
   const recheck = useCallback(async (): Promise<InterviewSlotsPayload> => {
     if (!offeringId) return SLOTS_UNAVAILABLE;
-    const payload = await readSlots(offeringId, true);
+    const payload = await readSlots(offeringId, options.applicationId, true);
     if (isTrustworthySlotsAnswer(payload)) {
-      queryClient.setQueryData(slotsQueryKey(offeringId), payload);
+      queryClient.setQueryData(slotsQueryKey(offeringId, options.applicationId), payload);
     }
     return payload;
-  }, [offeringId, queryClient]);
+  }, [offeringId, options.applicationId, queryClient]);
 
   return {
     slots: query.data?.slots ?? [],
     reason: query.data?.reason ?? null,
+    applicationToken: query.data?.applicationToken ?? null,
     // A disabled query is pending forever; that is a wait on the PARENT and must
     // never shimmer. Same rule as `useInterviewBooking.isWaiting`.
     isWaiting: enabled && query.isPending,

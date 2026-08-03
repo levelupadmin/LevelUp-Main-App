@@ -74,6 +74,14 @@ export interface CalendlySignature {
  *     instead of dragging the row back to a superseded slot.
  */
 export interface CalendlyBooking {
+  /**
+   * Opaque app-minted identity returned by Calendly in
+   * `invitee.tracking.utm_content` behind the reserved LevelUp prefix. It is
+   * random, never the application id, and is accepted only when it has canonical
+   * UUID shape; the receiver still verifies it against its service-role-only
+   * mapping table.
+   */
+  applicationToken: string | null;
   inviteeEmail: string | null;
   inviteePhone: string | null;
   /**
@@ -96,6 +104,14 @@ export interface CalendlyBooking {
   /** ISO-8601 `created_at` of the invitee — the delivery's place in time. */
   bookedAt: string | null;
 }
+
+/**
+ * Namespace owned by the app inside Calendly's supported custom-data carrier.
+ * Calendly documents the five UTM query parameters as the values a hosted
+ * scheduling link persists into webhook `tracking`; arbitrary query keys are
+ * not part of that contract.
+ */
+export const CALENDLY_APPLICATION_TOKEN_PREFIX = "levelup_application_";
 
 /** Narrow an unknown to a plain object, so payload walking never throws. */
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -770,8 +786,17 @@ export function bookingFromEvent(payload: unknown): CalendlyBooking | null {
     asString(scheduledEvent?.status)?.toLowerCase() === "canceled";
 
   const rescheduledTo = asString(invitee.new_invitee);
+  const trackedContent = asString(asRecord(invitee.tracking)?.utm_content);
+  const trackedToken = trackedContent?.startsWith(CALENDLY_APPLICATION_TOKEN_PREFIX)
+    ? trackedContent.slice(CALENDLY_APPLICATION_TOKEN_PREFIX.length)
+    : null;
+  const applicationToken = trackedToken &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trackedToken)
+    ? trackedToken.toLowerCase()
+    : null;
 
   return {
+    applicationToken,
     inviteeEmail: asString(invitee.email),
     inviteePhone: asString(invitee.text_reminder_number) ?? locationPhone,
     startTime: asString(scheduledEvent?.start_time),
@@ -789,8 +814,8 @@ export function bookingFromEvent(payload: unknown): CalendlyBooking | null {
 
    RULED — REQ-INT-0 is BACK ON (Rahul, 2026-07-28), reversing the §6.4 park.
    The app offers the three soonest slots as one-tap buttons; Calendly still
-   CONFIRMS every one of them on its own surface, because the availability API
-   cannot create a booking. That constraint is the safety property, not a
+   CONFIRMS every one of them on its own surface, because this integration never
+   calls the invitee-creation API. That constraint is the safety property, not a
    limitation: we never hold a booking, so we can never double-book, and
    `calendly-webhook` above still records the fact.
 

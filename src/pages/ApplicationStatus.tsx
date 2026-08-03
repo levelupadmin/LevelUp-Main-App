@@ -647,6 +647,7 @@ const ApplicationStatus = () => {
         {showInterviewEmbed && (
           <InterviewSlots
             offeringId={application.offering_id}
+            applicationId={application.id}
             name={profile?.full_name}
             email={profile?.email ?? user?.email}
             className="mb-8"

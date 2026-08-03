@@ -31,6 +31,12 @@ export interface InterviewSlotsProps {
    * and no request is made until it lands.
    */
   offeringId: string | undefined;
+  /**
+   * Optional app-owned application row. The edge function accepts it only after
+   * verifying the current bearer owns that row and that it belongs to this
+   * offering; guests therefore keep the established identity fallback.
+   */
+  applicationId?: string;
   /** Prefill for Calendly's booking form. All optional — guests may have none. */
   email?: string | null;
   name?: string | null;
@@ -70,9 +76,9 @@ const NATIVE_PANEL_HEIGHT = 148;
  * are now literal.)
  *
  * WHY THIS DOES NOT REOPEN THE DOUBLE-BOOKING HAZARD THE PARK NAMED. The app
- * still cannot book: Calendly's API has no create-a-booking call, so each button
- * opens `scheduling_url`, Calendly's own deep link to THAT EXACT SLOT, and
- * Calendly confirms it on its own surface. Our list is an OFFER, never a hold —
+ * still cannot book: this integration never calls Calendly's invitee-creation
+ * API. Each button opens `scheduling_url`, Calendly's own deep link to THAT EXACT
+ * SLOT, and the applicant confirms it on Calendly's surface. Our list is an OFFER, never a hold —
  * the calendar keeps exactly one writer. What a self-rendered list CAN get wrong
  * is being stale, and that is handled at the only moment it matters: every tap
  * re-checks availability before it opens anything (`recheck`), and a slot that
@@ -135,6 +141,7 @@ const NATIVE_PANEL_HEIGHT = 148;
  */
 export const InterviewSlots = ({
   offeringId,
+  applicationId,
   email,
   name,
   className,
@@ -148,9 +155,10 @@ export const InterviewSlots = ({
   const hasBookingSurface = !!data?.bookingUrl;
   const {
     slots,
+    applicationToken,
     isWaiting: slotsWaiting,
     recheck,
-  } = useInterviewSlots(offeringId, { enabled: hasBookingSurface });
+  } = useInterviewSlots(offeringId, { enabled: hasBookingSurface, applicationId });
 
   // Web renders Calendly in place when it has to fall back; native hands off to
   // the hosted link. See the docblock.
@@ -224,13 +232,21 @@ export const InterviewSlots = ({
      as a booking made any other way. */
   const hostedUrl = useMemo(() => {
     if (!data?.bookingUrl) return null;
-    return calendlyBookingUrl(data.bookingUrl, { name, email });
-  }, [data?.bookingUrl, name, email]);
+    return calendlyBookingUrl(
+      data.bookingUrl,
+      { name, email },
+      { applicationToken },
+    );
+  }, [data?.bookingUrl, name, email, applicationToken]);
 
   const embedUrl = useMemo(() => {
     if (!data?.bookingUrl) return null;
-    return calendlyEmbedUrl(data.bookingUrl, { name, email });
-  }, [data?.bookingUrl, name, email]);
+    return calendlyEmbedUrl(
+      data.bookingUrl,
+      { name, email },
+      { applicationToken },
+    );
+  }, [data?.bookingUrl, name, email, applicationToken]);
 
   /**
    * Hand `href` to the browser, and ANSWER WHETHER IT WENT.
@@ -369,7 +385,11 @@ export const InterviewSlots = ({
         }
 
         const chosen = current ?? slot;
-        const href = calendlyBookingUrl(chosen.bookingUrl, { name, email });
+        const href = calendlyBookingUrl(
+          chosen.bookingUrl,
+          { name, email },
+          { applicationToken },
+        );
         setTapped({ slot: chosen, href, handedOff: false });
         if (handOff(href, target)) {
           setTapped((prev) =>
@@ -388,14 +408,18 @@ export const InterviewSlots = ({
         }
         setTapped({
           slot,
-          href: calendlyBookingUrl(slot.bookingUrl, { name, email }),
+          href: calendlyBookingUrl(
+            slot.bookingUrl,
+            { name, email },
+            { applicationToken },
+          ),
           handedOff: false,
         });
       } finally {
         setChecking(null);
       }
     },
-    [recheck, name, email, handOff],
+    [recheck, name, email, applicationToken, handOff],
   );
 
   /**

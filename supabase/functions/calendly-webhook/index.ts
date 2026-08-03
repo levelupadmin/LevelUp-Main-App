@@ -318,7 +318,7 @@ const CANDIDATE_LIMIT = 25;
  */
 interface Resolution {
   row: ApplicationRow | null;
-  key: "phone" | "email" | null;
+  key: "token" | "phone" | "email" | null;
   ambiguous: boolean;
   /** How many candidates the deciding probe saw. For the log only. */
   candidates: number;
@@ -493,10 +493,46 @@ async function candidatesByPhone(
 async function resolveApplication(
   // deno-lint-ignore no-explicit-any
   admin: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  applicationToken: string | null,
   phone: string | null,
   email: string | null,
   eventUri: string,
 ): Promise<Resolution> {
+  // The app-minted token is the only key on this delivery obtained after an
+  // authenticated ownership check rather than derived from a public form field.
+  // It therefore wins before INTEG-KEY-1's phone/email fallback. The mapping
+  // table is unreadable to anon/authenticated roles and the token is an
+  // unguessable random UUID, never the application id. A holder can remove it or
+  // share the capability-bearing link, but cannot mint a victim's value. A token miss is ordinary (hosted or
+  // legacy link); an exact hit names one row and must never be overridden by an
+  // invitee typing somebody else's email into the form.
+  if (applicationToken) {
+    const { data: binding, error: bindingError } = await admin
+      .from("cohort_calendly_bindings")
+      .select("application_id")
+      .eq("token", applicationToken)
+      .maybeSingle();
+    if (bindingError) {
+      console.error("[calendly-webhook] application-token lookup failed:", bindingError.message);
+    } else if (binding?.application_id) {
+      const { data: tokenRow, error: tokenRowError } = await admin
+        .from("cohort_applications")
+        .select(SELECT_COLUMNS)
+        .eq("id", binding.application_id)
+        .maybeSingle();
+      if (tokenRowError) {
+        console.error("[calendly-webhook] token-bound application read failed:", tokenRowError.message);
+      }
+      return {
+        row: (tokenRow as ApplicationRow | null) ?? null,
+        key: "token",
+        ambiguous: false,
+        candidates: tokenRow ? 1 : 0,
+        truncated: false,
+      };
+    }
+  }
+
   const syntheticPhone = email ? phoneFromSyntheticEmail(email) : null;
   const phoneKey = phone ?? syntheticPhone;
   const emailKey = email && !isSyntheticEmail(email) ? email : null;
@@ -531,12 +567,12 @@ async function resolveApplication(
     // own rule applies: refusing costs a mirrored booking, which is recoverable
     // and logged, while guessing costs a correct row, which is neither.
     //
-    // THE DURABLE FIX IS A SECRET WE MINT, NOT A FIELD THEY TYPE. Calendly
-    // returns a `tracking` object (utm_*, salesforce_uuid) that this parser does
-    // not read yet. Appending an opaque per-application token to `scheduling_url`
-    // and binding on that would make the phone probe unnecessary for
-    // app-originated bookings. That spans the client, the shared parser and this
-    // handler, so it is a scoped follow-up rather than part of this fix.
+    // THE DURABLE APP PATH IS A SECRET WE MINT, NOT A FIELD THEY TYPE. The slot
+    // function now appends an opaque, owner-gated token to `scheduling_url` in
+    // Calendly's supported `utm_content` carrier; the shared parser reads it and
+    // this handler resolves it before reaching this fallback. This phone branch
+    // remains for hosted/guest and pre-token bookings, so its evidence gate is
+    // still load-bearing.
     const { row, ambiguous } = chooseOne(rows, eventUri, emailKey, true);
     if (row) return { row, key: "phone", ambiguous: false, candidates: rows.length, truncated };
     if (ambiguous) {
@@ -668,6 +704,7 @@ Deno.serve(async (req) => {
 
   const { row, key, ambiguous, candidates, truncated } = await resolveApplication(
     admin,
+    booking.applicationToken,
     booking.inviteePhone,
     booking.inviteeEmail,
     booking.eventUri,

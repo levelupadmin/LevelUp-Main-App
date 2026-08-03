@@ -3,6 +3,7 @@ import { hmacSha256Hex, timingSafeEqual } from "@shared/crypto";
 import {
   availabilityWindow,
   bookingFromEvent,
+  CALENDLY_APPLICATION_TOKEN_PREFIX,
   eventTypeUriFor,
   formatSlotLabel,
   matchesSchedulingUrl,
@@ -357,6 +358,7 @@ describe("interviewerNameFromEvent — one named host, or nothing (REQ-INT-2)", 
 describe("bookingFromEvent — the booking facts, and nothing derived", () => {
   it("reads the invitee, the start, and the event URI from invitee.created", () => {
     expect(bookingFromEvent(meetEvent())).toEqual({
+      applicationToken: null,
       inviteeEmail: "Applicant@Example.com",
       inviteePhone: "+919788385577",
       startTime: "2026-07-30T13:00:00.000000Z",
@@ -373,6 +375,21 @@ describe("bookingFromEvent — the booking facts, and nothing derived", () => {
     const booking = bookingFromEvent(phoneEvent());
     expect(booking?.inviteePhone).toBe("+91 97883 85577");
     expect(booking?.eventUri).toBe("https://api.calendly.com/scheduled_events/EVT2");
+  });
+
+  it("reads only a UUID-shaped app binding from Calendly's tracking object", () => {
+    const token = "11111111-2222-4333-8444-555555555555";
+    expect(
+      bookingFromEvent(meetEvent({
+        tracking: { utm_content: `${CALENDLY_APPLICATION_TOKEN_PREFIX}${token}` },
+      }))?.applicationToken,
+    ).toBe(token);
+    expect(
+      bookingFromEvent(meetEvent({ tracking: { utm_content: "a user-typed value" } }))
+        ?.applicationToken,
+    ).toBeNull();
+    expect(bookingFromEvent(meetEvent({ tracking: "not-an-object" }))?.applicationToken)
+      .toBeNull();
   });
 
   it("takes a phone from the location ONLY when the location is a call to the invitee", () => {
@@ -484,6 +501,7 @@ describe("bookingFromEvent — the booking facts, and nothing derived", () => {
 
   it("degrades to nulls on a partial payload rather than inventing facts", () => {
     expect(bookingFromEvent({ event: "invitee.created", payload: {} })).toEqual({
+      applicationToken: null,
       inviteeEmail: null,
       inviteePhone: null,
       startTime: null,
