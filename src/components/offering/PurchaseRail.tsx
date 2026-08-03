@@ -88,7 +88,10 @@ export default function PurchaseRail({
         </ul>
       )}
 
-      <GuaranteeBadge days={refundPolicyDays} />
+      {/* Application-only cohorts charge a separate, non-refundable review
+          fee. Showing the program refund window beside the Apply CTA makes it
+          look like that review fee is refundable (FEE-1). */}
+      {!applyUrl && <GuaranteeBadge days={refundPolicyDays} />}
 
       {applyUrl ? (
         <a
