@@ -184,7 +184,7 @@ const AdminSchedule = () => {
     setForm((prev) => ({ ...prev, [key]: value }));
 
   /* ── Load ── */
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     // `live_sessions_safe`, NOT `live_sessions`. The base table's `zoom_link` is
     // the join link for every paid class, and it is no longer readable by the
@@ -260,11 +260,11 @@ const AdminSchedule = () => {
 
     setSessions(sessionsList);
     setLoading(false);
-  };
+  }, [toast]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   /* ── Open dialog ── */
   const openAdd = () => {

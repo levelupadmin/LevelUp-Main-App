@@ -12,7 +12,11 @@
     "typecheck:functions": "node scripts/typecheck-functions.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:room-access": "node qa-harness/cohort-room-access.spec.mjs"
+    "test:room-access": "node qa-harness/cohort-room-access.spec.mjs",
+    "test:announcement-fanout": "node qa-harness/run-announcement-fanout.mjs qa-harness/announcement-fanout.sql",
+    "test:room-feed-resources": "node qa-harness/run-announcement-fanout.mjs qa-harness/room-feed-resources.sql",
+    "test:room-third-act": "node qa-harness/run-announcement-fanout.mjs qa-harness/room-third-act.sql",
+    "test:room-legacy-access": "node qa-harness/run-announcement-fanout.mjs qa-harness/room-legacy-access-gaps.sql"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",

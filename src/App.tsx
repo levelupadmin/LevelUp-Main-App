@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { bootAnalytics } from "@/lib/analytics";
 import { COHORT_ROOMS, DECISION_FLOW, flag } from "@/lib/flags";
@@ -118,17 +118,59 @@ const AdmissionPublic = lazy(() => import("@/pages/AdmissionPublic"));
 
 // ── Cohort rooms (R1), behind VITE_COHORT_ROOMS ──
 // Their own chunks: with the flag off none of them is referenced by a rendered
-// route, so the room code never enters a session's network graph. `RoomHome`
-// and `RoomModuleRoute` share one module (and therefore one chunk) because a
-// module tab is only ever reached from the home it renders beside.
+// route, so the room code never enters a session's network graph.
 const MyCohortsPage = lazy(() => import("@/pages/MyCohortsPage"));
 const RoomShell = lazy(() => import("@/pages/room/RoomShell"));
 const RoomHome = lazy(() => import("@/pages/room/RoomHome"));
-const RoomModuleRoute = lazy(() =>
-  import("@/pages/room/RoomHome").then((m) => ({ default: m.RoomModuleRoute })),
+// R2's two built modules. `RoomWeeksRoute` rides RoomHome's chunk (it is the
+// gate + the assignment seam around WeeksModule, and needs the shell's envelope
+// that this file cannot read); the Screening Shelf is a page of its own and gets
+// its own chunk, which keeps its player + progress-writer out of the room open.
+const RoomWeeksRoute = lazy(() =>
+  import("@/pages/room/RoomHome").then((m) => ({ default: m.RoomWeeksRoute })),
 );
+const RoomScreenings = lazy(() => import("@/pages/room/RoomScreenings"));
+// R3's roster module. Its own chunk for the same reason the shelf has one: it
+// carries the roster grid and its avatars, none of which a room open needs.
+const RoomPeople = lazy(() => import("@/pages/room/RoomPeople"));
+// R3's activity and reference surfaces each stay in their own route chunk.
+// Opening a room therefore does not ship the feed composer, reply UI or the
+// resource binder until the member asks for one of them.
+const RoomFeed = lazy(() => import("@/pages/room/RoomFeed"));
+const RoomResources = lazy(() => import("@/pages/room/RoomResources"));
+const RoomDemoDay = lazy(() => import("@/pages/room/RoomDemoDay"));
 const CohortRoomRedirect = lazy(() =>
   import("@/pages/room/RoomShell").then((m) => ({ default: m.CohortRoomRedirect })),
+);
+
+/**
+ * What the module slot shows while a room module's chunk is in flight.
+ *
+ * 🔴 WHY THIS EXISTS. The nearest Suspense boundary above a room module is
+ * `StudentLayout`'s, which wraps the layout's whole `<Outlet/>` — so a module
+ * whose chunk is NOT resident makes React 18 unmount the room's chrome
+ * (switcher, masthead, module rail) and paint the generic app skeleton instead.
+ * Navigations here are synchronous (`<BrowserRouter>`, no `v7_startTransition`),
+ * so the blank is real, not theoretical. R2 split `screenings` into its own
+ * chunk, which made that reachable from inside a painted room in BOTH
+ * directions (home/weeks → screenings and screenings → home/weeks), so the
+ * boundary is per-module rather than only on the one new page.
+ *
+ * Written with plain elements and the global `skeleton-shimmer` class ON
+ * PURPOSE: importing the room's own loading states here would pull room code
+ * into the main bundle, which is exactly what the lazy boundaries above buy.
+ */
+const RoomModuleFallback = () => (
+  <div className="space-y-4" role="status" aria-busy="true">
+    <span className="sr-only">Loading…</span>
+    <div className="h-40 rounded-xl skeleton-shimmer" />
+    <div className="h-24 rounded-xl skeleton-shimmer" />
+  </div>
+);
+
+/** A room module route element, with its own boundary so the chrome survives. */
+const roomModule = (element: ReactNode) => (
+  <Suspense fallback={<RoomModuleFallback />}>{element}</Suspense>
 );
 
 // The QueryClient + its localStorage persister live in @/lib/queryClient so the
@@ -294,25 +336,26 @@ const App = () => {
                 {roomsEnabled && (
                   <>
                     <Route path="/rooms" element={<MyCohortsPage />} />
+                    {/* Every element below goes through `roomModule()`, which
+                        adds the Suspense boundary the room subtree otherwise
+                        lacks — see RoomModuleFallback. */}
                     <Route path="/room/:slug" element={<RoomShell />}>
-                      <Route index element={<RoomHome />} />
-                      <Route
-                        path="weeks/:n"
-                        element={<RoomModuleRoute module="weeks" title="Weeks" />}
-                      />
-                      <Route
-                        path="screenings"
-                        element={<RoomModuleRoute module="recordings" title="Screenings" />}
-                      />
-                      <Route path="feed" element={<RoomModuleRoute module="feed" title="Feed" />} />
-                      <Route
-                        path="people"
-                        element={<RoomModuleRoute module="roster" title="People" />}
-                      />
-                      <Route
-                        path="resources"
-                        element={<RoomModuleRoute module="resources" title="Resources" />}
-                      />
+                      <Route index element={roomModule(<RoomHome />)} />
+                      {/* The rail links `weeks/:n` (RoomShell.tsx `weeksHref`);
+                          the bare path is what a typed URL and a stale
+                          bookmark hit, and WeeksModule already resolves its own
+                          default week when the route names none. */}
+                      <Route path="weeks" element={roomModule(<RoomWeeksRoute />)} />
+                      <Route path="weeks/:n" element={roomModule(<RoomWeeksRoute />)} />
+                      {/* RoomScreenings owns the `recordings` gate itself, so
+                          the route does not add a second config decision. */}
+                      <Route path="screenings" element={roomModule(<RoomScreenings />)} />
+                      {/* Every built module owns its own config and lobby gate,
+                          so a typed URL cannot bypass the room's matrix. */}
+                      <Route path="feed" element={roomModule(<RoomFeed />)} />
+                      <Route path="people" element={roomModule(<RoomPeople />)} />
+                      <Route path="resources" element={roomModule(<RoomResources />)} />
+                      <Route path="demo-day" element={roomModule(<RoomDemoDay />)} />
                     </Route>
                   </>
                 )}

@@ -564,8 +564,19 @@ $shadow$;
 
 
 -- ===========================================================================
--- SECTION C — DELIBERATELY EMPTY. Do not "restore" the column-level revokes.
+-- SECTION C — POST-20260801 LINK-GRANT PARITY.
 -- ===========================================================================
+--
+-- The generated table-grant snapshot below predates the production security
+-- fix in 20260801100000_link_column_grants_actually_bite.sql. Section B must
+-- still run after db push to restore the broader platform grant model, but that
+-- historical snapshot re-grants table-wide SELECT on these two tables. Reapply
+-- the now-live column allowlist here so a freshly provisioned shadow ends in
+-- the same state as production after the August 1 fix.
+--
+-- The July 31 incident narrative below is retained as the reason this block is
+-- necessary. Its "deliberately empty" conclusion described production before
+-- the fix and is no longer the desired end state.
 --
 -- MEASURED AGAINST PRODUCTION (ivkvluezuiojovpotlyb) ON 2026-07-31, read-only:
 --
@@ -660,3 +671,43 @@ $shadow$;
 --   RAISE NOTICE 'shadow-grants: % column-level revoke(s) restored', restored;
 -- END
 -- $shadow_cols$;
+
+DO $post_fix_link_grants$
+DECLARE
+  r record;
+  cols text;
+  restored int := 0;
+BEGIN
+  FOR r IN
+    SELECT * FROM (VALUES
+      ('events',        'venue_link'),
+      ('live_sessions', 'zoom_link')
+    ) AS t(tbl, gated)
+  LOOP
+    IF to_regclass('public.' || quote_ident(r.tbl)) IS NULL THEN
+      CONTINUE;
+    END IF;
+
+    EXECUTE format(
+      'REVOKE SELECT ON public.%I FROM anon, authenticated',
+      r.tbl
+    );
+
+    SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position)
+      INTO cols
+      FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = r.tbl
+       AND column_name <> r.gated;
+
+    EXECUTE format(
+      'GRANT SELECT (%s) ON public.%I TO anon, authenticated',
+      cols,
+      r.tbl
+    );
+    restored := restored + 1;
+  END LOOP;
+
+  RAISE NOTICE 'shadow-grants: % post-fix link allowlist(s) restored', restored;
+END
+$post_fix_link_grants$;

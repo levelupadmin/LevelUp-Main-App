@@ -190,6 +190,11 @@ const RoomMasthead = ({
         className="relative z-10 transform-gpu px-5 pb-6 pt-32 sm:px-8 sm:pb-8 sm:pt-44"
         {...entrance.plate}
       >
+        {phase === "alumni" && (
+          <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.34em] text-room-accent-text">
+            Alumni
+          </p>
+        )}
         <div className="flex items-start gap-3">
           {/* The chip carries the mark when the hero does not; with no hero the
               crest behind the plate is already doing that job. */}

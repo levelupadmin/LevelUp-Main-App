@@ -602,3 +602,44 @@ export function moduleEnabled(
   const value = modules[key];
   return typeof value === "boolean" ? value : ROOM_MODULE_DEFAULTS[key];
 }
+
+/** The lifecycle phases accepted by `cohort_room_configs.phase`. */
+export type RoomLifecyclePhase = "pre_start" | "live" | "wrap" | "alumni";
+
+/**
+ * Phase-aware module decision used by R4. Demo Day is the sole phase-defaulted
+ * module: an absent/non-boolean config value opens it for wrap and alumni, while
+ * an explicit admin boolean always wins. Every other module keeps the original
+ * `moduleEnabled` contract.
+ */
+export function roomModuleEnabled(
+  config: RoomConfigInput | null | undefined,
+  key: RoomModuleKey,
+  phase: RoomLifecyclePhase,
+): boolean {
+  if (key !== "demo_day") return moduleEnabled(config, key);
+  const value = asRecord(asRecord(config).modules)[key];
+  if (typeof value === "boolean") return value;
+  return phase === "wrap" || phase === "alumni";
+}
+
+/** Alumni revision grace from R4-T3. */
+export const ALUMNI_REVISION_DAYS = 14;
+
+/**
+ * Whether this assignment may still be written by a member. Before alumni the
+ * existing submission rules apply. After the flip, only a `needs_revision`
+ * row remains writable, and only for fourteen days from the server timestamp.
+ */
+export function alumniRevisionOpen(
+  phase: RoomLifecyclePhase,
+  alumniSince: string | null | undefined,
+  status: string | null | undefined,
+  nowMs = Date.now(),
+): boolean {
+  if (phase !== "alumni") return true;
+  if (status !== "needs_revision" || !alumniSince) return false;
+  const sinceMs = Date.parse(alumniSince);
+  if (!Number.isFinite(sinceMs)) return false;
+  return nowMs <= sinceMs + ALUMNI_REVISION_DAYS * 24 * 60 * 60 * 1000;
+}
