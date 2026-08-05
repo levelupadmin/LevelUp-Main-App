@@ -6,10 +6,11 @@
 import { useState } from "react";
 import {
   Flame, Lock, Check, Play, FileText, ClipboardList, Sparkles, Upload,
-  Video, CalendarPlus, KeyRound, ChevronRight, Link2, Plus, Wand2,
+  Video, CalendarPlus, KeyRound, ChevronRight, Link2, Plus, Wand2, Target,
 } from "lucide-react";
 import { Eyebrow, Chip, Card, Btn, Avatar, LinkPreviewCard, PdfCard } from "./PreviewUI";
-import { STATS, FEED, ALBUM, MENTOR_QUEUE } from "./previewData";
+import { STATS, FEED, ALBUM, MENTOR_QUEUE, ENGINE } from "./previewData";
+import { toneForPhase } from "./previewTheme";
 
 const Serif = ({ children }: { children: React.ReactNode }) => (
   <span className="font-serif italic text-[hsl(var(--cream))]">{children}</span>
@@ -17,51 +18,167 @@ const Serif = ({ children }: { children: React.ReactNode }) => (
 
 /* ── 1 · Home ───────────────────────────────────────────────────────────── */
 
-export function HomeScreen({ go, tap }: { go: (k: string) => void; tap: (s: string) => void }) {
+/**
+ * The screenshot review that forced this rewrite, so it never regresses:
+ * v2's Home repeated the header stats as three stretched ovals, gave the
+ * "continue" moment one thin row, and left half the viewport empty. The rules
+ * now baked in: stats render ONCE (the shell header owns them); the hero is an
+ * asymmetric split that owns the top of the page; every band has gradient art
+ * or tinted depth so black-on-black never reads flat; and nothing floats in
+ * unmeasured space.
+ */
+
+/** The 13-block progress spine — each segment tinted by its phase. */
+function EngineSpine() {
   return (
-    <div className="space-y-3.5 lg:grid lg:grid-cols-2 lg:gap-5 lg:space-y-0 lg:[&>*:first-child]:col-span-2">
-      <div>
-        <Eyebrow>Creator Academy · Edition 2</Eyebrow>
-        <h1 className="mt-1 text-[22px] font-semibold tracking-[-0.025em]">
-          Creator <Serif>Studio</Serif>
-        </h1>
+    <div>
+      <div className="flex gap-1">
+        {ENGINE.map((e) => {
+          const t = toneForPhase(e.phase);
+          const done = e.n < STATS.week;
+          const now = e.n === STATS.week;
+          return (
+            <div
+              key={e.n}
+              title={`W${e.n} · ${e.title}`}
+              className="h-1.5 flex-1 rounded-full transition-colors"
+              style={{
+                background: done ? t.c : now ? `${t.c}66` : "hsl(var(--secondary))",
+                boxShadow: now ? `0 0 8px ${t.c}55` : undefined,
+              }}
+            />
+          );
+        })}
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Chip tone="cream">Week {STATS.week} of {STATS.totalWeeks}</Chip>
-        <Chip tone="success"><Flame className="mr-1 h-3 w-3" />{STATS.streak}-day streak</Chip>
-        <Chip>{STATS.xp} XP</Chip>
+      <div className="mt-1.5 flex justify-between text-[10px] font-semibold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">
+        <span>W0</span>
+        <span className="text-[hsl(var(--accent-amber))]">Block {STATS.week} — you are here</span>
+        <span>W12</span>
       </div>
+    </div>
+  );
+}
 
-      <Card tone="lit">
-        <Eyebrow>Pick up where you stopped</Eyebrow>
-        <div className="mt-1.5 text-[14px] font-semibold">Week 4 · Wed — Write 3 hooks for one idea</div>
-        <p className="mt-1.5 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
-          One day left before Week 4's assignment is due.
-        </p>
-        <div className="mt-3"><Btn onClick={() => go("path")}>Continue</Btn></div>
-      </Card>
+export function HomeScreen({ go, tap }: { go: (k: string) => void; tap: (s: string) => void }) {
+  const tone = toneForPhase("Produce");
+  return (
+    <div className="space-y-5">
+      {/* ── HERO — the week you are inside, split 5/3 ──────────────────── */}
+      <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))]">
+        <div className="grid lg:grid-cols-[5fr_3fr]">
+          {/* left: the week, lit by its phase colour */}
+          <div
+            className="relative p-6 sm:p-8"
+            style={{ background: `linear-gradient(135deg, ${tone.c}1c 0%, ${tone.c}08 42%, transparent 75%)` }}
+          >
+            <div
+              className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full opacity-25 blur-3xl"
+              style={{ background: tone.c }}
+            />
+            <div className="flex items-center gap-2.5">
+              <span
+                className="grid h-9 w-9 place-items-center rounded-lg text-[12px] font-extrabold"
+                style={{ background: tone.c, color: "hsl(var(--cream-text))" }}
+              >
+                W4
+              </span>
+              <div className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: tone.c }}>
+                Phase 2 · Produce
+              </div>
+            </div>
+            <h2 className="mt-4 text-[26px] font-semibold leading-tight tracking-[-0.025em] sm:text-[32px]">
+              Advanced <Serif>Production</Serif>
+            </h2>
+            <p className="mt-2 max-w-[42ch] text-[13px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+              Lighting depth, the reusable B-roll Bank, the teleprompter, Batch Day.
+            </p>
+            <div className="mt-4 flex items-center gap-2 text-[12.5px]">
+              <Target className="h-3.5 w-3.5 shrink-0" style={{ color: tone.c }} />
+              <span className="font-semibold">The block:</span>
+              <span className="text-[hsl(var(--muted-foreground))]">B-roll bank + 3 reels from one sitting</span>
+            </div>
+            <div className="mt-6"><EngineSpine /></div>
+          </div>
 
-      <Card>
-        <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[hsl(var(--gold))]" />
-          <Chip tone="gold">LIVE · SUN 3 PM</Chip>
+          {/* right: the one next action */}
+          <div className="flex flex-col justify-center gap-3 border-t border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-7 lg:border-l lg:border-t-0">
+            <Eyebrow>Pick up where you stopped</Eyebrow>
+            <div className="text-[15px] font-semibold leading-snug tracking-[-0.01em]">
+              Wed — Write 3 hooks for one idea
+            </div>
+            <p className="text-[12px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+              One day left before the block is due Thursday 9 PM. Finishing it unlocks Second Brain.
+            </p>
+            <Btn onClick={() => go("path")}>Continue on the Path</Btn>
+            <div className="grid grid-cols-3 divide-x divide-[hsl(var(--border))] rounded-lg border border-[hsl(var(--border))] text-center">
+              {[["Sun 3 PM", "Class"], ["Thu 9 PM", "Block due"], ["Sat 6 PM", "Ship/Fix/Hold"]].map(([v, k]) => (
+                <div key={k} className="px-1 py-2">
+                  <div className="text-[11.5px] font-bold">{v}</div>
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[hsl(var(--muted-foreground))]">{k}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="mt-2 text-[14px] font-semibold">Positioning teardown</div>
-        <p className="mt-1 text-[12.5px] text-[hsl(var(--muted-foreground))]">
-          Rahul reviews six submissions on the call.
-        </p>
-        <div className="mt-3"><Btn variant="outline" onClick={() => tap("Join link")}>Join session</Btn></div>
-      </Card>
+      </section>
 
-      <Card tone="locked">
-        <div className="flex items-center gap-2 text-[hsl(var(--muted-foreground))]">
-          <Lock className="h-3.5 w-3.5" /><Chip>Week 5</Chip>
+      {/* ── second band: live session (weighted) + the gate ─────────────── */}
+      <section className="grid gap-5 lg:grid-cols-[3fr_2fr]">
+        <div className="group overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
+          <div className="relative grid h-40 place-items-center bg-gradient-to-br from-[#221a10] via-[#120e08] to-black sm:h-44">
+            <div
+              className="pointer-events-none absolute inset-0 opacity-40"
+              style={{ background: "radial-gradient(420px 180px at 30% 20%, hsl(var(--gold)/0.25), transparent 70%)" }}
+            />
+            <div className="grid h-12 w-12 place-items-center rounded-full bg-gradient-to-b from-[hsl(var(--champagne-from))] to-[hsl(var(--champagne-to))] shadow-lg transition-transform group-hover:scale-105">
+              <Play className="h-4 w-4 fill-[hsl(var(--cream-text))] text-[hsl(var(--cream-text))]" />
+            </div>
+            <div className="absolute left-4 top-4 flex items-center gap-2">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[hsl(var(--gold))]" />
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--gold))]">
+                Live · Sun 3 PM
+              </span>
+            </div>
+          </div>
+          <div className="flex items-end justify-between gap-4 p-5">
+            <div className="min-w-0">
+              <div className="text-[15px] font-semibold tracking-[-0.01em]">Positioning teardown</div>
+              <p className="mt-1 text-[12px] text-[hsl(var(--muted-foreground))]">
+                Rahul reviews six submissions on the call.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => tap("Join session")}
+              className="shrink-0 rounded-lg border border-[hsl(var(--border-hover))] px-4 py-2 text-[12.5px] font-semibold transition-transform active:scale-[0.97]"
+            >
+              Join
+            </button>
+          </div>
         </div>
-        <div className="mt-2 text-[14px] font-semibold text-[hsl(var(--muted-foreground))]">Opens Sun 10 Aug</div>
-        <p className="mt-1 text-[12.5px] text-[hsl(var(--muted-foreground))]">
-          Submit Week 4's assignment to unlock it.
-        </p>
-      </Card>
+
+        <div className="flex flex-col justify-between rounded-2xl border border-[hsl(var(--border))] bg-black/40 p-5">
+          <div>
+            <div className="flex items-center gap-2 text-[hsl(var(--muted-foreground))]">
+              <Lock className="h-3.5 w-3.5" />
+              <Eyebrow>Week 5 · On-Camera Confidence</Eyebrow>
+            </div>
+            <div className="mt-2.5 text-[14px] font-semibold text-[hsl(var(--muted-foreground))]">
+              Opens Sun 10 Aug — once Week 4's block is in
+            </div>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+              The recording stays locked with it. Everything you've finished stays open.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => go("locked")}
+            className="mt-4 self-start text-[12px] font-semibold text-[hsl(var(--gold))] underline underline-offset-4"
+          >
+            See what's missing
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

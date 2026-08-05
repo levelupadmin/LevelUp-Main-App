@@ -54,7 +54,7 @@ export default function PreviewShell({
 
   return (
     <div
-      className="-mx-4 -mt-4 min-h-[80vh] sm:-mx-6"
+      className="min-h-[100dvh] w-full bg-[hsl(var(--background))] text-[hsl(var(--foreground))]"
       style={{
         backgroundImage:
           "radial-gradient(1100px 560px at 82% -12%, hsl(var(--cream)/0.055), transparent 60%), radial-gradient(840px 460px at -8% 6%, hsl(var(--gold)/0.05), transparent 55%)",
@@ -140,7 +140,7 @@ export default function PreviewShell({
             </nav>
           </div>
 
-          <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8 lg:py-7">{children}</div>
+          <div className="mx-auto w-full max-w-[1180px] px-4 pb-16 pt-5 sm:px-6 lg:px-10 lg:pt-8">{children}</div>
         </main>
       </div>
     </div>

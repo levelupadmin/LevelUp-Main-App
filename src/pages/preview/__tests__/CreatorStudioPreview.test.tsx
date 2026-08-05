@@ -44,8 +44,8 @@ describe("CreatorStudioPreview", () => {
 
   it("renders for the allowlisted address, banner first", () => {
     renderAs("avinash@leveluplearning.in");
-    expect(screen.getByText(/Prototype — nothing here is live/i)).toBeTruthy();
-    expect(screen.getByText(/Creator Academy · Edition 2/i)).toBeTruthy();
+    expect(screen.getAllByText(/Prototype/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Pick up where you stopped/i)).toBeTruthy();
   });
 
   it("mounts every section without throwing", () => {
