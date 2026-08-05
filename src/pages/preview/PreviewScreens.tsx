@@ -6,10 +6,10 @@
 import { useState } from "react";
 import {
   Flame, Lock, Check, Play, FileText, ClipboardList, Sparkles, Upload,
-  Video, CalendarPlus, KeyRound, ChevronRight, Link2, Plus,
+  Video, CalendarPlus, KeyRound, ChevronRight, Link2, Plus, Wand2,
 } from "lucide-react";
 import { Eyebrow, Chip, Card, Btn, Avatar, LinkPreviewCard, PdfCard } from "./PreviewUI";
-import { WEEKS, STATS, FEED, ALBUM, MENTOR_QUEUE, ENGINE, PHASES } from "./previewData";
+import { STATS, FEED, ALBUM, MENTOR_QUEUE } from "./previewData";
 
 const Serif = ({ children }: { children: React.ReactNode }) => (
   <span className="font-serif italic text-[hsl(var(--cream))]">{children}</span>
@@ -19,7 +19,7 @@ const Serif = ({ children }: { children: React.ReactNode }) => (
 
 export function HomeScreen({ go, tap }: { go: (k: string) => void; tap: (s: string) => void }) {
   return (
-    <div className="space-y-3.5">
+    <div className="space-y-3.5 lg:grid lg:grid-cols-2 lg:gap-5 lg:space-y-0 lg:[&>*:first-child]:col-span-2">
       <div>
         <Eyebrow>Creator Academy · Edition 2</Eyebrow>
         <h1 className="mt-1 text-[22px] font-semibold tracking-[-0.025em]">
@@ -66,147 +66,15 @@ export function HomeScreen({ go, tap }: { go: (k: string) => void; tap: (s: stri
   );
 }
 
-/* ── 2 · Path ───────────────────────────────────────────────────────────── */
-
-function Node({ state, n }: { state: "done" | "current" | "locked"; n: number | string }) {
-  if (state === "done")
-    return (
-      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-[hsl(var(--success))] bg-[hsl(var(--success)/0.15)]">
-        <Check className="h-4 w-4 text-[hsl(var(--success))]" />
-      </div>
-    );
-  if (state === "current")
-    return (
-      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-b from-[hsl(var(--champagne-from))] to-[hsl(var(--champagne-to))] text-[13px] font-bold text-[hsl(var(--cream-text))] shadow-[0_0_0_5px_hsl(var(--cream)/0.09)]">
-        {n}
-      </div>
-    );
-  return (
-    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-[hsl(var(--border))] bg-black/50">
-      <Lock className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
-    </div>
-  );
-}
-
-export function PathScreen({ go }: { go: (k: string) => void }) {
-  return (
-    <div className="space-y-3.5">
-      <div className="flex items-center gap-2">
-        <h2 className="text-[17px] font-semibold tracking-[-0.02em]">Your path</h2>
-        <div className="ml-auto flex gap-1.5">
-          <Chip tone="success"><Flame className="mr-1 h-3 w-3" />{STATS.streak}</Chip>
-          <Chip>{STATS.xp} XP</Chip>
-        </div>
-      </div>
-
-      {WEEKS.map((w) => (
-        <div key={w.n}>
-          <div className="mb-2 flex items-center gap-2.5">
-            <Eyebrow>W{w.n} · {w.theme}</Eyebrow>
-            <div className="h-px flex-1 bg-[hsl(var(--border))]" />
-            {w.state === "done" && <Chip tone="success">Done</Chip>}
-            {w.state === "current" && <Chip tone="cream">Now</Chip>}
-            {w.state === "locked" && <Chip><Lock className="mr-1 h-2.5 w-2.5" />{w.opensOn}</Chip>}
-          </div>
-
-          <div className="mb-2 flex items-start gap-1.5 text-[11px] leading-snug text-[hsl(var(--muted-foreground))]">
-            <span className="font-semibold uppercase tracking-[0.09em] text-[hsl(var(--gold))]">The block</span>
-            <span>{w.block}</span>
-          </div>
-
-          {w.state === "locked" ? (
-            <Card tone="locked">
-              <p className="text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">{w.lockReason}</p>
-              <div className="mt-3"><Btn variant="outline" onClick={() => go("locked")}>See what's missing</Btn></div>
-            </Card>
-          ) : (
-            <div className="space-y-1">
-              {w.days.map((d, i) => (
-                <button
-                  key={d.label}
-                  type="button"
-                  onClick={() => d.state !== "locked" && go("session")}
-                  style={{ marginLeft: `${[0, 22, 34, 14][i % 4]}px` }}
-                  className="flex w-full items-center gap-3 rounded-[var(--radius)] p-1.5 text-left transition-colors active:bg-[hsl(var(--secondary))]"
-                >
-                  <Node state={d.state} n={i + 1} />
-                  <div className="min-w-0">
-                    <div
-                      className={`truncate text-[12.5px] font-semibold ${
-                        d.state === "locked" ? "text-[hsl(var(--muted-foreground))]" : ""
-                      } ${d.state === "current" ? "text-[hsl(var(--cream))]" : ""}`}
-                    >
-                      {d.label} · {d.title}
-                    </div>
-                    <div className="text-[10.5px] text-[hsl(var(--muted-foreground))]">
-                      {d.state === "locked" ? "Locked" : `+${d.xp} XP`}
-                      {d.note ? ` · ${d.note}` : ""}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
-
-      <Card tone="locked">
-        <p className="text-[12px] leading-relaxed text-[hsl(var(--muted-foreground))]">
-          <span className="font-semibold text-[hsl(var(--foreground))]">How unlocking works. </span>
-          A week opens on its date <i>and</i> once the previous week&apos;s block is in. Days inside a week open in order.
-        </p>
-      </Card>
-
-      {/* The whole engine at a glance — the doc's "one project, thirteen blocks"
-          idea only lands if the student can see the shape of the whole thing. */}
-      <div className="pt-1">
-        <div className="mb-2 flex items-center gap-2">
-          <Eyebrow>The engine · all 13 blocks</Eyebrow>
-          <div className="h-px flex-1 bg-[hsl(var(--border))]" />
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {PHASES.map((p) => (<Chip key={p.name}>{p.name} · {p.weeks}</Chip>))}
-        </div>
-        <div className="mt-2.5 space-y-1">
-          {ENGINE.map((e) => {
-            const done = e.n < STATS.week;
-            const now = e.n === STATS.week;
-            return (
-              <div
-                key={e.n}
-                className={`flex items-start gap-2.5 rounded-[var(--radius)] px-2.5 py-2 ${
-                  now ? "bg-[hsl(var(--cream)/0.07)]" : ""
-                }`}
-              >
-                <span
-                  className={`mt-px w-7 shrink-0 text-[10.5px] font-bold ${
-                    done ? "text-[hsl(var(--success))]" : now ? "text-[hsl(var(--cream))]" : "text-[hsl(var(--muted-foreground))]"
-                  }`}
-                >
-                  W{e.n}
-                </span>
-                <div className="min-w-0">
-                  <div className={`text-[12px] font-medium leading-snug ${!done && !now ? "text-[hsl(var(--muted-foreground))]" : ""}`}>
-                    {e.title}
-                  </div>
-                  <div className="mt-0.5 text-[10.5px] leading-snug text-[hsl(var(--muted-foreground))]">{e.block}</div>
-                </div>
-                {done && <Check className="mt-0.5 h-3 w-3 shrink-0 text-[hsl(var(--success))]" />}
-                {!done && !now && <Lock className="mt-0.5 h-2.5 w-2.5 shrink-0 text-[hsl(var(--border-hover))]" />}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ── 3 · Session ────────────────────────────────────────────────────────── */
 
-export function SessionScreen({ tap }: { tap: (s: string) => void }) {
+export function SessionScreen({ tap, onBack }: { tap: (s: string) => void; onBack: () => void }) {
   return (
-    <div className="space-y-3.5">
+    <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8 lg:items-start">
+      <div className="space-y-3.5">
+      <button type="button" onClick={onBack} className="text-[12px] text-[hsl(var(--muted-foreground))] underline underline-offset-4">
+        ← Back to the path
+      </button>
       <div className="flex items-center gap-2">
         <Chip tone="cream">Week 4 · Sun</Chip><Chip>+20 XP</Chip>
       </div>
@@ -237,6 +105,12 @@ export function SessionScreen({ tap }: { tap: (s: string) => void }) {
         </p>
       </Card>
 
+      </div>
+
+      {/* On desktop the materials and the assignment sit beside the player
+          instead of below it — a 1400px monitor should not make the reader
+          scroll past a video to find the thing they came to do. */}
+      <aside className="mt-3.5 space-y-3.5 lg:mt-0 lg:sticky lg:top-4">
       <Card>
         <Eyebrow>Session materials</Eyebrow>
         <div className="mt-2.5 space-y-1.5">
@@ -277,6 +151,78 @@ export function SessionScreen({ tap }: { tap: (s: string) => void }) {
         </div>
         <div className="mt-3"><Btn onClick={() => tap("Submit assignment")}>Submit assignment</Btn></div>
       </Card>
+      </aside>
+    </div>
+  );
+}
+
+/* ── Second Brain ───────────────────────────────────────────────────────── */
+
+export function BrainScreen({ tap }: { tap: (s: string) => void }) {
+  return (
+    <div className="lg:grid lg:grid-cols-2 lg:gap-6 lg:items-start">
+      <div className="space-y-3.5">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[17px] font-semibold tracking-[-0.02em]">Spy a reel</h2>
+          <span className="ml-auto"><Chip tone="success">Unlocked W4</Chip></span>
+        </div>
+        <div className="rounded-[var(--radius)] border border-[hsl(var(--border))] bg-black/40 px-3 py-2.5 text-[12px] text-[hsl(var(--muted-foreground))]">
+          Paste an Instagram reel or YouTube link…
+        </div>
+        <Card tone="success">
+          <div className="flex items-center gap-1.5">
+            <Check className="h-3.5 w-3.5 text-[hsl(var(--success))]" />
+            <Eyebrow>Transcribed in 11s — live in production today</Eyebrow>
+          </div>
+          <p className="mt-1.5 text-[12px] text-[hsl(var(--muted-foreground))]">@thefinancegirl · 47s · 812k views</p>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+            Apify pulls the reel, ffmpeg strips the audio, Cloudflare Whisper transcribes it. No machine of yours is involved.
+          </p>
+        </Card>
+        <Card tone="lit">
+          <Eyebrow>Breakdown — new</Eyebrow>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Chip tone="cream">Hook: contradiction</Chip><Chip>problem → proof → ask</Chip>
+          </div>
+          <p className="mt-2.5 text-[12.5px] leading-relaxed">
+            <span className="font-semibold">Why it worked. </span>
+            <span className="text-[hsl(var(--muted-foreground))]">
+              She names the wrong belief in the first four words, so you stay to find out whether you hold it.
+            </span>
+          </p>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed">
+            <span className="font-semibold text-[hsl(var(--gold))]">Steal this. </span>
+            <span className="text-[hsl(var(--muted-foreground))]">Open on the belief, not the topic.</span>
+          </p>
+        </Card>
+      </div>
+
+      <div className="mt-3.5 space-y-3.5 lg:mt-0">
+        <Card tone="lit">
+          <div className="flex items-center gap-1.5">
+            <Wand2 className="h-3.5 w-3.5 text-[hsl(var(--cream))]" />
+            <Eyebrow>Remix in my voice — new</Eyebrow>
+          </div>
+          <div className="mt-2.5 rounded-[var(--radius)] border border-[hsl(var(--border))] bg-black/40 px-3 py-2.5 text-[12px] text-[hsl(var(--muted-foreground))]">
+            Why your first SIP feels pointless
+          </div>
+          <div className="mt-3"><Btn onClick={() => tap("Write it in my voice")}>Write it in my voice</Btn></div>
+          <p className="mt-2.5 text-[11.5px] text-[hsl(var(--muted-foreground))]">
+            Uses your Voice Profile, built from five of your own reels.
+          </p>
+        </Card>
+        <Card>
+          <Eyebrow>Your library</Eyebrow>
+          <div className="mt-2.5 space-y-1.5">
+            {[["Learn", 12], ["Adapt", 7], ["Saved", 23]].map(([b, n]) => (
+              <div key={String(b)} className="flex items-center gap-2 rounded-[var(--radius)] bg-[hsl(var(--secondary))] px-3 py-2.5">
+                <span className="text-[12.5px] font-medium">{b}</span>
+                <span className="ml-auto text-[11px] text-[hsl(var(--muted-foreground))]">{n} reels</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -327,7 +273,7 @@ export function LockedScreen({ go, tap }: { go: (k: string) => void; tap: (s: st
 export function FeedScreen({ tap }: { tap: (s: string) => void }) {
   const [draft, setDraft] = useState("");
   return (
-    <div className="space-y-3.5">
+    <div className="space-y-3.5 xl:columns-2 xl:gap-5 xl:space-y-0 xl:[&>*]:mb-5 xl:[&>*]:break-inside-avoid">
       <div className="flex items-center gap-2">
         <h2 className="text-[17px] font-semibold tracking-[-0.02em]">Feed</h2>
         <span className="ml-auto"><Chip tone="cream">Week 4</Chip></span>
@@ -396,7 +342,7 @@ const SLOT_LOOK = {
 
 export function AlbumScreen({ tap }: { tap: (s: string) => void }) {
   return (
-    <div className="space-y-3.5">
+    <div className="space-y-3.5 lg:mx-auto lg:max-w-3xl">
       <div className="flex items-center gap-3.5">
         <div
           className="grid h-16 w-16 shrink-0 place-items-center rounded-full"
@@ -465,7 +411,7 @@ export function AlbumScreen({ tap }: { tap: (s: string) => void }) {
 
 export function MentorScreen({ tap }: { tap: (s: string) => void }) {
   return (
-    <div className="space-y-3.5">
+    <div className="space-y-3.5 lg:mx-auto lg:max-w-3xl">
       <div className="flex items-center gap-2">
         <Chip tone="violet">MENTOR</Chip>
         <h2 className="text-[16px] font-semibold tracking-[-0.02em]">Review queue</h2>

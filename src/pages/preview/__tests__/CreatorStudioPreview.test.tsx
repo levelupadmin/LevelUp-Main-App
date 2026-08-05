@@ -34,18 +34,28 @@ describe("CreatorStudioPreview", () => {
     expect(screen.getByText(/Creator Academy · Edition 2/i)).toBeTruthy();
   });
 
-  it("mounts every tab without throwing", () => {
+  it("mounts every section without throwing", () => {
     renderAs("avinash@leveluplearning.in");
-    for (const tab of ["Path", "Feed", "Album", "Mentor", "Admin", "Home"]) {
-      fireEvent.click(screen.getByRole("button", { name: tab }));
-      expect(screen.getByText(/Prototype — nothing here is live/i)).toBeTruthy();
+    for (const tab of ["The Path", "Second Brain", "Creator OS", "Feed", "Mentor desk", "Admin", "Home"]) {
+      // Both rails render, so the label appears twice — either will do.
+      fireEvent.click(screen.getAllByRole("button", { name: new RegExp(`^${tab}`) })[0]);
+      expect(screen.getAllByText(/Prototype/i).length).toBeGreaterThan(0);
     }
   });
 
   it("shows the real 13-block engine on the path, not placeholder weeks", () => {
     renderAs("avinash@leveluplearning.in");
-    fireEvent.click(screen.getByRole("button", { name: "Path" }));
-    expect(screen.getByText(/The Psychology of Storytelling/i)).toBeTruthy();
-    expect(screen.getByText(/The Creator OS \+ Your 12-Month Plan \+ Demo Day/i)).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    expect(screen.getAllByText(/Advanced Production/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/The Creator OS \+ Your 12-Month Plan/i)).toBeTruthy();
+    expect(screen.getByText(/Distribution Engine/i)).toBeTruthy();
+  });
+
+  it("renders BOTH layouts — a desktop rail and a mobile rail — not one stretched column", () => {
+    renderAs("avinash@leveluplearning.in");
+    // The regression this pins: v1 had a single max-w-lg column, so each section
+    // label existed exactly once. Two rails means two, and that is the fix.
+    expect(screen.getAllByRole("button", { name: /^The Path/ }).length).toBe(2);
+    expect(screen.getAllByLabelText("Creator Studio sections").length).toBe(2);
   });
 });
