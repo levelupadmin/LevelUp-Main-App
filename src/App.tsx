@@ -307,6 +307,15 @@ const AppContent = () => {
                   fields, and an unpublished record 404s. */}
               {decisionFlow && <Route path="/admission/:slug" element={<AdmissionPublic />} />}
 
+              {/* Creator Studio PROTOTYPE — public ON PREVIEW HOSTS ONLY.
+                  It imports no Supabase client and renders only hard-coded
+                  literals, so there is no data to protect; the Vercel
+                  deployment-protection token is the actual door. On the
+                  production domain the component itself still demands the
+                  allowlisted signed-in account (see previewGate.ts), so
+                  merging this to main cannot expose it to students. */}
+              <Route path="/creator-studio-preview" element={<CreatorStudioPreview />} />
+
               {/* Browse merged into Home, keep old deep links working. */}
               <Route path="/browse" element={<Navigate to="/" replace />} />
               {/* Friendly alias for the sessions tab. */}
@@ -322,7 +331,6 @@ const AppContent = () => {
                 <Route path="/my-courses" element={<Navigate to="/learn?seg=courses" replace />} />
                 <Route path="/studio" element={<Studio />} />
                 <Route path="/studio/second-brain" element={<StudioSecondBrain />} />
-                <Route path="/creator-studio-preview" element={<CreatorStudioPreview />} />
                 <Route path="/my-sessions" element={<Navigate to="/learn?seg=live" replace />} />
                 <Route path="/events" element={<Navigate to="/learn?seg=calendar" replace />} />
                 <Route path="/events/:eventId" element={<EventDetail />} />

@@ -31,7 +31,7 @@ import { useState, useCallback } from "react";
 import { Navigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { canSeePreview } from "./previewGate";
+import { canSeePreview, previewHostAllowsAnonymous } from "./previewGate";
 import PreviewShell from "./PreviewShell";
 import { SHELL_TABS } from "./previewTabs";
 import PathwayBoard from "./PathwayBoard";
@@ -60,7 +60,8 @@ export default function CreatorStudioPreview() {
     toast(`${what} — prototype`, { description: "Not wired up yet. This is here to judge the flow." });
   }, []);
 
-  if (!canSeePreview({ id: user?.id ?? profile?.id, email: user?.email ?? profile?.email }))
+  const anonymousOk = previewHostAllowsAnonymous(window.location.hostname);
+  if (!anonymousOk && !canSeePreview({ id: user?.id ?? profile?.id, email: user?.email ?? profile?.email }))
     return <Navigate to="/home" replace />;
 
   const go = (k: string) => setScreen(k);

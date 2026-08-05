@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canSeePreview } from "../previewGate";
+import { canSeePreview, previewHostAllowsAnonymous } from "../previewGate";
 
 const ID = "5c25205d-bc27-45d6-b6a0-19478ef68560";
 
@@ -26,5 +26,18 @@ describe("canSeePreview", () => {
     expect(canSeePreview(undefined)).toBe(false);
     expect(canSeePreview({})).toBe(false);
     expect(canSeePreview({ id: "", email: "" })).toBe(false);
+  });
+});
+
+describe("previewHostAllowsAnonymous", () => {
+  it("lets a Vercel preview host and localhost skip login — the bypass token is the door there", () => {
+    expect(previewHostAllowsAnonymous("levelup-main-abc123-level-up4.vercel.app")).toBe(true);
+    expect(previewHostAllowsAnonymous("localhost")).toBe(true);
+  });
+
+  it("refuses the production domain, so merging the branch cannot expose the prototype", () => {
+    expect(previewHostAllowsAnonymous("app.leveluplearning.in")).toBe(false);
+    expect(previewHostAllowsAnonymous("leveluplearning.in")).toBe(false);
+    expect(previewHostAllowsAnonymous("evil-vercel.app.attacker.com")).toBe(false);
   });
 });

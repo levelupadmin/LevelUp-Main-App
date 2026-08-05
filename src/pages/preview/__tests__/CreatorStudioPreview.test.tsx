@@ -23,9 +23,23 @@ const renderAs = (email: string | null) => {
 };
 
 describe("CreatorStudioPreview", () => {
-  it("renders nothing of the prototype for a non-allowlisted user", () => {
+  it("renders for anyone on a preview host — jsdom is localhost, and there the Vercel bypass token is the door", () => {
     renderAs("student@gmail.com");
-    expect(screen.queryByText(/Prototype — nothing here is live/i)).toBeNull();
+    expect(screen.getAllByText(/Prototype/i).length).toBeGreaterThan(0);
+  });
+
+  it("refuses a non-allowlisted user on the production domain", () => {
+    const original = window.location;
+    Object.defineProperty(window, "location", {
+      value: { ...original, hostname: "app.leveluplearning.in" },
+      writable: true,
+    });
+    try {
+      renderAs("student@gmail.com");
+      expect(screen.queryByText(/Prototype/i)).toBeNull();
+    } finally {
+      Object.defineProperty(window, "location", { value: original, writable: true });
+    }
   });
 
   it("renders for the allowlisted address, banner first", () => {

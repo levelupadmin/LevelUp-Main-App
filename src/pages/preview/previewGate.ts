@@ -33,3 +33,20 @@ export function canSeePreview(
   const email = identity.email?.trim().toLowerCase();
   return !!email && PREVIEW_EMAILS.includes(email);
 }
+
+/**
+ * Where the prototype may skip login entirely.
+ *
+ * Review friction was killing the loop: every push mints a new *.vercel.app
+ * origin, so the reviewer's session never carries over and each visit demanded
+ * a fresh phone OTP — for a page with no data behind it. On preview hosts the
+ * real door is Vercel deployment protection (the bypass token), so requiring a
+ * login on top protects nothing and costs a review cycle each time.
+ *
+ * The production domain gets the opposite rule: anonymous is refused and the
+ * signed-in allowlist applies, so merging the branch cannot expose the
+ * prototype to students.
+ */
+export function previewHostAllowsAnonymous(hostname: string): boolean {
+  return hostname.endsWith(".vercel.app") || hostname === "localhost" || hostname === "127.0.0.1";
+}
