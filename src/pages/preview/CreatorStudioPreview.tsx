@@ -56,8 +56,8 @@ export default function CreatorStudioPreview() {
     toast(`${what} — prototype`, { description: "Not wired up yet. This is here to judge the flow." });
   }, []);
 
-  const email = user?.email ?? profile?.email ?? null;
-  if (!canSeePreview(email)) return <Navigate to="/home" replace />;
+  if (!canSeePreview({ id: user?.id ?? profile?.id, email: user?.email ?? profile?.email }))
+    return <Navigate to="/home" replace />;
 
   const go = (k: string) => setScreen(k);
 

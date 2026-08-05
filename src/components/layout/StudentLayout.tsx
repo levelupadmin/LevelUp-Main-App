@@ -1,4 +1,4 @@
-import { Suspense, useState, useEffect, useMemo, useRef } from "react";
+import { Suspense, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import PageMotion from "@/components/motion/PageMotion";
@@ -11,13 +11,15 @@ import Footer from "@/components/Footer";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
   Home, BookOpen, MessageSquare, User,
-  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2, Sparkles, Brain
+  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2, Sparkles, Brain,
+  FlaskConical
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCohortRoomsSurfaceValue } from "@/contexts/CohortRoomsSurfaceContext";
 import RoomNavSlot from "@/components/layout/RoomNavSlot";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
 import { useStudioEnabled } from "@/hooks/useStudio";
+import { canSeePreview } from "@/pages/preview/previewGate";
 import { hapticSelection, tapTick } from "@/lib/haptics";
 
 // Browse merged into Home, the catalog now lives in the Home feed.
@@ -38,6 +40,13 @@ const MOBILE_NAV_ITEMS = [
 
 // Studio (Content Brain) — inserted into the nav only for active cohort members.
 const STUDIO_NAV_ITEM = { label: "Studio", icon: Brain, path: "/studio" };
+
+// Creator Studio PROTOTYPE. Appears for the allowlisted account only — see
+// src/pages/preview/previewGate.ts. Deliberately given a real nav slot rather
+// than left as a URL to paste: this app's login is phone OTP, and a deep link
+// does not survive the OTP round trip, so a pasted /creator-studio-preview
+// lands the reviewer on /home with no way back in. A tab always survives.
+const PREVIEW_NAV_ITEM = { label: "Preview", icon: FlaskConical, path: "/creator-studio-preview" };
 
 interface Props {
   /**
@@ -69,7 +78,7 @@ const ContentSuspenseFallback = () => (
 );
 
 const StudentLayout = ({ children }: Props) => {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const motionSafe = useMotionSafe();
@@ -149,20 +158,24 @@ const StudentLayout = ({ children }: Props) => {
 
   // Studio only appears for active cohort members; everyone else sees the
   // unchanged bar (additive — never orphans a route).
-  const navItems = useMemo(() => {
-    if (!studioEnabled) return NAV_ITEMS;
-    const arr = [...NAV_ITEMS];
-    const i = arr.findIndex((x) => x.path === "/learn");
-    arr.splice(i >= 0 ? i + 1 : arr.length, 0, STUDIO_NAV_ITEM);
-    return arr;
-  }, [studioEnabled]);
-  const mobileNavItems = useMemo(() => {
-    if (!studioEnabled) return MOBILE_NAV_ITEMS;
-    const arr = [...MOBILE_NAV_ITEMS];
-    const i = arr.findIndex((x) => x.path === "/learn");
-    arr.splice(i >= 0 ? i + 1 : arr.length, 0, STUDIO_NAV_ITEM);
-    return arr;
-  }, [studioEnabled]);
+  const showPreview = canSeePreview({ id: user?.id ?? profile?.id, email: user?.email ?? profile?.email });
+
+  const buildNav = useCallback(
+    (base: typeof NAV_ITEMS) => {
+      const arr = [...base];
+      if (studioEnabled) {
+        const i = arr.findIndex((x) => x.path === "/learn");
+        arr.splice(i >= 0 ? i + 1 : arr.length, 0, STUDIO_NAV_ITEM);
+      }
+      // Appended last on purpose: the prototype must never displace a real tab.
+      if (showPreview) arr.push(PREVIEW_NAV_ITEM);
+      return arr;
+    },
+    [studioEnabled, showPreview],
+  );
+
+  const navItems = useMemo(() => buildNav(NAV_ITEMS), [buildNav]);
+  const mobileNavItems = useMemo(() => buildNav(MOBILE_NAV_ITEMS), [buildNav]);
 
   const firstName = profile?.full_name?.split(" ")[0] ?? "Student";
 

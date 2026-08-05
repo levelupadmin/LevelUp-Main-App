@@ -14,7 +14,7 @@ vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn() }) }
 import CreatorStudioPreview from "../CreatorStudioPreview";
 
 const renderAs = (email: string | null) => {
-  mockAuth.mockReturnValue({ user: email ? { email } : null, profile: null });
+  mockAuth.mockReturnValue({ user: email ? { id: "auth-id", email } : null, profile: null });
   return render(
     <MemoryRouter initialEntries={["/creator-studio-preview"]}>
       <CreatorStudioPreview />
