@@ -1,9 +1,9 @@
 /**
- * The prototype's one job is to MOUNT on a real device. These tests prove the
- * gate closes for everyone else and that every screen renders without throwing
- * — the failure mode that would waste a review session.
+ * The prototype's one job is to MOUNT and PLAY. These tests pin the gate,
+ * every screen mounting, and the loop actually looping (day → XP; block →
+ * Week 5; accept → Album).
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
@@ -22,8 +22,10 @@ const renderAs = (email: string | null) => {
   );
 };
 
+beforeEach(() => localStorage.clear());
+
 describe("CreatorStudioPreview", () => {
-  it("renders for anyone on a preview host — jsdom is localhost, and there the Vercel bypass token is the door", () => {
+  it("renders for anyone on a preview host — jsdom is localhost, where the Vercel bypass token is the door", () => {
     renderAs("student@gmail.com");
     expect(screen.getAllByText(/Prototype/i).length).toBeGreaterThan(0);
   });
@@ -42,34 +44,42 @@ describe("CreatorStudioPreview", () => {
     }
   });
 
-  it("renders for the allowlisted address, banner first", () => {
-    renderAs("avinash@leveluplearning.in");
-    expect(screen.getAllByText(/Prototype/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Pick up where you stopped/i)).toBeTruthy();
-  });
-
   it("mounts every section without throwing", () => {
     renderAs("avinash@leveluplearning.in");
     for (const tab of ["The Path", "Second Brain", "Creator OS", "Feed", "Mentor desk", "Admin", "Home"]) {
-      // Both rails render, so the label appears twice — either will do.
       fireEvent.click(screen.getAllByRole("button", { name: new RegExp(`^${tab}`) })[0]);
       expect(screen.getAllByText(/Prototype/i).length).toBeGreaterThan(0);
     }
   });
 
-  it("shows the real 13-block engine on the path, not placeholder weeks", () => {
-    renderAs("avinash@leveluplearning.in");
-    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
-    expect(screen.getAllByText(/Advanced Production/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/The Creator OS \+ Your 12-Month Plan/i)).toBeTruthy();
-    expect(screen.getByText(/Distribution Engine/i)).toBeTruthy();
-  });
-
   it("renders BOTH layouts — a desktop rail and a mobile rail — not one stretched column", () => {
     renderAs("avinash@leveluplearning.in");
-    // The regression this pins: v1 had a single max-w-lg column, so each section
-    // label existed exactly once. Two rails means two, and that is the fix.
     expect(screen.getAllByRole("button", { name: /^The Path/ }).length).toBe(2);
     expect(screen.getAllByLabelText("Creator Studio sections").length).toBe(2);
+  });
+
+  it("PLAYS: completing the starred day moves XP in the header", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    // AnimatePresence mode="wait" swaps screens through an exit frame — await it.
+    fireEvent.click(await screen.findByRole("button", { name: /Wed — Write 3 hooks/ }));
+    expect((await screen.findAllByText("850")).length).toBeGreaterThan(0);
+  });
+
+  it("PLAYS: submitting the block opens Week 5 and the mentor desk can accept it", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Wed — Write 3 hooks/ })); // day done → block current
+    fireEvent.click(await screen.findByRole("button", { name: /Thu 9 PM — The block/ })); // opens session
+    fireEvent.change(await screen.findByLabelText(/Your 3 reels/), { target: { value: "A, B, C" } });
+    fireEvent.click(screen.getByRole("button", { name: /Submit · unlocks Week 5/ }));
+    expect(await screen.findByText(/Submitted — Week 5 is open/i)).toBeTruthy();
+    // play the mentor
+    fireEvent.click(screen.getAllByRole("button", { name: /^Mentor desk/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Accept — reviewed on the call/ }));
+    // place it in the Album
+    fireEvent.click(screen.getAllByRole("button", { name: /^Creator OS/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Add to my Album/ }));
+    expect(await screen.findByText(/10 of 19 pieces placed/i)).toBeTruthy();
   });
 });

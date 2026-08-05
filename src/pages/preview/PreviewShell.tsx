@@ -21,15 +21,26 @@
  */
 import type { ReactNode } from "react";
 import { ClipboardCheck, Flame, Zap } from "lucide-react";
+import { motion } from "framer-motion";
 import { SHELL_TABS } from "./previewTabs";
-import { STATS } from "./previewData";
+
 
 function StatChip({ icon: Icon, value, label, tint }: { icon: typeof Zap; value: string | number; label: string; tint: string }) {
   return (
     <div className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5">
       <Icon className="h-3.5 w-3.5" style={{ color: tint }} />
       <div className="leading-none">
-        <div className="text-[13px] font-extrabold">{value}</div>
+        {/* Keyed on the value: earning XP makes the number itself spring, so
+            progress is FELT in the chrome, not just re-printed. */}
+        <motion.div
+          key={String(value)}
+          initial={{ scale: 1.35, color: tint }}
+          animate={{ scale: 1, color: "hsl(var(--foreground))" }}
+          transition={{ type: "spring", stiffness: 300, damping: 16 }}
+          className="text-[13px] font-extrabold"
+        >
+          {value}
+        </motion.div>
         <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--muted-foreground))]">{label}</div>
       </div>
     </div>
@@ -37,18 +48,20 @@ function StatChip({ icon: Icon, value, label, tint }: { icon: typeof Zap; value:
 }
 
 export default function PreviewShell({
-  active, onChange, title, children,
+  active, onChange, title, children, xp, streak,
 }: {
   active: string;
   onChange: (k: string) => void;
   title: string;
   children: ReactNode;
+  xp: number;
+  streak: number;
 }) {
   const stats = (
     <>
-      <StatChip icon={Zap} value={STATS.xp} label="XP" tint="hsl(var(--gold))" />
-      <StatChip icon={Flame} value={STATS.streak} label="Streak" tint="hsl(var(--accent-amber))" />
-      <StatChip icon={ClipboardCheck} value={`${STATS.week}/12`} label="Blocks" tint="hsl(var(--success))" />
+      <StatChip icon={Zap} value={xp} label="XP" tint="hsl(var(--gold))" />
+      <StatChip icon={Flame} value={streak} label="Streak" tint="hsl(var(--accent-amber))" />
+      <StatChip icon={ClipboardCheck} value="4/12" label="Blocks" tint="hsl(var(--success))" />
     </>
   );
 
