@@ -47,6 +47,11 @@ const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const MyCoursesPage = lazy(() => import("@/pages/MyCoursesPage"));
 const Studio = lazy(() => import("@/pages/Studio"));
 const StudioSecondBrain = lazy(() => import("@/pages/StudioSecondBrain"));
+// Creator Studio clickable PROTOTYPE. Its own chunk, reachable only by an
+// allowlisted address (src/pages/preview/previewGate.ts), and it imports no
+// Supabase client — so for every other user this code is never fetched and has
+// no path to their data. See the file header before editing.
+const CreatorStudioPreview = lazy(() => import("@/pages/preview/CreatorStudioPreview"));
 const Learn = lazy(() => import("@/pages/Learn"));
 const MySessionsPage = lazy(() => import("@/pages/MySessionsPage"));
 const EventsPage = lazy(() => import("@/pages/EventsPage"));
@@ -317,6 +322,7 @@ const AppContent = () => {
                 <Route path="/my-courses" element={<Navigate to="/learn?seg=courses" replace />} />
                 <Route path="/studio" element={<Studio />} />
                 <Route path="/studio/second-brain" element={<StudioSecondBrain />} />
+                <Route path="/creator-studio-preview" element={<CreatorStudioPreview />} />
                 <Route path="/my-sessions" element={<Navigate to="/learn?seg=live" replace />} />
                 <Route path="/events" element={<Navigate to="/learn?seg=calendar" replace />} />
                 <Route path="/events/:eventId" element={<EventDetail />} />
