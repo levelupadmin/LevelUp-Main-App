@@ -8,8 +8,8 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Check, Lock, ClipboardList, Upload, Video, CalendarPlus, KeyRound, ChevronRight,
-  Heart, MessageCircle, Share2, FileText, Instagram, Youtube, Megaphone, HandHelping,
+  Check, Lock, ClipboardList, ChevronRight,
+  Heart, MessageCircle, Share2, FileText, Instagram, Youtube, HandHelping,
   Clapperboard, Users, ExternalLink, Flame, Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -606,38 +606,6 @@ function QueueHeader({ name, initials, week, type, when, status, closedNote }: {
       {status === "closed"
         ? <span className="shrink-0 rounded-full border border-[hsl(var(--success)/0.4)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--success))]">{closedNote ?? "Closed"}</span>
         : <span className="shrink-0 rounded-full border border-[hsl(var(--gold)/0.4)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--gold))]">Open</span>}
-    </div>
-  );
-}
-
-/* ── 9 · Admin ──────────────────────────────────────────────────────────── */
-
-export function AdminScreen({ s }: Pick<ScreenProps, "s">) {
-  const rows = [
-    { icon: CalendarPlus, title: "Create a live session", body: "Schedules it, creates the Zoom meeting, issues each student a personal join link." },
-    { icon: Video, title: "Upload a recording", body: "Protected storage; plays only for enrolled students through an expiring link." },
-    { icon: Megaphone, title: "Post an announcement", body: "Pinned to the top of the room's feed until you unpin it." },
-    { icon: Upload, title: "Create a course", body: "The existing admin flow, reachable from here." },
-    { icon: KeyRound, title: "Unlock a week for one student", body: `Override the gate with a reason and an audit trail.${s.week5Unlocked ? " (Week 5 currently open via the block.)" : ""}` },
-  ];
-  return (
-    <div className="space-y-8">
-      <PageHeader eyebrow="Admin" title="Creator Studio control" subtitle="What your team gets. Buttons are labelled with what they'll do; wiring comes after sign-off." />
-      <div className="grid gap-4 lg:grid-cols-2">
-        {rows.map((r) => (
-          <SurfaceCard key={r.title} variant="static" padding="lg">
-            <div className="flex items-start gap-3">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[hsl(var(--cream)/0.1)]">
-                <r.icon className="h-4 w-4 text-[hsl(var(--cream))]" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[13.5px] font-semibold">{r.title}</div>
-                <p className="mt-1 text-[12px] leading-relaxed text-[hsl(var(--muted-foreground))]">{r.body}</p>
-              </div>
-            </div>
-          </SurfaceCard>
-        ))}
-      </div>
     </div>
   );
 }

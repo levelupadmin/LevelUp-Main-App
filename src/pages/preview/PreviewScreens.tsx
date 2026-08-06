@@ -283,6 +283,8 @@ interface TrailNodeModel {
   xp: number;
   action?: () => void;
   hint: string;
+  /** Session blurb for the hover card — template default, admin override applied. */
+  blurb?: string;
 }
 
 /** Build every node on the trail — the class node is NEVER dead: past = rewatch, future = details. */
@@ -290,11 +292,12 @@ function buildTrail(s: PlayState, go: (k: string) => void, d: Dispatch): TrailNo
   const nodes: TrailNodeModel[] = [];
   for (const e of ENGINE) {
     const st = weekStatus(e.n, s);
+    const blurb = s.overrides[e.n]?.blurb ?? SESSION_INFO[e.n]?.blurb;
     if (e.n === CURRENT_WEEK) {
       for (const day of s.days) {
         const kind = day.isBlock ? "block" : day.id === "d1" ? "class" : day.id === "d5" ? "review" : "drill";
         nodes.push({
-          id: day.id, week: e.n, label: day.label, title: day.title, kind, xp: day.xp,
+          id: day.id, week: e.n, label: day.label, title: day.title, kind, xp: day.xp, blurb,
           state: day.state === "done" && kind === "class" ? "done" : day.state,
           action:
             kind === "class" ? () => go("session/4")
@@ -319,7 +322,7 @@ function buildTrail(s: PlayState, go: (k: string) => void, d: Dispatch): TrailNo
         : st === "open5" && day.kind === "drill" ? "current"
         : "locked";
       nodes.push({
-        id: day.id, week: e.n, label: day.label, title: day.title, kind: day.kind, xp: day.xp,
+        id: day.id, week: e.n, label: day.label, title: day.title, kind: day.kind, xp: day.xp, blurb,
         state,
         action: isClass ? () => go(`session/${e.n}`) : st === "done" ? () => go(`session/${e.n}`) : undefined,
         hint:
@@ -421,7 +424,7 @@ function TrailNode({ node, tone, index }: { node: TrailNodeModel; tone: { c: str
             <div className="mt-1.5 text-[13.5px] font-semibold leading-snug">{node.title}</div>
             {node.kind === "class" && (
               <p className="mt-1.5 line-clamp-2 text-[11.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
-                {SESSION_INFO[node.week]?.blurb}
+                {node.blurb}
               </p>
             )}
             <div className={`mt-2.5 flex items-center gap-1.5 text-[11px] font-semibold ${clickable ? "" : "text-[hsl(var(--muted-foreground))]"}`}
@@ -662,6 +665,9 @@ export function SessionDetailScreen({ s, go, week }: Pick<ScreenProps, "s" | "go
   const n = e.n;
   const t = toneForPhase(e.phase);
   const info = SESSION_INFO[n];
+  // Template default, admin override applied — the precedence rule, live.
+  const blurb = s.overrides[n]?.blurb ?? info?.blurb;
+  const blockText = s.overrides[n]?.block ?? e.block;
   const st = weekStatus(n, s);
   const isPastOrCurrent = n <= CURRENT_WEEK;
   const isNextLive = n === LIVE_SESSION.week;
@@ -672,7 +678,7 @@ export function SessionDetailScreen({ s, go, week }: Pick<ScreenProps, "s" | "go
       <PageHeader
         eyebrow={`Week ${n} · ${e.phase} · ${SESSION_DATES[n]} 3:00 PM`}
         title={e.title}
-        subtitle={info?.blurb}
+        subtitle={blurb}
         meta={
           <>
             <span className="inline-flex items-center gap-1.5"><Radio className="h-3.5 w-3.5" style={{ color: t.c }} /> Live class · hosted by Rahul</span>
@@ -699,7 +705,7 @@ export function SessionDetailScreen({ s, go, week }: Pick<ScreenProps, "s" | "go
           <SurfaceCard variant="static" padding="lg">
             <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">The week it opens</div>
             <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
-              The block: <span className="text-[hsl(var(--foreground))]">{e.block}</span>. Tue drill → Thu 9 PM block → Sat 6 PM Ship / Fix / Hold.
+              The block: <span className="text-[hsl(var(--foreground))]">{blockText}</span>. Tue drill → Thu 9 PM block → Sat 6 PM Ship / Fix / Hold.
               {!isPastOrCurrent && " Those unlock in order once the week's doors open — this page never locks."}
             </p>
           </SurfaceCard>

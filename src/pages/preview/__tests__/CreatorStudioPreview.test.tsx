@@ -140,6 +140,35 @@ describe("CreatorStudioPreview", () => {
     expect(await screen.findByRole("button", { name: /Rewatch the class|Watch the recording/ })).toBeTruthy();
   });
 
+  it("ADMIN DEMO: launch a Dec 5 cohort with a blackout and see it announced", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Launch a cohort/ }));
+    // Default start is Dec 5; add a blackout on Week 3's class day.
+    fireEvent.change(await screen.findByLabelText(/Blackout days/), { target: { value: "2026-12-26" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: /Generate the calendar/ }));
+    // The calendar shows the shift, then announces.
+    expect(await screen.findByText(/1 class shifted past blackouts/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Announce Creator Academy · Cohort 03/ }));
+    expect(await screen.findByText(/Announced/)).toBeTruthy();
+  }, 15000);
+
+  it("ADMIN DEMO: a Template Studio edit projects onto the student session page", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Template Studio/ }));
+    // Week 6 is selected by default — rewrite the session blurb and save.
+    fireEvent.change(await screen.findByLabelText(/Session blurb/), {
+      target: { value: "The 20-minute edit system, rebuilt live." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save to template/ }));
+    expect(await screen.findByText(/Saved — live on the student Path/)).toBeTruthy();
+    // View as student → the session page shows the admin's words.
+    fireEvent.click(screen.getByRole("button", { name: /View Week 6 as a student/ }));
+    expect(await screen.findByText("The 20-minute edit system, rebuilt live.")).toBeTruthy();
+  }, 15000);
+
   it("the People view shows the cohort", async () => {
     renderAs("avinash@leveluplearning.in");
     fireEvent.click(screen.getAllByRole("button", { name: /^Feed/ })[0]);

@@ -41,6 +41,20 @@ export interface PlayPost {
   mine?: boolean;
 }
 
+/** A cohort launched from the admin demo — the architecture's layer 2, played. */
+export interface PlayCohort {
+  name: string;
+  start: string; // YYYY-MM-DD
+  blackouts: string[];
+  shiftedCount: number;
+}
+
+/** Template card overrides — admin edits that project onto the student side. */
+export interface CardOverride {
+  blurb?: string;
+  block?: string;
+}
+
 export interface PlayState {
   xp: number;
   streak: number;
@@ -53,6 +67,9 @@ export interface PlayState {
   week5Unlocked: boolean;
   albumFilled: string[]; // slot codes
   posts: PlayPost[];
+  /** Admin demo state. */
+  cohort?: PlayCohort;
+  overrides: Record<number, CardOverride>;
 }
 
 const SEEDED: PlayPost[] = SEED_POSTS.map((p) => ({
@@ -85,6 +102,8 @@ export const INITIAL: PlayState = {
   week5Unlocked: false,
   albumFilled: [],
   posts: SEEDED,
+  cohort: undefined,
+  overrides: {},
 };
 
 export type PlayAction =
@@ -96,6 +115,8 @@ export type PlayAction =
   | { type: "post_feed"; postType: PostType; body: string; url?: string }
   | { type: "toggle_like"; id: string }
   | { type: "add_comment"; id: string; body: string }
+  | { type: "launch_cohort"; cohort: PlayCohort }
+  | { type: "admin_edit_card"; week: number; blurb?: string; block?: string }
   | { type: "reset" };
 
 function completeDay(s: PlayState, id: string): PlayState {
@@ -163,6 +184,15 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
           p.id === a.id ? { ...p, comments: [...p.comments, { author: "You", body: a.body.trim() }] } : p,
         ),
       };
+    case "launch_cohort":
+      return { ...s, cohort: a.cohort };
+    case "admin_edit_card": {
+      const prev = s.overrides[a.week] ?? {};
+      const next: CardOverride = { ...prev };
+      if (a.blurb !== undefined) next.blurb = a.blurb;
+      if (a.block !== undefined) next.block = a.block;
+      return { ...s, overrides: { ...s.overrides, [a.week]: next } };
+    }
     case "reset":
       return INITIAL;
     default:
@@ -170,7 +200,7 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
   }
 }
 
-const KEY = "creator-studio-preview-v2";
+const KEY = "creator-studio-preview-v3";
 
 export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
   const [state, dispatch] = useReducer(reduce, INITIAL, (init) => {
@@ -179,7 +209,7 @@ export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
       if (!raw) return init;
       const saved = JSON.parse(raw) as PlayState;
       // A shape mismatch after a prototype update must reset, not crash.
-      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) ? saved : init;
+      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" ? saved : init;
     } catch {
       return init;
     }

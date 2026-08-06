@@ -19,7 +19,8 @@ import PreviewShell from "./PreviewShell";
 import { SHELL_TABS } from "./previewTabs";
 import { usePlayState } from "./previewStore";
 import { HomeScreen, PathScreen, RecordingScreen, AssignmentScreen, SessionDetailScreen } from "./PreviewScreens";
-import { AlbumScreen, DocScreen, FeedScreen, MentorScreen, AdminScreen } from "./PreviewStudioScreens";
+import { AlbumScreen, DocScreen, FeedScreen, MentorScreen } from "./PreviewStudioScreens";
+import { AdminScreen, CohortLauncherScreen, TemplateStudioScreen } from "./PreviewAdminScreens";
 
 const TITLES: Record<string, string> = {
   home: "Home", path: "The Path", recording: "The Path", assignment: "The Path",
@@ -56,7 +57,10 @@ export default function CreatorStudioPreview() {
       case "doc": return <DocScreen go={go} docId={param ?? "scr1"} />;
       case "feed": return <FeedScreen s={s} d={d} go={go} />;
       case "mentor": return <MentorScreen s={s} d={d} go={go} />;
-      case "admin": return <AdminScreen s={s} />;
+      case "admin":
+        if (param === "launch") return <CohortLauncherScreen s={s} d={d} go={go} />;
+        if (param === "template") return <TemplateStudioScreen s={s} d={d} go={go} />;
+        return <AdminScreen s={s} go={go} />;
       default: return <HomeScreen s={s} d={d} go={go} />;
     }
   })();
