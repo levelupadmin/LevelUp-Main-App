@@ -1,18 +1,20 @@
 /**
  * The playable state for the Creator Studio prototype.
  *
- * "Make it functional for me to go and fuck around" — so the whole learning
- * loop is now real, just local: complete a day → XP and streak move → the next
- * day unlocks → submit the block → Week 5 (and its recording) unlock → the
- * mentor desk can approve it → the approved work can be placed in the Album →
- * a feed post actually posts. Progress persists in localStorage so it survives
- * a refresh, and a reset button puts everything back.
+ * The whole learning loop is real, just local: watch the recording → it
+ * completes the day and hands you to the unfinished assignment → submit the
+ * block → Week 5 (and its recording) unlock → the mentor desk can approve it →
+ * the approved work can be placed in the Album → the feed takes posts, likes
+ * and comments. Progress persists in localStorage so it survives a refresh,
+ * and a reset button puts everything back.
  *
  * 🔴 STILL ZERO DATABASE. This file is the entire backend: a reducer and
  * localStorage. When this graduates, the reducer's action names become the RPC
- * names (`complete_day`, `submit_block`, …) — that mapping is the point.
+ * names (`complete_day`, `watch_recording`, `submit_block`, …) — that mapping
+ * is the point.
  */
 import { useEffect, useReducer } from "react";
+import { SEED_POSTS, type PostType } from "./previewData";
 
 export interface PlayDay {
   id: string;
@@ -24,18 +26,48 @@ export interface PlayDay {
   note?: string;
 }
 
+export interface PlayPost {
+  id: string;
+  author: string;
+  initials: string;
+  type: PostType;
+  body: string;
+  url?: string;
+  urlTitle?: string;
+  when: string;
+  likes: number;
+  likedByMe: boolean;
+  comments: Array<{ author: string; body: string }>;
+  mine?: boolean;
+}
+
 export interface PlayState {
   xp: number;
   streak: number;
   days: PlayDay[];
+  /** Recording ids (`rec-w4`) the student marked watched. */
+  watched: string[];
   /** Week 4's block submission. */
   blockText: string;
   blockStatus: "none" | "submitted" | "accepted";
   week5Unlocked: boolean;
   albumFilled: string[]; // slot codes
-  feedPosts: Array<{ id: string; author: string; body: string; url?: string; ts: number }>;
-  brain: { url: string; status: "idle" | "working" | "done" } ;
+  posts: PlayPost[];
 }
+
+const SEEDED: PlayPost[] = SEED_POSTS.map((p) => ({
+  id: p.id,
+  author: p.author,
+  initials: p.initials,
+  type: p.type,
+  body: p.body,
+  url: p.url,
+  urlTitle: p.urlTitle,
+  when: p.when,
+  likes: p.likes,
+  likedByMe: false,
+  comments: p.comments,
+}));
 
 export const INITIAL: PlayState = {
   xp: 840,
@@ -43,37 +75,49 @@ export const INITIAL: PlayState = {
   days: [
     { id: "d1", label: "Sun 3 PM", title: "Live class — lighting depth + the B-roll Bank", xp: 20, state: "done" },
     { id: "d2", label: "Mon", title: "Build your reusable B-roll bank", xp: 10, state: "done" },
-    { id: "d3", label: "Wed", title: "Write 3 hooks for one idea", xp: 10, state: "current", note: "Unlocks Second Brain" },
+    { id: "d3", label: "Wed", title: "Watch the class recording", xp: 10, state: "current", note: "Hands you straight to the block" },
     { id: "d4", label: "Thu 9 PM", title: "The block — 3 reels from one sitting", xp: 25, state: "locked", isBlock: true },
     { id: "d5", label: "Sat 6 PM", title: "Ship / Fix / Hold", xp: 15, state: "locked" },
   ],
+  watched: [],
   blockText: "",
   blockStatus: "none",
   week5Unlocked: false,
   albumFilled: [],
-  feedPosts: [],
-  brain: { url: "", status: "idle" },
+  posts: SEEDED,
 };
 
 export type PlayAction =
   | { type: "complete_day"; id: string }
+  | { type: "watch_recording"; week: number }
   | { type: "submit_block"; text: string }
   | { type: "mentor_accept" }
   | { type: "add_to_album"; slot: string }
-  | { type: "post_feed"; body: string; url?: string }
-  | { type: "brain_capture"; url: string }
-  | { type: "brain_done" }
+  | { type: "post_feed"; postType: PostType; body: string; url?: string }
+  | { type: "toggle_like"; id: string }
+  | { type: "add_comment"; id: string; body: string }
   | { type: "reset" };
+
+function completeDay(s: PlayState, id: string): PlayState {
+  const i = s.days.findIndex((d) => d.id === id);
+  if (i < 0 || s.days[i].state !== "current") return s;
+  const days = s.days.map((d, j) =>
+    j === i ? { ...d, state: "done" as const } : j === i + 1 && d.state === "locked" ? { ...d, state: "current" as const } : d,
+  );
+  return { ...s, days, xp: s.xp + s.days[i].xp, streak: s.streak + 1 };
+}
 
 export function reduce(s: PlayState, a: PlayAction): PlayState {
   switch (a.type) {
-    case "complete_day": {
-      const i = s.days.findIndex((d) => d.id === a.id);
-      if (i < 0 || s.days[i].state !== "current") return s;
-      const days = s.days.map((d, j) =>
-        j === i ? { ...d, state: "done" as const } : j === i + 1 && d.state === "locked" ? { ...d, state: "current" as const } : d,
-      );
-      return { ...s, days, xp: s.xp + s.days[i].xp, streak: s.streak + 1 };
+    case "complete_day":
+      return completeDay(s, a.id);
+    case "watch_recording": {
+      const id = `rec-w${a.week}`;
+      if (s.watched.includes(id)) return s;
+      // Watching the CURRENT week's recording is the Wed day — completing it
+      // is what hands the student to the block. Past weeks are pure revisit.
+      const afterDay = a.week === 4 ? completeDay(s, "d3") : s;
+      return { ...afterDay, watched: [...s.watched, id] };
     }
     case "submit_block": {
       if (!a.text.trim()) return s;
@@ -87,16 +131,38 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
       return s.blockStatus === "accepted" && !s.albumFilled.includes(a.slot)
         ? { ...s, albumFilled: [...s.albumFilled, a.slot] }
         : s;
-    case "post_feed":
+    case "post_feed": {
       if (!a.body.trim() && !a.url) return s;
+      const post: PlayPost = {
+        id: `p${Date.now()}`,
+        author: "You",
+        initials: "YO",
+        type: a.postType,
+        body: a.body.trim(),
+        url: a.url,
+        when: "just now",
+        likes: 0,
+        likedByMe: false,
+        comments: [],
+        mine: true,
+      };
+      return { ...s, posts: [post, ...s.posts] };
+    }
+    case "toggle_like":
       return {
         ...s,
-        feedPosts: [{ id: `p${Date.now()}`, author: "You", body: a.body.trim(), url: a.url, ts: Date.now() }, ...s.feedPosts],
+        posts: s.posts.map((p) =>
+          p.id === a.id ? { ...p, likedByMe: !p.likedByMe, likes: p.likes + (p.likedByMe ? -1 : 1) } : p,
+        ),
       };
-    case "brain_capture":
-      return { ...s, brain: { url: a.url, status: "working" } };
-    case "brain_done":
-      return { ...s, brain: { ...s.brain, status: "done" } };
+    case "add_comment":
+      if (!a.body.trim()) return s;
+      return {
+        ...s,
+        posts: s.posts.map((p) =>
+          p.id === a.id ? { ...p, comments: [...p.comments, { author: "You", body: a.body.trim() }] } : p,
+        ),
+      };
     case "reset":
       return INITIAL;
     default:
@@ -104,7 +170,7 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
   }
 }
 
-const KEY = "creator-studio-preview-v1";
+const KEY = "creator-studio-preview-v2";
 
 export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
   const [state, dispatch] = useReducer(reduce, INITIAL, (init) => {
@@ -113,7 +179,7 @@ export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
       if (!raw) return init;
       const saved = JSON.parse(raw) as PlayState;
       // A shape mismatch after a prototype update must reset, not crash.
-      return Array.isArray(saved.days) && typeof saved.xp === "number" ? saved : init;
+      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) ? saved : init;
     } catch {
       return init;
     }

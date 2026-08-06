@@ -2,14 +2,13 @@
  * CREATOR STUDIO — PLAYABLE PROTOTYPE (see PreviewShell for the layout story).
  *
  * Still zero database: `previewStore` (a reducer + localStorage) is the entire
- * backend. But the loop is now real — complete the day, submit the block, watch
- * Week 5 unlock, accept it at the mentor desk, place it in the Album.
+ * backend. The loop is real — resume the recording, get handed to the block,
+ * submit it, watch Week 5 unlock, accept it at the mentor desk, place it in
+ * the Album, then like/comment your way through the feed.
  *
- * Motion doctrine, per the app's own DESIGN-STRATEGY.md ("physics, not
- * transitions"): screens hand over via AnimatePresence with a spring — nothing
- * snaps; the header stats pop when their value changes, so earning XP is felt
- * in the chrome, not just printed; and `prefers-reduced-motion` is respected
- * because the springs ride the app's motion-safe hook.
+ * Navigation: `screen` is a string, optionally with a param — "recording/4",
+ * "assignment/4", "doc/scr1". The shell's rail highlights the section the
+ * sub-screen belongs to.
  */
 import { useState, useCallback } from "react";
 import { Navigate } from "react-router-dom";
@@ -19,13 +18,18 @@ import { canSeePreview, previewHostAllowsAnonymous } from "./previewGate";
 import PreviewShell from "./PreviewShell";
 import { SHELL_TABS } from "./previewTabs";
 import { usePlayState } from "./previewStore";
-import {
-  HomeScreen, PathScreen, SessionScreen, FeedScreen, AlbumScreen, MentorScreen, AdminScreen, BrainScreen,
-} from "./PreviewScreens";
+import { HomeScreen, PathScreen, RecordingScreen, AssignmentScreen, LiveScreen } from "./PreviewScreens";
+import { AlbumScreen, DocScreen, FeedScreen, MentorScreen, AdminScreen } from "./PreviewStudioScreens";
 
 const TITLES: Record<string, string> = {
-  home: "Home", path: "The Path", session: "The Path", brain: "Second Brain",
-  album: "Creator OS", feed: "Feed", mentor: "Mentor desk", admin: "Admin",
+  home: "Home", path: "The Path", recording: "The Path", assignment: "The Path",
+  live: "Live session", album: "Creator OS", doc: "Creator OS",
+  feed: "Feed", mentor: "Mentor desk", admin: "Admin",
+};
+
+/** Which rail tab a sub-screen belongs under. */
+const TAB_FOR: Record<string, string> = {
+  recording: "path", assignment: "path", live: "home", doc: "album",
 };
 
 export default function CreatorStudioPreview() {
@@ -40,21 +44,34 @@ export default function CreatorStudioPreview() {
   if (!anonymousOk && !canSeePreview({ id: user?.id ?? profile?.id, email: user?.email ?? profile?.email }))
     return <Navigate to="/home" replace />;
 
-  const screens: Record<string, React.ReactNode> = {
-    home: <HomeScreen s={s} d={d} go={go} />,
-    path: <PathScreen s={s} d={d} go={go} />,
-    session: <SessionScreen s={s} d={d} go={go} />,
-    brain: <BrainScreen s={s} d={d} go={go} />,
-    album: <AlbumScreen s={s} d={d} go={go} />,
-    feed: <FeedScreen s={s} d={d} go={go} />,
-    mentor: <MentorScreen s={s} d={d} go={go} />,
-    admin: <AdminScreen s={s} />,
-  };
+  const [kind, param] = screen.split("/");
 
-  const activeTab = SHELL_TABS.some((t) => t.key === screen) ? screen : "path";
+  const content = (() => {
+    switch (kind) {
+      case "path": return <PathScreen s={s} d={d} go={go} />;
+      case "recording": return <RecordingScreen s={s} d={d} go={go} week={Number(param) || 4} />;
+      case "assignment": return <AssignmentScreen s={s} d={d} go={go} />;
+      case "live": return <LiveScreen s={s} go={go} />;
+      case "album": return <AlbumScreen s={s} d={d} go={go} />;
+      case "doc": return <DocScreen go={go} docId={param ?? "scr1"} />;
+      case "feed": return <FeedScreen s={s} d={d} go={go} />;
+      case "mentor": return <MentorScreen s={s} d={d} go={go} />;
+      case "admin": return <AdminScreen s={s} />;
+      default: return <HomeScreen s={s} d={d} go={go} />;
+    }
+  })();
+
+  const activeTab = SHELL_TABS.some((t) => t.key === kind) ? kind : TAB_FOR[kind] ?? "home";
 
   return (
-    <PreviewShell active={activeTab} onChange={setScreen} title={TITLES[screen] ?? "Creator Studio"} xp={s.xp} streak={s.streak}>
+    <PreviewShell
+      active={activeTab}
+      onChange={setScreen}
+      title={TITLES[kind] ?? "Creator Studio"}
+      xp={s.xp}
+      streak={s.streak}
+      onReset={() => d({ type: "reset" })}
+    >
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={screen}
@@ -63,7 +80,7 @@ export default function CreatorStudioPreview() {
           exit={reduced ? undefined : { opacity: 0, y: -8 }}
           transition={{ type: "spring", stiffness: 260, damping: 28 }}
         >
-          {screens[screen] ?? screens.home}
+          {content}
         </motion.div>
       </AnimatePresence>
     </PreviewShell>

@@ -20,7 +20,7 @@
  * teal/amber to this app's champagne and gold.
  */
 import type { ReactNode } from "react";
-import { ClipboardCheck, Flame, Zap } from "lucide-react";
+import { ClipboardCheck, Flame, RotateCcw, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 import { SHELL_TABS } from "./previewTabs";
 
@@ -48,7 +48,7 @@ function StatChip({ icon: Icon, value, label, tint }: { icon: typeof Zap; value:
 }
 
 export default function PreviewShell({
-  active, onChange, title, children, xp, streak,
+  active, onChange, title, children, xp, streak, onReset,
 }: {
   active: string;
   onChange: (k: string) => void;
@@ -56,12 +56,24 @@ export default function PreviewShell({
   children: ReactNode;
   xp: number;
   streak: number;
+  onReset?: () => void;
 }) {
   const stats = (
     <>
       <StatChip icon={Zap} value={xp} label="XP" tint="hsl(var(--gold))" />
       <StatChip icon={Flame} value={streak} label="Streak" tint="hsl(var(--accent-amber))" />
-      <StatChip icon={ClipboardCheck} value="4/12" label="Blocks" tint="hsl(var(--success))" />
+      <StatChip icon={ClipboardCheck} value="4/13" label="Blocks" tint="hsl(var(--success))" />
+      {onReset && (
+        <button
+          type="button"
+          onClick={onReset}
+          title="Reset the demo"
+          aria-label="Reset the demo"
+          className="grid h-9 w-9 place-items-center rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] transition-colors hover:text-[hsl(var(--foreground))]"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      )}
     </>
   );
 

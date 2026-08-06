@@ -1,38 +1,53 @@
 /**
- * Creator Studio prototype screens — built from the app's OWN design system.
+ * Creator Studio prototype — core screens: Home, Path, Recording, Assignment,
+ * Live session. Social surfaces (Album/Feed/Mentor/Admin) live in
+ * `PreviewStudioScreens.tsx`.
  *
- * 🔴 THE RULE THIS FILE NOW LIVES BY. Earlier versions hand-rolled a parallel
- * component set (custom cards, chips, buttons) next to the app, and the result
- * read as foreign — "I hate the design" was the review, and it was earned.
- * Every surface here is now the app's canonical primitive: `SurfaceCard`
- * (spring press + haptic), `PageHeader`, `Section`, `StatCard`, and the
- * champagne `Button`. If a screen needs something these can't express, extend
- * the pattern library — do NOT hand-roll a lookalike here.
+ * 🔴 THE RULE THIS FILE LIVES BY. Every surface is the app's canonical
+ * primitive: `SurfaceCard`, `PageHeader`, `Section`, `StatCard`, and the
+ * champagne `Button`. Hand-rolled lookalikes were the "I hate the design"
+ * failure — twice. Extend the pattern library if something's missing.
  *
- * Screens are PLAYABLE via `previewStore` (still zero database): complete the
- * day, submit the block, watch Week 5 unlock, approve it at the mentor desk,
- * place it in the Album, post to the feed.
+ * v2, after the founder's walkthrough. The organizing principle of this
+ * version: **the first thing a student sees is what to DO next** — not their
+ * XP. Stats live in the shell header only. Home is: continue → this week →
+ * upcoming. The Path is all 13 weeks, browsable, with a jump rail.
  */
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import {
-  Flame, Lock, Check, Play, FileText, ClipboardList, Upload, Video,
-  CalendarPlus, KeyRound, ChevronRight, Link2, Wand2, Target, RotateCcw, Instagram, Youtube, HardDrive,
+  Flame, Lock, Check, Play, FileText, ClipboardList, ChevronRight, ChevronLeft,
+  Video, CalendarDays, ArrowRight, Instagram, Youtube, HardDrive, Link2, Radio,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PageHeader, Section, SurfaceCard, StatCard, EmptyState } from "@/components/patterns";
-import { ENGINE, STATS as SEED } from "./previewData";
-import { toneForPhase } from "./previewTheme";
+import { PageHeader, Section, SurfaceCard } from "@/components/patterns";
+import {
+  ENGINE, PHASES, CURRENT_WEEK, OPENS_ON, daysForWeek, RECORDINGS, LIVE_SESSION,
+} from "./previewData";
+import { toneForPhase, snakeOffset } from "./previewTheme";
 import { linkKind, type PlayState, type PlayAction } from "./previewStore";
 
 type Dispatch = React.Dispatch<PlayAction>;
-interface ScreenProps { s: PlayState; d: Dispatch; go: (k: string) => void }
+export interface ScreenProps { s: PlayState; d: Dispatch; go: (k: string) => void }
 
-const Serif = ({ children }: { children: React.ReactNode }) => (
+export const Serif = ({ children }: { children: React.ReactNode }) => (
   <span className="font-serif italic text-[hsl(var(--cream))]">{children}</span>
 );
 
-/* ── link preview card (feed + mentor) ──────────────────────────────────── */
+/** In-prototype back button (PageHeader's `back` is a router Link — wrong tool here). */
+export function BackRow({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="-ml-1 inline-flex min-h-[36px] items-center gap-1 rounded-md px-1 text-[13px] text-[hsl(var(--muted-foreground))] transition-colors hover:text-[hsl(var(--foreground))]"
+    >
+      <ChevronLeft className="h-4 w-4" /> {label}
+    </button>
+  );
+}
+
+/* ── link preview card (feed + album + mentor) ──────────────────────────── */
 
 const LINK_LOOKS = {
   youtube: { Icon: Youtube, tint: "hsl(var(--accent-crimson))", art: "from-[#2a1414] to-[#0d0b0b]" },
@@ -41,22 +56,24 @@ const LINK_LOOKS = {
   generic: { Icon: Link2, tint: "hsl(var(--muted-foreground))", art: "from-[#17171c] to-[#0b0b0d]" },
 } as const;
 
-export function LinkCard({ url, title }: { url: string; title?: string }) {
+export function LinkCard({ url, title, compact }: { url: string; title?: string; compact?: boolean }) {
   const kind = linkKind(url);
   const { Icon, tint, art } = LINK_LOOKS[kind];
   const isVideo = kind === "youtube" || kind === "instagram";
   return (
     <div className="overflow-hidden rounded-xl border border-[hsl(var(--border))]">
-      <div className={`relative grid h-32 place-items-center bg-gradient-to-br ${art}`}>
-        {isVideo ? (
-          <div className="grid h-10 w-10 place-items-center rounded-full bg-black/55 backdrop-blur-sm">
-            <Play className="h-3.5 w-3.5 fill-white text-white" />
-          </div>
-        ) : (
-          <Icon className="h-6 w-6" style={{ color: tint }} />
-        )}
-      </div>
-      <div className="flex items-center gap-2 bg-[hsl(var(--surface-2,0_0%_8%))] bg-[hsl(var(--secondary))] px-3 py-2">
+      {!compact && (
+        <div className={`relative grid h-32 place-items-center bg-gradient-to-br ${art}`}>
+          {isVideo ? (
+            <div className="grid h-10 w-10 place-items-center rounded-full bg-black/55 backdrop-blur-sm">
+              <Play className="h-3.5 w-3.5 fill-white text-white" />
+            </div>
+          ) : (
+            <Icon className="h-6 w-6" style={{ color: tint }} />
+          )}
+        </div>
+      )}
+      <div className="flex items-center gap-2 bg-[hsl(var(--secondary))] px-3 py-2">
         <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: tint }} />
         <div className="min-w-0">
           <div className="truncate text-[12.5px] font-medium">{title ?? url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 48)}</div>
@@ -67,90 +84,167 @@ export function LinkCard({ url, title }: { url: string; title?: string }) {
   );
 }
 
+/* ── shared: where is the student, what's next ──────────────────────────── */
+
+interface NextAction {
+  eyebrow: string;
+  title: string;
+  sub: string;
+  cta: string;
+  goTo: string;
+}
+
+export function nextActionFor(s: PlayState): NextAction {
+  const current = s.days.find((x) => x.state === "current");
+  if (current?.id === "d3")
+    return {
+      eyebrow: "Continue where you left off",
+      title: "Watch the Week 4 recording",
+      sub: "Advanced Production · 62 min · finishing it hands you straight to this week's block.",
+      cta: "Resume watching",
+      goTo: "recording/4",
+    };
+  if (current?.isBlock || (s.blockStatus === "none" && s.days.find((x) => x.isBlock)?.state !== "locked"))
+    return {
+      eyebrow: "One thing left this week",
+      title: "Submit the block — 3 reels from one sitting",
+      sub: "Due Thu 9 PM. Submitting it is exactly what opens Week 5 and its recording.",
+      cta: "Open the assignment",
+      goTo: "assignment/4",
+    };
+  if (s.blockStatus !== "none")
+    return {
+      eyebrow: "Week 4 wrapped",
+      title: "Week 5 is open — On-Camera Confidence",
+      sub: "Your block is in. Sunday's live class briefs the take-1 vs take-10 drill.",
+      cta: "See the live session",
+      goTo: "live",
+    };
+  return {
+    eyebrow: "Continue where you left off",
+    title: "Pick up the Path",
+    sub: "Week 4 · Advanced Production.",
+    cta: "Open the Path",
+    goTo: "path",
+  };
+}
+
 /* ── 1 · Home ───────────────────────────────────────────────────────────── */
 
 export function HomeScreen({ s, d, go }: ScreenProps) {
   const tone = toneForPhase("Produce");
-  const currentDay = s.days.find((x) => x.state === "current");
+  const next = nextActionFor(s);
   const doneCount = s.days.filter((x) => x.state === "done").length;
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Creator Academy · Edition 2"
+        eyebrow={`Week 4 of 13 · Advanced Production · ${doneCount}/${s.days.length} days done`}
         title={<>Creator <Serif>Studio</Serif></>}
-        subtitle="One project. Your Distribution Engine — built block by block."
-        actions={
-          <Button variant="outline" size="sm" onClick={() => d({ type: "reset" })}>
-            <RotateCcw /> Reset demo
-          </Button>
-        }
+        subtitle="One project — your Distribution Engine, built block by block."
       />
 
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard label="XP" value={s.xp} accent="amber" icon={<Flame className="h-4 w-4" />} />
-        <StatCard label="Streak" value={`${s.streak} days`} accent="emerald" icon={<Flame className="h-4 w-4" />} />
-        <StatCard label="This week" value={`${doneCount}/${s.days.length}`} sublabel="days done" accent="cream" icon={<Check className="h-4 w-4" />} />
-      </div>
+      {/* THE first thing: what to do next. Big, one CTA, nothing competing. */}
+      <SurfaceCard variant="static" padding="lg" className="relative overflow-hidden">
+        <div
+          className="pointer-events-none absolute -right-14 -top-20 h-64 w-64 rounded-full opacity-25 blur-3xl"
+          style={{ background: tone.c }}
+        />
+        <div className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: tone.c }}>
+          {next.eyebrow}
+        </div>
+        <div className="mt-1.5 text-[19px] font-bold tracking-[-0.01em]">{next.title}</div>
+        <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-[hsl(var(--muted-foreground))]">{next.sub}</p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button variant="champagne" onClick={() => go(next.goTo)}>
+            {next.cta} <ArrowRight />
+          </Button>
+          <button
+            type="button"
+            onClick={() => go("path")}
+            className="text-[12.5px] font-semibold text-[hsl(var(--muted-foreground))] underline underline-offset-4 hover:text-[hsl(var(--foreground))]"
+          >
+            See the whole week
+          </button>
+        </div>
+      </SurfaceCard>
 
-      <Section title="This week" description="Week 4 · Advanced Production — the block: B-roll bank + 3 reels from one sitting">
-        <SurfaceCard variant="static" padding="lg" className="relative overflow-hidden">
-          <div
-            className="pointer-events-none absolute -right-14 -top-20 h-56 w-56 rounded-full opacity-20 blur-3xl"
-            style={{ background: tone.c }}
-          />
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="min-w-0">
-              <div className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: tone.c }}>
-                {currentDay ? "Up next" : s.blockStatus === "none" ? "The block is open" : "Week 4 wrapped"}
-              </div>
-              <div className="mt-1 text-[16px] font-semibold tracking-[-0.01em]">
-                {currentDay ? `${currentDay.label} — ${currentDay.title}` : s.blockStatus === "none" ? "Submit the block: 3 reels from one sitting" : "Week 5 is open. On-Camera Confidence."}
-              </div>
-              <p className="mt-1 text-[12.5px] text-[hsl(var(--muted-foreground))]">
-                {currentDay ? "Finishing it unlocks Second Brain." : s.blockStatus === "none" ? "Due Thu 9 PM. Submitting it opens Week 5 and its recording." : "Go meet the take-1 vs take-10 drill."}
-              </p>
-            </div>
-            <Button variant="champagne" onClick={() => go("path")}>Continue</Button>
+      {/* This week, at a glance — small, scannable, no scroll needed. */}
+      <Section title="This week" description="Week 4 · the block: B-roll bank + 3 reels from one sitting · due Thu 9 PM">
+        <SurfaceCard variant="static" padding="lg">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+            {s.days.map((day) => (
+              <button
+                key={day.id}
+                type="button"
+                disabled={day.state === "locked"}
+                onClick={() =>
+                  day.id === "d3" && day.state === "current" ? go("recording/4")
+                  : day.isBlock && day.state === "current" ? go("assignment/4")
+                  : day.state === "current" ? d({ type: "complete_day", id: day.id })
+                  : undefined
+                }
+                className="group flex items-center gap-2 disabled:cursor-not-allowed"
+              >
+                <span
+                  className="grid h-7 w-7 place-items-center rounded-full text-[11px] font-extrabold"
+                  style={{
+                    background: day.state === "done" ? "hsl(var(--success))" : day.state === "current" ? tone.c : "hsl(var(--secondary))",
+                    color: day.state === "locked" ? "hsl(var(--muted-foreground))" : "hsl(var(--cream-text))",
+                  }}
+                >
+                  {day.state === "done" ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : day.state === "locked" ? <Lock className="h-3 w-3" /> : "→"}
+                </span>
+                <span className="text-left leading-tight">
+                  <span className={`block text-[10px] font-bold uppercase tracking-wide ${day.state === "current" ? "" : "text-[hsl(var(--muted-foreground))]"}`} style={day.state === "current" ? { color: tone.c } : undefined}>
+                    {day.label}
+                  </span>
+                  <span className="block max-w-[150px] truncate text-[11px] text-[hsl(var(--muted-foreground))]">{day.title.replace(/^The block — /, "")}</span>
+                </span>
+              </button>
+            ))}
           </div>
         </SurfaceCard>
       </Section>
 
-      <Section title="Live session" description="Sun 3 PM — Positioning teardown">
+      {/* Upcoming — the live session, joinable, with the gate explained in words. */}
+      <Section title="Upcoming" description="Live classes are for everyone in the cohort — attendance earns XP.">
         <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
-          <SurfaceCard variant="static" padding="none" className="overflow-hidden">
-            <div className="relative grid h-40 place-items-center bg-gradient-to-br from-[#221a10] via-[#120e08] to-[#0a0a0a]">
+          <SurfaceCard variant="interactive" padding="none" className="overflow-hidden" onClick={() => go("live")}>
+            <div className="relative grid h-36 place-items-center bg-gradient-to-br from-[#221a10] via-[#120e08] to-[#0a0a0a]">
               <div className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-b from-[hsl(var(--champagne-from))] to-[hsl(var(--champagne-to))]">
-                <Play className="h-4 w-4 fill-[hsl(var(--cream-text))] text-[hsl(var(--cream-text))]" />
+                <Radio className="h-4 w-4 text-[hsl(var(--cream-text))]" />
               </div>
               <div className="absolute left-4 top-4 flex items-center gap-2">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[hsl(var(--gold))]" />
-                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--gold))]">Live · Sun 3 PM</span>
+                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--gold))]">Live · {LIVE_SESSION.when}</span>
               </div>
             </div>
             <div className="flex items-center justify-between gap-3 p-4">
-              <div>
-                <div className="text-[14px] font-semibold">Positioning teardown</div>
-                <div className="text-[12px] text-[hsl(var(--muted-foreground))]">Rahul reviews six submissions on the call.</div>
+              <div className="min-w-0">
+                <div className="truncate text-[14px] font-semibold">{LIVE_SESSION.title}</div>
+                <div className="text-[12px] text-[hsl(var(--muted-foreground))]">Hosted by {LIVE_SESSION.host} · Zoom link inside</div>
               </div>
-              <Button variant="outline" size="sm">Join</Button>
+              <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-[hsl(var(--gold))]">
+                Open <ChevronRight className="h-3.5 w-3.5" />
+              </span>
             </div>
           </SurfaceCard>
 
-          <SurfaceCard variant="static" padding="lg" className={s.week5Unlocked ? "" : "bg-black/40"}>
+          <SurfaceCard variant="static" padding="lg">
             <div className="flex items-center gap-2 text-[hsl(var(--muted-foreground))]">
               {s.week5Unlocked ? <Check className="h-4 w-4 text-[hsl(var(--success))]" /> : <Lock className="h-4 w-4" />}
               <span className="text-[11px] font-bold uppercase tracking-[0.12em]">Week 5 · On-Camera Confidence</span>
             </div>
             <div className={`mt-2 text-[14px] font-semibold ${s.week5Unlocked ? "" : "text-[hsl(var(--muted-foreground))]"}`}>
-              {s.week5Unlocked ? "Open — recording included" : "Opens once Week 4's block is in"}
+              {s.week5Unlocked ? "Open — drills and recording included" : "Locked until your Week 4 block is in"}
             </div>
             <p className="mt-1.5 text-[12px] leading-relaxed text-[hsl(var(--muted-foreground))]">
               {s.week5Unlocked
-                ? "Unlocked the moment you submitted. That's the gate rule working."
-                : "The recording stays locked with it. Everything you've finished stays open."}
+                ? "It opened the moment you submitted. Nothing you've finished ever locks again."
+                : "You can still join Sunday's live class — only Week 5's drills and recording wait for the block. Everything you've finished stays open."}
             </p>
             {!s.week5Unlocked && (
-              <button type="button" onClick={() => go("path")} className="mt-3 text-[12px] font-semibold text-[hsl(var(--gold))] underline underline-offset-4">
+              <button type="button" onClick={() => go("assignment/4")} className="mt-3 text-[12px] font-semibold text-[hsl(var(--gold))] underline underline-offset-4">
                 Go submit the block
               </button>
             )}
@@ -161,127 +255,372 @@ export function HomeScreen({ s, d, go }: ScreenProps) {
   );
 }
 
-/* ── 2 · Path (playable) ────────────────────────────────────────────────── */
+/* ── 2 · The Path — all 13 weeks, browsable, with a jump rail ───────────── */
+
+type WeekStatus = "done" | "current" | "open5" | "locked";
+
+function weekStatus(n: number, s: PlayState): WeekStatus {
+  if (n < CURRENT_WEEK) return "done";
+  if (n === CURRENT_WEEK) return "current";
+  if (n === 5 && s.week5Unlocked) return "open5";
+  return "locked";
+}
 
 export function PathScreen({ s, d, go }: ScreenProps) {
-  const tone = toneForPhase("Produce");
+  const refs = useRef<Record<number, HTMLDivElement | null>>({});
+  const jump = (n: number) => refs.current[n]?.scrollIntoView({ behavior: "smooth", block: "start" });
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="The Path"
         title={<>Your Distribution <Serif>Engine</Serif></>}
-        subtitle="A week opens on its date and once the previous block is in. Days open in order — tap the starred one."
+        subtitle="All 13 blocks. Finished weeks stay open to revisit. A locked week shows you its sessions — its doors open on the date, once the previous block is in."
       />
 
-      <Section title="Week 4 · Advanced Production" description="The block: B-roll bank + 3 reels from one sitting">
-        <div className="flex flex-col items-center gap-5 py-2">
-          {s.days.map((day, i) => {
+      {/* Mobile jump rail — sticky chips, no full-page scroll hunting. */}
+      <nav
+        aria-label="Jump to a week"
+        className="sticky top-0 z-10 -mx-4 flex gap-1.5 overflow-x-auto border-b border-[hsl(var(--border))] bg-black/85 px-4 py-2 backdrop-blur [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden"
+      >
+        {ENGINE.map((e) => {
+          const st = weekStatus(e.n, s);
+          return (
+            <button
+              key={e.n}
+              type="button"
+              onClick={() => jump(e.n)}
+              className={`shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold ${
+                st === "current" ? "bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))]"
+                : st === "done" ? "text-[hsl(var(--success))]"
+                : st === "open5" ? "text-[hsl(var(--cream))]"
+                : "text-[hsl(var(--muted-foreground))]"
+              }`}
+            >
+              W{e.n}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="lg:grid lg:grid-cols-[224px_1fr] lg:gap-8">
+        {/* Desktop jump rail — every block, one click, no scrolling through 13 weeks. */}
+        <aside className="hidden lg:block">
+          <div className="sticky top-24 space-y-1">
+            {ENGINE.map((e) => {
+              const st = weekStatus(e.n, s);
+              const t = toneForPhase(e.phase);
+              return (
+                <button
+                  key={e.n}
+                  type="button"
+                  onClick={() => jump(e.n)}
+                  className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-left transition-colors ${
+                    st === "current" ? "border-[hsl(var(--border))] bg-[hsl(var(--secondary))]" : "border-transparent hover:bg-[hsl(var(--secondary))]/60"
+                  }`}
+                >
+                  <span
+                    className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[9px] font-extrabold"
+                    style={{
+                      background: st === "done" ? "hsl(var(--success))" : st === "current" || st === "open5" ? t.c : "hsl(var(--secondary))",
+                      color: st === "locked" ? "hsl(var(--muted-foreground))" : "hsl(var(--cream-text))",
+                    }}
+                  >
+                    {st === "done" ? <Check className="h-3 w-3" strokeWidth={3.5} /> : st === "locked" ? <Lock className="h-2.5 w-2.5" /> : e.n}
+                  </span>
+                  <span className="min-w-0 leading-tight">
+                    <span className={`block truncate text-[11.5px] font-medium ${st === "locked" ? "text-[hsl(var(--muted-foreground))]" : ""}`}>
+                      W{e.n} · {e.title}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        {/* The board — every week, winding, in phase colour. */}
+        <div className="min-w-0 space-y-10">
+          {ENGINE.map((e) => (
+            <WeekOnPath key={e.n} n={e.n} s={s} d={d} go={go} refCb={(el) => { refs.current[e.n] = el; }} />
+          ))}
+
+          <SurfaceCard variant="static" padding="lg" className="text-center">
+            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--gold))]">Demo Day</div>
+            <div className="mt-1 text-[15px] font-semibold">Sat 19 Sep — your engine, on stage</div>
+            <p className="mt-1 text-[12px] text-[hsl(var(--muted-foreground))]">Thirteen blocks stack into one working Distribution Engine. That's the whole game.</p>
+          </SurfaceCard>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WeekOnPath({ n, s, d, go, refCb }: { n: number; s: PlayState; d: Dispatch; go: (k: string) => void; refCb: (el: HTMLDivElement | null) => void }) {
+  const e = ENGINE[n];
+  const t = toneForPhase(e.phase);
+  const st = weekStatus(n, s);
+  const phaseStart = PHASES.find((p) => ENGINE.find((x) => x.phase === p.name)?.n === n);
+
+  // Current week plays from the store; every other week renders its template.
+  const days = n === CURRENT_WEEK
+    ? s.days.map((day) => ({ id: day.id, label: day.label, title: day.title, state: day.state, isBlock: day.isBlock, kind: day.isBlock ? "block" : day.id === "d1" ? "class" : "drill" }))
+    : daysForWeek(n).map((day) => ({
+        id: day.id, label: day.label, title: day.title, isBlock: day.kind === "block", kind: day.kind,
+        state: st === "done" ? ("done" as const) : st === "open5" && day.kind === "class" ? ("current" as const) : ("locked" as const),
+      }));
+
+  return (
+    <div ref={refCb} className="scroll-mt-16 lg:scroll-mt-24">
+      {phaseStart && (
+        <div className="mb-4 flex items-center gap-3">
+          <span className="h-px flex-1 bg-[hsl(var(--border))]" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: t.c }}>
+            Phase · {phaseStart.name} ({phaseStart.weeks})
+          </span>
+          <span className="h-px flex-1 bg-[hsl(var(--border))]" />
+        </div>
+      )}
+
+      {/* Week banner — state in plain words, never just a lock icon. */}
+      <div className="rounded-2xl border p-4" style={{ borderColor: st === "current" ? `${t.c}` : "hsl(var(--border))", background: st === "current" ? "hsl(var(--secondary))" : "transparent" }}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[10.5px] font-bold uppercase tracking-[0.14em]" style={{ color: t.c }}>
+              Week {n} · {e.phase}
+            </div>
+            <div className={`mt-0.5 text-[15px] font-bold tracking-[-0.01em] ${st === "locked" ? "text-[hsl(var(--muted-foreground))]" : ""}`}>{e.title}</div>
+            <div className="mt-0.5 text-[12px] text-[hsl(var(--muted-foreground))]">The block: {e.block}</div>
+          </div>
+          <div className="shrink-0 text-right">
+            {st === "done" && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--success)/0.4)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--success))]">
+                <Check className="h-3 w-3" /> Done — open to revisit
+              </span>
+            )}
+            {st === "current" && (
+              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide" style={{ background: t.c, color: "hsl(var(--cream-text))" }}>
+                You are here
+              </span>
+            )}
+            {st === "open5" && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--cream)/0.35)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--cream))]">
+                Just opened
+              </span>
+            )}
+            {st === "locked" && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--border-hover))] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--muted-foreground))]">
+                <Lock className="h-3 w-3" /> {OPENS_ON[n] ?? "Later"}{n === 5 ? " + Week 4 block" : ` + Week ${n - 1} block`}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* The days — visible for every week (that's the ask), openable only when earned. */}
+        <div className="mt-5 flex flex-col items-center gap-5 py-1">
+          {days.map((day, i) => {
             const done = day.state === "done";
             const current = day.state === "current";
             const locked = day.state === "locked";
-            const off = [0, 44, 66, 44, 0][i % 5];
-            const openable = current && !day.isBlock;
+            const revisitable = st === "done" && day.kind === "class";
+            const clickable =
+              (current && n === CURRENT_WEEK) || revisitable || (st === "open5" && day.kind === "class");
+            const off = snakeOffset(i, false) * 0.55;
+            const onTap = () => {
+              if (revisitable) return go(`recording/${n}`);
+              if (st === "open5" && day.kind === "class") return go("live");
+              if (n !== CURRENT_WEEK) return;
+              if (day.id === "d3" && current) return go("recording/4");
+              if (day.isBlock && current) return go("assignment/4");
+              if (current) return d({ type: "complete_day", id: day.id });
+            };
             return (
               <div key={day.id} className="relative flex flex-col items-center" style={{ transform: `translateX(${off}px)` }}>
-                {current && (
+                {current && n === CURRENT_WEEK && (
                   <div className="absolute -top-8 z-10 animate-bounce" style={{ animationDuration: "1.6s" }}>
                     <div className="rounded-lg bg-[hsl(var(--cream))] px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide text-[hsl(var(--cream-text))] shadow-lg">
-                      {day.isBlock ? "SUBMIT" : "START"}
+                      {day.isBlock ? "SUBMIT" : day.id === "d3" ? "WATCH" : "START"}
                     </div>
                   </div>
                 )}
                 <motion.button
                   type="button"
-                  disabled={locked}
-                  onClick={() => (day.isBlock && current ? go("session") : openable ? d({ type: "complete_day", id: day.id }) : undefined)}
+                  disabled={!clickable && !done}
+                  onClick={onTap}
                   aria-label={`${day.label} — ${day.title}`}
-                  initial={{ scale: 0.85, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  whileTap={locked ? undefined : { scale: 0.92, y: 3 }}
-                  transition={{ type: "spring", stiffness: 320, damping: 20, delay: i * 0.05 }}
-                  className="grid h-14 w-14 place-items-center rounded-full text-[17px] font-extrabold disabled:opacity-70"
+                  whileTap={clickable ? { scale: 0.92, y: 3 } : undefined}
+                  className={`grid h-12 w-12 place-items-center rounded-full text-[15px] font-extrabold ${!clickable && locked ? "opacity-70" : ""}`}
                   style={{
-                    background: done ? "hsl(var(--success))" : current ? tone.c : "hsl(var(--secondary))",
+                    background: done ? "hsl(var(--success))" : current ? t.c : "hsl(var(--secondary))",
                     color: done || current ? "hsl(var(--cream-text))" : "hsl(var(--muted-foreground))",
-                    boxShadow: locked ? "none" : `0 5px 0 ${done ? "hsl(156 77% 22%)" : current ? tone.d : "hsl(0 0% 5%)"}`,
+                    boxShadow: locked ? "none" : `0 5px 0 ${done ? "hsl(156 77% 22%)" : current ? t.d : "hsl(0 0% 5%)"}`,
                   }}
                 >
-                  {done ? <Check className="h-5 w-5" strokeWidth={3} /> : locked ? <Lock className="h-4 w-4" /> : i + 1}
+                  {done ? (revisitable ? <Play className="h-4 w-4 fill-current" /> : <Check className="h-4 w-4" strokeWidth={3} />) : locked ? <Lock className="h-3.5 w-3.5" /> : day.kind === "class" ? <Radio className="h-4 w-4" /> : i + 1}
                 </motion.button>
                 <div className="mt-2 text-center">
-                  <div className="text-[10px] font-extrabold tracking-wide" style={{ color: done ? "hsl(var(--success))" : current ? tone.c : "hsl(var(--muted-foreground))" }}>
+                  <div className="text-[10px] font-extrabold tracking-wide" style={{ color: done ? "hsl(var(--success))" : current ? t.c : "hsl(var(--muted-foreground))" }}>
                     {day.label.toUpperCase()}
                   </div>
-                  <div className="max-w-[150px] text-[10.5px] leading-tight text-[hsl(var(--muted-foreground))]">{day.title}</div>
+                  <div className="max-w-[170px] text-[10.5px] leading-tight text-[hsl(var(--muted-foreground))]">
+                    {day.title}
+                    {revisitable && <span className="block text-[9.5px] font-semibold text-[hsl(var(--success))]">Tap to rewatch</span>}
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
-        <p className="mt-2 text-center text-[11.5px] text-[hsl(var(--muted-foreground))]">
-          Tap the starred day to complete it — XP and streak move for real. The Thu node opens the block submission.
-        </p>
-      </Section>
-
-      <Section title="The engine · all 13 blocks">
-        <div className="grid gap-1.5 sm:grid-cols-2">
-          {ENGINE.map((e) => {
-            const t = toneForPhase(e.phase);
-            const done = e.n < SEED.week || (e.n === 4 && s.blockStatus !== "none");
-            const now = e.n === (s.week5Unlocked ? 5 : 4);
-            return (
-              <div key={e.n} className={`flex items-start gap-2.5 rounded-xl border px-3 py-2 ${now ? "border-[hsl(var(--cream)/0.3)] bg-[hsl(var(--cream)/0.05)]" : "border-transparent"}`}>
-                <span className="mt-px w-7 shrink-0 text-[10.5px] font-bold" style={{ color: done ? "hsl(var(--success))" : now ? t.c : "hsl(var(--muted-foreground))" }}>
-                  W{e.n}
-                </span>
-                <div className="min-w-0">
-                  <div className={`truncate text-[12px] font-medium ${!done && !now ? "text-[hsl(var(--muted-foreground))]" : ""}`}>{e.title}</div>
-                  <div className="truncate text-[10.5px] text-[hsl(var(--muted-foreground))]">{e.block}</div>
-                </div>
-                {done && <Check className="ml-auto mt-0.5 h-3 w-3 shrink-0 text-[hsl(var(--success))]" />}
-              </div>
-            );
-          })}
-        </div>
-      </Section>
+      </div>
     </div>
   );
 }
 
-/* ── 3 · Session / block submission (playable) ──────────────────────────── */
+/* ── 3 · Recording — a real video, then straight to the work ────────────── */
 
-export function SessionScreen({ s, d, go }: ScreenProps) {
-  const [text, setText] = useState(s.blockText);
+export function RecordingScreen({ s, d, go, week }: ScreenProps & { week: number }) {
+  const rec = RECORDINGS[week] ?? RECORDINGS[4];
+  const watched = s.watched.includes(`rec-w${rec.week}`);
+  const isCurrent = rec.week === CURRENT_WEEK;
+  const willRedirect = isCurrent && s.blockStatus === "none";
+  const [redirecting, setRedirecting] = useState(false);
+  const timer = useRef<number>();
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const markWatched = () => {
+    d({ type: "watch_recording", week: rec.week });
+    if (willRedirect) {
+      setRedirecting(true);
+      // The founder's flow: finish the recording → land on the unfinished assignment.
+      timer.current = window.setTimeout(() => go("assignment/4"), 900);
+    }
+  };
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      <BackRow label="The Path" onClick={() => go("path")} />
       <PageHeader
-        back={{ to: "#", label: "The Path" }}
-        eyebrow="Week 4 · Thu 9 PM"
-        title="The block — 3 reels from one sitting"
-        subtitle="Recorded class below; transcript and cheat sheet beside it. Submit and watch Week 5 open."
+        eyebrow={`Week ${rec.week} · Recording`}
+        title={ENGINE[rec.week].title}
+        subtitle={isCurrent ? "Watch it through — when you're done, the block is next." : "Finished weeks stay open. Rewatch anything, any time."}
       />
       <div className="grid gap-6 lg:grid-cols-[3fr_2fr] lg:items-start">
+        <SurfaceCard variant="static" padding="none" className="overflow-hidden">
+          {/* A REAL playable video (public sample film as the dummy). */}
+          <video
+            key={rec.videoUrl}
+            src={rec.videoUrl}
+            controls
+            playsInline
+            preload="metadata"
+            className="aspect-video w-full bg-black"
+            onEnded={markWatched}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+            <div className="min-w-0">
+              <div className="text-[14px] font-semibold">{rec.title}</div>
+              <div className="text-[11.5px] text-[hsl(var(--muted-foreground))]">{rec.duration} · dummy footage, real flow</div>
+            </div>
+            <div className="flex gap-2">
+              {[{ I: FileText, t: "Transcript" }, { I: ClipboardList, t: "Cheat sheet" }].map(({ I, t }) => (
+                <span key={t} className="inline-flex items-center gap-1.5 rounded-lg bg-[hsl(var(--secondary))] px-2.5 py-1.5 text-[11px] text-[hsl(var(--muted-foreground))]">
+                  <I className="h-3.5 w-3.5 text-[hsl(var(--cream))]" /> {t}
+                </span>
+              ))}
+            </div>
+          </div>
+        </SurfaceCard>
+
+        <SurfaceCard variant="static" padding="lg" className="lg:sticky lg:top-24">
+          {!watched ? (
+            <>
+              <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--gold))]">When you've watched it</div>
+              <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+                {willRedirect
+                  ? "Mark it done and I'll take you straight to the one thing left this week — the block."
+                  : "Mark it watched to log the rewatch. Nothing re-locks, ever."}
+              </p>
+              <div className="mt-3">
+                <Button variant="champagne" className="w-full" onClick={markWatched}>
+                  <Check /> I've finished the recording
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 text-[hsl(var(--success))]">
+                <Check className="h-4 w-4" />
+                <span className="text-[11px] font-bold uppercase tracking-[0.12em]">Watched</span>
+              </div>
+              <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+                {redirecting
+                  ? "Taking you to the assignment…"
+                  : isCurrent && s.blockStatus === "none"
+                    ? "One thing left this week: the block."
+                    : "Logged. Revisit any time."}
+              </p>
+              {isCurrent && s.blockStatus === "none" && (
+                <div className="mt-3">
+                  <Button variant="champagne" className="w-full" onClick={() => go("assignment/4")}>
+                    Go to the assignment <ArrowRight />
+                  </Button>
+                </div>
+              )}
+              {!isCurrent && (
+                <div className="mt-3">
+                  <Button variant="outline" className="w-full" onClick={() => go("path")}>Back to the Path</Button>
+                </div>
+              )}
+            </>
+          )}
+        </SurfaceCard>
+      </div>
+    </div>
+  );
+}
+
+/* ── 4 · Assignment — the block, submit it, watch the gate open ─────────── */
+
+export function AssignmentScreen({ s, d, go }: ScreenProps) {
+  const [text, setText] = useState(s.blockText);
+  return (
+    <div className="space-y-6">
+      <BackRow label="The Path" onClick={() => go("path")} />
+      <PageHeader
+        eyebrow="Week 4 · The block · due Thu 9 PM"
+        title="3 reels from one sitting"
+        subtitle="One batch day, three finished reels. This is the deliverable that opens Week 5."
+      />
+      <div className="grid gap-6 lg:grid-cols-[2fr_3fr] lg:items-start">
         <div className="space-y-4">
-          <SurfaceCard variant="static" padding="none" className="overflow-hidden">
-            <div className="relative grid h-52 place-items-center bg-gradient-to-br from-[#1c1712] to-[#0a0a0a]">
-              <div className="grid h-12 w-12 place-items-center rounded-full bg-gradient-to-b from-[hsl(var(--champagne-from))] to-[hsl(var(--champagne-to))]">
-                <Play className="h-4 w-4 fill-[hsl(var(--cream-text))] text-[hsl(var(--cream-text))]" />
-              </div>
-              <span className="absolute bottom-2.5 right-2.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white">62:14</span>
+          <SurfaceCard variant="static" padding="lg">
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">The brief</div>
+            <ul className="mt-2.5 space-y-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+              {[
+                "Batch-shoot in ONE sitting — teleprompter + your B-roll bank.",
+                "Three reels, each under 60 seconds, hooks first.",
+                "Post links below (Instagram, YouTube or Drive).",
+              ].map((line) => (
+                <li key={line} className="flex gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[hsl(var(--success))]" /> {line}</li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => go("recording/4")}
+              className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold text-[hsl(var(--gold))] underline underline-offset-4"
+            >
+              <Video className="h-3.5 w-3.5" /> Rewatch the class first
+            </button>
+          </SurfaceCard>
+          <SurfaceCard variant="static" padding="lg">
+            <div className="flex items-center gap-2 text-[hsl(var(--muted-foreground))]">
+              <CalendarDays className="h-4 w-4" />
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em]">Why it gates Week 5</span>
             </div>
-            <div className="flex items-center gap-4 p-4">
-              <div className="min-w-0 flex-1">
-                <div className="text-[14px] font-semibold">Advanced Production — Week 4 live</div>
-                <div className="text-[11.5px] text-[hsl(var(--muted-foreground))]">You attended 41 of 62 min · 66% · full XP</div>
-              </div>
-              <div className="flex gap-2">
-                {[FileText, ClipboardList].map((I, i) => (
-                  <span key={i} className="grid h-8 w-8 place-items-center rounded-lg bg-[hsl(var(--secondary))]">
-                    <I className="h-3.5 w-3.5 text-[hsl(var(--cream))]" />
-                  </span>
-                ))}
-              </div>
-            </div>
+            <p className="mt-2 text-[12px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+              Week 5 is on-camera work built on this batch. Submitting the block — not watching, not attending — is what opens it. Your mentor reviews it on Saturday's Ship / Fix / Hold call.
+            </p>
           </SurfaceCard>
         </div>
 
@@ -295,13 +634,13 @@ export function SessionScreen({ s, d, go }: ScreenProps) {
               <textarea
                 id="block-input"
                 value={text}
-                onChange={(e) => setText(e.target.value)}
-                rows={5}
+                onChange={(ev) => setText(ev.target.value)}
+                rows={6}
                 placeholder="Reel 1: … &#10;Reel 2: … &#10;Reel 3: …"
                 className="mt-2 w-full resize-none rounded-xl border border-[hsl(var(--input))] bg-black/40 p-3 text-[13px] leading-relaxed outline-none placeholder:text-[hsl(var(--muted-foreground))] focus:border-[hsl(var(--border-hover))]"
               />
               <div className="mt-3">
-                <Button variant="champagne" className="w-full" disabled={!text.trim()} onClick={() => { d({ type: "submit_block", text }); }}>
+                <Button variant="champagne" className="w-full" disabled={!text.trim()} onClick={() => d({ type: "submit_block", text })}>
                   Submit · unlocks Week 5
                 </Button>
               </div>
@@ -333,284 +672,66 @@ export function SessionScreen({ s, d, go }: ScreenProps) {
   );
 }
 
-/* ── 4 · Feed (playable) ────────────────────────────────────────────────── */
+/* ── 5 · Live session — the Zoom door ───────────────────────────────────── */
 
-const SEED_FEED = [
-  { id: "s1", author: "Meghna Iyer", body: "Week 4 hook test. Third version is the one that finally felt like me.", url: "https://www.instagram.com/reel/xw2", ts: 0 },
-  { id: "s2", author: "Pranav Kotecha", body: "Rough cut before I post tomorrow. Is the open too slow?", url: "https://youtu.be/r0ughcut", ts: 0 },
-];
-
-export function FeedScreen({ s, d }: ScreenProps) {
-  const [body, setBody] = useState("");
-  const [url, setUrl] = useState("");
-  const posts = [...s.feedPosts, ...SEED_FEED];
+export function LiveScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
   return (
-    <div className="space-y-8">
-      <PageHeader eyebrow="The room" title="Feed" subtitle="Share what you made. Videos go in as links — YouTube, Instagram or Drive. PDFs attach directly." />
-      <SurfaceCard variant="static" padding="lg">
-        <label htmlFor="feed-body" className="text-[13px] font-semibold">Share this week's work</label>
-        <textarea
-          id="feed-body"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          rows={2}
-          placeholder="What did you make?"
-          className="mt-2 w-full resize-none rounded-xl border border-[hsl(var(--input))] bg-black/40 p-3 text-[13px] outline-none placeholder:text-[hsl(var(--muted-foreground))] focus:border-[hsl(var(--border-hover))]"
-        />
-        <input
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="Paste a link (optional) — it becomes a preview card"
-          className="mt-2 w-full rounded-xl border border-[hsl(var(--input))] bg-black/40 px-3 py-2.5 text-[13px] outline-none placeholder:text-[hsl(var(--muted-foreground))] focus:border-[hsl(var(--border-hover))]"
-        />
-        {url.trim() && <div className="mt-3"><LinkCard url={url.trim()} /></div>}
-        <div className="mt-3 flex justify-end">
-          <Button variant="champagne" size="sm" disabled={!body.trim()} onClick={() => { d({ type: "post_feed", body, url: url.trim() || undefined }); setBody(""); setUrl(""); }}>
-            Post
-          </Button>
-        </div>
-      </SurfaceCard>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <AnimatePresence initial={false}>
-        {posts.map((p) => (
-          <motion.div
-            key={p.id}
-            layout
-            initial={{ opacity: 0, y: 16, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ type: "spring", stiffness: 260, damping: 24 }}
-          >
-          <SurfaceCard variant="static" padding="lg">
-            <div className="flex items-center gap-2.5">
-              <div className="grid h-8 w-8 place-items-center rounded-full bg-[hsl(var(--secondary))] text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">
-                {p.author.split(" ").map((w) => w[0]).join("")}
-              </div>
-              <div>
-                <div className="text-[12.5px] font-semibold">{p.author}</div>
-                <div className="text-[10.5px] text-[hsl(var(--muted-foreground))]">{p.ts ? "just now" : "this week"}</div>
-              </div>
-            </div>
-            {p.body && <p className="mt-2.5 text-[13px] leading-relaxed">{p.body}</p>}
-            {p.url && <div className="mt-2.5"><LinkCard url={p.url} /></div>}
-          </SurfaceCard>
-          </motion.div>
-        ))}
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-}
-
-/* ── 5 · Mentor desk (playable) ─────────────────────────────────────────── */
-
-export function MentorScreen({ s, d }: ScreenProps) {
-  return (
-    <div className="space-y-8">
-      <PageHeader eyebrow="Mentor" title="Review queue" subtitle="Close a review the way you actually work — one tap for a call review, typing optional." />
-      {s.blockStatus === "none" ? (
-        <EmptyState
-          icon={<ClipboardList className="h-5 w-5" />}
-          title="Nothing to review yet"
-          description="Submit Week 4's block as the student first — then come back here and play the mentor."
-        />
-      ) : (
-        <SurfaceCard variant="static" padding="lg">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">You · Week 4</div>
-              <div className="mt-1 text-[14px] font-semibold">The block — 3 reels from one sitting</div>
-            </div>
-            {s.blockStatus === "accepted"
-              ? <span className="rounded-full border border-[hsl(var(--success)/0.4)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--success))]">Closed</span>
-              : <span className="rounded-full border border-[hsl(var(--gold)/0.4)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--gold))]">Open</span>}
-          </div>
-          <p className="mt-3 whitespace-pre-wrap rounded-xl bg-[hsl(var(--secondary))] p-3 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">{s.blockText}</p>
-          {s.blockStatus === "submitted" && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button variant="champagne" size="sm" onClick={() => d({ type: "mentor_accept" })}>
-                <Check /> Accept — reviewed on the call
-              </Button>
-              <Button variant="outline" size="sm">Type feedback</Button>
-            </div>
-          )}
-          {s.blockStatus === "accepted" && (
-            <p className="mt-3 text-[12px] text-[hsl(var(--muted-foreground))]">
-              Accepted. The student now sees "Add to my Album" on this piece.
-            </p>
-          )}
-        </SurfaceCard>
-      )}
-    </div>
-  );
-}
-
-/* ── 6 · Creator OS / Album (playable) ──────────────────────────────────── */
-
-const ALBUM_BLOCKS = [
-  { name: "Position", slots: ["pos.story", "pos.niche", "pos.audience", "pos.oneliner", "pos.bio"], openFrom: 0 },
-  { name: "Scripts", slots: ["scr.hook1", "scr.hook2", "scr.hooks", "scr.long", "scr.tpl", "scr.cta", "scr.s7", "scr.s8"], openFrom: 2 },
-  { name: "Body of work", slots: ["work.1", "work.2", "work.3", "work.4", "work.5", "work.6"], openFrom: 4 },
-];
-const PREFILLED = ["pos.story", "pos.niche", "pos.audience", "pos.oneliner", "pos.bio", "scr.hook1", "scr.hook2", "work.1", "work.2"];
-
-export function AlbumScreen({ s, d }: ScreenProps) {
-  const filled = new Set([...PREFILLED, ...s.albumFilled]);
-  const total = ALBUM_BLOCKS.reduce((n, b) => n + b.slots.length, 0);
-  return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      <BackRow label="Home" onClick={() => go("home")} />
       <PageHeader
-        eyebrow="Creator OS"
-        title={<>The <Serif>Album</Serif></>}
-        subtitle="Every box already has your name on it and a week it gets filled. Approved work is what fills them."
-        meta={<span className="text-[12px] text-[hsl(var(--muted-foreground))]">{filled.size} of {total} pieces placed</span>}
+        eyebrow={`Week ${LIVE_SESSION.week} · Live class`}
+        title={<>On-Camera <Serif>Confidence</Serif></>}
+        subtitle={`${LIVE_SESSION.when} · hosted by ${LIVE_SESSION.host} · live for everyone in the cohort.`}
       />
-
-      {s.blockStatus === "accepted" && !s.albumFilled.includes("scr.hooks") && (
-        <SurfaceCard variant="static" padding="lg" className="border-[hsl(var(--success)/0.35)]">
-          <div className="flex items-center gap-2 text-[hsl(var(--success))]">
-            <Check className="h-4 w-4" />
-            <span className="text-[11px] font-bold uppercase tracking-[0.12em]">Approved by Rahul — ready to place</span>
+      <div className="grid gap-6 lg:grid-cols-[3fr_2fr] lg:items-start">
+        <SurfaceCard variant="static" padding="none" className="overflow-hidden">
+          <div className="relative grid h-48 place-items-center bg-gradient-to-br from-[#221a10] via-[#120e08] to-[#0a0a0a]">
+            <div className="grid h-12 w-12 place-items-center rounded-full bg-gradient-to-b from-[hsl(var(--champagne-from))] to-[hsl(var(--champagne-to))]">
+              <Radio className="h-4 w-4 text-[hsl(var(--cream-text))]" />
+            </div>
+            <div className="absolute left-4 top-4 flex items-center gap-2">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[hsl(var(--gold))]" />
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--gold))]">Goes live · {LIVE_SESSION.when}</span>
+            </div>
           </div>
-          <div className="mt-1.5 text-[14px] font-semibold">The block — 3 reels from one sitting</div>
-          <div className="mt-3">
-            <Button variant="champagne" size="sm" onClick={() => d({ type: "add_to_album", slot: "scr.hooks" })}>
-              Add to my Album → Scripts
-            </Button>
+          <div className="p-5">
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">On the call</div>
+            <ul className="mt-2.5 space-y-2">
+              {LIVE_SESSION.agenda.map((line, i) => (
+                <li key={line} className="flex gap-2.5 text-[13px] leading-relaxed">
+                  <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[hsl(var(--secondary))] text-[10px] font-bold text-[hsl(var(--gold))]">{i + 1}</span>
+                  {line}
+                </li>
+              ))}
+            </ul>
           </div>
         </SurfaceCard>
-      )}
 
-      {ALBUM_BLOCKS.map((b) => {
-        const got = b.slots.filter((x) => filled.has(x)).length;
-        return (
-          <Section key={b.name} title={b.name} description={`${got} of ${b.slots.length} filled`}>
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">
-              {b.slots.map((code, i) => {
-                const isFilled = filled.has(code);
-                const locked = i >= b.openFrom + 6; // crude horizon for the demo
-                const justAdded = s.albumFilled.includes(code);
-                return (
-                  <motion.div
-                    key={code}
-                    layout
-                    animate={justAdded ? { scale: [1, 1.18, 1] } : undefined}
-                    transition={{ type: "spring", stiffness: 300, damping: 14 }}
-                    className={`grid aspect-square place-items-center rounded-xl border text-[13px] ${
-                      isFilled
-                        ? "border-[hsl(var(--success)/0.35)] bg-[hsl(var(--success)/0.12)] text-[hsl(var(--success))]"
-                        : locked
-                          ? "border-[hsl(var(--border))] bg-black/50 text-[hsl(var(--border-hover))]"
-                          : "border-dashed border-[hsl(var(--border-hover))] bg-black/30"
-                    }`}
-                  >
-                    {isFilled ? <Check className="h-4 w-4" /> : locked ? <Lock className="h-3 w-3" /> : null}
-                  </motion.div>
-                );
-              })}
-            </div>
-          </Section>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ── 7 · Second Brain (playable capture) ────────────────────────────────── */
-
-export function BrainScreen({ s, d }: ScreenProps) {
-  const [url, setUrl] = useState("");
-  const working = s.brain.status === "working";
-  return (
-    <div className="space-y-8">
-      <PageHeader eyebrow="Second Brain" title="Spy a reel" subtitle="Paste a link. Capture and transcription already run in production; the breakdown layer is what's new." />
-      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-        <div className="space-y-4">
+        <div className="space-y-4 lg:sticky lg:top-24">
           <SurfaceCard variant="static" padding="lg">
-            <label htmlFor="brain-url" className="text-[13px] font-semibold">Instagram or YouTube link</label>
-            <div className="mt-2 flex gap-2">
-              <input
-                id="brain-url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="instagram.com/reel/…"
-                className="w-full rounded-xl border border-[hsl(var(--input))] bg-black/40 px-3 py-2.5 text-[13px] outline-none placeholder:text-[hsl(var(--muted-foreground))] focus:border-[hsl(var(--border-hover))]"
-              />
-              <Button
-                variant="champagne"
-                disabled={!url.trim() || working}
-                onClick={() => {
-                  d({ type: "brain_capture", url: url.trim() });
-                  window.setTimeout(() => d({ type: "brain_done" }), 1600);
-                }}
-              >
-                {working ? "Working…" : "Spy"}
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--gold))]">Your seat</div>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+              Personal join link — attendance is tracked automatically and earns XP. Recording lands here after the call{s.week5Unlocked ? "." : " — it unlocks with your Week 4 block."}
+            </p>
+            <div className="mt-3">
+              <Button variant="champagne" className="w-full" asChild>
+                <a href={LIVE_SESSION.zoomUrl} target="_blank" rel="noreferrer">
+                  <Video /> Join on Zoom
+                </a>
               </Button>
             </div>
-            {working && (
-              <div className="mt-3 space-y-2" role="status" aria-busy="true">
-                <div className="h-3 w-3/5 rounded skeleton-shimmer" />
-                <div className="h-3 w-4/5 rounded skeleton-shimmer" />
-              </div>
-            )}
+            <div className="mt-2 text-center text-[10.5px] text-[hsl(var(--muted-foreground))]">zoom.us · opens in the Zoom app</div>
           </SurfaceCard>
-
-          {s.brain.status === "done" && (
-            <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 240, damping: 24 }}>
-            <SurfaceCard variant="static" padding="lg" className="border-[hsl(var(--cream)/0.28)]">
-              <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--gold))]">Breakdown</div>
-              <div className="mt-2.5"><LinkCard url={s.brain.url} title="Captured reel" /></div>
-              <div className="mt-3 space-y-2 text-[12.5px] leading-relaxed">
-                <p><span className="font-semibold">Hook.</span> <span className="text-[hsl(var(--muted-foreground))]">Contradiction — names the wrong belief in the first four words.</span></p>
-                <p><span className="font-semibold">Structure.</span> <span className="text-[hsl(var(--muted-foreground))]">Problem → proof → ask.</span></p>
-                <p><span className="font-semibold text-[hsl(var(--gold))]">Steal this.</span> <span className="text-[hsl(var(--muted-foreground))]">Open on the belief, not the topic.</span></p>
-              </div>
-            </SurfaceCard>
-            </motion.div>
-          )}
-        </div>
-
-        <SurfaceCard variant="static" padding="lg">
-          <div className="flex items-center gap-1.5">
-            <Wand2 className="h-3.5 w-3.5 text-[hsl(var(--cream))]" />
-            <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">Remix in my voice</span>
-          </div>
-          <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
-            Runs the breakdown through your Voice Profile — built from five of your own reels — and drafts the script the way you talk. One Claude API call in the studio worker; nothing runs on anyone's laptop.
-          </p>
-          <div className="mt-3"><Button variant="outline" size="sm" disabled={s.brain.status !== "done"}>Write it in my voice</Button></div>
-        </SurfaceCard>
-      </div>
-    </div>
-  );
-}
-
-/* ── 8 · Admin ──────────────────────────────────────────────────────────── */
-
-export function AdminScreen({ s }: Pick<ScreenProps, "s">) {
-  const rows = [
-    { icon: CalendarPlus, title: "Create a live session", body: "Schedules it, creates the Zoom meeting, issues each student a personal join link." },
-    { icon: Video, title: "Upload a recording", body: "Protected storage; plays only for enrolled students through an expiring link." },
-    { icon: Upload, title: "Create a course", body: "The existing admin flow, reachable from here." },
-    { icon: KeyRound, title: "Unlock a week for one student", body: `Override the gate with a reason and an audit trail.${s.week5Unlocked ? " (Week 5 currently open via the block.)" : ""}` },
-  ];
-  return (
-    <div className="space-y-8">
-      <PageHeader eyebrow="Admin" title="Creator Studio control" subtitle="What your team gets. Buttons are labelled with what they'll do; wiring comes after sign-off." />
-      <div className="grid gap-4 lg:grid-cols-2">
-        {rows.map((r) => (
-          <SurfaceCard key={r.title} variant="static" padding="lg">
-            <div className="flex items-start gap-3">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[hsl(var(--cream)/0.1)]">
-                <r.icon className="h-4 w-4 text-[hsl(var(--cream))]" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[13.5px] font-semibold">{r.title}</div>
-                <p className="mt-1 text-[12px] leading-relaxed text-[hsl(var(--muted-foreground))]">{r.body}</p>
-              </div>
+          <SurfaceCard variant="static" padding="lg">
+            <div className="flex items-center gap-2 text-[hsl(var(--muted-foreground))]">
+              <Flame className="h-4 w-4 text-[hsl(var(--accent-amber))]" />
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em]">Come with</span>
             </div>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+              Your three Week 4 reels{s.blockStatus === "none" ? " — submit the block first so Rahul can pull yours up live." : " — already in. You might get the live re-direct."}
+            </p>
           </SurfaceCard>
-        ))}
+        </div>
       </div>
     </div>
   );
