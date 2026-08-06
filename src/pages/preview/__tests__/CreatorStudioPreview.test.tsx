@@ -107,6 +107,35 @@ describe("CreatorStudioPreview", () => {
     expect(await screen.findByRole("button", { name: "13" })).toBeTruthy();
   });
 
+  it("a FUTURE week's session is readable — details open, only the doing is locked", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    // Week 9's class node exists on the trail and opens its session page.
+    fireEvent.click(await screen.findByRole("button", { name: /Sun 3 PM — Live class — Community \+ Lead Capture/ }));
+    // The founder's ask: info is visible even though the week hasn't happened.
+    expect(await screen.findByText(/turning viewers into names you own/i)).toBeTruthy();
+    expect(screen.getByText(/The capture machine: lead magnet/)).toBeTruthy();
+    // The Zoom door is a placeholder, not a dead lock.
+    expect(screen.getByRole("button", { name: /Zoom link drops Sun 7 Sep/ })).toBeTruthy();
+  });
+
+  it("the All-sessions overview opens and jumps straight into a session", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /All sessions/ }));
+    // All 13 sessions listed with dates.
+    expect(await screen.findByText("Sun 28 Sep · upcoming")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /The Creator OS \+ Your 12-Month Plan/ }));
+    expect(await screen.findByText(/your 12-month engine, presented on Demo Day/i)).toBeTruthy();
+  });
+
+  it("a PAST week's class node is a rewatch door, not a checkmark grave", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Sun 3 PM — Live class — Scriptwriting/ }));
+    expect(await screen.findByRole("button", { name: /Rewatch the class|Watch the recording/ })).toBeTruthy();
+  });
+
   it("the People view shows the cohort", async () => {
     renderAs("avinash@leveluplearning.in");
     fireEvent.click(screen.getAllByRole("button", { name: /^Feed/ })[0]);

@@ -18,18 +18,18 @@ import { canSeePreview, previewHostAllowsAnonymous } from "./previewGate";
 import PreviewShell from "./PreviewShell";
 import { SHELL_TABS } from "./previewTabs";
 import { usePlayState } from "./previewStore";
-import { HomeScreen, PathScreen, RecordingScreen, AssignmentScreen, LiveScreen } from "./PreviewScreens";
+import { HomeScreen, PathScreen, RecordingScreen, AssignmentScreen, SessionDetailScreen } from "./PreviewScreens";
 import { AlbumScreen, DocScreen, FeedScreen, MentorScreen, AdminScreen } from "./PreviewStudioScreens";
 
 const TITLES: Record<string, string> = {
   home: "Home", path: "The Path", recording: "The Path", assignment: "The Path",
-  live: "Live session", album: "Creator OS", doc: "Creator OS",
+  session: "The Path", album: "Creator OS", doc: "Creator OS",
   feed: "Feed", mentor: "Mentor desk", admin: "Admin",
 };
 
 /** Which rail tab a sub-screen belongs under. */
 const TAB_FOR: Record<string, string> = {
-  recording: "path", assignment: "path", live: "home", doc: "album",
+  recording: "path", assignment: "path", session: "path", doc: "album",
 };
 
 export default function CreatorStudioPreview() {
@@ -51,7 +51,7 @@ export default function CreatorStudioPreview() {
       case "path": return <PathScreen s={s} d={d} go={go} />;
       case "recording": return <RecordingScreen s={s} d={d} go={go} week={Number(param) || 4} />;
       case "assignment": return <AssignmentScreen s={s} d={d} go={go} />;
-      case "live": return <LiveScreen s={s} go={go} />;
+      case "session": return <SessionDetailScreen s={s} go={go} week={Number(param) || 4} />;
       case "album": return <AlbumScreen s={s} d={d} go={go} />;
       case "doc": return <DocScreen go={go} docId={param ?? "scr1"} />;
       case "feed": return <FeedScreen s={s} d={d} go={go} />;

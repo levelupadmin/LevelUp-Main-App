@@ -1,28 +1,34 @@
 /**
  * Creator Studio prototype — core screens: Home, Path, Recording, Assignment,
- * Live session. Social surfaces (Album/Feed/Mentor/Admin) live in
+ * Session detail. Social surfaces (Album/Feed/Mentor/Admin) live in
  * `PreviewStudioScreens.tsx`.
  *
  * 🔴 THE RULE THIS FILE LIVES BY. Every surface is the app's canonical
- * primitive: `SurfaceCard`, `PageHeader`, `Section`, `StatCard`, and the
- * champagne `Button`. Hand-rolled lookalikes were the "I hate the design"
- * failure — twice. Extend the pattern library if something's missing.
+ * primitive: `SurfaceCard`, `PageHeader`, `Section`, the champagne `Button`,
+ * and the shadcn `HoverCard`/`Sheet` where floating layers are needed.
+ * Hand-rolled lookalikes were the "I hate the design" failure — twice.
  *
- * v2, after the founder's walkthrough. The organizing principle of this
- * version: **the first thing a student sees is what to DO next** — not their
- * XP. Stats live in the shell header only. Home is: continue → this week →
- * upcoming. The Path is all 13 weeks, browsable, with a jump rail.
+ * v3, after founder walkthrough round 2. The Path is ONE continuous Duolingo
+ * trail (no boxed weeks): phase unit banners → week dividers → a winding line
+ * of nodes with hover previews, a scroll-spy rail, an "All sessions" overview
+ * sheet, and a session detail page for every week — future ones included,
+ * because "if there is a week 9 that has not happened, I need to know the
+ * details". Info is never locked; only doing is.
  */
-import { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   Flame, Lock, Check, Play, FileText, ClipboardList, ChevronRight, ChevronLeft,
   Video, CalendarDays, ArrowRight, Instagram, Youtube, HardDrive, Link2, Radio,
+  Zap, ListTree, MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { PageHeader, Section, SurfaceCard } from "@/components/patterns";
 import {
   ENGINE, PHASES, CURRENT_WEEK, OPENS_ON, daysForWeek, RECORDINGS, LIVE_SESSION,
+  SESSION_DATES, SESSION_INFO,
 } from "./previewData";
 import { toneForPhase, snakeOffset } from "./previewTheme";
 import { linkKind, type PlayState, type PlayAction } from "./previewStore";
@@ -118,7 +124,7 @@ export function nextActionFor(s: PlayState): NextAction {
       title: "Week 5 is open — On-Camera Confidence",
       sub: "Your block is in. Sunday's live class briefs the take-1 vs take-10 drill.",
       cta: "See the live session",
-      goTo: "live",
+      goTo: "session/5",
     };
   return {
     eyebrow: "Continue where you left off",
@@ -178,7 +184,8 @@ export function HomeScreen({ s, d, go }: ScreenProps) {
                 type="button"
                 disabled={day.state === "locked"}
                 onClick={() =>
-                  day.id === "d3" && day.state === "current" ? go("recording/4")
+                  day.id === "d1" ? go("session/4")
+                  : day.id === "d3" && day.state === "current" ? go("recording/4")
                   : day.isBlock && day.state === "current" ? go("assignment/4")
                   : day.state === "current" ? d({ type: "complete_day", id: day.id })
                   : undefined
@@ -186,7 +193,7 @@ export function HomeScreen({ s, d, go }: ScreenProps) {
                 className="group flex items-center gap-2 disabled:cursor-not-allowed"
               >
                 <span
-                  className="grid h-7 w-7 place-items-center rounded-full text-[11px] font-extrabold"
+                  className="grid h-7 w-7 place-items-center rounded-full text-[11px] font-extrabold transition-transform group-hover:scale-110"
                   style={{
                     background: day.state === "done" ? "hsl(var(--success))" : day.state === "current" ? tone.c : "hsl(var(--secondary))",
                     color: day.state === "locked" ? "hsl(var(--muted-foreground))" : "hsl(var(--cream-text))",
@@ -209,7 +216,7 @@ export function HomeScreen({ s, d, go }: ScreenProps) {
       {/* Upcoming — the live session, joinable, with the gate explained in words. */}
       <Section title="Upcoming" description="Live classes are for everyone in the cohort — attendance earns XP.">
         <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
-          <SurfaceCard variant="interactive" padding="none" className="overflow-hidden" onClick={() => go("live")}>
+          <SurfaceCard variant="interactive" padding="none" className="overflow-hidden" onClick={() => go("session/5")}>
             <div className="relative grid h-36 place-items-center bg-gradient-to-br from-[#221a10] via-[#120e08] to-[#0a0a0a]">
               <div className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-b from-[hsl(var(--champagne-from))] to-[hsl(var(--champagne-to))]">
                 <Radio className="h-4 w-4 text-[hsl(var(--cream-text))]" />
@@ -255,7 +262,7 @@ export function HomeScreen({ s, d, go }: ScreenProps) {
   );
 }
 
-/* ── 2 · The Path — all 13 weeks, browsable, with a jump rail ───────────── */
+/* ── 2 · The Path — one continuous Duolingo trail ───────────────────────── */
 
 type WeekStatus = "done" | "current" | "open5" | "locked";
 
@@ -266,217 +273,550 @@ function weekStatus(n: number, s: PlayState): WeekStatus {
   return "locked";
 }
 
+interface TrailNodeModel {
+  id: string;
+  week: number;
+  label: string;
+  title: string;
+  kind: "class" | "drill" | "block" | "review";
+  state: "done" | "current" | "info" | "locked";
+  xp: number;
+  action?: () => void;
+  hint: string;
+}
+
+/** Build every node on the trail — the class node is NEVER dead: past = rewatch, future = details. */
+function buildTrail(s: PlayState, go: (k: string) => void, d: Dispatch): TrailNodeModel[] {
+  const nodes: TrailNodeModel[] = [];
+  for (const e of ENGINE) {
+    const st = weekStatus(e.n, s);
+    if (e.n === CURRENT_WEEK) {
+      for (const day of s.days) {
+        const kind = day.isBlock ? "block" : day.id === "d1" ? "class" : day.id === "d5" ? "review" : "drill";
+        nodes.push({
+          id: day.id, week: e.n, label: day.label, title: day.title, kind, xp: day.xp,
+          state: day.state === "done" && kind === "class" ? "done" : day.state,
+          action:
+            kind === "class" ? () => go("session/4")
+            : day.id === "d3" && day.state === "current" ? () => go("recording/4")
+            : day.isBlock && day.state === "current" ? () => go("assignment/4")
+            : day.state === "current" ? () => d({ type: "complete_day", id: day.id })
+            : undefined,
+          hint:
+            kind === "class" ? "Open the session — details, recording, resources"
+            : day.state === "done" ? "Done — XP banked"
+            : day.state === "current" ? (day.isBlock ? "Open the assignment" : "Tap to do this now")
+            : "Opens when the day before it is done",
+        });
+      }
+      continue;
+    }
+    for (const day of daysForWeek(e.n)) {
+      const isClass = day.kind === "class";
+      const state: TrailNodeModel["state"] =
+        st === "done" ? "done"
+        : isClass ? "info"
+        : st === "open5" && day.kind === "drill" ? "current"
+        : "locked";
+      nodes.push({
+        id: day.id, week: e.n, label: day.label, title: day.title, kind: day.kind, xp: day.xp,
+        state,
+        action: isClass ? () => go(`session/${e.n}`) : st === "done" ? () => go(`session/${e.n}`) : undefined,
+        hint:
+          isClass ? (st === "done" ? "Rewatch the class — nothing re-locks" : st === "locked" ? `Details open now · class ${SESSION_DATES[e.n]}` : "Session details + Zoom link")
+          : st === "done" ? "Done — revisit via the session page"
+          : st === "open5" ? "Opens after Sunday's class"
+          : e.n === 5 ? "Unlocks with your Week 4 block"
+          : `Unlocks ${OPENS_ON[e.n] ?? "later"} + Week ${e.n - 1}'s block`,
+      });
+    }
+  }
+  return nodes;
+}
+
+/** The pulsing halo on the current node — isolated so the loop never re-renders the trail. */
+function CurrentHalo({ tint }: { tint: string }) {
+  const reduced = useReducedMotion();
+  if (reduced) return null;
+  return (
+    <motion.span
+      aria-hidden
+      className="pointer-events-none absolute inset-0 rounded-full"
+      style={{ border: `2px solid ${tint}` }}
+      animate={{ scale: [1, 1.45], opacity: [0.55, 0] }}
+      transition={{ duration: 1.6, repeat: Infinity, ease: "easeOut" }}
+    />
+  );
+}
+
+const NODE_STYLE = {
+  done: { bg: "hsl(var(--success))", fg: "hsl(var(--cream-text))", lip: "hsl(156 77% 22%)" },
+  locked: { bg: "hsl(var(--secondary))", fg: "hsl(var(--muted-foreground))", lip: "hsl(0 0% 5%)" },
+} as const;
+
+function TrailNode({ node, tone, index }: { node: TrailNodeModel; tone: { c: string; d: string }; index: number }) {
+  const off = snakeOffset(index, false) * 0.75;
+  const isCurrent = node.state === "current";
+  const isInfo = node.state === "info";
+  const clickable = Boolean(node.action);
+  const palette =
+    node.state === "done" ? NODE_STYLE.done
+    : isCurrent ? { bg: tone.c, fg: "hsl(var(--cream-text))", lip: tone.d }
+    : isInfo ? { bg: "hsl(var(--card))", fg: tone.c, lip: "hsl(0 0% 5%)" }
+    : NODE_STYLE.locked;
+
+  const face =
+    node.state === "done" ? (node.kind === "class" ? <Play className="h-4 w-4 fill-current" /> : <Check className="h-4 w-4" strokeWidth={3} />)
+    : isInfo ? <Radio className="h-4 w-4" />
+    : node.state === "locked" ? <Lock className="h-3.5 w-3.5" />
+    : node.kind === "class" ? <Radio className="h-4 w-4" />
+    : node.kind === "block" ? <Zap className="h-4 w-4" />
+    : <Play className="h-4 w-4 fill-current" />;
+
+  return (
+    <div className="relative flex flex-col items-center" style={{ transform: `translateX(${off}px)` }}>
+      {isCurrent && (
+        <div className="absolute -top-8 z-10 animate-bounce" style={{ animationDuration: "1.6s" }}>
+          <div className="rounded-lg bg-[hsl(var(--cream))] px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide text-[hsl(var(--cream-text))] shadow-lg">
+            {node.kind === "block" ? "SUBMIT" : node.id === "d3" ? "WATCH" : "START"}
+          </div>
+        </div>
+      )}
+      <HoverCard openDelay={120} closeDelay={60}>
+        <HoverCardTrigger asChild>
+          <motion.button
+            type="button"
+            disabled={!clickable}
+            onClick={node.action}
+            aria-label={`${node.label} — ${node.title}`}
+            whileHover={clickable ? { scale: 1.08, y: -2 } : undefined}
+            whileTap={clickable ? { scale: 0.92, y: 3 } : undefined}
+            transition={{ type: "spring", stiffness: 340, damping: 18 }}
+            className={`relative grid h-12 w-12 place-items-center rounded-full text-[15px] font-extrabold ${node.state === "locked" ? "opacity-70" : ""} ${isInfo ? "border" : ""}`}
+            style={{
+              background: palette.bg,
+              color: palette.fg,
+              borderColor: isInfo ? `${tone.c}` : undefined,
+              boxShadow: node.state === "locked" ? "none" : `0 5px 0 ${palette.lip}`,
+            }}
+          >
+            {isCurrent && <CurrentHalo tint={tone.c} />}
+            {face}
+          </motion.button>
+        </HoverCardTrigger>
+        <HoverCardContent
+          side="right"
+          align="center"
+          className="w-72 border-[hsl(var(--border))] bg-black/85 p-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl"
+        >
+          <div className="p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: tone.c }}>
+                Week {node.week} · {node.label}
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-[hsl(var(--gold)/0.35)] px-2 py-0.5 text-[10px] font-bold text-[hsl(var(--gold))]">
+                <Zap className="h-3 w-3" /> {node.xp} XP
+              </span>
+            </div>
+            <div className="mt-1.5 text-[13.5px] font-semibold leading-snug">{node.title}</div>
+            {node.kind === "class" && (
+              <p className="mt-1.5 line-clamp-2 text-[11.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+                {SESSION_INFO[node.week]?.blurb}
+              </p>
+            )}
+            <div className={`mt-2.5 flex items-center gap-1.5 text-[11px] font-semibold ${clickable ? "" : "text-[hsl(var(--muted-foreground))]"}`}
+              style={clickable ? { color: tone.c } : undefined}>
+              {clickable ? <ChevronRight className="h-3 w-3" /> : <Lock className="h-3 w-3" />} {node.hint}
+            </div>
+          </div>
+        </HoverCardContent>
+      </HoverCard>
+      <div className="mt-2 text-center">
+        <div className="text-[10px] font-extrabold tracking-wide" style={{ color: node.state === "done" ? "hsl(var(--success))" : isCurrent || isInfo ? tone.c : "hsl(var(--muted-foreground))" }}>
+          {node.label.toUpperCase()}
+        </div>
+        <div className="max-w-[180px] text-[10.5px] leading-tight text-[hsl(var(--muted-foreground))]">{node.title}</div>
+      </div>
+    </div>
+  );
+}
+
+function WeekDivider({ n, s, tone }: { n: number; s: PlayState; tone: { c: string } }) {
+  const st = weekStatus(n, s);
+  const e = ENGINE[n];
+  return (
+    <div className="flex w-full items-center gap-3 py-1">
+      <span className="h-px flex-1 bg-gradient-to-r from-transparent to-[hsl(var(--border))]" />
+      <div className="text-center">
+        <div className="text-[10px] font-extrabold uppercase tracking-[0.18em]" style={{ color: st === "locked" ? "hsl(var(--muted-foreground))" : tone.c }}>
+          Week {n} · {SESSION_DATES[n]}
+        </div>
+        <div className={`text-[12.5px] font-bold tracking-[-0.01em] ${st === "locked" ? "text-[hsl(var(--muted-foreground))]" : ""}`}>{e.title}</div>
+        <div className="mt-0.5 text-[10.5px] text-[hsl(var(--muted-foreground))]">
+          {st === "done" ? "Done — open to revisit"
+            : st === "current" ? `The block: ${e.block}`
+            : st === "open5" ? "Just opened"
+            : n === 5 ? "Doors open with your Week 4 block"
+            : `Doors open ${OPENS_ON[n]} + Week ${n - 1}'s block · session details already open`}
+        </div>
+      </div>
+      <span className="h-px flex-1 bg-gradient-to-l from-transparent to-[hsl(var(--border))]" />
+    </div>
+  );
+}
+
+function PhaseBanner({ name, weeks, tone }: { name: string; weeks: string; tone: { c: string; d: string } }) {
+  return (
+    <div
+      className="relative w-full overflow-hidden rounded-2xl border px-5 py-4"
+      style={{ borderColor: `${tone.c}40`, background: `linear-gradient(120deg, ${tone.c}1f, transparent 65%)` }}
+    >
+      <div className="text-[10px] font-extrabold uppercase tracking-[0.2em]" style={{ color: tone.c }}>Phase · {weeks}</div>
+      <div className="mt-0.5 text-[16px] font-bold tracking-[-0.01em]">{name}</div>
+      <div
+        className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full opacity-25 blur-2xl"
+        style={{ background: tone.c }}
+      />
+    </div>
+  );
+}
+
 export function PathScreen({ s, d, go }: ScreenProps) {
-  const refs = useRef<Record<number, HTMLDivElement | null>>({});
-  const jump = (n: number) => refs.current[n]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const [activeWeek, setActiveWeek] = useState(CURRENT_WEEK);
+  const weekRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const nodes = useMemo(() => buildTrail(s, go, d), [s, go, d]);
+  const doneSteps = nodes.filter((n) => n.state === "done").length;
+
+  const jump = (n: number) => weekRefs.current[n]?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  // Scroll-spy: the rail follows the trail. Guarded — jsdom has no IntersectionObserver.
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) {
+          if (en.isIntersecting) {
+            const n = Number((en.target as HTMLElement).dataset.week);
+            if (!Number.isNaN(n)) setActiveWeek(n);
+          }
+        }
+      },
+      { rootMargin: "-20% 0px -70% 0px" },
+    );
+    Object.values(weekRefs.current).forEach((el) => el && io.observe(el));
+    return () => io.disconnect();
+  }, []);
+
+  const openSession = (n: number) => { setOverviewOpen(false); go(`session/${n}`); };
+
+  const progressBar = (
+    <div className="h-1 w-full overflow-hidden rounded-full bg-[hsl(var(--secondary))]">
+      <motion.div
+        className="h-full rounded-full"
+        style={{ background: "linear-gradient(90deg, hsl(var(--gold)), hsl(var(--champagne-from)))" }}
+        initial={false}
+        animate={{ width: `${Math.round((doneSteps / nodes.length) * 100)}%` }}
+        transition={{ type: "spring", stiffness: 120, damping: 22 }}
+      />
+    </div>
+  );
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="The Path"
         title={<>Your Distribution <Serif>Engine</Serif></>}
-        subtitle="All 13 blocks. Finished weeks stay open to revisit. A locked week shows you its sessions — its doors open on the date, once the previous block is in."
+        subtitle="One trail, thirteen blocks. Sessions are always open to read — doors open on the date, once the previous block is in."
+        actions={
+          <Button variant="outline" size="sm" onClick={() => setOverviewOpen(true)}>
+            <ListTree /> All sessions
+          </Button>
+        }
       />
 
-      {/* Mobile jump rail — sticky chips, no full-page scroll hunting. */}
-      <nav
-        aria-label="Jump to a week"
-        className="sticky top-0 z-10 -mx-4 flex gap-1.5 overflow-x-auto border-b border-[hsl(var(--border))] bg-black/85 px-4 py-2 backdrop-blur [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden"
-      >
-        {ENGINE.map((e) => {
-          const st = weekStatus(e.n, s);
-          return (
-            <button
-              key={e.n}
-              type="button"
-              onClick={() => jump(e.n)}
-              className={`shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold ${
-                st === "current" ? "bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))]"
-                : st === "done" ? "text-[hsl(var(--success))]"
-                : st === "open5" ? "text-[hsl(var(--cream))]"
-                : "text-[hsl(var(--muted-foreground))]"
-              }`}
-            >
-              W{e.n}
-            </button>
-          );
-        })}
-      </nav>
+      {/* Mobile sticky bar: progress + overview. */}
+      <div className="sticky top-0 z-10 -mx-4 border-b border-[hsl(var(--border))] bg-black/85 px-4 py-2.5 backdrop-blur lg:hidden">
+        <div className="flex items-center gap-3">
+          <div className="flex-1">{progressBar}</div>
+          <span className="shrink-0 text-[10.5px] font-bold text-[hsl(var(--muted-foreground))]">{doneSteps}/{nodes.length}</span>
+          <button
+            type="button"
+            onClick={() => setOverviewOpen(true)}
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[hsl(var(--border))] px-2 py-1 text-[11px] font-semibold text-[hsl(var(--muted-foreground))]"
+          >
+            <ListTree className="h-3.5 w-3.5" /> W{activeWeek}
+          </button>
+        </div>
+      </div>
 
-      <div className="lg:grid lg:grid-cols-[224px_1fr] lg:gap-8">
-        {/* Desktop jump rail — every block, one click, no scrolling through 13 weeks. */}
+      <div className="lg:grid lg:grid-cols-[236px_1fr] lg:gap-10">
+        {/* Desktop rail — scroll-spy follows you down the trail. */}
         <aside className="hidden lg:block">
-          <div className="sticky top-24 space-y-1">
-            {ENGINE.map((e) => {
-              const st = weekStatus(e.n, s);
-              const t = toneForPhase(e.phase);
-              return (
-                <button
-                  key={e.n}
-                  type="button"
-                  onClick={() => jump(e.n)}
-                  className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-left transition-colors ${
-                    st === "current" ? "border-[hsl(var(--border))] bg-[hsl(var(--secondary))]" : "border-transparent hover:bg-[hsl(var(--secondary))]/60"
-                  }`}
-                >
-                  <span
-                    className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[9px] font-extrabold"
-                    style={{
-                      background: st === "done" ? "hsl(var(--success))" : st === "current" || st === "open5" ? t.c : "hsl(var(--secondary))",
-                      color: st === "locked" ? "hsl(var(--muted-foreground))" : "hsl(var(--cream-text))",
-                    }}
-                  >
-                    {st === "done" ? <Check className="h-3 w-3" strokeWidth={3.5} /> : st === "locked" ? <Lock className="h-2.5 w-2.5" /> : e.n}
-                  </span>
-                  <span className="min-w-0 leading-tight">
-                    <span className={`block truncate text-[11.5px] font-medium ${st === "locked" ? "text-[hsl(var(--muted-foreground))]" : ""}`}>
-                      W{e.n} · {e.title}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
+          <div className="sticky top-24 space-y-3">
+            <div>
+              <div className="mb-1.5 flex items-center justify-between text-[10.5px] font-bold text-[hsl(var(--muted-foreground))]">
+                <span>PROGRESS</span><span>{doneSteps} of {nodes.length} steps</span>
+              </div>
+              {progressBar}
+            </div>
+            <nav aria-label="Jump to a week" className="space-y-0.5">
+              {PHASES.map((p) => {
+                const t = toneForPhase(p.name);
+                return (
+                  <div key={p.name} className="pt-2 first:pt-0">
+                    <div className="px-2 pb-1 text-[9px] font-extrabold uppercase tracking-[0.18em]" style={{ color: t.c }}>{p.name}</div>
+                    {ENGINE.filter((e) => e.phase === p.name).map((e) => {
+                      const st = weekStatus(e.n, s);
+                      const on = activeWeek === e.n;
+                      return (
+                        <button
+                          key={e.n}
+                          type="button"
+                          onClick={() => jump(e.n)}
+                          className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-left transition-colors ${
+                            on ? "border-[hsl(var(--border))] bg-[hsl(var(--secondary))]" : "border-transparent hover:bg-[hsl(var(--secondary))]/60"
+                          }`}
+                        >
+                          <span
+                            className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[9px] font-extrabold"
+                            style={{
+                              background: st === "done" ? "hsl(var(--success))" : st === "current" || st === "open5" ? t.c : "hsl(var(--secondary))",
+                              color: st === "locked" ? "hsl(var(--muted-foreground))" : "hsl(var(--cream-text))",
+                            }}
+                          >
+                            {st === "done" ? <Check className="h-3 w-3" strokeWidth={3.5} /> : e.n}
+                          </span>
+                          <span className={`min-w-0 truncate text-[11.5px] font-medium ${st === "locked" && !on ? "text-[hsl(var(--muted-foreground))]" : ""}`}>
+                            {e.title}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </nav>
           </div>
         </aside>
 
-        {/* The board — every week, winding, in phase colour. */}
-        <div className="min-w-0 space-y-10">
-          {ENGINE.map((e) => (
-            <WeekOnPath key={e.n} n={e.n} s={s} d={d} go={go} refCb={(el) => { refs.current[e.n] = el; }} />
-          ))}
+        {/* THE TRAIL — continuous, winding, phase-tinted. No boxes. */}
+        <div className="min-w-0">
+          <div className="mx-auto flex max-w-md flex-col items-center gap-6 lg:max-w-lg">
+            {PHASES.map((p) => {
+              const t = toneForPhase(p.name);
+              const phaseWeeks = ENGINE.filter((e) => e.phase === p.name);
+              return (
+                <div key={p.name} className="flex w-full flex-col items-center gap-6">
+                  <PhaseBanner name={p.name} weeks={p.weeks} tone={t} />
+                  {phaseWeeks.map((e) => (
+                    <div
+                      key={e.n}
+                      ref={(el) => { weekRefs.current[e.n] = el; }}
+                      data-week={e.n}
+                      className="flex w-full scroll-mt-16 flex-col items-center gap-6 lg:scroll-mt-24"
+                    >
+                      <WeekDivider n={e.n} s={s} tone={t} />
+                      {nodes.filter((nd) => nd.week === e.n).map((nd) => (
+                        <TrailNode key={nd.id} node={nd} tone={t} index={nodes.findIndex((x) => x.id === nd.id)} />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
 
-          <SurfaceCard variant="static" padding="lg" className="text-center">
-            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--gold))]">Demo Day</div>
-            <div className="mt-1 text-[15px] font-semibold">Sat 19 Sep — your engine, on stage</div>
-            <p className="mt-1 text-[12px] text-[hsl(var(--muted-foreground))]">Thirteen blocks stack into one working Distribution Engine. That's the whole game.</p>
-          </SurfaceCard>
+            <div className="w-full pt-2">
+              <SurfaceCard variant="static" padding="lg" className="text-center">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--gold))]">Demo Day</div>
+                <div className="mt-1 text-[15px] font-semibold">Sat 19 Sep — your engine, on stage</div>
+                <p className="mt-1 text-[12px] text-[hsl(var(--muted-foreground))]">Thirteen blocks stack into one working Distribution Engine. That's the whole game.</p>
+              </SurfaceCard>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
 
-function WeekOnPath({ n, s, d, go, refCb }: { n: number; s: PlayState; d: Dispatch; go: (k: string) => void; refCb: (el: HTMLDivElement | null) => void }) {
-  const e = ENGINE[n];
-  const t = toneForPhase(e.phase);
-  const st = weekStatus(n, s);
-  const phaseStart = PHASES.find((p) => ENGINE.find((x) => x.phase === p.name)?.n === n);
-
-  // Current week plays from the store; every other week renders its template.
-  const days = n === CURRENT_WEEK
-    ? s.days.map((day) => ({ id: day.id, label: day.label, title: day.title, state: day.state, isBlock: day.isBlock, kind: day.isBlock ? "block" : day.id === "d1" ? "class" : "drill" }))
-    : daysForWeek(n).map((day) => ({
-        id: day.id, label: day.label, title: day.title, isBlock: day.kind === "block", kind: day.kind,
-        state: st === "done" ? ("done" as const) : st === "open5" && day.kind === "class" ? ("current" as const) : ("locked" as const),
-      }));
-
-  return (
-    <div ref={refCb} className="scroll-mt-16 lg:scroll-mt-24">
-      {phaseStart && (
-        <div className="mb-4 flex items-center gap-3">
-          <span className="h-px flex-1 bg-[hsl(var(--border))]" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: t.c }}>
-            Phase · {phaseStart.name} ({phaseStart.weeks})
-          </span>
-          <span className="h-px flex-1 bg-[hsl(var(--border))]" />
-        </div>
-      )}
-
-      {/* Week banner — state in plain words, never just a lock icon. */}
-      <div className="rounded-2xl border p-4" style={{ borderColor: st === "current" ? `${t.c}` : "hsl(var(--border))", background: st === "current" ? "hsl(var(--secondary))" : "transparent" }}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="text-[10.5px] font-bold uppercase tracking-[0.14em]" style={{ color: t.c }}>
-              Week {n} · {e.phase}
-            </div>
-            <div className={`mt-0.5 text-[15px] font-bold tracking-[-0.01em] ${st === "locked" ? "text-[hsl(var(--muted-foreground))]" : ""}`}>{e.title}</div>
-            <div className="mt-0.5 text-[12px] text-[hsl(var(--muted-foreground))]">The block: {e.block}</div>
-          </div>
-          <div className="shrink-0 text-right">
-            {st === "done" && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--success)/0.4)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--success))]">
-                <Check className="h-3 w-3" /> Done — open to revisit
-              </span>
-            )}
-            {st === "current" && (
-              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide" style={{ background: t.c, color: "hsl(var(--cream-text))" }}>
-                You are here
-              </span>
-            )}
-            {st === "open5" && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--cream)/0.35)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--cream))]">
-                Just opened
-              </span>
-            )}
-            {st === "locked" && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--border-hover))] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--muted-foreground))]">
-                <Lock className="h-3 w-3" /> {OPENS_ON[n] ?? "Later"}{n === 5 ? " + Week 4 block" : ` + Week ${n - 1} block`}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* The days — visible for every week (that's the ask), openable only when earned. */}
-        <div className="mt-5 flex flex-col items-center gap-5 py-1">
-          {days.map((day, i) => {
-            const done = day.state === "done";
-            const current = day.state === "current";
-            const locked = day.state === "locked";
-            const revisitable = st === "done" && day.kind === "class";
-            const clickable =
-              (current && n === CURRENT_WEEK) || revisitable || (st === "open5" && day.kind === "class");
-            const off = snakeOffset(i, false) * 0.55;
-            const onTap = () => {
-              if (revisitable) return go(`recording/${n}`);
-              if (st === "open5" && day.kind === "class") return go("live");
-              if (n !== CURRENT_WEEK) return;
-              if (day.id === "d3" && current) return go("recording/4");
-              if (day.isBlock && current) return go("assignment/4");
-              if (current) return d({ type: "complete_day", id: day.id });
-            };
-            return (
-              <div key={day.id} className="relative flex flex-col items-center" style={{ transform: `translateX(${off}px)` }}>
-                {current && n === CURRENT_WEEK && (
-                  <div className="absolute -top-8 z-10 animate-bounce" style={{ animationDuration: "1.6s" }}>
-                    <div className="rounded-lg bg-[hsl(var(--cream))] px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide text-[hsl(var(--cream-text))] shadow-lg">
-                      {day.isBlock ? "SUBMIT" : day.id === "d3" ? "WATCH" : "START"}
-                    </div>
+      {/* The overview — every session, one sheet, jump anywhere. */}
+      <Sheet open={overviewOpen} onOpenChange={setOverviewOpen}>
+        <SheetContent className="w-full overflow-y-auto border-[hsl(var(--border))] bg-black/90 backdrop-blur-xl sm:max-w-md">
+          <SheetHeader className="text-left">
+            <SheetTitle>All sessions</SheetTitle>
+            <SheetDescription>Cohort 01 · Sundays 3 PM. Tap a session for details — every one is open to read.</SheetDescription>
+          </SheetHeader>
+          <div className="mt-4 space-y-4">
+            {PHASES.map((p) => {
+              const t = toneForPhase(p.name);
+              return (
+                <div key={p.name}>
+                  <div className="pb-1.5 text-[9.5px] font-extrabold uppercase tracking-[0.18em]" style={{ color: t.c }}>
+                    {p.name} · {p.weeks}
                   </div>
-                )}
-                <motion.button
-                  type="button"
-                  disabled={!clickable && !done}
-                  onClick={onTap}
-                  aria-label={`${day.label} — ${day.title}`}
-                  whileTap={clickable ? { scale: 0.92, y: 3 } : undefined}
-                  className={`grid h-12 w-12 place-items-center rounded-full text-[15px] font-extrabold ${!clickable && locked ? "opacity-70" : ""}`}
-                  style={{
-                    background: done ? "hsl(var(--success))" : current ? t.c : "hsl(var(--secondary))",
-                    color: done || current ? "hsl(var(--cream-text))" : "hsl(var(--muted-foreground))",
-                    boxShadow: locked ? "none" : `0 5px 0 ${done ? "hsl(156 77% 22%)" : current ? t.d : "hsl(0 0% 5%)"}`,
-                  }}
-                >
-                  {done ? (revisitable ? <Play className="h-4 w-4 fill-current" /> : <Check className="h-4 w-4" strokeWidth={3} />) : locked ? <Lock className="h-3.5 w-3.5" /> : day.kind === "class" ? <Radio className="h-4 w-4" /> : i + 1}
-                </motion.button>
-                <div className="mt-2 text-center">
-                  <div className="text-[10px] font-extrabold tracking-wide" style={{ color: done ? "hsl(var(--success))" : current ? t.c : "hsl(var(--muted-foreground))" }}>
-                    {day.label.toUpperCase()}
-                  </div>
-                  <div className="max-w-[170px] text-[10.5px] leading-tight text-[hsl(var(--muted-foreground))]">
-                    {day.title}
-                    {revisitable && <span className="block text-[9.5px] font-semibold text-[hsl(var(--success))]">Tap to rewatch</span>}
+                  <div className="divide-y divide-[hsl(var(--border))] overflow-hidden rounded-xl border border-[hsl(var(--border))]">
+                    {ENGINE.filter((e) => e.phase === p.name).map((e) => {
+                      const st = weekStatus(e.n, s);
+                      return (
+                        <div key={e.n} className="flex items-center gap-2 bg-[hsl(var(--card))] px-3 py-2.5 transition-colors hover:bg-[hsl(var(--secondary))]">
+                          <button type="button" onClick={() => openSession(e.n)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+                            <span
+                              className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-extrabold"
+                              style={{
+                                background: st === "done" ? "hsl(var(--success))" : st === "current" || st === "open5" ? t.c : "hsl(var(--secondary))",
+                                color: st === "locked" ? "hsl(var(--muted-foreground))" : "hsl(var(--cream-text))",
+                              }}
+                            >
+                              {st === "done" ? <Check className="h-3 w-3" strokeWidth={3.5} /> : e.n}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate text-[12.5px] font-semibold">{e.title}</span>
+                              <span className="block text-[10.5px] text-[hsl(var(--muted-foreground))]">
+                                {SESSION_DATES[e.n]} · {st === "done" ? "done" : st === "current" ? "this week" : st === "open5" ? "open" : "upcoming"}
+                              </span>
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            title="Show on the trail"
+                            aria-label={`Show Week ${e.n} on the trail`}
+                            onClick={() => { setOverviewOpen(false); window.setTimeout(() => jump(e.n), 250); }}
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[hsl(var(--muted-foreground))] transition-colors hover:bg-black/40 hover:text-[hsl(var(--foreground))]"
+                          >
+                            <MapPin className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
+
+/* ── 3 · Session detail — EVERY week has one, locked or not ─────────────── */
+
+export function SessionDetailScreen({ s, go, week }: Pick<ScreenProps, "s" | "go"> & { week: number }) {
+  const e = ENGINE[week] ?? ENGINE[4];
+  const n = e.n;
+  const t = toneForPhase(e.phase);
+  const info = SESSION_INFO[n];
+  const st = weekStatus(n, s);
+  const isPastOrCurrent = n <= CURRENT_WEEK;
+  const isNextLive = n === LIVE_SESSION.week;
+
+  return (
+    <div className="space-y-6">
+      <BackRow label="The Path" onClick={() => go("path")} />
+      <PageHeader
+        eyebrow={`Week ${n} · ${e.phase} · ${SESSION_DATES[n]} 3:00 PM`}
+        title={e.title}
+        subtitle={info?.blurb}
+        meta={
+          <>
+            <span className="inline-flex items-center gap-1.5"><Radio className="h-3.5 w-3.5" style={{ color: t.c }} /> Live class · hosted by Rahul</span>
+            <span className="inline-flex items-center gap-1.5"><Zap className="h-3.5 w-3.5 text-[hsl(var(--gold))]" /> Attendance earns 20 XP</span>
+            {st === "done" && <span className="inline-flex items-center gap-1.5 text-[hsl(var(--success))]"><Check className="h-3.5 w-3.5" /> You attended</span>}
+          </>
+        }
+      />
+
+      <div className="grid gap-6 lg:grid-cols-[3fr_2fr] lg:items-start">
+        <div className="space-y-4">
+          <SurfaceCard variant="static" padding="lg">
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">On the call</div>
+            <ul className="mt-2.5 space-y-2">
+              {(info?.agenda ?? []).map((line, i) => (
+                <li key={line} className="flex gap-2.5 text-[13px] leading-relaxed">
+                  <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[hsl(var(--secondary))] text-[10px] font-bold" style={{ color: t.c }}>{i + 1}</span>
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </SurfaceCard>
+
+          <SurfaceCard variant="static" padding="lg">
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">The week it opens</div>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+              The block: <span className="text-[hsl(var(--foreground))]">{e.block}</span>. Tue drill → Thu 9 PM block → Sat 6 PM Ship / Fix / Hold.
+              {!isPastOrCurrent && " Those unlock in order once the week's doors open — this page never locks."}
+            </p>
+          </SurfaceCard>
+        </div>
+
+        <div className="space-y-4 lg:sticky lg:top-24">
+          {st === "done" || n === CURRENT_WEEK ? (
+            <SurfaceCard variant="static" padding="lg">
+              <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--gold))]">Recording</div>
+              <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+                {RECORDINGS[n] ? `Full class · ${RECORDINGS[n].duration}. ${s.watched.includes(`rec-w${n}`) ? "You've watched this — rewatch any time." : "Nothing you've opened ever re-locks."}` : "The recording lands here after the call."}
+              </p>
+              {RECORDINGS[n] && (
+                <div className="mt-3">
+                  <Button variant="champagne" className="w-full" onClick={() => go(`recording/${n}`)}>
+                    <Play /> {s.watched.includes(`rec-w${n}`) ? "Rewatch the class" : "Watch the recording"}
+                  </Button>
+                </div>
+              )}
+            </SurfaceCard>
+          ) : (
+            <SurfaceCard variant="static" padding="lg">
+              <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--gold))]">Your seat</div>
+              <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+                {isNextLive
+                  ? "Personal join link — attendance is tracked automatically and earns XP. The recording lands here after the call."
+                  : `Live ${SESSION_DATES[n]} at 3 PM. Your personal Zoom link appears here 30 minutes before the class — the session page is always open, only the drills wait.`}
+              </p>
+              <div className="mt-3">
+                {isNextLive ? (
+                  <Button variant="champagne" className="w-full" asChild>
+                    <a href={LIVE_SESSION.zoomUrl} target="_blank" rel="noreferrer">
+                      <Video /> Join on Zoom
+                    </a>
+                  </Button>
+                ) : (
+                  <Button variant="outline" className="w-full" disabled>
+                    <Video /> Zoom link drops {SESSION_DATES[n]}
+                  </Button>
+                )}
               </div>
-            );
-          })}
+              {isNextLive && <div className="mt-2 text-center text-[10.5px] text-[hsl(var(--muted-foreground))]">zoom.us · opens in the Zoom app</div>}
+            </SurfaceCard>
+          )}
+
+          <SurfaceCard variant="static" padding="lg">
+            <div className="flex items-center gap-2 text-[hsl(var(--muted-foreground))]">
+              <Flame className="h-4 w-4 text-[hsl(var(--accent-amber))]" />
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em]">Come with</span>
+            </div>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+              {n === 5
+                ? s.blockStatus === "none"
+                  ? "Your three Week 4 reels — submit the block first so Rahul can pull yours up live."
+                  : "Your three Week 4 reels — already in. You might get the live re-direct."
+                : n <= CURRENT_WEEK
+                  ? "This one's behind you — the resources stay on this page."
+                  : `Week ${n - 1}'s block, shipped. That's the door in.`}
+            </p>
+          </SurfaceCard>
+
+          <div className="flex gap-2">
+            {[{ I: FileText, t: "Transcript" }, { I: ClipboardList, t: "Cheat sheet" }, { I: CalendarDays, t: "Add to calendar" }].map(({ I, t: label }) => (
+              <span key={label} className="inline-flex items-center gap-1.5 rounded-lg bg-[hsl(var(--secondary))] px-2.5 py-1.5 text-[11px] text-[hsl(var(--muted-foreground))]">
+                <I className="h-3.5 w-3.5 text-[hsl(var(--cream))]" /> {label}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-/* ── 3 · Recording — a real video, then straight to the work ────────────── */
+/* ── 4 · Recording — a real video, then straight to the work ────────────── */
 
 export function RecordingScreen({ s, d, go, week }: ScreenProps & { week: number }) {
   const rec = RECORDINGS[week] ?? RECORDINGS[4];
@@ -499,7 +839,7 @@ export function RecordingScreen({ s, d, go, week }: ScreenProps & { week: number
 
   return (
     <div className="space-y-6">
-      <BackRow label="The Path" onClick={() => go("path")} />
+      <BackRow label="Session details" onClick={() => go(`session/${rec.week}`)} />
       <PageHeader
         eyebrow={`Week ${rec.week} · Recording`}
         title={ENGINE[rec.week].title}
@@ -580,7 +920,7 @@ export function RecordingScreen({ s, d, go, week }: ScreenProps & { week: number
   );
 }
 
-/* ── 4 · Assignment — the block, submit it, watch the gate open ─────────── */
+/* ── 5 · Assignment — the block, submit it, watch the gate open ─────────── */
 
 export function AssignmentScreen({ s, d, go }: ScreenProps) {
   const [text, setText] = useState(s.blockText);
@@ -667,71 +1007,6 @@ export function AssignmentScreen({ s, d, go }: ScreenProps) {
             </>
           )}
         </SurfaceCard>
-      </div>
-    </div>
-  );
-}
-
-/* ── 5 · Live session — the Zoom door ───────────────────────────────────── */
-
-export function LiveScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
-  return (
-    <div className="space-y-6">
-      <BackRow label="Home" onClick={() => go("home")} />
-      <PageHeader
-        eyebrow={`Week ${LIVE_SESSION.week} · Live class`}
-        title={<>On-Camera <Serif>Confidence</Serif></>}
-        subtitle={`${LIVE_SESSION.when} · hosted by ${LIVE_SESSION.host} · live for everyone in the cohort.`}
-      />
-      <div className="grid gap-6 lg:grid-cols-[3fr_2fr] lg:items-start">
-        <SurfaceCard variant="static" padding="none" className="overflow-hidden">
-          <div className="relative grid h-48 place-items-center bg-gradient-to-br from-[#221a10] via-[#120e08] to-[#0a0a0a]">
-            <div className="grid h-12 w-12 place-items-center rounded-full bg-gradient-to-b from-[hsl(var(--champagne-from))] to-[hsl(var(--champagne-to))]">
-              <Radio className="h-4 w-4 text-[hsl(var(--cream-text))]" />
-            </div>
-            <div className="absolute left-4 top-4 flex items-center gap-2">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[hsl(var(--gold))]" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--gold))]">Goes live · {LIVE_SESSION.when}</span>
-            </div>
-          </div>
-          <div className="p-5">
-            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">On the call</div>
-            <ul className="mt-2.5 space-y-2">
-              {LIVE_SESSION.agenda.map((line, i) => (
-                <li key={line} className="flex gap-2.5 text-[13px] leading-relaxed">
-                  <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[hsl(var(--secondary))] text-[10px] font-bold text-[hsl(var(--gold))]">{i + 1}</span>
-                  {line}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </SurfaceCard>
-
-        <div className="space-y-4 lg:sticky lg:top-24">
-          <SurfaceCard variant="static" padding="lg">
-            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--gold))]">Your seat</div>
-            <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
-              Personal join link — attendance is tracked automatically and earns XP. Recording lands here after the call{s.week5Unlocked ? "." : " — it unlocks with your Week 4 block."}
-            </p>
-            <div className="mt-3">
-              <Button variant="champagne" className="w-full" asChild>
-                <a href={LIVE_SESSION.zoomUrl} target="_blank" rel="noreferrer">
-                  <Video /> Join on Zoom
-                </a>
-              </Button>
-            </div>
-            <div className="mt-2 text-center text-[10.5px] text-[hsl(var(--muted-foreground))]">zoom.us · opens in the Zoom app</div>
-          </SurfaceCard>
-          <SurfaceCard variant="static" padding="lg">
-            <div className="flex items-center gap-2 text-[hsl(var(--muted-foreground))]">
-              <Flame className="h-4 w-4 text-[hsl(var(--accent-amber))]" />
-              <span className="text-[11px] font-bold uppercase tracking-[0.12em]">Come with</span>
-            </div>
-            <p className="mt-2 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">
-              Your three Week 4 reels{s.blockStatus === "none" ? " — submit the block first so Rahul can pull yours up live." : " — already in. You might get the live re-direct."}
-            </p>
-          </SurfaceCard>
-        </div>
       </div>
     </div>
   );

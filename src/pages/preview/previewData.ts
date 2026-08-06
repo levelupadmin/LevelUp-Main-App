@@ -105,6 +105,76 @@ export const RECORDINGS: Record<number, PreviewRecording> = {
   4: { week: 4, title: "Advanced Production — full class", duration: "62:14", videoUrl: `${VID}/TearsOfSteel.mp4` },
 };
 
+/* ── Sessions — one per week, ALL viewable (founder: "if there is a week 9
+ *    that has not happened, I need to know the details… those sessions need
+ *    to be there"). Drills gate; session INFO never does. ─────────────────── */
+
+export const SESSION_DATES: Record<number, string> = {
+  0: "Sun 6 Jul", 1: "Sun 13 Jul", 2: "Sun 20 Jul", 3: "Sun 27 Jul", 4: "Sun 3 Aug",
+  5: "Sun 10 Aug", 6: "Sun 17 Aug", 7: "Sun 24 Aug", 8: "Sun 31 Aug",
+  9: "Sun 7 Sep", 10: "Sun 14 Sep", 11: "Sun 21 Sep", 12: "Sun 28 Sep",
+};
+
+export interface SessionInfo {
+  blurb: string;
+  agenda: string[];
+}
+
+export const SESSION_INFO: Record<number, SessionInfo> = {
+  0: {
+    blurb: "Why some stories are impossible to scroll past. The psychology under every hook you'll ever write.",
+    agenda: ["The four tension patterns every viral story uses", "Live teardown: three founder stories, rebuilt on the call", "Your founder story — first draft, on camera, tonight"],
+  },
+  1: {
+    blurb: "Find the overlap between what you know, what you love, and what people already search for.",
+    agenda: ["The founder–market fit triangle, mapped for six students live", "21 content ideas in 40 minutes — the extraction drill", "Your one-pager: niche, promise, proof"],
+  },
+  2: {
+    blurb: "Scripts that sound like you, at ten times your writing speed — your AI engine, assembled live.",
+    agenda: ["The 5-part script skeleton (hook, setup, proof, payoff, ask)", "Build your AI engine: voice profile + prompt stack", "Five scripts before Thursday — the batch method"],
+  },
+  3: {
+    blurb: "Turn any script into a shot list you can film alone in a bedroom. Then post it — publicly.",
+    agenda: ["Shot division: one script becomes twelve shots", "Framing, light and the ₹0 home studio", "The first-public-post ritual — everyone ships"],
+  },
+  4: {
+    blurb: "Batch like a production house: one sitting, three reels, and a B-roll bank you'll reuse for months.",
+    agenda: ["Lighting depth on a budget — the two-lamp setup", "The B-roll bank: shoot once, cut forever", "Teleprompter workflow + batch day, demonstrated live"],
+  },
+  5: {
+    blurb: "The camera doesn't make you stiff — take one does. We break it with volume, live.",
+    agenda: ["Warm-up: the 10-second cold open, everyone on camera", "Take-1 vs take-10 — live demonstration", "Three students get a live re-direct", "The week's block briefed: re-shoot one old reel"],
+  },
+  6: {
+    blurb: "An editing system that cuts a reel in 20 minutes flat — and the 21-day calendar it feeds.",
+    agenda: ["The edit template: captions, pacing, sound in one pass", "Cut a student's raw footage live in 20 minutes", "Calendar v2: your 21-day sprint, drafted"],
+  },
+  7: {
+    blurb: "One long-form piece becomes seven — the repurposing pipeline that feeds every format.",
+    agenda: ["The 1→7 pipeline on a real student video", "Writing for the feed vs the reel vs the email", "Run the pipeline on your own long-form this week"],
+  },
+  8: {
+    blurb: "Where to publish, how often, and the commitment ceremony — the sprint contract gets signed.",
+    agenda: ["Platform strategy: pick two, ignore the rest", "Profiles that convert a profile visit into a follow", "The Sprint contract + your B-roll bank check"],
+  },
+  9: {
+    blurb: "The sprint begins. Community and lead capture — turning viewers into names you own.",
+    agenda: ["The capture machine: lead magnet → link → list", "DMs that don't feel like DMs", "Sprint week 1: the daily ship rhythm"],
+  },
+  10: {
+    blurb: "Read your numbers like a producer, not a fan — and double down where the data points.",
+    agenda: ["The 5 metrics that matter (and the 20 that don't)", "Live scorecard reviews: three student accounts", "Your data-driven double-down for sprint week 2"],
+  },
+  11: {
+    blurb: "Money enters the chat: your funnel, your inbound script, and the paid boost that multiplies winners.",
+    agenda: ["The service funnel: content → call → client", "Inbound DM script, word by word", "Paper-boost plan: put ₹500 behind proven reels"],
+  },
+  12: {
+    blurb: "The full Creator OS assembled: your 12-month engine, presented on Demo Day.",
+    agenda: ["The 12-month content engine, mapped", "Creator OS walkthrough: every system you built, lit up", "Demo Day: your engine, on stage"],
+  },
+};
+
 /* ── The upcoming live session ──────────────────────────────────────────── */
 
 export const LIVE_SESSION = {
