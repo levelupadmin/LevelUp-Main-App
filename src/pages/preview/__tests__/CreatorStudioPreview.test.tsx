@@ -5,7 +5,7 @@
  * submit → Week 5 opens → mentor accepts → Album places it.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 const mockAuth = vi.fn();
@@ -119,13 +119,17 @@ describe("CreatorStudioPreview", () => {
     expect(screen.getByRole("button", { name: /Zoom link drops Sun 7 Sep/ })).toBeTruthy();
   });
 
-  it("the All-sessions overview opens and jumps straight into a session", async () => {
+  it("the All-sessions overview lists every week and a tap jumps to it on the Path", async () => {
     renderAs("avinash@leveluplearning.in");
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
     fireEvent.click(await screen.findByRole("button", { name: /All sessions/ }));
     // All 13 sessions listed with dates.
     expect(await screen.findByText("Sun 28 Sep · upcoming")).toBeTruthy();
+    // One action, one outcome: tapping a row closes the sheet and jumps on the trail.
     fireEvent.click(screen.getByRole("button", { name: /The Creator OS \+ Your 12-Month Plan/ }));
+    await waitFor(() => expect(screen.queryByText("Sun 28 Sep · upcoming")).toBeNull());
+    // The session itself opens from the trail node — still one click away.
+    fireEvent.click(await screen.findByRole("button", { name: /Sun 3 PM — Live class — The Creator OS/ }));
     expect(await screen.findByText(/your 12-month engine, presented on Demo Day/i)).toBeTruthy();
   });
 

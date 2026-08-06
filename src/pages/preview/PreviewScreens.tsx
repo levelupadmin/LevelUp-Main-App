@@ -20,7 +20,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import {
   Flame, Lock, Check, Play, FileText, ClipboardList, ChevronRight, ChevronLeft,
   Video, CalendarDays, ArrowRight, Instagram, Youtube, HardDrive, Link2, Radio,
-  Zap, ListTree, MapPin,
+  Zap, ListTree,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -488,7 +488,7 @@ export function PathScreen({ s, d, go }: ScreenProps) {
   const nodes = useMemo(() => buildTrail(s, go, d), [s, go, d]);
   const doneSteps = nodes.filter((n) => n.state === "done").length;
 
-  const jump = (n: number) => weekRefs.current[n]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const jump = (n: number) => weekRefs.current[n]?.scrollIntoView?.({ behavior: "smooth", block: "start" });
 
   // Scroll-spy: the rail follows the trail. Guarded — jsdom has no IntersectionObserver.
   useEffect(() => {
@@ -508,7 +508,12 @@ export function PathScreen({ s, d, go }: ScreenProps) {
     return () => io.disconnect();
   }, []);
 
-  const openSession = (n: number) => { setOverviewOpen(false); go(`session/${n}`); };
+  // One action, one outcome: a row in the overview takes you to that week on
+  // the trail. Opening the session happens ON the trail — click, see, done.
+  const jumpFromOverview = (n: number) => {
+    setOverviewOpen(false);
+    window.setTimeout(() => jump(n), 250);
+  };
 
   const progressBar = (
     <div className="h-1 w-full overflow-hidden rounded-full bg-[hsl(var(--secondary))]">
@@ -550,59 +555,17 @@ export function PathScreen({ s, d, go }: ScreenProps) {
         </div>
       </div>
 
-      <div className="lg:grid lg:grid-cols-[236px_1fr] lg:gap-10">
-        {/* Desktop rail — scroll-spy follows you down the trail. */}
-        <aside className="hidden lg:block">
-          <div className="sticky top-24 space-y-3">
-            <div>
-              <div className="mb-1.5 flex items-center justify-between text-[10.5px] font-bold text-[hsl(var(--muted-foreground))]">
-                <span>PROGRESS</span><span>{doneSteps} of {nodes.length} steps</span>
-              </div>
-              {progressBar}
+      {/* THE TRAIL — centered, continuous, peaceful. No rail competing with it. */}
+      <div className="min-w-0">
+        <div className="mx-auto max-w-md lg:max-w-lg">
+          {/* Desktop progress — one quiet line above the trail. */}
+          <div className="mb-6 hidden lg:block">
+            <div className="mb-1.5 flex items-center justify-between text-[10.5px] font-bold text-[hsl(var(--muted-foreground))]">
+              <span>PROGRESS</span><span>{doneSteps} of {nodes.length} steps</span>
             </div>
-            <nav aria-label="Jump to a week" className="space-y-0.5">
-              {PHASES.map((p) => {
-                const t = toneForPhase(p.name);
-                return (
-                  <div key={p.name} className="pt-2 first:pt-0">
-                    <div className="px-2 pb-1 text-[9px] font-extrabold uppercase tracking-[0.18em]" style={{ color: t.c }}>{p.name}</div>
-                    {ENGINE.filter((e) => e.phase === p.name).map((e) => {
-                      const st = weekStatus(e.n, s);
-                      const on = activeWeek === e.n;
-                      return (
-                        <button
-                          key={e.n}
-                          type="button"
-                          onClick={() => jump(e.n)}
-                          className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-left transition-colors ${
-                            on ? "border-[hsl(var(--border))] bg-[hsl(var(--secondary))]" : "border-transparent hover:bg-[hsl(var(--secondary))]/60"
-                          }`}
-                        >
-                          <span
-                            className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[9px] font-extrabold"
-                            style={{
-                              background: st === "done" ? "hsl(var(--success))" : st === "current" || st === "open5" ? t.c : "hsl(var(--secondary))",
-                              color: st === "locked" ? "hsl(var(--muted-foreground))" : "hsl(var(--cream-text))",
-                            }}
-                          >
-                            {st === "done" ? <Check className="h-3 w-3" strokeWidth={3.5} /> : e.n}
-                          </span>
-                          <span className={`min-w-0 truncate text-[11.5px] font-medium ${st === "locked" && !on ? "text-[hsl(var(--muted-foreground))]" : ""}`}>
-                            {e.title}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </nav>
+            {progressBar}
           </div>
-        </aside>
-
-        {/* THE TRAIL — continuous, winding, phase-tinted. No boxes. */}
-        <div className="min-w-0">
-          <div className="mx-auto flex max-w-md flex-col items-center gap-6 lg:max-w-lg">
+          <div className="flex flex-col items-center gap-6">
             {PHASES.map((p) => {
               const t = toneForPhase(p.name);
               const phaseWeeks = ENGINE.filter((e) => e.phase === p.name);
@@ -642,7 +605,7 @@ export function PathScreen({ s, d, go }: ScreenProps) {
         <SheetContent className="w-full overflow-y-auto border-[hsl(var(--border))] bg-black/90 backdrop-blur-xl sm:max-w-md">
           <SheetHeader className="text-left">
             <SheetTitle>All sessions</SheetTitle>
-            <SheetDescription>Cohort 01 · Sundays 3 PM. Tap a session for details — every one is open to read.</SheetDescription>
+            <SheetDescription>Cohort 01 · Sundays 3 PM. Tap one — I'll take you to that week on the Path.</SheetDescription>
           </SheetHeader>
           <div className="mt-4 space-y-4">
             {PHASES.map((p) => {
@@ -656,34 +619,29 @@ export function PathScreen({ s, d, go }: ScreenProps) {
                     {ENGINE.filter((e) => e.phase === p.name).map((e) => {
                       const st = weekStatus(e.n, s);
                       return (
-                        <div key={e.n} className="flex items-center gap-2 bg-[hsl(var(--card))] px-3 py-2.5 transition-colors hover:bg-[hsl(var(--secondary))]">
-                          <button type="button" onClick={() => openSession(e.n)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-                            <span
-                              className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-extrabold"
-                              style={{
-                                background: st === "done" ? "hsl(var(--success))" : st === "current" || st === "open5" ? t.c : "hsl(var(--secondary))",
-                                color: st === "locked" ? "hsl(var(--muted-foreground))" : "hsl(var(--cream-text))",
-                              }}
-                            >
-                              {st === "done" ? <Check className="h-3 w-3" strokeWidth={3.5} /> : e.n}
-                            </span>
-                            <span className="min-w-0">
-                              <span className="block truncate text-[12.5px] font-semibold">{e.title}</span>
-                              <span className="block text-[10.5px] text-[hsl(var(--muted-foreground))]">
-                                {SESSION_DATES[e.n]} · {st === "done" ? "done" : st === "current" ? "this week" : st === "open5" ? "open" : "upcoming"}
-                              </span>
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            title="Show on the trail"
-                            aria-label={`Show Week ${e.n} on the trail`}
-                            onClick={() => { setOverviewOpen(false); window.setTimeout(() => jump(e.n), 250); }}
-                            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[hsl(var(--muted-foreground))] transition-colors hover:bg-black/40 hover:text-[hsl(var(--foreground))]"
+                        <button
+                          key={e.n}
+                          type="button"
+                          onClick={() => jumpFromOverview(e.n)}
+                          className="flex w-full items-center gap-2.5 bg-[hsl(var(--card))] px-3 py-2.5 text-left transition-colors hover:bg-[hsl(var(--secondary))]"
+                        >
+                          <span
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-extrabold"
+                            style={{
+                              background: st === "done" ? "hsl(var(--success))" : st === "current" || st === "open5" ? t.c : "hsl(var(--secondary))",
+                              color: st === "locked" ? "hsl(var(--muted-foreground))" : "hsl(var(--cream-text))",
+                            }}
                           >
-                            <MapPin className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
+                            {st === "done" ? <Check className="h-3 w-3" strokeWidth={3.5} /> : e.n}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[12.5px] font-semibold">{e.title}</span>
+                            <span className="block text-[10.5px] text-[hsl(var(--muted-foreground))]">
+                              {SESSION_DATES[e.n]} · {st === "done" ? "done" : st === "current" ? "this week" : st === "open5" ? "open" : "upcoming"}
+                            </span>
+                          </span>
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--muted-foreground))]" />
+                        </button>
                       );
                     })}
                   </div>
