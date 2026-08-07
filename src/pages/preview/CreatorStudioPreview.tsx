@@ -19,8 +19,10 @@ import PreviewShell from "./PreviewShell";
 import { SHELL_TABS } from "./previewTabs";
 import { usePlayState } from "./previewStore";
 import { HomeScreen, PathScreen, RecordingScreen, AssignmentScreen, SessionDetailScreen } from "./PreviewScreens";
-import { AlbumScreen, DocScreen, FeedScreen, MentorScreen } from "./PreviewStudioScreens";
+import { AlbumScreen, DocScreen, FeedScreen } from "./PreviewStudioScreens";
 import { AdminScreen, CohortLauncherScreen, TemplateStudioScreen } from "./PreviewAdminScreens";
+import { ProgramBuilderScreen, BuiltPathPreviewScreen } from "./PreviewBuilderScreens";
+import { MentorScreen, MentorWeeksScreen, MentorWeekScreen } from "./PreviewMentorScreens";
 
 const TITLES: Record<string, string> = {
   home: "Home", path: "The Path", recording: "The Path", assignment: "The Path",
@@ -45,7 +47,7 @@ export default function CreatorStudioPreview() {
   if (!anonymousOk && !canSeePreview({ id: user?.id ?? profile?.id, email: user?.email ?? profile?.email }))
     return <Navigate to="/home" replace />;
 
-  const [kind, param] = screen.split("/");
+  const [kind, param, param2] = screen.split("/");
 
   const content = (() => {
     switch (kind) {
@@ -56,11 +58,16 @@ export default function CreatorStudioPreview() {
       case "album": return <AlbumScreen s={s} d={d} go={go} />;
       case "doc": return <DocScreen go={go} docId={param ?? "scr1"} />;
       case "feed": return <FeedScreen s={s} d={d} go={go} />;
-      case "mentor": return <MentorScreen s={s} d={d} go={go} />;
+      case "mentor":
+        if (param && param2 !== undefined) return <MentorWeekScreen s={s} d={d} go={go} week={Number(param2) || 4} />;
+        if (param) return <MentorWeeksScreen s={s} go={go} />;
+        return <MentorScreen s={s} go={go} />;
       case "admin":
         if (param === "launch") return <CohortLauncherScreen s={s} d={d} go={go} />;
         if (param === "template") return <TemplateStudioScreen s={s} d={d} go={go} />;
-        return <AdminScreen s={s} go={go} />;
+        if (param === "builder") return <ProgramBuilderScreen key={param2 ?? "new"} s={s} d={d} go={go} programId={param2} />;
+        if (param === "preview" && param2) return <BuiltPathPreviewScreen s={s} go={go} programId={param2} />;
+        return <AdminScreen s={s} d={d} go={go} />;
       default: return <HomeScreen s={s} d={d} go={go} />;
     }
   })();

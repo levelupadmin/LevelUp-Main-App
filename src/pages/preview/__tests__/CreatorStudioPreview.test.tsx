@@ -82,8 +82,11 @@ describe("CreatorStudioPreview", () => {
     fireEvent.click(screen.getByRole("button", { name: /Submit · unlocks Week 5/ }));
     expect(await screen.findByText(/Submitted — Week 5 is open/i)).toBeTruthy();
 
-    // Play the mentor — the seeded queue is there too, but ours is on top.
+    // Play the mentor — cohort → week 4 → Submissions tab, ours on top.
     fireEvent.click(screen.getAllByRole("button", { name: /^Mentor desk/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy · Cohort 01/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Week 4 · Sun 3 Aug/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Submissions$/ }));
     fireEvent.click((await screen.findAllByRole("button", { name: /Accept — reviewed on the call/ }))[0]);
 
     // Place it in the Album.
@@ -168,6 +171,59 @@ describe("CreatorStudioPreview", () => {
     fireEvent.click(screen.getByRole("button", { name: /View Week 6 as a student/ }));
     expect(await screen.findByText("The 20-minute edit system, rebuilt live.")).toBeTruthy();
   }, 15000);
+
+  it("BUILDER: a program built from scratch renders its own Path", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Build a program from scratch/ }));
+
+    // Name it, rename the phase, add a community call and a resource with a link.
+    fireEvent.change(await screen.findByLabelText("Program name"), { target: { value: "Video Editing Studio" } });
+    fireEvent.change(screen.getByLabelText("Phase 1 name"), { target: { value: "Orientation" } });
+    fireEvent.click(screen.getByRole("button", { name: /Add to Week 1/ }));
+    fireEvent.change(screen.getByLabelText("Day"), { target: { value: "Thu" } });
+    fireEvent.change(screen.getByLabelText("Card type"), { target: { value: "community_call" } });
+    fireEvent.change(screen.getByLabelText("Card title"), { target: { value: "Community call — wins & blockers" } });
+    fireEvent.click(screen.getByRole("button", { name: /Add card/ }));
+    // Second card: a resource with a Drive link.
+    fireEvent.click(screen.getByRole("button", { name: /Add to Week 1/ }));
+    fireEvent.change(screen.getByLabelText("Card type"), { target: { value: "resource" } });
+    fireEvent.change(screen.getByLabelText("Card title"), { target: { value: "Editing template pack" } });
+    fireEvent.change(screen.getByLabelText("Card link"), { target: { value: "https://drive.google.com/drive/folders/xyz" } });
+    fireEvent.click(screen.getByRole("button", { name: /Add card/ }));
+
+    // Add a second phase, then preview the generated Path.
+    fireEvent.click(screen.getByRole("button", { name: /Add a phase/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Preview the Path/ }));
+
+    expect(await screen.findByText("Video Editing Studio")).toBeTruthy();
+    expect(screen.getByText("Orientation")).toBeTruthy();
+    expect(screen.getByText(/THU · COMMUNITY CALL/)).toBeTruthy();
+    expect(screen.getByText("Editing template pack")).toBeTruthy();
+  }, 20000);
+
+  it("MENTOR v2: cohort → weeks → students tab counts + submissions tab + CSV export", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Mentor desk/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy · Cohort 01/ }));
+    // Weeks grid — current week flagged.
+    expect(await screen.findByText(/You're here/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Week 4 · Sun 3 Aug/ }));
+    // Students tab first: counts + statuses.
+    expect(await screen.findByText("4/10")).toBeTruthy();
+    expect(screen.getByText("Meghna Iyer")).toBeTruthy();
+    expect(screen.getAllByText("Not yet").length).toBeGreaterThan(0);
+    // Submissions tab: review a seeded piece → Creator OS connection line.
+    fireEvent.click(screen.getByRole("button", { name: /^Submissions$/ }));
+    const before = screen.queryAllByText(/can now place this piece in their Creator OS/).length;
+    fireEvent.click((await screen.findAllByRole("button", { name: /Ship — reviewed on the call/ }))[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/can now place this piece in their Creator OS/).length).toBe(before + 1),
+    );
+    // Export exists and confirms.
+    fireEvent.click(screen.getByRole("button", { name: /Export CSV/ }));
+    expect(await screen.findByRole("button", { name: /Exported/ })).toBeTruthy();
+  }, 20000);
 
   it("the People view shows the cohort", async () => {
     renderAs("avinash@leveluplearning.in");

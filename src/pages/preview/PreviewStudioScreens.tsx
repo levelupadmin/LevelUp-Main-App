@@ -13,9 +13,9 @@ import {
   Clapperboard, Users, ExternalLink, Flame, Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PageHeader, Section, SurfaceCard, StatCard, EmptyState } from "@/components/patterns";
+import { PageHeader, Section, SurfaceCard } from "@/components/patterns";
 import {
-  PROFILE, SCRIPTS, POSITION_PACK, PUBLISHED_WORK, SPRINT, PEOPLE, MENTOR_SEED,
+  PROFILE, SCRIPTS, POSITION_PACK, PUBLISHED_WORK, SPRINT, PEOPLE,
   type PreviewDoc, type PostType,
 } from "./previewData";
 import { LinkCard, BackRow, Serif, type ScreenProps } from "./PreviewScreens";
@@ -479,133 +479,6 @@ function PeopleGrid({ onMention }: { onMention: (name: string) => void }) {
           </div>
         </SurfaceCard>
       ))}
-    </div>
-  );
-}
-
-/* ── 8 · Mentor desk — a real queue to walk ─────────────────────────────── */
-
-export function MentorScreen({ s, d }: ScreenProps) {
-  const [seedState, setSeedState] = useState<Record<string, "open" | "accepted" | "feedback">>({});
-  const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
-  const [note, setNote] = useState("");
-
-  const openCount = MENTOR_SEED.filter((m) => m.status === "open" && !seedState[m.id]).length + (s.blockStatus === "submitted" ? 1 : 0);
-  const closedCount = MENTOR_SEED.filter((m) => m.status === "closed").length
-    + Object.values(seedState).filter((v) => v !== "open").length
-    + (s.blockStatus === "accepted" ? 1 : 0);
-
-  return (
-    <div className="space-y-8">
-      <PageHeader
-        eyebrow="Mentor"
-        title="Review queue"
-        subtitle="Thursday night, blocks land. Close a review the way you actually work — one tap for a call review, typing optional."
-      />
-
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Open" value={openCount} accent="amber" icon={<ClipboardList className="h-4 w-4" />} />
-        <StatCard label="Closed this week" value={closedCount} accent="emerald" icon={<Check className="h-4 w-4" />} />
-        <StatCard label="Median turnaround" value="16h" accent="cream" icon={<Flame className="h-4 w-4" />} />
-      </div>
-
-      <Section title="This week's blocks" description="Week 4 — B-roll bank + 3 reels from one sitting.">
-        <div className="space-y-3">
-          {/* The student's OWN submission, live from the loop. */}
-          {s.blockStatus !== "none" && (
-            <SurfaceCard variant="static" padding="lg" className="border-[hsl(var(--cream)/0.28)]">
-              <QueueHeader name="You" initials="YO" week={4} type="Text" when="just now"
-                status={s.blockStatus === "accepted" ? "closed" : "open"} closedNote={s.blockStatus === "accepted" ? "Ship — accepted" : undefined} />
-              <p className="mt-3 whitespace-pre-wrap rounded-xl bg-[hsl(var(--secondary))] p-3 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">{s.blockText}</p>
-              {s.blockStatus === "submitted" && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button variant="champagne" size="sm" onClick={() => d({ type: "mentor_accept" })}>
-                    <Check /> Accept — reviewed on the call
-                  </Button>
-                  <Button variant="outline" size="sm">Type feedback</Button>
-                </div>
-              )}
-              {s.blockStatus === "accepted" && (
-                <p className="mt-3 text-[12px] text-[hsl(var(--muted-foreground))]">Accepted. The student now sees "Add to my Album" on this piece.</p>
-              )}
-            </SurfaceCard>
-          )}
-
-          {MENTOR_SEED.map((m) => {
-            const local = seedState[m.id];
-            const isClosed = m.status === "closed" || (local && local !== "open");
-            const closedNote = m.closedNote ?? (local === "accepted" ? "Ship — accepted" : local === "feedback" ? "Feedback sent" : undefined);
-            return (
-              <SurfaceCard key={m.id} variant="static" padding="lg">
-                <QueueHeader name={m.student} initials={m.initials} week={m.week} type={m.type} when={m.when}
-                  status={isClosed ? "closed" : "open"} closedNote={closedNote} />
-                <p className="mt-3 rounded-xl bg-[hsl(var(--secondary))] p-3 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">{m.body}</p>
-                {m.url && <div className="mt-3"><LinkCard url={m.url} compact /></div>}
-                {!isClosed && (
-                  <div className="mt-4">
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="champagne" size="sm" onClick={() => setSeedState((st) => ({ ...st, [m.id]: "accepted" }))}>
-                        <Check /> Accept — reviewed on the call
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => { setFeedbackFor(feedbackFor === m.id ? null : m.id); setNote(""); }}>
-                        Type feedback
-                      </Button>
-                    </div>
-                    {feedbackFor === m.id && (
-                      <div className="mt-3 flex gap-2">
-                        <input
-                          value={note}
-                          onChange={(ev) => setNote(ev.target.value)}
-                          placeholder={`Feedback for ${m.student.split(" ")[0]}…`}
-                          aria-label={`Feedback for ${m.student}`}
-                          className="w-full rounded-xl border border-[hsl(var(--input))] bg-black/40 px-3 py-2 text-[12.5px] outline-none placeholder:text-[hsl(var(--muted-foreground))] focus:border-[hsl(var(--border-hover))]"
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!note.trim()}
-                          onClick={() => { setSeedState((st) => ({ ...st, [m.id]: "feedback" })); setFeedbackFor(null); }}
-                        >
-                          Send
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </SurfaceCard>
-            );
-          })}
-
-          {s.blockStatus === "none" && (
-            <EmptyState
-              icon={<ClipboardList className="h-5 w-5" />}
-              title="Your own block isn't in this queue yet"
-              description="Submit Week 4's block as the student — it'll appear here at the top for you to review as the mentor."
-            />
-          )}
-        </div>
-      </Section>
-    </div>
-  );
-}
-
-function QueueHeader({ name, initials, week, type, when, status, closedNote }: {
-  name: string; initials: string; week: number; type: string; when: string; status: "open" | "closed"; closedNote?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-2.5">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[hsl(var(--secondary))] text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">
-          {initials}
-        </div>
-        <div className="min-w-0">
-          <div className="truncate text-[13.5px] font-semibold">{name}</div>
-          <div className="text-[11px] text-[hsl(var(--muted-foreground))]">Week {week} · {type} · {when}</div>
-        </div>
-      </div>
-      {status === "closed"
-        ? <span className="shrink-0 rounded-full border border-[hsl(var(--success)/0.4)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--success))]">{closedNote ?? "Closed"}</span>
-        : <span className="shrink-0 rounded-full border border-[hsl(var(--gold)/0.4)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--gold))]">Open</span>}
     </div>
   );
 }

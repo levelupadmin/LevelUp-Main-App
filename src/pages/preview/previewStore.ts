@@ -55,6 +55,36 @@ export interface CardOverride {
   block?: string;
 }
 
+/* ── The from-scratch Program Builder — the founder's "plus plus plus" ──── */
+
+export type BuiltCardKind = "live_class" | "community_call" | "task" | "assignment" | "resource";
+
+export interface BuiltCard {
+  id: string;
+  day: string; // Sun … Sat
+  kind: BuiltCardKind;
+  title: string;
+  link?: string; // Drive / recording / anything
+}
+
+export interface BuiltWeek {
+  id: string;
+  title: string;
+  cards: BuiltCard[];
+}
+
+export interface BuiltPhase {
+  id: string;
+  name: string;
+  weeks: BuiltWeek[];
+}
+
+export interface BuiltProgram {
+  id: string;
+  name: string;
+  phases: BuiltPhase[];
+}
+
 export interface PlayState {
   xp: number;
   streak: number;
@@ -70,6 +100,8 @@ export interface PlayState {
   /** Admin demo state. */
   cohort?: PlayCohort;
   overrides: Record<number, CardOverride>;
+  /** Programs built from scratch in the app. */
+  programs: BuiltProgram[];
 }
 
 const SEEDED: PlayPost[] = SEED_POSTS.map((p) => ({
@@ -104,6 +136,7 @@ export const INITIAL: PlayState = {
   posts: SEEDED,
   cohort: undefined,
   overrides: {},
+  programs: [],
 };
 
 export type PlayAction =
@@ -117,6 +150,8 @@ export type PlayAction =
   | { type: "add_comment"; id: string; body: string }
   | { type: "launch_cohort"; cohort: PlayCohort }
   | { type: "admin_edit_card"; week: number; blurb?: string; block?: string }
+  | { type: "save_program"; program: BuiltProgram }
+  | { type: "delete_program"; id: string }
   | { type: "reset" };
 
 function completeDay(s: PlayState, id: string): PlayState {
@@ -193,6 +228,15 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
       if (a.block !== undefined) next.block = a.block;
       return { ...s, overrides: { ...s.overrides, [a.week]: next } };
     }
+    case "save_program": {
+      const exists = s.programs.some((p) => p.id === a.program.id);
+      return {
+        ...s,
+        programs: exists ? s.programs.map((p) => (p.id === a.program.id ? a.program : p)) : [...s.programs, a.program],
+      };
+    }
+    case "delete_program":
+      return { ...s, programs: s.programs.filter((p) => p.id !== a.id) };
     case "reset":
       return INITIAL;
     default:
@@ -200,7 +244,7 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
   }
 }
 
-const KEY = "creator-studio-preview-v3";
+const KEY = "creator-studio-preview-v4";
 
 export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
   const [state, dispatch] = useReducer(reduce, INITIAL, (init) => {
@@ -209,7 +253,7 @@ export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
       if (!raw) return init;
       const saved = JSON.parse(raw) as PlayState;
       // A shape mismatch after a prototype update must reset, not crash.
-      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" ? saved : init;
+      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" && Array.isArray(saved.programs) ? saved : init;
     } catch {
       return init;
     }

@@ -14,7 +14,7 @@ import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarPlus, Video, Megaphone, KeyRound, ChevronRight, Check, Rocket,
-  PencilLine, Radio, Zap, ClipboardList, Eye, CalendarX, X, Layers,
+  PencilLine, Radio, Zap, ClipboardList, Eye, CalendarX, X, Layers, Plus, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader, Section, SurfaceCard } from "@/components/patterns";
@@ -25,10 +25,11 @@ import { BackRow, type ScreenProps } from "./PreviewScreens";
 
 /* ── Admin hub ──────────────────────────────────────────────────────────── */
 
-export function AdminScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
+export function AdminScreen({ s, d, go }: ScreenProps) {
   const tools = [
+    { icon: Plus, title: "Build a program from scratch", body: "Any shape — 2 weeks or 15, your phases, your days, your cards (live classes, community calls, tasks, resources with links). The Path draws itself.", to: "admin/builder", live: true },
     { icon: Rocket, title: "Launch a cohort", body: "Template + start date + blackout days → the full dated calendar, previewed, then announced. Ten minutes, zero code.", to: "admin/launch", live: true },
-    { icon: PencilLine, title: "Template Studio", body: "The curriculum as typed cards. Edit a card's content and watch it project onto the student Path.", to: "admin/template", live: true },
+    { icon: PencilLine, title: "Template Studio", body: "The Creator Academy curriculum as typed cards. Edit a card's content and watch it project onto the student Path.", to: "admin/template", live: true },
     { icon: Video, title: "Upload a recording", body: "Protected storage; plays only for enrolled students through an expiring link." },
     { icon: Megaphone, title: "Post an announcement", body: "Pinned to the top of the room's feed until you unpin it." },
     { icon: KeyRound, title: "Unlock a week for one student", body: `Override the gate with a reason and an audit trail.${s.week5Unlocked ? " (Week 5 currently open via the block.)" : ""}` },
@@ -38,8 +39,43 @@ export function AdminScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
       <PageHeader
         eyebrow="Admin"
         title="Creator Studio control"
-        subtitle="The two glowing tools are LIVE in this demo — walk the December launch and the template edit."
+        subtitle="The glowing tools are LIVE in this demo — build a program from nothing, launch the December cohort, edit the template."
       />
+
+      {s.programs.length > 0 && (
+        <Section title="Your programs" description="Built from scratch, in the app.">
+          <div className="grid gap-3 lg:grid-cols-2">
+            {s.programs.map((p) => {
+              const weeks = p.phases.reduce((x, ph) => x + ph.weeks.length, 0);
+              const cards = p.phases.reduce((x, ph) => x + ph.weeks.reduce((y, w) => y + w.cards.length, 0), 0);
+              return (
+                <SurfaceCard key={p.id} variant="static" padding="lg">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-[13.5px] font-semibold">{p.name || "Untitled program"}</div>
+                      <div className="mt-0.5 text-[11.5px] text-[hsl(var(--muted-foreground))]">
+                        {p.phases.length} phase{p.phases.length !== 1 ? "s" : ""} · {weeks} week{weeks !== 1 ? "s" : ""} · {cards} card{cards !== 1 ? "s" : ""}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-1.5">
+                      <Button variant="outline" size="sm" onClick={() => go(`admin/preview/${p.id}`)}><Eye /> Path</Button>
+                      <Button variant="outline" size="sm" onClick={() => go(`admin/builder/${p.id}`)}><PencilLine /> Edit</Button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${p.name || "untitled program"}`}
+                        onClick={() => d({ type: "delete_program", id: p.id })}
+                        className="grid h-8 w-8 place-items-center rounded-lg text-[hsl(var(--muted-foreground))] transition-colors hover:bg-black/40"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </SurfaceCard>
+              );
+            })}
+          </div>
+        </Section>
+      )}
 
       <Section title="Your cohorts">
         <div className="grid gap-3 lg:grid-cols-2">
