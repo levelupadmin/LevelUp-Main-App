@@ -21,18 +21,18 @@ import { usePlayState } from "./previewStore";
 import { HomeScreen, PathScreen, RecordingScreen, AssignmentScreen, SessionDetailScreen } from "./PreviewScreens";
 import { AlbumScreen, DocScreen, FeedScreen } from "./PreviewStudioScreens";
 import { AdminScreen, CohortLauncherScreen, TemplateStudioScreen } from "./PreviewAdminScreens";
-import { ProgramBuilderScreen, BuiltPathPreviewScreen } from "./PreviewBuilderScreens";
-import { MentorScreen, MentorWeeksScreen, MentorWeekScreen } from "./PreviewMentorScreens";
+import { ProgramBuilderScreen, BuiltPathPreviewScreen, BuiltCardScreen } from "./PreviewBuilderScreens";
+import { MentorScreen, MentorWeeksScreen, MentorWeekScreen, MentorBuiltScreen } from "./PreviewMentorScreens";
 
 const TITLES: Record<string, string> = {
   home: "Home", path: "The Path", recording: "The Path", assignment: "The Path",
   session: "The Path", album: "Creator OS", doc: "Creator OS",
-  feed: "Feed", mentor: "Mentor desk", admin: "Admin",
+  feed: "Feed", mentor: "Mentor desk", admin: "Admin", builtcard: "Admin",
 };
 
 /** Which rail tab a sub-screen belongs under. */
 const TAB_FOR: Record<string, string> = {
-  recording: "path", assignment: "path", session: "path", doc: "album",
+  recording: "path", assignment: "path", session: "path", doc: "album", builtcard: "admin",
 };
 
 export default function CreatorStudioPreview() {
@@ -59,9 +59,12 @@ export default function CreatorStudioPreview() {
       case "doc": return <DocScreen go={go} docId={param ?? "scr1"} />;
       case "feed": return <FeedScreen s={s} d={d} go={go} />;
       case "mentor":
+        if (param === "built") return <MentorBuiltScreen s={s} go={go} />;
         if (param && param2 !== undefined) return <MentorWeekScreen s={s} d={d} go={go} week={Number(param2) || 4} />;
         if (param) return <MentorWeeksScreen s={s} go={go} />;
         return <MentorScreen s={s} go={go} />;
+      case "builtcard":
+        return <BuiltCardScreen s={s} d={d} go={go} programId={param ?? ""} cardId={param2 ?? ""} />;
       case "admin":
         if (param === "launch") return <CohortLauncherScreen s={s} d={d} go={go} />;
         if (param === "template") return <TemplateStudioScreen s={s} d={d} go={go} />;

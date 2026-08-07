@@ -185,12 +185,13 @@ describe("CreatorStudioPreview", () => {
     fireEvent.change(screen.getByLabelText("Card type"), { target: { value: "community_call" } });
     fireEvent.change(screen.getByLabelText("Card title"), { target: { value: "Community call — wins & blockers" } });
     fireEvent.click(screen.getByRole("button", { name: /Add card/ }));
-    // Second card: a resource with a Drive link.
+    // Second card: a resource — its template opens on add; attach a Drive link there.
     fireEvent.click(screen.getByRole("button", { name: /Add to Week 1/ }));
     fireEvent.change(screen.getByLabelText("Card type"), { target: { value: "resource" } });
     fireEvent.change(screen.getByLabelText("Card title"), { target: { value: "Editing template pack" } });
-    fireEvent.change(screen.getByLabelText("Card link"), { target: { value: "https://drive.google.com/drive/folders/xyz" } });
     fireEvent.click(screen.getByRole("button", { name: /Add card/ }));
+    fireEvent.change(await screen.findByLabelText("Resource URL"), { target: { value: "https://drive.google.com/drive/folders/xyz" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add resource" }));
 
     // Add a second phase, then preview the generated Path.
     fireEvent.click(screen.getByRole("button", { name: /Add a phase/ }));
@@ -201,6 +202,38 @@ describe("CreatorStudioPreview", () => {
     expect(screen.getByText(/THU · COMMUNITY CALL/)).toBeTruthy();
     expect(screen.getByText("Editing template pack")).toBeTruthy();
   }, 20000);
+
+  it("TEMPLATES: the sample program's cards open as filled student pages, and its assignment takes a submission that reaches the Mentor Desk", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Build a program from scratch/ }));
+    // One tap: the fully-filled sample.
+    fireEvent.click(await screen.findByRole("button", { name: /Load a filled sample/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Preview the Path/ }));
+
+    // The generated Path is clickable — open the orientation live class.
+    fireEvent.click(await screen.findByRole("button", { name: /Sun — Orientation — how this program works/ }));
+    // The student page renders the filled template: mentor, brief, Zoom→recording, resources.
+    expect(await screen.findByText(/Hosted by Rahul/)).toBeTruthy();
+    expect(screen.getByText(/how reviews work/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Watch the recording/ })).toBeTruthy(); // recording present → replaces Zoom
+    expect(screen.getByText("Program handbook (PDF)")).toBeTruthy();
+
+    // Back to the Path → open the assignment → the in-built form.
+    fireEvent.click(screen.getByRole("button", { name: new RegExp("^" + "Video Editing Studio") }));
+    fireEvent.click(await screen.findByRole("button", { name: /Sat — First cut — the 30-second sequence/ }));
+    expect(await screen.findByText(/Paste the link to your exported cut/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Submission for First cut/), { target: { value: "https://youtu.be/first-cut — trimming the open hurt" } });
+    fireEvent.click(screen.getByRole("button", { name: /Submit — goes straight to the Mentor Desk/ }));
+    expect(await screen.findByText(/Submitted — sitting in the Mentor Desk/)).toBeTruthy();
+
+    // And the Mentor Desk actually has it.
+    fireEvent.click(screen.getAllByRole("button", { name: /^Mentor desk/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Program Builder demos/ }));
+    expect(await screen.findByText(/trimming the open hurt/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Ship — reviewed on the call/ }));
+    expect(await screen.findByText(/can now place this piece in their Creator OS/)).toBeTruthy();
+  }, 25000);
 
   it("MENTOR v2: cohort → weeks → students tab counts + submissions tab + CSV export", async () => {
     renderAs("avinash@leveluplearning.in");

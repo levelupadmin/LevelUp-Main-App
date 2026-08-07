@@ -44,6 +44,23 @@ describe("the admin demo's store actions", () => {
     expect(s.cohort?.name).toBe("Creator Academy · Cohort 03");
   });
 
+  it("submit_built routes an in-built form submission to the mentor's pile", () => {
+    const program = {
+      id: "prog-x", name: "Video Editing Studio",
+      phases: [{ id: "ph1", name: "Foundations", weeks: [{ id: "w1", title: "Week 1", cards: [
+        { id: "c1", day: "Sat", kind: "assignment" as const, title: "First cut", submitPrompt: "Link + one line" },
+      ] }] }],
+    };
+    let s = reduce(INITIAL, { type: "save_program", program });
+    s = reduce(s, { type: "submit_built", programId: "prog-x", cardId: "c1", body: "https://youtu.be/mycut — hardest cut was the opening" });
+    expect(s.builtSubmissions.length).toBe(1);
+    expect(s.builtSubmissions[0].cardTitle).toBe("First cut");
+    expect(s.builtSubmissions[0].programName).toBe("Video Editing Studio");
+    // blank refused; unknown card refused
+    expect(reduce(s, { type: "submit_built", programId: "prog-x", cardId: "c1", body: "  " })).toBe(s);
+    expect(reduce(s, { type: "submit_built", programId: "prog-x", cardId: "nope", body: "x" })).toBe(s);
+  });
+
   it("admin_edit_card overrides the template and merges partial edits", () => {
     let s = reduce(INITIAL, { type: "admin_edit_card", week: 6, blurb: "New blurb for editing week." });
     s = reduce(s, { type: "admin_edit_card", week: 6, block: "One reel, cut two ways" });

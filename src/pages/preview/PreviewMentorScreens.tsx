@@ -67,6 +67,67 @@ export function MentorScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
             </div>
           </SurfaceCard>
         )}
+        {s.builtSubmissions.length > 0 && (
+          <SurfaceCard variant="interactive" padding="lg" className="border-[hsl(var(--accent-amber)/0.35)]" onClick={() => go("mentor/built")}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[14px] font-semibold">Program Builder demos</div>
+                <div className="mt-0.5 text-[11.5px] text-[hsl(var(--muted-foreground))]">
+                  {s.builtSubmissions.length} submission{s.builtSubmissions.length !== 1 ? "s" : ""} from built assignment cards — straight from the in-built form
+                </div>
+              </div>
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[hsl(var(--accent-amber)/0.45)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--accent-amber))]">
+                New <ChevronRight className="h-3 w-3" />
+              </span>
+            </div>
+          </SurfaceCard>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Built-program submissions — the in-built form's landing spot ───────── */
+
+export function MentorBuiltScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
+  const [shipped, setShipped] = useState<Record<string, boolean>>({});
+  return (
+    <div className="space-y-6">
+      <BackRow label="Cohorts" onClick={() => go("mentor")} />
+      <PageHeader
+        eyebrow="Mentor · Program Builder demos"
+        title="Built-card submissions"
+        subtitle="Every submission below came through an assignment card's in-built form — no Tally, no export, no gap."
+      />
+      <div className="space-y-3">
+        {s.builtSubmissions.map((b) => (
+          <SurfaceCard key={b.id} variant="static" padding="lg">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-[13.5px] font-semibold">{b.cardTitle}</div>
+                <div className="text-[11px] text-[hsl(var(--muted-foreground))]">{b.programName} · You · {b.when}</div>
+              </div>
+              {shipped[b.id]
+                ? <span className="shrink-0 rounded-full border border-[hsl(var(--success)/0.4)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--success))]">Ship</span>
+                : <span className="shrink-0 rounded-full border border-[hsl(var(--gold)/0.4)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--gold))]">Open</span>}
+            </div>
+            <p className="mt-3 whitespace-pre-wrap rounded-xl bg-[hsl(var(--secondary))] p-3 text-[12.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">{b.body}</p>
+            {!shipped[b.id] ? (
+              <div className="mt-4">
+                <Button variant="champagne" size="sm" onClick={() => setShipped((x) => ({ ...x, [b.id]: true }))}>
+                  <Check /> Ship — reviewed on the call
+                </Button>
+              </div>
+            ) : (
+              <p className="mt-3 text-[12px] font-medium text-[hsl(var(--success))]">
+                Shipped. The student can now place this piece in their Creator OS — it carries your review with it.
+              </p>
+            )}
+          </SurfaceCard>
+        ))}
+        {s.builtSubmissions.length === 0 && (
+          <EmptyState icon={<ClipboardList className="h-5 w-5" />} title="Nothing here yet" description="Submit against a built assignment card in the Path preview and it lands here." />
+        )}
       </div>
     </div>
   );

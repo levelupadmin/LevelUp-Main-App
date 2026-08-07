@@ -59,12 +59,45 @@ export interface CardOverride {
 
 export type BuiltCardKind = "live_class" | "community_call" | "task" | "assignment" | "resource";
 
+export interface BuiltResource {
+  id: string;
+  label: string;
+  url: string;
+}
+
+/**
+ * A card is a TEMPLATE the admin fills, not just a title. Which fields render
+ * depends on the kind — the student page draws itself from what's filled:
+ *   live_class      mentor · brief · zoomUrl (pre-class) · recordingUrl (post) · resources
+ *   community_call  mentor · brief · zoomUrl
+ *   assignment      brief · resources · submitPrompt (the in-built "Tally") — submissions land in the Mentor Desk
+ *   task            brief
+ *   resource        brief · resources
+ */
 export interface BuiltCard {
   id: string;
   day: string; // Sun … Sat
   kind: BuiltCardKind;
   title: string;
-  link?: string; // Drive / recording / anything
+  mentor?: string;
+  brief?: string;
+  zoomUrl?: string;
+  recordingUrl?: string;
+  resources?: BuiltResource[];
+  /** Assignment only — the submission ask. Its presence turns on the in-built submit form. */
+  submitPrompt?: string;
+  link?: string; // legacy quick-add single link (still rendered as a resource)
+}
+
+/** A submission made against a built program's assignment card — the mentor sees these. */
+export interface BuiltSubmission {
+  id: string;
+  programId: string;
+  programName: string;
+  cardId: string;
+  cardTitle: string;
+  body: string;
+  when: string;
 }
 
 export interface BuiltWeek {
@@ -102,6 +135,8 @@ export interface PlayState {
   overrides: Record<number, CardOverride>;
   /** Programs built from scratch in the app. */
   programs: BuiltProgram[];
+  /** Submissions against built assignment cards — routed to the Mentor Desk. */
+  builtSubmissions: BuiltSubmission[];
 }
 
 const SEEDED: PlayPost[] = SEED_POSTS.map((p) => ({
@@ -137,6 +172,7 @@ export const INITIAL: PlayState = {
   cohort: undefined,
   overrides: {},
   programs: [],
+  builtSubmissions: [],
 };
 
 export type PlayAction =
@@ -152,6 +188,7 @@ export type PlayAction =
   | { type: "admin_edit_card"; week: number; blurb?: string; block?: string }
   | { type: "save_program"; program: BuiltProgram }
   | { type: "delete_program"; id: string }
+  | { type: "submit_built"; programId: string; cardId: string; body: string }
   | { type: "reset" };
 
 function completeDay(s: PlayState, id: string): PlayState {
@@ -237,6 +274,19 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
     }
     case "delete_program":
       return { ...s, programs: s.programs.filter((p) => p.id !== a.id) };
+    case "submit_built": {
+      if (!a.body.trim()) return s;
+      const prog = s.programs.find((p) => p.id === a.programId);
+      const card = prog?.phases.flatMap((ph) => ph.weeks).flatMap((w) => w.cards).find((c) => c.id === a.cardId);
+      if (!prog || !card) return s;
+      return {
+        ...s,
+        builtSubmissions: [
+          { id: `bs${Date.now()}`, programId: prog.id, programName: prog.name, cardId: card.id, cardTitle: card.title, body: a.body.trim(), when: "just now" },
+          ...s.builtSubmissions,
+        ],
+      };
+    }
     case "reset":
       return INITIAL;
     default:
@@ -244,7 +294,7 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
   }
 }
 
-const KEY = "creator-studio-preview-v4";
+const KEY = "creator-studio-preview-v5";
 
 export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
   const [state, dispatch] = useReducer(reduce, INITIAL, (init) => {
@@ -253,7 +303,7 @@ export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
       if (!raw) return init;
       const saved = JSON.parse(raw) as PlayState;
       // A shape mismatch after a prototype update must reset, not crash.
-      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" && Array.isArray(saved.programs) ? saved : init;
+      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" && Array.isArray(saved.programs) && Array.isArray(saved.builtSubmissions) ? saved : init;
     } catch {
       return init;
     }
