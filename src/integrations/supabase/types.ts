@@ -7031,6 +7031,7 @@ export type Database = {
       }
       claim_my_purchases: { Args: never; Returns: Json }
       claim_purchases_for_user: { Args: { p_user_id: string }; Returns: Json }
+      recover_own_deleted_account: { Args: never; Returns: boolean }
       cleanup_deleted_users: {
         Args: never
         Returns: {

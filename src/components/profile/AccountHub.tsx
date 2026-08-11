@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Award,
@@ -8,6 +8,8 @@ import {
   Scale,
   Trash2,
   ChevronRight,
+  ChevronDown,
+  Settings2,
   type LucideIcon,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
@@ -147,6 +149,13 @@ const AccountHub = ({
 }: AccountHubProps) => {
   const navigate = useNavigate();
 
+  // Delete account is deliberately tucked behind a collapsed "Advanced"
+  // disclosure (default closed) rather than sitting as a one-tap card — a
+  // stray tap on the hub can't reach it, but it stays reachable in-app as
+  // Google Play requires. Expanding it is the first of two deliberate steps
+  // (the second is the type-your-email/phone confirmation in ProfilePage).
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
   const accountItems: MenuItem[] = [
     { icon: Pencil, label: "Edit profile", onClick: onEditProfile },
     { icon: Bell, label: "Notifications", onClick: onNotifications },
@@ -201,8 +210,41 @@ const AccountHub = ({
       <Reveal delayMs={160}>
         <MenuGroup items={accountItems} />
       </Reveal>
+
+      {/* Advanced (collapsed): keeps the destructive action out of one-tap
+          reach. Closed by default; deleting requires expanding this first. */}
       <Reveal delayMs={200}>
-        <MenuGroup items={dangerItems} />
+        <div>
+          <button
+            type="button"
+            aria-expanded={advancedOpen}
+            onClick={() => {
+              void hapticSelection();
+              setAdvancedOpen((v) => !v);
+            }}
+            className="pressable flex w-full items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3.5 text-left transition-colors hover:bg-surface-2"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-muted-foreground">
+              <Settings2 className="h-4 w-4" />
+            </div>
+            <span className="flex-1 text-sm font-medium text-foreground">Advanced</span>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                advancedOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+
+          {advancedOpen && (
+            <div className="mt-3 space-y-2">
+              <MenuGroup items={dangerItems} />
+              <p className="px-1 text-xs text-muted-foreground">
+                Deleting is permanent after a 7-day grace period. You'll be asked to
+                type your full email or phone number to confirm.
+              </p>
+            </div>
+          )}
+        </div>
       </Reveal>
     </div>
   );

@@ -413,12 +413,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         initialLoadDone = true;
       }
 
-      const result = await fetchProfile(nextSession.user.id);
+      let result = await fetchProfile(nextSession.user.id);
 
       if (!isMounted) return;
 
+      // Auto-recover a soft-deleted account on re-login. A valid session with
+      // no visible profile row means the account was soft-deleted (RLS hides
+      // deleted_at rows). Holding this session already proves ownership — they
+      // just passed OTP / magic-link — so restore them instead of dead-ending
+      // on "contact support". recover_own_deleted_account clears deleted_at for
+      // auth.uid() only (SECURITY DEFINER; the client can't do it under RLS),
+      // then we re-fetch. If nothing was recovered we fall through to sign-out.
       if (result.ok && result.profile === null) {
-        // Soft-deleted account inside the grace window: the session
+        const { data: recovered } = await supabase.rpc("recover_own_deleted_account");
+        if (!isMounted) return;
+        if (recovered === true) {
+          result = await fetchProfile(nextSession.user.id);
+          if (!isMounted) return;
+        }
+      }
+
+      if (result.ok && result.profile === null) {
+        // Recovery didn't restore a row (genuinely no profile): the session
         // minted but RLS returns no profile row, which would leave the
         // app half-working (RequireAuth passes, every profile-driven
         // surface breaks). Sign out instead. Resetting hadSession first

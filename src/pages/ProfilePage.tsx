@@ -237,11 +237,34 @@ const DangerZoneSection = ({
   onOpenChange: (open: boolean) => void;
 }) => {
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, user, profile } = useAuth();
   const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
 
-  const canConfirm = confirmText.trim().toUpperCase() === "DELETE" && !deleting;
+  // Re-verify identity before deleting: the user must type their FULL email or
+  // phone number (not a generic "DELETE"), so a rushed / accidental confirmation
+  // can't go through. Synthetic phone-signup emails (…@phone.leveluplearning.in)
+  // aren't real addresses, so we fall back to the phone for those accounts.
+  const rawEmail = (profile?.email || user?.email || "").trim();
+  const emailIdentity =
+    rawEmail && !rawEmail.toLowerCase().endsWith("@phone.leveluplearning.in")
+      ? rawEmail.toLowerCase()
+      : "";
+  const phoneIdentity = (user?.phone || "").replace(/\D/g, ""); // e.g. 918088352708
+  // What we show the user to type (GitHub-style). Prefer the real email.
+  const primaryIdentityLabel = emailIdentity || (phoneIdentity ? `+${phoneIdentity}` : "");
+
+  const input = confirmText.trim();
+  const inputDigits = input.replace(/\D/g, "");
+  const emailMatches = !!emailIdentity && input.toLowerCase() === emailIdentity;
+  // Accept the full number with or without the country code (≥10 digits typed).
+  const phoneMatches =
+    !!phoneIdentity &&
+    inputDigits.length >= 10 &&
+    (inputDigits === phoneIdentity ||
+      phoneIdentity.endsWith(inputDigits) ||
+      inputDigits.endsWith(phoneIdentity.slice(-10)));
+  const canConfirm = !deleting && (emailMatches || phoneMatches);
 
   const handleDelete = async () => {
     if (!canConfirm) return;
@@ -293,15 +316,30 @@ const DangerZoneSection = ({
             htmlFor="delete-confirm"
             className="text-xs text-muted-foreground"
           >
-            Type <span className="font-mono text-foreground">DELETE</span> to
-            confirm
+            To confirm, type your full{" "}
+            {emailIdentity && phoneIdentity
+              ? "email or phone number"
+              : emailIdentity
+              ? "email address"
+              : "phone number"}
+            {primaryIdentityLabel && (
+              <>
+                :{" "}
+                <span className="font-mono text-foreground break-all">
+                  {primaryIdentityLabel}
+                </span>
+              </>
+            )}
           </label>
           <Input
             id="delete-confirm"
             autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            inputMode={emailIdentity ? "email" : "tel"}
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
-            placeholder="DELETE"
+            placeholder={primaryIdentityLabel || "your email or phone"}
             disabled={deleting}
           />
         </div>
