@@ -18,7 +18,7 @@ import {
   Play,
 } from "lucide-react";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
-import { SignedVideo } from "@/components/chapter/ChapterMediaPlayer";
+import { SignedVideo, ProtectedDocument } from "@/components/chapter/ChapterMediaPlayer";
 
 interface Chapter {
   id: string;
@@ -26,6 +26,8 @@ interface Chapter {
   description: string | null;
   content_type: string;
   media_url: string | null;
+  media_provider?: string | null;
+  allow_download?: boolean | null;
   embed_url: string | null;
   article_body: string | null;
   make_free: boolean;
@@ -178,10 +180,8 @@ export default function AdminChapterPreview() {
                   title={chapter.title}
                 />
               </div>
-            ) : chapter.content_type === "pdf" && chapter.media_url ? (
-              <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card" style={{ height: "70vh" }}>
-                <iframe src={chapter.media_url} className="w-full h-full" title={`${chapter.title} - PDF`} />
-              </div>
+            ) : chapter.content_type === "pdf" && (chapter.media_url || chapter.media_provider === "supabase-signed") ? (
+              <ProtectedDocument chapter={chapter} />
             ) : chapter.content_type === "image" && chapter.media_url ? (
               <div className="w-full rounded-[16px] border border-border overflow-hidden bg-card flex items-center justify-center p-4">
                 <img src={chapter.media_url} alt={chapter.title} className="max-w-full max-h-[70vh] object-contain rounded-lg" />

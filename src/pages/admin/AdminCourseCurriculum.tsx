@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, ChevronUp, ChevronDown, Trash2, GripVertical } from "lucide-react";
 import VdoCipherUploader from "@/components/admin/VdoCipherUploader";
 import ProtectedVideoUploader from "@/components/admin/ProtectedVideoUploader";
+import ProtectedDocumentUploader from "@/components/admin/ProtectedDocumentUploader";
 import {
   DndContext,
   PointerSensor,
@@ -63,6 +64,9 @@ interface Chapter {
   article_body: string;
   duration_seconds: number;
   make_free: boolean;
+  // When true, students get an explicit Download button and the PDF toolbar
+  // stays visible. Default false = view-only (protected).
+  allow_download: boolean;
   sort_order: number;
   video_type: string;
   vdocipher_video_id: string;
@@ -131,7 +135,7 @@ const AdminCourseCurriculum = () => {
     const secIds = secs.map((s) => s.id);
     const { data: chs } = await supabase
       .from("chapters")
-      .select("id, title, content_type, description, media_url, media_provider, embed_url, article_body, duration_seconds, make_free, sort_order, section_id, video_type, vdocipher_video_id, vdocipher_watermark_text, thumbnail_url, vdocipher_thumbnail_url")
+      .select("id, title, content_type, description, media_url, media_provider, embed_url, article_body, duration_seconds, make_free, allow_download, sort_order, section_id, video_type, vdocipher_video_id, vdocipher_watermark_text, thumbnail_url, vdocipher_thumbnail_url")
       .in("section_id", secIds)
       .order("sort_order");
 
@@ -149,6 +153,7 @@ const AdminCourseCurriculum = () => {
         article_body: ch.article_body || "",
         duration_seconds: ch.duration_seconds || 0,
         make_free: ch.make_free,
+        allow_download: (ch as { allow_download?: boolean }).allow_download ?? false,
         sort_order: ch.sort_order,
         video_type: (ch as any).video_type || "standard",
         vdocipher_video_id: (ch as any).vdocipher_video_id || "",
@@ -197,6 +202,7 @@ const AdminCourseCurriculum = () => {
             article_body: "",
             duration_seconds: 0,
             make_free: false,
+            allow_download: false,
             sort_order: updated[sectionIdx].chapters.length,
             video_type: courseDefaultVideoType,
             vdocipher_video_id: "",
@@ -493,6 +499,7 @@ const AdminCourseCurriculum = () => {
             article_body: ch.article_body || null,
             duration_seconds: ch.duration_seconds || 0,
             make_free: ch.make_free,
+            allow_download: ch.allow_download ?? false,
             sort_order: cIdx,
             video_type: ch.video_type || "standard",
             vdocipher_video_id: ch.vdocipher_video_id || null,
@@ -560,8 +567,17 @@ const AdminCourseCurriculum = () => {
   // Persist the uploaded chapter; returns its REAL id (for the background
   // completion patch) or undefined on failure. Looks the chapter up by its
   // local id — indices captured in closures go stale across renders.
-  const persistUploadedChapter = useCallback(async (chapterLocalId: string, key: string): Promise<string | undefined> => {
-    const media = { media_url: key, media_provider: "supabase-signed", video_type: "standard" } as const;
+  const persistUploadedChapter = useCallback(async (
+    chapterLocalId: string,
+    key: string,
+    kind: "video" | "document" = "video",
+  ): Promise<string | undefined> => {
+    // A document keeps its own content_type (pdf/…) and has no video_type;
+    // only a video normalises video_type to 'standard'.
+    const media = (kind === "video"
+      ? { media_url: key, media_provider: "supabase-signed", video_type: "standard" }
+      : { media_url: key, media_provider: "supabase-signed" }) as Record<string, string>;
+    const attachedLabel = kind === "video" ? "Video attached & saved" : "File attached & saved";
     // Reflect the upload in local state immediately (by id, never by index).
     setSections((prev) => prev.map((s) => ({
       ...s,
@@ -598,13 +614,13 @@ const AdminCourseCurriculum = () => {
           ...s,
           chapters: s.chapters.map((c) => (c.id === chapterLocalId ? { ...c, id: data.id, _isNew: false } : c)),
         })));
-        toast({ title: "Video attached & saved", description: ch.title });
+        toast({ title: attachedLabel, description: ch.title });
         return data.id as string;
       }
 
       const { error } = await supabase.from("chapters").update(media as any).eq("id", ch.id);
       if (error) throw error;
-      toast({ title: "Video attached & saved", description: ch.title });
+      toast({ title: attachedLabel, description: ch.title });
       return ch.id;
     } catch (err: any) {
       toast({
@@ -698,7 +714,7 @@ const AdminCourseCurriculum = () => {
                             <SelectContent>
                               <SelectItem value="video">Video</SelectItem>
                               <SelectItem value="text">Text / Article</SelectItem>
-                              <SelectItem value="pdf">PDF</SelectItem>
+                              <SelectItem value="pdf">PDF / Document</SelectItem>
                               <SelectItem value="image">Image</SelectItem>
                               <SelectItem value="embedded">Embedded Link</SelectItem>
                               <SelectItem value="quiz">Quiz</SelectItem>
@@ -841,16 +857,83 @@ const AdminCourseCurriculum = () => {
                           </div>
                         )}
 
-                        {/* PDF / Image URL */}
-                        {(ch.content_type === "pdf" || ch.content_type === "image") && (
+                        {/* PDF / Document: upload a download-protected file (default,
+                            recommended) OR paste a public URL, plus a per-chapter
+                            download toggle. */}
+                        {ch.content_type === "pdf" && (
+                          <div className="space-y-3 border border-border rounded-lg p-3 bg-secondary/20">
+                            <div>
+                              <label className="block text-xs font-medium mb-1">
+                                Upload a document (protected — recommended)
+                              </label>
+                              <ProtectedDocumentUploader
+                                courseId={courseId || undefined}
+                                chapterId={ch.id}
+                                label={`${ch.title || "Untitled chapter"}${courseTitle ? " · " + courseTitle : ""}`}
+                                alreadyProtected={ch.media_provider === "supabase-signed"}
+                                onUploaded={(key) =>
+                                  // Targeted save of just this chapter (inserts it
+                                  // if new); "document" kind keeps content_type=pdf
+                                  // and skips video_type.
+                                  persistUploadedChapter(ch.id, key, "document")
+                                }
+                              />
+                              <p className="text-[11px] text-muted-foreground mt-1">
+                                PDF, Word, PowerPoint, Excel or text. No public link — served through a short-lived signed URL. PDFs open inside the app; other formats need download turned on to open.
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">
+                                …or paste a public URL
+                              </label>
+                              <Input
+                                value={ch.media_provider === "supabase-signed" ? "" : ch.media_url}
+                                disabled={ch.media_provider === "supabase-signed"}
+                                onChange={(e) =>
+                                  updateChapter(sIdx, cIdx, {
+                                    media_url: e.target.value,
+                                    media_provider: "",
+                                  })
+                                }
+                                placeholder={
+                                  ch.media_provider === "supabase-signed"
+                                    ? "Using a protected upload — clear it to paste a URL"
+                                    : "https://example.com/document.pdf"
+                                }
+                              />
+                              {ch.media_provider === "supabase-signed" && (
+                                <button
+                                  type="button"
+                                  className="text-[11px] text-muted-foreground underline mt-1"
+                                  onClick={() =>
+                                    updateChapter(sIdx, cIdx, { media_url: "", media_provider: "" })
+                                  }
+                                >
+                                  Remove protected file and paste a URL instead
+                                </button>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 pt-1">
+                              <Switch
+                                checked={ch.allow_download}
+                                onCheckedChange={(v) => updateChapter(sIdx, cIdx, { allow_download: v })}
+                              />
+                              <label className="text-xs">
+                                Allow students to download
+                                <span className="text-muted-foreground/60 ml-1">
+                                  — off = view-only, download blocked
+                                </span>
+                              </label>
+                            </div>
+                          </div>
+                        )}
+                        {ch.content_type === "image" && (
                           <div>
-                            <label className="block text-xs font-medium mb-1">
-                              {ch.content_type === "pdf" ? "PDF URL" : "Image URL"}
-                            </label>
+                            <label className="block text-xs font-medium mb-1">Image URL</label>
                             <Input
                               value={ch.media_url}
                               onChange={(e) => updateChapter(sIdx, cIdx, { media_url: e.target.value })}
-                              placeholder={ch.content_type === "pdf" ? "https://example.com/document.pdf" : "https://example.com/image.jpg"}
+                              placeholder="https://example.com/image.jpg"
                             />
                           </div>
                         )}

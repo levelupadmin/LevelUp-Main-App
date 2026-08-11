@@ -36,9 +36,16 @@ interface StartOpts {
   onKey?: (key: string) => void | string | Promise<string | void>;
 }
 
+// What kind of media is being uploaded — drives the fallback content-type and
+// which chapter columns the completion patch touches. Both kinds go to the same
+// private `protected-video` bucket via the same get-video-upload-url edge fn.
+type UploadKind = "video" | "document";
+
 interface UploadCtx {
   uploads: UploadItem[];
   startVideoUpload: (opts: StartOpts) => void;
+  /** Same background pipeline as video, for PDFs / Word / any resource file. */
+  startDocumentUpload: (opts: StartOpts) => void;
   dismiss: (id: string) => void;
   /** Clear every finished (done/error) item — the dock's "Close" once idle. */
   clearFinished: () => void;
@@ -71,8 +78,8 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const startVideoUpload = useCallback(
-    async ({ file, chapterId, courseId, label, onKey }: StartOpts) => {
+  const run = useCallback(
+    async (kind: UploadKind, { file, chapterId, courseId, label, onKey }: StartOpts) => {
       const id = `up-${seq++}`;
       setUploads((list) => [...list, { id, filename: file.name, label, progress: 0, status: "preparing" }]);
       try {
@@ -99,7 +106,10 @@ export function UploadProvider({ children }: { children: ReactNode }) {
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open("PUT", signed.signedUrl!);
-          xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+          xhr.setRequestHeader(
+            "Content-Type",
+            file.type || (kind === "video" ? "video/mp4" : "application/octet-stream")
+          );
           xhr.upload.onprogress = (e) => {
             if (e.lengthComputable) patch(id, { progress: Math.round((e.loaded / e.total) * 100) });
           };
@@ -112,11 +122,14 @@ export function UploadProvider({ children }: { children: ReactNode }) {
         });
 
         // Attach to the chapter server-side so it survives navigation without a save.
+        // Video also normalises video_type; a document has no video_type to set.
         if (effectiveChapterId && !effectiveChapterId.startsWith("new-")) {
-          await supabase
-            .from("chapters")
-            .update({ media_url: signed.path, media_provider: "supabase-signed", video_type: "standard" })
-            .eq("id", effectiveChapterId);
+          const attach: Record<string, unknown> = {
+            media_url: signed.path,
+            media_provider: "supabase-signed",
+          };
+          if (kind === "video") attach.video_type = "standard";
+          await supabase.from("chapters").update(attach).eq("id", effectiveChapterId);
         }
 
         // No auto-dismiss: the green tick stays in the dock (Drive-style) until
@@ -131,5 +144,12 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     [patch]
   );
 
-  return <Ctx.Provider value={{ uploads, startVideoUpload, dismiss, clearFinished }}>{children}</Ctx.Provider>;
+  const startVideoUpload = useCallback((opts: StartOpts) => void run("video", opts), [run]);
+  const startDocumentUpload = useCallback((opts: StartOpts) => void run("document", opts), [run]);
+
+  return (
+    <Ctx.Provider value={{ uploads, startVideoUpload, startDocumentUpload, dismiss, clearFinished }}>
+      {children}
+    </Ctx.Provider>
+  );
 }

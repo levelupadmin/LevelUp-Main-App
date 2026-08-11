@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { RotateCcw, RotateCw, FileText, BookOpen } from "lucide-react";
+import { RotateCcw, RotateCw, FileText, BookOpen, Download } from "lucide-react";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 import { supabase } from "@/integrations/supabase/client";
 import { useMotionSafe, durations, easings, instant } from "@/lib/motion";
@@ -470,6 +470,145 @@ export function SignedVideo({ chapterId, title }: { chapterId: string; title: st
   );
 }
 
+/** The file extension of a storage key or URL, lower-case, sans query/hash. */
+function extOf(urlOrKey: string): string {
+  const clean = urlOrKey.split(/[?#]/)[0];
+  const dot = clean.lastIndexOf(".");
+  return dot === -1 ? "" : clean.slice(dot + 1).toLowerCase();
+}
+
+/**
+ * A chapter's document/resource (content_type = 'pdf', repurposed to carry any
+ * document format). Two storage modes:
+ *  • media_provider = 'supabase-signed' → file is in the PRIVATE bucket; we mint a
+ *    short-lived signed URL via get-video-src (same enrolment gate as video).
+ *  • anything else → media_url is a plain public/legacy URL, used directly.
+ *
+ * Protection posture keys off `allow_download`:
+ *  • PDF → inline <iframe>. When download is OFF we append #toolbar=0&navpanes=0,
+ *    which hides the browser PDF viewer's download/print chrome; when ON, the
+ *    toolbar stays and we add a Download button.
+ *  • non-PDF (docx/pptx/xlsx/…) can't render in-browser — we show a resource
+ *    card. A Download button appears ONLY when download is allowed; otherwise it
+ *    stays view-only (and such files should really be uploaded as PDF).
+ * Not unbreakable (a determined user can still screen-grab or re-fetch the signed
+ * URL within its TTL), but there's no shareable public link and the easy download
+ * paths are gone — the same bargain as the protected-video player.
+ */
+/** Only the fields ProtectedDocument reads — so both the student viewer's
+ *  Chapter and the admin preview's local shape satisfy it without a cast. */
+interface DocumentChapter {
+  id: string;
+  title: string;
+  media_url: string | null;
+  media_provider?: string | null;
+  allow_download?: boolean | null;
+}
+
+export function ProtectedDocument({ chapter }: { chapter: DocumentChapter }) {
+  const isSigned = (chapter.media_provider || "") === "supabase-signed";
+  const allowDownload = !!chapter.allow_download;
+  const [url, setUrl] = useState<string | null>(isSigned ? null : chapter.media_url || null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isSigned) {
+      setUrl(chapter.media_url || null);
+      return;
+    }
+    let cancelled = false;
+    setUrl(null);
+    setErr(null);
+    supabase.functions
+      .invoke("get-video-src", { body: { chapter_id: chapter.id } })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        const resolved = (data as { url?: string } | null)?.url;
+        if (error || !resolved) {
+          setErr("This file couldn't be loaded. Make sure you're signed in and enrolled.");
+          return;
+        }
+        setUrl(resolved);
+      })
+      .catch(() => {
+        if (!cancelled) setErr("This file couldn't be loaded. Please try again.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chapter.id, chapter.media_url, isSigned]);
+
+  if (err) {
+    return (
+      <div className="w-full rounded-2xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+        {err}
+      </div>
+    );
+  }
+  if (!url) {
+    return (
+      <div className="w-full rounded-2xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+        Loading document…
+      </div>
+    );
+  }
+
+  // Prefer the stored key (has the real extension) over a signed URL that may
+  // carry query params; fall back to the resolved URL for legacy public rows.
+  const ext = extOf(chapter.media_url || url);
+  const isPdf = ext === "pdf" || (!ext && !isSigned); // legacy untyped public URLs assumed PDF
+
+  if (isPdf) {
+    // #toolbar=0&navpanes=0 hides Chrome/Edge's built-in download+print chrome.
+    const src = allowDownload ? url : `${url}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`;
+    return (
+      <div className="space-y-2">
+        <div className="w-full rounded-2xl border border-border overflow-hidden bg-card h-[55vh] sm:h-[80vh]">
+          <iframe
+            src={src}
+            className="w-full h-full"
+            title={`${chapter.title} - document`}
+          />
+        </div>
+        {allowDownload && (
+          <a
+            href={url}
+            download
+            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          >
+            <Download className="h-3.5 w-3.5" /> Download
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  // Non-PDF document: no inline preview possible.
+  return (
+    <div className="w-full rounded-2xl border border-border bg-card p-8 flex items-center gap-4">
+      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-surface-2 text-cream">
+        <FileText className="h-8 w-8" aria-hidden="true" />
+      </span>
+      <div className="min-w-0">
+        <p className="font-medium truncate">{chapter.title}</p>
+        {allowDownload ? (
+          <a
+            href={url}
+            download
+            className="mt-2 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90"
+          >
+            <Download className="h-3.5 w-3.5" /> Download {ext ? ext.toUpperCase() : "file"}
+          </a>
+        ) : (
+          <p className="text-muted-foreground text-sm mt-1">
+            This resource is view-only and can't be previewed in the browser.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ChapterMediaPlayer({ chapter, updateProgress, lastPosition }: Props) {
   return chapter.content_type === "video" && (chapter as any).video_type === "vdocipher" && (chapter as any).vdocipher_video_id ? (
     <div className="w-full max-w-full rounded-2xl overflow-hidden shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
@@ -537,10 +676,8 @@ export default function ChapterMediaPlayer({ chapter, updateProgress, lastPositi
         );
       })()}
     </div>
-  ) : chapter.content_type === "pdf" && chapter.media_url ? (
-    <div className="w-full rounded-2xl border border-border overflow-hidden bg-card h-[55vh] sm:h-[80vh]">
-      <iframe src={chapter.media_url} className="w-full h-full" title={`${chapter.title} - PDF`} />
-    </div>
+  ) : chapter.content_type === "pdf" && (chapter.media_url || chapter.media_provider === "supabase-signed") ? (
+    <ProtectedDocument chapter={chapter} />
   ) : chapter.content_type === "image" && chapter.media_url ? (
     <div className="w-full rounded-2xl border border-border overflow-hidden bg-card flex items-center justify-center p-4">
       <img src={chapter.media_url} alt={chapter.title} className="max-w-full max-h-[80vh] object-contain rounded-lg" />

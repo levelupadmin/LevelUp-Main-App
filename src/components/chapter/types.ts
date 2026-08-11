@@ -6,9 +6,14 @@ export interface Chapter {
   description: string | null;
   content_type: string;
   media_url: string | null;
+  // 'supabase-signed' = private-bucket file reached via a short-lived signed URL.
+  media_provider?: string | null;
   embed_url: string | null;
   article_body: string | null;
   make_free: boolean;
+  // Documents/resources: when true the student gets a Download button and the
+  // PDF toolbar is left visible. Default/false = view-only.
+  allow_download?: boolean | null;
   section_id: string;
   sort_order: number;
   duration_seconds: number | null;

@@ -1,10 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent, act } from "@testing-library/react";
+import { render, fireEvent, act, waitFor } from "@testing-library/react";
 
 // The app-owned <video> reads chapter markers for the STEAL-4 scrub caption from
 // `chapter_moments`. Stub the client so the fetch never hits the network; each
 // test can override what the chainable query resolves to via `momentsRows`.
 let momentsRows: Array<{ id: string; label: string; seconds: number }> = [];
+// get-video-src (used by SignedVideo + ProtectedDocument) resolves to this.
+let signedSrcUrl = "https://signed.example.com/file?token=abc";
 vi.mock("@/integrations/supabase/client", () => {
   const makeQuery = () => {
     const query: Record<string, unknown> = {};
@@ -15,7 +17,12 @@ vi.mock("@/integrations/supabase/client", () => {
       resolve({ data: momentsRows });
     return query;
   };
-  return { supabase: { from: vi.fn(() => makeQuery()) } };
+  return {
+    supabase: {
+      from: vi.fn(() => makeQuery()),
+      functions: { invoke: vi.fn(() => Promise.resolve({ data: { url: signedSrcUrl }, error: null })) },
+    },
+  };
 });
 
 import ChapterMediaPlayer from "../ChapterMediaPlayer";
@@ -168,6 +175,87 @@ describe("ChapterMediaPlayer — cross-origin surfaces get NO app-owned <video>"
     );
     expect(container.querySelector("iframe")).toBeInTheDocument();
     expect(container.querySelector("video")).toBeNull();
+  });
+});
+
+describe("ChapterMediaPlayer — protected documents (download toggle)", () => {
+  const pdfChapter = (over: Partial<Chapter>): Chapter => ({
+    ...baseChapter,
+    content_type: "pdf",
+    media_url: "https://x/deck.pdf",
+    ...over,
+  });
+
+  it("hides the PDF toolbar and shows no download link when download is off", () => {
+    const { container } = render(
+      <ChapterMediaPlayer
+        chapter={pdfChapter({ allow_download: false })}
+        updateProgress={() => {}}
+        lastPosition={0}
+      />,
+    );
+    const iframe = container.querySelector("iframe")!;
+    // #toolbar=0 strips the browser PDF viewer's download/print chrome.
+    expect(iframe.getAttribute("src")).toContain("#toolbar=0");
+    expect(container.querySelector("a[download]")).toBeNull();
+  });
+
+  it("keeps the toolbar and shows a download link when download is allowed", () => {
+    const { container } = render(
+      <ChapterMediaPlayer
+        chapter={pdfChapter({ allow_download: true })}
+        updateProgress={() => {}}
+        lastPosition={0}
+      />,
+    );
+    const iframe = container.querySelector("iframe")!;
+    expect(iframe.getAttribute("src")).not.toContain("#toolbar=0");
+    const dl = container.querySelector("a[download]") as HTMLAnchorElement;
+    expect(dl).toBeInTheDocument();
+    expect(dl.getAttribute("href")).toBe("https://x/deck.pdf");
+  });
+
+  it("non-PDF resource is view-only with no download when download is off", () => {
+    const { container } = render(
+      <ChapterMediaPlayer
+        chapter={pdfChapter({ media_url: "https://x/notes.docx", allow_download: false })}
+        updateProgress={() => {}}
+        lastPosition={0}
+      />,
+    );
+    // Not previewable → no iframe, no download link.
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(container.querySelector("a[download]")).toBeNull();
+    expect(container.textContent).toContain("view-only");
+  });
+
+  it("non-PDF resource exposes a download link when download is allowed", () => {
+    const { container } = render(
+      <ChapterMediaPlayer
+        chapter={pdfChapter({ media_url: "https://x/notes.docx", allow_download: true })}
+        updateProgress={() => {}}
+        lastPosition={0}
+      />,
+    );
+    const dl = container.querySelector("a[download]") as HTMLAnchorElement;
+    expect(dl).toBeInTheDocument();
+    expect(dl.textContent).toContain("DOCX");
+  });
+
+  it("resolves a signed URL for a private-bucket document and hides its toolbar", async () => {
+    signedSrcUrl = "https://signed.example.com/deck.pdf?token=xyz";
+    const { container } = render(
+      <ChapterMediaPlayer
+        chapter={pdfChapter({ media_provider: "supabase-signed", media_url: "uploads/c/deck.pdf", allow_download: false })}
+        updateProgress={() => {}}
+        lastPosition={0}
+      />,
+    );
+    // The signed URL arrives async; the iframe appears once resolved.
+    await waitFor(() => expect(container.querySelector("iframe")).toBeInTheDocument());
+    const src = container.querySelector("iframe")!.getAttribute("src")!;
+    expect(src).toContain("https://signed.example.com/deck.pdf?token=xyz");
+    expect(src).toContain("#toolbar=0");
   });
 });
 
