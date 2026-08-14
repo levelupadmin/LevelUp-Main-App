@@ -24,8 +24,18 @@ export interface ScheduledWeek {
 
 const DAY = 24 * 60 * 60 * 1000;
 
+/**
+ * Local calendar date, NOT `toISOString()`. Blackouts are calendar days an
+ * admin picked and the cursor is a local midnight. In any timezone east of
+ * UTC — IST, where every user is — `toISOString()` rolls local midnight back
+ * to the previous day, so a blackout would silently never match and the
+ * cohort would be scheduled straight through a holiday. Format from the local
+ * parts instead, which is also what this becomes as a SQL `date` in the RPC.
+ */
 function iso(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
 }
 
 function at(d: Date, hours: number, minutes = 0): Date {
