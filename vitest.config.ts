@@ -4,6 +4,13 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  // The preview shell reads the vite-injected build stamp (see buildStamp() in
+  // vite.config.ts). Tests run through vitest's own config, so the same globals
+  // have to be defined here or every shell render throws ReferenceError.
+  define: {
+    __BUILD_SHA__: JSON.stringify("test"),
+    __BUILD_TIME__: JSON.stringify("2026-08-14T14:16:00.000Z"),
+  },
   test: {
     environment: "jsdom",
     globals: true,

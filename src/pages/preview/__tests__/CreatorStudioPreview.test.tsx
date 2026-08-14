@@ -26,6 +26,14 @@ const renderAs = (email: string | null) => {
 beforeEach(() => localStorage.clear());
 
 describe("CreatorStudioPreview", () => {
+  it("stamps the build it came from — a stale deployment alias must be visible on screen", () => {
+    // 2026-08-14: the branch alias stayed pinned to an older deployment and the
+    // URL served week-old code while the dashboard said READY. Nothing on the
+    // page disagreed. This is the disagreement.
+    renderAs("student@gmail.com");
+    expect(screen.getAllByText(/^build test/).length).toBeGreaterThan(0);
+  });
+
   it("renders for anyone on a preview host — jsdom is localhost, where the Vercel bypass token is the door", () => {
     renderAs("student@gmail.com");
     expect(screen.getAllByText(/Prototype/i).length).toBeGreaterThan(0);

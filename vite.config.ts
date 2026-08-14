@@ -4,8 +4,32 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { nonBlockingCss } from "./build/non-blocking-css";
 
+/**
+ * BUILD STAMP — what commit is this bundle, really?
+ *
+ * 🔴 THE INCIDENT THIS PREVENTS (2026-08-14). The preview branch alias stayed
+ * pinned to a hand-aliased CLI deployment. A later green push built fine, the
+ * dashboard said READY, and the URL still served week-old code. Nobody could
+ * tell from the screen — the only way to catch it was pulling the shipped JS
+ * chunk and grepping for a line that should have been gone.
+ *
+ * So the bundle now carries its own identity. Vercel sets VERCEL_GIT_COMMIT_SHA
+ * on the build; it is NOT a VITE_ var, so it is injected here rather than read
+ * from import.meta.env. Local builds fall back to "dev". Read it on screen in
+ * the prototype badge: if it does not match the commit you were handed, the
+ * alias is stale — re-point it, do not debug the app.
+ */
+function buildStamp() {
+  const sha = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || "";
+  return {
+    __BUILD_SHA__: JSON.stringify(sha ? sha.slice(0, 7) : "dev"),
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  define: buildStamp(),
   server: {
     host: "::",
     port: 8080,

@@ -23,6 +23,7 @@ import type { ReactNode } from "react";
 import { ClipboardCheck, Flame, RotateCcw, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 import { SHELL_TABS } from "./previewTabs";
+import BuildStamp from "./BuildStamp";
 
 
 function StatChip({ icon: Icon, value, label, tint }: { icon: typeof Zap; value: string | number; label: string; tint: string }) {
@@ -122,6 +123,8 @@ export default function PreviewShell({
             <p className="mt-1 text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">
               Invented data, inert buttons, no database. Visible only to you.
             </p>
+            {/* Which commit am I? See BuildStamp — a stale alias is otherwise invisible. */}
+            <BuildStamp className="mt-2 block" />
           </div>
         </aside>
 
@@ -135,10 +138,11 @@ export default function PreviewShell({
           {/* Mobile: the rail scrolls, and the prototype warning rides with it. */}
           <div className="lg:hidden">
             <div className="px-4 pt-4">
-              <div className="rounded-lg border border-[hsl(var(--accent-violet)/0.4)] bg-[hsl(var(--accent-violet)/0.09)] px-3 py-2">
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-[hsl(var(--accent-violet)/0.4)] bg-[hsl(var(--accent-violet)/0.09)] px-3 py-2">
                 <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[hsl(var(--accent-violet))]">
                   Prototype — nothing here is live
                 </span>
+                <BuildStamp className="shrink-0" />
               </div>
             </div>
             <div className="mt-3 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
