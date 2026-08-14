@@ -19,22 +19,24 @@
  * session; a review is a live session that reads a week's blocks. Making them
  * types would double every node on the trail and buy nothing.
  */
-import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import { ArrowLeft, Check, Lock, Video, Users, ClipboardCheck, Flag, ExternalLink, Star } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { ArrowLeft, ArrowRight, Check, ChevronRight, Lock, Video, Users, Play, Radio, Zap, ExternalLink, Star } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { PageHeader, Section, SurfaceCard } from "@/components/patterns";
+import { Serif } from "./PreviewScreens";
+import { snakeOffset, toneForPhase, type PhaseTone } from "./previewTheme";
 import type { PlayAction, PlayState } from "./previewStore";
 import {
   LUCA, KIND_LABEL, dateOf, fmtDate, dayName, findCard, orderedCards,
   type CardKind, type TemplateCard, type TemplateWeek,
 } from "./previewProgram";
 import { cardState, recordingVerdict, blocksDone, weekOpen, type UnlockInput } from "./previewUnlock";
+import { CelebrationOverlay, type Celebration } from "./Celebrate";
 
 /** The prototype's "today". Cohort 02 week 0 is live, week 1 is next. */
 export const TODAY_ISO = "2026-08-18";
-
-const ICON: Record<CardKind, typeof Video> = {
-  live_session: Video, community_call: Users, micro: ClipboardCheck, block: Flag,
-};
 
 /** One tint per card type. Colour carries the type, nothing else. */
 const TINT: Record<CardKind, { bg: string; fg: string; ring: string }> = {
@@ -63,107 +65,316 @@ export function resolve(s: PlayState, card: TemplateCard): TemplateCard {
 
 const dOf = (w: number, d: number) => dateOf(LUCA, w, d);
 
+
 /* ─────────────────────────────────────────────────────────────────────────
-   THE PATH — every week, every day, one node per card
+   THE PATH — one continuous winding trail, over the real curriculum
+   ─────────────────────────────────────────────────────────────────────────
+
+   🔴 THE MISTAKE THIS UNDOES (founder, 2026-08-15). When the dummy content was
+   replaced with the real curriculum, the trail went with it and the Path
+   became a list of rows. That threw away the only part of this room anyone
+   could not buy off a shelf: the board with lips under the nodes, a colour per
+   phase, a winding line, a halo on the step you are standing on. The data
+   model was right and the surface was wrong. The trail is the surface — the
+   real curriculum now runs THROUGH it, not instead of it.
    ───────────────────────────────────────────────────────────────────────── */
+
+interface TrailNode {
+  card: TemplateCard;
+  week: TemplateWeek;
+  state: "done" | "current" | "info" | "locked";
+  why?: string;
+  when: Date;
+}
+
+/**
+ * "Current" is the first thing you could actually do — the one node that gets
+ * the halo and the pill. Everything past it that is open reads as available,
+ * not as urgent. One target on screen at a time.
+ */
+function buildTrail(s: PlayState, u: UnlockInput): TrailNode[] {
+  const out: TrailNode[] = [];
+  let currentTaken = false;
+  for (const week of LUCA.weeks) {
+    for (const raw of orderedCards(week)) {
+      const card = resolve(s, raw);
+      const v = cardState(LUCA, week, card, u, dOf);
+      const when = dOf(week.no, card.dayOffset);
+      let state: TrailNode["state"];
+      if (v.state === "done") state = "done";
+      else if (v.state === "locked") state = "locked";
+      else if (!currentTaken && !card.needsAuthoring) { state = "current"; currentTaken = true; }
+      else state = "info";
+      out.push({ card, week, state, why: v.why, when });
+    }
+  }
+  return out;
+}
+
+const PILL: Record<CardKind, string> = {
+  live_session: "JOIN", community_call: "DROP IN", micro: "START", block: "SUBMIT",
+};
+
+function Halo({ tint }: { tint: string }) {
+  const reduced = useReducedMotion();
+  if (reduced) return null;
+  return (
+    <motion.span
+      aria-hidden
+      className="pointer-events-none absolute inset-0 rounded-full"
+      style={{ border: `2px solid ${tint}` }}
+      animate={{ scale: [1, 1.45], opacity: [0.55, 0] }}
+      transition={{ duration: 1.6, repeat: Infinity, ease: "easeOut" }}
+    />
+  );
+}
+
+const FACE: Record<CardKind, typeof Video> = {
+  live_session: Radio, community_call: Users, micro: Play, block: Zap,
+};
+
+function Node({ node, tone, index, go }: { node: TrailNode; tone: PhaseTone; index: number; go: (k: string) => void }) {
+  const off = snakeOffset(index, false) * 0.75;
+  const { card, state } = node;
+  const isCurrent = state === "current";
+  const isInfo = state === "info";
+
+  const palette =
+    state === "done" ? { bg: "hsl(var(--success))", fg: "hsl(var(--cream-text))", lip: "hsl(156 77% 22%)" }
+    : isCurrent ? { bg: tone.c, fg: "hsl(var(--cream-text))", lip: tone.d }
+    : isInfo ? { bg: "hsl(var(--card))", fg: tone.c, lip: "hsl(0 0% 5%)" }
+    : { bg: "hsl(var(--secondary))", fg: "hsl(var(--muted-foreground))", lip: "hsl(0 0% 5%)" };
+
+  const Icon = FACE[card.kind];
+  const face =
+    state === "done" ? <Check className="h-4 w-4" strokeWidth={3} />
+    : state === "locked" ? <Lock className="h-3.5 w-3.5" />
+    : <Icon className={`h-4 w-4 ${card.kind === "micro" ? "fill-current" : ""}`} />;
+
+  // Every node opens. Reading is never gated — only doing is. A locked node
+  // still shows you its brief, its mentor and the reason it is shut.
+  const hint =
+    state === "done" ? "Done — XP banked"
+    : state === "locked" ? (node.why ?? "Opens later")
+    : card.kind === "live_session" ? "Open the session — Zoom, resources, recording"
+    : card.kind === "community_call" ? "Open the room"
+    : card.kind === "block" ? "Open the submission box"
+    : "Open it";
+
+  return (
+    <div className="relative flex flex-col items-center" style={{ transform: `translateX(${off}px)` }}>
+      {isCurrent && (
+        <div className="absolute -top-8 z-10 animate-bounce" style={{ animationDuration: "1.6s" }}>
+          <div className="rounded-lg bg-[hsl(var(--cream))] px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide text-[hsl(var(--cream-text))] shadow-lg">
+            {PILL[card.kind]}
+          </div>
+        </div>
+      )}
+      <HoverCard openDelay={120} closeDelay={60}>
+        <HoverCardTrigger asChild>
+          <motion.button
+            type="button"
+            onClick={() => go(`card/${card.id}`)}
+            aria-label={`${dayName(node.when)} ${card.time ?? ""} — ${card.title}`}
+            whileHover={{ scale: 1.08, y: -2 }}
+            whileTap={{ scale: 0.92, y: 3 }}
+            transition={{ type: "spring", stiffness: 340, damping: 18 }}
+            className={`relative grid h-12 w-12 place-items-center rounded-full text-[15px] font-extrabold ${state === "locked" ? "opacity-70" : ""} ${isInfo ? "border" : ""}`}
+            style={{
+              background: palette.bg,
+              color: palette.fg,
+              borderColor: isInfo ? tone.c : undefined,
+              boxShadow: state === "locked" ? "none" : `0 5px 0 ${palette.lip}`,
+            }}
+          >
+            {isCurrent && <Halo tint={tone.c} />}
+            {face}
+          </motion.button>
+        </HoverCardTrigger>
+        <HoverCardContent
+          side="right"
+          align="center"
+          className="w-72 border-[hsl(var(--border))] bg-black/85 p-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl"
+        >
+          <div className="p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: tone.c }}>
+                Week {node.week.no} · {dayName(node.when)}{card.time ? ` ${card.time}` : ""}
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-[hsl(var(--gold)/0.35)] px-2 py-0.5 text-[10px] font-bold text-[hsl(var(--gold))]">
+                <Zap className="h-3 w-3" /> {card.xp} XP
+              </span>
+            </div>
+            <div className="mt-1.5 text-[13.5px] font-semibold leading-snug">{card.title}</div>
+            <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">
+              {KIND_LABEL[card.kind]}
+              {card.mentor ? ` · ${card.mentor}` : ""}
+            </div>
+            {card.blurb && (
+              <p className="mt-1.5 line-clamp-2 text-[11.5px] leading-relaxed text-[hsl(var(--muted-foreground))]">{card.blurb}</p>
+            )}
+            <div
+              className="mt-2.5 flex items-center gap-1.5 text-[11px] font-semibold"
+              style={state === "locked" ? { color: "hsl(var(--muted-foreground))" } : { color: tone.c }}
+            >
+              {state === "locked" ? <Lock className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />} {hint}
+            </div>
+          </div>
+        </HoverCardContent>
+      </HoverCard>
+      <div className="mt-2 text-center">
+        <div
+          className="text-[10px] font-extrabold tracking-wide"
+          style={{ color: state === "done" ? "hsl(var(--success))" : isCurrent || isInfo ? tone.c : "hsl(var(--muted-foreground))" }}
+        >
+          {dayName(node.when).toUpperCase()}{card.time ? ` · ${card.time}` : ""}
+        </div>
+        <div className="max-w-[190px] text-[10.5px] leading-tight text-[hsl(var(--muted-foreground))]">{card.title}</div>
+      </div>
+    </div>
+  );
+}
+
+function WeekDivider({ week, tone, verdict }: { week: TemplateWeek; tone: PhaseTone; verdict: { state: string; why?: string } }) {
+  const locked = verdict.state === "locked";
+  const block = week.cards.find((c) => c.kind === "block");
+  return (
+    <div className="flex w-full items-center gap-3 py-1">
+      <span className="h-px flex-1 bg-gradient-to-r from-transparent to-[hsl(var(--border))]" />
+      <div className="max-w-[300px] text-center">
+        <div
+          className="text-[10px] font-extrabold uppercase tracking-[0.18em]"
+          style={{ color: locked ? "hsl(var(--muted-foreground))" : tone.c }}
+        >
+          Week {week.no} · {fmtDate(dOf(week.no, 0))}
+        </div>
+        <div className={`text-[12.5px] font-bold tracking-[-0.01em] ${locked ? "text-[hsl(var(--muted-foreground))]" : ""}`}>
+          {week.title}
+        </div>
+        <div className="mt-0.5 text-[10.5px] leading-snug text-[hsl(var(--muted-foreground))]">
+          {locked ? `${verdict.why} Session details are already open.` : block ? `The block: ${block.title.replace(/^Week \d+ block — /, "")}` : ""}
+        </div>
+      </div>
+      <span className="h-px flex-1 bg-gradient-to-l from-transparent to-[hsl(var(--border))]" />
+    </div>
+  );
+}
+
+function PhaseBanner({ name, weeks, tone }: { name: string; weeks: string; tone: PhaseTone }) {
+  return (
+    <div
+      className="relative w-full overflow-hidden rounded-2xl border px-5 py-4"
+      style={{ borderColor: `${tone.c}40`, background: `linear-gradient(120deg, ${tone.c}1f, transparent 65%)` }}
+    >
+      <div className="text-[10px] font-extrabold uppercase tracking-[0.2em]" style={{ color: tone.c }}>
+        Phase · {weeks}
+      </div>
+      <div className="mt-0.5 text-[16px] font-bold tracking-[-0.01em]">{name}</div>
+      <div
+        className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full opacity-25 blur-2xl"
+        style={{ background: tone.c }}
+      />
+    </div>
+  );
+}
 
 export function ProgramPathScreen({ s, go }: { s: PlayState; go: (k: string) => void }) {
   const u = useUnlock(s);
+  const nodes = useMemo(() => buildTrail(s, u), [s, u]);
+  const done = nodes.filter((n) => n.state === "done").length;
   const blocks = blocksDone(LUCA, u.submittedCardIds);
-  let phase = "";
+  const weekRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  const phases: Array<{ name: string; weeks: TemplateWeek[] }> = [];
+  for (const w of LUCA.weeks) {
+    const last = phases[phases.length - 1];
+    if (last && last.name === w.phase) last.weeks.push(w);
+    else phases.push({ name: w.phase, weeks: [w] });
+  }
+
+  const progressBar = (
+    <div className="h-1 w-full overflow-hidden rounded-full bg-[hsl(var(--secondary))]">
+      <motion.div
+        className="h-full rounded-full"
+        style={{ background: "linear-gradient(90deg, hsl(var(--gold)), hsl(var(--champagne-from)))" }}
+        initial={false}
+        animate={{ width: `${Math.round((done / nodes.length) * 100)}%` }}
+        transition={{ type: "spring", stiffness: 120, damping: 22 }}
+      />
+    </div>
+  );
 
   return (
-    <div className="mx-auto max-w-[760px]">
-      <header className="mb-6">
-        <h2 className="text-[22px] font-extrabold tracking-[-0.02em]">{LUCA.name}</h2>
-        <p className="mt-1 text-[13px] text-[hsl(var(--muted-foreground))]">
-          Cohort 02 · starts Sat 15 Aug · Demo Day Sat 14 Nov · {blocks.done} of {blocks.total} blocks in
-        </p>
-      </header>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="The Path"
+        title={<>Your Distribution <Serif>Engine</Serif></>}
+        subtitle="One trail, thirteen blocks. Sessions are always open to read — doors open on the date, once the previous block is in."
+      />
 
-      {LUCA.weeks.map((week) => {
-        const wv = weekOpen(LUCA, week.no, u, dOf);
-        const newPhase = week.phase !== phase;
-        phase = week.phase;
-        const cards = orderedCards(week);
-        const unauthored = cards.every((c) => c.needsAuthoring);
+      <div className="sticky top-0 z-10 -mx-4 border-b border-[hsl(var(--border))] bg-black/85 px-4 py-2.5 backdrop-blur lg:hidden">
+        <div className="flex items-center gap-3">
+          <div className="flex-1">{progressBar}</div>
+          <span className="shrink-0 text-[10.5px] font-bold text-[hsl(var(--muted-foreground))]">
+            {blocks.done}/{blocks.total} blocks
+          </span>
+        </div>
+      </div>
 
-        return (
-          <section key={week.no} className="mb-8">
-            {newPhase && (
-              <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--gold))]">
-                {week.phase}
-              </div>
-            )}
-            <div className="mb-3 flex items-baseline justify-between gap-3 border-b border-[hsl(var(--border))] pb-2">
-              <div className="min-w-0">
-                <div className="text-[15px] font-bold">
-                  Week {week.no} · {week.title}
-                </div>
-                {week.blurb && (
-                  <p className="mt-0.5 text-[12px] leading-relaxed text-[hsl(var(--muted-foreground))]">{week.blurb}</p>
-                )}
-              </div>
-              <div className="shrink-0 text-right text-[11px] text-[hsl(var(--muted-foreground))]">
-                {fmtDate(dOf(week.no, 0))}
-                {unauthored && (
-                  <div className="mt-1 rounded-md bg-[hsl(var(--secondary))] px-2 py-0.5 text-[10px]">Not authored yet</div>
-                )}
-              </div>
+      <div className="min-w-0">
+        <div className="mx-auto max-w-md lg:max-w-lg">
+          <div className="mb-6 hidden lg:block">
+            <div className="mb-1.5 flex items-center justify-between text-[10.5px] font-bold text-[hsl(var(--muted-foreground))]">
+              <span>PROGRESS</span>
+              <span>{done} of {nodes.length} steps · {blocks.done} of {blocks.total} blocks</span>
             </div>
+            {progressBar}
+          </div>
 
-            {wv.state === "locked" && (
-              <p className="mb-3 flex items-center gap-2 text-[12px] text-[hsl(var(--muted-foreground))]">
-                <Lock className="h-3.5 w-3.5" /> {wv.why}
-              </p>
-            )}
-
-            <ul className="flex flex-col gap-2">
-              {cards.map((raw) => {
-                const c = resolve(s, raw);
-                const v = cardState(LUCA, week, c, u, dOf);
-                const Icon = ICON[c.kind];
-                const tint = TINT[c.kind];
-                const when = dOf(week.no, c.dayOffset);
-                return (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => go(`card/${c.id}`)}
-                      className="flex w-full items-center gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3.5 py-3 text-left transition-colors hover:border-[hsl(var(--cream)/0.4)]"
+          <div className="flex flex-col items-center gap-6">
+            {phases.map((p) => {
+              const tone = toneForPhase(p.name);
+              const span = p.weeks.length > 1 ? `W${p.weeks[0].no}–W${p.weeks[p.weeks.length - 1].no}` : `W${p.weeks[0].no}`;
+              return (
+                <div key={p.name} className="flex w-full flex-col items-center gap-6">
+                  <PhaseBanner name={p.name} weeks={span} tone={tone} />
+                  {p.weeks.map((week) => (
+                    <div
+                      key={week.no}
+                      ref={(el) => { weekRefs.current[week.no] = el; }}
+                      data-week={week.no}
+                      className="flex w-full scroll-mt-16 flex-col items-center gap-6 lg:scroll-mt-24"
                     >
-                      <span
-                        className="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
-                        style={{ background: tint.bg, color: tint.fg, boxShadow: `inset 0 0 0 1px ${tint.ring}` }}
-                      >
-                        {v.state === "done" ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2">
-                          <span className="truncate text-[13.5px] font-medium">{c.title}</span>
-                          {c.needsAuthoring && (
-                            <span className="shrink-0 rounded bg-[hsl(var(--secondary))] px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
-                              fill me
-                            </span>
-                          )}
-                        </span>
-                        <span className="mt-0.5 block truncate text-[11px] text-[hsl(var(--muted-foreground))]">
-                          {dayName(when)} {fmtDate(when).replace(/^\w+,?\s*/, "")}
-                          {c.time ? ` · ${c.time}` : ""} · {KIND_LABEL[c.kind]}
-                          {v.state === "locked" && v.why ? ` · ${v.why}` : ""}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-[11px] text-[hsl(var(--muted-foreground))]">
-                        {v.state === "done" ? "done" : v.state === "locked" ? <Lock className="h-3.5 w-3.5" /> : `+${c.xp}`}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        );
-      })}
+                      <WeekDivider week={week} tone={tone} verdict={weekOpen(LUCA, week.no, u, dOf)} />
+                      {nodes
+                        .filter((n) => n.week.no === week.no)
+                        .map((n) => (
+                          <Node
+                            key={n.card.id}
+                            node={n}
+                            tone={tone}
+                            index={nodes.findIndex((x) => x.card.id === n.card.id)}
+                            go={go}
+                          />
+                        ))}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+
+            <div className="w-full pt-2">
+              <SurfaceCard variant="static" padding="lg" className="text-center">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--gold))]">Demo Day</div>
+                <div className="mt-1 text-[15px] font-semibold">Sat 14 Nov — your engine, on stage</div>
+                <p className="mt-1 text-[12px] text-[hsl(var(--muted-foreground))]">
+                  Thirteen blocks stack into one working Distribution Engine. That's the whole game.
+                </p>
+              </SurfaceCard>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -300,7 +511,7 @@ function FeedbackForm({ cardId, d }: { cardId: string; d: React.Dispatch<PlayAct
   );
 }
 
-function LiveSessionCard({ s, d, card, week }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek }) {
+function LiveSessionCard({ s, d, card, week, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
   const when = dOf(week.no, card.dayOffset);
   const past = new Date(`${TODAY_ISO}T00:00:00`) > when;
   const fb = s.feedback[card.id];
@@ -379,7 +590,7 @@ function LiveSessionCard({ s, d, card, week }: { s: PlayState; d: React.Dispatch
       {!done && (
         <button
           type="button"
-          onClick={() => d({ type: "card_done", cardId: card.id })}
+          onClick={() => { d({ type: "card_done", cardId: card.id }); onDone(card, week); }}
           className="mt-3 w-full rounded-lg border border-[hsl(var(--border))] px-4 py-2.5 text-[13px]"
         >
           I attended this session
@@ -390,7 +601,7 @@ function LiveSessionCard({ s, d, card, week }: { s: PlayState; d: React.Dispatch
   );
 }
 
-function CommunityCallCard({ s, d, card }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard }) {
+function CommunityCallCard({ s, d, card, week, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
   const done = s.progress[card.id]?.done;
   return (
     <>
@@ -415,7 +626,7 @@ function CommunityCallCard({ s, d, card }: { s: PlayState; d: React.Dispatch<Pla
       {!done && (
         <button
           type="button"
-          onClick={() => d({ type: "card_done", cardId: card.id })}
+          onClick={() => { d({ type: "card_done", cardId: card.id }); onDone(card, week); }}
           className="mt-3 w-full rounded-lg border border-[hsl(var(--border))] px-4 py-2.5 text-[13px]"
         >
           I came to this
@@ -426,7 +637,7 @@ function CommunityCallCard({ s, d, card }: { s: PlayState; d: React.Dispatch<Pla
   );
 }
 
-function MicroCard({ s, d, card, locked }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; locked?: string }) {
+function MicroCard({ s, d, card, week, locked, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; locked?: string; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
   const done = s.progress[card.id]?.done;
   return (
     <>
@@ -444,7 +655,7 @@ function MicroCard({ s, d, card, locked }: { s: PlayState; d: React.Dispatch<Pla
         ) : (
           <button
             type="button"
-            onClick={() => d({ type: "card_done", cardId: card.id })}
+            onClick={() => { d({ type: "card_done", cardId: card.id }); onDone(card, week); }}
             className="w-full rounded-lg bg-[hsl(var(--cream))] px-4 py-2.5 text-[13px] font-semibold text-[hsl(var(--cream-text))]"
           >
             Mark this done
@@ -456,7 +667,7 @@ function MicroCard({ s, d, card, locked }: { s: PlayState; d: React.Dispatch<Pla
 }
 
 /** The submission box — configured per card, not hard-coded. */
-function BlockCard({ s, d, card, locked }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; locked?: string }) {
+function BlockCard({ s, d, card, week, locked, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; locked?: string; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
   const existing = s.submissions.find((x) => x.cardId === card.id);
   const [link, setLink] = useState(existing?.link ?? "");
   const [text, setText] = useState(existing?.text ?? "");
@@ -522,7 +733,7 @@ function BlockCard({ s, d, card, locked }: { s: PlayState; d: React.Dispatch<Pla
           <button
             type="button"
             disabled={empty}
-            onClick={() => d({ type: "submit_work", cardId: card.id, link, text, fileName })}
+            onClick={() => { d({ type: "submit_work", cardId: card.id, link, text, fileName }); if (!existing) onDone(card, week); }}
             className="w-full rounded-lg bg-[hsl(var(--cream))] px-4 py-2.5 text-[13px] font-semibold text-[hsl(var(--cream-text))] disabled:opacity-40"
           >
             {existing ? "Update my submission" : "Submit my week"}
@@ -552,6 +763,38 @@ function BlockCard({ s, d, card, locked }: { s: PlayState; d: React.Dispatch<Pla
 
 export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React.Dispatch<PlayAction>; go: (k: string) => void; cardId: string }) {
   const u = useUnlock(s);
+  const [party, setParty] = useState<Celebration | null>(null);
+
+  /**
+   * Celebrate the CONSEQUENCE, not the click. "Done" is a receipt; "week 1 is
+   * open" is a reward. So the overlay names whatever the action just unlocked
+   * — the next drill by title, or the whole next week — and falls back to the
+   * XP only when nothing opened.
+   */
+  const celebrate = (card: TemplateCard, week: TemplateWeek) => {
+    const after: UnlockInput = {
+      ...u,
+      progress: { ...u.progress, [card.id]: { done: true } },
+      submittedCardIds: card.kind === "block" ? [...u.submittedCardIds, card.id] : u.submittedCardIds,
+    };
+    if (card.kind === "block") {
+      const nextWeek = LUCA.weeks.find((w) => w.no === week.no + 1);
+      if (nextWeek && weekOpen(LUCA, nextWeek.no, after, dOf).state === "open") {
+        setParty({ title: `Week ${nextWeek.no} is open`, sub: nextWeek.title });
+        return;
+      }
+      setParty({ title: "Block submitted", sub: `Your mentor has it. +${card.xp} XP` });
+      return;
+    }
+    const nextDrill = orderedCards(week).find(
+      (c) => c.id !== card.id && cardState(LUCA, week, c, u, dOf).state === "locked" && cardState(LUCA, week, c, after, dOf).state === "open",
+    );
+    setParty(
+      nextDrill
+        ? { title: "Unlocked", sub: nextDrill.title }
+        : { title: `+${card.xp} XP`, sub: "Banked. Nothing you finish ever locks again." },
+    );
+  };
   const found = findCard(LUCA, cardId);
   if (!found) {
     return (
@@ -568,105 +811,192 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <CelebrationOverlay show={party} onDone={() => setParty(null)} />
       <Shell go={go} week={found.week} card={card}>
         {card.needsAuthoring && (
           <p className="mt-3 rounded-lg border border-dashed border-[hsl(var(--border))] px-3 py-2 text-[12px] text-[hsl(var(--muted-foreground))]">
             This week is on the calendar but not authored yet. Weeks 0 and 1 are the finished examples.
           </p>
         )}
-        {card.kind === "live_session" && <LiveSessionCard s={s} d={d} card={card} week={found.week} />}
-        {card.kind === "community_call" && <CommunityCallCard s={s} d={d} card={card} />}
-        {card.kind === "micro" && <MicroCard s={s} d={d} card={card} locked={locked} />}
-        {card.kind === "block" && <BlockCard s={s} d={d} card={card} locked={locked} />}
+        {card.kind === "live_session" && <LiveSessionCard s={s} d={d} card={card} week={found.week} onDone={celebrate} />}
+        {card.kind === "community_call" && <CommunityCallCard s={s} d={d} card={card} week={found.week} onDone={celebrate} />}
+        {card.kind === "micro" && <MicroCard s={s} d={d} card={card} week={found.week} locked={locked} onDone={celebrate} />}
+        {card.kind === "block" && <BlockCard s={s} d={d} card={card} week={found.week} locked={locked} onDone={celebrate} />}
       </Shell>
     </motion.div>
   );
 }
 
+
 /* ─────────────────────────────────────────────────────────────────────────
-   HOME — the next action, not a dashboard
+   HOME — composed, not a list
+   ─────────────────────────────────────────────────────────────────────────
+
+   Locked decision #9: home leads with the ONE next action, stats are chips in
+   the header, and every lock is explained in plain words. The composition —
+   glow-backed hero, a scannable week strip, an upcoming-live card — is the one
+   the founder signed off in round 1. What changed underneath is that all three
+   now read the real template instead of hand-written prose, so Home can never
+   drift from the Path.
    ───────────────────────────────────────────────────────────────────────── */
 
-/**
- * Locked decision #9: home leads with the ONE thing to do next, and every lock
- * is explained in plain words. Stats are chips in the header, not the point of
- * the screen. This version computes that next action from the real template
- * instead of a hand-written hero, so it can never drift from the Path.
- */
 export function ProgramHomeScreen({ s, go }: { s: PlayState; go: (k: string) => void }) {
   const u = useUnlock(s);
+  const nodes = useMemo(() => buildTrail(s, u), [s, u]);
   const blocks = blocksDone(LUCA, u.submittedCardIds);
 
-  const next = useMemo(() => {
-    for (const week of LUCA.weeks) {
-      for (const raw of orderedCards(week)) {
-        const c = resolve(s, raw);
-        if (c.needsAuthoring) continue;
-        if (cardState(LUCA, week, c, u, dOf).state === "open") return { week, card: c };
-      }
-    }
-    return null;
-  }, [s, u]);
+  const current = nodes.find((n) => n.state === "current") ?? nodes.find((n) => n.state === "info");
+  const tone = toneForPhase(current?.week.phase ?? LUCA.weeks[0].phase);
 
-  const thisWeek = LUCA.weeks[0];
+  // "This week" = the week the current step lives in, not a hard-coded 0.
+  const week = current?.week ?? LUCA.weeks[0];
+  const weekNodes = nodes.filter((n) => n.week.no === week.no);
+  const doneThisWeek = weekNodes.filter((n) => n.state === "done").length;
+
+  // The next live thing you could walk into, anywhere ahead on the trail.
+  const upcoming = nodes.find(
+    (n) => (n.card.kind === "live_session" || n.card.kind === "community_call") && n.state !== "done" && !n.card.needsAuthoring,
+  );
+
+  const nextWeek = LUCA.weeks.find((w) => w.no === week.no + 1);
+  const nextWeekVerdict = nextWeek ? weekOpen(LUCA, nextWeek.no, u, dOf) : null;
 
   return (
-    <div className="mx-auto max-w-[760px]">
-      <header className="mb-6">
-        <h2 className="text-[22px] font-extrabold tracking-[-0.02em]">Your next move</h2>
-        <p className="mt-1 text-[13px] text-[hsl(var(--muted-foreground))]">
-          {LUCA.name} · Cohort 02 · {blocks.done} of {blocks.total} blocks in
-        </p>
-      </header>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow={`Week ${week.no} of 12 · ${week.title} · ${doneThisWeek}/${weekNodes.length} steps done`}
+        title={<>Creator <Serif>Studio</Serif></>}
+        subtitle="One project — your Distribution Engine, built block by block."
+      />
 
-      {next ? (
-        <button
-          type="button"
-          onClick={() => go(`card/${next.card.id}`)}
-          className="mb-6 w-full rounded-2xl border border-[hsl(var(--cream)/0.35)] bg-[hsl(var(--card))] p-5 text-left"
-        >
-          <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--gold))]">
-            {KIND_LABEL[next.card.kind]} · week {next.week.no}
+      {current && (
+        <SurfaceCard variant="static" padding="lg" className="relative overflow-hidden">
+          <div
+            className="pointer-events-none absolute -right-14 -top-20 h-64 w-64 rounded-full opacity-25 blur-3xl"
+            style={{ background: tone.c }}
+          />
+          <div className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: tone.c }}>
+            {KIND_LABEL[current.card.kind]} · {dayName(current.when)}
+            {current.card.time ? ` ${current.card.time}` : ""}
           </div>
-          <div className="mt-2 text-[18px] font-extrabold leading-snug">{next.card.title}</div>
-          {next.card.blurb && (
-            <p className="mt-1.5 text-[13px] leading-relaxed text-[hsl(var(--muted-foreground))]">{next.card.blurb}</p>
+          <div className="mt-1.5 text-[19px] font-bold tracking-[-0.01em]">{current.card.title}</div>
+          {current.card.blurb && (
+            <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-[hsl(var(--muted-foreground))]">{current.card.blurb}</p>
           )}
-          <div className="mt-3 text-[12px] text-[hsl(var(--cream))]">Open it</div>
-        </button>
-      ) : (
-        <p className="mb-6 text-[13px] text-[hsl(var(--muted-foreground))]">Nothing open right now. The Path has everything.</p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button variant="champagne" onClick={() => go(`card/${current.card.id}`)}>
+              {current.card.kind === "block" ? "Open the submission box" : current.card.kind === "micro" ? "Start it" : "Open the session"}{" "}
+              <ArrowRight />
+            </Button>
+            <button
+              type="button"
+              onClick={() => go("path")}
+              className="text-[12.5px] font-semibold text-[hsl(var(--muted-foreground))] underline underline-offset-4 hover:text-[hsl(var(--foreground))]"
+            >
+              See the whole trail
+            </button>
+          </div>
+        </SurfaceCard>
       )}
 
-      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--muted-foreground))]">
-        This week — week {thisWeek.no}
-      </div>
-      <ul className="flex flex-col gap-2">
-        {orderedCards(thisWeek).map((raw) => {
-          const c = resolve(s, raw);
-          const v = cardState(LUCA, thisWeek, c, u, dOf);
-          const when = dOf(thisWeek.no, c.dayOffset);
-          return (
-            <li key={c.id}>
+      <Section
+        title="This week"
+        description={`Week ${week.no} · ${week.blurb ?? week.title}`}
+      >
+        <SurfaceCard variant="static" padding="lg">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+            {weekNodes.map((n) => (
               <button
+                key={n.card.id}
                 type="button"
-                onClick={() => go(`card/${c.id}`)}
-                className="flex w-full items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3.5 py-2.5 text-left"
+                onClick={() => go(`card/${n.card.id}`)}
+                className="group flex items-center gap-2"
               >
-                <span className="min-w-0">
-                  <span className="block truncate text-[13px]">{c.title}</span>
-                  <span className="block text-[11px] text-[hsl(var(--muted-foreground))]">
-                    {dayName(when)}{c.time ? ` · ${c.time}` : ""} · {KIND_LABEL[c.kind]}
+                <span
+                  className="grid h-7 w-7 place-items-center rounded-full text-[11px] font-extrabold transition-transform group-hover:scale-110"
+                  style={{
+                    background:
+                      n.state === "done" ? "hsl(var(--success))" : n.state === "current" ? tone.c : "hsl(var(--secondary))",
+                    color: n.state === "locked" || n.state === "info" ? "hsl(var(--muted-foreground))" : "hsl(var(--cream-text))",
+                  }}
+                >
+                  {n.state === "done" ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : n.state === "locked" ? <Lock className="h-3 w-3" /> : "→"}
+                </span>
+                <span className="text-left leading-tight">
+                  <span
+                    className={`block text-[10px] font-bold uppercase tracking-wide ${n.state === "current" ? "" : "text-[hsl(var(--muted-foreground))]"}`}
+                    style={n.state === "current" ? { color: tone.c } : undefined}
+                  >
+                    {dayName(n.when)}{n.card.time ? ` ${n.card.time}` : ""}
+                  </span>
+                  <span className="block max-w-[160px] truncate text-[11px] text-[hsl(var(--muted-foreground))]">
+                    {n.card.title.replace(/^Week \d+ block — /, "")}
                   </span>
                 </span>
-                <span className="shrink-0 text-[11px] text-[hsl(var(--muted-foreground))]">
-                  {v.state === "done" ? "done" : v.state === "locked" ? "locked" : `+${c.xp}`}
-                </span>
               </button>
-            </li>
-          );
-        })}
-      </ul>
+            ))}
+          </div>
+        </SurfaceCard>
+      </Section>
+
+      <Section title="Upcoming" description="Live sessions are for everyone in the cohort — attendance earns XP, and falling behind never shuts the room.">
+        <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+          {upcoming && (
+            <SurfaceCard variant="interactive" padding="none" className="overflow-hidden" onClick={() => go(`card/${upcoming.card.id}`)}>
+              <div className="relative grid h-36 place-items-center bg-gradient-to-br from-[#221a10] via-[#120e08] to-[#0a0a0a]">
+                <div className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-b from-[hsl(var(--champagne-from))] to-[hsl(var(--champagne-to))]">
+                  <Radio className="h-4 w-4 text-[hsl(var(--cream-text))]" />
+                </div>
+                <div className="absolute left-4 top-4 flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[hsl(var(--gold))]" />
+                  <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--gold))]">
+                    Live · {fmtDate(upcoming.when)}{upcoming.card.time ? ` ${upcoming.card.time}` : ""}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3 p-4">
+                <div className="min-w-0">
+                  <div className="truncate text-[14px] font-semibold">{upcoming.card.title}</div>
+                  <div className="text-[12px] text-[hsl(var(--muted-foreground))]">
+                    {upcoming.card.mentor ? `Hosted by ${upcoming.card.mentor} · ` : ""}
+                    {upcoming.card.zoomUrl ? "Zoom link inside" : "Zoom link not up yet"}
+                  </div>
+                </div>
+                <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-[hsl(var(--gold))]">
+                  Open <ChevronRight className="h-3.5 w-3.5" />
+                </span>
+              </div>
+            </SurfaceCard>
+          )}
+
+          {nextWeek && nextWeekVerdict && (
+            <SurfaceCard variant="static" padding="lg">
+              <div className="flex items-center gap-2 text-[hsl(var(--muted-foreground))]">
+                {nextWeekVerdict.state === "open" ? (
+                  <Check className="h-4 w-4 text-[hsl(var(--success))]" />
+                ) : (
+                  <Lock className="h-4 w-4" />
+                )}
+                <span className="text-[11px] font-bold uppercase tracking-[0.12em]">
+                  Week {nextWeek.no} · {nextWeek.title}
+                </span>
+              </div>
+              <div className={`mt-2 text-[14px] font-semibold ${nextWeekVerdict.state === "open" ? "" : "text-[hsl(var(--muted-foreground))]"}`}>
+                {nextWeekVerdict.state === "open" ? "Open — drills and block included" : nextWeekVerdict.why}
+              </div>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+                {nextWeekVerdict.state === "open"
+                  ? "It opened the moment your block landed. Nothing you have finished ever locks again."
+                  : "You can still join its live session — only the drills and the block wait. Everything you have finished stays open."}
+              </p>
+            </SurfaceCard>
+          )}
+        </div>
+      </Section>
+
+      <p className="text-center text-[11px] text-[hsl(var(--muted-foreground))]">
+        {blocks.done} of {blocks.total} blocks in · Demo Day Sat 14 Nov
+      </p>
     </div>
   );
 }

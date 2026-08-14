@@ -36,8 +36,27 @@ export const PHASE_TONES: PhaseTone[] = [
 ];
 
 export function toneForPhase(phase: string): PhaseTone {
-  return PHASE_TONES.find((t) => t.name === phase) ?? PHASE_TONES[0];
+  return (
+    PROGRAM_TONES.find((t) => t.name === phase) ??
+    PHASE_TONES.find((t) => t.name === phase) ??
+    PHASE_TONES[0]
+  );
 }
+
+/**
+ * The six phases of the REAL Creator Academy (locked Cohort 02 schedule).
+ * Rule 2 of this file — each phase owns a colour — matters more here than it
+ * did over four dummy phases: a student scrolling from "Find your lane" in
+ * August to "The Creator Sprint" in November should SEE that they travelled.
+ */
+export const PROGRAM_TONES: PhaseTone[] = [
+  { name: "Find your lane", c: "hsl(var(--gold))", d: "hsl(40 61% 32%)" },
+  { name: "Ideas and scripts", c: "hsl(var(--accent-amber))", d: "hsl(38 92% 26%)" },
+  { name: "Make the content", c: "hsl(var(--accent-crimson))", d: "hsl(0 72% 26%)" },
+  { name: "Edit like a system", c: "hsl(var(--accent-violet))", d: "hsl(258 90% 34%)" },
+  { name: "Multiply and lock", c: "hsl(var(--accent-indigo))", d: "hsl(239 84% 34%)" },
+  { name: "The Creator Sprint", c: "hsl(var(--accent-emerald))", d: "hsl(160 84% 20%)" },
+];
 
 /**
  * Horizontal offsets that make the trail wind. Lifted from Creator OS's

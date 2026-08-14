@@ -104,6 +104,33 @@ describe("CreatorStudioPreview", () => {
     expect(await screen.findByText(/ship/i)).toBeTruthy();
   }, 20000);
 
+  it("the Path is the TRAIL, not a list — phase banners, week dividers, winding nodes", async () => {
+    // 2026-08-15: the real curriculum first shipped as flat rows and threw away
+    // the one surface nobody could buy off a shelf. This is the guard.
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+
+    // A phase banner per phase of the real program, in the real order.
+    expect(await screen.findByText("Find your lane")).toBeTruthy();
+    expect(screen.getByText("The Creator Sprint")).toBeTruthy();
+    // Week dividers carry the real dates.
+    expect(screen.getByText(/Week 0 · Sun, 16 Aug/)).toBeTruthy();
+    // Nodes are circular buttons labelled by day and title, not table rows.
+    expect(screen.getByRole("button", { name: /Sat 6:00 PM — Orientation/ })).toBeTruthy();
+    expect(screen.getByText(/Your Distribution/)).toBeTruthy();
+  });
+
+  it("finishing a step throws confetti and names what it OPENED, not what you clicked", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: /Record five voice-note memories/ }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Mark this done/ }));
+
+    // The payoff names the next drill by title — a receipt would just say done.
+    expect(await screen.findByText("Unlocked")).toBeTruthy();
+    expect(screen.getByText("Break down two creator reels")).toBeTruthy();
+  }, 20000);
+
   it("the recording stays shut until the feedback form is filled — the founder's gate", async () => {
     renderAs("avinash@leveluplearning.in");
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
