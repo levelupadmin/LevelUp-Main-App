@@ -49,7 +49,7 @@ function StatChip({ icon: Icon, value, label, tint }: { icon: typeof Zap; value:
 }
 
 export default function PreviewShell({
-  active, onChange, title, children, xp, streak, onReset,
+  active, onChange, title, children, xp, streak, blocks, onReset,
 }: {
   active: string;
   onChange: (k: string) => void;
@@ -57,13 +57,15 @@ export default function PreviewShell({
   children: ReactNode;
   xp: number;
   streak: number;
+  /** Blocks submitted out of the program's total — the real count, not a prop-shaped lie. */
+  blocks: { done: number; total: number };
   onReset?: () => void;
 }) {
   const stats = (
     <>
       <StatChip icon={Zap} value={xp} label="XP" tint="hsl(var(--gold))" />
       <StatChip icon={Flame} value={streak} label="Streak" tint="hsl(var(--accent-amber))" />
-      <StatChip icon={ClipboardCheck} value="4/13" label="Blocks" tint="hsl(var(--success))" />
+      <StatChip icon={ClipboardCheck} value={`${blocks.done}/${blocks.total}`} label="Blocks" tint="hsl(var(--success))" />
       {onReset && (
         <button
           type="button"

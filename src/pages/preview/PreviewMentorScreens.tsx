@@ -43,6 +43,19 @@ export function MentorScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
         subtitle="Pick a cohort. You'll see every week — jump to the one you're mentoring."
       />
       <div className="grid gap-3 lg:grid-cols-2">
+        <SurfaceCard variant="interactive" padding="lg" onClick={() => go("mentor/work")}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[14px] font-semibold">Creator Academy · Cohort 02</div>
+              <div className="mt-0.5 text-[11.5px] text-[hsl(var(--muted-foreground))]">
+                Live submissions from the Path · {s.submissions.length} in
+              </div>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[hsl(var(--gold)/0.4)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--gold))]">
+              Open <ChevronRight className="h-3 w-3" />
+            </span>
+          </div>
+        </SurfaceCard>
         <SurfaceCard variant="interactive" padding="lg" onClick={() => go("mentor/ca01")}>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">

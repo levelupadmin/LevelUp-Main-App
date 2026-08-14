@@ -68,39 +68,82 @@ describe("CreatorStudioPreview", () => {
     expect(screen.getAllByLabelText("Creator Studio sections").length).toBe(2);
   });
 
-  it("Home leads with the next action, not the stats — and it opens the recording", async () => {
+  it("Home leads with the next action, and the next action is real curriculum", async () => {
     renderAs("avinash@leveluplearning.in");
-    fireEvent.click(screen.getByRole("button", { name: /Resume watching/ }));
-    // Recording page: a real <video> and the done button.
-    expect(await screen.findByRole("button", { name: /I've finished the recording/ })).toBeTruthy();
+    // Not a hand-written hero: the first OPEN card computed from the template.
+    fireEvent.click((await screen.findAllByRole("button", { name: /Orientation/ }))[0]);
+    expect(await screen.findByText(/Why this program exists/)).toBeTruthy();
   });
 
-  it("PLAYS the founder's flow: recording → watched → handed to the assignment → submit → Week 5 → mentor → Album", async () => {
+  it("PLAYS the real loop: drill → block → the submission box → the mentor's verdict", async () => {
     renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
 
-    // Home hero → recording
-    fireEvent.click(screen.getByRole("button", { name: /Resume watching/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /I've finished the recording/ }));
+    // Monday's drill is open; Tuesday's is not, and it says why in plain words.
+    fireEvent.click((await screen.findAllByRole("button", { name: /Record five voice-note memories/ }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Mark this done/ }));
+    expect(await screen.findByText(/Done\. \+15 XP/)).toBeTruthy();
 
-    // XP moved in the header (840 → 850) the moment the recording completed the day.
-    expect((await screen.findAllByText("850")).length).toBeGreaterThan(0);
+    // The week's block: the in-app box, with a helper line per field.
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: /Week 0 block/ }))[0]);
+    expect(await screen.findByText(/Make sure it is shared so your mentor can open it/)).toBeTruthy();
 
-    // Auto-handoff to the assignment (900ms) — wait it out.
-    fireEvent.change(await screen.findByLabelText(/Your 3 reels/, {}, { timeout: 3000 }), { target: { value: "A, B, C" } });
-    fireEvent.click(screen.getByRole("button", { name: /Submit · unlocks Week 5/ }));
-    expect(await screen.findByText(/Submitted — Week 5 is open/i)).toBeTruthy();
+    // An empty submission is refused — a mentor must never open an empty page.
+    expect((screen.getByRole("button", { name: /Submit my week/ }) as HTMLButtonElement).disabled).toBe(true);
 
-    // Play the mentor — cohort → week 4 → Submissions tab, ours on top.
+    fireEvent.change(screen.getByLabelText(/^Link/), { target: { value: "https://drive.google.com/x" } });
+    fireEvent.click(screen.getByRole("button", { name: /Submit my week/ }));
+    expect(await screen.findByText(/Your mentor sees this in their desk/)).toBeTruthy();
+
+    // The mentor desk opens exactly what was typed, and ships it.
     fireEvent.click(screen.getAllByRole("button", { name: /^Mentor desk/ })[0]);
-    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy · Cohort 01/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /Week 4 · Sun 3 Aug/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /^Submissions$/ }));
-    fireEvent.click((await screen.findAllByRole("button", { name: /Accept — reviewed on the call/ }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy · Cohort 02/ }));
+    expect(await screen.findByText("https://drive.google.com/x")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^SHIP$/i }));
+    expect(await screen.findByText(/ship/i)).toBeTruthy();
+  }, 20000);
 
-    // Place it in the Album.
-    fireEvent.click(screen.getAllByRole("button", { name: /^Creator OS/ })[0]);
-    fireEvent.click(await screen.findByRole("button", { name: /Add to my Album/ }));
-    expect(await screen.findByText(/Just placed · Week 4/i)).toBeTruthy();
+  it("the recording stays shut until the feedback form is filled — the founder's gate", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: /The psychology of storytelling/ }))[0]);
+
+    // Two ratings and a note. Both ratings required, the note is not.
+    expect(await screen.findByText(/Both ratings are needed/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: /Submit and open the recording/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "The mentor: 4 of 5" }));
+    fireEvent.click(screen.getByRole("button", { name: "What you learned: 5 of 5" }));
+    expect((screen.getByRole("button", { name: /Submit and open the recording/ }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("a Zoom link that is not up yet reads as not up yet, never as a dead button", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    // Week 2 is unauthored, so its class has no link — the honest empty state.
+    fireEvent.click(await screen.findByRole("button", { name: /Scripts part 1 — structure and hooks/ }));
+    expect(await screen.findByText(/The Zoom link is not up yet/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Join on Zoom/ })).toBeNull();
+  });
+
+  it("a future week is locked with a reason, and the reason is the previous block", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    expect((await screen.findAllByText(/Opens 29 Aug, once week 1's block is in\./)).length).toBeGreaterThan(0);
+  });
+
+  it("ADMIN: editing a card's field lands on the student page — the whole point of the pen", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy content/ }, { timeout: 4000 }));
+    fireEvent.click(await screen.findByRole("button", { name: /Week 0 · Orientation/ }));
+    fireEvent.click((await screen.findAllByRole("button", { name: /^Orientation/ }))[0]);
+
+    const mentor = await screen.findByLabelText(/^Mentor/);
+    fireEvent.change(mentor, { target: { value: "Rahul and a guest" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /View this as a student/ }));
+    expect(await screen.findByText(/with Rahul and a guest/)).toBeTruthy();
   }, 20000);
 
   it("the Feed takes a typed post, a like and a comment", async () => {
@@ -116,39 +159,6 @@ describe("CreatorStudioPreview", () => {
     // Like Meghna's seeded post (12 likes → 13).
     fireEvent.click(screen.getByRole("button", { name: "12" }));
     expect(await screen.findByRole("button", { name: "13" })).toBeTruthy();
-  });
-
-  it("a FUTURE week's session is readable — details open, only the doing is locked", async () => {
-    renderAs("avinash@leveluplearning.in");
-    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
-    // Week 9's class node exists on the trail and opens its session page.
-    fireEvent.click(await screen.findByRole("button", { name: /Sun 3 PM — Live class — Community \+ Lead Capture/ }));
-    // The founder's ask: info is visible even though the week hasn't happened.
-    expect(await screen.findByText(/turning viewers into names you own/i)).toBeTruthy();
-    expect(screen.getByText(/The capture machine: lead magnet/)).toBeTruthy();
-    // The Zoom door is a placeholder, not a dead lock.
-    expect(screen.getByRole("button", { name: /Zoom link drops Sun 7 Sep/ })).toBeTruthy();
-  });
-
-  it("the All-sessions overview lists every week and a tap jumps to it on the Path", async () => {
-    renderAs("avinash@leveluplearning.in");
-    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
-    fireEvent.click(await screen.findByRole("button", { name: /All sessions/ }));
-    // All 13 sessions listed with dates.
-    expect(await screen.findByText("Sun 28 Sep · upcoming")).toBeTruthy();
-    // One action, one outcome: tapping a row closes the sheet and jumps on the trail.
-    fireEvent.click(screen.getByRole("button", { name: /The Creator OS \+ Your 12-Month Plan/ }));
-    await waitFor(() => expect(screen.queryByText("Sun 28 Sep · upcoming")).toBeNull());
-    // The session itself opens from the trail node — still one click away.
-    fireEvent.click(await screen.findByRole("button", { name: /Sun 3 PM — Live class — The Creator OS/ }));
-    expect(await screen.findByText(/your 12-month engine, presented on Demo Day/i)).toBeTruthy();
-  });
-
-  it("a PAST week's class node is a rewatch door, not a checkmark grave", async () => {
-    renderAs("avinash@leveluplearning.in");
-    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
-    fireEvent.click(await screen.findByRole("button", { name: /Sun 3 PM — Live class — Scriptwriting/ }));
-    expect(await screen.findByRole("button", { name: /Rewatch the class|Watch the recording/ })).toBeTruthy();
   });
 
   it("ADMIN DEMO: launch a Dec 5 cohort with a blackout and see it announced", async () => {

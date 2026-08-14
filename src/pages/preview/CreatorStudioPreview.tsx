@@ -18,21 +18,25 @@ import { canSeePreview, previewHostAllowsAnonymous } from "./previewGate";
 import PreviewShell from "./PreviewShell";
 import { SHELL_TABS } from "./previewTabs";
 import { usePlayState } from "./previewStore";
+import { LUCA } from "./previewProgram";
+import { blocksDone } from "./previewUnlock";
 import { HomeScreen, PathScreen, RecordingScreen, AssignmentScreen, SessionDetailScreen } from "./PreviewScreens";
 import { AlbumScreen, DocScreen, FeedScreen } from "./PreviewStudioScreens";
 import { AdminScreen, CohortLauncherScreen, TemplateStudioScreen } from "./PreviewAdminScreens";
 import { ProgramBuilderScreen, BuiltPathPreviewScreen, BuiltCardScreen } from "./PreviewBuilderScreens";
 import { MentorScreen, MentorWeeksScreen, MentorWeekScreen, MentorBuiltScreen } from "./PreviewMentorScreens";
+import { ProgramPathScreen, ProgramCardScreen, ProgramHomeScreen } from "./PreviewProgramScreens";
+import { ProgramAdminScreen, ProgramWeekEditorScreen, ProgramMentorScreen } from "./PreviewProgramAdmin";
 
 const TITLES: Record<string, string> = {
-  home: "Home", path: "The Path", recording: "The Path", assignment: "The Path",
-  session: "The Path", album: "Creator OS", doc: "Creator OS",
+  home: "Home", path: "The Path", trail: "The Path", recording: "The Path", assignment: "The Path",
+  session: "The Path", card: "The Path", album: "Creator OS", doc: "Creator OS",
   feed: "Feed", mentor: "Mentor desk", admin: "Admin", builtcard: "Admin",
 };
 
 /** Which rail tab a sub-screen belongs under. */
 const TAB_FOR: Record<string, string> = {
-  recording: "path", assignment: "path", session: "path", doc: "album", builtcard: "admin",
+  recording: "path", assignment: "path", session: "path", card: "path", doc: "album", builtcard: "admin",
 };
 
 export default function CreatorStudioPreview() {
@@ -51,7 +55,9 @@ export default function CreatorStudioPreview() {
 
   const content = (() => {
     switch (kind) {
-      case "path": return <PathScreen s={s} d={d} go={go} />;
+      case "path": return <ProgramPathScreen s={s} go={go} />;
+      case "card": return <ProgramCardScreen s={s} d={d} go={go} cardId={param ?? ""} />;
+      case "trail": return <PathScreen s={s} d={d} go={go} />;
       case "recording": return <RecordingScreen s={s} d={d} go={go} week={Number(param) || 4} />;
       case "assignment": return <AssignmentScreen s={s} d={d} go={go} />;
       case "session": return <SessionDetailScreen s={s} go={go} week={Number(param) || 4} />;
@@ -59,6 +65,7 @@ export default function CreatorStudioPreview() {
       case "doc": return <DocScreen go={go} docId={param ?? "scr1"} />;
       case "feed": return <FeedScreen s={s} d={d} go={go} />;
       case "mentor":
+        if (param === "work") return <ProgramMentorScreen s={s} d={d} go={go} />;
         if (param === "built") return <MentorBuiltScreen s={s} go={go} />;
         if (param && param2 !== undefined) return <MentorWeekScreen s={s} d={d} go={go} week={Number(param2) || 4} />;
         if (param) return <MentorWeeksScreen s={s} go={go} />;
@@ -66,12 +73,15 @@ export default function CreatorStudioPreview() {
       case "builtcard":
         return <BuiltCardScreen s={s} d={d} go={go} programId={param ?? ""} cardId={param2 ?? ""} />;
       case "admin":
+        if (param === "week" && param2 !== undefined) return <ProgramWeekEditorScreen s={s} d={d} go={go} weekNo={Number(param2)} />;
+        if (param === "week") return <ProgramAdminScreen s={s} go={go} />;
         if (param === "launch") return <CohortLauncherScreen s={s} d={d} go={go} />;
         if (param === "template") return <TemplateStudioScreen s={s} d={d} go={go} />;
         if (param === "builder") return <ProgramBuilderScreen key={param2 ?? "new"} s={s} d={d} go={go} programId={param2} />;
         if (param === "preview" && param2) return <BuiltPathPreviewScreen s={s} go={go} programId={param2} />;
         return <AdminScreen s={s} d={d} go={go} />;
-      default: return <HomeScreen s={s} d={d} go={go} />;
+      case "oldhome": return <HomeScreen s={s} d={d} go={go} />;
+      default: return <ProgramHomeScreen s={s} go={go} />;
     }
   })();
 
@@ -84,6 +94,7 @@ export default function CreatorStudioPreview() {
       title={TITLES[kind] ?? "Creator Studio"}
       xp={s.xp}
       streak={s.streak}
+      blocks={blocksDone(LUCA, s.submissions.map((x) => x.cardId))}
       onReset={() => d({ type: "reset" })}
     >
       <AnimatePresence mode="wait" initial={false}>

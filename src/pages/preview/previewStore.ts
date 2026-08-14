@@ -15,6 +15,8 @@
  */
 import { useEffect, useReducer } from "react";
 import { SEED_POSTS, type PostType } from "./previewData";
+import { LUCA, findCard, orderedCards, XP } from "./previewProgram";
+import type { TemplateCard } from "./previewProgram";
 
 export interface PlayDay {
   id: string;
@@ -118,6 +120,44 @@ export interface BuiltProgram {
   phases: BuiltPhase[];
 }
 
+/* ── The real program's runtime — layer 3 of the architecture ───────────── */
+
+/**
+ * Per-card student state. One row per (student, cohort_card) when this
+ * graduates — `card_progress`. Status only ever moves forward, which is a
+ * CHECK constraint in Postgres and an invariant here: nothing that unlocked
+ * ever re-locks.
+ */
+export interface CardProgress {
+  done: boolean;
+  doneOn?: string;
+}
+
+/**
+ * The founder's recording gate, 2026-08-15: you cannot watch the recording of
+ * a session until you have told us how it went. Two ratings and one open box —
+ * deliberately small, because a long form does not get filled and an unfilled
+ * form means an unwatchable recording.
+ */
+export interface SessionFeedback {
+  mentor: number;   // 1-5
+  content: number;  // 1-5
+  note: string;
+}
+
+/** A block submission — this is what the mentor opens. */
+export interface BlockSubmission {
+  cardId: string;
+  weekNo: number;
+  cardTitle: string;
+  link: string;
+  text: string;
+  fileName: string;
+  when: string;
+  verdict?: "ship" | "fix" | "hold";
+  mentorNote?: string;
+}
+
 export interface PlayState {
   xp: number;
   streak: number;
@@ -137,6 +177,12 @@ export interface PlayState {
   programs: BuiltProgram[];
   /** Submissions against built assignment cards — routed to the Mentor Desk. */
   builtSubmissions: BuiltSubmission[];
+  /* ── the real LUCA program ── */
+  progress: Record<string, CardProgress>;
+  feedback: Record<string, SessionFeedback>;
+  submissions: BlockSubmission[];
+  /** Admin edits to template cards, by card id. The student side reads these. */
+  cardEdits: Record<string, Partial<TemplateCard>>;
 }
 
 const SEEDED: PlayPost[] = SEED_POSTS.map((p) => ({
@@ -173,6 +219,10 @@ export const INITIAL: PlayState = {
   overrides: {},
   programs: [],
   builtSubmissions: [],
+  progress: {},
+  feedback: {},
+  submissions: [],
+  cardEdits: {},
 };
 
 export type PlayAction =
@@ -189,6 +239,11 @@ export type PlayAction =
   | { type: "save_program"; program: BuiltProgram }
   | { type: "delete_program"; id: string }
   | { type: "submit_built"; programId: string; cardId: string; body: string }
+  | { type: "card_done"; cardId: string }
+  | { type: "submit_feedback"; cardId: string; mentor: number; content: number; note: string }
+  | { type: "submit_work"; cardId: string; link: string; text: string; fileName: string }
+  | { type: "mentor_verdict"; cardId: string; verdict: "ship" | "fix" | "hold"; note: string }
+  | { type: "admin_save_card"; cardId: string; patch: Partial<TemplateCard> }
   | { type: "reset" };
 
 function completeDay(s: PlayState, id: string): PlayState {
@@ -287,6 +342,56 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
         ],
       };
     }
+    case "card_done": {
+      if (s.progress[a.cardId]?.done) return s;
+      const found = findCard(LUCA, a.cardId);
+      if (!found) return s;
+      return {
+        ...s,
+        progress: { ...s.progress, [a.cardId]: { done: true, doneOn: "just now" } },
+        xp: s.xp + (s.cardEdits[a.cardId]?.xp ?? found.card.xp),
+        streak: s.streak + 1,
+      };
+    }
+    case "submit_feedback": {
+      if (!a.mentor || !a.content) return s;
+      return { ...s, feedback: { ...s.feedback, [a.cardId]: { mentor: a.mentor, content: a.content, note: a.note.trim() } } };
+    }
+    case "submit_work": {
+      // At least one box has to carry something. An empty submission is not a
+      // submission, and letting one through would mean a mentor opening
+      // nothing — the exact thing the box exists to prevent.
+      if (!a.link.trim() && !a.text.trim() && !a.fileName.trim()) return s;
+      const found = findCard(LUCA, a.cardId);
+      if (!found) return s;
+      const already = s.submissions.some((x) => x.cardId === a.cardId);
+      const row: BlockSubmission = {
+        cardId: a.cardId,
+        weekNo: found.week.no,
+        cardTitle: s.cardEdits[a.cardId]?.title ?? found.card.title,
+        link: a.link.trim(),
+        text: a.text.trim(),
+        fileName: a.fileName.trim(),
+        when: "just now",
+      };
+      return {
+        ...s,
+        submissions: already ? s.submissions.map((x) => (x.cardId === a.cardId ? row : x)) : [row, ...s.submissions],
+        progress: { ...s.progress, [a.cardId]: { done: true, doneOn: "just now" } },
+        xp: already ? s.xp : s.xp + (s.cardEdits[a.cardId]?.xp ?? found.card.xp),
+      };
+    }
+    case "mentor_verdict": {
+      return {
+        ...s,
+        submissions: s.submissions.map((x) =>
+          x.cardId === a.cardId ? { ...x, verdict: a.verdict, mentorNote: a.note.trim() } : x,
+        ),
+        xp: a.verdict === "ship" ? s.xp + XP.ship : s.xp,
+      };
+    }
+    case "admin_save_card":
+      return { ...s, cardEdits: { ...s.cardEdits, [a.cardId]: { ...s.cardEdits[a.cardId], ...a.patch } } };
     case "reset":
       return INITIAL;
     default:
@@ -294,7 +399,7 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
   }
 }
 
-const KEY = "creator-studio-preview-v5";
+const KEY = "creator-studio-preview-v6";
 
 export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
   const [state, dispatch] = useReducer(reduce, INITIAL, (init) => {
@@ -303,7 +408,7 @@ export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
       if (!raw) return init;
       const saved = JSON.parse(raw) as PlayState;
       // A shape mismatch after a prototype update must reset, not crash.
-      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" && Array.isArray(saved.programs) && Array.isArray(saved.builtSubmissions) ? saved : init;
+      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" && Array.isArray(saved.programs) && Array.isArray(saved.builtSubmissions) && typeof saved.progress === "object" && typeof saved.feedback === "object" && Array.isArray(saved.submissions) && typeof saved.cardEdits === "object" ? saved : init;
     } catch {
       return init;
     }
