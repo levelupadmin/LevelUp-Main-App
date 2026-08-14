@@ -13,6 +13,16 @@
  */
 import { useState } from "react";
 
+/**
+ * A greppable marker, not just a value. Minifiers rename the variable holding
+ * the SHA, and a bare 7-hex string is indistinguishable from the dozens of
+ * chunk hashes in a bundle — the verify script matched the wrong one on its
+ * first run. A template literal over a `define` constant is folded by esbuild
+ * into ONE literal, so the shipped JS contains `cs-build:89feae5` verbatim and
+ * `_scripts/verify_preview_deploy.sh` can read the truth off the wire.
+ */
+export const BUILD_MARKER = `cs-build:${__BUILD_SHA__}`;
+
 function stampTime(): string {
   try {
     return new Date(__BUILD_TIME__).toLocaleString("en-IN", {
@@ -26,7 +36,7 @@ function stampTime(): string {
 
 export default function BuildStamp({ className = "" }: { className?: string }) {
   const [copied, setCopied] = useState(false);
-  const sha = __BUILD_SHA__;
+  const sha = BUILD_MARKER.slice("cs-build:".length);
   const when = stampTime();
 
   const copy = () => {
