@@ -87,3 +87,17 @@
    9pm to submit work, so body holds at 400 and only large display text thins. */
 .cs-brand p { font-weight: 400; }
 .cs-brand .text-\[19px\], .cs-brand .text-\[21px\], .cs-brand .text-\[22px\] { font-weight: 500; letter-spacing: -0.01em; }
+
+/**
+ * The entrance video fills the viewport. `cover` crops to fill, which is right
+ * on a landscape screen and wrong on a tall phone — a 16:9 animation cropped
+ * to 9:16 loses most of its width and can cut the mark in half. So portrait
+ * gets `contain` and keeps the whole animation, letterboxed against the same
+ * near-black the room already uses, which reads as intentional rather than as
+ * a gap.
+ */
+.cs-boot-video { object-fit: cover; }
+
+@media (orientation: portrait) {
+  .cs-boot-video { object-fit: contain; }
+}

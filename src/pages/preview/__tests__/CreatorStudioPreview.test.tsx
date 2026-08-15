@@ -116,6 +116,17 @@ describe("CreatorStudioPreview", () => {
     expect(await screen.findByText(/ship/i)).toBeTruthy();
   }, 20000);
 
+  it("the entrance fills the viewport and is never cut short by a timer", () => {
+    sessionStorage.clear();
+    const { container } = renderAs("avinash@leveluplearning.in");
+    const v = container.querySelector("video.cs-boot-video") as HTMLVideoElement | null;
+    expect(v).toBeTruthy();
+    // Full bleed, and it plays to its own end rather than to a clock.
+    expect(v?.classList.contains("h-full")).toBe(true);
+    expect(v?.classList.contains("w-full")).toBe(true);
+    expect(v?.loop).toBe(false);
+  });
+
   it("the entrance plays once a session, never twice", async () => {
     sessionStorage.clear();
     const first = renderAs("avinash@leveluplearning.in");

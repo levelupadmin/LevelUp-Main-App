@@ -1,21 +1,27 @@
 /**
- * THE ENTRANCE.
+ * THE ENTRANCE — full bleed, and it finishes.
  *
- * 🔴 WHY ONCE A SESSION, NOT EVERY LOAD. This is a room students open daily,
- * often twice. What feels premium on day one is an obstacle by day four, and by
- * week three it is the thing standing between someone and their deadline. So it
- * plays on first entry per session, it is skippable on any key or tap, and
- * anyone with reduced-motion set gets the static mark and nothing else.
+ * Founder, 2026-08-15: "I wanted the video to be on the screen, not one small
+ * patch. It has to go full size, end to end, and the animation has to
+ * completely get over, then we load the page. I know this might not be
+ * scalable, I just want to see how nice it looks."
  *
- * The asset is the academy's own logo animation, the one under "What is the
- * LevelUp Creator Academy" on the marketing site. It is currently served from
- * a Cloudflare `pub-….r2.dev` bucket proxied through the CDN — those dev URLs
- * are rate-limited and not intended for production traffic, so before merge it
- * moves into the app's own bucket. Prototype only, and deliberate.
+ * So this deliberately trades the polite thing for the good-looking thing:
+ * the animation owns the whole viewport and the room waits for it to END,
+ * rather than being cut off by a timer.
  *
- * It is also `loop={false}` on purpose: a splash has to end. If the source
- * turns out to loop seamlessly rather than landing on the lockup, the timeout
- * below ends it anyway — the animation never gets to hold the room hostage.
+ * 🔴 WHAT THAT COSTS, WRITTEN DOWN SO THE TRADE IS A CHOICE AND NOT A DRIFT.
+ * The room is gated on a video download. Once a session softens it, but a
+ * student on a bad train connection waits on a CDN before they can submit
+ * anything. Two guards keep that from becoming a wall rather than a wait:
+ * `onError` bails instantly, and a long stall timeout gives up if the file
+ * never arrives. Neither ever cuts a playing animation short — they only
+ * rescue the case where it is not playing at all.
+ *
+ * If this stays past the prototype, the honest version is: keep full bleed,
+ * keep once-a-session, but preload the file and skip the splash entirely when
+ * it is not already cached. That way it is a gift on a good connection and
+ * invisible on a bad one.
  */
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
@@ -24,8 +30,8 @@ const SRC =
   "https://cdn.leveluplearning.in/creator-academy-local/assets/pub-3be000680ad849f1b16efc848a240a04.r2.dev/creator/Creators%20Logo%20Animation.mp4";
 
 const KEY = "cs-boot-seen";
-/** Hard ceiling. Nothing about a logo justifies more than this. */
-const MAX_MS = 2600;
+/** Only fires if the video never starts. A playing animation is never cut. */
+const STALL_MS = 12000;
 
 export function LevelUpMark({ className = "" }: { className?: string }) {
   return (
@@ -46,16 +52,31 @@ export default function StudioBoot() {
       return false; // storage blocked — never trap someone behind a splash
     }
   });
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [hint, setHint] = useState(false);
+  const startedRef = useRef(false);
 
   useEffect(() => {
     if (!show) return;
     try { sessionStorage.setItem(KEY, "1"); } catch { /* fine */ }
-    const t = window.setTimeout(() => setShow(false), reduced ? 900 : MAX_MS);
+
+    // Reduced motion gets the mark and a beat, never a video.
+    if (reduced) {
+      const t = window.setTimeout(() => setShow(false), 900);
+      return () => window.clearTimeout(t);
+    }
+
+    // The only timer here. It checks whether playback ever BEGAN — if it did,
+    // the animation is left alone to finish on its own terms.
+    const stall = window.setTimeout(() => {
+      if (!startedRef.current) setShow(false);
+    }, STALL_MS);
+    const hintTimer = window.setTimeout(() => setHint(true), 3500);
     const skip = () => setShow(false);
     window.addEventListener("keydown", skip);
     return () => {
-      window.clearTimeout(t);
+      window.clearTimeout(stall);
+      window.clearTimeout(hintTimer);
       window.removeEventListener("keydown", skip);
     };
   }, [show, reduced]);
@@ -64,42 +85,58 @@ export default function StudioBoot() {
     <AnimatePresence>
       {show && (
         <motion.div
-          className="fixed inset-0 z-[60] grid place-items-center bg-[hsl(var(--background))]"
+          className="fixed inset-0 z-[60] bg-[hsl(var(--background))]"
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.45, ease: "easeOut" }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
           onClick={() => setShow(false)}
           role="status"
           aria-label="Creator Studio"
         >
-          <div className="flex flex-col items-center gap-5">
-            {reduced ? (
-              <LevelUpMark className="h-8 w-14 text-[hsl(var(--foreground))]" />
-            ) : (
-              <video
-                ref={videoRef}
+          {reduced ? (
+            <div className="grid h-full w-full place-items-center">
+              <LevelUpMark className="h-9 w-16 text-[hsl(var(--foreground))]" />
+            </div>
+          ) : (
+            <>
+              {/* The mark holds the frame while the file arrives, so the first
+                  thing on screen is never an empty black rectangle. */}
+              <motion.div
+                className="absolute inset-0 grid place-items-center"
+                animate={{ opacity: playing ? 0 : 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                <LevelUpMark className="h-9 w-16 text-[hsl(var(--muted-foreground))]" />
+              </motion.div>
+
+              <motion.video
                 src={SRC}
                 autoPlay
                 muted
                 playsInline
                 loop={false}
+                onPlaying={() => { startedRef.current = true; setPlaying(true); }}
                 onEnded={() => setShow(false)}
-                // If the CDN is throttling or offline the splash must not become
-                // a blank wall — the timeout still fires, and the mark below is
-                // already on screen underneath.
                 onError={() => setShow(false)}
-                className="max-h-[38vh] max-w-[76vw] object-contain"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: playing ? 1 : 0 }}
+                transition={{ duration: 0.35 }}
+                className="cs-boot-video absolute inset-0 h-full w-full"
               />
-            )}
-            <motion.div
-              className="text-[10px] tracking-[0.24em] text-[hsl(var(--muted-foreground))]"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-            >
-              CREATOR STUDIO
-            </motion.div>
-          </div>
+
+              <AnimatePresence>
+                {hint && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="pointer-events-none absolute inset-x-0 bottom-8 text-center text-[10px] tracking-[0.24em] text-[hsl(var(--muted-foreground))]"
+                  >
+                    TAP TO SKIP
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </>
+          )}
         </motion.div>
       )}
     </AnimatePresence>
