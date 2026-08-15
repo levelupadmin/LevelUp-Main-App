@@ -384,3 +384,119 @@ export const KIND_LABEL: Record<CardKind, string> = {
   micro: "Micro assignment",
   block: "Assignment deadline",
 };
+
+/* ─────────────────────────────────────────────────────────────────────────
+   EDITING THE TEMPLATE — pure functions, so admin actions are testable
+   ─────────────────────────────────────────────────────────────────────────
+
+   The founder's rule, 2026-08-15: "I don't want to limit myself in terms of
+   creating something." So every structural move is here — add, delete,
+   duplicate, reorder — for phases, weeks and cards alike, and each one returns
+   a NEW template rather than mutating. Two consequences worth the discipline:
+   undo is free, and each of these becomes one RPC with the same name later.
+
+   Week numbers are POSITIONS, not identity. Moving week 4 above week 3
+   renumbers both, which is exactly what "swap week 3 and 4" has to mean — the
+   dates belong to the slot, the content travels.
+   ───────────────────────────────────────────────────────────────────────── */
+
+let seq = 0;
+export function newId(prefix: string): string {
+  seq += 1;
+  return `${prefix}-${Date.now().toString(36)}-${seq}`;
+}
+
+/** Renumber weeks 0..n after any structural change. Dates follow position. */
+function renumber(weeks: TemplateWeek[]): TemplateWeek[] {
+  return weeks.map((w, i) => ({ ...w, no: i }));
+}
+
+export function moveWeek(t: ProgramTemplate, from: number, to: number): ProgramTemplate {
+  if (to < 0 || to >= t.weeks.length || from === to) return t;
+  const weeks = [...t.weeks];
+  const [row] = weeks.splice(from, 1);
+  weeks.splice(to, 0, row);
+  return { ...t, weeks: renumber(weeks) };
+}
+
+export function addWeek(t: ProgramTemplate, at: number, phase: string): ProgramTemplate {
+  const weeks = [...t.weeks];
+  weeks.splice(at, 0, { no: 0, phase, title: "New week", blurb: "", cards: [] });
+  return { ...t, weeks: renumber(weeks) };
+}
+
+export function duplicateWeek(t: ProgramTemplate, index: number): ProgramTemplate {
+  const src = t.weeks[index];
+  if (!src) return t;
+  const copy: TemplateWeek = {
+    ...src,
+    no: 0,
+    title: `${src.title} (copy)`,
+    cards: src.cards.map((c) => ({ ...c, id: newId(c.kind) })),
+  };
+  const weeks = [...t.weeks];
+  weeks.splice(index + 1, 0, copy);
+  return { ...t, weeks: renumber(weeks) };
+}
+
+export function deleteWeek(t: ProgramTemplate, index: number): ProgramTemplate {
+  if (t.weeks.length <= 1) return t;
+  const weeks = t.weeks.filter((_, i) => i !== index);
+  return { ...t, weeks: renumber(weeks) };
+}
+
+export function setWeekField(t: ProgramTemplate, index: number, patch: Partial<TemplateWeek>): ProgramTemplate {
+  return { ...t, weeks: t.weeks.map((w, i) => (i === index ? { ...w, ...patch } : w)) };
+}
+
+/** A blank card of a kind, with only that kind's fields present. */
+export function blankCard(kind: CardKind, dayOffset: number): TemplateCard {
+  const base = { id: newId(kind), kind, dayOffset, title: "Untitled", xp: XP[kind], needsAuthoring: true };
+  if (kind === "live_session") return { ...base, time: "3:00 PM", durationMin: 180, mentor: "", blurb: "", learn: [], zoomUrl: "", recordingUrl: "", gateRecordingOnFeedback: true };
+  if (kind === "community_call") return { ...base, time: "9:00 PM", durationMin: 45, mentor: "", blurb: "", zoomUrl: "" };
+  if (kind === "block")
+    return {
+      ...base, time: "9:00 PM", blurb: "",
+      submit: {
+        prompt: "Drop your work",
+        link: { on: true, helper: "Paste the link to your Doc or Drive folder." },
+        text: { on: true, helper: "Anything your mentor should know first." },
+        file: { on: false, helper: "Attach a file. Up to 10MB." },
+      },
+    };
+  return { ...base, blurb: "" };
+}
+
+export function addCard(t: ProgramTemplate, weekIndex: number, kind: CardKind, dayOffset: number): ProgramTemplate {
+  return setWeekField(t, weekIndex, { cards: [...(t.weeks[weekIndex]?.cards ?? []), blankCard(kind, dayOffset)] });
+}
+
+export function duplicateCard(t: ProgramTemplate, weekIndex: number, cardId: string): ProgramTemplate {
+  const week = t.weeks[weekIndex];
+  const src = week?.cards.find((c) => c.id === cardId);
+  if (!src) return t;
+  return setWeekField(t, weekIndex, { cards: [...week.cards, { ...src, id: newId(src.kind), title: `${src.title} (copy)` }] });
+}
+
+export function deleteCard(t: ProgramTemplate, weekIndex: number, cardId: string): ProgramTemplate {
+  const week = t.weeks[weekIndex];
+  if (!week) return t;
+  return setWeekField(t, weekIndex, { cards: week.cards.filter((c) => c.id !== cardId) });
+}
+
+export function setCardField(t: ProgramTemplate, cardId: string, patch: Partial<TemplateCard>): ProgramTemplate {
+  return {
+    ...t,
+    weeks: t.weeks.map((w) => ({ ...w, cards: w.cards.map((c) => (c.id === cardId ? { ...c, ...patch, needsAuthoring: false } : c)) })),
+  };
+}
+
+/** Rename a phase everywhere it appears — phases are a label on a week range. */
+export function renamePhase(t: ProgramTemplate, from: string, to: string): ProgramTemplate {
+  return { ...t, weeks: t.weeks.map((w) => (w.phase === from ? { ...w, phase: to } : w)) };
+}
+
+/** The batch layer: one function, a start date in, every date out. */
+export function withStart(t: ProgramTemplate, startISO: string): ProgramTemplate {
+  return { ...t, anchorISO: startISO };
+}

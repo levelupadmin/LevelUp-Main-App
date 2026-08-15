@@ -74,7 +74,7 @@ export default function CreatorStudioPreview() {
         return <BuiltCardScreen s={s} d={d} go={go} programId={param ?? ""} cardId={param2 ?? ""} />;
       case "admin":
         if (param === "week" && param2 !== undefined) return <ProgramWeekEditorScreen s={s} d={d} go={go} weekNo={Number(param2)} />;
-        if (param === "week") return <ProgramAdminScreen s={s} go={go} />;
+        if (param === "week") return <ProgramAdminScreen s={s} d={d} go={go} />;
         if (param === "launch") return <CohortLauncherScreen s={s} d={d} go={go} />;
         if (param === "template") return <TemplateStudioScreen s={s} d={d} go={go} />;
         if (param === "builder") return <ProgramBuilderScreen key={param2 ?? "new"} s={s} d={d} go={go} programId={param2} />;

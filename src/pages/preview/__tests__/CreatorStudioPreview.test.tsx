@@ -131,6 +131,37 @@ describe("CreatorStudioPreview", () => {
     expect(screen.getByText("Break down two creator reels")).toBeTruthy();
   }, 20000);
 
+  it("ADMIN: adding a card puts it on the student Path, deleting takes it off", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy content/ }, { timeout: 4000 }));
+    fireEvent.click(await screen.findByRole("button", { name: /Week 0 · Orientation/ }));
+
+    fireEvent.change(await screen.findByLabelText("Card type"), { target: { value: "community_call" } });
+    fireEvent.change(screen.getByLabelText("Day"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
+
+    // It exists in the week editor, and it exists on the trail.
+    expect((await screen.findAllByText("Untitled")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    expect((await screen.findAllByRole("button", { name: /Untitled/ })).length).toBeGreaterThan(0);
+  }, 20000);
+
+  it("ADMIN: a new start date re-dates the whole batch on the student side", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy content/ }, { timeout: 4000 }));
+
+    fireEvent.change(await screen.findByLabelText(/Batch starts on/), { target: { value: "2026-12-06" } });
+    fireEvent.click(screen.getByRole("button", { name: /Re-date the batch/ }));
+
+    // The admin screen itself reports the new span first.
+    expect(await screen.findByText(/week 0 opens Sat, 5 Dec/)).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    expect(await screen.findByText(/Week 0 · Sun, 6 Dec/, {}, { timeout: 4000 })).toBeTruthy();
+  }, 20000);
+
   it("the recording stays shut until the feedback form is filled — the founder's gate", async () => {
     renderAs("avinash@leveluplearning.in");
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);

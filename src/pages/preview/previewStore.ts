@@ -15,8 +15,12 @@
  */
 import { useEffect, useReducer } from "react";
 import { SEED_POSTS, type PostType } from "./previewData";
-import { LUCA, findCard, orderedCards, XP } from "./previewProgram";
-import type { TemplateCard } from "./previewProgram";
+import {
+  LUCA, findCard, XP,
+  moveWeek, addWeek, duplicateWeek, deleteWeek, setWeekField,
+  addCard, duplicateCard, deleteCard, setCardField, renamePhase, withStart,
+} from "./previewProgram";
+import type { CardKind, ProgramTemplate, TemplateCard, TemplateWeek } from "./previewProgram";
 
 export interface PlayDay {
   id: string;
@@ -181,8 +185,17 @@ export interface PlayState {
   progress: Record<string, CardProgress>;
   feedback: Record<string, SessionFeedback>;
   submissions: BlockSubmission[];
-  /** Admin edits to template cards, by card id. The student side reads these. */
-  cardEdits: Record<string, Partial<TemplateCard>>;
+  /**
+   * THE PROGRAM ITSELF, in state — editable, not a constant.
+   *
+   * 🔴 THE CHANGE THAT MAKES ADMIN REAL. Until now the curriculum was a frozen
+   * import and admin "edits" were a patch layer laid over it. That could never
+   * satisfy the founder's rule — anything on the path must be add-able and
+   * delete-able from the back end — because you cannot patch a week into
+   * existence. So the template lives here, and every admin action rewrites it.
+   * One source, one thing to change, and the student side simply reads it.
+   */
+  program: ProgramTemplate;
 }
 
 const SEEDED: PlayPost[] = SEED_POSTS.map((p) => ({
@@ -222,7 +235,7 @@ export const INITIAL: PlayState = {
   progress: {},
   feedback: {},
   submissions: [],
-  cardEdits: {},
+  program: LUCA,
 };
 
 export type PlayAction =
@@ -244,6 +257,16 @@ export type PlayAction =
   | { type: "submit_work"; cardId: string; link: string; text: string; fileName: string }
   | { type: "mentor_verdict"; cardId: string; verdict: "ship" | "fix" | "hold"; note: string }
   | { type: "admin_save_card"; cardId: string; patch: Partial<TemplateCard> }
+  | { type: "week_move"; from: number; to: number }
+  | { type: "week_add"; at: number; phase: string }
+  | { type: "week_duplicate"; index: number }
+  | { type: "week_delete"; index: number }
+  | { type: "week_edit"; index: number; patch: Partial<TemplateWeek> }
+  | { type: "card_add"; weekIndex: number; kind: CardKind; dayOffset: number }
+  | { type: "card_duplicate"; weekIndex: number; cardId: string }
+  | { type: "card_delete"; weekIndex: number; cardId: string }
+  | { type: "phase_rename"; from: string; to: string }
+  | { type: "batch_start"; startISO: string }
   | { type: "reset" };
 
 function completeDay(s: PlayState, id: string): PlayState {
@@ -344,12 +367,12 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
     }
     case "card_done": {
       if (s.progress[a.cardId]?.done) return s;
-      const found = findCard(LUCA, a.cardId);
+      const found = findCard(s.program, a.cardId);
       if (!found) return s;
       return {
         ...s,
         progress: { ...s.progress, [a.cardId]: { done: true, doneOn: "just now" } },
-        xp: s.xp + (s.cardEdits[a.cardId]?.xp ?? found.card.xp),
+        xp: s.xp + found.card.xp,
         streak: s.streak + 1,
       };
     }
@@ -362,13 +385,13 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
       // submission, and letting one through would mean a mentor opening
       // nothing — the exact thing the box exists to prevent.
       if (!a.link.trim() && !a.text.trim() && !a.fileName.trim()) return s;
-      const found = findCard(LUCA, a.cardId);
+      const found = findCard(s.program, a.cardId);
       if (!found) return s;
       const already = s.submissions.some((x) => x.cardId === a.cardId);
       const row: BlockSubmission = {
         cardId: a.cardId,
         weekNo: found.week.no,
-        cardTitle: s.cardEdits[a.cardId]?.title ?? found.card.title,
+        cardTitle: found.card.title,
         link: a.link.trim(),
         text: a.text.trim(),
         fileName: a.fileName.trim(),
@@ -378,7 +401,7 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
         ...s,
         submissions: already ? s.submissions.map((x) => (x.cardId === a.cardId ? row : x)) : [row, ...s.submissions],
         progress: { ...s.progress, [a.cardId]: { done: true, doneOn: "just now" } },
-        xp: already ? s.xp : s.xp + (s.cardEdits[a.cardId]?.xp ?? found.card.xp),
+        xp: already ? s.xp : s.xp + found.card.xp,
       };
     }
     case "mentor_verdict": {
@@ -391,7 +414,27 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
       };
     }
     case "admin_save_card":
-      return { ...s, cardEdits: { ...s.cardEdits, [a.cardId]: { ...s.cardEdits[a.cardId], ...a.patch } } };
+      return { ...s, program: setCardField(s.program, a.cardId, a.patch) };
+    case "week_move":
+      return { ...s, program: moveWeek(s.program, a.from, a.to) };
+    case "week_add":
+      return { ...s, program: addWeek(s.program, a.at, a.phase) };
+    case "week_duplicate":
+      return { ...s, program: duplicateWeek(s.program, a.index) };
+    case "week_delete":
+      return { ...s, program: deleteWeek(s.program, a.index) };
+    case "week_edit":
+      return { ...s, program: setWeekField(s.program, a.index, a.patch) };
+    case "card_add":
+      return { ...s, program: addCard(s.program, a.weekIndex, a.kind, a.dayOffset) };
+    case "card_duplicate":
+      return { ...s, program: duplicateCard(s.program, a.weekIndex, a.cardId) };
+    case "card_delete":
+      return { ...s, program: deleteCard(s.program, a.weekIndex, a.cardId) };
+    case "phase_rename":
+      return { ...s, program: renamePhase(s.program, a.from, a.to) };
+    case "batch_start":
+      return { ...s, program: withStart(s.program, a.startISO) };
     case "reset":
       return INITIAL;
     default:
@@ -399,7 +442,7 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
   }
 }
 
-const KEY = "creator-studio-preview-v6";
+const KEY = "creator-studio-preview-v7";
 
 export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
   const [state, dispatch] = useReducer(reduce, INITIAL, (init) => {
@@ -408,7 +451,7 @@ export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
       if (!raw) return init;
       const saved = JSON.parse(raw) as PlayState;
       // A shape mismatch after a prototype update must reset, not crash.
-      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" && Array.isArray(saved.programs) && Array.isArray(saved.builtSubmissions) && typeof saved.progress === "object" && typeof saved.feedback === "object" && Array.isArray(saved.submissions) && typeof saved.cardEdits === "object" ? saved : init;
+      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" && Array.isArray(saved.programs) && Array.isArray(saved.builtSubmissions) && typeof saved.progress === "object" && typeof saved.feedback === "object" && Array.isArray(saved.submissions) && saved.program && Array.isArray(saved.program.weeks) ? saved : init;
     } catch {
       return init;
     }

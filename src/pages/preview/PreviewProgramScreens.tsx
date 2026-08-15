@@ -29,8 +29,8 @@ import { Serif } from "./PreviewScreens";
 import { snakeOffset, toneForPhase, type PhaseTone } from "./previewTheme";
 import type { PlayAction, PlayState } from "./previewStore";
 import {
-  LUCA, KIND_LABEL, dateOf, fmtDate, dayName, findCard, orderedCards,
-  type CardKind, type TemplateCard, type TemplateWeek,
+  KIND_LABEL, dateOf, fmtDate, dayName, findCard, orderedCards,
+  type CardKind, type ProgramTemplate, type TemplateCard, type TemplateWeek,
 } from "./previewProgram";
 import { cardState, recordingVerdict, blocksDone, weekOpen, type UnlockInput } from "./previewUnlock";
 import { CelebrationOverlay, type Celebration } from "./Celebrate";
@@ -57,13 +57,17 @@ export function useUnlock(s: PlayState): UnlockInput {
   );
 }
 
-/** Admin edits win over the template — the whole point of the admin screen. */
-export function resolve(s: PlayState, card: TemplateCard): TemplateCard {
-  const patch = s.cardEdits[card.id];
-  return patch ? { ...card, ...patch } : card;
+/**
+ * The card, as it is right now. Admin edits rewrite the program in state, so
+ * there is nothing to layer — this exists so call sites read intent, and so
+ * there is one place to add a per-student override later.
+ */
+export function resolve(_s: PlayState, card: TemplateCard): TemplateCard {
+  return card;
 }
 
-const dOf = (w: number, d: number) => dateOf(LUCA, w, d);
+/** Dates come from the batch start date, which the admin can change. */
+const makeDOf = (t: ProgramTemplate) => (w: number, d: number) => dateOf(t, w, d);
 
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -93,12 +97,13 @@ interface TrailNode {
  * not as urgent. One target on screen at a time.
  */
 function buildTrail(s: PlayState, u: UnlockInput): TrailNode[] {
+  const dOf = makeDOf(s.program);
   const out: TrailNode[] = [];
   let currentTaken = false;
-  for (const week of LUCA.weeks) {
+  for (const week of s.program.weeks) {
     for (const raw of orderedCards(week)) {
       const card = resolve(s, raw);
-      const v = cardState(LUCA, week, card, u, dOf);
+      const v = cardState(s.program, week, card, u, dOf);
       const when = dOf(week.no, card.dayOffset);
       let state: TrailNode["state"];
       if (v.state === "done") state = "done";
@@ -235,7 +240,7 @@ function Node({ node, tone, index, go }: { node: TrailNode; tone: PhaseTone; ind
   );
 }
 
-function WeekDivider({ week, tone, verdict }: { week: TemplateWeek; tone: PhaseTone; verdict: { state: string; why?: string } }) {
+function WeekDivider({ week, tone, verdict, dOf }: { week: TemplateWeek; tone: PhaseTone; verdict: { state: string; why?: string }; dOf: (w: number, d: number) => Date }) {
   const locked = verdict.state === "locked";
   const block = week.cards.find((c) => c.kind === "block");
   return (
@@ -280,13 +285,14 @@ function PhaseBanner({ name, weeks, tone }: { name: string; weeks: string; tone:
 
 export function ProgramPathScreen({ s, go }: { s: PlayState; go: (k: string) => void }) {
   const u = useUnlock(s);
+  const dOf = makeDOf(s.program);
   const nodes = useMemo(() => buildTrail(s, u), [s, u]);
   const done = nodes.filter((n) => n.state === "done").length;
-  const blocks = blocksDone(LUCA, u.submittedCardIds);
+  const blocks = blocksDone(s.program, u.submittedCardIds);
   const weekRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   const phases: Array<{ name: string; weeks: TemplateWeek[] }> = [];
-  for (const w of LUCA.weeks) {
+  for (const w of s.program.weeks) {
     const last = phases[phases.length - 1];
     if (last && last.name === w.phase) last.weeks.push(w);
     else phases.push({ name: w.phase, weeks: [w] });
@@ -345,7 +351,7 @@ export function ProgramPathScreen({ s, go }: { s: PlayState; go: (k: string) => 
                       data-week={week.no}
                       className="flex w-full scroll-mt-16 flex-col items-center gap-6 lg:scroll-mt-24"
                     >
-                      <WeekDivider week={week} tone={tone} verdict={weekOpen(LUCA, week.no, u, dOf)} />
+                      <WeekDivider week={week} tone={tone} verdict={weekOpen(s.program, week.no, u, dOf)} dOf={dOf} />
                       {nodes
                         .filter((n) => n.week.no === week.no)
                         .map((n) => (
@@ -383,7 +389,7 @@ export function ProgramPathScreen({ s, go }: { s: PlayState; go: (k: string) => 
    ONE CARD — four renderers behind one route
    ───────────────────────────────────────────────────────────────────────── */
 
-function Shell({ children, go, week, card }: { children: React.ReactNode; go: (k: string) => void; week: TemplateWeek; card: TemplateCard }) {
+function Shell({ children, go, week, card, dOf }: { children: React.ReactNode; go: (k: string) => void; week: TemplateWeek; card: TemplateCard; dOf: (w: number, d: number) => Date }) {
   const when = dOf(week.no, card.dayOffset);
   const tint = TINT[card.kind];
   return (
@@ -511,7 +517,7 @@ function FeedbackForm({ cardId, d }: { cardId: string; d: React.Dispatch<PlayAct
   );
 }
 
-function LiveSessionCard({ s, d, card, week, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
+function LiveSessionCard({ s, d, card, week, dOf, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; dOf: (w: number, d: number) => Date; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
   const when = dOf(week.no, card.dayOffset);
   const past = new Date(`${TODAY_ISO}T00:00:00`) > when;
   const fb = s.feedback[card.id];
@@ -763,6 +769,7 @@ function BlockCard({ s, d, card, week, locked, onDone }: { s: PlayState; d: Reac
 
 export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React.Dispatch<PlayAction>; go: (k: string) => void; cardId: string }) {
   const u = useUnlock(s);
+  const dOf = makeDOf(s.program);
   const [party, setParty] = useState<Celebration | null>(null);
 
   /**
@@ -778,8 +785,8 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
       submittedCardIds: card.kind === "block" ? [...u.submittedCardIds, card.id] : u.submittedCardIds,
     };
     if (card.kind === "block") {
-      const nextWeek = LUCA.weeks.find((w) => w.no === week.no + 1);
-      if (nextWeek && weekOpen(LUCA, nextWeek.no, after, dOf).state === "open") {
+      const nextWeek = s.program.weeks.find((w) => w.no === week.no + 1);
+      if (nextWeek && weekOpen(s.program, nextWeek.no, after, dOf).state === "open") {
         setParty({ title: `Week ${nextWeek.no} is open`, sub: nextWeek.title });
         return;
       }
@@ -787,7 +794,7 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
       return;
     }
     const nextDrill = orderedCards(week).find(
-      (c) => c.id !== card.id && cardState(LUCA, week, c, u, dOf).state === "locked" && cardState(LUCA, week, c, after, dOf).state === "open",
+      (c) => c.id !== card.id && cardState(s.program, week, c, u, dOf).state === "locked" && cardState(s.program, week, c, after, dOf).state === "open",
     );
     setParty(
       nextDrill
@@ -795,7 +802,7 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
         : { title: `+${card.xp} XP`, sub: "Banked. Nothing you finish ever locks again." },
     );
   };
-  const found = findCard(LUCA, cardId);
+  const found = findCard(s.program, cardId);
   if (!found) {
     return (
       <div className="mx-auto max-w-[680px]">
@@ -806,19 +813,19 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
     );
   }
   const card = resolve(s, found.card);
-  const v = cardState(LUCA, found.week, card, u, dOf);
+  const v = cardState(s.program, found.week, card, u, dOf);
   const locked = v.state === "locked" ? v.why : undefined;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <CelebrationOverlay show={party} onDone={() => setParty(null)} />
-      <Shell go={go} week={found.week} card={card}>
+      <Shell go={go} week={found.week} card={card} dOf={dOf}>
         {card.needsAuthoring && (
           <p className="mt-3 rounded-lg border border-dashed border-[hsl(var(--border))] px-3 py-2 text-[12px] text-[hsl(var(--muted-foreground))]">
             This week is on the calendar but not authored yet. Weeks 0 and 1 are the finished examples.
           </p>
         )}
-        {card.kind === "live_session" && <LiveSessionCard s={s} d={d} card={card} week={found.week} onDone={celebrate} />}
+        {card.kind === "live_session" && <LiveSessionCard s={s} d={d} card={card} week={found.week} dOf={dOf} onDone={celebrate} />}
         {card.kind === "community_call" && <CommunityCallCard s={s} d={d} card={card} week={found.week} onDone={celebrate} />}
         {card.kind === "micro" && <MicroCard s={s} d={d} card={card} week={found.week} locked={locked} onDone={celebrate} />}
         {card.kind === "block" && <BlockCard s={s} d={d} card={card} week={found.week} locked={locked} onDone={celebrate} />}
@@ -842,14 +849,15 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
 
 export function ProgramHomeScreen({ s, go }: { s: PlayState; go: (k: string) => void }) {
   const u = useUnlock(s);
+  const dOf = makeDOf(s.program);
   const nodes = useMemo(() => buildTrail(s, u), [s, u]);
-  const blocks = blocksDone(LUCA, u.submittedCardIds);
+  const blocks = blocksDone(s.program, u.submittedCardIds);
 
   const current = nodes.find((n) => n.state === "current") ?? nodes.find((n) => n.state === "info");
-  const tone = toneForPhase(current?.week.phase ?? LUCA.weeks[0].phase);
+  const tone = toneForPhase(current?.week.phase ?? s.program.weeks[0].phase);
 
   // "This week" = the week the current step lives in, not a hard-coded 0.
-  const week = current?.week ?? LUCA.weeks[0];
+  const week = current?.week ?? s.program.weeks[0];
   const weekNodes = nodes.filter((n) => n.week.no === week.no);
   const doneThisWeek = weekNodes.filter((n) => n.state === "done").length;
 
@@ -858,13 +866,13 @@ export function ProgramHomeScreen({ s, go }: { s: PlayState; go: (k: string) => 
     (n) => (n.card.kind === "live_session" || n.card.kind === "community_call") && n.state !== "done" && !n.card.needsAuthoring,
   );
 
-  const nextWeek = LUCA.weeks.find((w) => w.no === week.no + 1);
-  const nextWeekVerdict = nextWeek ? weekOpen(LUCA, nextWeek.no, u, dOf) : null;
+  const nextWeek = s.program.weeks.find((w) => w.no === week.no + 1);
+  const nextWeekVerdict = nextWeek ? weekOpen(s.program, nextWeek.no, u, dOf) : null;
 
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow={`Week ${week.no} of 12 · ${week.title} · ${doneThisWeek}/${weekNodes.length} steps done`}
+        eyebrow={`Week ${week.no} of ${s.program.weeks.length - 1} · ${week.title} · ${doneThisWeek}/${weekNodes.length} steps done`}
         title={<>Creator <Serif>Studio</Serif></>}
         subtitle="One project — your Distribution Engine, built block by block."
       />
