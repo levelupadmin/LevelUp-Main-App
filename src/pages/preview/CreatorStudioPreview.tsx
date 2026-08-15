@@ -16,6 +16,8 @@ import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { canSeePreview, previewHostAllowsAnonymous } from "./previewGate";
 import PreviewShell from "./PreviewShell";
+import StudioBoot from "./StudioBoot";
+import "./brand.css";
 import { SHELL_TABS } from "./previewTabs";
 import { usePlayState } from "./previewStore";
 import { LUCA } from "./previewProgram";
@@ -91,7 +93,9 @@ export default function CreatorStudioPreview() {
   const activeTab = SHELL_TABS.some((t) => t.key === kind) ? kind : TAB_FOR[kind] ?? "home";
 
   return (
-    <PreviewShell
+    <div className="cs-brand">
+      <StudioBoot />
+      <PreviewShell
       active={activeTab}
       onChange={setScreen}
       title={TITLES[kind] ?? "Creator Studio"}
@@ -111,6 +115,7 @@ export default function CreatorStudioPreview() {
           {content}
         </motion.div>
       </AnimatePresence>
-    </PreviewShell>
+      </PreviewShell>
+    </div>
   );
 }

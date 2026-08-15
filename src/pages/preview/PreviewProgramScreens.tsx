@@ -146,11 +146,19 @@ function Node({ node, tone, index, go }: { node: TrailNode; tone: PhaseTone; ind
   const isCurrent = state === "current";
   const isInfo = state === "info";
 
+  /**
+   * 🔴 THE RESTRAINT RULE (founder, 2026-08-15): "keep the colours a little on
+   * the darker palette, don't make it too colourful." The deck's interior
+   * slides are almost monochrome and colour marks one thing per screen. So:
+   * the step you are ON is the brightest thing here, in cream, not the most
+   * saturated. Done carries a thin accent outline rather than a filled tile.
+   * Everything else is grey and gets out of the way.
+   */
   const palette =
-    state === "done" ? { bg: "hsl(var(--success))", fg: "hsl(var(--cream-text))", lip: "hsl(156 77% 22%)" }
-    : isCurrent ? { bg: tone.c, fg: "hsl(var(--cream-text))", lip: tone.d }
-    : isInfo ? { bg: "hsl(var(--card))", fg: tone.c, lip: "hsl(0 0% 5%)" }
-    : { bg: "hsl(var(--secondary))", fg: "hsl(var(--muted-foreground))", lip: "hsl(0 0% 5%)" };
+    state === "done" ? { bg: "hsl(var(--card))", fg: "hsl(var(--success))", lip: "hsl(0 0% 5%)" }
+    : isCurrent ? { bg: "hsl(var(--cream))", fg: "hsl(var(--cream-text))", lip: "hsl(0 0% 4%)" }
+    : isInfo ? { bg: "hsl(var(--card))", fg: "hsl(var(--muted-foreground))", lip: "hsl(0 0% 5%)" }
+    : { bg: "hsl(var(--card))", fg: "hsl(0 0% 32%)", lip: "hsl(0 0% 5%)" };
 
   const Icon = FACE[card.kind];
   const face =
@@ -172,7 +180,7 @@ function Node({ node, tone, index, go }: { node: TrailNode; tone: PhaseTone; ind
     <div className="relative flex flex-col items-center" style={{ transform: `translateX(${off}px)` }}>
       {isCurrent && (
         <div className="absolute -top-8 z-10 animate-bounce" style={{ animationDuration: "1.6s" }}>
-          <div className="rounded-lg bg-[hsl(var(--cream))] px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide text-[hsl(var(--cream-text))] shadow-lg">
+          <div className="rounded-md bg-[hsl(var(--cream))] px-2.5 py-0.5 text-[10px] font-semibold tracking-[0.1em] text-[hsl(var(--cream-text))]">
             {PILL[card.kind]}
           </div>
         </div>
@@ -186,15 +194,15 @@ function Node({ node, tone, index, go }: { node: TrailNode; tone: PhaseTone; ind
             whileHover={{ scale: 1.08, y: -2 }}
             whileTap={{ scale: 0.92, y: 3 }}
             transition={{ type: "spring", stiffness: 340, damping: 18 }}
-            className={`relative grid h-12 w-12 place-items-center rounded-full text-[15px] font-extrabold ${state === "locked" ? "opacity-70" : ""} ${isInfo ? "border" : ""}`}
+            className={`relative grid h-12 w-12 place-items-center rounded-[16px] text-[15px] font-semibold ${state === "locked" ? "opacity-80" : ""} ${state !== "current" ? "border" : ""}`}
             style={{
               background: palette.bg,
               color: palette.fg,
-              borderColor: isInfo ? tone.c : undefined,
-              boxShadow: state === "locked" ? "none" : `0 5px 0 ${palette.lip}`,
+              borderColor: state === "done" ? "hsl(var(--success)/0.35)" : "hsl(var(--border))",
+              boxShadow: state === "current" ? `0 5px 0 ${palette.lip}, 0 0 0 5px hsl(var(--cream)/0.07)` : `0 4px 0 ${palette.lip}`,
             }}
           >
-            {isCurrent && <Halo tint={tone.c} />}
+            {isCurrent && <Halo tint="hsl(var(--cream)/0.5)" />}
             {face}
           </motion.button>
         </HoverCardTrigger>
@@ -232,7 +240,7 @@ function Node({ node, tone, index, go }: { node: TrailNode; tone: PhaseTone; ind
       <div className="mt-2 text-center">
         <div
           className="text-[10px] font-extrabold tracking-wide"
-          style={{ color: state === "done" ? "hsl(var(--success))" : isCurrent || isInfo ? tone.c : "hsl(var(--muted-foreground))" }}
+          style={{ color: isCurrent ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))" }}
         >
           {dayName(node.when).toUpperCase()}{card.time ? ` · ${card.time}` : ""}
         </div>
@@ -249,11 +257,8 @@ function WeekDivider({ week, tone, verdict, dOf }: { week: TemplateWeek; tone: P
     <div className="flex w-full items-center gap-3 py-1">
       <span className="h-px flex-1 bg-gradient-to-r from-transparent to-[hsl(var(--border))]" />
       <div className="max-w-[300px] text-center">
-        <div
-          className="text-[10px] font-extrabold uppercase tracking-[0.18em]"
-          style={{ color: locked ? "hsl(var(--muted-foreground))" : tone.c }}
-        >
-          Week {week.no} · {fmtDate(dOf(week.no, 0))}
+        <div className="text-[10px] uppercase tracking-[0.2em] text-[hsl(var(--muted-foreground))]">
+          Week {String(week.no).padStart(2, "0")} · {fmtDate(dOf(week.no, 0))}
         </div>
         <div className={`text-[12.5px] font-bold tracking-[-0.01em] ${locked ? "text-[hsl(var(--muted-foreground))]" : ""}`}>
           {week.title}
@@ -280,18 +285,15 @@ function WeekDivider({ week, tone, verdict, dOf }: { week: TemplateWeek; tone: P
 
 function PhaseBanner({ name, weeks, tone }: { name: string; weeks: string; tone: PhaseTone }) {
   return (
-    <div
-      className="relative w-full overflow-hidden rounded-2xl border px-5 py-4"
-      style={{ borderColor: `${tone.c}40`, background: `linear-gradient(120deg, ${tone.c}1f, transparent 65%)` }}
-    >
-      <div className="text-[10px] font-extrabold uppercase tracking-[0.2em]" style={{ color: tone.c }}>
+    <div className="w-full">
+      <span className="inline-block rounded-full border border-[hsl(var(--border-hover))] px-3 py-1 text-[11px] text-[hsl(var(--muted-foreground))]">
         Phase · {weeks}
+      </span>
+      {/* The deck's move: cream heading, one phrase carrying the accent. */}
+      <div className="mt-2.5 text-[22px] font-semibold tracking-[-0.01em]">
+        {name.split(" ").slice(0, -1).join(" ")}{" "}
+        <span style={{ color: tone.c }}>{name.split(" ").slice(-1)}</span>
       </div>
-      <div className="mt-0.5 text-[16px] font-bold tracking-[-0.01em]">{name}</div>
-      <div
-        className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full opacity-25 blur-2xl"
-        style={{ background: tone.c }}
-      />
     </div>
   );
 }

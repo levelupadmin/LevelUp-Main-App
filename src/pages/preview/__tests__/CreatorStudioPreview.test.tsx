@@ -23,7 +23,11 @@ const renderAs = (email: string | null) => {
   );
 };
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  // The entrance is once-a-session, so tests that are not about it opt out.
+  sessionStorage.setItem("cs-boot-seen", "1");
+});
 
 describe("CreatorStudioPreview", () => {
   it("stamps the build it came from — a stale deployment alias must be visible on screen", () => {
@@ -112,6 +116,25 @@ describe("CreatorStudioPreview", () => {
     expect(await screen.findByText(/ship/i)).toBeTruthy();
   }, 20000);
 
+  it("the entrance plays once a session, never twice", async () => {
+    sessionStorage.clear();
+    const first = renderAs("avinash@leveluplearning.in");
+    expect(screen.getByRole("status", { name: "Creator Studio" })).toBeTruthy();
+    first.unmount();
+
+    // Second entry in the same session goes straight to the room.
+    renderAs("avinash@leveluplearning.in");
+    expect(screen.queryByRole("status", { name: "Creator Studio" })).toBeNull();
+  });
+
+  it("the room wears the brand, scoped so the rest of the app cannot move", () => {
+    sessionStorage.setItem("cs-boot-seen", "1");
+    const { container } = renderAs("avinash@leveluplearning.in");
+    // Every override hangs off this one class. Remove it and the app's own
+    // default skin returns — which is what makes the re-skin reversible.
+    expect(container.querySelector(".cs-brand")).toBeTruthy();
+  });
+
   it("the Path is the TRAIL, not a list — phase banners, week dividers, winding nodes", async () => {
     // 2026-08-15: the real curriculum first shipped as flat rows and threw away
     // the one surface nobody could buy off a shelf. This is the guard.
@@ -119,10 +142,12 @@ describe("CreatorStudioPreview", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
 
     // A phase banner per phase of the real program, in the real order.
-    expect(await screen.findByText("Find your lane")).toBeTruthy();
-    expect(screen.getByText("The Creator Sprint")).toBeTruthy();
-    // Week dividers carry the real dates.
-    expect(screen.getByText(/Week 0 · Sun, 16 Aug/)).toBeTruthy();
+    // The phase heading is cream with its last word carrying the accent, which
+    // is the deck's own move — so it lives across two elements by design.
+    expect(await screen.findByText("lane")).toBeTruthy();
+    expect(screen.getByText("Sprint")).toBeTruthy();
+    // Week dividers carry the real dates, two-digit as in the deck.
+    expect(screen.getByText(/Week 00 · Sun, 16 Aug/)).toBeTruthy();
     // Nodes are circular buttons labelled by day and title, not table rows.
     expect(screen.getByRole("button", { name: /Sat 6:00 PM — Orientation/ })).toBeTruthy();
     expect(screen.getByText(/Your Distribution/)).toBeTruthy();
@@ -167,7 +192,7 @@ describe("CreatorStudioPreview", () => {
     expect(await screen.findByText(/week 0 opens Sat, 5 Dec/)).toBeTruthy();
 
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
-    expect(await screen.findByText(/Week 0 · Sun, 6 Dec/, {}, { timeout: 4000 })).toBeTruthy();
+    expect(await screen.findByText(/Week 00 · Sun, 6 Dec/, {}, { timeout: 4000 })).toBeTruthy();
   }, 20000);
 
   it("ADMIN: attaching a recording to a live session shows up on the student card", async () => {
@@ -213,8 +238,8 @@ describe("CreatorStudioPreview", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
     // Week 0 has not moved; week 5 has.
-    expect(await screen.findByText(/Week 0 · Sun, 16 Aug/, {}, { timeout: 4000 })).toBeTruthy();
-    expect(screen.getByText(/Week 5 · Sun, 27 Sep/)).toBeTruthy();
+    expect(await screen.findByText(/Week 00 · Sun, 16 Aug/, {}, { timeout: 4000 })).toBeTruthy();
+    expect(screen.getByText(/Week 05 · Sun, 27 Sep/)).toBeTruthy();
   }, 20000);
 
   it("ADMIN: marking a week 'no session' says so on the trail without moving any date", async () => {
@@ -227,7 +252,7 @@ describe("CreatorStudioPreview", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
     // Wait for the trail itself, not just any "no session" text — the admin
     // toggle also reads that, and asserting too early passes on the wrong screen.
-    expect(await screen.findByText(/Week 6 · Sun, 27 Sep/, {}, { timeout: 4000 })).toBeTruthy();
+    expect(await screen.findByText(/Week 06 · Sun, 27 Sep/, {}, { timeout: 4000 })).toBeTruthy();
     expect(screen.getAllByText("no session").length).toBeGreaterThan(0);
   }, 20000);
 

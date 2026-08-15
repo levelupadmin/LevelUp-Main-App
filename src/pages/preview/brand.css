@@ -1,0 +1,89 @@
+/**
+ * THE CREATOR ACADEMY BRAND, SCOPED TO THE STUDIO.
+ *
+ * 🔴 WHY A SCOPED LAYER AND NOT GLOBAL TOKENS. The preview draws itself from
+ * the app's own CSS variables — the same ones checkout, the dashboard and every
+ * other room use. Editing them globally would re-skin the entire product to a
+ * cohort room's brand. So every override lives under `.cs-brand`, which wraps
+ * the Studio and nothing else. Removing one class returns the room to the
+ * app's default skin, which also makes this reversible if the founder hates it.
+ *
+ * Values are read off the real brand, not invented:
+ *   · the live site  www.leveluplearning.live/creator-academy
+ *   · the Cohort 02 orientation deck
+ *
+ * The rule the deck taught, and the one worth defending in review: interior
+ * slides are almost monochrome. One accent phrase per heading, everything else
+ * greyscale. Colour NEVER fills a surface — it marks the single thing that
+ * matters on the screen. Five greys carry the room; the three accents appear
+ * once each. When someone asks to "make it pop", the answer is motion.
+ *
+ * Type: the brand runs PolySans (Trial on the marketing site). Outfit is the
+ * closest thing available on an allowlisted CDN and is what ships until the
+ * real files land — swapping is one @import and one --font-brand value.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap");
+
+.cs-brand {
+  /* Surfaces — near-black neutral, exactly the site's #0F0F0F / #171717. */
+  --background: 0 0% 6%;
+  --card: 0 0% 9%;
+  --secondary: 0 0% 12%;
+  --popover: 0 0% 7%;
+  --border: 0 0% 15%;
+  --border-hover: 0 0% 22%;
+  --input: 0 0% 15%;
+
+  /* Text — warm off-white with the brand's pink cast, then two steps down. */
+  --foreground: 348 23% 87%;
+  --muted-foreground: 346 9% 60%;
+  --card-foreground: 348 23% 87%;
+  --popover-foreground: 348 23% 87%;
+
+  /* The primary action. The site's Request Invite is cream on dark, not a
+     gradient — the gradient is saved for the one celebration a week. */
+  --cream: 348 23% 87%;
+  --cream-text: 0 0% 6%;
+  --champagne-from: 348 23% 90%;
+  --champagne-to: 346 12% 78%;
+
+  /* The three accents. Each one means something, and each appears once.
+     lilac = the phrase that matters · teal = done · gold = the live thing. */
+  --accent-violet: 259 53% 77%;
+  --accent-violet-deep: 259 53% 70%;
+  --success: 175 69% 39%;
+  --gold: 53 48% 57%;
+  --accent-amber: 53 48% 57%;
+  --accent-emerald: 175 69% 39%;
+  --accent-crimson: 340 72% 70%;
+  --accent-crimson-text: 340 72% 74%;
+  --accent-indigo: 232 64% 62%;
+  --accent-indigo-text: 232 64% 70%;
+  --room-accent: 348 23% 87%;
+
+  --font-brand: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-brand);
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+/* The whole room speaks in one voice. The app's Instrument Serif display face
+   belongs to the rest of the product, not to the academy. */
+.cs-brand h1, .cs-brand h2, .cs-brand h3, .cs-brand button, .cs-brand input,
+.cs-brand textarea, .cs-brand select, .cs-brand label, .cs-brand a {
+  font-family: var(--font-brand);
+}
+
+/* Deck grammar: eyebrows and any all-caps label are letterspaced and quiet. */
+.cs-brand .tracking-\[0\.18em\],
+.cs-brand .tracking-\[0\.2em\],
+.cs-brand .tracking-\[0\.16em\],
+.cs-brand .tracking-\[0\.14em\] {
+  font-weight: 400;
+}
+
+/* Body copy sits at 300 on the marketing site. That is elegant at 20px on a
+   landing page and genuinely hard to read at 12px in a tool someone opens at
+   9pm to submit work, so body holds at 400 and only large display text thins. */
+.cs-brand p { font-weight: 400; }
+.cs-brand .text-\[19px\], .cs-brand .text-\[21px\], .cs-brand .text-\[22px\] { font-weight: 500; letter-spacing: -0.01em; }

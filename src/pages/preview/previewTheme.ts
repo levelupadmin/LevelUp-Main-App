@@ -6,7 +6,9 @@
  *
  *  1. **Nodes have a lip.** `box-shadow: 0 5px 0 <darker>` plus a 3px press on
  *     :active. That single detail is why the path feels like a physical board
- *     and not a list of circles.
+ *     and not a list of circles. Under the Creator Academy brand the lip goes
+ *     near-black rather than a darker tint of the accent — the board still
+ *     reads as physical, without the colour the founder asked us to pull back.
  *  2. **Each phase owns a colour.** Walking from phase 1 to phase 4 should look
  *     like moving through a book, not scrolling one page.
  *  3. **The trail winds.** Fixed horizontal offsets per day index — a straight
@@ -50,12 +52,12 @@ export function toneForPhase(phase: string): PhaseTone {
  * August to "The Creator Sprint" in November should SEE that they travelled.
  */
 export const PROGRAM_TONES: PhaseTone[] = [
-  { name: "Find your lane", c: "hsl(var(--gold))", d: "hsl(40 61% 32%)" },
-  { name: "Ideas and scripts", c: "hsl(var(--accent-amber))", d: "hsl(38 92% 26%)" },
-  { name: "Make the content", c: "hsl(var(--accent-crimson))", d: "hsl(0 72% 26%)" },
-  { name: "Edit like a system", c: "hsl(var(--accent-violet))", d: "hsl(258 90% 34%)" },
-  { name: "Multiply and lock", c: "hsl(var(--accent-indigo))", d: "hsl(239 84% 34%)" },
-  { name: "The Creator Sprint", c: "hsl(var(--accent-emerald))", d: "hsl(160 84% 20%)" },
+  { name: "Find your lane", c: "hsl(var(--accent-violet))", d: "hsl(0 0% 12%)" },
+  { name: "Ideas and scripts", c: "hsl(var(--gold))", d: "hsl(0 0% 12%)" },
+  { name: "Make the content", c: "hsl(var(--accent-crimson))", d: "hsl(0 0% 12%)" },
+  { name: "Edit like a system", c: "hsl(var(--success))", d: "hsl(0 0% 12%)" },
+  { name: "Multiply and lock", c: "hsl(var(--accent-indigo))", d: "hsl(0 0% 12%)" },
+  { name: "The Creator Sprint", c: "hsl(var(--foreground))", d: "hsl(0 0% 12%)" },
 ];
 
 /**
