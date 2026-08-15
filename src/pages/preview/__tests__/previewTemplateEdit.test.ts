@@ -8,6 +8,9 @@ import {
   LUCA, moveWeek, addWeek, duplicateWeek, deleteWeek, setWeekField,
   addCard, duplicateCard, deleteCard, setCardField, renamePhase, withStart,
   dateOf, blankCard, orderedCards,
+  pushFrom, removePause, setNoSession, addPhase, setWeekPhase, phasesOf,
+  addQuestion, moveQuestion, deleteQuestion, blankQuestion,
+  addResource, setResource, deleteResource,
 } from "../previewProgram";
 
 describe("moving weeks", () => {
@@ -72,7 +75,7 @@ describe("adding, duplicating and deleting", () => {
   it("a new card carries only its own kind's fields — a micro has no Zoom box to leave empty", () => {
     expect(blankCard("micro", 1).zoomUrl).toBeUndefined();
     expect(blankCard("live_session", 0).zoomUrl).toBe("");
-    expect(blankCard("block", 4).submit?.link.on).toBe(true);
+    expect(blankCard("block", 4).submit?.questions.length).toBe(1);
   });
 });
 
@@ -109,5 +112,85 @@ describe("the batch layer", () => {
     const t = withStart(LUCA, "2027-01-03");
     expect(t.weeks.length).toBe(LUCA.weeks.length);
     expect(orderedCards(t.weeks[0]).length).toBe(orderedCards(LUCA.weeks[0]).length);
+  });
+});
+
+describe("changing a batch that is already running", () => {
+  it("a push moves everything AFTER the week, and nothing before it", () => {
+    const t = pushFrom(LUCA, 4, 1, "mentor unavailable");
+    // Week 4 and everything before it are exactly where they were.
+    expect(dateOf(t, 4, 0).getTime()).toBe(dateOf(LUCA, 4, 0).getTime());
+    expect(dateOf(t, 0, 0).getTime()).toBe(dateOf(LUCA, 0, 0).getTime());
+    // Week 5 onwards moved by exactly seven days.
+    expect(dateOf(t, 5, 0).getTime() - dateOf(LUCA, 5, 0).getTime()).toBe(7 * 86400000);
+    expect(dateOf(t, 12, 0).getTime() - dateOf(LUCA, 12, 0).getTime()).toBe(7 * 86400000);
+  });
+
+  it("pushes stack, and undoing one leaves the other", () => {
+    let t = pushFrom(LUCA, 2, 1, "one");
+    t = pushFrom(t, 6, 1, "two");
+    expect(dateOf(t, 7, 0).getTime() - dateOf(LUCA, 7, 0).getTime()).toBe(14 * 86400000);
+    t = removePause(t, (t.pauses ?? [])[0].id);
+    expect(dateOf(t, 7, 0).getTime() - dateOf(LUCA, 7, 0).getTime()).toBe(7 * 86400000);
+  });
+
+  it("'no session' marks the week WITHOUT moving any date — a cancelled class is not a cancelled week", () => {
+    const t = setNoSession(LUCA, 5, true, "Mentor unavailable");
+    expect(t.weeks[5].noSession).toBe(true);
+    expect(dateOf(t, 6, 0).getTime()).toBe(dateOf(LUCA, 6, 0).getTime());
+  });
+});
+
+describe("phases", () => {
+  it("adds a phase, and a week can be moved into it", () => {
+    let t = addPhase(LUCA, "Launch");
+    expect(phasesOf(t)).toContain("Launch");
+    t = setWeekPhase(t, 0, "Launch");
+    expect(t.weeks[0].phase).toBe("Launch");
+  });
+});
+
+describe("the form builder", () => {
+  it("adds, reorders and deletes questions on a block", () => {
+    let t = addQuestion(LUCA, "w0-block", "rating");
+    const qs = t.weeks[0].cards.find((c) => c.id === "w0-block")!.submit!.questions;
+    const last = qs[qs.length - 1];
+    expect(last.type).toBe("rating");
+
+    t = moveQuestion(t, "w0-block", last.id, -1);
+    const after = t.weeks[0].cards.find((c) => c.id === "w0-block")!.submit!.questions;
+    expect(after[after.length - 2].id).toBe(last.id);
+
+    t = deleteQuestion(t, "w0-block", last.id);
+    expect(t.weeks[0].cards.find((c) => c.id === "w0-block")!.submit!.questions.some((q) => q.id === last.id)).toBe(false);
+  });
+
+  it("a choice question is born with options, a text question is not", () => {
+    expect(blankQuestion("choice_one").options?.length).toBe(2);
+    expect(blankQuestion("long_text").options).toBeUndefined();
+  });
+
+  it("never asks for identity — no question is named after a name, email or phone", () => {
+    for (const w of LUCA.weeks)
+      for (const c of w.cards)
+        for (const q of c.submit?.questions ?? [])
+          expect(/name|email|phone|whatsapp/i.test(q.title)).toBe(false);
+  });
+});
+
+describe("resources", () => {
+  it("attaches a recording, a deck and a transcript to a session, then removes one", () => {
+    let t = addResource(LUCA, "w0-class", "recording");
+    t = addResource(t, "w0-class", "deck");
+    t = addResource(t, "w0-class", "transcript");
+    const card = () => t.weeks[0].cards.find((c) => c.id === "w0-class")!;
+    expect(card().resources?.length).toBe(3);
+
+    const rec = card().resources!.find((r) => r.kind === "recording")!;
+    t = setResource(t, "w0-class", rec.id, { url: "https://zoom.us/rec/abc", label: "Session recording" });
+    expect(card().resources!.find((r) => r.id === rec.id)!.url).toBe("https://zoom.us/rec/abc");
+
+    t = deleteResource(t, "w0-class", rec.id);
+    expect(card().resources?.length).toBe(2);
   });
 });

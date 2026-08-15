@@ -32,10 +32,18 @@
 export type CardKind = "live_session" | "community_call" | "micro" | "block";
 
 /** A resource, and WHEN it is allowed to appear. */
+export type ResourceKind = "deck" | "transcript" | "recording" | "resource";
+
+export const RESOURCE_LABEL: Record<ResourceKind, string> = {
+  deck: "Deck", transcript: "Transcript", recording: "Recording", resource: "Resource",
+};
+
 export interface CardResource {
   id: string;
   label: string;
   url: string;
+  /** What it is, so the student page can group it instead of one flat list. */
+  kind?: ResourceKind;
   /**
    * The program's standing rule: "resources arrive the morning of the task
    * that uses them. No kits, no dumps, nothing that constrains the thinking
@@ -45,19 +53,52 @@ export interface CardResource {
   releaseNote?: string;
 }
 
-/** The in-app submission box — the founder's "like a Tally form, but ours". */
-export interface SubmitField {
-  on: boolean;
-  /** Says in plain words what may and may not go in this box. */
+/**
+ * THE FORM BUILDER — "like a Tally form, but ours".
+ *
+ * 🔴 WHY A QUESTION LIST AND NOT THREE FIXED BOXES. The first cut hard-coded
+ * link / notes / file, which meant every assignment asked the same three
+ * things regardless of what it was actually collecting. An assignment that
+ * wants "pick one of these three angles, then paste the doc, then rate your own
+ * confidence" could not be expressed at all. So a submission is an ORDERED
+ * LIST OF QUESTIONS the admin builds, exactly like Tally — with one deliberate
+ * difference: it never asks for name, email or phone, because by the time a
+ * student reaches this screen we already know who they are. That repetition is
+ * the single biggest reason to bring this in-house.
+ */
+export type QuestionType =
+  | "short_text" | "long_text" | "link" | "file"
+  | "choice_one" | "choice_many" | "rating" | "yes_no";
+
+export const QUESTION_LABEL: Record<QuestionType, string> = {
+  short_text: "Short text",
+  long_text: "Long text",
+  link: "Link",
+  file: "File upload",
+  choice_one: "Pick one",
+  choice_many: "Pick many",
+  rating: "Rating out of five",
+  yes_no: "Yes or no",
+};
+
+export interface Question {
+  id: string;
+  type: QuestionType;
+  title: string;
+  /** The line under the question saying what belongs there. */
   helper: string;
+  required: boolean;
+  /** choice_one / choice_many only. */
+  options?: string[];
 }
 
 export interface SubmitBox {
   prompt: string;
-  link: SubmitField;
-  text: SubmitField;
-  file: SubmitField;
+  questions: Question[];
 }
+
+/** An answer is a string, or a list of them for pick-many. */
+export type AnswerValue = string | string[];
 
 export interface TemplateCard {
   id: string;
@@ -89,7 +130,28 @@ export interface TemplateWeek {
   phase: string;
   title: string;
   blurb?: string;
+  /**
+   * "There is no class this Sunday." The week KEEPS its slot and its dates —
+   * only the teaching is off. Marking it does not shift anything, because a
+   * cancelled class is not the same event as a cancelled week, and conflating
+   * the two is how a schedule quietly drifts by a fortnight.
+   */
+  noSession?: boolean;
+  noSessionNote?: string;
   cards: TemplateCard[];
+}
+
+/**
+ * A pause inserted into a LIVE batch. Everything after `afterWeek` moves
+ * forward by `weeks`; everything up to and including it does not move at all.
+ * That asymmetry is the whole point — history has already happened, and a
+ * student who submitted week 3 on time must never find week 3 has moved.
+ */
+export interface BatchPause {
+  id: string;
+  afterWeek: number;
+  weeks: number;
+  reason: string;
 }
 
 export interface ProgramTemplate {
@@ -98,18 +160,23 @@ export interface ProgramTemplate {
   roomName: string;
   /** The Sunday of week 0. Cohort 02: Sun 16 Aug 2026. */
   anchorISO: string;
+  /** Draft = nobody is in it yet. Live = students are walking it right now. */
+  status?: "draft" | "live";
+  /** Pauses pushed into a running batch. Empty for a clean template. */
+  pauses?: BatchPause[];
   weeks: TemplateWeek[];
 }
 
 /* ── XP: a config row, never a number buried in a component ─────────────── */
 export const XP = { live_session: 50, community_call: 20, micro: 15, block: 100, ship: 50 } as const;
 
-const box = (prompt: string, link: string, text: string, file: string): SubmitBox => ({
-  prompt,
-  link: { on: true, helper: link },
-  text: { on: true, helper: text },
-  file: { on: true, helper: file },
-});
+let qn = 0;
+const q = (type: QuestionType, title: string, helper: string, required = true, options?: string[]): Question => {
+  qn += 1;
+  return { id: `q${qn}`, type, title, helper, required, options };
+};
+
+const box = (prompt: string, questions: Question[]): SubmitBox => ({ prompt, questions });
 
 /* ── WEEK 0 — fully authored ────────────────────────────────────────────── */
 
@@ -182,12 +249,12 @@ const W0: TemplateWeek = {
       title: "Week 0 block — voice notes and breakdowns",
       blurb: "Five voice notes uploaded, and two reel breakdowns with the levers labelled.",
       learn: ["Tension holds", "Specific, not general", "Sounds like a person talking"],
-      submit: box(
-        "Drop your week 0 work",
-        "Paste the link to your Drive folder or Google Doc. Make sure it is shared so your mentor can open it.",
-        "Anything your mentor should know before they open it. Optional.",
-        "Attach a file if your work is not in Drive. Up to 10MB.",
-      ),
+      submit: box("Drop your week 0 work", [
+        q("link", "Your Drive folder", "Paste the link to the folder holding your five voice notes. Make sure it is shared so your mentor can open it."),
+        q("choice_one", "Which memory card did you use", "Pick the one that matched where you are.", true, ["Card A — I run a business", "Card B — building toward one"]),
+        q("long_text", "The two reels you broke down", "Paste both links, and under each one write which levers you spotted and what they did to you."),
+        q("short_text", "Anything your mentor should know first", "Optional. One line.", false),
+      ]),
       xp: XP.block,
     },
     {
@@ -267,12 +334,13 @@ const W1: TemplateWeek = {
       title: "Week 1 block — positioning one-pager",
       blurb: "The one-pager plus your origin story as a voice note, twenty seconds maximum.",
       learn: ["The who is hyper-specific", "The value line survives the 100-day test", "Twenty exact audience phrases banked"],
-      submit: box(
-        "Drop your week 1 work",
-        "Link to your creator-story doc in 02 - Scripts and ideas. Shared, so your mentor can open it.",
-        "Paste your positioning line here so the room can read it in one glance.",
-        "Attach the origin story voice note. Up to 10MB.",
-      ),
+      submit: box("Drop your week 1 work", [
+        q("link", "Your one-pager", "Link to your creator-story doc in 02 - Scripts and ideas. Shared, so your mentor can open it."),
+        q("short_text", "Your positioning line", "The exact line: I help [who] [do what]. One sentence, so the room can read it at a glance."),
+        q("choice_many", "Which seats are you taking", "Pick one to three. Never all five.", true, ["Teacher", "Underdog", "Insider", "Contrarian", "Entertainer"]),
+        q("file", "Your origin story voice note", "Twenty seconds maximum. Talked, not read."),
+        q("rating", "How settled does this feel", "One means still guessing, five means you would defend it.", false),
+      ]),
       xp: XP.block,
     },
     {
@@ -307,7 +375,10 @@ function stub(no: number, phase: string, title: string, className: string, block
       {
         id: `w${no}-block`, kind: "block", dayOffset: 4, time: "9:00 PM",
         title: blockTitle, blurb: "The week's one deliverable.",
-        submit: box("Drop your work", "Link to your Drive folder or Doc.", "Anything your mentor should know first.", "Attach a file. Up to 10MB."),
+        submit: box("Drop your work", [
+          q("link", "Your work", "Link to your Drive folder or Doc, shared so your mentor can open it."),
+          q("long_text", "Anything your mentor should know first", "Optional.", false),
+        ]),
         xp: XP.block, needsAuthoring: true,
       },
       {
@@ -352,9 +423,15 @@ export function isoOf(d: Date): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+/** How many weeks of pause sit before this week. History is never affected. */
+export function pauseWeeksBefore(t: ProgramTemplate, weekNo: number): number {
+  return (t.pauses ?? []).filter((p) => p.afterWeek < weekNo).reduce((n, p) => n + p.weeks, 0);
+}
+
 export function dateOf(t: ProgramTemplate, weekNo: number, dayOffset: number): Date {
   const anchor = new Date(`${t.anchorISO}T00:00:00`);
-  return new Date(anchor.getTime() + (weekNo * 7 + dayOffset) * DAY);
+  const shifted = weekNo + pauseWeeksBefore(t, weekNo);
+  return new Date(anchor.getTime() + (shifted * 7 + dayOffset) * DAY);
 }
 
 export function fmtDate(d: Date): string {
@@ -459,9 +536,9 @@ export function blankCard(kind: CardKind, dayOffset: number): TemplateCard {
       ...base, time: "9:00 PM", blurb: "",
       submit: {
         prompt: "Drop your work",
-        link: { on: true, helper: "Paste the link to your Doc or Drive folder." },
-        text: { on: true, helper: "Anything your mentor should know first." },
-        file: { on: false, helper: "Attach a file. Up to 10MB." },
+        questions: [
+          { id: newId("q"), type: "link", title: "Your work", helper: "Paste the link to your Doc or Drive folder.", required: true },
+        ],
       },
     };
   return { ...base, blurb: "" };
@@ -499,4 +576,100 @@ export function renamePhase(t: ProgramTemplate, from: string, to: string): Progr
 /** The batch layer: one function, a start date in, every date out. */
 export function withStart(t: ProgramTemplate, startISO: string): ProgramTemplate {
   return { ...t, anchorISO: startISO };
+}
+
+/* ── Editing questions, resources, phases, and a live batch ─────────────── */
+
+export function blankQuestion(type: QuestionType): Question {
+  return {
+    id: newId("q"),
+    type,
+    title: "New question",
+    helper: "",
+    required: true,
+    options: type === "choice_one" || type === "choice_many" ? ["Option one", "Option two"] : undefined,
+  };
+}
+
+function mapCard(t: ProgramTemplate, cardId: string, fn: (c: TemplateCard) => TemplateCard): ProgramTemplate {
+  return { ...t, weeks: t.weeks.map((w) => ({ ...w, cards: w.cards.map((c) => (c.id === cardId ? fn(c) : c)) })) };
+}
+
+export function addQuestion(t: ProgramTemplate, cardId: string, type: QuestionType): ProgramTemplate {
+  return mapCard(t, cardId, (c) => ({
+    ...c,
+    needsAuthoring: false,
+    submit: { prompt: c.submit?.prompt ?? "Drop your work", questions: [...(c.submit?.questions ?? []), blankQuestion(type)] },
+  }));
+}
+
+export function setQuestion(t: ProgramTemplate, cardId: string, qid: string, patch: Partial<Question>): ProgramTemplate {
+  return mapCard(t, cardId, (c) =>
+    c.submit ? { ...c, submit: { ...c.submit, questions: c.submit.questions.map((x) => (x.id === qid ? { ...x, ...patch } : x)) } } : c,
+  );
+}
+
+export function deleteQuestion(t: ProgramTemplate, cardId: string, qid: string): ProgramTemplate {
+  return mapCard(t, cardId, (c) =>
+    c.submit ? { ...c, submit: { ...c.submit, questions: c.submit.questions.filter((x) => x.id !== qid) } } : c,
+  );
+}
+
+export function moveQuestion(t: ProgramTemplate, cardId: string, qid: string, dir: -1 | 1): ProgramTemplate {
+  return mapCard(t, cardId, (c) => {
+    if (!c.submit) return c;
+    const qs = [...c.submit.questions];
+    const i = qs.findIndex((x) => x.id === qid);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= qs.length) return c;
+    [qs[i], qs[j]] = [qs[j], qs[i]];
+    return { ...c, submit: { ...c.submit, questions: qs } };
+  });
+}
+
+export function addResource(t: ProgramTemplate, cardId: string, kind: ResourceKind): ProgramTemplate {
+  return mapCard(t, cardId, (c) => ({
+    ...c,
+    needsAuthoring: false,
+    resources: [...(c.resources ?? []), { id: newId("r"), kind, label: RESOURCE_LABEL[kind], url: "" }],
+  }));
+}
+
+export function setResource(t: ProgramTemplate, cardId: string, rid: string, patch: Partial<CardResource>): ProgramTemplate {
+  return mapCard(t, cardId, (c) => ({ ...c, resources: (c.resources ?? []).map((r) => (r.id === rid ? { ...r, ...patch } : r)) }));
+}
+
+export function deleteResource(t: ProgramTemplate, cardId: string, rid: string): ProgramTemplate {
+  return mapCard(t, cardId, (c) => ({ ...c, resources: (c.resources ?? []).filter((r) => r.id !== rid) }));
+}
+
+/** Add a phase by putting a new week under a new name — phases are a label. */
+export function addPhase(t: ProgramTemplate, name: string): ProgramTemplate {
+  const weeks = [...t.weeks, { no: 0, phase: name, title: "New week", blurb: "", cards: [] }];
+  return { ...t, weeks: weeks.map((w, i) => ({ ...w, no: i })) };
+}
+
+/** Move one week into a different phase. The list re-groups by itself. */
+export function setWeekPhase(t: ProgramTemplate, index: number, phase: string): ProgramTemplate {
+  return setWeekField(t, index, { phase });
+}
+
+export function phasesOf(t: ProgramTemplate): string[] {
+  const out: string[] = [];
+  for (const w of t.weeks) if (!out.includes(w.phase)) out.push(w.phase);
+  return out;
+}
+
+/* ── Running-batch operations ───────────────────────────────────────────── */
+
+export function setNoSession(t: ProgramTemplate, index: number, off: boolean, note = ""): ProgramTemplate {
+  return setWeekField(t, index, { noSession: off, noSessionNote: note });
+}
+
+export function pushFrom(t: ProgramTemplate, afterWeek: number, weeks: number, reason: string): ProgramTemplate {
+  return { ...t, pauses: [...(t.pauses ?? []), { id: newId("pause"), afterWeek, weeks, reason }] };
+}
+
+export function removePause(t: ProgramTemplate, id: string): ProgramTemplate {
+  return { ...t, pauses: (t.pauses ?? []).filter((p) => p.id !== id) };
 }

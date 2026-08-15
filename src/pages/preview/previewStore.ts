@@ -19,8 +19,14 @@ import {
   LUCA, findCard, XP,
   moveWeek, addWeek, duplicateWeek, deleteWeek, setWeekField,
   addCard, duplicateCard, deleteCard, setCardField, renamePhase, withStart,
+  addQuestion, setQuestion, deleteQuestion, moveQuestion,
+  addResource, setResource, deleteResource,
+  addPhase, setWeekPhase, setNoSession, pushFrom, removePause,
 } from "./previewProgram";
-import type { CardKind, ProgramTemplate, TemplateCard, TemplateWeek } from "./previewProgram";
+import type {
+  AnswerValue, CardKind, CardResource, ProgramTemplate, Question, QuestionType,
+  ResourceKind, TemplateCard, TemplateWeek,
+} from "./previewProgram";
 
 export interface PlayDay {
   id: string;
@@ -154,9 +160,8 @@ export interface BlockSubmission {
   cardId: string;
   weekNo: number;
   cardTitle: string;
-  link: string;
-  text: string;
-  fileName: string;
+  /** One entry per question id — the sheet's columns come from the card. */
+  answers: Record<string, AnswerValue>;
   when: string;
   verdict?: "ship" | "fix" | "hold";
   mentorNote?: string;
@@ -254,7 +259,7 @@ export type PlayAction =
   | { type: "submit_built"; programId: string; cardId: string; body: string }
   | { type: "card_done"; cardId: string }
   | { type: "submit_feedback"; cardId: string; mentor: number; content: number; note: string }
-  | { type: "submit_work"; cardId: string; link: string; text: string; fileName: string }
+  | { type: "submit_work"; cardId: string; answers: Record<string, AnswerValue> }
   | { type: "mentor_verdict"; cardId: string; verdict: "ship" | "fix" | "hold"; note: string }
   | { type: "admin_save_card"; cardId: string; patch: Partial<TemplateCard> }
   | { type: "week_move"; from: number; to: number }
@@ -267,6 +272,18 @@ export type PlayAction =
   | { type: "card_delete"; weekIndex: number; cardId: string }
   | { type: "phase_rename"; from: string; to: string }
   | { type: "batch_start"; startISO: string }
+  | { type: "question_add"; cardId: string; qType: QuestionType }
+  | { type: "question_edit"; cardId: string; qid: string; patch: Partial<Question> }
+  | { type: "question_delete"; cardId: string; qid: string }
+  | { type: "question_move"; cardId: string; qid: string; dir: -1 | 1 }
+  | { type: "resource_add"; cardId: string; kind: ResourceKind }
+  | { type: "resource_edit"; cardId: string; rid: string; patch: Partial<CardResource> }
+  | { type: "resource_delete"; cardId: string; rid: string }
+  | { type: "phase_add"; name: string }
+  | { type: "week_phase"; index: number; phase: string }
+  | { type: "week_no_session"; index: number; off: boolean; note?: string }
+  | { type: "batch_push"; afterWeek: number; weeks: number; reason: string }
+  | { type: "batch_unpush"; id: string }
   | { type: "reset" };
 
 function completeDay(s: PlayState, id: string): PlayState {
@@ -381,10 +398,11 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
       return { ...s, feedback: { ...s.feedback, [a.cardId]: { mentor: a.mentor, content: a.content, note: a.note.trim() } } };
     }
     case "submit_work": {
-      // At least one box has to carry something. An empty submission is not a
-      // submission, and letting one through would mean a mentor opening
-      // nothing — the exact thing the box exists to prevent.
-      if (!a.link.trim() && !a.text.trim() && !a.fileName.trim()) return s;
+      // At least one answer has to carry something. An empty submission is not
+      // a submission, and letting one through means a mentor opening nothing —
+      // the exact thing the box exists to prevent.
+      const filled = Object.values(a.answers).some((v) => (Array.isArray(v) ? v.length > 0 : String(v ?? "").trim() !== ""));
+      if (!filled) return s;
       const found = findCard(s.program, a.cardId);
       if (!found) return s;
       const already = s.submissions.some((x) => x.cardId === a.cardId);
@@ -392,9 +410,7 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
         cardId: a.cardId,
         weekNo: found.week.no,
         cardTitle: found.card.title,
-        link: a.link.trim(),
-        text: a.text.trim(),
-        fileName: a.fileName.trim(),
+        answers: a.answers,
         when: "just now",
       };
       return {
@@ -435,6 +451,30 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
       return { ...s, program: renamePhase(s.program, a.from, a.to) };
     case "batch_start":
       return { ...s, program: withStart(s.program, a.startISO) };
+    case "question_add":
+      return { ...s, program: addQuestion(s.program, a.cardId, a.qType) };
+    case "question_edit":
+      return { ...s, program: setQuestion(s.program, a.cardId, a.qid, a.patch) };
+    case "question_delete":
+      return { ...s, program: deleteQuestion(s.program, a.cardId, a.qid) };
+    case "question_move":
+      return { ...s, program: moveQuestion(s.program, a.cardId, a.qid, a.dir) };
+    case "resource_add":
+      return { ...s, program: addResource(s.program, a.cardId, a.kind) };
+    case "resource_edit":
+      return { ...s, program: setResource(s.program, a.cardId, a.rid, a.patch) };
+    case "resource_delete":
+      return { ...s, program: deleteResource(s.program, a.cardId, a.rid) };
+    case "phase_add":
+      return { ...s, program: addPhase(s.program, a.name) };
+    case "week_phase":
+      return { ...s, program: setWeekPhase(s.program, a.index, a.phase) };
+    case "week_no_session":
+      return { ...s, program: setNoSession(s.program, a.index, a.off, a.note) };
+    case "batch_push":
+      return { ...s, program: pushFrom(s.program, a.afterWeek, a.weeks, a.reason) };
+    case "batch_unpush":
+      return { ...s, program: removePause(s.program, a.id) };
     case "reset":
       return INITIAL;
     default:
@@ -442,7 +482,7 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
   }
 }
 
-const KEY = "creator-studio-preview-v7";
+const KEY = "creator-studio-preview-v8";
 
 export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
   const [state, dispatch] = useReducer(reduce, INITIAL, (init) => {

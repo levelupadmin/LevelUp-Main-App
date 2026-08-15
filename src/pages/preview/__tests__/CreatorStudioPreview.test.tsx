@@ -92,7 +92,10 @@ describe("CreatorStudioPreview", () => {
     // An empty submission is refused — a mentor must never open an empty page.
     expect((screen.getByRole("button", { name: /Submit my week/ }) as HTMLButtonElement).disabled).toBe(true);
 
-    fireEvent.change(screen.getByLabelText(/^Link/), { target: { value: "https://drive.google.com/x" } });
+    // The form is the admin's question list, so answer the required ones.
+    fireEvent.change(screen.getByLabelText(/^Your Drive folder/), { target: { value: "https://drive.google.com/x" } });
+    fireEvent.click(screen.getByRole("button", { name: /Card A — I run a business/ }));
+    fireEvent.change(screen.getByLabelText(/^The two reels you broke down/), { target: { value: "two reels, levers labelled" } });
     fireEvent.click(screen.getByRole("button", { name: /Submit my week/ }));
     expect(await screen.findByText(/Your mentor sees this in their desk/)).toBeTruthy();
 
@@ -160,6 +163,66 @@ describe("CreatorStudioPreview", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
     expect(await screen.findByText(/Week 0 · Sun, 6 Dec/, {}, { timeout: 4000 })).toBeTruthy();
+  }, 20000);
+
+  it("ADMIN: attaching a recording to a live session shows up on the student card", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy content/ }, { timeout: 4000 }));
+    fireEvent.click(await screen.findByRole("button", { name: /Week 0 · Orientation/ }));
+    fireEvent.click((await screen.findAllByRole("button", { name: /^Orientation/ }))[0]);
+
+    fireEvent.click(await screen.findByRole("button", { name: /\+ Deck/ }));
+    const label = (await screen.findAllByLabelText(/^Label for/))[0];
+    fireEvent.change(label, { target: { value: "Orientation slides" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /View this as a student/ }));
+    expect(await screen.findByText("Orientation slides")).toBeTruthy();
+  }, 20000);
+
+  it("ADMIN: a question added to the form appears in the student's submission box", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy content/ }, { timeout: 4000 }));
+    fireEvent.click(await screen.findByRole("button", { name: /Week 0 · Orientation/ }));
+    fireEvent.click((await screen.findAllByRole("button", { name: /Week 0 block/ }))[0]);
+
+    fireEvent.click(await screen.findByRole("button", { name: /\+ Yes or no/ }));
+    const titles = await screen.findAllByLabelText(/Question \d+ title/);
+    fireEvent.change(titles[titles.length - 1], { target: { value: "Did you record all five" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /View this as a student/ }));
+    expect(await screen.findByText("Did you record all five")).toBeTruthy();
+  }, 20000);
+
+  it("ADMIN: pushing a running batch moves later weeks and leaves earlier ones alone", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy content/ }, { timeout: 4000 }));
+
+    fireEvent.change(await screen.findByLabelText(/Push everything after week/), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText(/Reason for the push/), { target: { value: "mentor unavailable" } });
+    fireEvent.click(screen.getByRole("button", { name: /Push by one week/ }));
+    expect(await screen.findByText(/After week 4, everything moved 1 week — mentor unavailable/)).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    // Week 0 has not moved; week 5 has.
+    expect(await screen.findByText(/Week 0 · Sun, 16 Aug/, {}, { timeout: 4000 })).toBeTruthy();
+    expect(screen.getByText(/Week 5 · Sun, 27 Sep/)).toBeTruthy();
+  }, 20000);
+
+  it("ADMIN: marking a week 'no session' says so on the trail without moving any date", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy content/ }, { timeout: 4000 }));
+    const toggles = await screen.findAllByRole("button", { name: "running" });
+    fireEvent.click(toggles[5]);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    // Wait for the trail itself, not just any "no session" text — the admin
+    // toggle also reads that, and asserting too early passes on the wrong screen.
+    expect(await screen.findByText(/Week 6 · Sun, 27 Sep/, {}, { timeout: 4000 })).toBeTruthy();
+    expect(screen.getAllByText("no session").length).toBeGreaterThan(0);
   }, 20000);
 
   it("the recording stays shut until the feedback form is filled — the founder's gate", async () => {

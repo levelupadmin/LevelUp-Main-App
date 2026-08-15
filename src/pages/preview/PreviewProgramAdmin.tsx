@@ -17,8 +17,8 @@ import { useState } from "react";
 import { ArrowLeft, Video, Users, ClipboardCheck, Flag, Plus, Copy, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import type { PlayAction, PlayState } from "./previewStore";
 import {
-  KIND_LABEL, dateOf, fmtDate, dayName, orderedCards,
-  type CardKind, type ProgramTemplate, type TemplateCard,
+  KIND_LABEL, QUESTION_LABEL, RESOURCE_LABEL, dateOf, fmtDate, dayName, findCard, orderedCards, phasesOf,
+  type CardKind, type ProgramTemplate, type QuestionType, type ResourceKind, type TemplateCard,
 } from "./previewProgram";
 import { resolve } from "./PreviewProgramScreens";
 
@@ -68,8 +68,9 @@ export function ProgramAdminScreen({ s, d, go }: { s: PlayState; d: React.Dispat
   const dOf = makeDOf(t);
   const [start, setStart] = useState(t.anchorISO);
 
-  const phases: string[] = [];
-  for (const w of t.weeks) if (!phases.includes(w.phase)) phases.push(w.phase);
+  const phases = phasesOf(t);
+  const [pushAfter, setPushAfter] = useState(0);
+  const [pushReason, setPushReason] = useState("");
 
   return (
     <div className="mx-auto max-w-[760px]">
@@ -110,17 +111,79 @@ export function ProgramAdminScreen({ s, d, go }: { s: PlayState; d: React.Dispat
         </p>
       </div>
 
-      <div className="mt-6 mb-2 flex items-center justify-between">
+      {/* CHANGING A BATCH THAT IS ALREADY RUNNING. Weeks before the pause do
+          not move — a student who submitted week 3 on time must never find
+          week 3 has shifted under them. */}
+      <div className="mt-4 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+        <div className="text-[12px] font-bold">Push a running batch</div>
+        <p className="mt-0.5 text-[11px] text-[hsl(var(--muted-foreground))]">
+          A mentor dropped out, or a week is lost. Everything after the week you pick moves forward. Everything up to it stays exactly where it was.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select
+            aria-label="Push everything after week"
+            value={pushAfter}
+            onChange={(e) => setPushAfter(Number(e.target.value))}
+            className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-2 text-[12px]"
+          >
+            {t.weeks.map((w) => (
+              <option key={w.no} value={w.no}>after week {w.no}</option>
+            ))}
+          </select>
+          <input
+            aria-label="Reason for the push"
+            value={pushReason}
+            onChange={(e) => setPushReason(e.target.value)}
+            placeholder="Reason, e.g. mentor unavailable"
+            className="min-w-[180px] flex-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-[12px]"
+          />
+          <button
+            type="button"
+            onClick={() => { d({ type: "batch_push", afterWeek: pushAfter, weeks: 1, reason: pushReason || "no reason given" }); setPushReason(""); }}
+            className="rounded-lg bg-[hsl(var(--cream))] px-3 py-2 text-[12px] font-semibold text-[hsl(var(--cream-text))]"
+          >
+            Push by one week
+          </button>
+        </div>
+        {(t.pauses ?? []).length > 0 && (
+          <div className="mt-3 flex flex-col gap-1.5 border-t border-[hsl(var(--border))] pt-3">
+            {(t.pauses ?? []).map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="text-[hsl(var(--muted-foreground))]">
+                  After week {p.afterWeek}, everything moved {p.weeks} week{p.weeks > 1 ? "s" : ""} — {p.reason}
+                </span>
+                <button type="button" onClick={() => d({ type: "batch_unpush", id: p.id })} className="underline underline-offset-2">
+                  undo
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 mb-2 flex flex-wrap items-center justify-between gap-2">
         <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--muted-foreground))]">
           {t.weeks.length} weeks · {phases.length} phases
         </span>
-        <button
-          type="button"
-          onClick={() => d({ type: "week_add", at: t.weeks.length, phase: phases[phases.length - 1] ?? "New phase" })}
-          className="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-[12px]"
-        >
-          <Plus className="h-3.5 w-3.5" /> Add a week
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const name = window.prompt("New phase name", "New phase");
+              if (name) d({ type: "phase_add", name });
+            }}
+            className="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-[12px]"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add a phase
+          </button>
+          <button
+            type="button"
+            onClick={() => d({ type: "week_add", at: t.weeks.length, phase: phases[phases.length - 1] ?? "New phase" })}
+            className="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-[12px]"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add a week
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -152,6 +215,26 @@ export function ProgramAdminScreen({ s, d, go }: { s: PlayState; d: React.Dispat
                   <span className="mt-0.5 block text-[11px] text-[hsl(var(--muted-foreground))]">
                     {fmtDate(dOf(w.no, 0))} · {cards.length} cards{unauthored ? ` · ${unauthored} to write` : ""}
                   </span>
+                </button>
+                <select
+                  aria-label={`Phase for week ${w.no}`}
+                  value={w.phase}
+                  onChange={(e) => d({ type: "week_phase", index: i, phase: e.target.value })}
+                  className="hidden shrink-0 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-[11px] sm:block"
+                >
+                  {phases.map((ph) => (
+                    <option key={ph} value={ph}>{ph}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => d({ type: "week_no_session", index: i, off: !w.noSession, note: w.noSession ? "" : "No class this week" })}
+                  className="shrink-0 rounded-lg border px-2 py-1 text-[10px] font-bold uppercase tracking-wide"
+                  style={w.noSession
+                    ? { borderColor: "hsl(var(--gold)/0.5)", color: "hsl(var(--gold))" }
+                    : { borderColor: "hsl(var(--border))", color: "hsl(var(--muted-foreground))" }}
+                >
+                  {w.noSession ? "no session" : "running"}
                 </button>
                 <div className="flex shrink-0 items-center gap-1">
                   <IconBtn label={`Move week ${w.no} up`} disabled={i === 0} onClick={() => d({ type: "week_move", from: i, to: i - 1 })}><ChevronUp className="h-3.5 w-3.5" /></IconBtn>
@@ -349,11 +432,140 @@ function CardForm({ s, d, card }: { s: PlayState; d: React.Dispatch<PlayAction>;
         );
       })}
 
-      {card.kind === "block" && card.submit && (
-        <div className="rounded-lg bg-[hsl(var(--secondary))] p-3 text-[11px] text-[hsl(var(--muted-foreground))]">
-          Submission box: link, notes and file are on. Each carries its own helper line telling the student what belongs there.
+      {/* RESOURCES — the deck, the transcript, the recording, anything else.
+          This is where "where do I put the recording after the session" is
+          answered, and it lives on the card so it can never be orphaned. */}
+      <div className="rounded-lg border border-[hsl(var(--border))] p-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--muted-foreground))]">Resources</span>
+          <div className="flex flex-wrap gap-1">
+            {(["recording", "deck", "transcript", "resource"] as ResourceKind[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => d({ type: "resource_add", cardId: card.id, kind: k })}
+                className="rounded-lg border border-[hsl(var(--border))] px-2 py-1 text-[11px]"
+              >
+                + {RESOURCE_LABEL[k]}
+              </button>
+            ))}
+          </div>
+        </div>
+        {(card.resources ?? []).length === 0 && (
+          <p className="text-[11px] text-[hsl(var(--muted-foreground))]">Nothing attached yet. The student sees no resources section at all.</p>
+        )}
+        {(card.resources ?? []).map((r) => (
+          <div key={r.id} className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="rounded bg-[hsl(var(--secondary))] px-2 py-1 text-[10px] uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
+              {RESOURCE_LABEL[r.kind ?? "resource"]}
+            </span>
+            <input
+              aria-label={`Label for ${r.id}`}
+              value={r.label}
+              onChange={(e) => d({ type: "resource_edit", cardId: card.id, rid: r.id, patch: { label: e.target.value } })}
+              className="min-w-[110px] flex-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-[12px]"
+            />
+            <input
+              aria-label={`Link for ${r.id}`}
+              value={r.url}
+              onChange={(e) => d({ type: "resource_edit", cardId: card.id, rid: r.id, patch: { url: e.target.value } })}
+              placeholder="https://…"
+              className="min-w-[130px] flex-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-[12px]"
+            />
+            <IconBtn label={`Delete ${r.label}`} onClick={() => d({ type: "resource_delete", cardId: card.id, rid: r.id })}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </IconBtn>
+          </div>
+        ))}
+      </div>
+
+      {/* THE FORM BUILDER — an ordered question list, exactly like Tally, minus
+          the name and email we already know. */}
+      {card.kind === "block" && (
+        <div className="rounded-lg border border-[hsl(var(--border))] p-3">
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--muted-foreground))]">
+            The submission form
+          </div>
+          <label className="mb-3 block text-[12px]" htmlFor={`prompt-${card.id}`}>
+            Form heading
+            <input
+              id={`prompt-${card.id}`}
+              value={card.submit?.prompt ?? ""}
+              onChange={(e) => d({ type: "admin_save_card", cardId: card.id, patch: { submit: { prompt: e.target.value, questions: card.submit?.questions ?? [] } } })}
+              className="mt-1 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-[12px]"
+            />
+          </label>
+
+          {(card.submit?.questions ?? []).map((q, qi) => (
+            <div key={q.id} className="mb-2 rounded-lg border border-[hsl(var(--border))] p-2.5">
+              <div className="mb-1.5 flex items-center gap-1">
+                <span className="text-[10px] text-[hsl(var(--muted-foreground))]">Q{qi + 1}</span>
+                <select
+                  aria-label={`Type for question ${qi + 1}`}
+                  value={q.type}
+                  onChange={(e) => d({ type: "question_edit", cardId: card.id, qid: q.id, patch: { type: e.target.value as QuestionType } })}
+                  className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-[11px]"
+                >
+                  {(Object.keys(QUESTION_LABEL) as QuestionType[]).map((k) => (
+                    <option key={k} value={k}>{QUESTION_LABEL[k]}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => d({ type: "question_edit", cardId: card.id, qid: q.id, patch: { required: !q.required } })}
+                  className="rounded-lg border border-[hsl(var(--border))] px-2 py-1 text-[10px] uppercase tracking-wide"
+                  style={q.required ? { color: "hsl(var(--gold))", borderColor: "hsl(var(--gold)/0.5)" } : { color: "hsl(var(--muted-foreground))" }}
+                >
+                  {q.required ? "required" : "optional"}
+                </button>
+                <span className="flex-1" />
+                <IconBtn label={`Move question ${qi + 1} up`} disabled={qi === 0} onClick={() => d({ type: "question_move", cardId: card.id, qid: q.id, dir: -1 })}><ChevronUp className="h-3.5 w-3.5" /></IconBtn>
+                <IconBtn label={`Move question ${qi + 1} down`} disabled={qi === (card.submit?.questions.length ?? 1) - 1} onClick={() => d({ type: "question_move", cardId: card.id, qid: q.id, dir: 1 })}><ChevronDown className="h-3.5 w-3.5" /></IconBtn>
+                <IconBtn label={`Delete question ${qi + 1}`} onClick={() => d({ type: "question_delete", cardId: card.id, qid: q.id })}><Trash2 className="h-3.5 w-3.5" /></IconBtn>
+              </div>
+              <input
+                aria-label={`Question ${qi + 1} title`}
+                value={q.title}
+                onChange={(e) => d({ type: "question_edit", cardId: card.id, qid: q.id, patch: { title: e.target.value } })}
+                className="mb-1.5 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-[12px]"
+              />
+              <input
+                aria-label={`Question ${qi + 1} helper`}
+                value={q.helper}
+                onChange={(e) => d({ type: "question_edit", cardId: card.id, qid: q.id, patch: { helper: e.target.value } })}
+                placeholder="The line under it, saying what belongs there"
+                className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-[11px]"
+              />
+              {(q.type === "choice_one" || q.type === "choice_many") && (
+                <input
+                  aria-label={`Question ${qi + 1} options`}
+                  value={(q.options ?? []).join(" | ")}
+                  onChange={(e) => d({ type: "question_edit", cardId: card.id, qid: q.id, patch: { options: e.target.value.split("|").map((x) => x.trim()).filter(Boolean) } })}
+                  placeholder="Option one | Option two | Option three"
+                  className="mt-1.5 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-[11px]"
+                />
+              )}
+            </div>
+          ))}
+
+          <div className="flex flex-wrap gap-1">
+            {(Object.keys(QUESTION_LABEL) as QuestionType[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => d({ type: "question_add", cardId: card.id, qType: k })}
+                className="rounded-lg border border-[hsl(var(--border))] px-2 py-1 text-[11px]"
+              >
+                + {QUESTION_LABEL[k]}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]">
+            It never asks for name, email or number. We already know who they are.
+          </p>
         </div>
       )}
+
       {card.kind === "live_session" && (
         <div className="rounded-lg bg-[hsl(var(--secondary))] p-3 text-[11px] text-[hsl(var(--muted-foreground))]">
           Recording is gated on the feedback form: two ratings and a note before it opens.
@@ -421,6 +633,7 @@ export function ProgramMentorScreen({
 function SubmissionRow({ s, d, cardId }: { s: PlayState; d: React.Dispatch<PlayAction>; cardId: string }) {
   const sub = s.submissions.find((x) => x.cardId === cardId);
   const [note, setNote] = useState("");
+  const qs = findCard(s.program, cardId)?.card.submit?.questions ?? [];
   if (!sub) return null;
 
   return (
@@ -430,14 +643,23 @@ function SubmissionRow({ s, d, cardId }: { s: PlayState; d: React.Dispatch<PlayA
         <div className="shrink-0 text-[11px] text-[hsl(var(--muted-foreground))]">week {sub.weekNo} · {sub.when}</div>
       </div>
 
-      {sub.link && (
-        <p className="mt-2 truncate text-[12px] text-[hsl(var(--cream))]">{sub.link}</p>
+      {qs.length > 0 ? (
+        <div className="mt-2 flex flex-col gap-2">
+          {qs.map((q) => {
+            const v = sub.answers[q.id];
+            const text = Array.isArray(v) ? v.join(", ") : String(v ?? "");
+            if (!text.trim()) return null;
+            return (
+              <div key={q.id}>
+                <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">{q.title}</div>
+                <div className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed">{text}</div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-2 text-[12px] text-[hsl(var(--muted-foreground))]">This card has no questions.</p>
       )}
-      {sub.text && (
-        <p className="mt-2 whitespace-pre-wrap rounded-lg bg-[hsl(var(--secondary))] px-3 py-2 text-[13px] leading-relaxed">{sub.text}</p>
-      )}
-      {sub.fileName && <p className="mt-2 text-[12px] text-[hsl(var(--muted-foreground))]">Attached: {sub.fileName}</p>}
-
       {sub.verdict ? (
         <p className="mt-3 text-[12px]">
           <span className="font-bold uppercase text-[hsl(var(--success))]">{sub.verdict}</span>

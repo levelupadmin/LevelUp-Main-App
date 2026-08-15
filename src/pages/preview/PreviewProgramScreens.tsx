@@ -29,8 +29,9 @@ import { Serif } from "./PreviewScreens";
 import { snakeOffset, toneForPhase, type PhaseTone } from "./previewTheme";
 import type { PlayAction, PlayState } from "./previewStore";
 import {
-  KIND_LABEL, dateOf, fmtDate, dayName, findCard, orderedCards,
-  type CardKind, type ProgramTemplate, type TemplateCard, type TemplateWeek,
+  KIND_LABEL, RESOURCE_LABEL, dateOf, fmtDate, dayName, findCard, orderedCards,
+  type AnswerValue, type CardKind, type ProgramTemplate, type Question,
+  type ResourceKind, type TemplateCard, type TemplateWeek,
 } from "./previewProgram";
 import { cardState, recordingVerdict, blocksDone, weekOpen, type UnlockInput } from "./previewUnlock";
 import { CelebrationOverlay, type Celebration } from "./Celebrate";
@@ -255,9 +256,20 @@ function WeekDivider({ week, tone, verdict, dOf }: { week: TemplateWeek; tone: P
         </div>
         <div className={`text-[12.5px] font-bold tracking-[-0.01em] ${locked ? "text-[hsl(var(--muted-foreground))]" : ""}`}>
           {week.title}
+          {week.noSession && (
+            <span className="ml-1.5 rounded bg-[hsl(var(--gold)/0.16)] px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-[hsl(var(--gold))]">
+              no session
+            </span>
+          )}
         </div>
         <div className="mt-0.5 text-[10.5px] leading-snug text-[hsl(var(--muted-foreground))]">
-          {locked ? `${verdict.why} Session details are already open.` : block ? `The block: ${block.title.replace(/^Week \d+ block — /, "")}` : ""}
+          {week.noSession
+            ? week.noSessionNote || "No class this week. The dates do not move."
+            : locked
+              ? `${verdict.why} Session details are already open.`
+              : block
+                ? `The block: ${block.title.replace(/^Week \d+ block — /, "")}`
+                : ""}
         </div>
       </div>
       <span className="h-px flex-1 bg-gradient-to-l from-transparent to-[hsl(var(--border))]" />
@@ -438,24 +450,35 @@ function Learn({ items, label }: { items?: string[]; label: string }) {
 
 function Resources({ card }: { card: TemplateCard }) {
   if (!card.resources?.length) return null;
+  // Grouped, because "the deck" and "the transcript" are different errands and
+  // a flat list makes a student hunt for the one they came for.
+  const groups: ResourceKind[] = ["recording", "deck", "transcript", "resource"];
   return (
     <div className="mt-5">
       <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--muted-foreground))]">Resources</div>
       <div className="flex flex-col gap-2">
-        {card.resources.map((r) => (
-          <a
-            key={r.id}
-            href={r.url}
-            onClick={(e) => e.preventDefault()}
-            className="flex items-center justify-between gap-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2.5"
-          >
-            <span className="min-w-0">
-              <span className="block truncate text-[13px]">{r.label}</span>
-              {r.releaseNote && <span className="block text-[11px] text-[hsl(var(--muted-foreground))]">{r.releaseNote}</span>}
-            </span>
-            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--muted-foreground))]" />
-          </a>
-        ))}
+        {groups.flatMap((g) =>
+          (card.resources ?? [])
+            .filter((r) => (r.kind ?? "resource") === g)
+            .map((r) => (
+              <a
+                key={r.id}
+                href={r.url || "#"}
+                onClick={(e) => e.preventDefault()}
+                className="flex items-center justify-between gap-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2.5"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px]">{r.label}</span>
+                  <span className="block text-[11px] text-[hsl(var(--muted-foreground))]">
+                    {RESOURCE_LABEL[r.kind ?? "resource"]}
+                    {r.releaseNote ? ` · ${r.releaseNote}` : ""}
+                    {!r.url ? " · not up yet" : ""}
+                  </span>
+                </span>
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--muted-foreground))]" />
+              </a>
+            )),
+        )}
       </div>
     </div>
   );
@@ -672,14 +695,102 @@ function MicroCard({ s, d, card, week, locked, onDone }: { s: PlayState; d: Reac
   );
 }
 
-/** The submission box — configured per card, not hard-coded. */
+/** The submission box — the admin's question list, rendered. */
+function QuestionField({ q, value, onChange }: { q: Question; value: AnswerValue; onChange: (v: AnswerValue) => void }) {
+  const id = `q-${q.id}`;
+  const label = (
+    <>
+      {q.title}
+      {!q.required && <span className="text-[hsl(var(--muted-foreground))]"> (optional)</span>}
+      {q.helper && <span className="mt-0.5 block text-[11px] text-[hsl(var(--muted-foreground))]">{q.helper}</span>}
+    </>
+  );
+  const box = "mt-1.5 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-[13px] outline-none focus:border-[hsl(var(--cream)/0.5)]";
+  const str = typeof value === "string" ? value : "";
+  const arr = Array.isArray(value) ? value : [];
+
+  return (
+    <label className="mb-4 block text-[13px]" htmlFor={id}>
+      {label}
+      {q.type === "long_text" ? (
+        <textarea id={id} rows={4} value={str} onChange={(e) => onChange(e.target.value)} className={`${box} resize-none`} />
+      ) : q.type === "rating" ? (
+        <span className="mt-1.5 flex gap-1">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              aria-label={`${q.title}: ${n} of 5`}
+              onClick={() => onChange(String(n))}
+              className="grid h-8 w-8 place-items-center rounded-lg border border-[hsl(var(--border))]"
+              style={String(n) === str ? { background: "hsl(var(--gold)/0.16)", color: "hsl(var(--gold))" } : undefined}
+            >
+              <Star className="h-3.5 w-3.5" />
+            </button>
+          ))}
+        </span>
+      ) : q.type === "yes_no" ? (
+        <span className="mt-1.5 flex gap-2">
+          {["Yes", "No"].map((o) => (
+            <button
+              key={o}
+              type="button"
+              onClick={() => onChange(o)}
+              className="rounded-lg border border-[hsl(var(--border))] px-4 py-1.5 text-[12px]"
+              style={o === str ? { background: "hsl(var(--cream))", color: "hsl(var(--cream-text))" } : undefined}
+            >
+              {o}
+            </button>
+          ))}
+        </span>
+      ) : q.type === "choice_one" || q.type === "choice_many" ? (
+        <span className="mt-1.5 flex flex-col gap-1.5">
+          {(q.options ?? []).map((o) => {
+            const on = q.type === "choice_one" ? str === o : arr.includes(o);
+            return (
+              <button
+                key={o}
+                type="button"
+                onClick={() =>
+                  q.type === "choice_one" ? onChange(o) : onChange(on ? arr.filter((x) => x !== o) : [...arr, o])
+                }
+                className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-left text-[12.5px]"
+                style={on ? { borderColor: "hsl(var(--cream)/0.6)", background: "hsl(var(--secondary))" } : undefined}
+              >
+                <span
+                  className="grid h-4 w-4 shrink-0 place-items-center border border-[hsl(var(--border))]"
+                  style={{ borderRadius: q.type === "choice_one" ? "50%" : "4px", background: on ? "hsl(var(--cream))" : "transparent" }}
+                >
+                  {on && <Check className="h-2.5 w-2.5 text-[hsl(var(--cream-text))]" strokeWidth={4} />}
+                </span>
+                {o}
+              </button>
+            );
+          })}
+        </span>
+      ) : (
+        <input
+          id={id}
+          value={str}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={q.type === "link" ? "https://…" : q.type === "file" ? "voice-note-01.m4a" : ""}
+          className={box}
+        />
+      )}
+    </label>
+  );
+}
+
 function BlockCard({ s, d, card, week, locked, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; locked?: string; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
   const existing = s.submissions.find((x) => x.cardId === card.id);
-  const [link, setLink] = useState(existing?.link ?? "");
-  const [text, setText] = useState(existing?.text ?? "");
-  const [fileName, setFileName] = useState(existing?.fileName ?? "");
+  const [answers, setAnswers] = useState<Record<string, AnswerValue>>(existing?.answers ?? {});
   const box = card.submit;
-  const empty = !link.trim() && !text.trim() && !fileName.trim();
+
+  const missing = (box?.questions ?? []).filter((q) => {
+    if (!q.required) return false;
+    const v = answers[q.id];
+    return Array.isArray(v) ? v.length === 0 : !String(v ?? "").trim();
+  });
 
   return (
     <>
@@ -692,61 +803,29 @@ function BlockCard({ s, d, card, week, locked, onDone }: { s: PlayState; d: Reac
         </p>
       ) : !box ? null : (
         <div className="mt-6 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
-          <div className="mb-3 text-[14px] font-bold">{box.prompt}</div>
+          <div className="mb-4 text-[14px] font-bold">{box.prompt}</div>
 
-          {box.link.on && (
-            <label className="mb-3 block text-[13px]" htmlFor="sub-link">
-              Link
-              <span className="mt-0.5 block text-[11px] text-[hsl(var(--muted-foreground))]">{box.link.helper}</span>
-              <input
-                id="sub-link"
-                value={link}
-                onChange={(e) => setLink(e.target.value)}
-                placeholder="https://docs.google.com/…"
-                className="mt-1.5 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-[13px] outline-none focus:border-[hsl(var(--cream)/0.5)]"
-              />
-            </label>
+          {box.questions.length === 0 && (
+            <p className="mb-3 text-[12px] text-[hsl(var(--muted-foreground))]">
+              No questions yet. An admin builds them on this card.
+            </p>
           )}
 
-          {box.text.on && (
-            <label className="mb-3 block text-[13px]" htmlFor="sub-text">
-              Notes
-              <span className="mt-0.5 block text-[11px] text-[hsl(var(--muted-foreground))]">{box.text.helper}</span>
-              <textarea
-                id="sub-text"
-                rows={4}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                className="mt-1.5 w-full resize-none rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-[13px] outline-none focus:border-[hsl(var(--cream)/0.5)]"
-              />
-            </label>
-          )}
-
-          {box.file.on && (
-            <label className="mb-3 block text-[13px]" htmlFor="sub-file">
-              File
-              <span className="mt-0.5 block text-[11px] text-[hsl(var(--muted-foreground))]">{box.file.helper}</span>
-              <input
-                id="sub-file"
-                value={fileName}
-                onChange={(e) => setFileName(e.target.value)}
-                placeholder="voice-note-01.m4a"
-                className="mt-1.5 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-[13px] outline-none focus:border-[hsl(var(--cream)/0.5)]"
-              />
-            </label>
-          )}
+          {box.questions.map((q) => (
+            <QuestionField key={q.id} q={q} value={answers[q.id] ?? (q.type === "choice_many" ? [] : "")} onChange={(v) => setAnswers({ ...answers, [q.id]: v })} />
+          ))}
 
           <button
             type="button"
-            disabled={empty}
-            onClick={() => { d({ type: "submit_work", cardId: card.id, link, text, fileName }); if (!existing) onDone(card, week); }}
+            disabled={missing.length > 0 || box.questions.length === 0}
+            onClick={() => { d({ type: "submit_work", cardId: card.id, answers }); if (!existing) onDone(card, week); }}
             className="w-full rounded-lg bg-[hsl(var(--cream))] px-4 py-2.5 text-[13px] font-semibold text-[hsl(var(--cream-text))] disabled:opacity-40"
           >
             {existing ? "Update my submission" : "Submit my week"}
           </button>
-          {empty && (
+          {missing.length > 0 && (
             <p className="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]">
-              Fill at least one box. An empty submission would reach your mentor as an empty page.
+              Still needed: {missing.map((q) => q.title).join(", ")}.
             </p>
           )}
 
