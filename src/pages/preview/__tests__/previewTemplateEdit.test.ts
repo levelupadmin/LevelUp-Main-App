@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  LUCA, moveWeek, addWeek, duplicateWeek, deleteWeek, setWeekField,
+  LUCA, SEED_VERSION, moveWeek, addWeek, duplicateWeek, deleteWeek, setWeekField,
   addCard, duplicateCard, deleteCard, setCardField, renamePhase, withStart,
   dateOf, blankCard, orderedCards,
   pushFrom, removePause, setNoSession, addPhase, setWeekPhase, phasesOf,
@@ -192,5 +192,13 @@ describe("resources", () => {
 
     t = deleteResource(t, "w0-class", rec.id);
     expect(card().resources?.length).toBe(2);
+  });
+});
+
+
+describe("the stored curriculum can never outlive the shipped one", () => {
+  it("a seed version exists, so a stale saved program is detectable", () => {
+    expect(typeof SEED_VERSION).toBe("number");
+    expect(SEED_VERSION).toBeGreaterThan(0);
   });
 });

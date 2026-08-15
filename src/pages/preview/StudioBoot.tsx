@@ -10,6 +10,15 @@
  * the animation owns the whole viewport and the room waits for it to END,
  * rather than being cut off by a timer.
  *
+ * 🔴 AND IT STARTS NEAR THE END, ON PURPOSE (founder, second pass): "the full
+ * animation takes too much time — keep the last three seconds where there is
+ * the flip from light to black, with all the stickers." So playback seeks to
+ * `duration - TAIL` the moment metadata lands. That is a genuinely better
+ * trade than trimming the file: the room waits about three seconds instead of
+ * the full run, the payoff frame is still the one people remember, and if the
+ * animation is ever recut we inherit the new ending automatically with no
+ * asset to re-export or re-host.
+ *
  * 🔴 WHAT THAT COSTS, WRITTEN DOWN SO THE TRADE IS A CHOICE AND NOT A DRIFT.
  * The room is gated on a video download. Once a session softens it, but a
  * student on a bad train connection waits on a CDN before they can submit
@@ -30,6 +39,8 @@ const SRC =
   "https://cdn.leveluplearning.in/creator-academy-local/assets/pub-3be000680ad849f1b16efc848a240a04.r2.dev/creator/Creators%20Logo%20Animation.mp4";
 
 const KEY = "cs-boot-seen";
+/** Seconds of the animation to keep — the flip to dark and the stickers. */
+const TAIL_S = 3.2;
 /** Only fires if the video never starts. A playing animation is never cut. */
 const STALL_MS = 12000;
 
@@ -115,6 +126,13 @@ export default function StudioBoot() {
                 muted
                 playsInline
                 loop={false}
+                onLoadedMetadata={(e) => {
+                  // Jump to the payoff. Guarded because a stream with no known
+                  // duration reports Infinity or NaN, and seeking to that
+                  // leaves a black frame that never plays.
+                  const v = e.currentTarget;
+                  if (Number.isFinite(v.duration) && v.duration > TAIL_S) v.currentTime = v.duration - TAIL_S;
+                }}
                 onPlaying={() => { startedRef.current = true; setPlaying(true); }}
                 onEnded={() => setShow(false)}
                 onError={() => setShow(false)}

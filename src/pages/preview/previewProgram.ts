@@ -408,6 +408,21 @@ function stub(no: number, phase: string, title: string, className: string, block
   };
 }
 
+/**
+ * 🔴 BUMP THIS WHENEVER THE SEED CONTENT CHANGES.
+ *
+ * The whole program lives in state and state is persisted, which means a
+ * student — or the founder mid-review — keeps the curriculum they first loaded
+ * FOREVER. Every content fix I ship silently fails to reach them, and worse, a
+ * card authored under an older shape can render half a form. Both look like
+ * "the admin screen is broken" rather than "your copy is stale", which is
+ * exactly the wrong thing for a reviewer to conclude.
+ *
+ * So the seed carries a version. On load, a mismatch replaces the PROGRAM with
+ * the new seed and keeps progress, submissions and feedback untouched.
+ */
+export const SEED_VERSION = 3;
+
 export const LUCA: ProgramTemplate = {
   key: "creator_academy",
   name: "LevelUp Creator Academy",

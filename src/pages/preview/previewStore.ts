@@ -16,7 +16,7 @@
 import { useEffect, useReducer } from "react";
 import { SEED_POSTS, type PostType } from "./previewData";
 import {
-  LUCA, findCard, XP,
+  LUCA, SEED_VERSION, findCard, XP,
   moveWeek, addWeek, duplicateWeek, deleteWeek, setWeekField,
   addCard, duplicateCard, deleteCard, setCardField, renamePhase, withStart,
   addQuestion, setQuestion, deleteQuestion, moveQuestion,
@@ -210,6 +210,8 @@ export interface PlayState {
    * One source, one thing to change, and the student side simply reads it.
    */
   program: ProgramTemplate;
+  /** Which seed the stored program came from. See SEED_VERSION. */
+  programVersion: number;
 }
 
 const SEEDED: PlayPost[] = SEED_POSTS.map((p) => ({
@@ -251,6 +253,7 @@ export const INITIAL: PlayState = {
   submissions: [],
   drafts: {},
   program: LUCA,
+  programVersion: SEED_VERSION,
 };
 
 export type PlayAction =
@@ -296,6 +299,7 @@ export type PlayAction =
   | { type: "week_no_session"; index: number; off: boolean; note?: string }
   | { type: "batch_push"; afterWeek: number; weeks: number; reason: string }
   | { type: "batch_unpush"; id: string }
+  | { type: "restore_curriculum" }
   | { type: "reset" };
 
 function completeDay(s: PlayState, id: string): PlayState {
@@ -499,6 +503,10 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
       return { ...s, program: pushFrom(s.program, a.afterWeek, a.weeks, a.reason) };
     case "batch_unpush":
       return { ...s, program: removePause(s.program, a.id) };
+    case "restore_curriculum":
+      // Content back to the shipped seed. Progress is deliberately untouched —
+      // a reviewer restoring the curriculum has not asked to lose their walk.
+      return { ...s, program: LUCA, programVersion: SEED_VERSION };
     case "reset":
       return INITIAL;
     default:
@@ -514,6 +522,12 @@ export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
       const raw = localStorage.getItem(KEY);
       if (!raw) return init;
       const saved = JSON.parse(raw) as PlayState;
+      // A newer seed wins over the stored copy of the curriculum, but only over
+      // the curriculum — the walk survives.
+      if (saved && saved.programVersion !== SEED_VERSION) {
+        saved.program = LUCA;
+        saved.programVersion = SEED_VERSION;
+      }
       // A shape mismatch after a prototype update must reset, not crash.
       return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" && Array.isArray(saved.programs) && Array.isArray(saved.builtSubmissions) && typeof saved.progress === "object" && typeof saved.feedback === "object" && Array.isArray(saved.submissions) && saved.program && Array.isArray(saved.program.weeks) ? saved : init;
     } catch {

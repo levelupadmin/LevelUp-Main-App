@@ -110,6 +110,14 @@ export function ProgramAdminScreen({ s, d, go }: { s: PlayState; d: React.Dispat
         <p className="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]">
           Currently week 0 opens {fmtDate(dOf(0, -1))} and week {t.weeks.length - 1} lands {fmtDate(dOf(t.weeks.length - 1, 6))}.
         </p>
+        <button
+          type="button"
+          onClick={() => d({ type: "restore_curriculum" })}
+          className="mt-3 text-[11px] text-[hsl(var(--muted-foreground))] underline underline-offset-4"
+        >
+          Restore the original curriculum
+        </button>
+        <span className="ml-2 text-[11px] text-[hsl(var(--muted-foreground))]">content only — your progress stays</span>
       </div>
 
       {/* CHANGING A BATCH THAT IS ALREADY RUNNING. Weeks before the pause do
@@ -396,19 +404,34 @@ export function ProgramWeekEditorScreen({
   );
 }
 
+/**
+ * 🔴 THE BUG THIS FIXES (founder, 2026-08-15): "I try to change whatever is
+ * there and I don't think I am able to do it."
+ *
+ * He was right, and the cause was mine. Half this editor saved on change —
+ * resources, questions, the day picker, the recording link — and half held
+ * edits in local state until you pressed a Save button at the BOTTOM of a form
+ * that had since grown a resource list and a whole form builder. Type a mentor
+ * name, scroll past all that, never reach the button, navigate away, lose it.
+ *
+ * A form where some fields persist and others do not is worse than one where
+ * none do, because it teaches you to trust it. So there is no Save button now:
+ * every field writes as you type, exactly like the rest of the screen.
+ */
 function CardForm({ s, d, card }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard }) {
   const fields = FIELDS[card.kind];
-  const [draft, setDraft] = useState<Record<string, string>>(() => {
-    const o: Record<string, string> = {};
-    for (const f of fields) o[f.key as string] = (card[f.key] as string) ?? "";
-    return o;
-  });
-  const [saved, setSaved] = useState(false);
+  const [touched, setTouched] = useState(false);
+
+  const write = (key: keyof TemplateCard, value: string) => {
+    setTouched(true);
+    d({ type: "admin_save_card", cardId: card.id, patch: { [key]: value } as Partial<TemplateCard> });
+  };
 
   return (
     <div className="flex flex-col gap-3">
       {fields.map((f) => {
         const id = `f-${card.id}-${String(f.key)}`;
+        const value = (card[f.key] as string) ?? "";
         return (
           <label key={String(f.key)} className="block text-[12px]" htmlFor={id}>
             {f.label}
@@ -417,21 +440,50 @@ function CardForm({ s, d, card }: { s: PlayState; d: React.Dispatch<PlayAction>;
               <textarea
                 id={id}
                 rows={2}
-                value={draft[f.key as string]}
-                onChange={(e) => { setDraft({ ...draft, [f.key as string]: e.target.value }); setSaved(false); }}
+                value={value}
+                onChange={(e) => write(f.key, e.target.value)}
                 className="mt-1.5 w-full resize-none rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-[13px] outline-none focus:border-[hsl(var(--cream)/0.5)]"
               />
             ) : (
               <input
                 id={id}
-                value={draft[f.key as string]}
-                onChange={(e) => { setDraft({ ...draft, [f.key as string]: e.target.value }); setSaved(false); }}
+                value={value}
+                onChange={(e) => write(f.key, e.target.value)}
                 className="mt-1.5 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-[13px] outline-none focus:border-[hsl(var(--cream)/0.5)]"
               />
             )}
           </label>
         );
       })}
+
+      {/* 🔴 FOUND BY THE SELF-REVIEW CHECKLIST, not by the founder: these
+          bullets are the most-read thing on a card and there was no way to
+          edit them. Every field a student reads must be a field an admin
+          writes — that is the rule, and this was breaking it. */}
+      <label className="block text-[12px]" htmlFor={`learn-${card.id}`}>
+        {card.kind === "block" ? "What good looks like" : card.kind === "micro" ? "What to do" : "What you'll learn"}
+        <span className="mt-0.5 block text-[11px] text-[hsl(var(--muted-foreground))]">
+          One line each. These are the bullets on the student's card.
+        </span>
+        <textarea
+          id={`learn-${card.id}`}
+          rows={4}
+          value={(card.learn ?? []).join("\n")}
+          onChange={(e) => {
+            setTouched(true);
+            d({
+              type: "admin_save_card",
+              cardId: card.id,
+              patch: { learn: e.target.value.split("\n").map((x) => x.trim()).filter(Boolean) },
+            });
+          }}
+          className="mt-1.5 w-full resize-none rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-[13px] outline-none focus:border-[hsl(var(--cream)/0.5)]"
+        />
+      </label>
+
+      {touched && (
+        <p className="text-[11px] text-[hsl(var(--success))]">Saved as you type. The student page already shows this.</p>
+      )}
 
       {/* RESOURCES — the deck, the transcript, the recording, anything else.
           This is where "where do I put the recording after the session" is
@@ -472,6 +524,13 @@ function CardForm({ s, d, card }: { s: PlayState; d: React.Dispatch<PlayAction>;
               onChange={(e) => d({ type: "resource_edit", cardId: card.id, rid: r.id, patch: { url: e.target.value } })}
               placeholder="https://…"
               className="min-w-[130px] flex-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-[12px]"
+            />
+            <input
+              aria-label={`Release note for ${r.id}`}
+              value={r.releaseNote ?? ""}
+              onChange={(e) => d({ type: "resource_edit", cardId: card.id, rid: r.id, patch: { releaseNote: e.target.value } })}
+              placeholder="Released Mon 8:00 AM"
+              className="min-w-[120px] flex-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-[11px]"
             />
             <IconBtn label={`Delete ${r.label}`} onClick={() => d({ type: "resource_delete", cardId: card.id, rid: r.id })}>
               <Trash2 className="h-3.5 w-3.5" />
@@ -573,19 +632,6 @@ function CardForm({ s, d, card }: { s: PlayState; d: React.Dispatch<PlayAction>;
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => {
-          const patch: Partial<TemplateCard> = {};
-          for (const f of fields) (patch as Record<string, string>)[f.key as string] = draft[f.key as string];
-          d({ type: "admin_save_card", cardId: card.id, patch });
-          setSaved(true);
-        }}
-        className="rounded-lg bg-[hsl(var(--cream))] px-4 py-2 text-[13px] font-semibold text-[hsl(var(--cream-text))]"
-      >
-        Save
-      </button>
-      {saved && <p className="text-[11px] text-[hsl(var(--success))]">Saved. The student page shows this now.</p>}
     </div>
   );
 }

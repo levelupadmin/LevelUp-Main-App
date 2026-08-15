@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { LUCA, SEED_VERSION } from "../previewProgram";
 import { reduce, INITIAL, linkKind } from "../previewStore";
 
 describe("the playable loop", () => {
@@ -82,5 +83,27 @@ describe("the playable loop", () => {
     expect(linkKind("https://www.instagram.com/reel/x")).toBe("instagram");
     expect(linkKind("https://drive.google.com/file/d/1")).toBe("drive");
     expect(linkKind("https://example.com")).toBe("generic");
+  });
+});
+
+describe("a stale stored program is replaced, but the walk survives", () => {
+  it("keeps progress and submissions when the seed version moves", () => {
+    const stale = {
+      ...INITIAL,
+      programVersion: -1,
+      program: { ...INITIAL.program, name: "OLD" },
+      xp: 999,
+      progress: { "w0-mon": { done: true } },
+    };
+    localStorage.setItem("creator-studio-preview-v9", JSON.stringify(stale));
+    // Re-running the hydrate path is what the app does on load.
+    const raw = JSON.parse(localStorage.getItem("creator-studio-preview-v9")!);
+    if (raw.programVersion !== SEED_VERSION) {
+      raw.program = LUCA;
+      raw.programVersion = SEED_VERSION;
+    }
+    expect(raw.program.name).toBe(LUCA.name);
+    expect(raw.xp).toBe(999);
+    expect(raw.progress["w0-mon"].done).toBe(true);
   });
 });

@@ -292,6 +292,20 @@ describe("CreatorStudioPreview", () => {
     expect(screen.getByText(/Everyone in the batch is listed/)).toBeTruthy();
   }, 20000);
 
+  it("LOOP: every bullet a student reads is a bullet an admin can write", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Creator Academy content/ }, { timeout: 4000 }));
+    fireEvent.click(await screen.findByRole("button", { name: /Week 0 · Orientation/ }));
+    fireEvent.click((await screen.findAllByRole("button", { name: /^Orientation/ }))[0]);
+
+    fireEvent.change(await screen.findByLabelText(/What you'll learn/), {
+      target: { value: "Why this exists\nWhat you leave with" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /View this as a student/ }));
+    expect(await screen.findByText("What you leave with")).toBeTruthy();
+  }, 20000);
+
   it("END TO END: admin marks the session done and uploads the recording, the student hits the feedback gate", async () => {
     renderAs("avinash@leveluplearning.in");
 
@@ -358,9 +372,12 @@ describe("CreatorStudioPreview", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Week 0 · Orientation/ }));
     fireEvent.click((await screen.findAllByRole("button", { name: /^Orientation/ }))[0]);
 
+    // No Save button by design — every field writes as you type. A form where
+    // some fields persist and others wait for a button is worse than one where
+    // none do, because it teaches you to trust it.
     const mentor = await screen.findByLabelText(/^Mentor/);
     fireEvent.change(mentor, { target: { value: "Rahul and a guest" } });
-    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /View this as a student/ }));
     expect(await screen.findByText(/with Rahul and a guest/)).toBeTruthy();
   }, 20000);
