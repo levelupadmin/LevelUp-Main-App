@@ -21,7 +21,7 @@ import {
   type CardKind, type ProgramTemplate, type QuestionType, type ResourceKind, type TemplateCard,
 } from "./previewProgram";
 import { resolve } from "./PreviewProgramScreens";
-import { CLASSMATES, roomFor, sinceOpen } from "./previewCohort";
+import { CLASSMATES, answersFor, roomFor, sinceOpen } from "./previewCohort";
 
 const ICON: Record<CardKind, typeof Video> = {
   live_session: Video, community_call: Users, micro: ClipboardCheck, block: Flag,
@@ -771,8 +771,7 @@ export function ProgramSheetScreen({ s, go, cardId }: { s: PlayState; go: (k: st
         id: p.id, name: p.name, initials: p.initials,
         stage: a?.stage ?? "not started",
         when: a ? sinceOpen(a.startedMin) : "",
-        // Invented classmates do not carry real answers — the shape is the point.
-        answers: a?.stage === "submitted" ? undefined : undefined,
+        answers: a?.stage === "submitted" ? answersFor(cardId, p.id, qs) : undefined,
       };
     }),
   ];
@@ -837,6 +836,154 @@ export function ProgramSheetScreen({ s, go, cardId }: { s: PlayState; go: (k: st
       <p className="mt-4 text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">
         Everyone in the batch is listed, including the people who have not started. The student-facing room never shows that column.
       </p>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   RUN THE WEEK — the desk your team opens every evening
+   ─────────────────────────────────────────────────────────────────────────
+
+   Everything else in admin is setup you touch occasionally. This is the one
+   that is open after every session, so it holds exactly the four things that
+   happen at 9:30 at night and nothing else: the session is done, here is the
+   recording, open the feedback, and who has submitted.
+
+   A session becomes "completed" because a human says so, never because the
+   clock passed. A class that ran two hours late is not over, and a class that
+   was cancelled never happened.
+   ───────────────────────────────────────────────────────────────────────── */
+
+export function RunTheWeekScreen({
+  s, d, go, weekNo,
+}: { s: PlayState; d: React.Dispatch<PlayAction>; go: (k: string) => void; weekNo?: number }) {
+  const t = s.program;
+  const dOf = makeDOf(t);
+  const [wk, setWk] = useState(weekNo ?? 0);
+  const week = t.weeks.find((w) => w.no === wk) ?? t.weeks[0];
+  const cards = orderedCards(week);
+
+  return (
+    <div className="mx-auto max-w-[760px]">
+      <button type="button" onClick={() => go("admin")} className="mb-4 flex items-center gap-1.5 text-[12px] text-[hsl(var(--muted-foreground))]">
+        <ArrowLeft className="h-3.5 w-3.5" /> Admin
+      </button>
+      <h2 className="text-[21px] font-extrabold tracking-[-0.02em]">Run the week</h2>
+      <p className="mt-1 text-[13px] text-[hsl(var(--muted-foreground))]">
+        Mark a session done, drop the recording in, open the feedback gate. A session is over when you say it is, not when the clock says so.
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        {t.weeks.map((w) => (
+          <button
+            key={w.no}
+            type="button"
+            onClick={() => setWk(w.no)}
+            className="rounded-lg border px-2.5 py-1 text-[11px]"
+            style={w.no === wk
+              ? { borderColor: "hsl(var(--cream)/0.6)", background: "hsl(var(--secondary))" }
+              : { borderColor: "hsl(var(--border))", color: "hsl(var(--muted-foreground))" }}
+          >
+            W{w.no}
+          </button>
+        ))}
+      </div>
+
+      <p className="mt-3 text-[12px] text-[hsl(var(--muted-foreground))]">
+        Week {week.no} · {week.title} · class {fmtDate(dOf(week.no, 0))}
+        {week.noSession ? " · no session this week" : ""}
+      </p>
+
+      <div className="mt-4 flex flex-col gap-3">
+        {cards.map((card) => {
+          const when = dOf(week.no, card.dayOffset);
+          if (card.kind === "live_session" || card.kind === "community_call") {
+            return (
+              <div key={card.id} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-[14px] font-medium">{card.title}</div>
+                    <div className="mt-0.5 text-[11px] text-[hsl(var(--muted-foreground))]">
+                      {dayName(when)} {fmtDate(when).replace(/^\w+,?\s*/, "")}{card.time ? ` · ${card.time}` : ""} · {KIND_LABEL[card.kind]}
+                    </div>
+                  </div>
+                  {card.kind === "live_session" && (
+                    <button
+                      type="button"
+                      onClick={() => d({ type: "admin_save_card", cardId: card.id, patch: { completed: !card.completed } })}
+                      className="shrink-0 rounded-lg border px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide"
+                      style={card.completed
+                        ? { borderColor: "hsl(var(--success)/0.5)", color: "hsl(var(--success))" }
+                        : { borderColor: "hsl(var(--border))", color: "hsl(var(--muted-foreground))" }}
+                    >
+                      {card.completed ? "session done" : "mark done"}
+                    </button>
+                  )}
+                </div>
+
+                {card.kind === "live_session" && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <label className="block text-[11px]" htmlFor={`rec-${card.id}`}>
+                      Recording link
+                      <input
+                        id={`rec-${card.id}`}
+                        value={card.recordingUrl ?? ""}
+                        onChange={(e) => d({ type: "admin_save_card", cardId: card.id, patch: { recordingUrl: e.target.value } })}
+                        placeholder="Paste the Zoom cloud recording link"
+                        className="mt-1 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-[12px]"
+                      />
+                    </label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => d({ type: "admin_save_card", cardId: card.id, patch: { gateRecordingOnFeedback: !card.gateRecordingOnFeedback } })}
+                        className="rounded-lg border border-[hsl(var(--border))] px-2.5 py-1 text-[11px]"
+                        style={card.gateRecordingOnFeedback ? { color: "hsl(var(--gold))", borderColor: "hsl(var(--gold)/0.5)" } : undefined}
+                      >
+                        {card.gateRecordingOnFeedback ? "feedback required" : "feedback optional"}
+                      </button>
+                      <span className="text-[11px] text-[hsl(var(--muted-foreground))]">
+                        {s.feedback[card.id] ? "you have left feedback" : "no feedback from you yet"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
+                      {!card.completed
+                        ? "Students still see the Zoom door."
+                        : card.recordingUrl
+                          ? "Students see the recording door, behind the feedback form."
+                          : "Marked done, but there is no recording yet — students are told exactly that."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          const room = roomFor(card.id);
+          const mine = s.submissions.some((x) => x.cardId === card.id);
+          const submitted = room.filter((a) => a.stage === "submitted").length + (mine ? 1 : 0);
+          return (
+            <div key={card.id} className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+              <div className="min-w-0">
+                <div className="truncate text-[14px] font-medium">{card.title}</div>
+                <div className="mt-0.5 text-[11px] text-[hsl(var(--muted-foreground))]">
+                  {dayName(when)}{card.time ? ` · ${card.time}` : ""} · {KIND_LABEL[card.kind]}
+                  {card.kind === "block" ? ` · ${submitted}/${CLASSMATES.length + 1} in` : ""}
+                </div>
+              </div>
+              {card.kind === "block" && (
+                <button
+                  type="button"
+                  onClick={() => go(`mentor/sheet/${card.id}`)}
+                  className="shrink-0 rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-[11px]"
+                >
+                  Open the sheet
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -542,8 +542,6 @@ function FeedbackForm({ cardId, d }: { cardId: string; d: React.Dispatch<PlayAct
 }
 
 function LiveSessionCard({ s, d, card, week, dOf, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; dOf: (w: number, d: number) => Date; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
-  const when = dOf(week.no, card.dayOffset);
-  const past = new Date(`${TODAY_ISO}T00:00:00`) > when;
   const fb = s.feedback[card.id];
   const rec = recordingVerdict(card, !!fb);
   const done = s.progress[card.id]?.done;
@@ -559,7 +557,7 @@ function LiveSessionCard({ s, d, card, week, dOf, onDone }: { s: PlayState; d: R
       <Resources card={card} />
 
       <div className="mt-6 flex flex-col gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
-        {!past ? (
+        {!card.completed ? (
           card.zoomUrl ? (
             <>
               <a

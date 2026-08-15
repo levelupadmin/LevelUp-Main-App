@@ -256,18 +256,49 @@ describe("CreatorStudioPreview", () => {
     expect(screen.getByText(/Everyone in the batch is listed/)).toBeTruthy();
   }, 20000);
 
-  it("the recording stays shut until the feedback form is filled — the founder's gate", async () => {
+  it("END TO END: admin marks the session done and uploads the recording, the student hits the feedback gate", async () => {
     renderAs("avinash@leveluplearning.in");
+
+    // Before anyone marks anything, the student sees the Zoom door.
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
     fireEvent.click((await screen.findAllByRole("button", { name: /The psychology of storytelling/ }))[0]);
+    expect(await screen.findByText("Join on Zoom")).toBeTruthy();
 
-    // Two ratings and a note. Both ratings required, the note is not.
-    expect(await screen.findByText(/Both ratings are needed/)).toBeTruthy();
+    // Admin runs the week: mark done, paste the recording.
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Run the week/ }, { timeout: 4000 }));
+    const marks = await screen.findAllByRole("button", { name: "mark done" });
+    fireEvent.click(marks[1]);
+    const recs = await screen.findAllByLabelText(/Recording link/);
+    fireEvent.change(recs[1], { target: { value: "https://zoom.us/rec/psych" } });
+
+    // Back on the student side: the door has changed, and it is gated.
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: /The psychology of storytelling/ }))[0]);
+    expect(await screen.findByText(/Tell us how the session went/)).toBeTruthy();
+    expect(screen.queryByText("Join on Zoom")).toBeNull();
+
+    // Two ratings required, the note is not.
     expect((screen.getByRole("button", { name: /Submit and open the recording/ }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "The mentor: 4 of 5" }));
     fireEvent.click(screen.getByRole("button", { name: "What you learned: 5 of 5" }));
-    expect((screen.getByRole("button", { name: /Submit and open the recording/ }) as HTMLButtonElement).disabled).toBe(false);
-  });
+    fireEvent.click(screen.getByRole("button", { name: /Submit and open the recording/ }));
+    expect(await screen.findByText("Watch the recording")).toBeTruthy();
+  }, 25000);
+
+  it("marked done with no recording tells the student exactly that", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Admin/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Run the week/ }, { timeout: 4000 }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "mark done" }))[1]);
+    expect(await screen.findByText(/Marked done, but there is no recording yet/)).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: /The psychology of storytelling/ }))[0]);
+    expect((await screen.findAllByText(/The recording is not up yet/)).length).toBeGreaterThan(0);
+    // The feedback form is still offered, so it opens the moment it lands.
+    expect(screen.getByRole("button", { name: /Submit and open the recording/ })).toBeTruthy();
+  }, 25000);
 
   it("a Zoom link that is not up yet reads as not up yet, never as a dead button", async () => {
     renderAs("avinash@leveluplearning.in");

@@ -123,6 +123,16 @@ export interface TemplateCard {
   recordingUrl?: string;
   /** The founder's gate: no recording until the feedback form is submitted. */
   gateRecordingOnFeedback?: boolean;
+  /**
+   * Marked done by an admin, NOT inferred from the clock.
+   *
+   * 🔴 WHY. "Suppose the orientation happens at 4pm but we push it to 6. After
+   * 8, at 9 or 9:30, we upload the Zoom." A session that ran late is not over
+   * because the calendar says so, and a session that was cancelled never
+   * happened at all. The Zoom door stays until a human says the session is
+   * done, which is the same human who has the recording to upload.
+   */
+  completed?: boolean;
   /** A review session states which week's block it reads. */
   reviewsWeek?: number;
   resources?: CardResource[];
