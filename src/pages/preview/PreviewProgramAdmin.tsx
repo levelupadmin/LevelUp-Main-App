@@ -21,6 +21,7 @@ import {
   type CardKind, type ProgramTemplate, type QuestionType, type ResourceKind, type TemplateCard,
 } from "./previewProgram";
 import { resolve } from "./PreviewProgramScreens";
+import { CLASSMATES, roomFor, sinceOpen } from "./previewCohort";
 
 const ICON: Record<CardKind, typeof Video> = {
   live_session: Video, community_call: Users, micro: ClipboardCheck, block: Flag,
@@ -688,6 +689,154 @@ function SubmissionRow({ s, d, cardId }: { s: PlayState; d: React.Dispatch<PlayA
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THE SHEET — one assignment, every student, every answer
+   ─────────────────────────────────────────────────────────────────────────
+
+   This is the Google Sheet you got out of Tally, with the two columns you were
+   tired of filling removed: name and email are the row, not a question.
+
+   It shows everyone in the batch, INCLUDING the people who have not started.
+   That is the deliberate difference from the student-facing room, which only
+   ever lists people who have moved. Students should feel the momentum; you
+   need the absences, because the person missing from three sheets in a row is
+   exactly who your "two missed weeks triggers a call" rule is about.
+   ───────────────────────────────────────────────────────────────────────── */
+
+export function ProgramSheetListScreen({ s, go }: { s: PlayState; go: (k: string) => void }) {
+  const t = s.program;
+  const dOf = makeDOf(t);
+  const blocks = t.weeks.flatMap((w) => w.cards.filter((c) => c.kind === "block").map((c) => ({ w, c })));
+
+  return (
+    <div className="mx-auto max-w-[760px]">
+      <button type="button" onClick={() => go("mentor")} className="mb-4 flex items-center gap-1.5 text-[12px] text-[hsl(var(--muted-foreground))]">
+        <ArrowLeft className="h-3.5 w-3.5" /> Mentor desk
+      </button>
+      <h2 className="text-[21px] font-extrabold tracking-[-0.02em]">Submission sheets</h2>
+      <p className="mt-1 text-[13px] text-[hsl(var(--muted-foreground))]">
+        One sheet per assignment. {CLASSMATES.length + 1} students in this batch.
+      </p>
+      <div className="mt-5 flex flex-col gap-2">
+        {blocks.map(({ w, c }) => {
+          const room = roomFor(c.id);
+          const mine = s.submissions.some((x) => x.cardId === c.id);
+          const submitted = room.filter((a) => a.stage === "submitted").length + (mine ? 1 : 0);
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => go(`mentor/sheet/${c.id}`)}
+              className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-[13.5px] font-medium">Week {w.no} · {c.title}</span>
+                <span className="mt-0.5 block text-[11px] text-[hsl(var(--muted-foreground))]">
+                  Due {fmtDate(dOf(w.no, c.dayOffset))} · {c.submit?.questions.length ?? 0} questions
+                </span>
+              </span>
+              <span className="shrink-0 text-[11px] text-[hsl(var(--muted-foreground))]">
+                {submitted}/{CLASSMATES.length + 1} in
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function ProgramSheetScreen({ s, go, cardId }: { s: PlayState; go: (k: string) => void; cardId: string }) {
+  const found = findCard(s.program, cardId);
+  if (!found) return null;
+  const qs = found.card.submit?.questions ?? [];
+  const room = roomFor(cardId);
+  const mySub = s.submissions.find((x) => x.cardId === cardId);
+  const myProg = s.progress[cardId];
+
+  const rows = [
+    {
+      id: "you", name: "You", initials: "YO",
+      stage: mySub ? "submitted" : myProg?.draftedOn ? "drafted" : myProg?.startedOn ? "started" : "not started",
+      when: mySub?.when ?? myProg?.draftedOn ?? myProg?.startedOn ?? "",
+      answers: mySub?.answers,
+    },
+    ...CLASSMATES.map((p) => {
+      const a = room.find((x) => x.student.id === p.id);
+      return {
+        id: p.id, name: p.name, initials: p.initials,
+        stage: a?.stage ?? "not started",
+        when: a ? sinceOpen(a.startedMin) : "",
+        // Invented classmates do not carry real answers — the shape is the point.
+        answers: a?.stage === "submitted" ? undefined : undefined,
+      };
+    }),
+  ];
+
+  const order: Record<string, number> = { submitted: 0, drafted: 1, started: 2, "not started": 3 };
+
+  return (
+    <div className="mx-auto max-w-[760px]">
+      <button type="button" onClick={() => go("mentor/sheet")} className="mb-4 flex items-center gap-1.5 text-[12px] text-[hsl(var(--muted-foreground))]">
+        <ArrowLeft className="h-3.5 w-3.5" /> All sheets
+      </button>
+      <h2 className="text-[19px] font-extrabold tracking-[-0.02em]">{found.card.title}</h2>
+      <p className="mt-1 text-[12px] text-[hsl(var(--muted-foreground))]">
+        Week {found.week.no} · {qs.length} questions · {rows.filter((r) => r.stage === "submitted").length} of {rows.length} submitted
+      </p>
+
+      <div className="mt-4 flex flex-col gap-2">
+        {[...rows].sort((a, b) => order[a.stage] - order[b.stage]).map((r) => (
+          <div key={r.id} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+            <div className="flex items-center gap-3">
+              <span
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[10px] font-bold"
+                style={r.id === "you"
+                  ? { background: "hsl(var(--cream))", color: "hsl(var(--cream-text))" }
+                  : { background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
+              >
+                {r.initials}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{r.name}</span>
+              <span
+                className="shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                style={r.stage === "submitted"
+                  ? { background: "hsl(var(--success)/0.14)", color: "hsl(var(--success))" }
+                  : r.stage === "not started"
+                    ? { background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }
+                    : { background: "hsl(var(--gold)/0.14)", color: "hsl(var(--gold))" }}
+              >
+                {r.stage}
+              </span>
+              {r.when && <span className="shrink-0 text-[10px] text-[hsl(var(--muted-foreground))]">{r.when}</span>}
+            </div>
+
+            {r.answers && (
+              <div className="mt-2 flex flex-col gap-1.5 border-t border-[hsl(var(--border))] pt-2">
+                {qs.map((q) => {
+                  const v = r.answers?.[q.id];
+                  const text = Array.isArray(v) ? v.join(", ") : String(v ?? "");
+                  if (!text.trim()) return null;
+                  return (
+                    <div key={q.id}>
+                      <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">{q.title}</div>
+                      <div className="mt-0.5 break-words text-[12.5px] leading-relaxed">{text}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-4 text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+        Everyone in the batch is listed, including the people who have not started. The student-facing room never shows that column.
+      </p>
     </div>
   );
 }

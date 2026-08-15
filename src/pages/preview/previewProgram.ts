@@ -105,6 +105,13 @@ export interface TemplateCard {
   kind: CardKind;
   /** -1 (Sat before) · 0 Sun · 1 Mon · … · 6 Sat · 7 (Sun after). */
   dayOffset: number;
+  /**
+   * Assignments only. The day the work OPENS, when it is earlier than the day
+   * it is due. An assignment is a span, not a moment: it can open on Wednesday
+   * and be due Friday at 6. The trail keeps the node on the DUE day, because
+   * that is where the pressure is, and the card says how long it has been open.
+   */
+  opensDayOffset?: number;
   time?: string;
   durationMin?: number;
   title: string;
@@ -245,7 +252,7 @@ const W0: TemplateWeek = {
       xp: XP.micro,
     },
     {
-      id: "w0-block", kind: "block", dayOffset: 4, time: "9:00 PM",
+      id: "w0-block", kind: "block", dayOffset: 4, opensDayOffset: 1, time: "9:00 PM",
       title: "Week 0 block — voice notes and breakdowns",
       blurb: "Five voice notes uploaded, and two reel breakdowns with the levers labelled.",
       learn: ["Tension holds", "Specific, not general", "Sounds like a person talking"],
@@ -330,7 +337,7 @@ const W1: TemplateWeek = {
       xp: XP.micro,
     },
     {
-      id: "w1-block", kind: "block", dayOffset: 4, time: "9:00 PM",
+      id: "w1-block", kind: "block", dayOffset: 4, opensDayOffset: 1, time: "9:00 PM",
       title: "Week 1 block — positioning one-pager",
       blurb: "The one-pager plus your origin story as a voice note, twenty seconds maximum.",
       learn: ["The who is hyper-specific", "The value line survives the 100-day test", "Twenty exact audience phrases banked"],

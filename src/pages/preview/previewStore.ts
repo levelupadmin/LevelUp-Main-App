@@ -141,6 +141,13 @@ export interface BuiltProgram {
 export interface CardProgress {
   done: boolean;
   doneOn?: string;
+  /**
+   * "I'm starting this." A commitment, not a checkbox — it costs nothing, it
+   * puts you in the room, and it is what makes the board worth opening on the
+   * days between opening and the deadline.
+   */
+  startedOn?: string;
+  draftedOn?: string;
 }
 
 /**
@@ -190,6 +197,8 @@ export interface PlayState {
   progress: Record<string, CardProgress>;
   feedback: Record<string, SessionFeedback>;
   submissions: BlockSubmission[];
+  /** Saved-but-not-sent answers, per card. */
+  drafts: Record<string, Record<string, AnswerValue>>;
   /**
    * THE PROGRAM ITSELF, in state — editable, not a constant.
    *
@@ -240,6 +249,7 @@ export const INITIAL: PlayState = {
   progress: {},
   feedback: {},
   submissions: [],
+  drafts: {},
   program: LUCA,
 };
 
@@ -258,6 +268,8 @@ export type PlayAction =
   | { type: "delete_program"; id: string }
   | { type: "submit_built"; programId: string; cardId: string; body: string }
   | { type: "card_done"; cardId: string }
+  | { type: "start_work"; cardId: string }
+  | { type: "save_draft"; cardId: string; answers: Record<string, AnswerValue> }
   | { type: "submit_feedback"; cardId: string; mentor: number; content: number; note: string }
   | { type: "submit_work"; cardId: string; answers: Record<string, AnswerValue> }
   | { type: "mentor_verdict"; cardId: string; verdict: "ship" | "fix" | "hold"; note: string }
@@ -393,6 +405,18 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
         streak: s.streak + 1,
       };
     }
+    case "start_work": {
+      if (s.progress[a.cardId]?.startedOn) return s;
+      return { ...s, progress: { ...s.progress, [a.cardId]: { ...(s.progress[a.cardId] ?? { done: false }), startedOn: "just now" } } };
+    }
+    case "save_draft": {
+      const prev = s.progress[a.cardId] ?? { done: false };
+      return {
+        ...s,
+        drafts: { ...s.drafts, [a.cardId]: a.answers },
+        progress: { ...s.progress, [a.cardId]: { ...prev, startedOn: prev.startedOn ?? "just now", draftedOn: "just now" } },
+      };
+    }
     case "submit_feedback": {
       if (!a.mentor || !a.content) return s;
       return { ...s, feedback: { ...s.feedback, [a.cardId]: { mentor: a.mentor, content: a.content, note: a.note.trim() } } };
@@ -482,7 +506,7 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
   }
 }
 
-const KEY = "creator-studio-preview-v8";
+const KEY = "creator-studio-preview-v9";
 
 export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
   const [state, dispatch] = useReducer(reduce, INITIAL, (init) => {

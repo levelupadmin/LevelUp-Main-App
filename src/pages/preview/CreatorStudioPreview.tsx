@@ -26,7 +26,7 @@ import { AdminScreen, CohortLauncherScreen, TemplateStudioScreen } from "./Previ
 import { ProgramBuilderScreen, BuiltPathPreviewScreen, BuiltCardScreen } from "./PreviewBuilderScreens";
 import { MentorScreen, MentorWeeksScreen, MentorWeekScreen, MentorBuiltScreen } from "./PreviewMentorScreens";
 import { ProgramPathScreen, ProgramCardScreen, ProgramHomeScreen } from "./PreviewProgramScreens";
-import { ProgramAdminScreen, ProgramWeekEditorScreen, ProgramMentorScreen } from "./PreviewProgramAdmin";
+import { ProgramAdminScreen, ProgramWeekEditorScreen, ProgramMentorScreen, ProgramSheetListScreen, ProgramSheetScreen } from "./PreviewProgramAdmin";
 
 const TITLES: Record<string, string> = {
   home: "Home", path: "The Path", trail: "The Path", recording: "The Path", assignment: "The Path",
@@ -65,6 +65,8 @@ export default function CreatorStudioPreview() {
       case "doc": return <DocScreen go={go} docId={param ?? "scr1"} />;
       case "feed": return <FeedScreen s={s} d={d} go={go} />;
       case "mentor":
+        if (param === "sheet" && param2) return <ProgramSheetScreen s={s} go={go} cardId={param2} />;
+        if (param === "sheet") return <ProgramSheetListScreen s={s} go={go} />;
         if (param === "work") return <ProgramMentorScreen s={s} d={d} go={go} />;
         if (param === "built") return <MentorBuiltScreen s={s} go={go} />;
         if (param && param2 !== undefined) return <MentorWeekScreen s={s} d={d} go={go} week={Number(param2) || 4} />;

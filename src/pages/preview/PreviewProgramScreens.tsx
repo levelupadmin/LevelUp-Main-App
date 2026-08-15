@@ -21,7 +21,7 @@
  */
 import { useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Check, ChevronRight, Lock, Video, Users, Play, Radio, Zap, ExternalLink, Star } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronRight, Lock, Video, Users, Play, Radio, Zap, ExternalLink, Star, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { PageHeader, Section, SurfaceCard } from "@/components/patterns";
@@ -35,6 +35,7 @@ import {
 } from "./previewProgram";
 import { cardState, recordingVerdict, blocksDone, weekOpen, type UnlockInput } from "./previewUnlock";
 import { CelebrationOverlay, type Celebration } from "./Celebrate";
+import { roomFor, sinceOpen, type ActivityStage } from "./previewCohort";
 
 /** The prototype's "today". Cohort 02 week 0 is live, week 1 is next. */
 export const TODAY_ISO = "2026-08-18";
@@ -781,10 +782,70 @@ function QuestionField({ q, value, onChange }: { q: Question; value: AnswerValue
   );
 }
 
-function BlockCard({ s, d, card, week, locked, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; locked?: string; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
+/** The room — who moved, in the order they moved. */
+function Room({ cardId, mine, dueReached }: { cardId: string; mine?: { stage: ActivityStage; label: string }; dueReached: boolean }) {
+  const others = roomFor(cardId);
+  const rows = [
+    ...others.map((a) => ({ id: a.student.id, name: a.student.name, initials: a.student.initials, when: sinceOpen(a.startedMin), stage: a.stage, me: false })),
+    ...(mine ? [{ id: "you", name: "You", initials: "YO", when: mine.label, stage: mine.stage, me: true }] : []),
+  ];
+  const started = rows.length;
+  const drafted = rows.filter((r) => r.stage === "drafted").length;
+  const submitted = rows.filter((r) => r.stage === "submitted").length;
+
+  return (
+    <div className="mt-6 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="flex items-center gap-2 text-[14px] font-bold">
+          <Flame className="h-4 w-4 text-[hsl(var(--gold))]" /> The room
+        </span>
+        <span className="text-[11px] text-[hsl(var(--muted-foreground))]">
+          {started} started{dueReached ? ` · ${drafted} drafting · ${submitted} submitted` : ""}
+        </span>
+      </div>
+
+      <div className="flex flex-col">
+        {rows.map((r, i) => (
+          <div key={r.id} className={`flex items-center gap-3 py-2 ${i ? "border-t border-[hsl(var(--border))]" : ""}`}>
+            <span className="w-4 text-[11px] text-[hsl(var(--muted-foreground))]">{i + 1}</span>
+            <span
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[10px] font-bold"
+              style={r.me
+                ? { background: "hsl(var(--cream))", color: "hsl(var(--cream-text))" }
+                : { background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
+            >
+              {r.initials}
+            </span>
+            <span className={`min-w-0 flex-1 truncate text-[13px] ${r.me ? "font-bold" : ""}`}>{r.name}</span>
+            <span
+              className="shrink-0 text-[11px]"
+              style={{ color: r.stage === "submitted" ? "hsl(var(--success))" : "hsl(var(--muted-foreground))" }}
+            >
+              {r.stage} · {r.when}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-3 text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+        Ordered by who moved first. Only people who have started appear here — nobody is listed for being behind.
+      </p>
+    </div>
+  );
+}
+
+function BlockCard({ s, d, card, week, locked, dOf, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; locked?: string; dOf: (w: number, d: number) => Date; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
   const existing = s.submissions.find((x) => x.cardId === card.id);
-  const [answers, setAnswers] = useState<Record<string, AnswerValue>>(existing?.answers ?? {});
+  const prog = s.progress[card.id];
+  const [answers, setAnswers] = useState<Record<string, AnswerValue>>(existing?.answers ?? s.drafts[card.id] ?? {});
   const box = card.submit;
+
+  const opensOn = dOf(week.no, card.opensDayOffset ?? card.dayOffset);
+  const dueOn = dOf(week.no, card.dayOffset);
+  const today = new Date(`${TODAY_ISO}T00:00:00`);
+  const isOpen = today >= opensOn;
+  const dueReached = today >= dueOn;
+  const spans = (card.opensDayOffset ?? card.dayOffset) !== card.dayOffset;
 
   const missing = (box?.questions ?? []).filter((q) => {
     if (!q.required) return false;
@@ -792,8 +853,21 @@ function BlockCard({ s, d, card, week, locked, onDone }: { s: PlayState; d: Reac
     return Array.isArray(v) ? v.length === 0 : !String(v ?? "").trim();
   });
 
+  const mine = existing
+    ? { stage: "submitted" as ActivityStage, label: existing.when }
+    : prog?.draftedOn
+      ? { stage: "drafted" as ActivityStage, label: prog.draftedOn }
+      : prog?.startedOn
+        ? { stage: "started" as ActivityStage, label: prog.startedOn }
+        : undefined;
+
   return (
     <>
+      {spans && (
+        <p className="mt-3 rounded-lg bg-[hsl(var(--secondary))] px-3 py-2 text-[12px]">
+          Open from {dayName(opensOn)} {fmtDate(opensOn).replace(/^\w+,?\s*/, "")} · due {dayName(dueOn)} {card.time}
+        </p>
+      )}
       <Learn items={card.learn} label="What good looks like" />
       <Resources card={card} />
 
@@ -801,46 +875,76 @@ function BlockCard({ s, d, card, week, locked, onDone }: { s: PlayState; d: Reac
         <p className="mt-6 flex items-center gap-2 text-[13px] text-[hsl(var(--muted-foreground))]">
           <Lock className="h-3.5 w-3.5" /> {locked}
         </p>
+      ) : !isOpen ? (
+        <p className="mt-6 flex items-center gap-2 text-[13px] text-[hsl(var(--muted-foreground))]">
+          <Lock className="h-3.5 w-3.5" /> Opens {dayName(opensOn)} {fmtDate(opensOn).replace(/^\w+,?\s*/, "")}.
+        </p>
       ) : !box ? null : (
-        <div className="mt-6 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
-          <div className="mb-4 text-[14px] font-bold">{box.prompt}</div>
-
-          {box.questions.length === 0 && (
-            <p className="mb-3 text-[12px] text-[hsl(var(--muted-foreground))]">
-              No questions yet. An admin builds them on this card.
+        <>
+          {!mine && (
+            <button
+              type="button"
+              onClick={() => d({ type: "start_work", cardId: card.id })}
+              className="mt-6 w-full rounded-lg bg-[hsl(var(--cream))] px-4 py-2.5 text-[13px] font-semibold text-[hsl(var(--cream-text))]"
+            >
+              I'm starting this
+            </button>
+          )}
+          {!mine && (
+            <p className="mt-2 text-center text-[11px] text-[hsl(var(--muted-foreground))]">
+              Puts you in the room and starts your clock. Nothing is submitted yet.
             </p>
           )}
 
-          {box.questions.map((q) => (
-            <QuestionField key={q.id} q={q} value={answers[q.id] ?? (q.type === "choice_many" ? [] : "")} onChange={(v) => setAnswers({ ...answers, [q.id]: v })} />
-          ))}
+          {mine && (
+            <div className="mt-6 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+              <div className="mb-4 text-[14px] font-bold">{box.prompt}</div>
+              {box.questions.length === 0 && (
+                <p className="mb-3 text-[12px] text-[hsl(var(--muted-foreground))]">No questions yet. An admin builds them on this card.</p>
+              )}
+              {box.questions.map((q) => (
+                <QuestionField key={q.id} q={q} value={answers[q.id] ?? (q.type === "choice_many" ? [] : "")} onChange={(v) => setAnswers({ ...answers, [q.id]: v })} />
+              ))}
 
-          <button
-            type="button"
-            disabled={missing.length > 0 || box.questions.length === 0}
-            onClick={() => { d({ type: "submit_work", cardId: card.id, answers }); if (!existing) onDone(card, week); }}
-            className="w-full rounded-lg bg-[hsl(var(--cream))] px-4 py-2.5 text-[13px] font-semibold text-[hsl(var(--cream-text))] disabled:opacity-40"
-          >
-            {existing ? "Update my submission" : "Submit my week"}
-          </button>
-          {missing.length > 0 && (
-            <p className="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]">
-              Still needed: {missing.map((q) => q.title).join(", ")}.
-            </p>
-          )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={missing.length > 0 || box.questions.length === 0}
+                  onClick={() => { d({ type: "submit_work", cardId: card.id, answers }); if (!existing) onDone(card, week); }}
+                  className="flex-1 rounded-lg bg-[hsl(var(--cream))] px-4 py-2.5 text-[13px] font-semibold text-[hsl(var(--cream-text))] disabled:opacity-40"
+                >
+                  {existing ? "Update my submission" : "Submit my week"}
+                </button>
+                {!existing && (
+                  <button
+                    type="button"
+                    onClick={() => d({ type: "save_draft", cardId: card.id, answers })}
+                    className="rounded-lg border border-[hsl(var(--border))] px-4 py-2.5 text-[13px]"
+                  >
+                    Save a draft
+                  </button>
+                )}
+              </div>
+              {missing.length > 0 && (
+                <p className="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]">Still needed: {missing.map((q) => q.title).join(", ")}.</p>
+              )}
 
-          {existing && (
-            <div className="mt-4 border-t border-[hsl(var(--border))] pt-3 text-[12px]">
-              <p className="text-[hsl(var(--success))]">Submitted {existing.when}. Your mentor sees this in their desk.</p>
-              {existing.verdict && (
-                <p className="mt-1.5">
-                  Verdict: <span className="font-bold uppercase">{existing.verdict}</span>
-                  {existing.mentorNote ? ` — ${existing.mentorNote}` : ""}
-                </p>
+              {existing && (
+                <div className="mt-4 border-t border-[hsl(var(--border))] pt-3 text-[12px]">
+                  <p className="text-[hsl(var(--success))]">Submitted {existing.when}. Your mentor sees this in their desk.</p>
+                  {existing.verdict && (
+                    <p className="mt-1.5">
+                      Verdict: <span className="font-bold uppercase">{existing.verdict}</span>
+                      {existing.mentorNote ? ` — ${existing.mentorNote}` : ""}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}
-        </div>
+
+          <Room cardId={card.id} mine={mine} dueReached={dueReached} />
+        </>
       )}
     </>
   );
@@ -907,7 +1011,7 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
         {card.kind === "live_session" && <LiveSessionCard s={s} d={d} card={card} week={found.week} dOf={dOf} onDone={celebrate} />}
         {card.kind === "community_call" && <CommunityCallCard s={s} d={d} card={card} week={found.week} onDone={celebrate} />}
         {card.kind === "micro" && <MicroCard s={s} d={d} card={card} week={found.week} locked={locked} onDone={celebrate} />}
-        {card.kind === "block" && <BlockCard s={s} d={d} card={card} week={found.week} locked={locked} onDone={celebrate} />}
+        {card.kind === "block" && <BlockCard s={s} d={d} card={card} week={found.week} locked={locked} dOf={dOf} onDone={celebrate} />}
       </Shell>
     </motion.div>
   );

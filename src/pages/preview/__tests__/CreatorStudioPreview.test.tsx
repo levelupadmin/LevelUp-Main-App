@@ -87,7 +87,12 @@ describe("CreatorStudioPreview", () => {
     // The week's block: the in-app box, with a helper line per field.
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
     fireEvent.click((await screen.findAllByRole("button", { name: /Week 0 block/ }))[0]);
+
+    // The form is behind the commitment. Starting is what opens it, and what
+    // puts you in the room.
+    fireEvent.click(await screen.findByRole("button", { name: /I'm starting this/ }));
     expect(await screen.findByText(/Make sure it is shared so your mentor can open it/)).toBeTruthy();
+    expect(screen.getAllByText(/The room/).length).toBeGreaterThan(0);
 
     // An empty submission is refused — a mentor must never open an empty page.
     expect((screen.getByRole("button", { name: /Submit my week/ }) as HTMLButtonElement).disabled).toBe(true);
@@ -192,6 +197,7 @@ describe("CreatorStudioPreview", () => {
     fireEvent.change(titles[titles.length - 1], { target: { value: "Did you record all five" } });
 
     fireEvent.click(screen.getByRole("button", { name: /View this as a student/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /I'm starting this/ }));
     expect(await screen.findByText("Did you record all five")).toBeTruthy();
   }, 20000);
 
@@ -223,6 +229,31 @@ describe("CreatorStudioPreview", () => {
     // toggle also reads that, and asserting too early passes on the wrong screen.
     expect(await screen.findByText(/Week 6 · Sun, 27 Sep/, {}, { timeout: 4000 })).toBeTruthy();
     expect(screen.getAllByText("no session").length).toBeGreaterThan(0);
+  }, 20000);
+
+  it("the room lists who moved first, and never who is behind", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: /Week 0 block/ }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /I'm starting this/ }));
+
+    expect((await screen.findAllByText(/The room/)).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Only people who have started appear here/)).toBeTruthy();
+    // Real classmates, the same ones the Feed shows.
+    expect(screen.getAllByText(/Iyer|Kotecha|Sharma|Thakur|Rao|Menon|Shaikh|Verma|Nair|Das/).length).toBeGreaterThan(0);
+    // You are in it, once you have moved.
+    expect(screen.getAllByText("You").length).toBeGreaterThan(0);
+  }, 20000);
+
+  it("the admin sheet lists EVERYONE, including who has not started", async () => {
+    renderAs("avinash@leveluplearning.in");
+    fireEvent.click(screen.getAllByRole("button", { name: /^Mentor desk/ })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Submission sheets/ }, { timeout: 4000 }));
+    fireEvent.click((await screen.findAllByRole("button", { name: /Week 0 block/ }))[0]);
+
+    // The column students never see.
+    expect((await screen.findAllByText("not started")).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Everyone in the batch is listed/)).toBeTruthy();
   }, 20000);
 
   it("the recording stays shut until the feedback form is filled — the founder's gate", async () => {

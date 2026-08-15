@@ -56,6 +56,19 @@ export function MentorScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
             </span>
           </div>
         </SurfaceCard>
+        <SurfaceCard variant="interactive" padding="lg" onClick={() => go("mentor/sheet")}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[14px] font-semibold">Submission sheets</div>
+              <div className="mt-0.5 text-[11.5px] text-[hsl(var(--muted-foreground))]">
+                One sheet per assignment — every student, every answer
+              </div>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[hsl(var(--border))] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--muted-foreground))]">
+              Open <ChevronRight className="h-3 w-3" />
+            </span>
+          </div>
+        </SurfaceCard>
         <SurfaceCard variant="interactive" padding="lg" onClick={() => go("mentor/ca01")}>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
