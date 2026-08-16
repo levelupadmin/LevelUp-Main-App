@@ -244,6 +244,11 @@ const W0: TemplateWeek = {
         { id: "r-mem-a", label: "Memory prompts — card A (you run a business)", url: "#", releaseNote: "Released Mon 8:00 AM" },
         { id: "r-mem-b", label: "Memory prompts — card B (building toward one)", url: "#", releaseNote: "Released Mon 8:00 AM" },
       ],
+      submit: box("Drop your five voice notes", [
+        q("link", "Your voice folder", "Share the Drive folder holding all five, so we can open it."),
+        q("choice_one", "Which card did you use", "Pick the one that matched where you are.", true, ["Card A — I run a business", "Card B — building toward one"]),
+        q("short_text", "Which memory surprised you", "One line. Optional.", false),
+      ]),
       xp: XP.micro,
     },
     {
@@ -252,6 +257,12 @@ const W0: TemplateWeek = {
       blurb: "Two reels that actually held you. Label every lever you were taught on Sunday, and write what each one did to you.",
       learn: ["Pick two reels that held you", "Label the levers", "Write what the lever did to you, not what it was"],
       resources: [{ id: "r-lever", label: "Lever labelling sheet", url: "#", releaseNote: "Released Tue 8:00 AM" }],
+      submit: box("Drop your two breakdowns", [
+        q("link", "Reel one", "Paste the link."),
+        q("long_text", "What it did to you", "Which levers you spotted, and what each one did. Not what it was."),
+        q("link", "Reel two", "Paste the link."),
+        q("long_text", "And this one", "Same again."),
+      ]),
       xp: XP.micro,
     },
     {
@@ -259,6 +270,10 @@ const W0: TemplateWeek = {
       title: "Your intro recording",
       blurb: "A camera muscle, not a graded piece. Retakes are fine and nobody scores this.",
       learn: ["Window light, eye level, arm and a half away", "Say who you are and what you are here to build", "Retakes are fine"],
+      submit: box("Drop your intro recording", [
+        q("file", "The recording", "Any length. Nobody scores this."),
+        q("yes_no", "Did you retake it", "Honestly. It tells us something useful.", false),
+      ]),
       xp: XP.micro,
     },
     {
@@ -421,7 +436,7 @@ function stub(no: number, phase: string, title: string, className: string, block
  * So the seed carries a version. On load, a mismatch replaces the PROGRAM with
  * the new seed and keeps progress, submissions and feedback untouched.
  */
-export const SEED_VERSION = 3;
+export const SEED_VERSION = 4;
 
 export const LUCA: ProgramTemplate = {
   key: "creator_academy",
@@ -563,6 +578,19 @@ export function blankCard(kind: CardKind, dayOffset: number): TemplateCard {
   const base = { id: newId(kind), kind, dayOffset, title: "Untitled", xp: XP[kind], needsAuthoring: true };
   if (kind === "live_session") return { ...base, time: "3:00 PM", durationMin: 180, mentor: "", blurb: "", learn: [], zoomUrl: "", recordingUrl: "", gateRecordingOnFeedback: true };
   if (kind === "community_call") return { ...base, time: "9:00 PM", durationMin: 45, mentor: "", blurb: "", zoomUrl: "" };
+  if (kind === "micro")
+    return {
+      ...base,
+      blurb: "",
+      // Founder: "a micro assignment also needs a submission form — it is not
+      // just about telling it, it is about getting it done." So a drill can
+      // collect work exactly like a block does; the only difference between
+      // them stays what it always was, whether it counts as the week's block.
+      submit: {
+        prompt: "Drop it here",
+        questions: [{ id: newId("q"), type: "link", title: "Your work", helper: "A link we can open. Drive, Doc, or the post itself.", required: true }],
+      },
+    };
   if (kind === "block")
     return {
       ...base, time: "9:00 PM", blurb: "",

@@ -212,6 +212,31 @@ export interface PlayState {
   program: ProgramTemplate;
   /** Which seed the stored program came from. See SEED_VERSION. */
   programVersion: number;
+
+  /* ── Templates and cohorts are different objects ───────────────────────
+   *
+   * 🔴 THE DISTINCTION THE FOUNDER DREW, 2026-08-15: "I have a template and I
+   * don't want you to touch it. When it shows Your Cohorts, I click on that
+   * and change THAT — I might have the same Creator Academy running for three
+   * batches at once."
+   *
+   * So a template is a shape that gets copied, and a cohort owns its copy.
+   * Editing Cohort 02's week 5 can never reach Cohort 03, and improving the
+   * template never reaches a batch already running. That is the only way three
+   * simultaneous batches of one programme can each drift on their own.
+   */
+  templates: ProgramTemplate[];
+  cohorts: Cohort[];
+  activeCohortId: string;
+}
+
+export interface Cohort {
+  id: string;
+  name: string;
+  /** Which template it was cut from. Kept for "clone this again". */
+  templateKey: string;
+  /** This cohort's OWN copy. Every admin edit lands here, never on the template. */
+  program: ProgramTemplate;
 }
 
 const SEEDED: PlayPost[] = SEED_POSTS.map((p) => ({
@@ -254,7 +279,27 @@ export const INITIAL: PlayState = {
   drafts: {},
   program: LUCA,
   programVersion: SEED_VERSION,
+  templates: [LUCA],
+  cohorts: [{ id: "ca02", name: "Creator Academy · Cohort 02", templateKey: LUCA.key, program: LUCA }],
+  activeCohortId: "ca02",
 };
+
+/** The programme the student is actually walking. */
+export function activeProgram(s: PlayState): ProgramTemplate {
+  return s.cohorts.find((c) => c.id === s.activeCohortId)?.program ?? s.program;
+}
+
+export function activeCohort(s: PlayState): Cohort | undefined {
+  return s.cohorts.find((c) => c.id === s.activeCohortId);
+}
+
+/** Every structural edit goes through here, so it can only ever hit one cohort. */
+function mapActive(s: PlayState, fn: (t: ProgramTemplate) => ProgramTemplate): PlayState {
+  return {
+    ...s,
+    cohorts: s.cohorts.map((c) => (c.id === s.activeCohortId ? { ...c, program: fn(c.program) } : c)),
+  };
+}
 
 export type PlayAction =
   | { type: "complete_day"; id: string }
@@ -300,6 +345,10 @@ export type PlayAction =
   | { type: "batch_push"; afterWeek: number; weeks: number; reason: string }
   | { type: "batch_unpush"; id: string }
   | { type: "restore_curriculum" }
+  | { type: "cohort_create"; templateKey: string; name: string; startISO: string }
+  | { type: "cohort_select"; id: string }
+  | { type: "cohort_delete"; id: string }
+  | { type: "template_clone"; fromKey: string; name: string }
   | { type: "reset" };
 
 function completeDay(s: PlayState, id: string): PlayState {
@@ -458,55 +507,79 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
       };
     }
     case "admin_save_card":
-      return { ...s, program: setCardField(s.program, a.cardId, a.patch) };
+      return mapActive(s, (t) => setCardField(t, a.cardId, a.patch));
     case "week_move":
-      return { ...s, program: moveWeek(s.program, a.from, a.to) };
+      return mapActive(s, (t) => moveWeek(t, a.from, a.to));
     case "week_add":
-      return { ...s, program: addWeek(s.program, a.at, a.phase) };
+      return mapActive(s, (t) => addWeek(t, a.at, a.phase));
     case "week_duplicate":
-      return { ...s, program: duplicateWeek(s.program, a.index) };
+      return mapActive(s, (t) => duplicateWeek(t, a.index));
     case "week_delete":
-      return { ...s, program: deleteWeek(s.program, a.index) };
+      return mapActive(s, (t) => deleteWeek(t, a.index));
     case "week_edit":
-      return { ...s, program: setWeekField(s.program, a.index, a.patch) };
+      return mapActive(s, (t) => setWeekField(t, a.index, a.patch));
     case "card_add":
-      return { ...s, program: addCard(s.program, a.weekIndex, a.kind, a.dayOffset) };
+      return mapActive(s, (t) => addCard(t, a.weekIndex, a.kind, a.dayOffset));
     case "card_duplicate":
-      return { ...s, program: duplicateCard(s.program, a.weekIndex, a.cardId) };
+      return mapActive(s, (t) => duplicateCard(t, a.weekIndex, a.cardId));
     case "card_delete":
-      return { ...s, program: deleteCard(s.program, a.weekIndex, a.cardId) };
+      return mapActive(s, (t) => deleteCard(t, a.weekIndex, a.cardId));
     case "phase_rename":
-      return { ...s, program: renamePhase(s.program, a.from, a.to) };
+      return mapActive(s, (t) => renamePhase(t, a.from, a.to));
     case "batch_start":
-      return { ...s, program: withStart(s.program, a.startISO) };
+      return mapActive(s, (t) => withStart(t, a.startISO));
     case "question_add":
-      return { ...s, program: addQuestion(s.program, a.cardId, a.qType) };
+      return mapActive(s, (t) => addQuestion(t, a.cardId, a.qType));
     case "question_edit":
-      return { ...s, program: setQuestion(s.program, a.cardId, a.qid, a.patch) };
+      return mapActive(s, (t) => setQuestion(t, a.cardId, a.qid, a.patch));
     case "question_delete":
-      return { ...s, program: deleteQuestion(s.program, a.cardId, a.qid) };
+      return mapActive(s, (t) => deleteQuestion(t, a.cardId, a.qid));
     case "question_move":
-      return { ...s, program: moveQuestion(s.program, a.cardId, a.qid, a.dir) };
+      return mapActive(s, (t) => moveQuestion(t, a.cardId, a.qid, a.dir));
     case "resource_add":
-      return { ...s, program: addResource(s.program, a.cardId, a.kind) };
+      return mapActive(s, (t) => addResource(t, a.cardId, a.kind));
     case "resource_edit":
-      return { ...s, program: setResource(s.program, a.cardId, a.rid, a.patch) };
+      return mapActive(s, (t) => setResource(t, a.cardId, a.rid, a.patch));
     case "resource_delete":
-      return { ...s, program: deleteResource(s.program, a.cardId, a.rid) };
+      return mapActive(s, (t) => deleteResource(t, a.cardId, a.rid));
     case "phase_add":
-      return { ...s, program: addPhase(s.program, a.name) };
+      return mapActive(s, (t) => addPhase(t, a.name));
     case "week_phase":
-      return { ...s, program: setWeekPhase(s.program, a.index, a.phase) };
+      return mapActive(s, (t) => setWeekPhase(t, a.index, a.phase));
     case "week_no_session":
-      return { ...s, program: setNoSession(s.program, a.index, a.off, a.note) };
+      return mapActive(s, (t) => setNoSession(t, a.index, a.off, a.note));
     case "batch_push":
-      return { ...s, program: pushFrom(s.program, a.afterWeek, a.weeks, a.reason) };
+      return mapActive(s, (t) => pushFrom(t, a.afterWeek, a.weeks, a.reason));
     case "batch_unpush":
-      return { ...s, program: removePause(s.program, a.id) };
+      return mapActive(s, (t) => removePause(t, a.id));
     case "restore_curriculum":
       // Content back to the shipped seed. Progress is deliberately untouched —
       // a reviewer restoring the curriculum has not asked to lose their walk.
-      return { ...s, program: LUCA, programVersion: SEED_VERSION };
+      return { ...mapActive(s, () => LUCA), program: LUCA, programVersion: SEED_VERSION };
+    case "cohort_create": {
+      const tpl = s.templates.find((t) => t.key === a.templateKey);
+      if (!tpl || !a.name.trim()) return s;
+      const id = `co-${Date.now().toString(36)}`;
+      // A COPY, taken at launch. The template can move on afterwards and this
+      // batch will not, which is the whole point of the split.
+      const program: ProgramTemplate = JSON.parse(JSON.stringify({ ...tpl, anchorISO: a.startISO, pauses: [] }));
+      return { ...s, cohorts: [...s.cohorts, { id, name: a.name.trim(), templateKey: tpl.key, program }], activeCohortId: id };
+    }
+    case "cohort_select":
+      return s.cohorts.some((c) => c.id === a.id) ? { ...s, activeCohortId: a.id } : s;
+    case "cohort_delete": {
+      if (s.cohorts.length <= 1) return s;
+      const cohorts = s.cohorts.filter((c) => c.id !== a.id);
+      return { ...s, cohorts, activeCohortId: s.activeCohortId === a.id ? cohorts[0].id : s.activeCohortId };
+    }
+    case "template_clone": {
+      const src = s.templates.find((t) => t.key === a.fromKey);
+      if (!src || !a.name.trim()) return s;
+      const key = a.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40);
+      if (s.templates.some((t) => t.key === key)) return s;
+      const copy: ProgramTemplate = JSON.parse(JSON.stringify({ ...src, key, name: a.name.trim() }));
+      return { ...s, templates: [...s.templates, copy] };
+    }
     case "reset":
       return INITIAL;
     default:
@@ -514,7 +587,7 @@ export function reduce(s: PlayState, a: PlayAction): PlayState {
   }
 }
 
-const KEY = "creator-studio-preview-v9";
+const KEY = "creator-studio-preview-v10";
 
 export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
   const [state, dispatch] = useReducer(reduce, INITIAL, (init) => {
@@ -527,9 +600,12 @@ export function usePlayState(): [PlayState, React.Dispatch<PlayAction>] {
       if (saved && saved.programVersion !== SEED_VERSION) {
         saved.program = LUCA;
         saved.programVersion = SEED_VERSION;
+        saved.templates = [LUCA];
+        saved.cohorts = [{ id: "ca02", name: "Creator Academy · Cohort 02", templateKey: LUCA.key, program: LUCA }];
+        saved.activeCohortId = "ca02";
       }
       // A shape mismatch after a prototype update must reset, not crash.
-      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" && Array.isArray(saved.programs) && Array.isArray(saved.builtSubmissions) && typeof saved.progress === "object" && typeof saved.feedback === "object" && Array.isArray(saved.submissions) && saved.program && Array.isArray(saved.program.weeks) ? saved : init;
+      return Array.isArray(saved.days) && Array.isArray(saved.posts) && Array.isArray(saved.watched) && typeof saved.overrides === "object" && Array.isArray(saved.programs) && Array.isArray(saved.builtSubmissions) && typeof saved.progress === "object" && typeof saved.feedback === "object" && Array.isArray(saved.submissions) && saved.program && Array.isArray(saved.program.weeks) && Array.isArray(saved.cohorts) && Array.isArray(saved.templates) ? saved : init;
     } catch {
       return init;
     }

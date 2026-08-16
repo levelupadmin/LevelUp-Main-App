@@ -16,6 +16,7 @@
 import { useState } from "react";
 import { ArrowLeft, Video, Users, ClipboardCheck, Flag, Plus, Copy, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import type { PlayAction, PlayState } from "./previewStore";
+import { activeProgram } from "./previewStore";
 import {
   KIND_LABEL, QUESTION_LABEL, RESOURCE_LABEL, dateOf, fmtDate, dayName, findCard, orderedCards, phasesOf,
   type CardKind, type ProgramTemplate, type QuestionType, type ResourceKind, type TemplateCard,
@@ -65,7 +66,7 @@ const FIELDS: Record<CardKind, Array<{ key: keyof TemplateCard; label: string; h
 };
 
 export function ProgramAdminScreen({ s, d, go }: { s: PlayState; d: React.Dispatch<PlayAction>; go: (k: string) => void }) {
-  const t = s.program;
+  const t = activeProgram(s);
   const dOf = makeDOf(t);
   const [start, setStart] = useState(t.anchorISO);
 
@@ -78,9 +79,12 @@ export function ProgramAdminScreen({ s, d, go }: { s: PlayState; d: React.Dispat
       <button type="button" onClick={() => go("admin")} className="mb-4 flex items-center gap-1.5 text-[12px] text-[hsl(var(--muted-foreground))]">
         <ArrowLeft className="h-3.5 w-3.5" /> Admin
       </button>
-      <h2 className="text-[21px] font-extrabold tracking-[-0.02em]">{t.name} — content</h2>
+      <h2 className="text-[21px] font-semibold tracking-[-0.02em]">{s.cohorts.find((c) => c.id === s.activeCohortId)?.name ?? t.name}</h2>
       <p className="mt-1 text-[13px] text-[hsl(var(--muted-foreground))]">
-        The template holds the shape. The start date turns it into a dated batch. Change either and the student Path redraws.
+        You are editing this cohort's own copy. Nothing here reaches the template or any other batch.{" "}
+        <button type="button" onClick={() => go("admin/cohorts")} className="underline underline-offset-4">
+          Switch cohort
+        </button>
       </p>
 
       {/* THE BATCH LAYER, as one field. This is the whole of "launch a cohort". */}
@@ -277,7 +281,7 @@ function IconBtn({ label, onClick, disabled, children }: { label: string; onClic
 export function ProgramWeekEditorScreen({
   s, d, go, weekNo,
 }: { s: PlayState; d: React.Dispatch<PlayAction>; go: (k: string) => void; weekNo: number }) {
-  const t = s.program;
+  const t = activeProgram(s);
   const dOf = makeDOf(t);
   const week = t.weeks.find((w) => w.no === weekNo);
   const weekIndex = t.weeks.findIndex((w) => w.no === weekNo);
@@ -657,9 +661,14 @@ export function ProgramMentorScreen({
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Mentor desk
       </button>
-      <h2 className="text-[21px] font-extrabold tracking-[-0.02em]">Cohort 02 — submissions</h2>
+      <h2 className="text-[21px] font-semibold tracking-[-0.02em]">Feedback</h2>
+      {/* 🔴 SIMPLIFIED ON THE FOUNDER'S CALL: "don't confuse them with
+          submitted, ship, fix. I have ten students and I need to know whether
+          I have given them feedback or not." One question, binary answer. The
+          verdict still exists underneath; it just stopped organising a screen
+          whose real job is making sure nobody goes home unanswered. */}
       <p className="mt-1 text-[13px] text-[hsl(var(--muted-foreground))]">
-        Straight from the Path. Give one verdict and the reason behind it.
+        One question: has this person heard back from you yet? Type it here, or tick it off if you gave it on the call.
       </p>
 
       {s.submissions.length === 0 ? (
@@ -680,7 +689,7 @@ export function ProgramMentorScreen({
 function SubmissionRow({ s, d, cardId }: { s: PlayState; d: React.Dispatch<PlayAction>; cardId: string }) {
   const sub = s.submissions.find((x) => x.cardId === cardId);
   const [note, setNote] = useState("");
-  const qs = findCard(s.program, cardId)?.card.submit?.questions ?? [];
+  const qs = findCard(activeProgram(s), cardId)?.card.submit?.questions ?? [];
   if (!sub) return null;
 
   return (
@@ -708,30 +717,37 @@ function SubmissionRow({ s, d, cardId }: { s: PlayState; d: React.Dispatch<PlayA
         <p className="mt-2 text-[12px] text-[hsl(var(--muted-foreground))]">This card has no questions.</p>
       )}
       {sub.verdict ? (
-        <p className="mt-3 text-[12px]">
-          <span className="font-bold uppercase text-[hsl(var(--success))]">{sub.verdict}</span>
-          {sub.mentorNote ? ` — ${sub.mentorNote}` : ""}
-        </p>
+        <div className="mt-3 rounded-lg bg-[hsl(var(--secondary))] px-3 py-2 text-[12px]">
+          <span className="text-[hsl(var(--success))]">Feedback given.</span>
+          {sub.mentorNote ? ` "${sub.mentorNote}"` : " Given on the call."}
+        </div>
       ) : (
         <div className="mt-3 flex flex-col gap-2">
-          <input
+          <span className="text-[11px] text-[hsl(var(--gold))]">Waiting on you</span>
+          <textarea
             aria-label={`Feedback for ${sub.cardTitle}`}
+            rows={2}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="One line. The direction, not a grade."
-            className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-[13px] outline-none focus:border-[hsl(var(--cream)/0.5)]"
+            placeholder="What to keep, what to change. One or two lines is plenty."
+            className="w-full resize-none rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-[13px] outline-none focus:border-[hsl(var(--cream)/0.5)]"
           />
-          <div className="flex gap-2">
-            {(["ship", "fix", "hold"] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => d({ type: "mentor_verdict", cardId: sub.cardId, verdict: v, note })}
-                className="flex-1 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-[12px] font-semibold uppercase tracking-wide"
-              >
-                {v}
-              </button>
-            ))}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={!note.trim()}
+              onClick={() => d({ type: "mentor_verdict", cardId: sub.cardId, verdict: "ship", note })}
+              className="rounded-lg bg-[hsl(var(--cream))] px-4 py-2 text-[12px] font-medium text-[hsl(var(--cream-text))] disabled:opacity-40"
+            >
+              Send feedback
+            </button>
+            <button
+              type="button"
+              onClick={() => d({ type: "mentor_verdict", cardId: sub.cardId, verdict: "ship", note: "" })}
+              className="rounded-lg border border-[hsl(var(--border))] px-4 py-2 text-[12px]"
+            >
+              I gave it on the call
+            </button>
           </div>
         </div>
       )}
@@ -754,7 +770,7 @@ function SubmissionRow({ s, d, cardId }: { s: PlayState; d: React.Dispatch<PlayA
    ───────────────────────────────────────────────────────────────────────── */
 
 export function ProgramSheetListScreen({ s, go }: { s: PlayState; go: (k: string) => void }) {
-  const t = s.program;
+  const t = activeProgram(s);
   const dOf = makeDOf(t);
   const blocks = t.weeks.flatMap((w) => w.cards.filter((c) => c.kind === "block").map((c) => ({ w, c })));
 
@@ -797,7 +813,7 @@ export function ProgramSheetListScreen({ s, go }: { s: PlayState; go: (k: string
 }
 
 export function ProgramSheetScreen({ s, go, cardId }: { s: PlayState; go: (k: string) => void; cardId: string }) {
-  const found = findCard(s.program, cardId);
+  const found = findCard(activeProgram(s), cardId);
   if (!found) return null;
   const qs = found.card.submit?.questions ?? [];
   const room = roomFor(cardId);
@@ -879,7 +895,34 @@ export function ProgramSheetScreen({ s, go, cardId }: { s: PlayState; go: (k: st
         ))}
       </div>
 
-      <p className="mt-4 text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+      <button
+        type="button"
+        onClick={() => {
+          // 🔴 The founder downloaded a CSV and it told him who had submitted
+          // but not WHAT — which makes it a register rather than a marking
+          // sheet. The answers are the columns now.
+          const head = ["Student", "Status", "When", ...qs.map((q) => q.title)];
+          const lines = [head, ...rows.map((r) => [
+            r.name, r.stage, r.when,
+            ...qs.map((q) => {
+              const v = r.answers?.[q.id];
+              return Array.isArray(v) ? v.join("; ") : String(v ?? "");
+            }),
+          ])];
+          const csv = lines.map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+          const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${found.card.title.replace(/\W+/g, "-")}.csv`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }}
+        className="mt-4 rounded-lg border border-[hsl(var(--border))] px-4 py-2 text-[12px]"
+      >
+        Download CSV, with their answers in it
+      </button>
+
+      <p className="mt-3 text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">
         Everyone in the batch is listed, including the people who have not started. The student-facing room never shows that column.
       </p>
     </div>
@@ -903,7 +946,7 @@ export function ProgramSheetScreen({ s, go, cardId }: { s: PlayState; go: (k: st
 export function RunTheWeekScreen({
   s, d, go, weekNo,
 }: { s: PlayState; d: React.Dispatch<PlayAction>; go: (k: string) => void; weekNo?: number }) {
-  const t = s.program;
+  const t = activeProgram(s);
   const dOf = makeDOf(t);
   const [wk, setWk] = useState(weekNo ?? 0);
   const week = t.weeks.find((w) => w.no === wk) ?? t.weeks[0];
@@ -1030,6 +1073,122 @@ export function RunTheWeekScreen({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TEMPLATES AND YOUR COHORTS — two lists, and the difference matters
+   ─────────────────────────────────────────────────────────────────────────
+
+   Founder: "I have a template and I don't want you to touch it. When it shows
+   Your Cohorts, I click on that and change THAT. I might have the same Creator
+   Academy for three batches running at once."
+
+   So: a template is a shape you cut copies from. A cohort owns its copy. Every
+   edit in the week editor lands on the cohort you are looking at and can never
+   reach the template or another batch. Improving the template is for the NEXT
+   batch, by design — a running cohort must never shift under students because
+   someone tidied the curriculum.
+   ───────────────────────────────────────────────────────────────────────── */
+
+export function CohortsScreen({ s, d, go }: { s: PlayState; d: React.Dispatch<PlayAction>; go: (k: string) => void }) {
+  const [tplKey, setTplKey] = useState(s.templates[0]?.key ?? "");
+  const [name, setName] = useState("");
+  const [start, setStart] = useState("2026-12-06");
+
+  return (
+    <div className="mx-auto max-w-[760px]">
+      <button type="button" onClick={() => go("admin")} className="mb-4 flex items-center gap-1.5 text-[12px] text-[hsl(var(--muted-foreground))]">
+        <ArrowLeft className="h-3.5 w-3.5" /> Admin
+      </button>
+
+      <h2 className="text-[21px] font-semibold tracking-[-0.02em]">Your cohorts</h2>
+      <p className="mt-1 text-[13px] text-[hsl(var(--muted-foreground))]">
+        Each one owns its own copy of the curriculum. Editing a cohort never touches the template or another batch.
+      </p>
+
+      <div className="mt-5 flex flex-col gap-2">
+        {s.cohorts.map((c) => {
+          const live = c.id === s.activeCohortId;
+          const weeks = c.program.weeks.length;
+          return (
+            <div key={c.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3">
+              <button type="button" onClick={() => { d({ type: "cohort_select", id: c.id }); go("admin/week"); }} className="min-w-0 flex-1 text-left">
+                <span className="block truncate text-[13.5px] font-medium">{c.name}</span>
+                <span className="mt-0.5 block text-[11px] text-[hsl(var(--muted-foreground))]">
+                  starts {fmtDate(dateOf(c.program, 0, -1))} · {weeks} weeks · from {c.templateKey}
+                </span>
+              </button>
+              {live ? (
+                <span className="shrink-0 rounded-md px-2 py-1 text-[10px] uppercase tracking-wide" style={{ background: "hsl(var(--success)/0.14)", color: "hsl(var(--success))" }}>
+                  viewing
+                </span>
+              ) : (
+                <button type="button" onClick={() => d({ type: "cohort_select", id: c.id })} className="shrink-0 rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-[11px]">
+                  View this one
+                </button>
+              )}
+              <IconBtn label={`Delete ${c.name}`} onClick={() => d({ type: "cohort_delete", id: c.id })}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </IconBtn>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 rounded-xl border border-dashed border-[hsl(var(--border))] p-4">
+        <div className="mb-3 text-[12px] font-medium">Start another batch</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select aria-label="Template" value={tplKey} onChange={(e) => setTplKey(e.target.value)} className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-2 text-[12px]">
+            {s.templates.map((t) => (
+              <option key={t.key} value={t.key}>{t.name}</option>
+            ))}
+          </select>
+          <input aria-label="Cohort name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Creator Academy · Cohort 03" className="min-w-[180px] flex-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-[12px]" />
+          <input aria-label="Start date" type="date" value={start} onChange={(e) => setStart(e.target.value)} className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-2 text-[12px]" />
+          <button
+            type="button"
+            onClick={() => { d({ type: "cohort_create", templateKey: tplKey, name, startISO: start }); setName(""); }}
+            className="rounded-lg bg-[hsl(var(--cream))] px-4 py-2 text-[12px] font-medium text-[hsl(var(--cream-text))]"
+          >
+            Create
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]">
+          It takes a copy of the template as it is today. Later template changes will not reach it.
+        </p>
+      </div>
+
+      <h3 className="mt-8 text-[15px] font-medium">Templates</h3>
+      <p className="mt-1 text-[12px] text-[hsl(var(--muted-foreground))]">
+        The shapes you cut cohorts from. Editing one only affects batches you start after.
+      </p>
+      <div className="mt-3 flex flex-col gap-2">
+        {s.templates.map((t) => (
+          <div key={t.key} className="flex flex-wrap items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13.5px] font-medium">{t.name}</div>
+              <div className="mt-0.5 text-[11px] text-[hsl(var(--muted-foreground))]">
+                {t.weeks.length} weeks · used by {s.cohorts.filter((c) => c.templateKey === t.key).length} cohort(s)
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const n = window.prompt("Name the new programme", `${t.name} copy`);
+                if (n) d({ type: "template_clone", fromKey: t.key, name: n });
+              }}
+              className="shrink-0 rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-[11px]"
+            >
+              Duplicate as a new programme
+            </button>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[11px] text-[hsl(var(--muted-foreground))]">
+        Duplicating is how a different programme starts: rip off Creator Academy, rename it, then rewrite the weeks.
+      </p>
     </div>
   );
 }

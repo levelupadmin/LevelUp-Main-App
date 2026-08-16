@@ -20,7 +20,7 @@
  * types would double every node on the trail and buy nothing.
  */
 import { useMemo, useRef, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Check, ChevronRight, Lock, Video, Users, Play, Radio, Zap, ExternalLink, Star, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -28,6 +28,7 @@ import { PageHeader, Section, SurfaceCard } from "@/components/patterns";
 import { Serif } from "./PreviewScreens";
 import { snakeOffset, toneForPhase, type PhaseTone } from "./previewTheme";
 import type { PlayAction, PlayState } from "./previewStore";
+import { activeProgram } from "./previewStore";
 import {
   KIND_LABEL, RESOURCE_LABEL, dateOf, fmtDate, dayName, findCard, orderedCards,
   type AnswerValue, type CardKind, type ProgramTemplate, type Question,
@@ -35,7 +36,8 @@ import {
 } from "./previewProgram";
 import { cardState, recordingVerdict, blocksDone, weekOpen, type UnlockInput } from "./previewUnlock";
 import { CelebrationOverlay, type Celebration } from "./Celebrate";
-import { roomFor, sinceOpen, type ActivityStage } from "./previewCohort";
+import { answersFor, roomFor, sinceOpen, type ActivityStage } from "./previewCohort";
+import { Podium, BoardSheet, StandingSheet, RulesSheet, type Standing } from "./PreviewBoard";
 
 /** The prototype's "today". Cohort 02 week 0 is live, week 1 is next. */
 export const TODAY_ISO = "2026-08-18";
@@ -99,13 +101,13 @@ interface TrailNode {
  * not as urgent. One target on screen at a time.
  */
 function buildTrail(s: PlayState, u: UnlockInput): TrailNode[] {
-  const dOf = makeDOf(s.program);
+  const dOf = makeDOf(activeProgram(s));
   const out: TrailNode[] = [];
   let currentTaken = false;
-  for (const week of s.program.weeks) {
+  for (const week of activeProgram(s).weeks) {
     for (const raw of orderedCards(week)) {
       const card = resolve(s, raw);
-      const v = cardState(s.program, week, card, u, dOf);
+      const v = cardState(activeProgram(s), week, card, u, dOf);
       const when = dOf(week.no, card.dayOffset);
       let state: TrailNode["state"];
       if (v.state === "done") state = "done";
@@ -299,15 +301,18 @@ function PhaseBanner({ name, weeks, tone }: { name: string; weeks: string; tone:
 }
 
 export function ProgramPathScreen({ s, go }: { s: PlayState; go: (k: string) => void }) {
+  const [jump, setJump] = useState(false);
+  const [board, setBoard] = useState(false);
+  const [who, setWho] = useState<Standing | null>(null);
   const u = useUnlock(s);
-  const dOf = makeDOf(s.program);
+  const dOf = makeDOf(activeProgram(s));
   const nodes = useMemo(() => buildTrail(s, u), [s, u]);
   const done = nodes.filter((n) => n.state === "done").length;
-  const blocks = blocksDone(s.program, u.submittedCardIds);
+  const blocks = blocksDone(activeProgram(s), u.submittedCardIds);
   const weekRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   const phases: Array<{ name: string; weeks: TemplateWeek[] }> = [];
-  for (const w of s.program.weeks) {
+  for (const w of activeProgram(s).weeks) {
     const last = phases[phases.length - 1];
     if (last && last.name === w.phase) last.weeks.push(w);
     else phases.push({ name: w.phase, weeks: [w] });
@@ -331,7 +336,60 @@ export function ProgramPathScreen({ s, go }: { s: PlayState; go: (k: string) => 
         eyebrow="The Path"
         title={<>Your Distribution <Serif>Engine</Serif></>}
         subtitle="One trail, thirteen blocks. Sessions are always open to read — doors open on the date, once the previous block is in."
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setJump(true)}>All weeks</Button>
+            <Button variant="outline" size="sm" onClick={() => setBoard(true)}>The board</Button>
+          </div>
+        }
       />
+
+      {/* Thirteen weeks is a long scroll. Founder asked for this back, and he
+          was right: on week nine, reaching week nine should not be a workout. */}
+      <AnimatePresence>
+        {jump && (
+          <motion.div
+            className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-[2px]"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setJump(false)} role="dialog" aria-label="All weeks"
+          >
+            <motion.div
+              className="max-h-[80vh] w-full max-w-[460px] overflow-y-auto rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5"
+              initial={{ scale: 0.95, y: 12 }} animate={{ scale: 1, y: 0 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-3 text-[15px] font-semibold">All weeks</div>
+              {activeProgram(s).weeks.map((w) => {
+                const v = weekOpen(activeProgram(s), w.no, u, dOf);
+                return (
+                  <button
+                    key={w.no}
+                    type="button"
+                    onClick={() => {
+                      setJump(false);
+                      window.setTimeout(() => weekRefs.current[w.no]?.scrollIntoView({ behavior: "smooth", block: "start" }), 240);
+                    }}
+                    className="flex w-full items-baseline justify-between gap-3 border-t border-[hsl(var(--border))] py-2.5 text-left"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-[13px]">Week {String(w.no).padStart(2, "0")} · {w.title}</span>
+                      <span className="block text-[11px] text-[hsl(var(--muted-foreground))]">
+                        {fmtDate(dOf(w.no, 0))}{w.noSession ? " · no session" : ""}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[11px] text-[hsl(var(--muted-foreground))]">
+                      {v.state === "open" ? "open" : "locked"}
+                    </span>
+                  </button>
+                );
+              })}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <BoardSheet s={s} open={board} onClose={() => setBoard(false)} onOpen={(st) => { setBoard(false); setWho(st); }} />
+      <StandingSheet s={s} standing={who} onClose={() => setWho(null)} />
 
       <div className="sticky top-0 z-10 -mx-4 border-b border-[hsl(var(--border))] bg-black/85 px-4 py-2.5 backdrop-blur lg:hidden">
         <div className="flex items-center gap-3">
@@ -366,7 +424,7 @@ export function ProgramPathScreen({ s, go }: { s: PlayState; go: (k: string) => 
                       data-week={week.no}
                       className="flex w-full scroll-mt-16 flex-col items-center gap-6 lg:scroll-mt-24"
                     >
-                      <WeekDivider week={week} tone={tone} verdict={weekOpen(s.program, week.no, u, dOf)} dOf={dOf} />
+                      <WeekDivider week={week} tone={tone} verdict={weekOpen(activeProgram(s), week.no, u, dOf)} dOf={dOf} />
                       {nodes
                         .filter((n) => n.week.no === week.no)
                         .map((n) => (
@@ -559,7 +617,13 @@ function LiveSessionCard({ s, d, card, week, dOf, onDone }: { s: PlayState; d: R
       <Resources card={card} />
 
       <div className="mt-6 flex flex-col gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
-        {!card.completed ? (
+        {/* 🔴 THE BUG HE HIT. This used to read `completed` alone, so pasting a
+            recording link changed nothing until someone ALSO pressed "mark
+            done" on another screen — and the card meanwhile claimed feedback
+            was required while offering no form. A recording that exists is
+            reason enough to open the recording door; `completed` only decides
+            whether the Zoom door is still up. */}
+        {!card.completed && !card.recordingUrl ? (
           card.zoomUrl ? (
             <>
               <a
@@ -667,8 +731,14 @@ function CommunityCallCard({ s, d, card, week, onDone }: { s: PlayState; d: Reac
   );
 }
 
-function MicroCard({ s, d, card, week, locked, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; locked?: string; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
+function MicroCard({ s, d, card, week, locked, dOf, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; locked?: string; dOf: (w: number, dd: number) => Date; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
   const done = s.progress[card.id]?.done;
+
+  // A drill that collects work behaves exactly like the week's block, because
+  // from the student's side it IS the same act. The only thing that separates
+  // them is whether it counts toward the thirteen.
+  if (card.submit && !locked) return <BlockCard s={s} d={d} card={card} week={week} dOf={dOf} onDone={onDone} />;
+
   return (
     <>
       <Learn items={card.learn} label="What to do" />
@@ -782,8 +852,56 @@ function QuestionField({ q, value, onChange }: { q: Question; value: AnswerValue
   );
 }
 
+/**
+ * Someone else's work, opened from the room.
+ *
+ * 🔴 WHY THIS IS THE POINT, not a nice-to-have (founder): "everyone should be
+ * able to see others' assignments and learn from it — that is more important."
+ * A leaderboard you cannot open is a scoreboard; a leaderboard you CAN open is
+ * a library. The names were already there; the work being one tap behind them
+ * is what turns envy into a reference.
+ */
+function PeerWork({ name, answers, questions, onClose }: { name: string; answers: Record<string, AnswerValue>; questions: Question[]; onClose: () => void }) {
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-[2px]"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+      role="dialog"
+      aria-label={`${name}'s submission`}
+    >
+      <motion.div
+        className="max-h-[80vh] w-full max-w-[520px] overflow-y-auto rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5"
+        initial={{ scale: 0.95, y: 12 }} animate={{ scale: 1, y: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="text-[15px] font-semibold">{name}</div>
+          <button type="button" onClick={onClose} className="text-[12px] text-[hsl(var(--muted-foreground))] underline underline-offset-4">
+            Close
+          </button>
+        </div>
+        {questions.map((q) => {
+          const v = answers[q.id];
+          const text = Array.isArray(v) ? v.join(", ") : String(v ?? "");
+          if (!text.trim()) return null;
+          return (
+            <div key={q.id} className="mb-3">
+              <div className="text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--muted-foreground))]">{q.title}</div>
+              <div className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed">{text}</div>
+            </div>
+          );
+        })}
+        <p className="mt-4 border-t border-[hsl(var(--border))] pt-3 text-[11px] text-[hsl(var(--muted-foreground))]">
+          Shared with the room because they submitted it. Read it, steal the good bits, do it your way.
+        </p>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 /** The room — who moved, in the order they moved. */
-function Room({ cardId, mine, dueReached }: { cardId: string; mine?: { stage: ActivityStage; label: string }; dueReached: boolean }) {
+function Room({ cardId, mine, dueReached, onOpen }: { cardId: string; mine?: { stage: ActivityStage; label: string }; dueReached: boolean; onOpen?: (id: string, name: string) => void }) {
   const others = roomFor(cardId);
   const rows = [
     ...others.map((a) => ({ id: a.student.id, name: a.student.name, initials: a.student.initials, when: sinceOpen(a.startedMin), stage: a.stage, me: false })),
@@ -816,7 +934,14 @@ function Room({ cardId, mine, dueReached }: { cardId: string; mine?: { stage: Ac
             >
               {r.initials}
             </span>
-            <span className={`min-w-0 flex-1 truncate text-[13px] ${r.me ? "font-bold" : ""}`}>{r.name}</span>
+            <button
+              type="button"
+              onClick={() => !r.me && onOpen?.(r.id, r.name)}
+              disabled={r.me || r.stage === "started"}
+              className={`min-w-0 flex-1 truncate text-left text-[13px] ${r.me ? "font-bold" : ""} ${!r.me && r.stage !== "started" ? "underline decoration-[hsl(var(--border-hover))] underline-offset-4" : ""}`}
+            >
+              {r.name}
+            </button>
             <span
               className="shrink-0 text-[11px]"
               style={{ color: r.stage === "submitted" ? "hsl(var(--success))" : "hsl(var(--muted-foreground))" }}
@@ -828,7 +953,7 @@ function Room({ cardId, mine, dueReached }: { cardId: string; mine?: { stage: Ac
       </div>
 
       <p className="mt-3 text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">
-        Ordered by who moved first. Only people who have started appear here — nobody is listed for being behind.
+        Ordered by who moved first. Tap anyone who has submitted to read their work. Only people who have started appear here — nobody is listed for being behind.
       </p>
     </div>
   );
@@ -837,6 +962,7 @@ function Room({ cardId, mine, dueReached }: { cardId: string; mine?: { stage: Ac
 function BlockCard({ s, d, card, week, locked, dOf, onDone }: { s: PlayState; d: React.Dispatch<PlayAction>; card: TemplateCard; week: TemplateWeek; locked?: string; dOf: (w: number, d: number) => Date; onDone: (c: TemplateCard, w: TemplateWeek) => void }) {
   const existing = s.submissions.find((x) => x.cardId === card.id);
   const prog = s.progress[card.id];
+  const [peer, setPeer] = useState<{ id: string; name: string } | null>(null);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>(existing?.answers ?? s.drafts[card.id] ?? {});
   const box = card.submit;
 
@@ -943,7 +1069,18 @@ function BlockCard({ s, d, card, week, locked, dOf, onDone }: { s: PlayState; d:
             </div>
           )}
 
-          <Room cardId={card.id} mine={mine} dueReached={dueReached} />
+          <Room cardId={card.id} mine={mine} dueReached={dueReached} onOpen={(id, name) => setPeer({ id, name })} />
+
+          <AnimatePresence>
+            {peer && (
+              <PeerWork
+                name={peer.name}
+                answers={answersFor(card.id, peer.id, box.questions)}
+                questions={box.questions}
+                onClose={() => setPeer(null)}
+              />
+            )}
+          </AnimatePresence>
         </>
       )}
     </>
@@ -952,7 +1089,7 @@ function BlockCard({ s, d, card, week, locked, dOf, onDone }: { s: PlayState; d:
 
 export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React.Dispatch<PlayAction>; go: (k: string) => void; cardId: string }) {
   const u = useUnlock(s);
-  const dOf = makeDOf(s.program);
+  const dOf = makeDOf(activeProgram(s));
   const [party, setParty] = useState<Celebration | null>(null);
 
   /**
@@ -968,8 +1105,8 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
       submittedCardIds: card.kind === "block" ? [...u.submittedCardIds, card.id] : u.submittedCardIds,
     };
     if (card.kind === "block") {
-      const nextWeek = s.program.weeks.find((w) => w.no === week.no + 1);
-      if (nextWeek && weekOpen(s.program, nextWeek.no, after, dOf).state === "open") {
+      const nextWeek = activeProgram(s).weeks.find((w) => w.no === week.no + 1);
+      if (nextWeek && weekOpen(activeProgram(s), nextWeek.no, after, dOf).state === "open") {
         setParty({ title: `Week ${nextWeek.no} is open`, sub: nextWeek.title });
         return;
       }
@@ -977,7 +1114,7 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
       return;
     }
     const nextDrill = orderedCards(week).find(
-      (c) => c.id !== card.id && cardState(s.program, week, c, u, dOf).state === "locked" && cardState(s.program, week, c, after, dOf).state === "open",
+      (c) => c.id !== card.id && cardState(activeProgram(s), week, c, u, dOf).state === "locked" && cardState(activeProgram(s), week, c, after, dOf).state === "open",
     );
     setParty(
       nextDrill
@@ -985,7 +1122,7 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
         : { title: `+${card.xp} XP`, sub: "Banked. Nothing you finish ever locks again." },
     );
   };
-  const found = findCard(s.program, cardId);
+  const found = findCard(activeProgram(s), cardId);
   if (!found) {
     return (
       <div className="mx-auto max-w-[680px]">
@@ -996,7 +1133,7 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
     );
   }
   const card = resolve(s, found.card);
-  const v = cardState(s.program, found.week, card, u, dOf);
+  const v = cardState(activeProgram(s), found.week, card, u, dOf);
   const locked = v.state === "locked" ? v.why : undefined;
 
   return (
@@ -1010,7 +1147,7 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
         )}
         {card.kind === "live_session" && <LiveSessionCard s={s} d={d} card={card} week={found.week} dOf={dOf} onDone={celebrate} />}
         {card.kind === "community_call" && <CommunityCallCard s={s} d={d} card={card} week={found.week} onDone={celebrate} />}
-        {card.kind === "micro" && <MicroCard s={s} d={d} card={card} week={found.week} locked={locked} onDone={celebrate} />}
+        {card.kind === "micro" && <MicroCard s={s} d={d} card={card} week={found.week} locked={locked} dOf={dOf} onDone={celebrate} />}
         {card.kind === "block" && <BlockCard s={s} d={d} card={card} week={found.week} locked={locked} dOf={dOf} onDone={celebrate} />}
       </Shell>
     </motion.div>
@@ -1031,16 +1168,28 @@ export function ProgramCardScreen({ s, d, go, cardId }: { s: PlayState; d: React
    ───────────────────────────────────────────────────────────────────────── */
 
 export function ProgramHomeScreen({ s, go }: { s: PlayState; go: (k: string) => void }) {
+  const [board, setBoard] = useState(false);
+  const [rules, setRules] = useState(false);
+  const [who, setWho] = useState<Standing | null>(null);
   const u = useUnlock(s);
-  const dOf = makeDOf(s.program);
+  const dOf = makeDOf(activeProgram(s));
   const nodes = useMemo(() => buildTrail(s, u), [s, u]);
-  const blocks = blocksDone(s.program, u.submittedCardIds);
+  const blocks = blocksDone(activeProgram(s), u.submittedCardIds);
 
   const current = nodes.find((n) => n.state === "current") ?? nodes.find((n) => n.state === "info");
-  const tone = toneForPhase(current?.week.phase ?? s.program.weeks[0].phase);
+
+  // Where the CALENDAR is today, regardless of where the student got to.
+  const today = new Date(`${TODAY_ISO}T00:00:00`);
+  const dated = nodes.filter((n) => !n.card.needsAuthoring);
+  const todayCard = [...dated].reverse().find((n) => n.when <= today) ?? dated[0];
+  const behind =
+    current && todayCard
+      ? Math.max(0, dated.indexOf(todayCard) - dated.indexOf(current))
+      : 0;
+  const tone = toneForPhase(current?.week.phase ?? activeProgram(s).weeks[0].phase);
 
   // "This week" = the week the current step lives in, not a hard-coded 0.
-  const week = current?.week ?? s.program.weeks[0];
+  const week = current?.week ?? activeProgram(s).weeks[0];
   const weekNodes = nodes.filter((n) => n.week.no === week.no);
   const doneThisWeek = weekNodes.filter((n) => n.state === "done").length;
 
@@ -1049,16 +1198,33 @@ export function ProgramHomeScreen({ s, go }: { s: PlayState; go: (k: string) => 
     (n) => (n.card.kind === "live_session" || n.card.kind === "community_call") && n.state !== "done" && !n.card.needsAuthoring,
   );
 
-  const nextWeek = s.program.weeks.find((w) => w.no === week.no + 1);
-  const nextWeekVerdict = nextWeek ? weekOpen(s.program, nextWeek.no, u, dOf) : null;
+  const nextWeek = activeProgram(s).weeks.find((w) => w.no === week.no + 1);
+  const nextWeekVerdict = nextWeek ? weekOpen(activeProgram(s), nextWeek.no, u, dOf) : null;
 
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow={`Week ${week.no} of ${s.program.weeks.length - 1} · ${week.title} · ${doneThisWeek}/${weekNodes.length} steps done`}
+        eyebrow={`Week ${week.no} of ${activeProgram(s).weeks.length - 1} · ${week.title} · ${doneThisWeek}/${weekNodes.length} steps done`}
         title={<>Creator <Serif>Studio</Serif></>}
         subtitle="One project — your Distribution Engine, built block by block."
       />
+
+      {/* 🔴 THE CATCH-UP STATE (founder): "if they open it two days after
+          orientation, they should still be able to record five voice notes.
+          Tell them technically today is this, but you're stuck here."
+          Two facts, not one — where the cohort is, and where YOU are. Showing
+          only the date shames; showing only your step hides that you are
+          behind. Both together is an instruction. */}
+      {current && behind > 0 && (
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3 text-[12px]">
+          <span className="text-[hsl(var(--muted-foreground))]">
+            The cohort is on {fmtDate(todayCard.when)} — {todayCard.card.title}.
+          </span>
+          <span className="text-[hsl(var(--foreground))]">
+            You are {behind} step{behind > 1 ? "s" : ""} back, and nothing has closed.
+          </span>
+        </div>
+      )}
 
       {current && (
         <SurfaceCard variant="static" padding="lg" className="relative overflow-hidden">
@@ -1185,9 +1351,20 @@ export function ProgramHomeScreen({ s, go }: { s: PlayState; go: (k: string) => 
         </div>
       </Section>
 
-      <p className="text-center text-[11px] text-[hsl(var(--muted-foreground))]">
-        {blocks.done} of {blocks.total} blocks in · Demo Day Sat 14 Nov
-      </p>
+      <Section title="The room" description="Ranked on work done, not on being early. Tap anyone to see what got them there.">
+        <Podium s={s} onOpen={setWho} onFull={() => setBoard(true)} />
+      </Section>
+
+      <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] text-[hsl(var(--muted-foreground))]">
+        <span>{blocks.done} of {blocks.total} blocks in · Demo Day Sat 14 Nov</span>
+        <button type="button" onClick={() => setRules(true)} className="underline underline-offset-4">
+          How XP and streaks work
+        </button>
+      </div>
+
+      <BoardSheet s={s} open={board} onClose={() => setBoard(false)} onOpen={(st) => { setBoard(false); setWho(st); }} />
+      <StandingSheet s={s} standing={who} onClose={() => setWho(null)} />
+      <RulesSheet open={rules} onClose={() => setRules(false)} />
     </div>
   );
 }

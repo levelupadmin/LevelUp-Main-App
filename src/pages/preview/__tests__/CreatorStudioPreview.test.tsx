@@ -59,7 +59,7 @@ describe("CreatorStudioPreview", () => {
 
   it("mounts every section without throwing — and Second Brain is gone from the rail", () => {
     renderAs("avinash@leveluplearning.in");
-    for (const tab of ["The Path", "Creator OS", "Feed", "Mentor desk", "Admin", "Home"]) {
+    for (const tab of ["The Path", "Creator OS", "Feed", "Mentor desk", "Admin", "Creator Studio"]) {
       fireEvent.click(screen.getAllByRole("button", { name: new RegExp(`^${tab}`) })[0]);
       expect(screen.getAllByText(/Prototype/i).length).toBeGreaterThan(0);
     }
@@ -84,9 +84,14 @@ describe("CreatorStudioPreview", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
 
     // Monday's drill is open; Tuesday's is not, and it says why in plain words.
+    // The Monday drill now COLLECTS work, so it behaves like any assignment:
+    // commit, fill, submit.
     fireEvent.click((await screen.findAllByRole("button", { name: /Record five voice-note memories/ }))[0]);
-    fireEvent.click(await screen.findByRole("button", { name: /Mark this done/ }));
-    expect(await screen.findByText(/Done\. \+15 XP/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /I'm starting this/ }));
+    fireEvent.change(await screen.findByLabelText(/^Your voice folder/), { target: { value: "https://drive.google.com/v" } });
+    fireEvent.click(screen.getByRole("button", { name: /Card A — I run a business/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Submit my week/ }));
+    expect(await screen.findByText(/Your mentor sees this in their desk/)).toBeTruthy();
 
     // The week's block: the in-app box, with a helper line per field.
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
@@ -112,8 +117,10 @@ describe("CreatorStudioPreview", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /^Mentor desk/ })[0]);
     fireEvent.click(await screen.findByRole("button", { name: /Creator Academy · Cohort 02/ }));
     expect(await screen.findByText("https://drive.google.com/x")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^SHIP$/i }));
-    expect(await screen.findByText(/ship/i)).toBeTruthy();
+    // The desk asks one question now: has this person heard back yet?
+    fireEvent.change(screen.getByLabelText(/Feedback for Week 0 block/), { target: { value: "Ship it, do not touch it again" } });
+    fireEvent.click(screen.getAllByRole("button", { name: /Send feedback/ })[0]);
+    expect(await screen.findByText(/Feedback given/)).toBeTruthy();
   }, 20000);
 
   it("the entrance fills the viewport and is never cut short by a timer", () => {
@@ -168,7 +175,10 @@ describe("CreatorStudioPreview", () => {
     renderAs("avinash@leveluplearning.in");
     fireEvent.click(screen.getAllByRole("button", { name: /^The Path/ })[0]);
     fireEvent.click((await screen.findAllByRole("button", { name: /Record five voice-note memories/ }))[0]);
-    fireEvent.click(await screen.findByRole("button", { name: /Mark this done/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /I'm starting this/ }));
+    fireEvent.change(await screen.findByLabelText(/^Your voice folder/), { target: { value: "https://drive.google.com/v" } });
+    fireEvent.click(screen.getByRole("button", { name: /Card A — I run a business/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Submit my week/ }));
 
     // The payoff names the next drill by title — a receipt would just say done.
     expect(await screen.findByText("Unlocked")).toBeTruthy();

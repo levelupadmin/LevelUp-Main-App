@@ -23,6 +23,7 @@ import type { ReactNode } from "react";
 import { ClipboardCheck, Flame, RotateCcw, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 import { SHELL_TABS } from "./previewTabs";
+import { LevelUpMark } from "./StudioBoot";
 import BuildStamp from "./BuildStamp";
 
 
@@ -92,7 +93,8 @@ export default function PreviewShell({
         {/* ── DESKTOP RAIL ─────────────────────────────────────────── */}
         <aside className="hidden lg:flex lg:w-[244px] lg:shrink-0 lg:flex-col lg:gap-6 lg:border-r lg:border-[hsl(var(--border))] lg:p-5">
           <div>
-            <div className="text-[17px] font-extrabold tracking-[-0.02em]">Creator Studio</div>
+            <LevelUpMark className="mb-2 h-5 w-9 text-[hsl(var(--foreground))]" />
+            <div className="text-[17px] font-semibold tracking-[-0.02em]">Creator Studio</div>
             <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[hsl(var(--gold))]">
               Creator Academy · Ed 2
             </div>
@@ -111,7 +113,11 @@ export default function PreviewShell({
                       : "border-transparent hover:bg-[hsl(var(--secondary))]/60"
                   }`}
                 >
-                  <t.icon className={`h-4 w-4 shrink-0 ${on ? "text-[hsl(var(--cream))]" : "text-[hsl(var(--muted-foreground))]"}`} />
+                  {t.brand ? (
+                    <LevelUpMark className={`h-4 w-6 shrink-0 ${on ? "text-[hsl(var(--cream))]" : "text-[hsl(var(--muted-foreground))]"}`} />
+                  ) : (
+                    <t.icon className={`h-4 w-4 shrink-0 ${on ? "text-[hsl(var(--cream))]" : "text-[hsl(var(--muted-foreground))]"}`} />
+                  )}
                   <div className="min-w-0 leading-tight">
                     <div className={`truncate text-[13px] font-medium ${on ? "" : "text-[hsl(var(--foreground))]/80"}`}>{t.label}</div>
                     <div className="truncate text-[10px] text-[hsl(var(--muted-foreground))]">{t.sub}</div>

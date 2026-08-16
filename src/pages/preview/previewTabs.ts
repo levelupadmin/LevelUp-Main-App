@@ -14,10 +14,12 @@ export interface ShellTab {
   label: string;
   sub: string;
   icon: typeof Map;
+  /** Renders the LevelUp mark instead of a generic icon. Home only. */
+  brand?: boolean;
 }
 
 export const SHELL_TABS: ShellTab[] = [
-  { key: "home", label: "Home", sub: "What's next for you", icon: LayoutGrid },
+  { key: "home", label: "Creator Studio", sub: "What's next for you", icon: LayoutGrid, brand: true },
   { key: "path", label: "The Path", sub: "All 13 blocks", icon: Map },
   { key: "album", label: "Creator OS", sub: "Your public album", icon: ClipboardCheck },
   { key: "feed", label: "Feed", sub: "The room + people", icon: MessageSquare },

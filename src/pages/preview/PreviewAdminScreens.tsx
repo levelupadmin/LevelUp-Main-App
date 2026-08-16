@@ -27,6 +27,7 @@ import { BackRow, type ScreenProps } from "./PreviewScreens";
 
 export function AdminScreen({ s, d, go }: ScreenProps) {
   const tools = [
+    { icon: Rocket, title: "Your cohorts", body: "Every batch you are running, each with its own copy of the curriculum. Start another from a template, or duplicate a template into a whole new programme.", to: "admin/cohorts", live: true },
     { icon: Video, title: "Run the week", body: "The evening desk: mark a session done, drop the recording in, open the feedback gate, check who has submitted. A session is over when you say it is.", to: "admin/run", live: true },
     { icon: PencilLine, title: "Creator Academy content", body: "The real Cohort 02 curriculum, week by week. Pick a week, pick a card, fill the form its type defines. Weeks 0 and 1 are authored end to end.", to: "admin/week", live: true },
     { icon: Plus, title: "Build a program from scratch", body: "Any shape — 2 weeks or 15, your phases, your days, your cards (live classes, community calls, tasks, resources with links). The Path draws itself.", to: "admin/builder", live: true },

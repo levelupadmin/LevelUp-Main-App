@@ -19,8 +19,7 @@ import PreviewShell from "./PreviewShell";
 import StudioBoot from "./StudioBoot";
 import "./brand.css";
 import { SHELL_TABS } from "./previewTabs";
-import { usePlayState } from "./previewStore";
-import { LUCA } from "./previewProgram";
+import { usePlayState, activeProgram } from "./previewStore";
 import { blocksDone } from "./previewUnlock";
 import { HomeScreen, PathScreen, RecordingScreen, AssignmentScreen, SessionDetailScreen } from "./PreviewScreens";
 import { AlbumScreen, DocScreen, FeedScreen } from "./PreviewStudioScreens";
@@ -28,7 +27,7 @@ import { AdminScreen, CohortLauncherScreen, TemplateStudioScreen } from "./Previ
 import { ProgramBuilderScreen, BuiltPathPreviewScreen, BuiltCardScreen } from "./PreviewBuilderScreens";
 import { MentorScreen, MentorWeeksScreen, MentorWeekScreen, MentorBuiltScreen } from "./PreviewMentorScreens";
 import { ProgramPathScreen, ProgramCardScreen, ProgramHomeScreen } from "./PreviewProgramScreens";
-import { ProgramAdminScreen, ProgramWeekEditorScreen, ProgramMentorScreen, ProgramSheetListScreen, ProgramSheetScreen, RunTheWeekScreen } from "./PreviewProgramAdmin";
+import { ProgramAdminScreen, ProgramWeekEditorScreen, ProgramMentorScreen, ProgramSheetListScreen, ProgramSheetScreen, RunTheWeekScreen, CohortsScreen } from "./PreviewProgramAdmin";
 
 const TITLES: Record<string, string> = {
   home: "Home", path: "The Path", trail: "The Path", recording: "The Path", assignment: "The Path",
@@ -77,6 +76,7 @@ export default function CreatorStudioPreview() {
       case "builtcard":
         return <BuiltCardScreen s={s} d={d} go={go} programId={param ?? ""} cardId={param2 ?? ""} />;
       case "admin":
+        if (param === "cohorts") return <CohortsScreen s={s} d={d} go={go} />;
         if (param === "run") return <RunTheWeekScreen s={s} d={d} go={go} weekNo={param2 !== undefined ? Number(param2) : undefined} />;
         if (param === "week" && param2 !== undefined) return <ProgramWeekEditorScreen s={s} d={d} go={go} weekNo={Number(param2)} />;
         if (param === "week") return <ProgramAdminScreen s={s} d={d} go={go} />;
@@ -101,7 +101,7 @@ export default function CreatorStudioPreview() {
       title={TITLES[kind] ?? "Creator Studio"}
       xp={s.xp}
       streak={s.streak}
-      blocks={blocksDone(LUCA, s.submissions.map((x) => x.cardId))}
+      blocks={blocksDone(activeProgram(s), s.submissions.map((x) => x.cardId))}
       onReset={() => d({ type: "reset" })}
     >
       <AnimatePresence mode="wait" initial={false}>
