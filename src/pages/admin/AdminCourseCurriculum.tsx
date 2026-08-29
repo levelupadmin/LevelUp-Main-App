@@ -96,6 +96,19 @@ const AdminCourseCurriculum = () => {
   const [courseTitle, setCourseTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Server-side rows the admin removed in the UI, pending deletion on save.
+  //
+  // WHY THIS EXISTS: `handleSave` walks `sections` and INSERTs (`_isNew`) or
+  // UPDATEs every row still in state. A removed chapter is simply absent from
+  // that walk, so nothing ever touched it — the DB row survived and the very
+  // next `load()` pulled it straight back. The delete button looked broken
+  // because the save had no concept of deletion at all.
+  //
+  // Locally-added rows never land here: their ids are client-side ("new-…")
+  // and have no DB row to delete. Cleared by `load()`, so a discarded edit
+  // (navigate away and back) cannot delete anything on a later save.
+  const [deletedChapterIds, setDeletedChapterIds] = useState<string[]>([]);
+  const [deletedSectionIds, setDeletedSectionIds] = useState<string[]>([]);
   // Always-fresh mirror of `sections` for async callbacks (upload persistence
   // fires long after the render that captured its closure).
   const sectionsRef = useRef<Section[]>([]);
@@ -116,6 +129,10 @@ const AdminCourseCurriculum = () => {
 
   const load = useCallback(async () => {
     if (!courseId) return;
+    // The refetch re-establishes the baseline, so anything queued from an
+    // abandoned edit must not survive into the next save.
+    setDeletedChapterIds([]);
+    setDeletedSectionIds([]);
     const { data: course } = await supabase.from("courses").select("title, default_video_type").eq("id", courseId).single();
     setCourseTitle(course?.title || "");
     setCourseDefaultVideoType((course as any)?.default_video_type || "standard");
@@ -326,6 +343,12 @@ const AdminCourseCurriculum = () => {
   };
 
   const removeSection = (idx: number) => {
+    const target = sectionsRef.current[idx];
+    // `chapters.section_id` is ON DELETE CASCADE, so removing the section row
+    // removes its chapters with it — no per-chapter bookkeeping needed here.
+    if (target && !target._isNew && target.id) {
+      setDeletedSectionIds((prev) => (prev.includes(target.id) ? prev : [...prev, target.id]));
+    }
     setSections((prev) => prev.filter((_, i) => i !== idx));
   };
 
@@ -433,6 +456,12 @@ const AdminCourseCurriculum = () => {
   }, [loading]);
 
   const removeChapter = (sIdx: number, cIdx: number) => {
+    const target = sectionsRef.current[sIdx]?.chapters[cIdx];
+    // Only a row that exists server-side needs a DELETE; a never-saved one
+    // disappears with the state update alone.
+    if (target && !target._isNew && target.id) {
+      setDeletedChapterIds((prev) => (prev.includes(target.id) ? prev : [...prev, target.id]));
+    }
     setSections((prev) => {
       const updated = [...prev];
       updated[sIdx] = {
@@ -466,6 +495,17 @@ const AdminCourseCurriculum = () => {
     setSaving(true);
 
     try {
+      // Deletions first, so a removed row can never be resurrected by the
+      // upsert walk below and so freed sort_order slots are already vacant.
+      // Both lists hold only server-side ids (see the state declaration).
+      if (deletedChapterIds.length > 0) {
+        const { error } = await supabase.from("chapters").delete().in("id", deletedChapterIds);
+        if (error) throw error;
+      }
+      if (deletedSectionIds.length > 0) {
+        const { error } = await supabase.from("sections").delete().in("id", deletedSectionIds);
+        if (error) throw error;
+      }
       for (let sIdx = 0; sIdx < sections.length; sIdx++) {
         const sec = sections[sIdx];
         let sectionId = sec.id;
@@ -518,6 +558,8 @@ const AdminCourseCurriculum = () => {
         }
       }
 
+      setDeletedChapterIds([]);
+      setDeletedSectionIds([]);
       toast({ title: "Curriculum saved" });
       load();
     } catch (err: any) {
@@ -672,7 +714,7 @@ const AdminCourseCurriculum = () => {
                   <button onClick={() => moveSection(sIdx, 1)} className="p-1 hover:bg-secondary rounded" disabled={sIdx === sections.length - 1}>
                     <ChevronDown className="h-4 w-4" />
                   </button>
-                  <button onClick={() => removeSection(sIdx)} className="p-1 hover:bg-destructive/20 text-destructive rounded">
+                  <button type="button" aria-label={`Delete section: ${sec.title}`} onClick={() => removeSection(sIdx)} className="p-1 hover:bg-destructive/20 text-destructive rounded">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -695,7 +737,7 @@ const AdminCourseCurriculum = () => {
                       <span className="text-xs font-mono text-muted-foreground w-6">{cIdx + 1}</span>
                       <span className="text-sm flex-1">{ch.title}</span>
                       <span className="text-xs font-mono text-muted-foreground">{ch.content_type}</span>
-                      <button onClick={(e) => { e.stopPropagation(); removeChapter(sIdx, cIdx); }} className="p-1 text-destructive hover:bg-destructive/20 rounded">
+                      <button type="button" aria-label={`Delete chapter: ${ch.title}`} onClick={(e) => { e.stopPropagation(); removeChapter(sIdx, cIdx); }} className="p-1 text-destructive hover:bg-destructive/20 rounded">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
