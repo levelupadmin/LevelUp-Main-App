@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent, act, waitFor } from "@testing-library/react";
+import { render, fireEvent, act, waitFor, screen } from "@testing-library/react";
 
 // The app-owned <video> reads chapter markers for the STEAL-4 scrub caption from
 // `chapter_moments`. Stub the client so the fetch never hits the network; each
@@ -24,6 +24,10 @@ vi.mock("@/integrations/supabase/client", () => {
     },
   };
 });
+
+vi.mock("@/components/chapter/ProtectedPdfViewer", () => ({
+  default: ({ url }: { url: string }) => <div data-testid="pdf-canvas-viewer" data-url={url} />,
+}));
 
 import ChapterMediaPlayer from "../ChapterMediaPlayer";
 import type { Chapter } from "../types";
@@ -165,7 +169,7 @@ describe("ChapterMediaPlayer — cross-origin surfaces get NO app-owned <video>"
     expect(container.querySelector("video")).toBeNull();
   });
 
-  it("renders a PDF as an iframe (no gesture surface)", () => {
+  it("renders a PDF through the canvas viewer, never a video surface", () => {
     const { container } = render(
       <ChapterMediaPlayer
         chapter={{ ...baseChapter, content_type: "pdf", media_url: "https://x/y.pdf" }}
@@ -173,7 +177,10 @@ describe("ChapterMediaPlayer — cross-origin surfaces get NO app-owned <video>"
         lastPosition={0}
       />,
     );
-    expect(container.querySelector("iframe")).toBeInTheDocument();
+    // The <iframe> was replaced: it delegated to the platform PDF plugin,
+    // which on iOS ignores #view=FitH and painted an unreadable zoomed crop.
+    expect(screen.getByTestId("pdf-canvas-viewer")).toBeInTheDocument();
+    expect(container.querySelector("iframe")).toBeNull();
     expect(container.querySelector("video")).toBeNull();
   });
 });
@@ -186,7 +193,7 @@ describe("ChapterMediaPlayer — protected documents (download toggle)", () => {
     ...over,
   });
 
-  it("hides the PDF toolbar and shows no download link when download is off", () => {
+  it("offers no download path at all when download is off", () => {
     const { container } = render(
       <ChapterMediaPlayer
         chapter={pdfChapter({ allow_download: false })}
@@ -194,13 +201,14 @@ describe("ChapterMediaPlayer — protected documents (download toggle)", () => {
         lastPosition={0}
       />,
     );
-    const iframe = container.querySelector("iframe")!;
-    // #toolbar=0 strips the browser PDF viewer's download/print chrome.
-    expect(iframe.getAttribute("src")).toContain("#toolbar=0");
+    // There is no native viewer to strip chrome from any more — the pages are
+    // rasterised to canvas, so no toolbar, no print and no Save-as exist.
+    expect(screen.getByTestId("pdf-canvas-viewer")).toBeInTheDocument();
+    expect(container.querySelector("iframe")).toBeNull();
     expect(container.querySelector("a[download]")).toBeNull();
   });
 
-  it("keeps the toolbar and shows a download link when download is allowed", () => {
+  it("still offers an explicit download link when download is allowed", () => {
     const { container } = render(
       <ChapterMediaPlayer
         chapter={pdfChapter({ allow_download: true })}
@@ -208,8 +216,7 @@ describe("ChapterMediaPlayer — protected documents (download toggle)", () => {
         lastPosition={0}
       />,
     );
-    const iframe = container.querySelector("iframe")!;
-    expect(iframe.getAttribute("src")).not.toContain("#toolbar=0");
+    expect(screen.getByTestId("pdf-canvas-viewer")).toBeInTheDocument();
     const dl = container.querySelector("a[download]") as HTMLAnchorElement;
     expect(dl).toBeInTheDocument();
     expect(dl.getAttribute("href")).toBe("https://x/deck.pdf");
@@ -242,20 +249,21 @@ describe("ChapterMediaPlayer — protected documents (download toggle)", () => {
     expect(dl.textContent).toContain("DOCX");
   });
 
-  it("resolves a signed URL for a private-bucket document and hides its toolbar", async () => {
+  it("resolves a signed URL for a private-bucket document and hands it to the viewer", async () => {
     signedSrcUrl = "https://signed.example.com/deck.pdf?token=xyz";
-    const { container } = render(
+    render(
       <ChapterMediaPlayer
         chapter={pdfChapter({ media_provider: "supabase-signed", media_url: "uploads/c/deck.pdf", allow_download: false })}
         updateProgress={() => {}}
         lastPosition={0}
       />,
     );
-    // The signed URL arrives async; the iframe appears once resolved.
-    await waitFor(() => expect(container.querySelector("iframe")).toBeInTheDocument());
-    const src = container.querySelector("iframe")!.getAttribute("src")!;
-    expect(src).toContain("https://signed.example.com/deck.pdf?token=xyz");
-    expect(src).toContain("#toolbar=0");
+    // The signed URL arrives async; the viewer mounts once it resolves, and it
+    // is the short-lived signed URL that reaches it — never the raw storage key.
+    await waitFor(() => expect(screen.getByTestId("pdf-canvas-viewer")).toBeInTheDocument());
+    expect(screen.getByTestId("pdf-canvas-viewer").getAttribute("data-url")).toBe(
+      "https://signed.example.com/deck.pdf?token=xyz",
+    );
   });
 });
 

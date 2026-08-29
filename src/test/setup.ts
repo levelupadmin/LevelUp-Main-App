@@ -23,3 +23,24 @@ Object.defineProperty(window, "matchMedia", {
     dispatchEvent: () => {},
   }),
 });
+
+// jsdom does not implement ResizeObserver, which is universally available in
+// the browsers this app targets (Safari 13.1+, Chrome 64+), so a component is
+// right to use it unguarded — the gap is jsdom's, not the code's.
+//
+// IntersectionObserver is DELIBERATELY not stubbed here. A no-op stub that
+// never fires is worse than its absence: components that fall back to
+// "render immediately" when the API is missing instead wait forever for a
+// callback that never comes (it silently broke YourWeek's CountUp). Tests that
+// need it stub it locally, with the firing behaviour that test wants.
+class NoopObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return [];
+  }
+}
+if (!("ResizeObserver" in globalThis)) {
+  (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = NoopObserver;
+}

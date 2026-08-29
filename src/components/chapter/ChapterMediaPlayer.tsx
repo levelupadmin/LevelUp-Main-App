@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { RotateCcw, RotateCw, FileText, BookOpen, Download } from "lucide-react";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 import { supabase } from "@/integrations/supabase/client";
+import ProtectedPdfViewer from "@/components/chapter/ProtectedPdfViewer";
 import { useMotionSafe, durations, easings, instant } from "@/lib/motion";
 import { tapTick, hapticSelection } from "@/lib/haptics";
 import type { Chapter } from "@/components/chapter/types";
@@ -508,6 +509,11 @@ interface DocumentChapter {
 export function ProtectedDocument({ chapter }: { chapter: DocumentChapter }) {
   const isSigned = (chapter.media_provider || "") === "supabase-signed";
   const allowDownload = !!chapter.allow_download;
+  // Set only if the canvas viewer cannot paint (see ProtectedPdfViewer's
+  // onUnavailable). Falls back to the platform's own PDF view — the pre-2026-08
+  // behaviour, which reads badly on iOS but is never a blank screen.
+  const [pdfFallback, setPdfFallback] = useState(false);
+  const handlePdfUnavailable = useCallback(() => setPdfFallback(true), []);
   const [url, setUrl] = useState<string | null>(isSigned ? null : chapter.media_url || null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -559,17 +565,23 @@ export function ProtectedDocument({ chapter }: { chapter: DocumentChapter }) {
   const isPdf = ext === "pdf" || (!ext && !isSigned); // legacy untyped public URLs assumed PDF
 
   if (isPdf) {
-    // #toolbar=0&navpanes=0 hides Chrome/Edge's built-in download+print chrome.
-    const src = allowDownload ? url : `${url}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`;
+    // Rendered to canvas by ProtectedPdfViewer rather than handed to an
+    // <iframe>. The iframe delegated to the platform's PDF plugin, and on iOS
+    // that plugin ignores `#view=FitH`/`#toolbar=0` outright — students got one
+    // zoomed-in fragment of page 1 in a fixed-height box they could not scroll.
+    // See that component for the full reasoning and the text-layer trade-off.
+    if (pdfFallback) {
+      return (
+        <div className="space-y-2">
+          <div className="w-full rounded-2xl border border-border overflow-hidden bg-card h-[55vh] sm:h-[80vh]">
+            <iframe src={url} className="w-full h-full" title={`${chapter.title} - document`} />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="space-y-2">
-        <div className="w-full rounded-2xl border border-border overflow-hidden bg-card h-[55vh] sm:h-[80vh]">
-          <iframe
-            src={src}
-            className="w-full h-full"
-            title={`${chapter.title} - document`}
-          />
-        </div>
+        <ProtectedPdfViewer url={url} title={chapter.title} onUnavailable={handlePdfUnavailable} />
         {allowDownload && (
           <a
             href={url}

@@ -53,3 +53,4 @@ design/vision/shots/
 design/community/shots/
 
 supabase/.branches/
+public/pdf.worker.min.js
