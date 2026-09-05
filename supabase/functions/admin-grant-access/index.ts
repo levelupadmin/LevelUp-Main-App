@@ -1,7 +1,11 @@
 // admin-grant-access — admin/owner only. One call = "make sure this person can
 // watch this offering", whether or not they have an account yet.
 //
-// For each student {full_name?, email?, phone?} it:
+// For each student {full_name?, email?, phone?, country_code?} it:
+//   0. resolves the phone to E.164 via the shared, unit-tested
+//      `resolveImportPhone` — a CRM export splits the dial code into its
+//      own column, and without honouring it a +44 student's national
+//      number silently became an Indian one they can never receive an OTP on;
 //   1. finds an existing profile by phone (+cc form) then email;
 //   2. failing that, finds an auth-only ("half-provisioned") account via the
 //      service-role RPC admin_find_auth_user and repairs its empty profile;
@@ -17,6 +21,7 @@
 // claim_purchases_for_user — a pre-created confirmed-phone account is exactly
 // what the claim flow expects to attach legacy purchases to at first sign-in.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
+import { resolveImportPhone } from "../_shared/phone.ts";
 
 function corsFor(req: Request) {
   const origin = req.headers.get("Origin") || "";
@@ -38,6 +43,9 @@ interface StudentInput {
   full_name?: string;
   email?: string;
   phone?: string;
+  /** Dial code from a CRM export's own column ("+44", "0044", "44"). Ignored
+   *  when `phone` already starts with "+" — see `resolveImportPhone`. */
+  country_code?: string;
 }
 
 interface RowResult {
@@ -53,17 +61,6 @@ interface RowResult {
   detail?: string;
 }
 
-/** "98765 43210" / "+91 98765-43210" / "9198765432 10" → "919876543210".
- *  10 digits are assumed Indian; longer numbers must already carry their
- *  country code. Returns null when it can't be a real phone. */
-function toAuthPhone(raw?: string): string | null {
-  if (!raw) return null;
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 10) return `91${digits}`;
-  if (digits.length === 11 && digits.startsWith("0")) return `91${digits.slice(1)}`;
-  if (digits.length >= 11 && digits.length <= 15) return digits;
-  return null;
-}
 
 Deno.serve(async (req) => {
   const cors = corsFor(req);
@@ -105,7 +102,13 @@ Deno.serve(async (req) => {
     const students = Array.isArray(body?.students) ? body!.students! : [];
     if (!offeringId) return json({ error: "offering_id required" }, 400);
     if (!students.length) return json({ error: "students[] required" }, 400);
-    if (students.length > 300) return json({ error: "Max 300 students per call — split the CSV" }, 400);
+    // A ceiling, not a workflow limit: the admin UI slices a larger CSV into
+// chunks of this size and calls repeatedly, so a 2,000-row CRM export
+// imports in one click. The cap keeps a single invocation inside the
+// edge runtime's wall-clock budget.
+    if (students.length > 300) {
+      return json({ error: "Max 300 students per call — send it in chunks" }, 400);
+    }
 
     const { data: offering } = await admin
       .from("offerings").select("id, title").eq("id", offeringId).maybeSingle();
@@ -118,7 +121,7 @@ Deno.serve(async (req) => {
       try {
         const fullName = s.full_name?.trim() || null;
         const email = s.email?.trim().toLowerCase() || null;
-        const authPhone = toAuthPhone(s.phone);
+        const authPhone = resolveImportPhone(s.phone, s.country_code);
         const profilePhone = authPhone ? `+${authPhone}` : null;
         if (!email && !authPhone) {
           return { input: s, status: "error", detail: "Needs an email or a valid phone" };
@@ -127,9 +130,15 @@ Deno.serve(async (req) => {
         // 1. Existing profile? Phone is the strongest key on this platform.
         let userId: string | null = null;
         let repaired = false;
-        if (profilePhone) {
-          const { data } = await admin.from("users").select("id").eq("phone", profilePhone).maybeSingle();
-          if (data) userId = data.id;
+        if (profilePhone && authPhone) {
+          // Profiles hold the number as "+91…" (the app's own writes) OR as bare
+          // "91…" (mirrored from auth.users by sync_confirmed_phone_to_users on
+          // first OTP login) — about 60% of rows are the bare form. Matching
+          // only the "+" form missed those and fell through to email / auth
+          // lookup, or minted a duplicate when the row had no email.
+          const { data } = await admin.from("users").select("id")
+            .in("phone", [profilePhone, authPhone]).limit(1);
+          if (data?.length) userId = data[0].id;
         }
         if (!userId && email) {
           const { data } = await admin.from("users").select("id").ilike("email", email).maybeSingle();
@@ -193,8 +202,11 @@ Deno.serve(async (req) => {
           if (existing[0].status === "active") {
             status = "already_enrolled";
           } else {
+            // Re-granting also clears the revoke stamp, otherwise the row
+            // reads "active, revoked on <date> by <admin>" forever.
             const { error } = await admin.from("enrolments")
-              .update({ status: "active" }).eq("id", existing[0].id);
+              .update({ status: "active", revoked_at: null, revoked_by: null, revoked_reason: null })
+              .eq("id", existing[0].id);
             if (error) return { input: s, status: "error", detail: error.message };
             status = "reactivated";
           }

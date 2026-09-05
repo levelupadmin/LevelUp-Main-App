@@ -15,7 +15,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Search, Copy, Archive, Trash2 } from "lucide-react";
+import { Plus, Pencil, Search, Copy, Link2, Archive, Trash2, Loader2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast as sonnerToast } from "sonner";
 
 interface OfferingRow {
@@ -37,6 +39,11 @@ const AdminOfferings = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  // Duplicate dialog
+  const [dupTarget, setDupTarget] = useState<OfferingRow | null>(null);
+  const [dupTitle, setDupTitle] = useState("");
+  const [dupCopyCurriculum, setDupCopyCurriculum] = useState(true);
+  const [duplicating, setDuplicating] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -115,6 +122,35 @@ const AdminOfferings = () => {
       load();
     }
     setDeleteId(null);
+  };
+
+  const openDuplicate = (o: OfferingRow) => {
+    setDupTitle(`${o.title} (copy)`);
+    setDupCopyCurriculum(true);
+    setDupTarget(o);
+  };
+
+  /** One transaction on the server (admin_duplicate_offering): the offering as a
+   *  private draft + its form fields, bumps, upsells, and — by default — a deep
+   *  copy of its courses so the new batch's curriculum can be edited without
+   *  touching the batch that is already running. Enrolments are never copied. */
+  const runDuplicate = async () => {
+    if (!dupTarget) return;
+    setDuplicating(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any).rpc("admin_duplicate_offering", {
+      p_offering_id: dupTarget.id,
+      p_new_title: dupTitle.trim() || null,
+      p_copy_curriculum: dupCopyCurriculum,
+    });
+    setDuplicating(false);
+    if (error || !data) {
+      toast({ title: "Couldn't duplicate", description: error?.message || "No id returned", variant: "destructive" });
+      return;
+    }
+    toast({ title: "Offering duplicated", description: "Opening the copy — it stays a private draft until you set it Active." });
+    setDupTarget(null);
+    navigate(`/admin/offerings/${data}/edit`);
   };
 
   const filtered = offerings.filter((o) => {
@@ -258,9 +294,16 @@ const AdminOfferings = () => {
                           className="p-1.5 rounded hover:bg-secondary"
                           title="Copy public link"
                         >
-                          <Copy className="h-4 w-4 text-muted-foreground" />
+                          <Link2 className="h-4 w-4 text-muted-foreground" />
                         </button>
                       )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openDuplicate(o); }}
+                        className="p-1.5 rounded hover:bg-secondary text-muted-foreground"
+                        title="Duplicate offering (new batch)"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); navigate(`/admin/offerings/${o.id}/edit`); }}
                         className="p-1.5 rounded hover:bg-secondary"
@@ -290,6 +333,53 @@ const AdminOfferings = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Duplicate */}
+      <Dialog open={!!dupTarget} onOpenChange={(o) => { if (!o && !duplicating) setDupTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Duplicate “{dupTarget?.title}”</DialogTitle>
+            <DialogDescription>
+              Makes a new <strong>private draft</strong> with the same price, checkout, thank-you
+              page, tracking and cohort settings. Students, applications and payments are never
+              copied — the copy starts with nobody enrolled.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">New title</label>
+              <Input
+                value={dupTitle}
+                onChange={(e) => setDupTitle(e.target.value)}
+                placeholder="e.g. The Breakthrough Filmmakers' Program — Batch 24"
+                autoFocus
+              />
+            </div>
+            <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <Checkbox
+                checked={dupCopyCurriculum}
+                onCheckedChange={(v) => setDupCopyCurriculum(v === true)}
+                className="mt-0.5"
+              />
+              <span>
+                Also copy the curriculum
+                <span className="block text-xs text-muted-foreground">
+                  {dupTarget?.course_count
+                    ? `Deep-copies ${dupTarget.course_count === 1 ? "the course" : `all ${dupTarget.course_count} courses`} (sections, chapters, resources, quizzes). Videos and PDFs are referenced, not re-uploaded. Untick to share the existing course instead.`
+                    : "This offering has no courses linked; nothing to copy."}
+                </span>
+              </span>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDupTarget(null)} disabled={duplicating}>Cancel</Button>
+            <Button onClick={runDuplicate} disabled={duplicating || !dupTitle.trim()} className="gap-2">
+              {duplicating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+              {duplicating ? "Duplicating…" : "Duplicate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>

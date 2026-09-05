@@ -34,6 +34,22 @@ interface UserRow {
   legacy_enrolment_count?: number;
 }
 
+/** PostgREST `or=` filter for the search box. The page used to filter only the
+ *  50 rows it had already fetched, so a student outside the current page could
+ *  never be found — search is server-side now. Digit-heavy input is treated as a
+ *  phone fragment (spaces / dashes / "+" stripped, so "+91 98765" finds
+ *  "919876…" and "+919876…" alike); anything else matches name or email.
+ *  Commas and parentheses would break PostgREST's filter grammar, so they are
+ *  dropped from the needle. */
+function buildSearchOr(raw: string): string | null {
+  const q = raw.trim().replace(/[,()]/g, "");
+  if (q.length < 2) return null;
+  const digits = q.replace(/\D/g, "");
+  const looksLikePhone = digits.length >= 4 && digits.length / q.length > 0.6;
+  const needle = looksLikePhone ? digits : q;
+  return `full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${needle}%`;
+}
+
 const AdminUsers = () => {
   const PAGE_SIZE = 50;
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -46,7 +62,12 @@ const AdminUsers = () => {
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [editUser, setEditUser] = useState<UserRow | null>(null);
-  const [editForm, setEditForm] = useState({ full_name: "", bio: "", role: "student" });
+  const EMPTY_FORM = { full_name: "", bio: "", role: "student", email: "", phone: "" };
+  const [editForm, setEditForm] = useState(EMPTY_FORM);
+  /** What the dialog loaded — only fields that differ from this are sent. */
+  const [editOrig, setEditOrig] = useState(EMPTY_FORM);
+  /** Server asked for a yes before attaching unclaimed TagMango purchases. */
+  const [legacyPrompt, setLegacyPrompt] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmRoleChange, setConfirmRoleChange] = useState(false);
   const [roleFilter, setRoleFilter] = useState("all");
@@ -93,18 +114,24 @@ const AdminUsers = () => {
     }));
   }, [allOfferings]);
 
+  const loadSeq = useRef(0);
   const load = async (p = page) => {
+    const seq = ++loadSeq.current;
+    const stale = () => seq !== loadSeq.current;
     setLoading(true);
     const from = p * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
     // Query the users_unified view - adds legacy flag, city, vertical, LTV.
+    const searchOr = buildSearchOr(debouncedSearch);
     let countQuery = supabase
       .from("users_unified" as any)
       .select("id", { count: "exact", head: true });
     if (scopeFilter === "active") countQuery = countQuery.eq("is_legacy", false);
     if (scopeFilter === "legacy") countQuery = countQuery.eq("is_legacy", true);
     if (verticalFilter !== "all") countQuery = countQuery.eq("program_vertical", verticalFilter);
+    if (roleFilter !== "all") countQuery = countQuery.eq("role", roleFilter);
+    if (searchOr) countQuery = countQuery.or(searchOr);
     const { count } = await countQuery;
     setTotalCount(count ?? 0);
 
@@ -118,8 +145,18 @@ const AdminUsers = () => {
     if (scopeFilter === "active") q = q.eq("is_legacy", false);
     if (scopeFilter === "legacy") q = q.eq("is_legacy", true);
     if (verticalFilter !== "all") q = q.eq("program_vertical", verticalFilter);
-    const { data: usersData } = await q as any;
+    if (roleFilter !== "all") q = q.eq("role", roleFilter);
+    if (searchOr) q = q.or(searchOr);
+    const { data: usersData, error: usersErr } = await q as any;
 
+    if (stale()) return; // a newer filter/page request is already in flight
+    if (usersErr) {
+      // Surface it — the old page swallowed this and sat on "Loading…" forever.
+      toast({ title: "Couldn't load users", description: usersErr.message, variant: "destructive" });
+      setUsers([]);
+      setLoading(false);
+      return;
+    }
     if (!usersData) { setLoading(false); return; }
 
     // Only real users have an `id`; phantom legacy users have id=null.
@@ -135,36 +172,88 @@ const AdminUsers = () => {
       if (!eMap[e.user_id]) eMap[e.user_id] = [];
       if (!eMap[e.user_id].includes(e.offering_id)) eMap[e.user_id].push(e.offering_id);
     });
+    if (stale()) return;
     setEnrolmentMap(eMap);
 
     setUsers((usersData as any[]).map((u: any) => ({ ...u, enrolment_count: eCounts[u.id] || 0 })));
     setLoading(false);
   };
 
-  useEffect(() => { load(page); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [page, scopeFilter, verticalFilter]);
+  // Any filter change restarts from page 0; the search box is debounced.
+  useEffect(() => { setPage(0); }, [debouncedSearch, roleFilter, scopeFilter, verticalFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(page); }, [page, scopeFilter, verticalFilter, roleFilter, debouncedSearch]);
 
   const openEdit = async (user: UserRow) => {
-    const { data } = await supabase.from("users").select("full_name, bio, role").eq("id", user.id).single();
-    setEditForm({ full_name: data?.full_name || "", bio: data?.bio || "", role: data?.role || "student" });
+    const { data } = await supabase.from("users").select("full_name, bio, role, email, phone").eq("id", user.id).single();
+    const loaded = {
+      full_name: data?.full_name || "",
+      bio: data?.bio || "",
+      role: data?.role || "student",
+      email: data?.email || "",
+      phone: data?.phone || "",
+    };
+    setEditForm(loaded);
+    setEditOrig(loaded);
+    setLegacyPrompt(null);
     setEditUser(user);
   };
 
   const isSelf = editUser?.id === currentUser?.id;
   const roleChanged = editUser && editForm.role !== editUser.role;
+  const actorIsOwner = currentUser?.role === "owner";
+  // Mirrors admin-update-user's rules: owners are editable only by owners; another
+  // admin's LOGIN fields (email/phone) only by an owner.
+  const targetLocked = !!editUser && editUser.role === "owner" && !actorIsOwner;
+  const loginLocked = targetLocked || (!!editUser && editUser.role === "admin" && !actorIsOwner && !isSelf);
 
-  const doSave = async () => {
+  const doSave = async (confirmLegacy = false) => {
     if (!editUser) return;
     setSaving(true);
     // Defense in depth: even if the select was somehow enabled, never
     // submit a role change for the currently signed-in admin. A DB trigger
     // (20260408160200_admin_role_guard.sql) blocks it server-side too.
-    const updates: Record<string, unknown> = {
-      full_name: editForm.full_name || null,
-      bio: editForm.bio || null,
-    };
-    if (!isSelf) updates.role = editForm.role;
+    // Name / bio / email / phone go through admin-update-user, which writes
+    // BOTH auth.users (what OTP login checks) and public.users (the profile).
+    // Writing a new phone to the profile alone would show the new number while
+    // the student could still only log in with the old one.
+    // Only the fields the admin actually edited are sent — an untouched phone
+    // must never be re-submitted as a "change" to the login identity.
+    const body: Record<string, unknown> = { user_id: editUser.id };
+    if (editForm.full_name !== editOrig.full_name) body.full_name = editForm.full_name || null;
+    if (editForm.bio !== editOrig.bio) body.bio = editForm.bio || null;
+    if (editForm.email.trim() !== editOrig.email.trim()) body.email = editForm.email.trim() || null;
+    if (editForm.phone.trim() !== editOrig.phone.trim()) body.phone = editForm.phone.trim() || null;
+    if (confirmLegacy) body.confirm_legacy_claim = true;
 
-    const { error } = await supabase.from("users").update(updates as unknown as TablesUpdate<"users">).eq("id", editUser.id);
+    if (Object.keys(body).length > 1) {
+      const { data: upd, error: fnErr } = await supabase.functions.invoke("admin-update-user", { body });
+      const outcome = upd as { ok?: boolean; code?: string; error?: string } | null;
+      if (outcome && outcome.ok === false && outcome.code === "needs_confirmation") {
+        setLegacyPrompt(outcome.error || "This identity has unclaimed purchases. Save anyway?");
+        setSaving(false);
+        return;
+      }
+      // The function returns business errors as data on 200; a thrown error is
+      // the gateway/auth layer, whose body is only reachable via context.
+      let fnMessage = outcome?.error;
+      if (!fnMessage && fnErr) {
+        const ctx = (fnErr as { context?: Response }).context;
+        try { fnMessage = ctx ? ((await ctx.json()) as { error?: string }).error : undefined; } catch { /* not JSON */ }
+        fnMessage = fnMessage || fnErr.message;
+      }
+      if (fnMessage) {
+        toast({ title: "Couldn't save", description: fnMessage, variant: "destructive" });
+        setSaving(false);
+        setConfirmRoleChange(false);
+        return;
+      }
+    }
+
+    // Role: plain profile update, guarded by the admin_role_guard trigger.
+    const error = !isSelf && roleChanged
+      ? (await supabase.from("users").update({ role: editForm.role } as unknown as TablesUpdate<"users">).eq("id", editUser.id)).error
+      : null;
 
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -359,14 +448,12 @@ const AdminUsers = () => {
     resetInput();
   };
 
+  // Search + role are applied server-side in load(); only the offering filter
+  // still narrows the fetched page (it needs the enrolment map).
   const filtered = users.filter((u) => {
-    const matchSearch = !debouncedSearch ||
-      (u.full_name || "").toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-      (u.email || "").toLowerCase().includes(debouncedSearch.toLowerCase());
-    const matchRole = roleFilter === "all" || u.role === roleFilter;
     const matchOffering = offeringFilter.length === 0 ||
       (enrolmentMap[u.id] || []).some((oid) => offeringFilter.includes(oid));
-    return matchSearch && matchRole && matchOffering;
+    return matchOffering;
   });
 
   return (
@@ -374,7 +461,7 @@ const AdminUsers = () => {
       <div className="flex flex-wrap items-center gap-4 mb-6">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search users..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <Input placeholder="Search name, email or phone…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
         <Select value={roleFilter} onValueChange={setRoleFilter}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
@@ -517,8 +604,37 @@ const AdminUsers = () => {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-1">Full Name</label>
-              <Input value={editForm.full_name} onChange={(e) => setEditForm((f) => ({ ...f, full_name: e.target.value }))} />
+              <Input value={editForm.full_name} disabled={targetLocked} onChange={(e) => setEditForm((f) => ({ ...f, full_name: e.target.value }))} />
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Email</label>
+                <Input
+                  type="email"
+                  value={editForm.email}
+                  disabled={loginLocked}
+                  onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="student@example.com"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Phone</label>
+                <Input
+                  value={editForm.phone}
+                  disabled={loginLocked}
+                  onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+                  placeholder="+91 98765 43210"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground -mt-2">
+              {targetLocked
+                ? "Only an owner can edit an owner's account."
+                : loginLocked
+                ? "Only an owner can change another admin's login email or phone."
+                : <>Phone is how they log in (OTP). Changing it moves the login to the new number —
+                  write it with the country code (<code>+91…</code>); a bare 10-digit number is read as Indian.</>}
+            </p>
             <div>
               <label className="block text-sm font-medium mb-1">Bio</label>
               <Textarea value={editForm.bio} onChange={(e) => setEditForm((f) => ({ ...f, bio: e.target.value }))} rows={3} />
@@ -538,12 +654,29 @@ const AdminUsers = () => {
                 </Select>
               )}
             </div>
-            <Button onClick={handleSave} disabled={saving} className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
+            <Button onClick={handleSave} disabled={saving || targetLocked} className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
               {saving ? "Saving…" : "Save Changes"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!legacyPrompt} onOpenChange={(o) => { if (!o) setLegacyPrompt(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" /> Unclaimed TagMango purchases
+            </AlertDialogTitle>
+            <AlertDialogDescription>{legacyPrompt}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); setLegacyPrompt(null); doSave(true); }} disabled={saving}>
+              {saving ? "Saving…" : "Save anyway"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmRoleChange} onOpenChange={setConfirmRoleChange}>
         <AlertDialogContent>
@@ -560,7 +693,7 @@ const AdminUsers = () => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={doSave} disabled={saving}>
+            <AlertDialogAction onClick={() => doSave()} disabled={saving}>
               {saving ? "Saving…" : "Confirm"}
             </AlertDialogAction>
           </AlertDialogFooter>

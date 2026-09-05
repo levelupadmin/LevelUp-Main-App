@@ -217,6 +217,15 @@ npx -y supabase@latest db push                                   # applies ALL p
 npx -y supabase@latest functions deploy <name>                   # server-side bundling; no Docker needed
 ```
 
+- **Quick prod SQL without the CLI:** `ops/lib/q.sh <<'SQL' … SQL` (Management API,
+  ref pinned, reads `SUPABASE_PAT` from `~/.levelup/.env.supabase`). Multi-statement
+  input returns only the LAST statement's rows.
+- **Before `db push`, run `migration list` and reconcile.** On 2026-09-05 prod had a
+  tracker row with no local file (`20260807140000 tagmango_sync`, applied
+  out-of-band — a no-op placeholder now lives in the repo) and two local files whose
+  objects were live in prod but never recorded (`20260811000000`, `20260811010000` —
+  fixed with `migration repair --status applied`). A blind push would have failed
+  on the first and re-run the second two.
 - **PROD project ref = `ivkvluezuiojovpotlyb`** (confirmed via the live app's
   `VITE_SUPABASE_URL` and `.env.supabase` `SUPABASE_MAIN_APP_REF`).
 - ⚠️ **`supabase/config.toml` `project_id = "twqagwleffjggoemzfqs"` is STALE/WRONG**

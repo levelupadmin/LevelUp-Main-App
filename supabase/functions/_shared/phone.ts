@@ -156,3 +156,71 @@ export function phoneBinding(
   if (phoneLike.length === 0) return "unknown";
   return phoneLike.includes(want) ? "match" : "mismatch";
 }
+
+/**
+ * Resolve ONE imported row's phone to bare E.164 digits (no `+`), or null when
+ * it cannot be a real number. This is the single place the admin bulk-import
+ * decides which country a number belongs to, so the edge function that CREATES
+ * the accounts and the admin preview that shows what WILL be created can never
+ * drift apart.
+ *
+ * A CRM export splits a number across two columns — a dial code and a national
+ * number — and that pair is only unambiguous if we say plainly which one wins:
+ *
+ *   1. A leading `+` on the phone means it ALREADY carries its country code, so
+ *      the country-code column is ignored. It is the weaker signal: an export
+ *      that fills both columns is usually just repeating the same code.
+ *   2. Otherwise, when a country code IS given, the phone is treated as the
+ *      NATIONAL number — a trunk `0` is dropped and the code is prepended. A
+ *      number that already repeats the code is not double-prefixed.
+ *   3. With NO country code, the historical default applies: a bare 10-digit
+ *      number is Indian. Every India-only CSV that imported before this column
+ *      existed keeps importing byte-identically.
+ *
+ * WHY IT MATTERS: without step 2 a `+44` student's 10-digit national number
+ * silently became `+91…`. Nothing errors — an account is created, the CSV row
+ * reports success, and the student can never receive the login OTP, because the
+ * account is keyed to an Indian number that isn't theirs.
+ *
+ * The result is held to E.164's own 8–15 digit range, so a truncated or junk
+ * cell is rejected here rather than becoming an account nobody can log into.
+ */
+export function resolveImportPhone(
+  rawPhone: string | null | undefined,
+  rawCountryCode?: string | null,
+): string | null {
+  const trimmed = String(rawPhone ?? "").trim();
+  if (!trimmed) return null;
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return null;
+
+  const plausible = (d: string) => (d.length >= 8 && d.length <= 15 ? d : null);
+
+  // 1. Already E.164 — the phone column carries its own country code.
+  if (trimmed.startsWith("+")) return plausible(digits.replace(/^0+/, ""));
+
+  // 2. Explicit country code → the phone column is a national number.
+  const cc = String(rawCountryCode ?? "").replace(/\D/g, "").replace(/^0+/, "");
+  if (cc) {
+    const national = digits.replace(/^0+/, "");
+    if (!national) return null;
+    // The export repeated the code in BOTH columns — don't double-prefix it.
+    //
+    // "Starts with the code" is NOT enough on its own: 9102534444 is a real
+    // 10-digit Indian mobile that happens to begin "91", and treating it as
+    // already-qualified drops it to a 10-digit number that is not a valid
+    // E.164 at all. So we also require that REMOVING the code still leaves a
+    // full-length national number (>= 9 digits). A genuinely prefixed
+    // 919102534444 leaves 10 and is kept; the bare mobile leaves 8 and is
+    // prefixed, which is what the country-code column asked for.
+    if (national.startsWith(cc) && national.length - cc.length >= 9) {
+      return plausible(national);
+    }
+    return plausible(cc + national);
+  }
+
+  // 3. No country code — the historical India default, preserved exactly.
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.length === 11 && digits.startsWith("0")) return `91${digits.slice(1)}`;
+  return digits.length >= 11 ? plausible(digits) : null;
+}

@@ -54,3 +54,7 @@ design/community/shots/
 
 supabase/.branches/
 public/pdf.worker.min.js
+
+# Student rosters used for one-off enrolment runs contain PII — never commit.
+ops/cohorts/*.csv
+ops/cohorts/BFP-*-SETUP.md

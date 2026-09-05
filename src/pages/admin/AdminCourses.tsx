@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Search, Eye, Pencil, Trash2, MoreVertical, Globe, Star } from "lucide-react";
+import { Plus, Search, Eye, Pencil, Trash2, MoreVertical, Globe, Star, Copy, Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -58,6 +59,9 @@ const AdminCourses = () => {
   const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [dupTarget, setDupTarget] = useState<CourseCard | null>(null);
+  const [dupTitle, setDupTitle] = useState("");
+  const [duplicating, setDuplicating] = useState(false);
   const [deleteCascadeInfo, setDeleteCascadeInfo] = useState<{
     sectionCount: number;
     chapterCount: number;
@@ -196,6 +200,34 @@ const AdminCourses = () => {
     setDeleteId(null);
   };
 
+  /* ── Duplicate ── */
+  const openDuplicate = (c: CourseCard) => {
+    setDupTitle(`${c.title} (copy)`);
+    setDupTarget(c);
+  };
+
+  /** Server-side deep copy (admin_duplicate_course): sections, chapters,
+   *  resources, quizzes, drip, testimonials, certificate template. Media is
+   *  referenced, not re-uploaded. Progress / reviews / enrolments stay with the
+   *  source. The copy is hidden from Browse until you switch it on. */
+  const runDuplicate = async () => {
+    if (!dupTarget) return;
+    setDuplicating(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any).rpc("admin_duplicate_course", {
+      p_course_id: dupTarget.id,
+      p_new_title: dupTitle.trim() || null,
+    });
+    setDuplicating(false);
+    if (error || !data) {
+      toast({ title: "Couldn't duplicate", description: error?.message || "No id returned", variant: "destructive" });
+      return;
+    }
+    toast({ title: "Course duplicated", description: "Opening the copy. Link it to an offering to give students access." });
+    setDupTarget(null);
+    navigate(`/admin/courses/${data}/edit`);
+  };
+
   /* ── Toggle show_on_browse ── */
   const toggleBrowse = async (courseId: string, current: boolean) => {
     const next = !current;
@@ -325,6 +357,7 @@ const AdminCourses = () => {
                     onDelete={() => openDeleteDialog(c.id)}
                     onToggleBrowse={() => toggleBrowse(c.id, c.show_on_browse)}
                     onReviews={() => navigate(`/admin/courses/${c.id}/reviews`)}
+                    onDuplicate={() => openDuplicate(c)}
                   />
                 ))}
               </div>
@@ -350,6 +383,7 @@ const AdminCourses = () => {
                     onDelete={() => openDeleteDialog(c.id)}
                     onToggleBrowse={() => toggleBrowse(c.id, c.show_on_browse)}
                     onReviews={() => navigate(`/admin/courses/${c.id}/reviews`)}
+                    onDuplicate={() => openDuplicate(c)}
                   />
                 ))}
               </div>
@@ -359,6 +393,31 @@ const AdminCourses = () => {
       )}
 
       {/* Delete confirmation */}
+      {/* Duplicate */}
+      <Dialog open={!!dupTarget} onOpenChange={(o) => { if (!o && !duplicating) setDupTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Duplicate “{dupTarget?.title}”</DialogTitle>
+            <DialogDescription>
+              Copies every section and chapter ({dupTarget?.chapter_count ?? 0} ch.), plus resources,
+              quizzes and the certificate template. Videos and PDFs are referenced, not re-uploaded.
+              Student progress, reviews and enrolments stay with the original.
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <label className="block text-sm font-medium mb-1">New title</label>
+            <Input value={dupTitle} onChange={(e) => setDupTitle(e.target.value)} autoFocus />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDupTarget(null)} disabled={duplicating}>Cancel</Button>
+            <Button onClick={runDuplicate} disabled={duplicating || !dupTitle.trim()} className="gap-2">
+              {duplicating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+              {duplicating ? "Duplicating…" : "Duplicate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={!!deleteId} onOpenChange={() => { setDeleteId(null); setDeleteCascadeInfo(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -411,6 +470,7 @@ function CourseCardComponent({
   onDelete,
   onToggleBrowse,
   onReviews,
+  onDuplicate,
 }: {
   course: CourseCard;
   tier: string;
@@ -419,6 +479,7 @@ function CourseCardComponent({
   onDelete: () => void;
   onToggleBrowse: () => void;
   onReviews: () => void;
+  onDuplicate: () => void;
 }) {
   return (
     // The whole card opens the editor — no need to hunt for the three-dot
@@ -493,6 +554,9 @@ function CourseCardComponent({
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onEdit}>
                 <Pencil className="h-4 w-4 mr-2" /> Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onDuplicate}>
+                <Copy className="h-4 w-4 mr-2" /> Duplicate
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">

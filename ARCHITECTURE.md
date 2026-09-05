@@ -44,7 +44,7 @@ The web app is authoritative; the native shells wrap it and are read-only on buy
 | **Live cohorts** | `pages/CohortDashboard.tsx`, `pages/ApplicationStatus.tsx`, `components/cohort/`, `components/live/` | `register-for-event`, `verify-event-payment`, `notify-cohort`, `tally-application-webhook` |
 | **Refunds / invoices** | `pages/ProfilePage.tsx`, `components/profile/`, `lib/invoice.ts` | `process-refund`, `generate-invoice-pdf` |
 | **Certificates** | `components/certificates/`, `hooks/useCertificateAutoGenerate.ts`, `lib/certificate-generator.ts` | (client-generated) |
-| **Admin** | `pages/admin/*` (37 pages), `components/admin/` | `admin-api`, `send-bulk-email`, `send-notification` |
+| **Admin** | `pages/admin/*` (37 pages), `components/admin/` | `admin-api`, `send-bulk-email`, `send-notification`, `admin-grant-access` (CSV import / add student), `admin-update-user` (edit login email/phone), RPCs `admin_duplicate_offering` / `admin_duplicate_course` |
 | **Email / notifications** | `components/notifications/`, `hooks/useNotifications.ts` | `queue-transactional-email`, `process-email-queue`, `_shared/email-templates/` |
 
 Cross-cutting: `contexts/AuthContext.tsx` (session + user), `components/guards/` (route
