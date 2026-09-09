@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { prefillPhoneParam, resolveLoginRedirect } from "@/lib/loginParams";
 import { motion } from "framer-motion";
 import {
   supabase,
@@ -35,6 +36,9 @@ const resolvePostAuthDestination = async (
   userId: string,
   fallback: string
 ): Promise<string> => {
+  // A buyer arriving from checkout must see their order first. Crafts are then
+  // collected on their next plain sign-in (Onboarding drops ?next=).
+  if (fallback.startsWith("/thank-you/")) return fallback;
   try {
     const { data, error } = await supabase
       .from("users")
@@ -117,6 +121,14 @@ const prefersReducedMotion = (): boolean =>
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  // Where to land after sign-in: RequireAuth's state.from first, then ?next=
+  // (guest checkout hands us /thank-you/<order> here), else /home. Same-origin
+  // paths only — see loginParams.ts.
+  const redirectTarget = resolveLoginRedirect(
+    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname,
+    searchParams.get("next"),
+  );
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
   const ms = useMotionSafe();
@@ -165,7 +177,13 @@ const Login = () => {
   // Always starts on "phone": the MSG91 flow is the proven path and stays the
   // default first paint whether or not the email tab is switched on.
   const [authTab, setAuthTab] = useState<OtpTab>("phone");
-  const [phone, setPhone] = useState("");
+  // Phone prefill (strict E.164) — handed over by checkout after a guest
+  // payment via router state (kept out of the URL so analytics/Sentry never
+  // see a phone number); ?phone= remains as a fallback.
+  const prefilledPhone = prefillPhoneParam(
+    (location.state as { phone?: string } | null)?.phone ?? searchParams.get("phone"),
+  );
+  const [phone, setPhone] = useState(prefilledPhone);
   const [email, setEmail] = useState("");
   const [channel, setChannel] = useState<"sms" | "whatsapp">("sms");
   const [loading, setLoading] = useState(false);
@@ -176,7 +194,8 @@ const Login = () => {
   // email-only fallback we skip straight into the form so the welcome layer
   // never traps a non-Indian user. Once the user is past the phone step
   // (OTP / email), the form is always open.
-  const [formOpen, setFormOpen] = useState(EMAIL_ONLY_AUTH);
+  // Open straight onto the form when checkout prefilled the phone.
+  const [formOpen, setFormOpen] = useState(EMAIL_ONLY_AUTH || !!prefilledPhone);
 
   // Animation key so the form column re-mounts the slide-in animation
   // on every step transition.
@@ -202,8 +221,8 @@ const Login = () => {
     // choreography short under latency. Standing down lets the choreography play
     // its full window and keeps the final destination handleVerify computed.
     if (celebratingRef.current) return;
-    navigate("/home", { replace: true });
-  }, [user, authLoading, navigate]);
+    navigate(redirectTarget, { replace: true });
+  }, [user, authLoading, navigate, redirectTarget]);
 
   // Best-effort widget init on mount. If it fails (script blocked, env
   // vars missing) we'll retry inside handleSendOtp; the UI doesn't
@@ -231,9 +250,6 @@ const Login = () => {
   // navTimer owns the actual route paint.
   if (user && !celebratingRef.current) return null;
 
-  const rawFrom =
-    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/home";
-  const redirectTarget = rawFrom.startsWith("/") && !rawFrom.includes("//") ? rawFrom : "/home";
   const isIndianPhone = phone.startsWith("+91");
   // App Review demo login: reviewers cannot receive an Indian OTP, so for
   // exactly this reserved number we skip the MSG91 widget and let

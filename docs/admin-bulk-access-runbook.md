@@ -199,6 +199,19 @@ with or without `+91`.
 
 ## Troubleshooting
 
+**"I paid on the website but can't see the course" (guest checkout).** Since
+2026-09-09 a guest purchase is attached to the account that owns the PHONE the
+buyer typed at checkout; after paying, the site sends them to the login screen
+with that number prefilled for one OTP. Ask the student to log in with that
+phone number (OTP). Email login only works if a real email has been set on the
+account (Users → Edit); new guest accounts carry a placeholder email. If they still
+see nothing: Users → search the phone → the purchase must show on that account
+and its Enrolments; if it shows on a different account, or on none, check the
+order in Payments (status `captured` + a Razorpay payment id) and use Grant
+access on the phone account. Purchases made before 2026-09-09 as a guest were
+repaired by script (see ops/cohorts, not committed) — anything left over is a
+one-off Grant.
+
 **"Student says they can't log in."** Check the phone on their row in the
 Students tab. If it starts `+91` but they're overseas, the `country_code` column
 was missing on import. Re-import that one row with the right country code — it

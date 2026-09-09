@@ -104,7 +104,11 @@ Deno.serve(async (req) => {
     let buyerName = po.guest_name ?? "";
     let buyerEmail = po.guest_email ?? "";
     let buyerPhone = po.guest_phone ?? "";
-    if (po.user_id) {
+    // A GUEST order (guest_email set) is billed to exactly what the buyer typed.
+    // The order may be attached to an existing phone-keyed account whose profile
+    // belongs to someone else's view of that person; never print that profile
+    // onto a PDF that is emailed to the typed address (2026-09-09 council).
+    if (po.user_id && !po.guest_email) {
       const { data: u } = await admin
         .from("users")
         .select("full_name, email, phone")

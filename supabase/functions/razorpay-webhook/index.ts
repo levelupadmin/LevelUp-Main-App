@@ -16,38 +16,7 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
-function normalizePhone(phone: string): string | null {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
-  if (digits.length === 10) return digits;
-  return null; // Invalid phone length
-}
-
-/**
- * O(1) lookup of auth.users by email via the GoTrue admin REST API.
- * See the same helper in verify-razorpay-payment for rationale: the
- * supabase-js listUsers() call does not accept a filter and scans the
- * entire table with a default page size of 50, losing records past it.
- */
-async function findAuthUserByEmail(
-  supabaseUrl: string,
-  serviceRoleKey: string,
-  email: string
-): Promise<{ id: string; email?: string } | null> {
-  try {
-    const res = await fetch(
-      `${supabaseUrl}/auth/v1/admin/users?email=${encodeURIComponent(email)}`,
-      { headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey } }
-    );
-    if (!res.ok) return null;
-    const body = await res.json();
-    if (Array.isArray(body?.users) && body.users.length > 0) return body.users[0];
-    if (body?.id && body?.email?.toLowerCase() === email.toLowerCase()) return body;
-    return null;
-  } catch {
-    return null;
-  }
-}
+import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 
 async function verifySignature(
   body: string,
@@ -55,82 +24,6 @@ async function verifySignature(
   secret: string
 ): Promise<boolean> {
   return timingSafeEqual(await hmacSha256Hex(body, secret), signature);
-}
-
-/**
- * Resolve (or create) the public.users / auth.users id for a guest checkout
- * payment order. Mirrors the logic in verify-razorpay-payment so the webhook
- * can recover guest customers when the redirect path fails.
- */
-async function resolveGuestUserId(
-  admin: any,
-  po: any
-): Promise<{ userId: string | null; error?: string }> {
-  if (!po.guest_email) {
-    return { userId: null, error: "Guest order has no guest_email" };
-  }
-
-  const normalizedPhone = po.guest_phone ? normalizePhone(po.guest_phone) : null;
-
-  // 1. existing public.users by email
-  const { data: existingUser } = await admin
-    .from("users")
-    .select("id")
-    .eq("email", po.guest_email)
-    .maybeSingle();
-
-  if (existingUser) {
-    return { userId: existingUser.id };
-  }
-
-  // 2. existing auth.users by email, O(1) via REST, see helper
-  let existingAuthUser: any = null;
-  try {
-    existingAuthUser = await findAuthUserByEmail(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      po.guest_email
-    );
-  } catch (err) {
-    console.warn("[razorpay-webhook] findAuthUserByEmail failed:", err);
-  }
-
-  if (existingAuthUser) {
-    await admin.from("users").upsert(
-      {
-        id: existingAuthUser.id,
-        email: po.guest_email,
-        full_name: po.guest_name,
-        phone: normalizedPhone,
-      },
-      { onConflict: "id" }
-    );
-    return { userId: existingAuthUser.id };
-  }
-
-  // 3. create a fresh auth user
-  const { data: newUser, error: createError } = await admin.auth.admin.createUser({
-    email: po.guest_email,
-    email_confirm: true,
-    user_metadata: {
-      full_name: po.guest_name,
-      phone: normalizedPhone,
-    },
-  });
-
-  if (createError) {
-    console.error("[razorpay-webhook] createUser failed:", createError.message);
-    return { userId: null, error: createError.message };
-  }
-
-  if (normalizedPhone) {
-    await admin
-      .from("users")
-      .update({ phone: normalizedPhone })
-      .eq("id", newUser.user.id);
-  }
-
-  return { userId: newUser.user.id };
 }
 
 Deno.serve(async (req) => {
@@ -207,7 +100,7 @@ Deno.serve(async (req) => {
     // "needs_review" = parked for a human (wrong amount / coupon / user issue),
     // so we must NOT auto-reprocess it on a Razorpay retry.
     if (po.status === "captured" || po.status === "needs_review") {
-      if (po.status === "captured" && !po.razorpay_payment_id) {
+      if (!po.razorpay_payment_id) {
         await admin
           .from("payment_orders")
           .update({ razorpay_payment_id: razorpayPaymentId })
@@ -230,7 +123,7 @@ Deno.serve(async (req) => {
       // Park for manual review rather than auto-enrolling on a wrong amount.
       await admin
         .from("payment_orders")
-        .update({ status: "needs_review" })
+        .update({ status: "needs_review", razorpay_payment_id: razorpayPaymentId })
         .eq("id", po.id);
       // Return 200: the amount will never change, so a 4xx here just makes
       // Razorpay retry the same mismatch forever. Ack receipt; a human
@@ -242,8 +135,13 @@ Deno.serve(async (req) => {
     // found/created from guest_email. We need the user id to grant enrolment.
     let userId: string | null = po.user_id;
     if (!userId) {
-      const resolved = await resolveGuestUserId(admin, po);
-      if (!resolved.userId) {
+      // Phone-keyed, shared with verify-razorpay-payment (see _shared/buyerIdentity.ts).
+      const resolved = await resolveOrCreateBuyer(
+        admin,
+        { name: po.guest_name, email: po.guest_email, phone: po.guest_phone },
+        { tag: "razorpay-webhook", paid: true },
+      );
+      if (!resolved.ok) {
         console.error(
           "[razorpay-webhook] Could not resolve guest user for payment_order",
           po.id,
@@ -251,7 +149,7 @@ Deno.serve(async (req) => {
         );
         await admin
           .from("payment_orders")
-          .update({ status: "needs_review" })
+          .update({ status: "needs_review", razorpay_payment_id: razorpayPaymentId })
           .eq("id", po.id);
         return jsonRes({ error: "Could not resolve user" }, 500);
       }
@@ -415,7 +313,7 @@ Deno.serve(async (req) => {
         );
         await admin
           .from("payment_orders")
-          .update({ status: "needs_review" })
+          .update({ status: "needs_review", razorpay_payment_id: razorpayPaymentId })
           .eq("id", po.id);
       }
     }

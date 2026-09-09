@@ -13,55 +13,7 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
-function normalizePhone(phone: string): string | null {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
-  if (digits.length === 10) return digits;
-  return null; // Invalid phone length
-}
-
-/**
- * O(1) lookup of an auth.users row by email via the GoTrue admin REST API.
- *
- * The supabase-js client's admin.auth.admin.listUsers() does not accept a
- * filter parameter in v2 and always returns a full page (default 50) from
- * the top of auth.users. On a large user base this drops the target user
- * off the page and returns null, causing guest checkouts to fail-over to
- * needs_review even when the user exists. The REST endpoint accepts
- * ?email=<email> and returns exactly one record (or empty).
- */
-async function findAuthUserByEmail(
-  supabaseUrl: string,
-  serviceRoleKey: string,
-  email: string
-): Promise<{ id: string; email?: string } | null> {
-  try {
-    const url = `${supabaseUrl}/auth/v1/admin/users?email=${encodeURIComponent(email)}`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${serviceRoleKey}`,
-        apikey: serviceRoleKey,
-      },
-    });
-    if (!res.ok) {
-      console.warn("[findAuthUserByEmail] HTTP", res.status);
-      return null;
-    }
-    const body = await res.json();
-    // The endpoint returns either { users: [...] } or a single user object
-    // depending on GoTrue version; handle both.
-    if (Array.isArray(body?.users) && body.users.length > 0) {
-      return body.users[0];
-    }
-    if (body?.id && body?.email?.toLowerCase() === email.toLowerCase()) {
-      return body;
-    }
-    return null;
-  } catch (err) {
-    console.warn("[findAuthUserByEmail] fetch failed:", err);
-    return null;
-  }
-}
+import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 
 async function verifyHmac(
   orderId: string,
@@ -156,7 +108,6 @@ Deno.serve(async (req) => {
 
     /* ── Auth: authenticated flow or guest flow ── */
     let userId: string | null = null;
-    let magicLinkToken: string | null = null;
 
     const authHeader = req.headers.get("Authorization");
     if (!is_guest) {
@@ -293,6 +244,45 @@ Deno.serve(async (req) => {
 
     console.log("[verify] Payment verified");
 
+    /* ── Guest: resolve the buyer by PHONE via find_login_identity ──
+       BEFORE the order is marked captured, so a resolution failure can never
+       downgrade a captured order, and nothing is issued to the caller: no
+       session is minted from payment proof (an unverified phone is not an
+       identity — the buyer proves it with one OTP on /login). Never GoTrue's
+       /admin/users?email= list (it ignores the filter and returns the newest
+       signups; that credited every guest purchase to a stranger until
+       2026-09-09). Shared with razorpay-webhook so both paths land on the
+       same account. ── */
+    if (!userId) {
+      if (po.user_id) {
+        userId = po.user_id as string;
+      } else {
+        const buyer = await resolveOrCreateBuyer(
+          admin,
+          { name: po.guest_name, email: po.guest_email, phone: po.guest_phone },
+          { tag: "verify", paid: true },
+        );
+        if (!buyer.ok) {
+          console.error("[verify] buyer resolution failed for", payment_order_id, buyer.error);
+          await admin
+            .from("payment_orders")
+            .update({ status: "needs_review", razorpay_payment_id, razorpay_signature })
+            .eq("id", payment_order_id);
+          return jsonRes(
+            {
+              success: false,
+              needs_review: true,
+              error:
+                "Payment received, but we could not set up your account automatically. Our team will email you within a few hours.",
+            },
+            202,
+          );
+        }
+        userId = buyer.userId;
+        await admin.from("payment_orders").update({ user_id: userId }).eq("id", payment_order_id);
+      }
+    }
+
     /* ── Capture-time coupon redemption ──
        Redemption is intentionally deferred from order-creation to here so
        that abandoned / failed payments do not burn coupon usage. We use
@@ -311,7 +301,7 @@ Deno.serve(async (req) => {
         );
         await admin
           .from("payment_orders")
-          .update({ status: "needs_review" })
+          .update({ status: "needs_review", razorpay_payment_id, razorpay_signature })
           .eq("id", payment_order_id);
         return jsonRes(
           {
@@ -335,218 +325,6 @@ Deno.serve(async (req) => {
         captured_at: new Date().toISOString(),
       })
       .eq("id", payment_order_id);
-
-    /* ── Guest account creation / lookup ── */
-    if (is_guest || !userId) {
-      const { data: poGuest } = await admin
-        .from("payment_orders")
-        .select("guest_email, guest_name, guest_phone, offering_id")
-        .eq("id", payment_order_id)
-        .single();
-
-      if (poGuest?.guest_email) {
-        const normalizedPhone = poGuest.guest_phone ? normalizePhone(poGuest.guest_phone) : null;
-
-        // Step 1: Check public.users table for existing user by email
-        const { data: existingUser } = await admin
-          .from("users")
-          .select("id, phone")
-          .eq("email", poGuest.guest_email)
-          .maybeSingle();
-
-        let matchedUserId: string | null = null;
-
-        if (existingUser) {
-          // Existing user found in public.users, so use them
-          console.log("[verify] Found existing user in public.users:", existingUser.id);
-          matchedUserId = existingUser.id;
-        }
-
-        if (matchedUserId) {
-          userId = matchedUserId;
-          await admin
-            .from("payment_orders")
-            .update({ user_id: userId })
-            .eq("id", payment_order_id);
-        } else {
-          // Previously this called admin.auth.admin.listUsers() with no
-          // pagination, an unbounded scan of the entire auth.users
-          // table on every guest checkout. On a large user base this
-          // can time out or return a truncated page (missing the user
-          // we care about) and drop the order to needs_review.
-          //
-          // Use the GoTrue admin REST endpoint directly with the
-          // ?email=<email> filter for an O(1) lookup.
-          let existingAuthUser: any = null;
-          try {
-            existingAuthUser = await findAuthUserByEmail(
-              Deno.env.get("SUPABASE_URL")!,
-              Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-              poGuest.guest_email
-            );
-          } catch (listErr) {
-            console.warn("[verify] Could not look up auth user:", listErr);
-          }
-
-          if (existingAuthUser) {
-            console.log("[verify] Found existing auth user:", existingAuthUser.id);
-            userId = existingAuthUser.id;
-
-            await admin.from("users").upsert(
-              {
-                id: userId,
-                email: poGuest.guest_email,
-                full_name: poGuest.guest_name,
-                phone: normalizedPhone,
-              },
-              { onConflict: "id" }
-            );
-
-            await admin
-              .from("payment_orders")
-              .update({ user_id: userId })
-              .eq("id", payment_order_id);
-          } else {
-            console.log("[verify] Creating new auth user for:", poGuest.guest_email);
-            const { data: newUser, error: createError } =
-              await admin.auth.admin.createUser({
-                email: poGuest.guest_email,
-                email_confirm: true,
-                user_metadata: {
-                  full_name: poGuest.guest_name,
-                  phone: normalizedPhone,
-                },
-              });
-
-            if (createError) {
-              console.error("[verify] createUser failed:", createError.message);
-
-              if (createError.message?.includes("already") || createError.message?.includes("exists")) {
-                console.log("[verify] Attempting fallback: fetching existing auth user");
-                try {
-                  const fallbackUser = await findAuthUserByEmail(
-                    Deno.env.get("SUPABASE_URL")!,
-                    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-                    poGuest.guest_email
-                  );
-
-                  if (fallbackUser) {
-                    userId = fallbackUser.id;
-                    console.log("[verify] Fallback succeeded, user:", userId);
-
-                    await admin.from("users").upsert(
-                      {
-                        id: userId,
-                        email: poGuest.guest_email,
-                        full_name: poGuest.guest_name,
-                        phone: normalizedPhone,
-                      },
-                      { onConflict: "id" }
-                    );
-
-                    await admin
-                      .from("payment_orders")
-                      .update({ user_id: userId })
-                      .eq("id", payment_order_id);
-                  } else {
-                    // Don't throw; the customer's payment was captured
-                    // and we cannot afford to lose them. Park the order
-                    // for ops review and tell the client to contact
-                    // support, instead of erroring out.
-                    console.error(
-                      "[verify] Fallback list found no user; parking order for review:",
-                      payment_order_id
-                    );
-                    await admin
-                      .from("payment_orders")
-                      .update({ status: "needs_review" })
-                      .eq("id", payment_order_id);
-                    return jsonRes(
-                      {
-                        success: false,
-                        needs_review: true,
-                        error:
-                          "Payment received but we couldn't create your account automatically. Our team will email you within a few hours.",
-                      },
-                      202
-                    );
-                  }
-                } catch (fallbackErr) {
-                  console.error("[verify] Fallback also failed:", fallbackErr);
-                  await admin
-                    .from("payment_orders")
-                    .update({ status: "needs_review" })
-                    .eq("id", payment_order_id);
-                  return jsonRes(
-                    {
-                      success: false,
-                      needs_review: true,
-                      error:
-                        "Payment received but we couldn't create your account automatically. Our team will email you within a few hours.",
-                    },
-                    202
-                  );
-                }
-              } else {
-                // Any other createUser error: don't drop the customer's
-                // money on the floor. Park for manual recovery.
-                console.error(
-                  "[verify] Non-duplicate createUser failure; parking order:",
-                  payment_order_id,
-                  createError.message
-                );
-                await admin
-                  .from("payment_orders")
-                  .update({ status: "needs_review" })
-                  .eq("id", payment_order_id);
-                return jsonRes(
-                  {
-                    success: false,
-                    needs_review: true,
-                    error:
-                      "Payment received but we couldn't create your account automatically. Our team will email you within a few hours.",
-                  },
-                  202
-                );
-              }
-            } else {
-              userId = newUser.user.id;
-              console.log("[verify] New user created:", userId);
-
-              await admin
-                .from("payment_orders")
-                .update({ user_id: userId })
-                .eq("id", payment_order_id);
-
-              if (normalizedPhone) {
-                await admin
-                  .from("users")
-                  .update({ phone: normalizedPhone })
-                  .eq("id", userId);
-              }
-            }
-          }
-        }
-
-        try {
-          const linkResult = await admin.auth.admin.generateLink({
-            type: "magiclink",
-            email: poGuest.guest_email,
-            options: {
-              redirectTo: `${Deno.env.get("SITE_URL") || "https://app.leveluplearning.in"}/home`,
-            },
-          });
-          if (linkResult.data?.properties?.hashed_token) {
-            magicLinkToken = linkResult.data.properties.hashed_token;
-            console.log("[verify] Magic link token captured for:", poGuest.guest_email);
-          } else {
-            console.log("[verify] Magic link generated (no token in response) for:", poGuest.guest_email);
-          }
-        } catch (linkErr) {
-          console.error("[verify] Magic link error (non-fatal):", linkErr);
-        }
-      }
-    }
 
     if (!userId) {
       return jsonRes({ error: "Unable to resolve user for enrolment" }, 500);
@@ -781,8 +559,10 @@ Deno.serve(async (req) => {
             .eq("id", poFull.user_id)
             .maybeSingle();
           if (u) {
-            toEmail = u.email || toEmail;
-            studentName = u.full_name || studentName;
+            // A guest order's receipt goes to the address typed at checkout;
+            // the profile email is used only when the order carried none.
+            toEmail = toEmail || u.email;
+            studentName = studentName === "there" ? (u.full_name || studentName) : studentName;
           }
         }
         if (!toEmail) {
@@ -826,9 +606,9 @@ Deno.serve(async (req) => {
       success: true,
       offering_title: off?.title ?? "your program",
       is_guest: is_guest || false,
-      magic_link_sent: is_guest || false,
-      magic_link_token: magicLinkToken || null,
       guest_email: responseGuestEmail,
+      // Guests prove the phone they paid with via one OTP on /login.
+      login_hint: is_guest ? "phone" : null,
     });
   } catch (err: any) {
     console.error("[verify] UNHANDLED ERROR:", err?.message || err, err?.stack);

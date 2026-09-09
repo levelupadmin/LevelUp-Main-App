@@ -83,6 +83,19 @@ The **frontend total is always a preview** — `verify-razorpay-payment` re-deri
 expected paise from `payment_orders.total_inr` before capturing, so a tampered client
 cannot change what's charged.
 
+**Guest buyers are identified by PHONE, once, in
+[`supabase/functions/_shared/buyerIdentity.ts`](supabase/functions/_shared/buyerIdentity.ts)**
+(`resolveOrCreateBuyer`): `find_login_identity` on the phone → the existing account is
+used exactly as it is (nothing typed on the checkout form is ever written onto it); no
+match → a new account with `phone_confirm` and the SYNTHETIC auth email, so phone-OTP
+login lands on the purchase; the typed email goes on `public.users` only, and only for a
+paid capture. No session is ever minted from payment proof: after verify the guest is sent
+to `/login?next=/thank-you/<order>&phone=…` for one OTP (`src/lib/checkoutVerify.ts`,
+`src/lib/loginParams.ts`). `verify-razorpay-payment`, `razorpay-webhook` and the free
+path of `guest-create-order` all call the helper; receipts and the invoice PDF for a guest
+order use the order's own guest fields, never a matched account's profile. The client
+MUST send `is_guest` on the verify call.
+
 ---
 
 ## How login flows
@@ -92,7 +105,7 @@ it to the phone via `phoneBinding` (rejects token-replay account-takeover), (3) 
 user up by phone with the `find_login_identity` RPC — **not** GoTrue's broken `?phone=`
 list filter, which silently misclassified the ~74k legacy users as new. Existing → login;
 unknown phone matching a `legacy_enrolments` row → seamless legacy login; truly new →
-signup. Guest checkout mints the auth user from name/email/phone with no OTP.
+signup. Guest checkout creates the auth user keyed on the typed phone with no OTP (see `_shared/buyerIdentity.ts`); the buyer proves the phone with one OTP on `/login` afterwards.
 
 Phone + OTP-binding helpers live in [`supabase/functions/_shared/phone.ts`](supabase/functions/_shared/phone.ts)
 (`normalizePhone`, `e164`, `last10`, `phoneVariants`, `syntheticEmail`, `phoneBinding`),

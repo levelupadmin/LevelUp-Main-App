@@ -52,6 +52,15 @@ killing vertical scroll.)
 5. **If it regresses anyway:** write the one-line lesson into this file + memory so
    the class can't recur.
 
+### Lessons on file (each one shipped to 100% prod before it was caught)
+- **2026-09-09 — GoTrue's `GET /auth/v1/admin/users?email=` (and `?phone=`) IGNORES
+  the filter and returns the newest signups.** Two payment functions used it to find
+  a guest buyer, so every guest purchase for 3½ months went to whoever signed up
+  last, and that stranger's profile was overwritten with the buyer's details. Look
+  users up ONLY via the `find_login_identity` RPC (`_shared/buyerIdentity.ts` for
+  checkout, `verify-msg91-otp` for login). Never write name/email/phone onto an
+  existing profile from an unauthenticated form.
+
 ### Staged (phased) rollout — what it is
 Release a new build to a SMALL fraction of users first, watch crash/error/complaint
 signals, then widen only if healthy. A bad build reaches a few users, not all — and

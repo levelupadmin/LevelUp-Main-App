@@ -8,6 +8,7 @@ import {
   toPaise,
 } from "../_shared/pricing.ts";
 import { normalizePhone } from "../_shared/phone.ts";
+import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 
 function encodeBase64(str: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
@@ -223,55 +224,23 @@ Deno.serve(async (req) => {
 
     /* ── FREE OFFERING: skip Razorpay, grant access immediately ── */
     if (totalInr <= 0) {
-      // Create or find user account
-      let userId: string | null = null;
-
-      const { data: existingUser } = await admin
-        .from("users")
-        .select("id, phone")
-        .eq("email", guest_email)
-        .maybeSingle();
-
-      if (existingUser) {
-        userId = existingUser.id;
-        await admin
-          .from("payment_orders")
-          .update({ user_id: userId })
-          .eq("id", po.id);
-      } else {
-        // email_confirm stays FALSE: the guest-typed email is unproven, and a
-        // confirmed account minted here let anyone pre-register (squat) an
-        // arbitrary victim email through this unauthenticated endpoint. The
-        // magic link below lands only in the real inbox, and clicking it is
-        // what confirms ownership and activates sign-in.
-        const { data: newUser, error: createError } =
-          await admin.auth.admin.createUser({
-            email: guest_email,
-            email_confirm: false,
-            user_metadata: {
-              full_name: guest_name,
-              phone: normalizedPhone,
-            },
-          });
-
-        if (createError) {
-          console.error("Guest user creation error:", createError);
-          return jsonRes({ error: "Failed to create user account" }, 500);
-        }
-
-        userId = newUser.user.id;
-        await admin
-          .from("payment_orders")
-          .update({ user_id: userId })
-          .eq("id", po.id);
-
-        if (normalizedPhone) {
-          await admin
-            .from("users")
-            .update({ phone: normalizedPhone })
-            .eq("id", userId);
-        }
+      // Find or create the account keyed on the PHONE (shared rule, see
+      // _shared/buyerIdentity.ts): an existing phone account is never written
+      // to, and a new one carries only the synthetic auth email.
+      const buyer = await resolveOrCreateBuyer(
+        admin,
+        { name: guest_name, email: guest_email, phone: normalizedPhone },
+        { tag: "guest-create-order", paid: false },
+      );
+      if (!buyer.ok) {
+        console.error("Guest user resolution error:", buyer.error);
+        return jsonRes({ error: "Failed to create user account" }, 500);
       }
+      const userId: string = buyer.userId;
+      await admin
+        .from("payment_orders")
+        .update({ user_id: userId })
+        .eq("id", po.id);
 
       // Check for duplicate enrolment
       const { data: existingEnrolment } = await admin
@@ -290,19 +259,6 @@ Deno.serve(async (req) => {
           source: "checkout",
           total_paid_inr: Number(po.total_inr),
         });
-      }
-
-      // Send magic link
-      try {
-        await admin.auth.admin.generateLink({
-          type: "magiclink",
-          email: guest_email,
-          options: {
-            redirectTo: `${Deno.env.get("SITE_URL") || "https://app.leveluplearning.in"}/home`,
-          },
-        });
-      } catch (linkErr) {
-        console.error("Magic link generation error:", linkErr);
       }
 
       return jsonRes({

@@ -13,6 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
+import { buildVerifyBody, postPaymentNavState, postPaymentRoute } from "@/lib/checkoutVerify";
 import { Loader2, Tag, BookOpen, ArrowLeft, CheckCircle2, Lock, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Tables } from "@/integrations/supabase/types";
@@ -578,7 +579,8 @@ export default function CheckoutPage() {
       // Free guest offering: edge function already enrolled the user
       // and granted access. Drop straight to ThankYou.
       if (isAnon && data?.success && !data?.razorpay_order_id) {
-        navigate(`/thank-you/${data.payment_order_id}`);
+        toast.success("You're enrolled! Sign in with your phone number to open it.");
+        navigate(postPaymentRoute(true, data.payment_order_id), { state: postPaymentNavState(guestPhone) });
         return;
       }
 
@@ -621,27 +623,33 @@ export default function CheckoutPage() {
           razorpay_order_id: string;
           razorpay_signature: string;
         }) => {
-          // Verify payment
+          // Verify payment. `is_guest` is REQUIRED for an anonymous buyer:
+          // without it the function demands a login token and 401s, and the
+          // buyer is told to "contact support" seconds after paying.
           const { data: verifyData, error: verifyErr } =
             await supabase.functions.invoke("verify-razorpay-payment", {
-              body: {
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_signature: response.razorpay_signature,
-                payment_order_id: data.payment_order_id,
-              },
+              body: buildVerifyBody(response, data.payment_order_id, isAnon),
             });
 
           if (verifyErr || !verifyData?.success) {
-            toast.error("Payment verification failed, please contact support");
+            toast.error(
+              verifyData?.needs_review
+                ? "Payment received. We're setting up your access and will email you shortly."
+                : "Payment verification failed, please contact support"
+            );
             setPaying(false); paymentInFlightRef.current = false;
             return;
           }
 
+          // Guest: the purchase now sits on the account that owns the phone
+          // they paid with. One OTP on /login (phone prefilled) proves it and
+          // lands them on Thank-you; payment_orders is not anonymously readable.
           toast.success(
-            `Welcome to ${verifyData.offering_title ?? offering.title}!`
+            isAnon
+              ? "Payment received! Sign in with your phone number to open your course."
+              : `Welcome to ${verifyData.offering_title ?? offering.title}!`
           );
-          navigate(`/thank-you/${data.payment_order_id}`);
+          navigate(postPaymentRoute(isAnon, data.payment_order_id), { state: isAnon ? postPaymentNavState(guestPhone) : undefined });
         },
         modal: {
           ondismiss: () => {

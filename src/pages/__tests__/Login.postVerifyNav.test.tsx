@@ -42,6 +42,7 @@ const h = vi.hoisted(() => ({
 vi.mock("react-router-dom", () => ({
   useNavigate: () => h.navigate,
   useLocation: () => ({ state: null }),
+  useSearchParams: () => [new URLSearchParams(), () => {}],
   Link: ({ to, children, ...rest }: { to?: unknown; children?: unknown }) =>
     createElement("a", { href: typeof to === "string" ? to : "#", ...rest }, children as never),
 }));

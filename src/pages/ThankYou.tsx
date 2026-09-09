@@ -325,7 +325,9 @@ export default function ThankYou() {
   const [purchasedUpsells, setPurchasedUpsells] = useState<Set<string>>(new Set());
   const [buyingUpsell, setBuyingUpsell] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
-  const [loggingIn, setLoggingIn] = useState(false);
+  // Kept for the button's loading UI; the guest CTA now routes straight to
+  // phone login, so it never flips on.
+  const [loggingIn] = useState(false);
 
   const pixelsFired = useRef(false);
   // One-shot success haptic on the produced arrival (native only; no-ops on web).
@@ -543,9 +545,16 @@ export default function ThankYou() {
     const emailToUse = originalGuestEmail || order?.guest_email;
     if (!emailToUse) return;
     setResending(true);
-    const { error } = await supabase.auth.signInWithOtp({ email: emailToUse });
+    // shouldCreateUser=false: a link may only go to an EXISTING login. Creating
+    // one here would mint a second, empty account for a buyer whose purchase
+    // lives on their phone-keyed account.
+    const { error } = await supabase.auth.signInWithOtp({
+      email: emailToUse,
+      options: { shouldCreateUser: false },
+    });
     if (error) {
-      toast.error(error.message);
+      toast.error("That email isn't a login yet. Sign in with the phone number you paid with.");
+      navigate(`/login?next=${encodeURIComponent("/my-courses")}`);
     } else {
       toast.success("Login link sent! Check your email");
     }
@@ -566,18 +575,11 @@ export default function ThankYou() {
       return;
     }
 
-    const email = originalGuestEmail || order?.guest_email;
-
-    if (email) {
-      setLoggingIn(true);
-      const { error } = await supabase.auth.signInWithOtp({ email });
-      if (!error) {
-        toast.success("Login link sent! Check your email to sign in.");
-      } else {
-        toast.error(error.message);
-      }
-      setLoggingIn(false);
-    }
+    // No session on this device (older app, or the auto sign-in didn't land):
+    // the purchase is on the account keyed to the phone they paid with, so the
+    // phone-OTP login is the one path guaranteed to reach it.
+    toast.success("Sign in with the phone number you paid with to open your course.");
+    navigate(`/login?next=${encodeURIComponent("/my-courses")}`);
   };
 
   const handleBuyUpsell = useCallback(async (upsell: Upsell) => {
@@ -905,11 +907,11 @@ export default function ThankYou() {
                 <div className="flex items-center gap-2.5">
                   <Mail className="h-4 w-4 text-[hsl(var(--cream))]" />
                   <p className="text-sm text-foreground">
-                    Login link sent to <strong className="text-[hsl(var(--cream))]">{order.guest_email}</strong>
+                    Your course is on the account for <strong className="text-[hsl(var(--cream))]">{order.guest_phone || "the phone you paid with"}</strong>
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground pl-6">
-                  Open it on any device to access your course.
+                  Sign in with that number (OTP) on any device to open it.
                 </p>
               </div>
             )}
