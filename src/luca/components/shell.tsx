@@ -29,6 +29,8 @@ export function RoomProvider({ slug, room, children }: { slug: string; room: Roo
     const id = setInterval(() => setTick((n) => n + 1), 30_000);
     return () => clearInterval(id);
   }, []);
+  // A real cohort never shows the demo's display shift (a cached demo room may have set it).
+  if (!room.program.is_demo) T.setDisplayShift(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- tick re-derives against the moving clock
   const d = useMemo(() => new Derived(room, T.now()), [room, tick]);
   useRankWatch(d);

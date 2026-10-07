@@ -1,5 +1,5 @@
 -- ============================================================================
--- LUCA — mentor desk v2 + calendar feed access check
+-- LUCA — mentor desk v2, calendar feed access check, demo display clock
 --
 -- 1. luca_desk also returns the program's assignments (a mentor who is not a
 --    learner never receives them in luca_room) and whether the caller is an
@@ -7,7 +7,9 @@
 -- 2. luca_calendar_feed stops serving a feed once the member no longer has
 --    access (refunded, withdrawn, balance overdue) or the program is hidden.
 --
--- Additive and idempotent: CREATE OR REPLACE of two functions, same
+-- 3. luca_demo_clock: the demo cohort's display shift (see below).
+--
+-- Additive and idempotent: CREATE OR REPLACE of three functions, same
 -- signatures and grants. Safe to run more than once.
 -- ============================================================================
 
@@ -105,3 +107,28 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.luca_calendar_feed(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.luca_calendar_feed(uuid) TO service_role;
+
+-- 3. The demo cohort's display clock. The day switcher shifts every demo
+--    timestamp by an exact offset (so "live now" is really live), which puts a
+--    6 PM session at, say, 1:48 AM. The app adds this display shift to every
+--    time it SHOWS for the demo, so sessions read at their mockup times while
+--    all logic keeps using real instants. Staff only, demo programs only.
+CREATE OR REPLACE FUNCTION public.luca_demo_clock(p_slug text)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_prog public.luca_programs; v_day_shift integer; v_off numeric;
+BEGIN
+  SELECT * INTO v_prog FROM public.luca_programs WHERE slug = p_slug;
+  IF NOT FOUND OR NOT v_prog.is_demo OR NOT public.luca_is_staff(v_prog.id) THEN RETURN NULL; END IF;
+  v_off := COALESCE((v_prog.content->'demo'->>'offset_secs')::numeric, 0);
+  SELECT w.starts_on - (v_prog.content->'demo'->'canon'->'week_starts'->>'0')::date INTO v_day_shift
+    FROM public.luca_weeks w WHERE w.program_id = v_prog.id AND w.n = 0;
+  RETURN jsonb_build_object('display_shift_secs', COALESCE(v_day_shift, 0) * 86400 - v_off);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.luca_demo_clock(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.luca_demo_clock(text) TO authenticated;

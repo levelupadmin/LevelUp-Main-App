@@ -14,6 +14,12 @@ export const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep
 
 let skewMs = 0;
 let zone = "Asia/Kolkata";
+/**
+ * Demo cohort only: added to every instant before it is SHOWN, so the demo's
+ * exactly-shifted timeline reads at its mockup times of day. Never affects
+ * durations or comparisons between instants (countdowns, live-ness).
+ */
+let shiftMs = 0;
 
 /** Align the client clock with the server's (called whenever an envelope arrives). */
 export function syncClock(serverNow: string | null | undefined): void {
@@ -23,6 +29,9 @@ export function syncClock(serverNow: string | null | undefined): void {
 }
 export function setZone(tz: string | null | undefined): void {
   if (tz) zone = tz;
+}
+export function setDisplayShift(ms: number): void {
+  shiftMs = Number.isFinite(ms) ? ms : 0;
 }
 export const now = (): Date => new Date(Date.now() + skewMs);
 export const toDate = (d: Date | string | number): Date => (d instanceof Date ? d : new Date(d));
@@ -42,10 +51,19 @@ function fmt(tz: string): Intl.DateTimeFormat {
 }
 const WD: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
+/**
+ * The minute an instant is shown at, as an instant. Normally the floor of its
+ * minute; with a demo display shift, the nearest minute in the shifted frame
+ * (the exact shift carries sub-second residue that would show 5:59 for 6:00).
+ */
+function shownMinute(x: number): number {
+  return shiftMs ? Math.round((x + shiftMs) / 6e4) * 6e4 - shiftMs : Math.floor(x / 6e4) * 6e4;
+}
+
 /** Calendar parts of an instant in the cohort's timezone. */
 export function parts(d: Date | string | number): Parts {
   const p: Record<string, string> = {};
-  for (const x of fmt(zone).formatToParts(toDate(d))) p[x.type] = x.value;
+  for (const x of fmt(zone).formatToParts(new Date(shownMinute(toDate(d).getTime()) + shiftMs))) p[x.type] = x.value;
   return { y: +p.year, mo: +p.month - 1, d: +p.day, wd: WD[p.weekday] ?? 0, h: +p.hour % 24, mi: +p.minute };
 }
 
@@ -54,8 +72,8 @@ export function sod(d: Date | string | number): Date {
   const x = toDate(d);
   const p = parts(x);
   const guess = Date.UTC(p.y, p.mo, p.d);
-  // offset = local wall clock − UTC for this instant
-  const off = Date.UTC(p.y, p.mo, p.d, p.h, p.mi) - Math.floor(x.getTime() / 6e4) * 6e4;
+  // offset = shown wall clock − the instant it was read from (zone + any demo shift)
+  const off = Date.UTC(p.y, p.mo, p.d, p.h, p.mi) - shownMinute(x.getTime());
   return new Date(guess - off);
 }
 export const add = (d: Date | string | number, days: number): Date => new Date(toDate(d).getTime() + days * DAYMS);
@@ -103,8 +121,9 @@ export const year = (d: Date | string | number) => parts(d).y;
 /** "2026-11-06" → the cohort-local midnight of that date. */
 export function dateOnly(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number);
-  const noonUtc = new Date(Date.UTC(y, m - 1, d, 12));
-  return sod(noonUtc);
+  // Noon of that date as shown (minus any demo shift), then its midnight.
+  const noon = new Date(Date.UTC(y, m - 1, d, 12) - shiftMs);
+  return sod(noon);
 }
 
 /** h:mm:ss / m:ss for media */

@@ -52,6 +52,22 @@ describe("cohort time is the program's zone, not the device's", () => {
     expect(T.diffDays("2026-10-24T20:00:00Z", "2026-10-24T17:00:00Z")).toBe(1);
     expect(T.dateOnly("2026-11-06").toISOString()).toBe("2026-11-05T18:30:00.000Z");
   });
+  it("the demo's display shift moves what is shown, never durations", () => {
+    T.setZone("Asia/Kolkata");
+    // A 6 PM session that the day switcher moved to 1:48 AM shows at 6 PM again.
+    const moved = "2026-10-12T20:18:00Z"; // 1:48 AM IST, 13 Oct
+    T.setDisplayShift(16 * 3600e3 + 12 * 60e3);
+    try {
+      expect(T.time(moved)).toBe("6 PM");
+      expect(T.day(moved)).toBe("Tue 13 Oct");
+      // A date-only week start is that date's midnight as shown.
+      const m = T.dateOnly("2026-10-13");
+      expect(T.time(m)).toBe("12 AM");
+      expect(T.day(m)).toBe("Tue 13 Oct");
+      expect(T.same(m, moved)).toBe(true);
+      expect(T.diffDays(moved, m)).toBe(0);
+    } finally { T.setDisplayShift(0); }
+  });
   it("media timestamps round-trip", () => {
     expect(T.fmtT(3725)).toBe("1:02:05");
     expect(T.parseT("1:02:05")).toBe(3725);

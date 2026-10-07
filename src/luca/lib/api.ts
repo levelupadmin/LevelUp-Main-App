@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { flag } from "@/lib/flags";
-import { setZone, syncClock } from "./time";
+import { setDisplayShift, setZone, syncClock } from "./time";
 import type { Desk, MyProgram, Room } from "./types";
 
 /**
@@ -67,6 +67,12 @@ export function useRoom(slug: string | undefined) {
       if (room) {
         syncClock(room.server_now);
         setZone(room.program.timezone);
+        let shift = 0;
+        if (room.program.is_demo && room.is_staff) {
+          // The demo's display clock (20261007100300). Absent before that migration: times show unshifted.
+          try { shift = (await rpc<{ display_shift_secs: number } | null>("luca_demo_clock", { p_slug: slug }))?.display_shift_secs ?? 0; } catch { shift = 0; }
+        }
+        setDisplayShift(shift * 1000);
       }
       return room;
     },

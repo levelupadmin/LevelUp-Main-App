@@ -227,7 +227,7 @@ function ThisWeek() {
     const fix = d.fixAsked();
     if (fix) out.push({ t: `Fix: ${fix.title}`, s: d.submission(fix.id)?.fix_due_at ? `By ${T.day(d.submission(fix.id)!.fix_due_at!)}, ${T.time(d.submission(fix.id)!.fix_due_at!)}` : "Your mentor asked for a fix", done: false, to: `assign/${fix.id}` });
     d.sessions.filter((s) => s.week_n === w).forEach((s: Session) => out.push({
-      t: ["review", "orientation", "demo"].includes(s.kind) ? s.title : `${KIND_LABEL[s.kind]}: ${s.title}`,
+      t: ["review", "orientation", "demo"].includes(s.kind) || s.title.toLowerCase().startsWith((KIND_LABEL[s.kind] ?? "").toLowerCase()) ? s.title : `${KIND_LABEL[s.kind]}: ${s.title}`,
       s: `${T.wd(s.starts_at)} ${T.range(s.starts_at, s.ends_at)} · +${p.coin_rules?.attend?.value ?? 100} for showing up`,
       done: d.attended(s.id), live: d.sState(s) === "live", to: `session/${s.id}`,
     }));
