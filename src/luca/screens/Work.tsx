@@ -31,7 +31,7 @@ export default function Work() {
     loud = (
       <article className="hs rv"><div className="hs-in">
         <div className="hs-top"><span className="hs-state"><Icon name="note-pencil" /><span>Fix asked · Week {a.week_n}</span></span></div>
-        {s.sub.fix_due_at ? <Count to={s.sub.fix_due_at} fmt="hms" /> : null}
+        {s.sub.fix_due_at ? <Count to={s.sub.fix_due_at} fmt={Date.parse(s.sub.fix_due_at) - T.now().getTime() > 2 * T.DAYMS ? "dhm" : "hms"} /> : null}
         <div className="hs-title">{a.title}</div>
         {s.sub.notes?.[0] ? <div className="hs-meta">{by ? `${by.name.split(" ")[0]}: ` : ""}&ldquo;{s.sub.notes[0]}&rdquo;</div> : null}
         <div className="hs-actions"><Link className="btn btn-block" to={`/luca/${slug}/assign/${a.id}`}>Paste the fixed link</Link></div>

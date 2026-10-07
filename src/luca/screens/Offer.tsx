@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon";
 import { Count, SecHead } from "../components/ui";
 import { DemoBar, NavBar, Page, useLuca } from "../components/shell";
 import { useUI } from "../components/overlays";
+import { useAuth } from "@/contexts/AuthContext";
 import { balanceOf, fill, firstName, inr } from "../lib/format";
 import { usePay } from "../lib/pay";
 import * as T from "../lib/time";
@@ -17,6 +18,7 @@ export default function Offer() {
   const ui = useUI();
   const pay = usePay(room);
   const O = p.content.offer ?? {};
+  const { profile } = useAuth();
 
   useEffect(() => {
     if (room.access === "learner") nav(`/luca/${slug}/today`, { replace: true });
@@ -24,7 +26,7 @@ export default function Offer() {
   }, [room.access, app, nav, slug]);
   if (!app) return null;
 
-  const name = firstName(room.me?.name ?? (app.answers?.name as string | undefined) ?? "");
+  const name = firstName(room.me?.name ?? profile?.full_name ?? (app.answers?.name as string | undefined) ?? "");
   if (app.status === "rejected" || app.status === "waitlisted") {
     return (
       <Page cls="page--offer">

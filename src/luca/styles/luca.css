@@ -2897,3 +2897,7 @@
 .luca .lc-contract { list-style: decimal; }
 .luca input, .luca textarea, .luca select { font: inherit; color: inherit; }
 .luca .linkish { text-decoration: underline; }
+
+/* Mentor desk: secondary actions read as buttons on the card; avatars keep their size in rows. */
+.luca .lu-desk-card .btn-secondary { background: var(--surface-3, rgba(255, 255, 255, .1)); }
+.luca .lu-q > .lc-av, .luca .lu-desk-row > .lc-av { flex: none; }

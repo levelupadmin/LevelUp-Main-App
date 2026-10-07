@@ -7,7 +7,7 @@ import { db, type ProgramRow } from "./db";
 import { ghostCls, inputCls, primaryCls } from "./RowEditor";
 import ProgramEditor from "./ProgramEditor";
 
-interface Offering { id: string; title: string; status: string; price_inr: number | null; confirmation_amount_inr: number | null; app_fee_inr: number | null }
+interface Offering { id: string; title: string; status: string; payment_mode: string | null; price_inr: number | null; confirmation_amount_inr: number | null; app_fee_inr: number | null }
 
 /** /admin/luca — every LUCA cohort, and a way to start a new one. */
 function ProgramList() {
@@ -24,7 +24,7 @@ function ProgramList() {
     void (async () => {
       const [p, o] = await Promise.all([
         db.from("luca_programs").select("*").order("is_demo").order("created_at", { ascending: false }),
-        db.from("offerings").select("id, title, status, price_inr, confirmation_amount_inr, app_fee_inr").order("created_at", { ascending: false }),
+        db.from("offerings").select("id, title, status, payment_mode, price_inr, confirmation_amount_inr, app_fee_inr").order("created_at", { ascending: false }),
       ]);
       if (p.error) toast({ title: "Couldn't load cohorts", description: p.error.message, variant: "destructive" });
       setRows((p.data as ProgramRow[]) ?? []);
@@ -52,12 +52,19 @@ function ProgramList() {
       cohort_label: form.cohort_label.trim(), is_demo: false, enabled: false, ...template,
     }).select("id").single();
     setBusy(false);
-    if (error) { toast({ title: "Couldn't create", description: error.message, variant: "destructive" }); return; }
+    if (error) {
+      const msg = /offering_uniq/.test(error.message) ? "That offering already has a LUCA cohort. Each cohort run needs its own offering."
+        : /slug/.test(error.message) ? "That slug is taken. Pick another." : error.message;
+      toast({ title: "Couldn't create", description: msg, variant: "destructive" });
+      return;
+    }
     toast({ title: "Cohort created", description: "It's off until you enable it, and staff-only until the LUCA switch is on." });
     nav(`/admin/luca/${data.id}`);
   };
 
   const offeringOf = (id: string | null) => offerings.find((o) => o.id === id);
+  // One LUCA cohort per offering (luca_programs_offering_uniq): each run of a cohort is its own offering.
+  const taken = new Set((rows ?? []).map((r) => r.offering_id).filter(Boolean) as string[]);
   return (
     <div className="p-6 max-w-5xl">
       <div className="flex items-start justify-between gap-4 mb-6">
@@ -74,7 +81,7 @@ function ProgramList() {
             <label className="sm:col-span-2"><span className="block text-xs text-muted-foreground mb-1">Offering (sets the price, deposit and application fee) *</span>
               <select className={inputCls} value={form.offering_id} onChange={(e) => setForm({ ...form, offering_id: e.target.value })}>
                 <option value="">Pick an offering</option>
-                {offerings.map((o) => <option key={o.id} value={o.id}>{o.title} · {o.status}{o.price_inr ? ` · ₹${Number(o.price_inr).toLocaleString("en-IN")}` : ""}{o.confirmation_amount_inr ? ` · deposit ₹${Number(o.confirmation_amount_inr).toLocaleString("en-IN")}` : ""}</option>)}
+                {offerings.map((o) => <option key={o.id} value={o.id} disabled={taken.has(o.id)}>{o.title} · {o.status}{o.payment_mode === "staged" ? " · staged" : " · NOT staged"}{o.price_inr ? ` · ₹${Number(o.price_inr).toLocaleString("en-IN")}` : ""}{o.confirmation_amount_inr ? ` · deposit ₹${Number(o.confirmation_amount_inr).toLocaleString("en-IN")}` : ""}{taken.has(o.id) ? " · already has a LUCA cohort" : ""}</option>)}
               </select>
             </label>
             <label><span className="block text-xs text-muted-foreground mb-1">Name *</span><input className={inputCls} value={form.name} placeholder="The LevelUp Creator Academy" onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
@@ -82,6 +89,9 @@ function ProgramList() {
             <label><span className="block text-xs text-muted-foreground mb-1">Short name</span><input className={inputCls} value={form.short_name} placeholder="LUCA" onChange={(e) => setForm({ ...form, short_name: e.target.value })} /></label>
             <label><span className="block text-xs text-muted-foreground mb-1">Cohort label</span><input className={inputCls} value={form.cohort_label} placeholder="Cohort 03" onChange={(e) => setForm({ ...form, cohort_label: e.target.value })} /></label>
           </div>
+          {form.offering_id && offerings.find((o) => o.id === form.offering_id)?.payment_mode !== "staged" ? (
+            <p className="text-xs text-amber-400">This offering isn&apos;t set to staged payments (fee, deposit, balance). LUCA won&apos;t take any payment on it until it is; change it in the offering.</p>
+          ) : null}
           <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={form.template} onChange={(e) => setForm({ ...form, template: e.target.checked })} />Start from the demo cohort&apos;s copy, coin values and features (then edit them)</label>
           <div className="flex gap-2 justify-end">
             <button type="button" className={ghostCls} onClick={() => setCreating(false)}>Cancel</button>

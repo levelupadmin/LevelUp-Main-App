@@ -109,8 +109,9 @@ export function fromForm(f: Field, v: string | boolean, tz: string): unknown {
   }
 }
 
-/** Look up a LevelUp account by email (admins can read users). */
+/** Look up a LevelUp account by email (admins can read users). Throws if the lookup itself fails. */
 export async function userIdByEmail(email: string): Promise<{ id: string; name: string } | null> {
-  const { data } = await db.from("users").select("id, full_name, email").ilike("email", email.trim()).limit(1).maybeSingle();
+  const { data, error } = await db.from("users").select("id, full_name, email").ilike("email", email.trim()).limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
   return data ? { id: data.id as string, name: (data.full_name as string) || (data.email as string) } : null;
 }

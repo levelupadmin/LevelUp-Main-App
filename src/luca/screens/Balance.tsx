@@ -51,7 +51,12 @@ export default function Balance() {
       </div>
       <div className="sec">
         <SecHead title="Questions about money" />
-        <div className="lc-note rv"><b>Talk to the cohort team</b> on WhatsApp{p.support_whatsapp ? "" : " from the You tab"}. Refunds follow our <a className="linkish" href="/refunds">refund policy</a>.</div>
+        <div className="lc-note rv">
+          {p.support_whatsapp
+            ? <><a className="linkish" href={`https://wa.me/${p.support_whatsapp.replace(/[^\d]/g, "")}?text=${encodeURIComponent(`Hi, a question about my ${p.cohort_label} balance.`)}`} target="_blank" rel="noopener noreferrer">Talk to the cohort team</a> on WhatsApp.</>
+            : <><b>Talk to the cohort team</b> on WhatsApp.</>}{" "}Refunds follow our <a className="linkish" href="/refunds">refund policy</a>.
+        </div>
+        {locked ? <a className="btn-text mt-3" href="/home">Back to LevelUp</a> : null}
       </div>
     </Page>
   );

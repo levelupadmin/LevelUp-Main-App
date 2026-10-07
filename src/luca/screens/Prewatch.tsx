@@ -42,6 +42,7 @@ export default function Prewatch() {
   const pw = row.prewatch;
   const mins = pw.minutes ?? 15;
   const due = d.pwDue(w);
+  const late = !!due && T.now() > due;
   const opensAt = row.starts_on ? T.add(T.dateOnly(row.starts_on), -7) : null;
   const notOpen = !!opensAt && T.now() < opensAt;
   const video = pw.video_url && canEmbed(pw.video_url) ? pw.video_url : null;
@@ -83,7 +84,7 @@ export default function Prewatch() {
       sum.clear();
       ui.moment({
         eyebrow: `Pre-watch · Week ${w}`, title: "Done.",
-        sub: w === 0 ? "One more setup step ticked." : r.of ? `${r.score} of ${r.of} on the quiz. Your hot seat this week is safe.` : "Your hot seat this week is safe.",
+        sub: w === 0 ? "One more setup step ticked." : `${r.of ? `${r.score} of ${r.of} on the quiz. ` : ""}${late ? "The hot-seat cutoff had passed, but the coins count." : "Your hot seat this week is safe."}`,
         coins: r.awarded || undefined, coinsWhy: "Pre-watch, quiz and summary",
         onDone: () => { void refresh(); nav(-1); },
       });
@@ -102,6 +103,7 @@ export default function Prewatch() {
         <p className="muted rv">
           {done ? "Done. Your hot seat this week is safe."
             : notOpen ? `Opens ${T.day(opensAt!)}. Come back then.`
+            : late ? `The hot-seat cutoff was ${T.day(due!)}, ${T.time(due!)}. Finish it anyway: the coins still count. About ${mins + 6} minutes.`
             : `Three steps, about ${mins + 6} minutes.${due ? ` Finish by ${T.day(due)}, ${T.time(due)} to keep your hot seat.` : ""}`}
         </p>
       </div>

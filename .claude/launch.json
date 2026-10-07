@@ -2,6 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     { "name": "levelup-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 8080 },
-    { "name": "luca-preview", "runtimeExecutable": "npx", "runtimeArgs": ["vite", "--config", "ops/luca/preview/vite.config.ts"], "port": 5199 }
+    { "name": "luca-preview", "runtimeExecutable": "npx", "runtimeArgs": ["vite", "--config", "ops/luca/preview/vite.config.ts"], "port": 5199 },
+    { "name": "luca-live", "runtimeExecutable": "env", "runtimeArgs": ["LUCA_DB=postgres://postgres@127.0.0.1:54999/luca_live", "npx", "vite", "--config", "ops/luca/preview/vite.config.ts", "--port", "5198"], "port": 5198 }
   ]
 }

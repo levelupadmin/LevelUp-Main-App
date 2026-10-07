@@ -11,6 +11,8 @@ export interface Pricing {
   price: number; deposit: number; app_fee: number;
   hold_days: number; balance_days: number | null; emi: boolean;
   offering_status?: string; calendly_url?: string | null;
+  /** 'staged' (app fee → deposit → balance) is the only mode LUCA takes money on. */
+  payment_mode?: string | null;
 }
 
 export interface Content {

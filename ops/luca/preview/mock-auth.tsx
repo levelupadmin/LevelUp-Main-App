@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
+import { who } from "./who";
 
-/** Preview sign-in: always the demo's staff learner. */
-const user = { id: "00000000-0000-0000-0000-00000000000a", email: "staff@example.com", phone: null };
-const profile = { id: user.id, full_name: "Diya Sharma", email: user.email, role: "admin", phone: null };
-
+/** Preview sign-in: whoever is picked in the preview's person switcher. */
 export function useAuth() {
+  const p = who();
+  const user = { id: p.id, email: p.email, phone: null };
+  const profile = { id: p.id, full_name: p.name, email: p.email, role: p.role, phone: null };
   return { user, profile, session: null, loading: false, signOut: async () => undefined, refreshProfile: async () => undefined };
 }
 export function AuthProvider({ children }: { children: ReactNode }) {

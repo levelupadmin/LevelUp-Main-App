@@ -97,7 +97,7 @@ export default function Status() {
   const rows: [string, string, "done" | "now" | "todo"][] = [
     ["Applied", T.day(app.applied_at), "done"],
     [`${inr(p.pricing.app_fee)} fee paid`, app.app_fee_paid ? "Refundable" : "Pay to finish applying", app.app_fee_paid ? "done" : "now"],
-    ["Interview", iv ? `${T.day(iv)}, ${T.time(iv)}` : "Pick a time", !app.app_fee_paid ? "todo" : decided || (iv && !ivFuture) ? "done" : "now"],
+    ["Interview", iv ? `${T.day(iv)}, ${T.time(iv)}` : decided ? "Done" : "Pick a time", !app.app_fee_paid ? "todo" : decided || (iv && !ivFuture) ? "done" : "now"],
     ["Decision", decided ? "Ready to open" : "Within 12 to 48 hours of your interview", decided ? "now" : "todo"],
     ["Confirm your seat", `${inr(p.pricing.deposit)} deposit`, "todo"],
   ];

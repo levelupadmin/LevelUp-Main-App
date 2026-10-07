@@ -51,7 +51,7 @@ export default function Sprint() {
         eyebrow: `Sprint · Day ${r.day}`, title: `Day ${r.day}. Done.`,
         sub: cs ? (left ? `${left} of your Clan still to post today.` : "Your whole Clan posted today.") : "Your mentor calls it in the next standup.",
         coins: r.awarded || undefined, coinsWhy: kind === "post" ? "Sprint day published" : "Sprint day logged",
-        extra: <div className="mo-streak"><Icon name="flame-fill" /><b>{(d.me?.streak ?? 0) + (d.me?.streak_today ? 0 : 1)}</b><span>days in a row</span></div>,
+        extra: (() => { const n = (d.me?.streak ?? 0) + (d.me?.streak_today ? 0 : 1); return <div className="mo-streak"><Icon name="flame-fill" /><b>{n}</b><span>{n === 1 ? "day" : "days"} in a row</span></div>; })(),
         onDone: () => { void refresh(); },
       });
     } catch (e) { sound.play("error"); ui.toast(errMsg(e), "warning-circle"); }

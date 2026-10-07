@@ -24,6 +24,7 @@ export default function ProgramPage() {
   const [drawn, setDrawn] = useState(false);
   const [formUrl, setFormUrl] = useState<string | null>(null);
   const f = (t?: string) => fill(t, p);
+  const begun = !!p.starts_at && Date.parse(p.starts_at) <= T.now().getTime();
   const loc = useLocation();
   useEffect(() => {
     if (!loc.hash) return;
@@ -88,7 +89,10 @@ export default function ProgramPage() {
           <span className="lc-k rv">{f(S.kicker)}</span>
           <h1 className="display lc-title rv">{S.title ?? p.name}</h1>
           {S.lede ? <p className="lc-lede rv">{S.lede}</p> : null}
-          <div className="lc-when rv">{(S.when ?? []).map((x, i) => (i === 0 ? <b key={i}>{f(x)}</b> : <span key={i}>{f(x)}</span>))}</div>
+          <div className="lc-when rv">{(S.when ?? [])
+            .filter((x) => !(begun && x.includes("{days_to_start}")))
+            .map((x) => (begun ? x.replace(/^Starts\b/, "Started") : x))
+            .map((x, i) => (i === 0 ? <b key={i}>{f(x)}</b> : <span key={i}>{f(x)}</span>))}</div>
         </div>
       </section>
 

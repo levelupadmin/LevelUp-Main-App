@@ -167,7 +167,7 @@ function LaunchTab({ p, ctx }: { p: ProgramRow; ctx: Ctx }) {
         db.from("luca_sessions").select("id, title, starts_at, ends_at, zoom_url, recording_url").eq("program_id", p.id),
         db.from("luca_assignments").select("id", { count: "exact", head: true }).eq("program_id", p.id),
         db.from("luca_mentors").select("id, name, user_id").eq("program_id", p.id),
-        p.offering_id ? db.from("offerings").select("id, title, status, price_inr, confirmation_amount_inr, app_fee_inr").eq("id", p.offering_id).maybeSingle() : Promise.resolve({ data: null }),
+        p.offering_id ? db.from("offerings").select("id, title, status, payment_mode, price_inr, confirmation_amount_inr, app_fee_inr").eq("id", p.offering_id).maybeSingle() : Promise.resolve({ data: null }),
       ]);
       setS({ weeks: w.count ?? 0, sessions: (se.data as Row[]) ?? [], assignments: a.count ?? 0, mentors: (m.data as Row[]) ?? [], offering: (o.data as Row) ?? undefined });
     })();
@@ -179,6 +179,7 @@ function LaunchTab({ p, ctx }: { p: ProgramRow; ctx: Ctx }) {
   const items: [boolean, string, string?][] = [
     [p.is_demo || !!s.offering, "On an offering", s.offering ? `${s.offering.title} · ${s.offering.status}` : "Pick one when creating the cohort"],
     [p.is_demo || s.offering?.status === "active", "Offering is active", "Applications are refused while it isn't"],
+    [p.is_demo || s.offering?.payment_mode === "staged", "Offering takes staged payments (fee, deposit, balance)", "Set the offering's payment mode to staged. Until then LUCA won't open any payment, so nobody is charged the full price by mistake."],
     [p.is_demo || (!!s.offering?.price_inr && !!s.offering?.confirmation_amount_inr && !!s.offering?.app_fee_inr), "Price, deposit and application fee set on the offering"],
     [!!p.starts_at && !!p.ends_at, "Start and end dates"],
     [!!p.cohort_label, "Cohort label"],

@@ -1,10 +1,17 @@
 /**
- * Stand-in for the Supabase client in the click-through preview. Reads serve
- * recorded demo envelopes, re-timed so "now" is now. Writes answer like the
- * server would but change nothing (the screen refetches the same day).
- * The demo day is switched by luca_demo_scenario, exactly as in the app.
+ * Stand-in for the Supabase client in the preview.
+ *
+ * LIVE mode (LUCA_DB set): every call runs for real against a scratch
+ * Postgres through bridge.ts, as the person picked in the switcher, with
+ * row-level security on. Only payments, Calendly and the link check (external
+ * services) are stubbed.
+ *
+ * RECORDED mode: reads serve recorded demo envelopes, re-timed so "now" is
+ * now; writes answer like the server would but change nothing.
  */
-type Res = { data: unknown; error: null | { message: string } };
+import { LIVE, whoId } from "./who";
+
+type Res = { data: unknown; error: null | { message: string }; count?: number | null };
 const STAGE_KEY = "luca.preview.stage";
 const stage = () => { try { return localStorage.getItem(STAGE_KEY) || "week5"; } catch { return "week5"; } };
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
@@ -82,10 +89,56 @@ function emptyQuery(): unknown {
   return self;
 }
 
+/* ---------------- live mode ---------------- */
+async function post(path: string, body: unknown): Promise<{ data?: unknown; error?: { message: string } }> {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return r.json();
+}
+async function liveRpc(fn: string, args: Record<string, unknown> = {}): Promise<Res> {
+  const r = await post("/__rpc", { fn, args, uid: whoId() });
+  return r.error ? { data: null, error: r.error } : { data: r.data ?? null, error: null };
+}
+type Filter = { op: "eq" | "ilike"; col: string; val: unknown };
+class LiveQuery implements PromiseLike<Res> {
+  private d: { table: string; action: "select" | "insert" | "update" | "delete"; columns?: string; filters: Filter[]; order: { col: string; asc: boolean }[]; limit?: number; head?: boolean; values?: unknown; returning?: boolean };
+  private one: "maybe" | "single" | null = null;
+  constructor(table: string) { this.d = { table, action: "select", filters: [], order: [] }; }
+  select(cols = "*", opts?: { count?: string; head?: boolean }) {
+    if (this.d.action === "select") { this.d.columns = cols; if (opts?.head) this.d.head = true; } else this.d.returning = true;
+    return this;
+  }
+  insert(v: unknown) { this.d.action = "insert"; this.d.values = v; return this; }
+  update(v: unknown) { this.d.action = "update"; this.d.values = v; return this; }
+  delete() { this.d.action = "delete"; return this; }
+  eq(col: string, val: unknown) { this.d.filters.push({ op: "eq", col, val }); return this; }
+  ilike(col: string, val: unknown) { this.d.filters.push({ op: "ilike", col, val }); return this; }
+  order(col: string, o?: { ascending?: boolean }) { this.d.order.push({ col, asc: o?.ascending !== false }); return this; }
+  limit(n: number) { this.d.limit = n; return this; }
+  maybeSingle() { this.one = "maybe"; return this; }
+  single() { this.one = "single"; return this; }
+  then<A = Res, B = never>(ok?: ((v: Res) => A | PromiseLike<A>) | null, bad?: ((e: unknown) => B | PromiseLike<B>) | null): PromiseLike<A | B> {
+    return this.run().then(ok, bad);
+  }
+  private async run(): Promise<Res> {
+    const r = await post("/__table", { ...this.d, uid: whoId() });
+    if (r.error) return { data: null, error: r.error, count: null };
+    const { rows, count } = r.data as { rows: unknown[]; count: number };
+    if (this.d.head) return { data: null, error: null, count };
+    if (this.one === "maybe") return { data: rows[0] ?? null, error: null, count };
+    if (this.one === "single") return rows.length ? { data: rows[0], error: null, count } : { data: null, error: { message: "No rows found" }, count };
+    if (this.d.action !== "select" && !this.d.returning) return { data: null, error: null, count };
+    return { data: rows, error: null, count };
+  }
+}
+async function liveInvoke(name: string): Promise<Res> {
+  if (name === "luca-link-check") return { data: { status: "ok" }, error: null };
+  return { data: null, error: { message: `${name} talks to an outside service and does not run in the preview` } };
+}
+
 export const supabase = {
-  rpc,
-  from: () => emptyQuery(),
-  functions: { invoke: async () => ({ data: { status: "ok", slots: [] }, error: null }) },
+  rpc: LIVE ? liveRpc : rpc,
+  from: (t: string) => (LIVE ? new LiveQuery(t) : emptyQuery()),
+  functions: { invoke: LIVE ? liveInvoke : async () => ({ data: { status: "ok", slots: [] }, error: null }) },
   auth: {
     getSession: async () => ({ data: { session: null }, error: null }),
     getUser: async () => ({ data: { user: null }, error: null }),

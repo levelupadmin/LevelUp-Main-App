@@ -33,10 +33,13 @@ function ReviewCard({ s, desk, onDone }: { s: DeskT["submissions"][number]; desk
   const m = desk.members.find((x) => x.id === s.member_id);
   const a = desk.assignments?.find((x) => x.id === s.assignment_id) ?? d.asg(s.assignment_id);
   const rs = a ? d.reviewFor(a) : undefined;
-  const [notes, setNotes] = useState((s.notes ?? []).join("\n"));
+  // A fresh review (first look, or a sent fix) starts empty; a past call shows what was said.
+  const [notes, setNotes] = useState(s.verdict === "pending" ? "" : (s.notes ?? []).join("\n"));
   const [due, setDue] = useState(() => toLocalInput(rs && Date.parse(rs.starts_at) > Date.now() ? new Date(Date.parse(rs.starts_at) - T.HOUR) : new Date(Date.now() + 2 * T.DAYMS)));
   const [busy, setBusy] = useState<string | null>(null);
+  const toast_ = () => ui.toast("Say what to fix: one note per line. The learner works from these.", "note-pencil");
   const call = async (v: "ship" | "fix" | "hold") => {
+    if (v === "fix" && !notes.trim()) { toast_(); return; }
     setBusy(v);
     try {
       await rpc("luca_review", {
@@ -232,7 +235,7 @@ function PeopleTab({ desk, onDone }: { desk: DeskT; onDone: () => Promise<void> 
     <>
       <div className="lu-desk-row">
         <span className="fine" style={{ flex: 1 }}>{list.length} people · {past} sessions so far</span>
-        {d.p.is_demo ? null : <button type="button" className="chip" onClick={() => setGhosts(!ghosts)}>{ghosts ? "Hide" : "Show"} sample people</button>}
+        {d.p.is_demo || !desk.members.some((m) => m.ghost) ? null : <button type="button" className="chip" onClick={() => setGhosts(!ghosts)}>{ghosts ? "Hide" : "Show"} sample people</button>}
       </div>
       <div className="mt-3">
         {list.map((m) => (

@@ -54,9 +54,11 @@ export function FieldInput({ f, value, onChange, ctx }: { f: Field; value: strin
           <input className={inputCls} style={{ maxWidth: 320 }} placeholder="Their LevelUp account email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <button type="button" className={ghostCls} disabled={!email.trim() || looking} onClick={async () => {
             setLooking(true);
-            const u = await userIdByEmail(email);
-            setLooking(false);
-            if (u) { onChange(u.id); setFound(u.name); } else setFound("No account with that email");
+            try {
+              const u = await userIdByEmail(email);
+              if (u) { onChange(u.id); setFound(u.name); } else setFound("No account with that email");
+            } catch (e) { setFound(`Couldn't look that up: ${(e as Error).message}`); }
+            finally { setLooking(false); }
           }}>{looking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Link"}</button>
           {v ? <span className="text-xs text-muted-foreground">Linked{found ? `: ${found}` : ""} · <button type="button" className="underline" onClick={() => { onChange(""); setFound(null); }}>unlink</button></span> : found ? <span className="text-xs text-muted-foreground">{found}</span> : null}
         </div>

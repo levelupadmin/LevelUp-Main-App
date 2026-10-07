@@ -72,6 +72,13 @@ export function usePay(room: Room) {
       return;
     }
 
+    // create-razorpay-order charges the staged amounts only on a 'staged' offering;
+    // on any other mode the fee step would bill the full price. Never open it then.
+    if (p.pricing.payment_mode !== "staged") {
+      ui.toast("Payments for this cohort aren't switched on yet. Message the cohort team and they'll sort it out.", "warning-circle");
+      return;
+    }
+
     if (isNative()) {
       const path = `/luca/${p.slug}/${stage === "app_fee" ? "apply/3" : stage === "confirmation" ? "offer" : "balance"}`;
       ui.sheet({

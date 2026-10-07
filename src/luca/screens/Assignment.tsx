@@ -160,7 +160,7 @@ export default function Assignment() {
       {s.v === "fix" && sub ? (
         <div className="sec">
           <SecHead title="Send the fix" sub={sub.fix_due_at ? `By ${T.day(sub.fix_due_at)}, ${T.time(sub.fix_due_at)}.` : undefined} />
-          {sub.fix_due_at ? <div className="vb-due rv"><Count to={sub.fix_due_at} fmt="hms" /></div> : null}
+          {sub.fix_due_at ? <div className="vb-due rv"><Count to={sub.fix_due_at} fmt={Date.parse(sub.fix_due_at) - T.now().getTime() > 2 * T.DAYMS ? "dhm" : "hms"} /></div> : null}
           <div className="lss rv"><LinkSlot part={FIX_PART[0]} i={0} slots={fix.slots} setSlots={fix.setSlots} /></div>
           <button className="btn btn-lg btn-block rv" type="button" disabled={!fix.allIn || busy} onClick={sendFix}>{busy ? "Sending" : "Send the fix"}</button>
         </div>
