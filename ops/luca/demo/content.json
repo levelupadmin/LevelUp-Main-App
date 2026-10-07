@@ -1,0 +1,238 @@
+{
+  "_note": "Learner-facing copy for a LUCA program. Placeholders in {braces} are filled by the app: {cohort} {app_fee} {deposit} {balance} {price} {start_day} {start_dm} {demo_day} {demo_dm} {days_to_start} {seats} {handle} {name} {sprint_start} {sprint_end}. This file seeds the hidden demo cohort; the admin console copies it as the starting template for a real cohort.",
+  "sales": {
+    "nav_title": "Creator Academy",
+    "kicker": "Live cohort · {cohort}",
+    "title": "Own your distribution.",
+    "lede": "Twelve weeks of publishing real posts on your real accounts, reviewed live by working creators.",
+    "when": ["Starts {start_day}", "{days_to_start} days away", "{seats} seats"],
+    "trailer": { "img": "/luca/img/s-filming.jpg", "title": "The 12 weeks in 30 seconds", "sub": "Watch the trailer" },
+    "nums": [["12", "weeks, Week 0 to Demo Day"], ["100+", "hours live, on Zoom"], ["10", "working creators as mentors"], ["21", "days of publishing, live"]],
+    "outcomes": {
+      "title": "What you walk out with",
+      "sub": "Not a course you watch. Work you publish.",
+      "items": [
+        ["A niche you can say in one breath", "Locked with a mentor in the first three weeks."],
+        ["21 days of posts on your own account", "One a day in the Sprint, each one called Ship or Fix."],
+        ["A media kit and a Demo Day showcase", "And a brand-deal pipeline to take with you."],
+        ["A system you keep using", "Ideas, scripts, one edit template, a calendar."]
+      ]
+    },
+    "sample": { "eyebrow": "Try it · sample review", "title": "Watch a script go from Fix to Ship", "sub": "This is what every Saturday looks like." },
+    "phases": { "title": "How the 12 weeks run", "sub": "Four phases. The four nodes of our logo." },
+    "week": {
+      "title": "Your week",
+      "sub": "About 11 hours. Built around a day job.",
+      "rows": [
+        { "day": "Sat", "time": "6 PM", "title": "Review", "sub": "Your work on the hot seat. A mentor calls it: Ship, Fix or Hold." },
+        { "day": "Sun", "time": "3 PM", "title": "Class", "sub": "A working creator teaches the craft, live." },
+        { "day": "Mon to Fri", "time": "an hour", "title": "Make it, post it", "sub": "Plus doubt sessions after 9 PM, for people with day jobs." }
+      ]
+    },
+    "mech": {
+      "title": "What keeps you going",
+      "sub": "Built so that quitting quietly is hard.",
+      "cards": [
+        { "v": "avs", "b": "A Clan of 5 to 6", "s": "Together for 12 weeks. Your coins add up to one Clan score." },
+        { "v": "coin", "n": "+150", "b": "Coins and a leaderboard", "s": "For showing up, shipping on time and helping your Clan." },
+        { "v": "grid", "n": 21, "on": 9, "b": "The 21-day Sprint", "s": "One post a day, live, with a mentor call on each." },
+        { "v": "date", "b": "Demo Day", "s": "You show what you built, to the whole cohort." }
+      ]
+    },
+    "mentors": { "title": "Your mentors", "sub": "10 working creators. A system, not one guru." },
+    "proof": {
+      "title": "Creators of the LevelUp ecosystem",
+      "sub": "From LevelUp's other programs, online and offline.",
+      "items": [["Thajmola", "440K"], ["Sakthivel", "340K"], ["Fredy George Antony", "230K"], ["Aanchal Chaturvedi", "85K"], ["Sujoy", "40K"], ["Mangesh", "25K"]]
+    },
+    "vs": {
+      "title": "Not a recorded course",
+      "head": ["A recorded course", "This cohort"],
+      "rows": [
+        ["5+ hours of recorded videos", "100+ hours of live sessions"],
+        ["One creator's recorded content", "Live access to 10 working creators"],
+        ["Same content for everyone", "Your own content, reviewed: Ship, Fix or Hold"],
+        ["Learn whenever, which means never", "12 weeks of real deadlines"],
+        ["Community Q&A, if you remember to ask", "A Clan of 5 to 6, and daily standups in the Sprint"],
+        ["A certificate", "Real posts on your account, a media kit and a Demo Day"]
+      ]
+    },
+    "price": {
+      "title": "What it costs",
+      "top": "or No-Cost EMI",
+      "bill": [
+        ["To apply", "Refundable, under our refund policy", "app_fee"],
+        ["To confirm your seat", "Only once you are accepted", "deposit"],
+        ["The balance", "In full, or on EMI", "balance"]
+      ]
+    },
+    "steps": {
+      "title": "How to get in",
+      "items": [
+        ["Apply", "Three questions. About five minutes."],
+        ["Pay {app_fee}", "Refundable. It keeps the list serious."],
+        ["Interview", "A video call: a vibe check and a commitment check."],
+        ["Hear back in 12 to 48 hours", "In the app and on WhatsApp."],
+        ["Confirm your seat with {deposit}", "Then the game starts."]
+      ]
+    },
+    "faq": {
+      "title": "Questions people ask",
+      "items": [
+        ["I can't shoot or edit. Will I keep up?", "Weeks 5 to 8 are production and editing, phone first: Instagram Edits and VN, with Premiere Pro basics. Technical mentors run them, and you leave with one edit template you reuse."],
+        ["I freeze on camera.", "Week 6 is on camera: short takes, a 10-take drill, and corrections from a mentor while you are live. Nobody is expected to be good at it in Week 0."],
+        ["I don't know what to post.", "You do not film anything until your niche is locked. Weeks 0 to 2 end with a one-line positioning and a 21-day calendar your mentor signs off."],
+        ["How much time does it take?", "About 11 hours a week: 6 across the weekend live sessions, and roughly an hour on weekdays to make and post. Built around a day job."],
+        ["What if I miss a live session?", "Every session is recorded, with chapters, in the app. Your hot seat only happens live, so plan your weekends for the 12 weeks."],
+        ["Who is this for?", "Entrepreneurs, working professionals, marketers and creators who want to own their distribution instead of renting it."],
+        ["Who is LevelUp?", "LevelUp Learning runs masterclasses, workshops and live cohorts. This one has 10 working creators as mentors, and you meet them live from Week 0."]
+      ]
+    },
+    "final": { "eyebrow": "{cohort} · {start_dm} to {demo_dm}", "title": "Forty seats. Applications close when they fill." },
+    "apply_cta": "Apply · {app_fee}, refundable",
+    "sticky": { "b": "{app_fee} to apply", "s": "Refundable · starts in {days_to_start} days" }
+  },
+  "phases": [
+    { "name": "Lock your niche", "from": 0, "to": 2, "out": "A positioning you can say in one line, and a 21-day calendar your mentor approved" },
+    { "name": "Create the content", "from": 3, "to": 6, "out": "Scripts that hold attention, 7 Sprint pieces locked, a shoot system, on-camera confidence" },
+    { "name": "Edit like a creator", "from": 7, "to": 8, "out": "Your one template and a speed workflow, so editing never blocks a post" },
+    { "name": "Ship and scale", "from": 9, "to": 12, "out": "21 days of publishing, community, analytics, a funnel, and Demo Day" }
+  ],
+  "breaks": [
+    { "start": "2026-11-06T00:00:00+05:30", "end": "2026-11-10T23:59:00+05:30", "label": "Diwali break. No classes on 7 and 8 Nov." }
+  ],
+  "arc_labels": [[0, "W0"], [3, "W3"], [7, "W7"], [10, "Sprint"], [13, "Demo"]],
+  "trailer": {
+    "label": "Trailer",
+    "beats": [
+      ["/luca/img/g00.jpg", "Week 0", "You stop guessing what to post."],
+      ["/luca/img/g01.jpg", "Weeks 1 to 2", "You lock a niche you can say in one breath."],
+      ["/luca/img/g14.jpg", "Weeks 2 to 4", "Ideas, a 21-day calendar, then scripts that hold."],
+      ["/luca/img/g05.jpg", "Every Saturday", "Your work goes on the hot seat. Ship, Fix or Hold."],
+      ["/luca/img/g04.jpg", "Weeks 5 to 6", "You shoot on your phone. The camera stops being scary."],
+      ["/luca/img/g08.jpg", "Weeks 7 to 8", "One edit template. Editing stops blocking you."],
+      ["/luca/img/g11.jpg", "Weeks 10 to 12", "21 days. A post a day, live on your account."],
+      ["/luca/img/g13.jpg", "All the way", "A Clan of six who notice when you go quiet."],
+      ["/luca/img/g15.jpg", "{demo_day}", "Demo Day. You show what you built."]
+    ],
+    "video_url": null,
+    "end_kicker": "{cohort} · starts {start_day}",
+    "end_title": "That's the 12 weeks.",
+    "review_cta": "See a real review"
+  },
+  "sample_review": {
+    "nav": "Sample review",
+    "tag": "Script and notes written for this demo",
+    "title": "Watch a script go from Fix to Ship",
+    "sub": "A reel script on the hot seat at a Saturday review. Tap a note to see the line it is about.",
+    "doc": "Reel script: \"Rent or buy at 25?\"",
+    "script": [
+      { "t": "Hi guys, welcome back to my channel.", "cut": true },
+      { "t": "Today we're talking about something a lot of you asked about.", "cut": true },
+      { "t": "Rent or buy. Let's get into it.", "cut": true },
+      { "t": "My dad bought a house at 27. I'm 25 and I rent. Here's the maths he never showed me.", "hook": true },
+      { "t": "Rent on my flat: ₹22,000 a month. The EMI on the same flat: ₹41,000, for 20 years." },
+      { "t": "The difference, invested every month, is the part nobody puts in the reel." },
+      { "t": "So that's my take. Let me know in the comments!", "end": true, "fix": "Run your own city's numbers tonight. The sheet is in my bio." }
+    ],
+    "notes": [
+      { "at": "0:00", "lines": [0, 1, 2], "text": "Lines 1 to 3 are a warm-up. Nobody waits for a welcome. Cut them." },
+      { "at": "0:09", "lines": [3], "text": "Line 4 is your hook and it turns up at second 9. Open with it." },
+      { "at": "0:41", "lines": [6], "text": "End on one thing to do, not \"let me know\"." }
+    ],
+    "by": { "ini": "CM", "name": "Creator mentor", "when": "Saturday review · live" },
+    "ship_note": "Hook in the first second, one action at the end. Post it Friday.",
+    "after": "That's every Saturday. Every post gets a call before it goes out, and you see why."
+  },
+  "apply": {
+    "fee_fine": "{app_fee}, refundable under our refund policy.",
+    "steps": [
+      {
+        "kind": "text", "eyebrow": "{cohort} · Application", "title": "What will you make?",
+        "sub": "One line: who it is for and what changes for them. You sharpen it with a mentor in Week 1.",
+        "field": { "key": "niche", "label": "Your niche", "ph": "Who it's for, and what changes" },
+        "chips": ["Money for your first salary", "Skincare that costs less", "Breaking into UX", "B2B sales, plainly"],
+        "field2": { "key": "handle", "label": "Your Instagram or YouTube", "ph": "@yourhandle" }
+      },
+      {
+        "kind": "choice", "key": "track", "eyebrow": "Question 2 of 3", "title": "Which track fits your week?",
+        "sub": "Both get the same classes, reviews and mentors. The difference is how often you post in the Sprint.",
+        "options": [
+          { "v": "A", "t": "Track A · Creator", "d": "One post a day for the 21-day Sprint. For working professionals, marketers and creators who can publish daily." },
+          { "v": "B", "t": "Track B · Founder", "d": "Three to four posts a week, with a daily log. For people running a business." }
+        ]
+      },
+      {
+        "kind": "why", "key": "why", "eyebrow": "Question 3 of 3", "title": "Why now?",
+        "sub": "Pick the one that is most true. Your interviewer reads this first.",
+        "options": ["I post, but with no plan", "I haven't started. The camera scares me.", "I run a business and need reach", "I want my name to be my distribution"],
+        "hours": { "b": "About 11 hours a week, for 12 weeks", "em": "Sat 6 PM and Sun 3 PM live, plus an hour on weekdays." }
+      }
+    ]
+  },
+  "interview": {
+    "sub": "A video call with someone from the cohort team. A vibe check and a commitment check. No portfolio needed.",
+    "how": "on video"
+  },
+  "status": {
+    "eyebrow": "The LevelUp Creator Academy · {cohort}",
+    "iv_label": "Interview · on video",
+    "iv_meta": "On video. A vibe check and a commitment check.",
+    "prep": {
+      "title": "Have these ready",
+      "sub": "Nothing to prepare on paper. Just think about these.",
+      "items": [
+        ["Your one line", "Who you make for, and what changes for them."],
+        ["One post you loved, one you didn't", "From anyone. Say why in a sentence."],
+        ["Your weekends", "Sat 6 PM and Sun 3 PM, {start_dm} to {demo_dm}. Check them now."]
+      ]
+    },
+    "decision_eyebrow": "The LevelUp Creator Academy",
+    "decision_title": "You're in, {name}."
+  },
+  "offer": {
+    "title": "Welcome to {cohort}, {name}.",
+    "intro": "Your interviewer said yes. Confirm your seat and the cohort opens up: your calendar, your first pre-watch, and 200 coins to start.",
+    "opens": [
+      ["Your Today screen and calendar", "Every session, one tap into your own calendar."],
+      ["200 coins", "Everyone starts level. The leaderboard opens at Orientation."],
+      ["Your Week 0 pre-watch", "Program OS, about 20 minutes."],
+      ["Your Clan", "Revealed live at Orientation, {start_day}."]
+    ],
+    "seat_sub": "Orientation is {start_day}. Your 12 weeks start there."
+  },
+  "setup": [
+    { "key": "seat", "title": "Confirm your seat", "sub": "Done" },
+    { "key": "whatsapp", "title": "Join the {cohort} WhatsApp group", "sub": "Reminders and Clan chat live here" },
+    { "key": "calendar", "title": "Add every session to your calendar", "sub": "One tap, and changes follow" },
+    { "key": "drive", "title": "Make your copy of the Drive folder", "sub": "01 - Voice & Story, 02 - Scripts & Ideas, and the rest" },
+    { "key": "pw0", "title": "Pre-watch: Program OS + quiz", "sub": "About 20 minutes" }
+  ],
+  "drive_folders": ["01 - Voice & Story", "02 - Scripts & Ideas", "03 - Production", "04 - Edit"],
+  "contract": {
+    "eyebrow": "Week 9 · Sprint contract",
+    "title": "21 days. One post a day.",
+    "items": [
+      "I post one short every day from {sprint_start} to {sprint_end}, on {handle}.",
+      "I paste each day's link in the app before 11:59 PM.",
+      "I take the mentor's call on each post: Ship, Fix or Hold.",
+      "If I miss a day, I tell my Clan and post the next day anyway."
+    ],
+    "items_b": [
+      "I post three to four times a week from {sprint_start} to {sprint_end}, on {handle}.",
+      "On the days I don't post, I log what I did in the app before 11:59 PM.",
+      "I take the mentor's call on each post: Ship, Fix or Hold.",
+      "If I miss a day, I tell my Clan and keep going the next day."
+    ]
+  },
+  "feedback_chips": ["Hook landed", "Cut the intro", "Say it faster", "Caption too long", "Great ending", "Show, don't tell"],
+  "reveal": { "k": "{cohort} · Your Clan", "s": "Your Clan's score is everyone's coins added up, so nobody wins alone.", "cta": "Meet your Clan" },
+  "default_chapters": {
+    "review": [[0, "Warm-up and the rules of the hot seat"], [9, "First hot seat"], [38, "Pattern: what everyone missed"], [64, "Ship, Fix or Hold, round two"], [96, "What to do before Sunday"]],
+    "class": [[0, "Why this week matters"], [14, "The framework"], [52, "Live teardown of 3 creators"], [96, "Build it: guided exercise"], [140, "Questions"], [160, "Your assignment"]],
+    "double": [[0, "Kit check"], [22, "Shot division, live"], [75, "Lighting with what you have"], [130, "Break"], [150, "Audio"], [205, "Raw to postable in 20 minutes"], [262, "Questions"]],
+    "orientation": [[0, "Welcome"], [18, "How the 12 weeks work"], [46, "Clans revealed"], [71, "Coins, streaks and the leaderboard"], [96, "Your first week"], [128, "Questions"]],
+    "standup": [[0, "Numbers round"], [20, "Blockers"], [36, "This week's focus"]]
+  },
+  "certificate": { "line": "Shipped 12 weeks, a 21-day Sprint and a Demo Day showcase." }
+}

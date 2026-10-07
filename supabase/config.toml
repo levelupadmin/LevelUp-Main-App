@@ -232,3 +232,13 @@ project_id = "twqagwleffjggoemzfqs"
   # this public handler must own the reachability/rate-limit boundary.
   [functions.validate-coupon]
     verify_jwt = false
+
+  # LUCA (live cohorts). luca-calendar is fetched by calendar apps, which
+  # cannot send a JWT: the per-member cal_token in the query string is the
+  # credential, resolved by a service_role-only RPC that answers 404 for an
+  # unknown token or a member without a seat. luca-link-check needs a
+  # signed-in caller.
+  [functions.luca-calendar]
+    verify_jwt = false
+  [functions.luca-link-check]
+    verify_jwt = true

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { bootAnalytics } from "@/lib/analytics";
-import { DECISION_FLOW, flag } from "@/lib/flags";
+import { DECISION_FLOW, LUCA, flag } from "@/lib/flags";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { queryClient, persistOptions } from "@/lib/queryClient";
 import { toast as sonnerToast } from "sonner";
@@ -25,6 +25,9 @@ import RouteFallback from "@/components/RouteFallback";
 // AdminLayout is lazy: admin paths are <1% of traffic; no reason to ship its
 // 20 KB of nav chrome + 14 admin route imports inside every anon page load.
 const AdminLayout = lazy(() => import("@/components/layout/AdminLayout"));
+// LUCA (live cohorts) ships dark behind VITE_LUCA; its code loads only when a /luca route is hit.
+const LucaApp = lazy(() => import("@/luca/LucaApp"));
+const AdminLuca = lazy(() => import("@/luca/admin/AdminLuca"));
 
 // Critical student paths, keep synchronous so first-paint of the most common
 // anon landings (/, /login, /signup) doesn't await a chunk fetch.
@@ -185,6 +188,7 @@ const AppContent = () => {
   // above). Read once per render so the whole decision block appears or
   // disappears atomically.
   const decisionFlow = flag(DECISION_FLOW);
+  const luca = flag(LUCA);
 
   // One server-authoritative value drives both this route table and the nested
   // StudentLayout nav. Local intent alone can never expose a shipped native
@@ -301,6 +305,10 @@ const AppContent = () => {
                   logged-out recipient can open it. It renders only whitelisted
                   fields, and an unpublished record 404s. */}
               {decisionFlow && <Route path="/admission/:slug" element={<AdmissionPublic />} />}
+
+              {/* LUCA, the live-cohort app: its own phone-first shell. Public at
+                  the program page; every screen past it checks access server-side. */}
+              {luca && <Route path="/luca/*" element={<ErrorBoundary><LucaApp /></ErrorBoundary>} />}
 
               {/* Browse merged into Home, keep old deep links working. */}
               <Route path="/browse" element={<Navigate to="/" replace />} />
@@ -434,6 +442,7 @@ const AppContent = () => {
                 <Route path="/admin/cohort-submissions" element={<AdminCohortSubmissions />} />
                 <Route path="/admin/notify-requests" element={<AdminNotifyRequests />} />
                 <Route path="/admin/cohorts/:batchId/attendance" element={<AdminCohortAttendance />} />
+                {luca && <Route path="/admin/luca/*" element={<AdminLuca />} />}
               </Route>
 
               {/* Instructor dashboard also uses the student layout for consistency */}

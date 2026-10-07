@@ -101,6 +101,18 @@ export const INSTALL_NUDGE = "VITE_INSTALL_NUDGE";
  */
 export const COHORT_ROOMS = "VITE_COHORT_ROOMS";
 
+/**
+ * LUCA, the live-cohort learner app (`/luca/*`, `/admin/luca/*`). Default off:
+ * with this down neither route exists and no LUCA code is loaded.
+ *
+ * ⚠️ SURFACE ONLY, NEVER AUTHORISATION. Like COHORT_ROOMS, anyone can flip
+ * this on their own device. Every LUCA screen reads through SECURITY DEFINER
+ * RPCs that re-check visibility and access on each call, and the server-side
+ * kill switch (`luca_runtime_config.surface_enabled`, off by default) keeps
+ * every LUCA program staff-only until it is turned on. See LUCA-LAUNCH.md.
+ */
+export const LUCA = "VITE_LUCA";
+
 /** Known flags and their default when neither localStorage nor env speaks. */
 const REGISTRY: Record<string, boolean> = {
   [FUNNEL_RECON]: false,
@@ -110,6 +122,7 @@ const REGISTRY: Record<string, boolean> = {
   [REMINDER_LADDER]: false,
   [INSTALL_NUDGE]: false,
   [COHORT_ROOMS]: false,
+  [LUCA]: false,
 };
 
 function truthy(value: unknown): boolean {

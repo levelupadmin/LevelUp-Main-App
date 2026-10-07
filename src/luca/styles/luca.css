@@ -1,0 +1,2893 @@
+/*  ---- tokens ----  *//* ==========================================================================
+   LevelUp Learning · brand families (round 3)
+   One component library, four brands. Each brand sets its own colour, type,
+   shape and motion, in light and dark.
+
+   data-brand  = stage | porcelain | glacier | evergreen
+   data-theme  = dark | light         (resolved by JS; each brand has a default)
+   data-accent = azure | ember | rose | iris | teal | volt | mono | terracotta | champagne | sage  (Stage only)
+   ========================================================================== */
+
+.luca {
+  /* ---- Space (4px base) ---- */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-10: 40px; --s-12: 48px; --s-16: 64px;
+  --gutter: 20px;
+
+  /* ---- Type (Stage values; brands override) ---- */
+  --font-body: "Geist Variable", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --display-stretch: 100%;
+  --numeral-stretch: 100%;
+  --display-weight: 720;
+  --display-tracking: -0.03em;
+  --title-weight: 680;
+  --num-weight: 720;
+  --eyebrow-tracking: .1em;
+  --t-display: 38px; --t-h1: 30px; --t-h2: 22px; --t-h3: 17px; --t-body: 15px; --t-small: 13px; --t-micro: 11px;
+
+  /* ---- Shape ---- */
+  --r-xs: 8px; --r-sm: 11px; --r-md: 15px; --r-lg: 20px; --r-xl: 26px; --r-pill: 999px;
+  --btn-r: 15px;
+  --poster-ratio: 2 / 3;
+
+  /* ---- Motion ---- */
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --ease-spring: cubic-bezier(.34, 1.2, .64, 1);
+  --ease-in: cubic-bezier(.55, 0, 1, .45);
+  --d-1: 120ms; --d-2: 200ms; --d-3: 320ms; --d-4: 520ms; --d-5: 800ms;
+  --motion-scale: 1;
+  --press-scale: .98;
+  --grain-opacity: 0;
+
+  /* ---- Colour: Stage dark (the fallback) ---- */
+  --bg: #0c0d0f; --bg-tint: #101215; --surface: #15171a; --surface-2: #1c1f23; --surface-3: #262a2f;
+  --line: #262a2f; --line-strong: #373c43;
+  --text: #f4f6f8; --text-2: #a8afb8; --text-3: #8a929c;
+  --accent: #2f6bff; --accent-ink: #ffffff; --accent-soft: rgba(47, 107, 255, .16); --accent-text: #7aa7ff;
+  --live: #ff453a; --live-ink: #ffffff; --live-soft: rgba(255, 69, 58, .14);
+  --success: #34c38f; --warning: #f5a524;
+  --scrim: rgba(12, 13, 15, .72);
+  --scrim-grad: linear-gradient(180deg, rgba(12,13,15,.1) 0%, rgba(12,13,15,0) 30%, rgba(12,13,15,.62) 62%, #0c0d0f 100%);
+  --shadow-1: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 24px -14px rgba(0,0,0,.7);
+  --shadow-2: 0 24px 48px -16px rgba(0,0,0,.75);
+  --glass: rgba(21, 23, 26, .78); --glass-line: rgba(244, 246, 248, .08);
+  --card-line: transparent;       /* outline on cards (Porcelain uses hairlines) */
+  --page-wash: none;              /* background texture behind pages (Glacier) */
+  --ticket: var(--accent); --ticket-ink: var(--accent-ink);
+  --intro-bg: #0b0c0e; --intro-ink: #f4f6f8; --intro-graph: var(--accent-text);
+  --icon-bg: #0c0d0f; --icon-fg: var(--accent-text);
+  --wall: radial-gradient(90% 60% at 25% 20%, #1d2b52 0%, transparent 60%), radial-gradient(80% 60% at 85% 85%, #1b2330 0%, transparent 60%), #0b0d12;
+  color-scheme: dark;
+}
+
+/* ==========================================================================
+   STAGE, REFINED
+   Cool neutrals, a chunky grotesque, filled blocks. One accent, your pick.
+   ========================================================================== */
+.luca  {
+  --font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Geist Variable", "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --display-weight: 720; --title-weight: 680; --num-weight: 720; --display-tracking: -0.035em;
+  --r-xs: 8px; --r-sm: 12px; --r-md: 16px; --r-lg: 22px; --r-xl: 28px; --btn-r: 16px;
+  --motion-scale: 1;
+}
+.luca[data-theme="dark"] {
+  --bg: #0c0d0f; --bg-tint: #101215; --surface: #15171a; --surface-2: #1c1f23; --surface-3: #262a2f;
+  --line: #262a2f; --line-strong: #373c43;
+  --text: #f4f6f8; --text-2: #a8afb8; --text-3: #8a929c;
+  --scrim: rgba(12, 13, 15, .72);
+  --scrim-grad: linear-gradient(180deg, rgba(12,13,15,.1) 0%, rgba(12,13,15,0) 30%, rgba(12,13,15,.62) 62%, #0c0d0f 100%);
+  --glass: rgba(21, 23, 26, .78); --glass-line: rgba(244, 246, 248, .08);
+  --shadow-1: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 24px -14px rgba(0,0,0,.7);
+  --shadow-2: 0 24px 48px -16px rgba(0,0,0,.75);
+  --live: #ff453a;
+  --intro-bg: #0b0c0e; --intro-ink: #f4f6f8;
+  --icon-bg: #0c0d0f;
+  color-scheme: dark;
+}
+.luca[data-theme="light"] {
+  --bg: #f3f4f6; --bg-tint: #eaecef; --surface: #ffffff; --surface-2: #e8ebef; --surface-3: #dde1e6;
+  --line: #e0e3e8; --line-strong: #c6cbd2;
+  --text: #0f1216; --text-2: #4d5560; --text-3: #626b76;
+  --scrim: rgba(15, 18, 22, .45);
+  --scrim-grad: linear-gradient(180deg, rgba(243,244,246,0) 0%, rgba(243,244,246,0) 42%, rgba(243,244,246,.72) 72%, #f3f4f6 100%);
+  --glass: rgba(255, 255, 255, .82); --glass-line: rgba(15, 18, 22, .08);
+  --shadow-1: 0 1px 2px rgba(15, 18, 22, .05), 0 10px 24px -16px rgba(15, 18, 22, .2);
+  --shadow-2: 0 24px 48px -18px rgba(15, 18, 22, .28);
+  --live: #d42a20;
+  --intro-bg: #f3f4f6; --intro-ink: #0f1216;
+  --icon-bg: #0c0d0f;
+  color-scheme: light;
+}
+/* Thin strokes and indicators (progress bars, switches, dots). Same as the accent
+   unless a pale accent needs a darker line to show on a light page. */
+.luca { --accent-line: var(--accent); }
+
+/* Stage launcher wallpaper picks up whichever accent is on */
+.luca  {
+  --wall: radial-gradient(90% 60% at 25% 20%, color-mix(in srgb, var(--accent) 24%, #0b0d12) 0%, transparent 60%), radial-gradient(80% 60% at 85% 85%, #1b2330 0%, transparent 60%), #0b0d12;
+}
+
+/* --------------------------------------------------------------------------
+   Stage accents. Ten to choose from, in two families.
+   Each sets: fill, text on the fill (ink), a soft tint, and accent-coloured
+   text that passes 4.5:1 on the page in that theme.
+   Vivid:  azure · ember · rose · iris · teal · volt
+   Quiet:  mono · terracotta · champagne · sage
+   -------------------------------------------------------------------------- */
+/* Azure (the round 3 default) */
+/* Ember: bright orange, white type on it (3.5:1, fine for the bold and large type on the card and buttons) */
+.luca[data-accent="ember"] { --accent: #f0561a; --accent-ink: #ffffff; --accent-soft: rgba(240, 86, 26, .16); --accent-text: #ff9362; }
+.luca[data-theme="light"][data-accent="ember"] { --accent-text: #b63f0b; --accent-soft: rgba(240, 86, 26, .12); }
+/* Rose */
+/* Iris */
+/* Teal */
+/* Volt: electric lime */
+/* Mono: no colour at all. White on dark, black on light */
+.luca[data-accent="mono"] { --accent: #f4f6f8; --accent-ink: #0c0d0f; --accent-soft: rgba(244, 246, 248, .1); --accent-text: #ffffff; }
+.luca[data-theme="light"][data-accent="mono"] { --accent: #0f1216; --accent-ink: #ffffff; --accent-soft: rgba(15, 18, 22, .07); --accent-text: #0f1216; }
+/* Terracotta: deep burnt orange, white type on it */
+/* Champagne: warm sand */
+/* Sage: soft grey green */
+
+/* ==========================================================================
+   PORCELAIN
+   Light first. White, warm grey, near-black type, one orange.
+   Precise and calm: hairlines, small corners, no shadows, nothing bounces.
+   ========================================================================== */
+
+/* ==========================================================================
+   GLACIER
+   Cool white and frosted glass, ink type, one deep blue.
+   Clean and clinical, soft depth, smooth physical motion.
+   ========================================================================== */
+
+/* ==========================================================================
+   EVERGREEN
+   Deep forest green, soft ivory, one apricot. Quiet luxury.
+   Large soft corners, floating tab bar, slow soft motion.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .luca { --motion-scale: .01 !important; }
+}
+
+/*  ---- brand ----  */
+
+/* ==========================================================================
+   BRAND LAYERS (round 3)
+   Same components, four brands. Tokens do most of the work; this file holds
+   what tokens cannot: surfaces, the tab bar, the live class card, and the
+   character of each brand.
+   ========================================================================== */
+
+/* ---- Prototype panel: brand swatches ---- */
+
+/* Stage accent picker */
+
+/* ==========================================================================
+   STAGE, REFINED
+   Filled blocks and a bold live card, minus the drama: no tilt, no bursts.
+   ========================================================================== */
+
+.luca  .hs { --ticket: var(--accent); --ticket-ink: var(--accent-ink); }
+
+.luca  .hs--after { --ticket: var(--surface-2); --ticket-ink: var(--text); }
+
+.luca  .hs--live { --ticket: var(--live); --ticket-ink: #fff; }
+
+.luca  .avatar { background: var(--surface-3); color: var(--text); }
+
+/* Mono: a white switch needs a dark knob */
+
+.luca[data-accent="mono"][data-theme="dark"] .switch.is-on i { background: #0c0d0f; }
+
+/* ==========================================================================
+   PORCELAIN
+   White cards on a warm off-white page, hairlines, small corners.
+   Numbers are set light and exact. Nothing glows.
+   ========================================================================== */
+
+/* live class: a plain card with a precise clock */
+
+/* ==========================================================================
+   GLACIER
+   Frosted cards over a soft cool wash. Depth, not decoration.
+   ========================================================================== */
+
+/* floating glass tab bar */
+
+/* live class: frosted over the program's own colours */
+
+/* ==========================================================================
+   EVERGREEN
+   Tonal green blocks, generous corners, pill buttons, a floating tab bar.
+   ========================================================================== */
+
+/* floating tab bar */
+
+/* live class: a deep tonal card with a soft ivory clock */
+
+/* ==========================================================================
+   Floating tab bars need the page to stop above them
+   ========================================================================== */
+
+/* ==========================================================================
+   PROOF and REEL, per brand
+   ========================================================================== */
+
+/* The rep number: bold in Stage, quiet everywhere else */
+
+/* Verdicts as calm pills in the quiet brands */
+
+/* First-open screen of Proof follows the brand's page */
+
+/* Reel kickers and headings follow the brand */
+
+/* Rep screen top bar follows the page colour */
+
+/* Launcher icon per brand */
+
+/* Reel countdown: calmer in every brand */
+
+/* Ledger total: quieter outside Stage */
+
+/*  ---- components ----  */
+
+/* ==========================================================================
+   LevelUp app prototype: components and screens.
+   Everything reads semantic tokens from tokens.css. Direction-specific
+   differences live at the bottom of this file.
+   ========================================================================== */
+
+.luca {
+  --m-1: calc(var(--d-1) * var(--motion-scale));
+  --m-2: calc(var(--d-2) * var(--motion-scale));
+  --m-3: calc(var(--d-3) * var(--motion-scale));
+  --m-4: calc(var(--d-4) * var(--motion-scale));
+  --m-5: calc(var(--d-5) * var(--motion-scale));
+  --focus: var(--accent);
+  --btn-r: var(--r-md);
+  --wc-a: 20%;
+  --wc-b: 32%;
+  --wc-ink: #fff;
+}
+
+.luca[data-theme="light"] { --wc-a: 86%; --wc-b: 74%; --wc-ink: #15130f; }
+
+.luca *, .luca *::before, .luca *::after { box-sizing: border-box; }
+
+.luca { margin: 0; height: 100%; }
+
+.luca {
+  background: var(--bg);
+  color: var(--text);
+  font: 400 var(--t-body)/1.45 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.luca button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
+
+.luca img { display: block; max-width: 100%; }
+
+.luca h1, .luca h2, .luca h3, .luca p { margin: 0; }
+
+.luca :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+
+.luca ::selection { background: var(--accent); color: var(--accent-ink); }
+
+.luca [hidden] { display: none !important; }
+
+.luca .ic { width: 20px; height: 20px; fill: currentColor; flex: none; }
+
+/* ---------- Type ---------- */
+
+.luca .display {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--display-tracking);
+  font-size: var(--t-display);
+  line-height: 1.02;
+  text-wrap: balance;
+}
+
+.luca .h1 {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--display-tracking);
+  font-size: var(--t-h1);
+  line-height: 1.06;
+  text-wrap: balance;
+}
+
+.luca .h2 {
+  font-family: var(--font-display);
+  font-weight: var(--title-weight);
+  font-size: var(--t-h2);
+  line-height: 1.15;
+  letter-spacing: calc(var(--display-tracking) * .6);
+  text-wrap: balance;
+}
+
+.luca .h3 { font-family: var(--font-body); font-weight: 620; font-size: 17px; line-height: 1.25; letter-spacing: -0.01em; }
+
+.luca .eyebrow {
+  font: 600 var(--t-micro)/1.3 var(--font-body);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.luca .muted { color: var(--text-2); }
+
+.luca .t1 { color: var(--text); font-weight: 600; }
+
+.luca .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.luca .lede { color: var(--text-2); font-size: 16px; line-height: 1.5; }
+
+.luca .fine { font-size: 12px; color: var(--text-3); line-height: 1.45; }
+
+.luca .fine .ic { width: 13px; height: 13px; vertical-align: -2px; }
+
+.luca .center { text-align: center; }
+
+.luca .body-text { color: var(--text-2); font-size: 14.5px; line-height: 1.55; }
+
+.luca .mt-2 { margin-top: 8px; }
+
+.luca .mt-3 { margin-top: 12px; }
+
+.luca .mt-4 { margin-top: 16px; }
+
+.luca .mt-5 { margin-top: 24px; }
+
+.luca .stack-2 { display: flex; flex-direction: column; gap: 10px; }
+
+.luca .stack-3 { display: flex; flex-direction: column; gap: 16px; }
+
+.luca .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 12px; }
+
+/* ---------- Buttons ---------- */
+
+.luca .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 44px; padding: 0 18px;
+  border: 0; border-radius: var(--btn-r);
+  background: var(--accent); color: var(--accent-ink);
+  font: 620 15px/1 var(--font-body); letter-spacing: -0.005em;
+  cursor: pointer; white-space: nowrap; text-decoration: none;
+  transition: transform var(--m-1) var(--ease-out), background-color var(--m-2), box-shadow var(--m-2), opacity var(--m-2);
+}
+
+.luca .btn:active:not(:disabled) { transform: scale(var(--press-scale)); }
+
+.luca .btn:disabled { background: var(--surface-3); color: var(--text-3); cursor: not-allowed; }
+
+.luca .btn .ic { width: 18px; height: 18px; }
+
+.luca .btn-lg { height: 52px; font-size: 16px; padding: 0 22px; }
+
+.luca .btn-sm { height: 34px; padding: 0 12px; font-size: 13px; gap: 6px; }
+
+.luca .btn-sm .ic { width: 15px; height: 15px; }
+
+.luca .btn-block { width: 100%; }
+
+.luca .btn-secondary { background: var(--surface-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+
+.luca .btn-glass { background: rgba(255, 255, 255, .14); color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+
+.luca .btn-live { background: var(--live); color: #fff; }
+
+.luca .btn.is-loading { pointer-events: none; }
+
+.luca .btn.is-done { background: var(--success); color: #07180f; }
+
+.luca .btn .lu-loader { width: 30px; }
+
+.luca .btn-text { background: none; border: 0; color: var(--text-2); font: 550 14px var(--font-body); padding: 10px; cursor: pointer; align-self: center; }
+
+.luca .btn-text--sm { font-size: 13px; padding: 6px 4px; }
+
+.luca .linkish { background: none; border: 0; padding: 0; color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+.luca .link { background: none; border: 0; padding: 4px 0; color: var(--accent-text); font: 600 13px var(--font-body); cursor: pointer; white-space: nowrap; }
+
+.luca .icon-btn {
+  position: relative; width: 40px; height: 40px; border-radius: 999px;
+  display: grid; place-items: center; background: transparent; border: 0; color: var(--text); cursor: pointer;
+  transition: background-color var(--m-2), transform var(--m-1) var(--ease-out);
+}
+
+.luca .icon-btn:active { transform: scale(.92); }
+
+.luca .icon-btn .ic { width: 22px; height: 22px; }
+
+.luca .icon-btn .dot { position: absolute; top: 9px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 2px var(--bg); }
+
+.luca .icon-btn--glass { background: rgba(0, 0, 0, .34); color: #fff; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+
+.luca .icon-btn--glass i { position: absolute; font: 700 7.5px/1 var(--font-body); font-style: normal; top: 50%; left: 50%; transform: translate(-50%, -38%); }
+
+.luca .icon-btn.is-on { background: #fff; color: #000; }
+
+.luca .avatar {
+  width: 34px; height: 34px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent-text);
+  border: 0; font: 650 12px/1 var(--font-body); letter-spacing: .02em; cursor: pointer;
+}
+
+.luca .avatar--lg { width: 44px; height: 44px; font-size: 14px; }
+
+.luca .avatar--xl { width: 64px; height: 64px; font-size: 20px; }
+
+/* ---------- Small primitives ---------- */
+
+.luca .fmt { display: inline-flex; align-items: center; gap: 5px; font: 650 10.5px/1 var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); white-space: nowrap; }
+
+.luca .fmt .ic { width: 13px; height: 13px; }
+
+.luca .fmt--on-art { color: rgba(255, 255, 255, .85); }
+
+.luca .live-pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--live); color: #fff; font: 700 10.5px/1 var(--font-body); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+
+.luca .live-pill i { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: lc-livePulse 1.5s infinite; }
+
+.luca .live-pill--sm { height: 22px; font-size: 10px; }
+
+.luca .live-pill--dot { background: none; padding: 0; height: auto; width: 10px; }
+
+.luca .live-pill--dot i { background: var(--live); width: 8px; height: 8px; }
+
+@keyframes lc-livePulse { 0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, .75); } 70% { box-shadow: 0 0 0 7px rgba(255, 255, 255, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); } }
+
+.luca .bar { display: block; height: 4px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+
+.luca .bar i { display: block; height: 100%; background: var(--accent-line); border-radius: inherit; transform-origin: left; }
+
+.luca .page.is-entering .bar i { animation: lc-barGrow var(--m-5) .2s var(--ease-out) both; }
+
+@keyframes lc-barGrow { from { transform: scaleX(0); } }
+
+.luca .bar--on-art { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 0; background: rgba(255, 255, 255, .28); }
+
+.luca .warn { color: var(--warning); }
+
+.luca[data-theme="light"] .warn { color: #a15c00; }
+
+/* ---------- Logo and the rising line ---------- */
+
+.luca .lu-logo { display: block; fill: currentColor; overflow: visible; }
+
+.luca .lu-logo .lg-graph line, .luca .lu-logo .lg-graph circle { fill: none; stroke: currentColor; }
+
+.luca .lg-link { stroke-width: 1.22; }
+
+.luca .lg-node { stroke-width: 1.35; }
+
+.luca .lu-logo--bar { height: 27px; width: auto; color: var(--text); }
+
+.luca .lu-graph { display: block; width: 100%; height: auto; overflow: visible; }
+
+.luca .lu-graph line, .luca .lu-graph circle { fill: none; stroke: currentColor; }
+
+.luca .lu-graph .lg-ripple { stroke-width: .5; opacity: 0; }
+
+.luca .lu-graph .lg-node, .luca .lu-graph .lg-ripple { transform-box: fill-box; transform-origin: center; }
+
+.luca .lu-loader { display: inline-block; width: 40px; color: currentColor; }
+
+.luca .lu-loader .lg-link, .luca .lu-loader .lg-node { stroke-dasharray: 1; stroke-dashoffset: 1; animation: lc-luLoop 1.6s var(--ease-in-out) infinite; }
+
+.luca .lu-loader .lg-node { animation-delay: calc(var(--i) * .16s); }
+
+.luca .lu-loader .lg-link { animation-delay: calc(var(--i) * .16s + .08s); }
+
+.luca .lu-loader--lg { width: 96px; color: var(--accent-text); margin-bottom: 12px; }
+
+@keyframes lc-luLoop { 0% { stroke-dashoffset: 1; } 40%, 62% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -1; } }
+
+@keyframes lc-draw { to { stroke-dashoffset: 0; } }
+
+.luca .done-mark, .luca .sheet-mark { width: 112px; color: var(--accent-text); margin: 6px auto 16px; }
+
+.luca .sheet-mark { width: 64px; margin: 4px 0 14px; }
+
+.luca .done-mark .lg-link, .luca .done-mark .lg-node { stroke-dasharray: 1; stroke-dashoffset: 1; }
+
+.luca .done-mark.is-drawn .lg-node { animation: lc-draw .5s calc(var(--i) * .16s) var(--ease-out) forwards, lc-nodePop .5s calc(var(--i) * .16s) var(--ease-spring) both; }
+
+.luca .done-mark.is-drawn .lg-link { animation: lc-draw .2s calc(var(--i) * .16s + .1s) var(--ease-out) forwards; }
+
+@keyframes lc-nodePop { from { transform: scale(.2); } to { transform: scale(1); } }
+
+.luca .done-state { text-align: center; padding-top: 10px; }
+
+.luca .done-state .muted { max-width: 30ch; margin: 6px auto 0; }
+
+/* ==========================================================================
+   Prototype shell (desktop panel + device frame)
+   ========================================================================== */
+
+.luca .page { position: absolute; inset: 0; background: var(--bg); overflow: hidden; will-change: transform; }
+
+.luca .page-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+
+.luca .page-scroll::-webkit-scrollbar { display: none; }
+
+.luca .end-space { height: 32px; }
+
+/* Stagger reveal on entry */
+
+.luca .page.is-entering .rv, .luca .is-swapping .rv { animation: lc-rvIn var(--m-4) var(--ease-out) both; animation-delay: calc(var(--rv, 0) * 38ms * var(--motion-scale)); }
+
+@keyframes lc-rvIn { from { opacity: 0; transform: translateY(14px); } }
+
+/* ---------- Tab bar ---------- */
+
+.luca .tabbar {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 50;
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  padding: 6px 8px var(--sab);
+  background: var(--glass); -webkit-backdrop-filter: blur(24px) saturate(1.6); backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: 0 -1px 0 var(--line);
+  transition: transform var(--m-4) var(--ease-out), opacity var(--m-3);
+}
+
+.luca .tabbar.is-hidden { transform: translateY(110%); opacity: 0; pointer-events: none; }
+
+.luca .tb-item { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0 4px; background: none; border: 0; color: var(--text-3); font: 600 10.5px/1 var(--font-body); cursor: pointer; transition: color var(--m-2); }
+
+.luca .tb-item .ic { width: 24px; height: 24px; transition: transform var(--m-3) var(--ease-spring); }
+
+.luca .tb-item.is-on { color: var(--text); }
+
+.luca .tb-item.is-on .ic { transform: translateY(-1px) scale(1.06); }
+
+.luca .tb-item:active .ic { transform: scale(.9); }
+
+/* ---------- App bar and nav bar ---------- */
+
+.luca .appbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(var(--sat) + 6px) var(--gutter) 4px; }
+
+.luca .ab-logo { display: flex; align-items: center; }
+
+.luca .ab-actions { display: flex; align-items: center; gap: 2px; }
+
+.luca .ab-actions .avatar { margin-left: 6px; }
+
+.luca .appbar--title { padding-top: calc(var(--sat) + 14px); padding-bottom: 8px; }
+
+.luca .navbar {
+  position: sticky; top: 0; z-index: 20;
+  display: grid; grid-template-columns: 48px 1fr auto; align-items: center;
+  height: calc(var(--sat) + 52px); padding: var(--sat) 8px 0;
+  transition: background-color var(--m-3), box-shadow var(--m-3);
+}
+
+.luca .nb-title { text-align: center; font: 620 15px/1.2 var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity var(--m-3); }
+
+.luca .nb-actions { display: flex; gap: 2px; min-width: 48px; justify-content: flex-end; }
+
+.luca .navbar.is-solid { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6); box-shadow: 0 1px 0 var(--line); }
+
+.luca .navbar--over { margin-bottom: calc(-1 * (var(--sat) + 52px)); }
+
+.luca .navbar--over:not(.is-solid) .nb-title { opacity: 0; }
+
+.luca .navbar--over:not(.is-solid) .icon-btn { background: rgba(0, 0, 0, .34); color: #fff; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+
+.luca .navbar--over .nb-actions { gap: 8px; padding-right: 4px; }
+
+/* ---------- Sections, rails ---------- */
+
+.luca .sec { padding: 0 var(--gutter); margin-top: 34px; }
+
+.luca .sec--hero { margin-top: 18px; }
+
+.luca .sec-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+
+.luca .sec-sub { margin-top: 4px; color: var(--text-2); font-size: 13.5px; line-height: 1.4; }
+
+.luca .rail { display: grid; grid-auto-flow: column; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 calc(-1 * var(--gutter)); padding: 2px var(--gutter) 8px; scroll-padding: 0 var(--gutter); scrollbar-width: none; overscroll-behavior-x: contain; }
+
+.luca .rail::-webkit-scrollbar { display: none; }
+
+.luca .rail > * { scroll-snap-align: start; }
+
+.luca .rail--ws { grid-auto-columns: 62%; }
+
+.luca .rail--flush { margin: 0 calc(-1 * var(--gutter)); }
+
+.luca .greet { padding: 18px var(--gutter) 0; }
+
+.luca .greet-h { margin-top: 6px; }
+
+/* ---------- Chips and segmented controls ---------- */
+
+.luca .chips { display: flex; gap: 8px; overflow-x: auto; padding: 0 var(--gutter) 2px; scrollbar-width: none; }
+
+.luca .chips::-webkit-scrollbar { display: none; }
+
+.luca .chips--scroll { margin-top: 12px; }
+
+.luca .chip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); border: 0; color: var(--text-2); font: 580 13.5px/1 var(--font-body); cursor: pointer; transition: background-color var(--m-2), color var(--m-2), transform var(--m-1); }
+
+.luca .chip .ic { width: 16px; height: 16px; }
+
+.luca .chip:active { transform: scale(.96); }
+
+.luca .chip.is-on { background: var(--text); color: var(--bg); box-shadow: none; }
+
+.luca .seg { display: flex; padding: 3px; gap: 2px; background: var(--surface-2); border-radius: calc(var(--r-md) + 2px); }
+
+.luca .seg button { flex: 1 1 auto; min-width: 0; height: 34px; padding: 0 10px; border: 0; background: none; color: var(--text-2); font: 580 13px/1 var(--font-body); border-radius: var(--r-md); display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; white-space: nowrap; transition: background-color var(--m-2), color var(--m-2), box-shadow var(--m-2); }
+
+.luca .seg button .ic { width: 16px; height: 16px; }
+
+.luca .seg button.is-on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-1), 0 0 0 1px var(--line); }
+
+.luca .seg--sm button { height: 32px; font-size: 12.5px; }
+
+/* ---------- Posters (masterclasses) ---------- */
+
+/* ---------- Workshop covers ---------- */
+
+/* ---------- Cohort cards ---------- */
+
+/* ---------- "Three ways to learn" ---------- */
+
+/* ---------- Tonight's session hero ---------- */
+
+.luca .hs { position: relative; border-radius: var(--r-xl); overflow: hidden; background: #0c0b0a; isolation: isolate; color: #fff; box-shadow: var(--shadow-2); }
+
+.luca .hs-art { position: absolute; inset: 0; z-index: -1; }
+
+.luca .hs-art img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.25); filter: blur(14px) saturate(1.35); }
+
+.luca .page.is-entering .hs-art img { animation: lc-settleBlur 1.6s var(--ease-out) both; }
+
+@keyframes lc-settleBlur { from { transform: scale(1.4); } }
+
+.luca .hs-art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10, 9, 8, .25) 0%, rgba(10, 9, 8, .55) 45%, rgba(10, 9, 8, .9) 100%); }
+
+.luca .hs-in { position: relative; padding: 18px; display: flex; flex-direction: column; gap: 6px; min-height: 318px; }
+
+.luca .hs-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: auto; padding-bottom: 18px; }
+
+.luca .hs-state { display: inline-flex; gap: 6px; align-items: center; height: 28px; padding: 0 11px 0 9px; border-radius: 999px; background: rgba(255, 255, 255, .14); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); font: 620 12.5px/1 var(--font-body); }
+
+.luca .hs-state .ic { width: 15px; height: 15px; }
+
+.luca .hs-state--done .ic { color: var(--success); }
+
+.luca .hs-count { display: flex; gap: 12px; align-items: baseline; font-family: var(--font-mono); font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+
+.luca .hs-num b { font-size: 44px; font-weight: 500; letter-spacing: -0.05em; line-height: 1; }
+
+.luca .hs-num i { font-style: normal; font-size: 14px; opacity: .55; margin-left: 2px; }
+
+.luca .hs-title { font: var(--title-weight) 20px/1.2 var(--font-display); letter-spacing: calc(var(--display-tracking) * .5); text-wrap: balance; }
+
+.luca .hs-title--big { font-size: 26px; }
+
+.luca .hs-meta { font-size: 13px; opacity: .72; }
+
+.luca .hs-people { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-top: 8px; opacity: .92; }
+
+.luca .hs-next { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-top: 8px; padding: 10px 12px; border-radius: var(--r-md); background: rgba(255, 255, 255, .1); }
+
+.luca .hs-next .ic { width: 16px; height: 16px; }
+
+.luca .hs-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+
+.luca .hs-row { display: flex; gap: 8px; }
+
+.luca .hs-row .btn { flex: 1; min-width: 0; }
+
+.luca .hs .btn-secondary { background: rgba(255, 255, 255, .12); color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14); }
+
+.luca .hs .btn:disabled { background: rgba(255, 255, 255, .1); color: rgba(255, 255, 255, .6); }
+
+.luca .hs-note { display: flex; gap: 6px; align-items: center; justify-content: center; font-size: 12px; opacity: .7; }
+
+.luca .hs-note .ic { width: 14px; height: 14px; }
+
+.luca .hs--live { box-shadow: 0 0 0 1px rgba(255, 69, 58, .5), var(--shadow-2); }
+
+/* ---------- Continue watching ---------- */
+
+/* ---------- This week ---------- */
+
+/* ---------- Program rows ---------- */
+
+.luca .list { display: flex; flex-direction: column; }
+
+/* ---------- "Start free" hero (new learners) ---------- */
+
+/* ---------- Detail pages ---------- */
+
+.luca .ls-b { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+
+.luca .files { display: flex; flex-direction: column; }
+
+.luca .file { display: grid; grid-template-columns: 22px 1fr 20px; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); color: var(--text); }
+
+.luca .files .file:first-child { border-top: 0; }
+
+.luca .file > .ic { color: var(--text-2); }
+
+.luca .file b { display: block; font-size: 14px; font-weight: 600; }
+
+.luca .file em { font-style: normal; font-size: 12px; color: var(--text-3); }
+
+.luca .file.is-locked { color: var(--text-3); }
+
+.luca .file.is-locked b { color: var(--text-2); }
+
+.luca .sticky-cta { position: absolute; left: 12px; right: 12px; bottom: calc(var(--sab) + 12px); z-index: 30; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 10px 10px 16px; border-radius: calc(var(--r-lg) + 2px); background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.5); backdrop-filter: blur(22px) saturate(1.5); box-shadow: var(--shadow-2), inset 0 0 0 1px var(--glass-line); transform: translateY(24px); opacity: 0; pointer-events: none; transition: transform var(--m-4) var(--ease-out), opacity var(--m-3); }
+
+.luca .sticky-cta.is-shown { transform: none; opacity: 1; pointer-events: auto; }
+
+.luca .steps { list-style: none; counter-reset: s; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; }
+
+.luca .steps li { counter-increment: s; display: grid; grid-template-columns: 30px 1fr; grid-template-rows: auto auto; column-gap: 12px; }
+
+.luca .steps li::before { content: counter(s); grid-row: span 2; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); font: 650 13px var(--font-mono); }
+
+.luca .steps b { font-size: 14.5px; font-weight: 620; }
+
+.luca .steps span { font-size: 13px; color: var(--text-2); }
+
+/* ---------- Cohort room ---------- */
+
+/* ---------- Player ---------- */
+
+@keyframes lc-kb { from { transform: scale(1.02); } to { transform: scale(1.14) translateX(-2%); } }
+
+/* ---------- Sheets, toasts, notifications ---------- */
+
+.luca .sheet-wrap { position: absolute; inset: 0; pointer-events: auto; }
+
+.luca .sheet-backdrop { position: absolute; inset: 0; background: var(--scrim); }
+
+.luca .sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 90%; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: var(--shadow-2), inset 0 1px 0 var(--glass-line); padding-bottom: var(--sab); }
+
+.luca .sheet-grip { flex: none; height: 26px; display: grid; place-items: center; cursor: grab; touch-action: none; }
+
+.luca .sheet-grip span { width: 38px; height: 5px; border-radius: 3px; background: var(--line-strong); }
+
+.luca .sheet-body { overflow-y: auto; scrollbar-width: none; }
+
+.luca .sheet-pad { padding: 2px var(--gutter) 22px; }
+
+.luca .sheet .h2 { margin-bottom: 6px; }
+
+.luca .sheet .muted { font-size: 14.5px; line-height: 1.45; }
+
+.luca .toasts { position: absolute; top: calc(var(--sat) + 4px); left: 10px; right: 10px; z-index: 85; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+
+.luca .toast { pointer-events: auto; display: inline-flex; gap: 8px; align-items: center; padding: 10px 16px 10px 13px; border-radius: 999px; background: var(--text); color: var(--bg); font: 580 13px/1.2 var(--font-body); box-shadow: var(--shadow-2); max-width: 100%; }
+
+.luca .toast .ic { width: 17px; height: 17px; }
+
+.luca .fx { position: absolute; inset: 0; z-index: 90; pointer-events: none; }
+
+.luca .fx > * { pointer-events: auto; }
+
+/* ---------- Forms ---------- */
+
+.luca .form-wrap { padding: 6px var(--gutter) 24px; display: flex; flex-direction: column; gap: 14px; }
+
+.luca .form-wrap .h1 { margin-top: 2px; }
+
+.luca .field { display: flex; flex-direction: column; gap: 8px; }
+
+.luca .label { font: 580 13px/1.2 var(--font-body); color: var(--text-2); }
+
+.luca .input-wrap { display: flex; align-items: center; background: var(--surface); border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line-strong); transition: box-shadow var(--m-2); }
+
+.luca .input-wrap:focus-within { box-shadow: inset 0 0 0 2px var(--focus); }
+
+.luca .input { flex: 1; min-width: 0; width: 100%; height: 52px; padding: 0 14px; background: none; border: 0; outline: none; color: var(--text); font: 520 17px var(--font-body); letter-spacing: .01em; }
+
+.luca textarea.input { height: auto; padding: 12px 14px; resize: none; font-size: 15px; line-height: 1.45; }
+
+.luca .input::placeholder { color: var(--text-3); }
+
+.luca .help { font-size: 12.5px; color: var(--text-3); line-height: 1.4; }
+
+.luca .err { font-size: 13px; color: var(--live); display: flex; gap: 6px; align-items: center; }
+
+.luca .err .ic { width: 16px; height: 16px; }
+
+.luca .field.is-error .input-wrap { box-shadow: inset 0 0 0 2px var(--live); }
+
+.luca .page--form .btn-text { margin-top: -4px; }
+
+.luca .ob-steps { display: flex; gap: 6px; justify-content: center; }
+
+.luca .ob-steps i { width: 28px; height: 4px; border-radius: 4px; background: var(--surface-3); transition: background-color var(--m-3); }
+
+.luca .ob-steps i.is-on { background: var(--accent-line); }
+
+.luca .pref { display: grid; grid-template-columns: 40px 1fr 22px; gap: 12px; align-items: center; padding: 16px 14px; border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); border: 0; color: inherit; text-align: left; cursor: pointer; transition: box-shadow var(--m-2); }
+
+.luca .pref-t { display: block; font-weight: 650; font-size: 15px; }
+
+.luca .pref-d { display: block; font-size: 13px; color: var(--text-2); line-height: 1.4; margin-top: 2px; }
+
+.luca .pref-radio { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--line-strong); transition: box-shadow var(--m-2); }
+
+.luca .pref.is-on { box-shadow: inset 0 0 0 2px var(--focus); }
+
+.luca .pref.is-on .pref-radio { box-shadow: inset 0 0 0 7px var(--focus); }
+
+/* ---------- Explore ---------- */
+
+.luca .empty { text-align: center; padding: 44px 28px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+.luca .empty-mark { width: 72px; color: var(--text-3); margin-bottom: 10px; opacity: .8; }
+
+.luca .empty-t { font: 650 17px/1.3 var(--font-body); }
+
+.luca .empty-s { font-size: 13.5px; color: var(--text-2); max-width: 30ch; line-height: 1.45; margin-bottom: 10px; }
+
+.luca .empty--sm { padding: 24px 12px; }
+
+/* ---------- Book a call ---------- */
+
+.luca .slot-days { display: flex; gap: 8px; margin-top: 18px; }
+
+.luca .slot-day { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 0; border-radius: var(--r-md); border: 0; background: var(--surface-2); color: var(--text-2); font: 580 12px var(--font-body); cursor: pointer; }
+
+.luca .slot-day b { font-size: 18px; color: var(--text); }
+
+.luca .slot-day.is-on { background: var(--text); color: var(--bg); }
+
+.luca .slot-day.is-on b { color: var(--bg); }
+
+.luca .slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+
+.luca .slot { height: 42px; border-radius: var(--r-sm); border: 0; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); font: 580 13.5px var(--font-body); cursor: pointer; }
+
+.luca .slot.is-on { box-shadow: inset 0 0 0 2px var(--focus); background: var(--accent-soft); }
+
+.luca .slot:disabled { color: var(--text-3); text-decoration: line-through; box-shadow: inset 0 0 0 1px var(--line); cursor: not-allowed; }
+
+/* ---------- Checkout sheet ---------- */
+
+/* ---------- Certificate ---------- */
+
+.luca .lu-logo--cert { height: 22px; width: auto; color: #1c1814; }
+
+/* ---------- Profile ---------- */
+
+.luca .set { margin: 26px var(--gutter) 0; }
+
+.luca .set-h { font: 650 11px/1 var(--font-body); text-transform: uppercase; letter-spacing: .09em; color: var(--text-3); margin: 0 0 10px 4px; }
+
+.luca .set-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 13px 14px; background: var(--surface); width: 100%; border: 0; color: inherit; text-align: left; font: inherit; box-shadow: inset 1px 0 0 var(--line), inset -1px 0 0 var(--line); }
+
+.luca .set-row:nth-child(2) { border-radius: var(--r-md) var(--r-md) 0 0; box-shadow: inset 0 1px 0 var(--line), inset 1px 0 0 var(--line), inset -1px 0 0 var(--line); }
+
+.luca .set-row:last-child { border-radius: 0 0 var(--r-md) var(--r-md); box-shadow: inset 0 -1px 0 var(--line), inset 1px 0 0 var(--line), inset -1px 0 0 var(--line); }
+
+.luca .set-row:nth-child(2):last-child { border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line); }
+
+.luca .set-row + .set-row { border-top: 1px solid var(--line); }
+
+.luca .set-row--btn { cursor: pointer; }
+
+.luca .set-row--btn > .ic { color: var(--text-3); width: 18px; height: 18px; }
+
+.luca .set-l { display: flex; gap: 12px; align-items: center; font-size: 15px; min-width: 0; }
+
+.luca .set-l > .ic { color: var(--text-2); }
+
+.luca .set-l em { display: block; font-style: normal; font-size: 12px; color: var(--text-3); margin-top: 1px; }
+
+.luca .set-row--col { flex-direction: column; align-items: stretch; }
+
+.luca .set-row--danger, .luca .set-row--danger .set-l > .ic { color: var(--live); }
+
+.luca .switch { width: 50px; height: 30px; border-radius: 999px; background: var(--surface-3); border: 0; position: relative; flex: none; cursor: pointer; transition: background-color var(--m-2); }
+
+.luca .switch i { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .28); transition: transform var(--m-3) var(--ease-spring); }
+
+.luca .switch.is-on { background: var(--accent-line); }
+
+.luca .switch.is-on i { transform: translateX(20px); }
+
+/* ==========================================================================
+   Launcher (phone home screen)
+   ========================================================================== */
+
+/* ==========================================================================
+   Intro (first launch) and the sign-in moment
+   ========================================================================== */
+
+@keyframes lc-fadeIn { to { opacity: 1; } }
+
+@keyframes lc-fadeOut { to { opacity: 0; } }
+
+@keyframes lc-fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* Marquee: the lights go down, a beam crosses, the name catches the light, a montage of the catalogue plays behind it */
+
+/* Returning users: one quiet beat, then straight in */
+
+/* The sign-in moment */
+
+.luca .welcome { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; --wl-bg: var(--bg); --wl-ink: var(--text); --wl-graph: var(--accent-text); }
+
+.luca .wl-bg { position: absolute; inset: 0; background: var(--wl-bg); animation: lc-fadeIn .3s var(--ease-out) both; opacity: 0; }
+
+.luca .welcome--marquee .wl-bg { background: radial-gradient(70% 45% at 50% 42%, color-mix(in srgb, var(--accent) 16%, var(--bg)) 0%, var(--bg) 72%); }
+
+.luca .wl-graph { position: relative; width: 64%; color: var(--wl-graph); }
+
+.luca .wl-graph .lg-node, .luca .wl-graph .lg-link { stroke-dasharray: 1; stroke-dashoffset: 1; }
+
+.luca .welcome .lg-node { animation: lc-draw .4s calc(.3s + var(--i) * var(--wl-step, .2s)) var(--ease-out) forwards, lc-nodePop .6s calc(.3s + var(--i) * var(--wl-step, .2s)) var(--ease-spring) both; }
+
+.luca .welcome .lg-link { animation: lc-draw .2s calc(.4s + var(--i) * var(--wl-step, .2s)) var(--ease-out) forwards; }
+
+.luca .welcome .lg-ripple { animation: lc-ripple 1.1s calc(.3s + var(--i) * var(--wl-step, .2s)) var(--ease-out) forwards; }
+
+@keyframes lc-ripple { 0% { opacity: .7; transform: scale(1); stroke-width: .8; } 100% { opacity: 0; transform: scale(3.4); stroke-width: .1; } }
+
+.luca .wl-text { position: relative; text-align: center; color: var(--wl-ink); opacity: 0; animation: lc-fadeUp .7s 1s var(--ease-out) forwards; padding: 0 24px; }
+
+.luca .wl-eyebrow { font: 650 11px/1 var(--font-body); letter-spacing: .14em; text-transform: uppercase; opacity: .6; }
+
+.luca .wl-title { font-family: var(--font-display); font-weight: var(--display-weight); letter-spacing: var(--display-tracking); font-size: 32px; line-height: 1.05; margin-top: 10px; }
+
+.luca .welcome.is-out { animation: lc-fadeOut .65s var(--ease-in-out) forwards; }
+
+.luca .welcome.is-out .wl-graph { animation: lc-wlGraphOut .65s var(--ease-in-out) forwards; }
+
+@keyframes lc-wlGraphOut { to { transform: translateY(-40px) scale(.8); opacity: 0; } }
+
+.luca .welcome--reduced .lg-node, .luca .welcome--reduced .lg-link { stroke-dashoffset: 0; animation: none; }
+
+.luca .welcome--reduced .wl-text { opacity: 1; animation: none; }
+
+/* ==========================================================================
+   Welcome screens (logged out)
+   ========================================================================== */
+
+/* Premiere welcome: a slow reel of the masterclass faces */
+
+/* ==========================================================================
+   SHARED STRUCTURE (round 3)
+   Brand-neutral rules every brand builds on. Rules of the house: no
+   icon-in-a-box, the accent only on the thing to press or the filter that
+   is on, red only when something is live, and nothing theatrical.
+   Brand-specific looks live in brands.css.
+   ========================================================================== */
+
+/* ---- Type from the brand tokens ---- */
+
+.luca .display, .luca .h1, .luca .h2, .luca .wl-title, .luca .hs-title {
+  font-family: var(--font-display);
+  font-stretch: var(--display-stretch);
+}
+
+.luca .display, .luca .h1, .luca .wl-title { font-weight: var(--display-weight); letter-spacing: var(--display-tracking); }
+
+.luca .h2 { font-weight: var(--title-weight); letter-spacing: calc(var(--display-tracking) * .5); }
+
+.luca .display { line-height: 1.02; }
+
+.luca .h1 { line-height: 1.06; }
+
+.luca .sec-head .h2 { font-size: var(--t-h2); }
+
+.luca .mono-num { font-family: var(--font-display); font-stretch: var(--numeral-stretch); font-weight: var(--num-weight); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+/* ---- Buttons ---- */
+
+.luca .btn { font-weight: 640; }
+
+.luca .btn-lg { height: 52px; }
+
+.luca .btn-secondary { box-shadow: inset 0 0 0 1px var(--card-line, var(--line)); }
+
+/* ---- Filters use the accent when on ---- */
+
+.luca .chip { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); height: 38px; padding: 0 15px; font-weight: 600; }
+
+.luca .chip .ic { display: none; }
+
+.luca .chip.is-on { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+
+.luca .seg { background: var(--surface-2); border-radius: 999px; padding: 4px; }
+
+.luca .seg button { border-radius: 999px; font-weight: 620; }
+
+.luca .seg button.is-on { background: var(--text); color: var(--bg); box-shadow: none; }
+
+/* ---- Format labels are words, not icons ---- */
+
+.luca .fmt .ic { display: none; }
+
+.luca .fmt { letter-spacing: .08em; }
+
+/* ---- Filled blocks instead of outlined boxes ---- */
+
+.luca .pref { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .avatar { background: var(--surface-3); color: var(--text); }
+
+.luca .me .avatar, .luca .ab-actions .avatar { background: var(--accent); color: var(--accent-ink); }
+
+/* ---- Tonight's class (base; brands restyle it) ---- */
+
+.luca .hs { background: var(--ticket); color: var(--ticket-ink); border-radius: var(--r-xl); box-shadow: none; }
+
+.luca .hs-art { inset: auto; top: 16px; right: 16px; width: 64px; height: 64px; border-radius: var(--r-md); overflow: hidden; z-index: 0; box-shadow: 0 10px 20px -12px rgba(0, 0, 0, .5); }
+
+.luca .hs-art::after { display: none; }
+
+.luca .hs-art img { transform: none; filter: none; animation: none !important; }
+
+.luca .hs-in { min-height: 0; padding: 18px 18px 16px; }
+
+.luca .hs-top { justify-content: flex-start; padding-right: 80px; padding-bottom: 22px; }
+
+.luca .hs-state { background: color-mix(in srgb, var(--ticket-ink) 12%, transparent); color: var(--ticket-ink); -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+.luca .hs-count { font-family: var(--font-display); font-stretch: var(--numeral-stretch); gap: 10px; margin-bottom: 6px; }
+
+.luca .hs-num b { font-size: 56px; font-weight: var(--num-weight); letter-spacing: -0.03em; line-height: .9; }
+
+.luca .hs-num i { font-family: var(--font-body); font-size: 14px; font-weight: 600; opacity: .55; margin-left: 3px; }
+
+.luca .hs-title { font-size: 20px; font-weight: var(--title-weight); line-height: 1.18; }
+
+.luca .hs-meta { opacity: .72; font-size: 13px; }
+
+.luca .hs-actions { margin-top: 16px; }
+
+.luca .hs .btn { background: var(--ticket-ink); color: var(--ticket); }
+
+.luca .hs .btn-secondary { background: color-mix(in srgb, var(--ticket-ink) 10%, transparent); color: var(--ticket-ink); box-shadow: none; }
+
+.luca .hs .btn:disabled { background: color-mix(in srgb, var(--ticket-ink) 10%, transparent); color: color-mix(in srgb, var(--ticket-ink) 55%, transparent); }
+
+.luca .hs-next { background: color-mix(in srgb, var(--ticket-ink) 8%, transparent); }
+
+.luca .hs-note { opacity: .75; }
+
+.luca .hs-people { opacity: 1; }
+
+.luca .hs--live { --ticket: var(--live); --ticket-ink: #ffffff; }
+
+.luca .hs--live .hs-state { background: none; padding: 0; }
+
+.luca .hs--live .live-pill { background: #fff; color: var(--live); }
+
+.luca .hs--live .live-pill i { background: var(--live); }
+
+.luca .hs--live .btn { background: #fff; color: #b3140b; }
+
+.luca .hs--live .hs-title--big { font-size: 28px; padding-right: 68px; line-height: 1.05; }
+
+.luca .hs--after { --ticket: var(--surface-2); --ticket-ink: var(--text); }
+
+.luca .hs--after .hs-state { background: var(--accent-soft); color: var(--accent-text); }
+
+.luca .hs--after .hs-state .ic { color: inherit; }
+
+.luca .hs--after .btn { background: var(--accent); color: var(--accent-ink); }
+
+.luca .hs--after .btn-secondary { background: var(--surface-3); color: var(--text); }
+
+.luca .hs--after .hs-title { font-size: 26px; padding-right: 68px; }
+
+/* ---- This week: colour bars instead of icons ---- */
+
+/* ---- Three ways to learn: the programs themselves, no icons ---- */
+
+/* ---- Onboarding: pick a craft by its picture ---- */
+
+.luca .pref { grid-template-columns: 1fr 22px; padding: 18px 16px; }
+
+.luca .pref-t { font-family: var(--font-display); font-size: 18px; font-weight: var(--title-weight); }
+
+.luca .pref.is-on { box-shadow: inset 0 0 0 2px var(--accent-line); }
+
+.luca .pref.is-on .pref-radio { box-shadow: inset 0 0 0 7px var(--accent-line); }
+
+/* ---- Help card, empty states, files: no stock icons ---- */
+
+.luca .empty-mark { width: 84px; color: var(--accent-text); opacity: 1; }
+
+.luca .empty-mark .lg-node, .luca .empty-mark .lg-link { stroke-dasharray: 1; stroke-dashoffset: 1; animation: lc-draw .5s calc(.2s + var(--i) * .14s) var(--ease-out) forwards; }
+
+.luca .file { grid-template-columns: 44px 1fr 20px; }
+
+.luca .file-badge { display: grid; place-items: center; height: 26px; border-radius: 6px; background: var(--surface-3); font: 700 9.5px/1 var(--font-mono); letter-spacing: .06em; color: var(--text-2); }
+
+/* ---- The cohort's 12 weeks: plain blocks ---- */
+
+/* ---- Tab bar: the accent marks where you are ---- */
+
+.luca .tb-item.is-on .ic { color: var(--accent-text); }
+
+/* ---- Free lesson hero label ---- */
+
+/* ---- Intro: images behind the logo (Stage only) ---- */
+
+/* ---- Light mode touches ---- */
+
+/* ==========================================================================
+   Phones: the prototype becomes the app, full screen
+   ========================================================================== */
+
+/* round 2 tidy-ups: no leftover icon boxes */
+
+/* Embedded (?embed=1): just the phone, no panel, no notes. Used by compare.html. */
+
+/*  ---- cohort ----  */
+
+/* ==========================================================================
+   LUCA live cohort prototype. Stage brand, Ember or Mono.
+   Rules carried from the brand: filled blocks, not outlines; words, not
+   icons in boxes; the accent only on the one loud block and on things that
+   are on; red only when something is live; calm motion; sound marks moments.
+   ========================================================================== */
+
+/* ---- engine overrides for this page ---- */
+
+.luca .hs-top { padding-right: 0; }
+
+.luca .hs-title--big, .luca .hs--live .hs-title--big, .luca .hs--after .hs-title { padding-right: 0; }
+
+.luca .hs-in { min-height: 0; }
+
+.luca .hs-count { margin: 2px 0 8px; }
+
+.luca .tb-item span { white-space: nowrap; }
+
+.luca .sheet .set { margin-left: 0; margin-right: 0; }
+
+.luca .toast .tc-n { font-family: var(--font-display); font-weight: 760; margin-right: 6px; }
+
+.luca .toast b { font-weight: 720; }
+
+/* ---- shared bits ---- */
+
+.luca .lc-av { width: 32px; height: 32px; border-radius: 50%; overflow: hidden; flex: none; display: grid; place-items: center; background: var(--surface-3); color: var(--text); font: 680 11.5px/1 var(--font-body); letter-spacing: .02em; }
+
+.luca .lc-av img { width: 100%; height: 100%; object-fit: cover; }
+
+.luca .lc-av--md { width: 42px; height: 42px; font-size: 13px; }
+
+.luca .lc-avs { display: flex; }
+
+.luca .lc-avs .lc-av { box-shadow: 0 0 0 2px var(--surface-2); }
+
+.luca .lc-avs .lc-av + .lc-av { margin-left: -8px; }
+
+.luca .lc-ck { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 2px var(--line-strong); color: transparent; flex: none; transition: background-color var(--m-2), box-shadow var(--m-2), color var(--m-2); }
+
+.luca .lc-ck .ic { width: 13px; height: 13px; }
+
+.luca .lc-ck.is-on { background: var(--accent-line); color: var(--accent-ink); box-shadow: none; }
+
+.luca .lc-pill { display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 11px 0 9px; border-radius: 999px; border: 0; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); color: var(--text); font: 700 14px/1 var(--font-display); font-variant-numeric: tabular-nums; cursor: pointer; }
+
+.luca .lc-pill .ic { width: 17px; height: 17px; color: var(--accent-text); }
+
+.luca .lc-pill b { display: inline-block; font-weight: inherit; }
+
+.luca .lc-pill--lg { height: 44px; padding: 0 15px 0 12px; font-size: 20px; cursor: default; }
+
+.luca .lc-pill--lg .ic { width: 22px; height: 22px; }
+
+.luca .is-bump { animation: lc-bump .55s var(--ease-spring); }
+
+@keyframes lc-bump { 30% { transform: scale(1.2); } }
+
+.luca .lc-appbar .ab-actions { gap: 6px; }
+
+.luca .lc-me { background: var(--accent); color: var(--accent-ink); border: 0; cursor: pointer; }
+
+.luca .lc-note { padding: 14px 16px; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); font-size: 14px; color: var(--text-2); line-height: 1.45; }
+
+.luca .lc-note b { color: var(--text); }
+
+.luca .lc-next { margin-top: 18px; }
+
+.luca .nb-link { padding-right: 10px; }
+
+/* verdict chips */
+
+.luca .vd { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 999px; font: 700 11px/1 var(--font-body); letter-spacing: .04em; white-space: nowrap; background: var(--surface-3); color: var(--text-2); flex: none; }
+
+.luca .vd--ship { background: var(--text); color: var(--bg); }
+
+.luca .vd--fix { background: transparent; color: var(--accent-text); box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+
+.luca .vd--hold { background: var(--surface-3); color: var(--text-3); }
+
+.luca .vd--pending, .luca .vd--fixed { background: var(--accent-soft); color: var(--accent-text); }
+
+.luca .vd--due { background: var(--surface-3); color: var(--text); }
+
+.luca .vd--soon { background: transparent; color: var(--text-3); box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+.luca .vd--late { background: transparent; color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+/* ==========================================================================
+   The cohort as the logo's rising line
+   ========================================================================== */
+
+.luca .arc { position: relative; display: block; padding-top: 18px; cursor: pointer; }
+
+.luca .arc-c { position: relative; }
+
+.luca .arc svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+.luca .arc-l { stroke: var(--line-strong); stroke-width: 2; stroke-linecap: round; }
+
+.luca .arc-l--done { stroke: var(--accent-line); }
+
+.luca .arc-l--sprint.arc-l--todo { stroke-dasharray: 3 4; }
+
+.luca .arc-n { stroke-width: 2; }
+
+.luca .arc-n--done { fill: var(--accent-line); stroke: var(--accent-line); }
+
+.luca .arc-n--now { fill: var(--bg); stroke: var(--accent-line); stroke-width: 3; }
+
+.luca .arc-n--todo { fill: var(--bg); stroke: var(--line-strong); }
+
+.luca .arc-n--demo.arc-n--todo { fill: var(--surface-3); }
+
+.luca .arc-halo { fill: var(--accent-soft); transform-box: fill-box; transform-origin: center; animation: lc-halo 2.4s ease-in-out infinite; }
+
+@keyframes lc-halo { 50% { transform: scale(1.4); opacity: .35; } }
+
+.luca .page.is-entering .arc-l--done, .luca .page.is-entering .arc-n--done { animation: lc-fadeIn .5s calc(var(--i) * 40ms) var(--ease-out) both; }
+
+.luca .arc-you { position: absolute; transform: translate(-50%, calc(-100% - 12px)); padding: 4px 6px; border-radius: 6px; background: var(--text); color: var(--bg); font: 700 9.5px/1 var(--font-body); letter-spacing: .1em; text-transform: uppercase; pointer-events: none; }
+
+.luca .arc-labels { position: relative; height: 14px; margin-top: 8px; }
+
+.luca .arc-t { position: absolute; top: 0; transform: translateX(-50%); font: 600 10.5px/1 var(--font-body); color: var(--text-3); white-space: nowrap; }
+
+.luca .arc-t:first-child { transform: translateX(-6px); }
+
+.luca .arc-t:last-child { transform: translateX(calc(-100% + 6px)); }
+
+.luca .arc-t.is-now { color: var(--text); }
+
+.luca .lc-arc-sec { margin-top: 10px; }
+
+.luca .lc-arc-note { margin-top: 12px; }
+
+.luca .lc-greet { padding-top: 14px; }
+
+/* ==========================================================================
+   Next-thing card additions
+   ========================================================================== */
+
+.luca .hs-todo { margin-top: 14px; padding: 4px; border-radius: var(--r-md); background: color-mix(in srgb, var(--ticket-ink) 11%, transparent); display: flex; flex-direction: column; }
+
+.luca .hs-todo-h { font: 650 12px/1.3 var(--font-body); padding: 8px 10px 4px; opacity: .85; }
+
+.luca .hs-t { display: grid; grid-template-columns: 22px 1fr 16px; gap: 10px; align-items: center; padding: 10px; border: 0; background: none; color: inherit; text-align: left; border-radius: calc(var(--r-md) - 4px); cursor: pointer; font: inherit; }
+
+.luca .hs-t:hover { background: color-mix(in srgb, var(--ticket-ink) 8%, transparent); }
+
+.luca .hs-t b { display: block; font-size: 14px; font-weight: 650; }
+
+.luca .hs-t em { display: block; font-style: normal; font-size: 12.5px; opacity: .82; margin-top: 2px; line-height: 1.35; }
+
+.luca .hs-t > .ic { width: 16px; height: 16px; opacity: .7; }
+
+.luca .hs-t.is-done b { text-decoration: line-through; opacity: .75; }
+
+.luca .hs .lc-ck { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ticket-ink) 55%, transparent); }
+
+.luca .hs .lc-ck.is-on { background: var(--ticket-ink); color: var(--ticket); box-shadow: none; }
+
+.luca .lc-hs-bar { margin-top: 12px; background: color-mix(in srgb, var(--ticket-ink) 20%, transparent); }
+
+.luca .lc-hs-bar i { background: var(--ticket-ink); }
+
+.luca .hs .lc-cnt { font-weight: 700; }
+
+.luca .hs-next .lc-cnt { font-weight: 700; }
+
+/* ---- standing ---- */
+
+.luca .lc-stand { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.luca .lc-st { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; padding: 14px; border: 0; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); color: inherit; cursor: pointer; font: inherit; }
+
+.luca .lc-st b { font: var(--num-weight) 34px/1 var(--font-display); letter-spacing: -0.03em; margin-top: 4px; }
+
+.luca .lc-st > span:last-child { font-size: 12.5px; color: var(--text-2); line-height: 1.35; }
+
+.luca .lc-st em { font-style: normal; color: var(--accent-text); font-weight: 650; }
+
+.luca .lc-st.is-wait { cursor: default; }
+
+.luca .lc-st.is-wait b { color: var(--text-3); }
+
+/* ---- lists of things to do ---- */
+
+.luca .tw { display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); overflow: hidden; }
+
+.luca .tw-r { display: grid; grid-template-columns: 22px 1fr 16px; gap: 12px; align-items: center; padding: 13px 14px; border: 0; background: none; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+
+.luca .tw-r + .tw-r { box-shadow: inset 0 1px 0 var(--line); }
+
+.luca .tw-r > .ic { width: 16px; height: 16px; color: var(--text-3); }
+
+.luca .tw-r > .ic:first-child { width: 20px; height: 20px; color: var(--text-2); }
+
+.luca .tw-b b { display: block; font-size: 14.5px; font-weight: 620; line-height: 1.3; }
+
+.luca .tw-b span { display: block; font-size: 12.5px; color: var(--text-2); margin-top: 2px; line-height: 1.35; }
+
+.luca .tw-r.is-done .tw-b b { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--line-strong); }
+
+.luca .tw-r:disabled { cursor: default; }
+
+.luca .tw-r.is-live { box-shadow: inset 3px 0 0 var(--live); }
+
+.luca .tw-live { font-style: normal; color: var(--live); font-weight: 700; }
+
+.luca .lc-tw-bar { margin: -4px 0 12px; }
+
+/* ---- Clan pulse ---- */
+
+.luca .cp { padding: 16px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .cp-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+
+.luca .cp-m { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-2); }
+
+.luca .cp-m em { font-style: normal; }
+
+.luca .cp-m .lc-av { width: 42px; height: 42px; box-shadow: 0 0 0 2px var(--surface-2), 0 0 0 4px var(--line-strong); opacity: .55; }
+
+.luca .cp-m.is-half .lc-av { opacity: .85; box-shadow: 0 0 0 2px var(--surface-2), 0 0 0 4px color-mix(in srgb, var(--accent-line) 50%, var(--line-strong)); }
+
+.luca .cp-m.is-done .lc-av { opacity: 1; box-shadow: 0 0 0 2px var(--surface-2), 0 0 0 4px var(--accent-line); }
+
+.luca .cp-m.is-done em { color: var(--text); }
+
+.luca .cp-s { margin-top: 16px; font-size: 14px; color: var(--text-2); line-height: 1.45; }
+
+.luca .cp-s b { color: var(--text); }
+
+.luca .cp-acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+.luca .cp-feed { display: grid; grid-template-columns: 32px 1fr auto; gap: 10px; align-items: center; width: 100%; margin-top: 14px; padding: 10px; border: 0; border-radius: var(--r-md); background: var(--surface-3); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+
+.luca .cp-feed b { display: block; font-size: 13px; }
+
+.luca .cp-feed em { display: block; font-style: normal; font-size: 12.5px; color: var(--text-2); margin-top: 1px; }
+
+.luca .cp-fb { font: 650 12px/1 var(--font-body); color: var(--accent-text); white-space: nowrap; }
+
+/* ---- Clan, not yet ---- */
+
+.luca .lc-mystery { display: flex; flex-direction: column; gap: 6px; padding: 18px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .lc-my-row { display: flex; gap: 6px; margin-bottom: 10px; }
+
+.luca .lc-my-row span { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-3); color: var(--text-3); font: 700 15px/1 var(--font-display); animation: lc-myst 2.4s calc(var(--i) * .18s) ease-in-out infinite; }
+
+@keyframes lc-myst { 50% { opacity: .4; } }
+
+.luca .lc-mystery b { font: var(--title-weight) 18px/1.2 var(--font-display); }
+
+.luca .lc-mystery > span { font-size: 13.5px; color: var(--text-2); line-height: 1.45; }
+
+.luca .lc-mystery--big { padding: 24px 20px; }
+
+.luca .lc-big-n { font: var(--num-weight) 64px/1 var(--font-display); letter-spacing: -0.04em; margin-bottom: 6px; }
+
+.luca .lc-clanout { display: grid; grid-template-columns: 1fr 20px; gap: 3px 10px; align-items: center; width: 100%; padding: 16px; border: 0; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1.5px var(--accent-line); color: inherit; text-align: left; cursor: pointer; font: inherit; animation: lc-glow 1.8s ease-in-out infinite; }
+
+.luca .lc-clanout .eyebrow { color: var(--accent-text); }
+
+.luca .lc-clanout b { font: var(--title-weight) 20px/1.2 var(--font-display); }
+
+.luca .lc-clanout span:not(.eyebrow) { font-size: 13px; color: var(--text-2); }
+
+.luca .lc-clanout .ic { grid-column: 2; grid-row: 1 / span 3; }
+
+@keyframes lc-glow { 50% { box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 5px var(--accent-soft); } }
+
+/* ---- sessions and recordings ---- */
+
+.luca .srs { display: flex; flex-direction: column; gap: 8px; }
+
+.luca .sr { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: center; padding: 12px; border: 0; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+
+.luca .sr-d { display: flex; flex-direction: column; align-items: center; font: 600 10.5px/1 var(--font-body); color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; gap: 3px; }
+
+.luca .sr-d b { font: var(--num-weight) 22px/1 var(--font-display); color: var(--text); letter-spacing: -0.02em; }
+
+.luca .sr-b { min-width: 0; }
+
+.luca .sr-b b { display: block; font-size: 14.5px; font-weight: 620; line-height: 1.3; }
+
+.luca .sr-b span { display: block; font-size: 12.5px; color: var(--text-2); margin-top: 3px; }
+
+.luca .sr-tag { font: 650 11px/1 var(--font-body); padding: 6px 8px; border-radius: 999px; background: var(--surface-3); color: var(--text-2); white-space: nowrap; }
+
+.luca .sr-tag--today { background: var(--accent-soft); color: var(--accent-text); }
+
+.luca .rcs { display: flex; flex-direction: column; gap: 14px; }
+
+.luca .rc { display: grid; grid-template-columns: 128px 1fr; gap: 12px; align-items: start; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+
+.luca .rc-art { position: relative; display: block; aspect-ratio: 16 / 10; border-radius: var(--r-sm); overflow: hidden; background: var(--surface-3); }
+
+.luca .rc-art img { width: 100%; height: 100%; object-fit: cover; }
+
+.luca .rc-play { position: absolute; left: 8px; bottom: 8px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, .5); color: #fff; }
+
+.luca .rc-play .ic { width: 13px; height: 13px; }
+
+.luca .rc-dur { position: absolute; right: 6px; bottom: 6px; padding: 3px 5px; border-radius: 5px; background: rgba(0, 0, 0, .62); color: #fff; font: 600 10.5px/1 var(--font-mono); }
+
+.luca .rc-art .bar { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 0; height: 3px; background: rgba(255, 255, 255, .25); }
+
+.luca .rc-b { display: flex; flex-direction: column; gap: 3px; padding-top: 1px; min-width: 0; }
+
+.luca .rc-k { font: 600 10.5px/1.2 var(--font-body); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+
+.luca .rc-b b { font-size: 14.5px; font-weight: 620; line-height: 1.3; }
+
+.luca .rc-b > span:not(.rc-k):not(.rc-hot) { font-size: 12.5px; color: var(--text-2); }
+
+.luca .rc-hot { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font: 650 12px/1 var(--font-body); color: var(--accent-text); }
+
+.luca .rc-hot .ic { width: 14px; height: 14px; }
+
+.luca .rc--big { grid-template-columns: 1fr; gap: 12px; }
+
+.luca .rc--big .rc-art { aspect-ratio: 16 / 9; border-radius: var(--r-lg); }
+
+.luca .rc--big .rc-play { width: 46px; height: 46px; left: 12px; bottom: 12px; background: var(--accent); color: var(--accent-ink); }
+
+.luca .rc--big .rc-play .ic { width: 20px; height: 20px; }
+
+.luca .rec-wk2 { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+
+.luca .rec-wk2 b { font: var(--title-weight) 18px/1.2 var(--font-display); }
+
+.luca .rec-wk2 span { font-size: 13px; color: var(--text-2); }
+
+.luca .lc-chips { margin-top: 6px; }
+
+/* ==========================================================================
+   Calendar
+   ========================================================================== */
+
+.luca .cal-h { display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; text-align: center; gap: 6px; }
+
+.luca .cal-h b { display: block; font: var(--title-weight) 16px/1.2 var(--font-display); }
+
+.luca .cal-h em { display: block; font-style: normal; font-size: 12.5px; color: var(--text-2); margin-top: 3px; }
+
+.luca .cds { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 14px; }
+
+.luca .cd { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 9px 0 8px; border: 0; border-radius: var(--r-md); background: var(--surface-2); color: var(--text-2); cursor: pointer; font: inherit; min-width: 0; }
+
+.luca .cd-w { font: 600 10px/1 var(--font-body); white-space: nowrap; }
+
+.luca .cd b { font: var(--num-weight) 18px/1 var(--font-display); color: var(--text); }
+
+.luca .cd-dots { display: flex; gap: 3px; height: 5px; }
+
+.luca .cd-dots i, .luca .cal-key i { display: block; width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); }
+
+.luca .cd-dots i.due, .luca .cal-key i.due { background: var(--accent-line); }
+
+.luca .cd-dots i.pw, .luca .cal-key i.pw { background: transparent; box-shadow: inset 0 0 0 1.4px var(--text-3); }
+
+.luca .cd-dots i.live, .luca .cal-key i.live { background: var(--live); }
+
+.luca .cd.is-today .cd-w { color: var(--accent-text); font-weight: 700; }
+
+.luca .cd.is-on { background: var(--text); color: var(--bg); }
+
+.luca .cd.is-on b { color: var(--bg); }
+
+.luca .cd.is-on .cd-w { color: var(--bg); }
+
+.luca .cd.is-on .cd-dots i.sess { background: var(--bg); opacity: .7; }
+
+.luca .cd.is-on .cd-dots i.pw { box-shadow: inset 0 0 0 1.4px var(--bg); }
+
+.luca .cd.is-off:not(.is-on) { background: transparent; box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .ce-day { margin: 22px 0 10px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+
+.luca .ce-day b { font: var(--title-weight) 18px/1.2 var(--font-display); }
+
+.luca .ce-day span { font-size: 13px; color: var(--text-2); }
+
+.luca .ces { display: flex; flex-direction: column; gap: 8px; }
+
+.luca .ce { display: grid; grid-template-columns: 62px 1fr 16px; gap: 10px; align-items: center; padding: 12px; border: 0; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+
+.luca .ce-t { position: relative; padding-left: 11px; font: 600 12px/1.2 var(--font-mono); color: var(--text-2); }
+
+.luca .ce-t::before { content: ""; position: absolute; left: 0; top: -4px; bottom: -4px; width: 3px; border-radius: 2px; background: var(--text-3); }
+
+.luca .ce--due .ce-t::before { background: var(--accent-line); }
+
+.luca .ce--live .ce-t::before { background: var(--live); }
+
+.luca .ce--pw .ce-t::before { background: var(--line-strong); }
+
+.luca .ce-k { display: block; font: 600 10.5px/1.2 var(--font-body); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+
+.luca .ce-b { min-width: 0; }
+
+.luca .ce-b b { display: block; font-size: 14.5px; font-weight: 620; line-height: 1.3; margin-top: 3px; }
+
+.luca .ce-b > span:last-child { display: block; font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
+
+.luca .ce > .ic { width: 16px; height: 16px; color: var(--text-3); }
+
+.luca .ce-empty { padding: 18px; border-radius: var(--r-md); background: var(--surface-2); color: var(--text-2); font-size: 14px; line-height: 1.45; }
+
+.luca .ce-empty b { color: var(--text); }
+
+.luca .cal-key { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 16px; font-size: 11.5px; color: var(--text-3); }
+
+.luca .cal-key span { display: inline-flex; align-items: center; gap: 6px; }
+
+.luca .cws { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
+
+.luca .cw-ph { display: flex; align-items: center; gap: 8px; margin: 14px 0 4px; font: 650 11px/1 var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+
+.luca .cw-ph:first-child { margin-top: 0; }
+
+.luca .cw-ph span { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-3); color: var(--text); font-size: 11px; letter-spacing: 0; }
+
+.luca .cw { display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: center; padding: 12px; border: 0; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+
+.luca .cw-n { font: var(--num-weight) 17px/1 var(--font-display); color: var(--text-2); }
+
+.luca .cw-n .ic { width: 18px; height: 18px; color: var(--accent-text); }
+
+.luca .cw-b { min-width: 0; }
+
+.luca .cw-b b { display: block; font-size: 14px; font-weight: 620; line-height: 1.3; }
+
+.luca .cw-b span { display: block; font-size: 12px; color: var(--text-2); margin-top: 2px; line-height: 1.35; }
+
+.luca .cw-s { font: 650 11.5px/1 var(--font-body); color: var(--text-3); white-space: nowrap; }
+
+.luca .cw-s .ic { width: 16px; height: 16px; color: var(--accent-text); }
+
+.luca .cw--done { opacity: .72; }
+
+.luca .cw--now { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+
+.luca .cw--now .cw-n, .luca .cw--now .cw-s { color: var(--accent-text); }
+
+.luca .cw--sprint:not(.cw--now) .cw-s { color: var(--accent-text); }
+
+.luca .cw--off { background: transparent; box-shadow: inset 0 0 0 1px var(--card-line); cursor: default; }
+
+/* ==========================================================================
+   Session
+   ========================================================================== */
+
+.luca .ss-hero { position: relative; height: 240px; margin-bottom: -56px; }
+
+.luca .ss-hero img { width: 100%; height: 100%; object-fit: cover; }
+
+.luca .ss-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, .45) 0%, rgba(0, 0, 0, 0) 38%, color-mix(in srgb, var(--bg) 70%, transparent) 72%, var(--bg) 100%); }
+
+.luca .ss-head { position: relative; margin-top: 0; }
+
+.luca .ss-head .muted { font-size: 14px; margin-top: 6px; }
+
+.luca .hsq-gate { display: grid; grid-template-columns: 22px 1fr 16px; gap: 10px; align-items: center; width: 100%; padding: 14px; border: 0; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1.5px var(--accent-line); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+
+.luca .hsq-gate b { display: block; font-size: 14.5px; margin-bottom: 2px; }
+
+.luca .hsq-gate span { font-size: 13px; color: var(--text-2); line-height: 1.4; }
+
+.luca .hsq-gate > .ic:first-child { color: var(--accent-text); width: 22px; height: 22px; }
+
+.luca .hsq-gate > .ic:last-child { width: 16px; height: 16px; color: var(--text-3); }
+
+.luca .hsq-ok { display: flex; gap: 8px; align-items: center; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); font-size: 14px; }
+
+.luca .hsq-ok .ic { color: var(--accent-text); }
+
+.luca .hsq { list-style: none; margin: 10px 0 0; padding: 0; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); overflow: hidden; }
+
+.luca .hsq li { display: grid; grid-template-columns: 20px 32px 1fr auto; gap: 10px; align-items: center; padding: 9px 14px; font-size: 14px; }
+
+.luca .hsq li + li { box-shadow: inset 0 1px 0 var(--line); }
+
+.luca .hsq-n { font: 600 12px/1 var(--font-mono); color: var(--text-3); }
+
+.luca .hsq li.is-me { background: var(--accent-soft); font-weight: 650; }
+
+.luca .hsq li.is-me .hsq-n { color: var(--accent-text); }
+
+.luca .mts { display: flex; flex-direction: column; gap: 12px; }
+
+.luca .mt { display: flex; gap: 12px; align-items: center; }
+
+.luca .mt b { display: block; font-size: 14.5px; }
+
+.luca .mt em { display: block; font-style: normal; font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
+
+.luca .ag { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+
+.luca .ag li { display: grid; grid-template-columns: 64px 1fr; gap: 10px; padding: 11px 0; font-size: 14px; box-shadow: inset 0 -1px 0 var(--line); }
+
+.luca .ag .mono { color: var(--text-3); font-size: 12.5px; }
+
+/* ==========================================================================
+   Player
+   ========================================================================== */
+
+.luca .page--rec { background: var(--bg); }
+
+.luca .pl2 { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); color: var(--text); }
+
+.luca .pl2-top { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; padding: var(--sat) 8px 6px; background: #000; color: #fff; font: 600 12.5px/1.2 var(--font-body); text-align: center; }
+
+.luca .pl2-top .icon-btn { color: #fff; }
+
+.luca .pl2-top [data-act="plSpeed2"] { font: 700 13px/1 var(--font-body); }
+
+.luca .pl2-v { position: relative; aspect-ratio: 16 / 9; background: #000; overflow: hidden; flex: none; }
+
+.luca .pl2-v img { width: 100%; height: 100%; object-fit: cover; opacity: .82; transition: transform 9s linear; }
+
+.luca .page--rec.is-playing .pl2-v img { transform: scale(1.07); }
+
+.luca .pl2-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, .78)); }
+
+.luca .pl2-play { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%); width: 58px; height: 58px; border-radius: 50%; border: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .45); color: #fff; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); cursor: pointer; transition: opacity var(--m-3); }
+
+.luca .pl2-play .ic { width: 26px; height: 26px; }
+
+.luca .page--rec.is-playing .pl2-play { opacity: 0; }
+
+.luca .page--rec.is-playing .pl2-v:hover .pl2-play { opacity: 1; }
+
+.luca .pl2-bar { position: absolute; left: 12px; right: 12px; bottom: 8px; color: #fff; }
+
+.luca .pl2-scrub { position: relative; height: 18px; cursor: pointer; }
+
+.luca .pl2-scrub::before { content: ""; position: absolute; left: 0; right: 0; top: 8px; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, .3); }
+
+.luca .pl2-fill { position: absolute; left: 0; top: 8px; height: 3px; border-radius: 3px; background: var(--accent); }
+
+.luca[data-accent="mono"][data-theme="light"] .pl2-fill { background: #fff; }
+
+.luca .pl2-scrub b { position: absolute; top: 7px; width: 2px; height: 5px; background: rgba(255, 255, 255, .75); transform: translateX(-1px); }
+
+.luca .pl2-scrub b.is-hot { width: 9px; height: 9px; top: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px #000; transform: translateX(-4.5px); }
+
+.luca[data-accent="mono"][data-theme="light"] .pl2-scrub b.is-hot { background: #fff; }
+
+.luca .pl2-knob { position: absolute; top: 4px; width: 11px; height: 11px; border-radius: 50%; background: #fff; transform: translateX(-50%); }
+
+.luca .pl2-t { display: flex; justify-content: space-between; gap: 8px; font: 600 11px/1 var(--font-mono); opacity: .9; }
+
+.luca .pl2-ch { flex: 1; text-align: center; font-family: var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.luca .pl2-body { flex: 1; overflow-y: auto; padding: 16px var(--gutter) calc(var(--sab) + 24px); scrollbar-width: none; }
+
+.luca .pl2-body::-webkit-scrollbar { display: none; }
+
+.luca .pl2-meta .muted { font-size: 13px; margin-top: 4px; }
+
+.luca .pl2-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+.luca .pl2-tabs { margin-top: 18px; }
+
+.luca .pl2-pane { margin-top: 10px; }
+
+.luca .pl2-chs, .luca .pl2-notes { list-style: none; margin: 0; padding: 0; }
+
+.luca .pl2-chs button, .luca .pl2-notes button { display: grid; grid-template-columns: 64px 1fr; gap: 10px; width: 100%; padding: 12px 4px; border: 0; background: none; color: var(--text-2); text-align: left; cursor: pointer; font: 500 14px/1.35 var(--font-body); box-shadow: inset 0 -1px 0 var(--line); }
+
+.luca .pl2-notes button { color: var(--text); }
+
+.luca .pl2-chs .mono, .luca .pl2-notes .mono { color: var(--text-3); font-size: 12.5px; padding-top: 1px; }
+
+.luca .pl2-chs button.is-now { color: var(--text); font-weight: 650; }
+
+.luca .pl2-chs button.is-now .mono { color: var(--accent-text); }
+
+.luca .pl2-chs button.is-hot span:last-child { color: var(--accent-text); font-weight: 650; }
+
+.luca .pl2-add { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+
+.luca .pl2-add .input-wrap { flex: 1; }
+
+.luca .pl2-add .input { height: 42px; font-size: 14.5px; }
+
+/* ==========================================================================
+   Work and assignments
+   ========================================================================== */
+
+.luca .wk-sum { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+
+.luca .wk-sum div { display: flex; flex-direction: column; gap: 5px; padding: 12px; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .wk-sum b { font: var(--num-weight) 28px/1 var(--font-display); letter-spacing: -0.03em; }
+
+.luca .wk-sum span { font-size: 12px; color: var(--text-2); }
+
+.luca .wrs { display: flex; flex-direction: column; gap: 6px; }
+
+.luca .wr { display: grid; grid-template-columns: 32px 1fr auto; gap: 10px; align-items: center; padding: 12px; border: 0; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+
+.luca .wr-w { font: var(--num-weight) 15px/1 var(--font-display); color: var(--text-3); }
+
+.luca .wr-b { min-width: 0; }
+
+.luca .wr-b b { display: block; font-size: 14px; font-weight: 620; line-height: 1.3; }
+
+.luca .wr-b span { display: block; font-size: 12px; color: var(--text-2); margin-top: 2px; }
+
+.luca .wr.is-fut { opacity: .55; }
+
+.luca .as-line { display: flex; gap: 10px; align-items: center; margin-top: 12px; font-size: 13.5px; color: var(--text-2); flex-wrap: wrap; }
+
+.luca .as-how { display: flex; flex-direction: column; gap: 3px; margin-bottom: 14px; }
+
+.luca .as-how b { font: var(--title-weight) 17px/1.25 var(--font-display); }
+
+.luca .as-how span { font-size: 13.5px; color: var(--text-2); }
+
+.luca .as-submit { margin-top: 2px; }
+
+.luca .lss { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+
+.luca .ls { padding: 14px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); transition: box-shadow var(--m-2); }
+
+.luca .ls.is-warn { box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+
+.luca .ls-top { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; }
+
+.luca .ls-word { min-width: 46px; height: 26px; padding: 0 6px; border-radius: 6px; display: grid; place-items: center; background: var(--surface-3); font: 700 9.5px/1 var(--font-mono); letter-spacing: .06em; color: var(--text-2); }
+
+.luca .ls-meta { min-width: 0; }
+
+.luca .ls-meta b { display: block; font-size: 14.5px; font-weight: 620; }
+
+.luca .ls-meta span { display: block; font-size: 12.5px; color: var(--text-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.luca .ls-acts { display: flex; align-items: center; gap: 6px; margin-top: 12px; }
+
+.luca .ls-type { display: flex; gap: 8px; align-items: center; width: 100%; }
+
+.luca .ls-type .input-wrap { flex: 1; }
+
+.luca .ls-type .input { height: 40px; font-size: 14px; }
+
+.luca .ls-card { display: grid; grid-template-columns: 34px 1fr 30px; gap: 10px; align-items: center; margin-top: 12px; padding: 10px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+
+.luca .ls-ic { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--surface-2); }
+
+.luca .ls-ic .ic { width: 19px; height: 19px; }
+
+.luca .ls-b { min-width: 0; }
+
+.luca .ls-b b { display: block; font-size: 13.5px; }
+
+.luca .ls-b span { display: block; font: 500 12px/1.3 var(--font-mono); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+
+.luca .ls-x { width: 30px; height: 30px; border: 0; border-radius: 50%; background: none; color: var(--text-3); display: grid; place-items: center; cursor: pointer; }
+
+.luca .ls-x .ic { width: 16px; height: 16px; }
+
+.luca .ls-ok { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 12.5px; color: var(--text-2); }
+
+.luca .ls-ok .ic { width: 15px; height: 15px; color: var(--accent-text); }
+
+.luca .ls-warn { display: grid; grid-template-columns: 18px 1fr; gap: 8px; margin-top: 12px; font-size: 13px; line-height: 1.45; color: var(--text-2); }
+
+.luca .ls-warn > .ic { width: 18px; height: 18px; color: var(--accent-text); }
+
+.luca .ls-warn b { color: var(--text); }
+
+.luca .ls-warn .btn { margin-top: 10px; display: flex; }
+
+.luca .lss--ro .ls { padding: 12px 14px; }
+
+.luca .drv { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.luca .drv span { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); font-size: 12.5px; color: var(--text-2); }
+
+.luca .drv .ic { width: 15px; height: 15px; }
+
+/* the verdict: Ship is the loud block */
+
+.luca .vb { padding: 18px; border-radius: var(--r-xl); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .vb-k { display: block; font: 650 11px/1 var(--font-body); letter-spacing: .08em; text-transform: uppercase; opacity: .75; }
+
+.luca .vb-w { display: block; font: var(--display-weight) 58px/1 var(--font-display); letter-spacing: -0.045em; margin-top: 8px; }
+
+.luca .vb--ship { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+
+.luca .vb--fix { box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+
+.luca .vb--fix .vb-w { color: var(--accent-text); }
+
+.luca .vb--hold .vb-w { color: var(--text-3); }
+
+.luca .vb--pending .vb-w { font-size: 36px; }
+
+.luca .vb p { font-size: 14px; line-height: 1.45; margin-top: 8px; opacity: .85; }
+
+.luca .vb .btn { margin-top: 12px; }
+
+.luca .vb-by { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
+
+.luca .vb-by b { display: block; font-size: 14px; }
+
+.luca .vb-by em { display: block; font-style: normal; font-size: 12px; opacity: .75; }
+
+.luca .vb--ship .lc-av { background: color-mix(in srgb, var(--accent-ink) 18%, transparent); color: var(--accent-ink); }
+
+.luca .vb-notes { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+
+.luca .vb-notes li { padding: 12px 14px; border-radius: var(--r-md); background: color-mix(in srgb, currentColor 8%, transparent); font-size: 14px; line-height: 1.45; }
+
+.luca .vb-fixed { display: flex; gap: 6px; align-items: center; font-size: 13px; margin-top: 12px; }
+
+.luca .vb-fixed .ic { width: 16px; height: 16px; }
+
+.luca .vb--sm { padding: 14px 16px; }
+
+.luca .vb--sm .vb-w { font-size: 34px; }
+
+.luca .vb-due { margin-bottom: 12px; }
+
+.luca .vb-due .hs-num b { font-size: 40px; font-weight: var(--num-weight); }
+
+/* ==========================================================================
+   Pre-watch
+   ========================================================================== */
+
+.luca .pw-step { padding: 16px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); margin-bottom: 10px; opacity: .5; transition: opacity var(--m-3), box-shadow var(--m-3); }
+
+.luca .pw-step.is-on, .luca .pw-step.is-done { opacity: 1; }
+
+.luca .pw-step.is-on { box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+
+.luca .pw-h { display: grid; grid-template-columns: 26px 1fr auto 22px; gap: 10px; align-items: center; }
+
+.luca .pw-n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-3); font: 700 12px/1 var(--font-mono); }
+
+.luca .pw-h b { font: var(--title-weight) 16px/1.2 var(--font-display); }
+
+.luca .pw-h em { font-style: normal; font-size: 12px; color: var(--text-3); }
+
+.luca .pw-v { position: relative; display: block; width: 100%; margin-top: 14px; aspect-ratio: 16 / 9; border: 0; padding: 0; border-radius: var(--r-md); overflow: hidden; cursor: pointer; background: #000; }
+
+.luca .pw-v:disabled { cursor: default; }
+
+.luca .pw-v img { width: 100%; height: 100%; object-fit: cover; opacity: .8; }
+
+.luca .pw-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); }
+
+.luca .pw-play .ic { width: 22px; height: 22px; }
+
+.luca .pw-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; border-radius: 0; background: rgba(255, 255, 255, .25); }
+
+.luca .pw-q { margin-top: 14px; }
+
+.luca .pw-qn { font-size: 12px; color: var(--text-3); }
+
+.luca .pw-qt { display: block; font: var(--title-weight) 17px/1.3 var(--font-display); margin-top: 6px; }
+
+.luca .pw-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+
+.luca .pw-o { padding: 13px 14px; border: 0; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); color: inherit; text-align: left; font: 550 14px/1.35 var(--font-body); cursor: pointer; transition: box-shadow var(--m-2), background-color var(--m-2), opacity var(--m-2); }
+
+.luca .pw-o:disabled { cursor: default; }
+
+.luca .pw-o.is-right { box-shadow: inset 0 0 0 2px var(--accent-line); background: var(--accent-soft); }
+
+.luca .pw-o.is-wrong { opacity: .55; text-decoration: line-through; }
+
+.luca .pw-res { font-size: 15px; line-height: 1.45; }
+
+.luca .pw-sum { margin-top: 12px; }
+
+.luca .pw-sum .muted { font-size: 13.5px; margin-bottom: 12px; line-height: 1.45; }
+
+/* ==========================================================================
+   Clan, leaderboard, coins
+   ========================================================================== */
+
+.luca .lc-clanc .hs-title--big { font-size: 36px; }
+
+.luca .lc-clan-avs { display: flex; margin-top: 14px; }
+
+.luca .lc-clan-avs .lc-av { width: 36px; height: 36px; background: color-mix(in srgb, var(--ticket-ink) 20%, var(--ticket)); color: var(--ticket-ink); box-shadow: 0 0 0 2px var(--ticket); }
+
+.luca .lc-clan-avs .lc-av + .lc-av { margin-left: -8px; }
+
+.luca .cms { display: flex; flex-direction: column; margin-top: 12px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); overflow: hidden; }
+
+.luca .cm { display: grid; grid-template-columns: 42px 1fr auto; gap: 12px; align-items: center; padding: 12px 14px; }
+
+.luca .cm + .cm { box-shadow: inset 0 1px 0 var(--line); }
+
+.luca .cm-b { min-width: 0; }
+
+.luca .cm-b b { display: block; font-size: 14.5px; }
+
+.luca .cm-b > span { display: block; font-size: 12.5px; color: var(--text-2); margin-top: 1px; }
+
+.luca .cm-b em { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font: 600 11.5px/1 var(--font-body); font-style: normal; color: var(--text-3); }
+
+.luca .cm-b em.is-done { color: var(--accent-text); }
+
+.luca .cm-b em .ic { width: 13px; height: 13px; }
+
+.luca .cm-r { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+
+.luca .cm-r > b { font: var(--num-weight) 15px/1 var(--font-display); }
+
+.luca .cm.is-me { background: var(--accent-soft); }
+
+.luca .fbs { display: flex; flex-direction: column; gap: 8px; }
+
+.luca .fbr { display: grid; grid-template-columns: 48px 1fr auto; gap: 12px; align-items: center; padding: 10px; border: 0; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+
+.luca .fbr-art { width: 48px; height: 64px; border-radius: 8px; overflow: hidden; }
+
+.luca .fbr-art img { width: 100%; height: 100%; object-fit: cover; }
+
+.luca .fbr-b em { display: block; font-style: normal; font-size: 12px; color: var(--text-3); }
+
+.luca .fbr-b b { display: block; font-size: 14px; margin-top: 2px; line-height: 1.3; }
+
+.luca .fbr-c { font: 700 13px/1 var(--font-display); color: var(--accent-text); padding-right: 4px; }
+
+.luca .clbs { display: flex; flex-direction: column; gap: 9px; }
+
+.luca .clb { display: grid; grid-template-columns: 16px 82px 1fr auto; gap: 10px; align-items: center; font-size: 13.5px; }
+
+.luca .clb-r { font: 600 12px/1 var(--font-mono); color: var(--text-3); }
+
+.luca .clb-n { font-weight: 600; white-space: nowrap; }
+
+.luca .clb > b { font: 650 12.5px/1 var(--font-mono); color: var(--text-2); }
+
+.luca .clb-bar { height: 10px; border-radius: 10px; background: var(--surface-2); overflow: hidden; }
+
+.luca .clb-bar i { display: block; height: 100%; border-radius: inherit; background: var(--text-3); }
+
+.luca .clb.is-me .clb-bar i { background: var(--accent-line); }
+
+.luca .clb.is-me .clb-n, .luca .clb.is-me > b { color: var(--text); font-weight: 750; }
+
+.luca .lb-when { margin-bottom: 14px; }
+
+.luca .lb-you { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; padding: 16px; border-radius: var(--r-lg); background: var(--accent); color: var(--accent-ink); }
+
+.luca .lb-you-r { font: var(--num-weight) 36px/1 var(--font-display); letter-spacing: -0.03em; }
+
+.luca .lb-you-b b { display: block; font-size: 15px; }
+
+.luca .lb-you-b span { display: block; font-size: 12.5px; opacity: .85; margin-top: 3px; line-height: 1.35; }
+
+.luca .lb-you .mv { color: inherit; }
+
+.luca .lb-pod { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: end; margin-top: 24px; }
+
+.luca .lb-p { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; padding: 16px 6px 12px; border-radius: var(--r-lg) var(--r-lg) var(--r-sm) var(--r-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); text-align: center; }
+
+.luca .lb-p--1 { min-height: 150px; background: var(--surface-3); }
+
+.luca .lb-p--2 { min-height: 126px; }
+
+.luca .lb-p--3 { min-height: 110px; }
+
+.luca .lb-p b { font-size: 13.5px; margin-top: 4px; }
+
+.luca .lb-p span { font: 650 12.5px/1 var(--font-mono); color: var(--text-2); }
+
+.luca .lb-p i { position: absolute; top: -11px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--text); color: var(--bg); font: 760 12px/1 var(--font-display); font-style: normal; }
+
+.luca .lb-p .lc-av { width: 44px; height: 44px; }
+
+.luca .lb-p.is-me { box-shadow: inset 0 0 0 2px var(--accent-line); }
+
+.luca .lb { list-style: none; margin: 14px 0 0; padding: 0; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); overflow: hidden; }
+
+.luca .lb li { display: grid; grid-template-columns: 22px 32px 1fr auto 34px; gap: 10px; align-items: center; padding: 9px 14px; font-size: 14px; }
+
+.luca .lb li + li { box-shadow: inset 0 1px 0 var(--line); }
+
+.luca .lb-r { font: 600 12px/1 var(--font-mono); color: var(--text-3); }
+
+.luca .lb-n { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.luca .lb-n em { margin-left: 6px; font: 650 10.5px/1 var(--font-body); font-style: normal; color: var(--accent-text); }
+
+.luca .lb li > b { font: 650 13px/1 var(--font-mono); }
+
+.luca .lb li.is-me { background: var(--accent-soft); font-weight: 650; }
+
+.luca .mv { display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px; font: 650 11px/1 var(--font-mono); color: var(--text-3); }
+
+.luca .mv .ic { width: 11px; height: 11px; }
+
+.luca .mv--up { color: var(--accent-text); }
+
+.luca .cn-top { display: flex; flex-direction: column; gap: 6px; padding: 20px; border-radius: var(--r-xl); background: var(--accent); color: var(--accent-ink); }
+
+.luca .cn-top .eyebrow { color: inherit; opacity: .8; }
+
+.luca .cn-top b { font: var(--num-weight) 58px/1 var(--font-display); letter-spacing: -0.045em; }
+
+.luca .cn-top > span:last-child { font-size: 13.5px; opacity: .85; }
+
+.luca .cr, .luca .ch { border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); overflow: hidden; }
+
+.luca .cr-r, .luca .ch-r { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; font-size: 14px; }
+
+.luca .cr-r + .cr-r, .luca .ch-r + .ch-r { box-shadow: inset 0 1px 0 var(--line); }
+
+.luca .cr-r i { margin-left: 8px; padding: 3px 6px; border-radius: 5px; background: var(--surface-3); font: 650 9.5px/1 var(--font-body); font-style: normal; color: var(--text-2); letter-spacing: .06em; text-transform: uppercase; vertical-align: 1px; }
+
+.luca .cr-r > b, .luca .ch-r > b { font: 700 14px/1 var(--font-mono); color: var(--accent-text); white-space: nowrap; }
+
+.luca .ch-r span b { display: block; font-weight: 600; }
+
+.luca .ch-r em { display: block; font-style: normal; font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+/* ==========================================================================
+   Sprint
+   ========================================================================== */
+
+.luca .sp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 8px; }
+
+.luca .sp-head .display { font-size: 42px; }
+
+.luca .sps { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+
+.luca .sp { position: relative; aspect-ratio: 9 / 14; border: 0; border-radius: 8px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); overflow: hidden; padding: 0; color: var(--text-3); cursor: default; font: inherit; }
+
+.luca .sp img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+.luca .sp.is-on { cursor: pointer; box-shadow: none; }
+
+.luca .sp.is-on::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, .4), transparent 40%, rgba(0, 0, 0, .6)); }
+
+.luca .sp-d { position: absolute; left: 5px; top: 5px; z-index: 1; font: 700 11px/1 var(--font-mono); }
+
+.luca .sp.is-on .sp-d, .luca .sp.is-on .sp-v { color: #fff; }
+
+.luca .sp-v { position: absolute; left: 5px; bottom: 5px; z-index: 1; font: 600 9.5px/1 var(--font-mono); }
+
+.luca .sp.is-today { box-shadow: inset 0 0 0 2px var(--accent-line); color: var(--accent-text); cursor: pointer; animation: lc-glowT 1.8s ease-in-out infinite; }
+
+@keyframes lc-glowT { 50% { box-shadow: inset 0 0 0 2px var(--accent-line), 0 0 0 4px var(--accent-soft); } }
+
+.luca .sps--mini { gap: 4px; }
+
+.luca .sps--mini .sp { aspect-ratio: 1; border-radius: 6px; }
+
+.luca .sps--mini .sp-d { font-size: 10px; left: 4px; top: 4px; }
+
+.luca .lss--on-ticket { margin: 14px 0 0; }
+
+.luca .lss--on-ticket .ls { background: color-mix(in srgb, var(--ticket-ink) 12%, transparent); box-shadow: none; color: var(--ticket-ink); }
+
+.luca .lss--on-ticket .ls-word { background: color-mix(in srgb, var(--ticket-ink) 18%, transparent); color: var(--ticket-ink); }
+
+.luca .lss--on-ticket .ls-meta span, .luca .lss--on-ticket .ls-ok { color: color-mix(in srgb, var(--ticket-ink) 82%, transparent); }
+
+.luca .lss--on-ticket .ls-ok .ic { color: var(--ticket-ink); }
+
+.luca .lss--on-ticket .btn { background: var(--ticket-ink); color: var(--ticket); }
+
+.luca .lss--on-ticket .btn-text { color: var(--ticket-ink); opacity: .85; }
+
+.luca .lss--on-ticket .ls-card { background: var(--surface); color: var(--text); box-shadow: none; }
+
+.luca .lss--on-ticket .lc-ck.is-on { background: var(--ticket-ink); color: var(--ticket); }
+
+.luca .sbd { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .sb-r { display: grid; grid-template-columns: 26px 44px 1fr; gap: 8px; align-items: center; font-size: 12.5px; }
+
+.luca .sb-r .lc-av { width: 26px; height: 26px; font-size: 9.5px; }
+
+.luca .sb-c { display: grid; grid-template-columns: repeat(21, 1fr); gap: 2px; }
+
+.luca .sb-c i { height: 14px; border-radius: 3px; background: var(--surface-3); }
+
+.luca .sb-c i.sc-on { background: var(--text-2); }
+
+.luca .sb-r.is-me .sb-c i.sc-on { background: var(--accent-line); }
+
+.luca .sb-c i.sc-miss { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+.luca .sb-c i.sc-now { background: transparent; box-shadow: inset 0 0 0 1.5px var(--accent-line); animation: lc-blink 1.4s ease-in-out infinite; }
+
+@keyframes lc-blink { 50% { opacity: .35; } }
+
+.luca .sb-r.is-me .sb-n { font-weight: 700; }
+
+.luca .sp-sheet { position: relative; width: min(100%, 220px); aspect-ratio: 9 / 14; margin: 0 auto; border-radius: var(--r-lg); overflow: hidden; }
+
+.luca .sp-sheet img { width: 100%; height: 100%; object-fit: cover; }
+
+.luca .sp-sheet-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, .45); color: #fff; }
+
+/* ==========================================================================
+   You
+   ========================================================================== */
+
+.luca .me-top { display: flex; gap: 14px; align-items: center; }
+
+.luca .me-top .muted { font-size: 13.5px; margin-top: 4px; }
+
+.luca .me-k { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+
+.luca .me-k div { padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .me-k b { display: block; font-size: 14px; margin-top: 4px; }
+
+.luca .me-acc { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+
+.luca .me-a { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 12px; border: 0; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); color: var(--text); font: 600 14px/1 var(--font-body); cursor: pointer; }
+
+.luca .me-a i { width: 22px; height: 22px; border-radius: 50%; }
+
+.luca .me-a-mono { background: linear-gradient(135deg, #f4f6f8 50%, #0f1216 50%); box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .35); }
+
+.luca .me-a.is-on { box-shadow: inset 0 0 0 2px var(--text); }
+
+.luca .set-row--col .seg { margin-top: 10px; }
+
+/* ==========================================================================
+   Moments: a finished thing, and the Clan reveal
+   ========================================================================== */
+
+.luca .moment { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; padding: 0 24px; }
+
+.luca .mo-bg { position: absolute; inset: 0; background: radial-gradient(70% 45% at 50% 40%, color-mix(in srgb, var(--accent) 18%, var(--bg)) 0%, var(--bg) 72%); opacity: 0; transition: opacity .35s var(--ease-out); }
+
+.luca .mo-in { position: relative; width: 100%; display: flex; flex-direction: column; align-items: center; text-align: center; opacity: 0; transform: translateY(16px); transition: opacity .45s .08s var(--ease-out), transform .6s .08s var(--ease-out); }
+
+.luca .moment.is-in .mo-bg, .luca .moment.is-in .mo-in { opacity: 1; transform: none; }
+
+.luca .moment.is-out { pointer-events: none; }
+
+.luca .moment.is-out .mo-bg, .luca .moment.is-out .mo-in { opacity: 0; transition-duration: .3s; transition-delay: 0s; }
+
+.luca .mo-mark { width: 150px; margin: 0 0 26px; }
+
+.luca .mo-k { font: 650 11px/1 var(--font-body); letter-spacing: .14em; text-transform: uppercase; color: var(--text-2); }
+
+.luca .mo-t { font: var(--display-weight) 34px/1.05 var(--font-display); letter-spacing: var(--display-tracking); margin-top: 12px; text-wrap: balance; }
+
+.luca .mo-s { font-size: 15px; color: var(--text-2); line-height: 1.5; margin-top: 10px; max-width: 32ch; }
+
+.luca .mo-coins, .luca .mo-streak { display: inline-flex; align-items: center; gap: 8px; margin-top: 20px; height: 44px; padding: 0 16px 0 12px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); animation: lc-coinIn .6s 1s var(--ease-spring) both; }
+
+.luca .mo-coins .ic, .luca .mo-streak .ic { width: 22px; height: 22px; color: var(--accent-text); }
+
+.luca .mo-coins b, .luca .mo-streak b { font: var(--num-weight) 20px/1 var(--font-display); }
+
+.luca .mo-coins span, .luca .mo-streak span { font-size: 13.5px; color: var(--text-2); }
+
+.luca .mo-streak { margin-top: 8px; animation-delay: 1.25s; }
+
+@keyframes lc-coinIn { from { opacity: 0; transform: translateY(8px) scale(.92); } }
+
+.luca .mo-acts { width: 100%; margin-top: 30px; display: flex; flex-direction: column; gap: 6px; }
+
+.luca .reveal { position: absolute; inset: 0; z-index: 6; display: flex; align-items: center; padding: 0 22px; transition: opacity .35s; }
+
+.luca .rvl-bg { position: absolute; inset: 0; background: radial-gradient(80% 50% at 50% 26%, color-mix(in srgb, var(--accent) 22%, var(--bg)) 0%, var(--bg) 75%); opacity: 0; transition: opacity .4s; }
+
+.luca .reveal.is-in .rvl-bg { opacity: 1; }
+
+.luca .reveal.is-out { opacity: 0; pointer-events: none; }
+
+.luca .rvl-in { position: relative; width: 100%; }
+
+.luca .rvl-k { font: 650 11px/1 var(--font-body); letter-spacing: .14em; text-transform: uppercase; color: var(--text-2); opacity: 0; }
+
+.luca .reveal.is-in .rvl-k { animation: lc-fadeUp2 .6s .2s var(--ease-out) forwards; }
+
+.luca .rvl-name { font: var(--display-weight) 60px/1 var(--font-display); letter-spacing: -0.045em; margin: 12px 0 22px; display: flex; }
+
+.luca .rvl-name span { display: inline-block; opacity: 0; transform: translateY(40%); }
+
+.luca .reveal.is-in .rvl-name span { animation: lc-letterUp .7s calc(.35s + var(--i) * .06s) var(--ease-out) forwards; }
+
+@keyframes lc-letterUp { to { opacity: 1; transform: none; } }
+
+@keyframes lc-fadeUp2 { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.luca .rvl-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+
+.luca .rvl-list li { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); opacity: 0; }
+
+.luca .reveal.is-in .rvl-list li { animation: lc-fadeUp2 .5s calc(1.4s + var(--i) * .18s) var(--ease-out) forwards; }
+
+.luca .rvl-list li:first-child { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+
+.luca .rvl-list b { display: block; font-size: 14.5px; }
+
+.luca .rvl-list em { display: block; font-style: normal; font-size: 12.5px; color: var(--text-2); margin-top: 1px; }
+
+.luca .rvl-s { font-size: 14px; color: var(--text-2); line-height: 1.5; margin: 16px 0 18px; opacity: 0; }
+
+.luca .rvl-in > .btn { opacity: 0; }
+
+.luca .reveal.is-in .rvl-s, .luca .reveal.is-in .rvl-in > .btn { animation: lc-fadeUp2 .5s 2.6s var(--ease-out) forwards; }
+
+/* sheets */
+
+.luca .lc-streak-big { display: flex; align-items: baseline; gap: 10px; }
+
+.luca .lc-streak-big .ic { width: 34px; height: 34px; color: var(--accent-text); align-self: center; }
+
+.luca .lc-streak-big b { font: var(--num-weight) 56px/1 var(--font-display); letter-spacing: -0.04em; }
+
+.luca .lc-streak-big span { font-size: 16px; color: var(--text-2); }
+
+.luca .lc-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 18px; }
+
+.luca .lc-days span { display: flex; flex-direction: column; align-items: center; gap: 6px; font: 600 11px/1 var(--font-body); color: var(--text-3); }
+
+.luca .lc-days i { width: 30px; height: 30px; border-radius: 50%; background: var(--surface-3); }
+
+.luca .lc-days .is-on i { background: var(--accent-line); }
+
+.luca .lc-days .is-today i { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text-3); }
+
+.luca .lc-days .is-today.is-on i { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent-line); }
+
+.luca .fb-head { display: flex; gap: 12px; align-items: center; }
+
+.luca .fb-head .h2 { margin: 3px 0 0; font-size: 19px; }
+
+.luca .fb-post { position: relative; height: 150px; margin-top: 14px; border-radius: var(--r-md); overflow: hidden; }
+
+.luca .fb-post img { width: 100%; height: 100%; object-fit: cover; }
+
+.luca .fb-post span { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, .45); color: #fff; }
+
+.luca .fb-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+
+.luca .fb-chips .chip { height: 34px; font-size: 13px; }
+
+.luca .lc-contract { margin: 12px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+
+.luca .lc-sign-in { font-family: var(--font-display); font-style: italic; font-size: 20px; }
+
+.luca .lc-cert { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 22px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .lc-cert-logo { width: 110px; color: var(--text); display: block; }
+
+.luca .lc-cert-logo svg { width: 100%; height: auto; }
+
+.luca .lc-cert b { font: var(--display-weight) 30px/1.05 var(--font-display); letter-spacing: var(--display-tracking); }
+
+.luca .lc-cert > span:last-child { font-size: 13.5px; color: var(--text-2); line-height: 1.45; }
+
+.luca .lc-wrap-n { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 14px; }
+
+.luca .lc-wrap-n div { display: flex; flex-direction: column; gap: 4px; padding: 10px 8px; border-radius: var(--r-md); background: var(--surface-3); }
+
+.luca .lc-wrap-n b { font: var(--num-weight) 22px/1 var(--font-display); letter-spacing: -0.02em; }
+
+.luca .lc-wrap-n span { font-size: 11px; color: var(--text-2); line-height: 1.25; }
+
+.luca .lc-invite { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; margin-top: 12px; padding: 16px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .lc-invite b { font-size: 14.5px; line-height: 1.3; }
+
+.luca .lc-invite span { grid-column: 1; font-size: 12.5px; color: var(--text-2); }
+
+.luca .lc-invite .btn { grid-column: 2; grid-row: 1 / span 2; }
+
+/* ==========================================================================
+   Not enrolled: program page
+   ========================================================================== */
+
+.luca .lc-hero { position: relative; height: 580px; overflow: hidden; color: #fff; background: #0b0c0e; }
+
+.luca .lc-hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 62% 30%; }
+
+.luca .page.is-entering .lc-hero-img { animation: lc-heroIn 1.8s var(--ease-out) both; }
+
+@keyframes lc-heroIn { from { transform: scale(1.08); } }
+
+.luca .lc-hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(8, 9, 10, .5) 0%, rgba(8, 9, 10, 0) 26%, rgba(8, 9, 10, .55) 56%, rgba(8, 9, 10, .95) 100%); }
+
+.luca .lc-hero-in { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; padding: 0 var(--gutter) 26px; display: flex; flex-direction: column; gap: 10px; }
+
+.luca .lc-k { font: 650 11.5px/1 var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: rgba(255, 255, 255, .82); }
+
+.luca .lc-title { font-size: 50px; color: #fff; }
+
+.luca .lc-lede { font-size: 16px; line-height: 1.45; color: rgba(255, 255, 255, .86); max-width: 32ch; }
+
+.luca .lc-when { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+.luca .lc-when > * { height: 30px; padding: 0 11px; display: inline-flex; align-items: center; border-radius: 999px; background: rgba(255, 255, 255, .14); font: 600 12.5px/1 var(--font-body); color: #fff; }
+
+.luca .lc-when b { background: #fff; color: #0c0d0f; }
+
+.luca .lc-trailer { position: relative; display: block; width: 100%; aspect-ratio: 16 / 10; border: 0; padding: 0; border-radius: var(--r-xl); overflow: hidden; cursor: pointer; background: #000; color: #fff; text-align: left; }
+
+.luca .lc-trailer img { width: 100%; height: 100%; object-fit: cover; opacity: .86; transition: transform .6s var(--ease-out); }
+
+.luca .lc-trailer:hover img { transform: scale(1.03); }
+
+.luca .lc-trailer::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, .78)); }
+
+.luca .lc-tr-play { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 1; width: 66px; height: 66px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .18); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .3); }
+
+.luca .lc-tr-play .ic { width: 26px; height: 26px; margin-left: 3px; }
+
+.luca .lc-tr-b { position: absolute; left: 16px; right: 16px; bottom: 14px; z-index: 1; display: flex; flex-direction: column; gap: 3px; }
+
+.luca .lc-tr-b b { font: var(--title-weight) 20px/1.15 var(--font-display); }
+
+.luca .lc-tr-b span { font-size: 13px; opacity: .82; }
+
+.luca .lc-nums { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.luca .lc-nums div { padding: 16px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); display: flex; flex-direction: column; gap: 6px; }
+
+.luca .lc-nums b { font: var(--num-weight) 40px/1 var(--font-display); letter-spacing: -0.04em; }
+
+.luca .lc-nums span { font-size: 13px; color: var(--text-2); line-height: 1.35; }
+
+.luca .lc-out { list-style: none; margin: 0; padding: 0; counter-reset: o; display: flex; flex-direction: column; gap: 8px; }
+
+.luca .lc-out li { counter-increment: o; display: grid; grid-template-columns: 30px 1fr; column-gap: 12px; padding: 14px 16px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .lc-out li::before { content: "0" counter(o); grid-row: span 2; font: var(--num-weight) 16px/1.3 var(--font-display); color: var(--accent-text); }
+
+.luca .lc-out b { font: var(--title-weight) 16px/1.25 var(--font-display); }
+
+.luca .lc-out span { font-size: 13.5px; color: var(--text-2); margin-top: 3px; line-height: 1.4; }
+
+.luca .lc-rv { display: grid; grid-template-columns: 1fr 100px; gap: 16px; align-items: center; width: 100%; padding: 18px; border: 0; border-radius: var(--r-xl); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+
+.luca .lc-rv-b { display: flex; flex-direction: column; gap: 5px; }
+
+.luca .lc-rv-b .eyebrow { color: var(--accent-text); }
+
+.luca .lc-rv-b b { font: var(--title-weight) 19px/1.2 var(--font-display); }
+
+.luca .lc-rv-b > span:last-child { font-size: 13.5px; color: var(--text-2); }
+
+.luca .lc-rv-mock { position: relative; height: 112px; padding: 14px 10px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--line); display: flex; flex-direction: column; gap: 9px; }
+
+.luca .lc-rv-mock i { height: 6px; border-radius: 3px; background: var(--surface-3); }
+
+.luca .lc-rv-mock i.s { width: 60%; }
+
+.luca .lc-rv-mock i.is-hl { background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.luca .lc-rv-mock em { position: absolute; right: -6px; bottom: -8px; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); color: var(--accent-text); box-shadow: inset 0 0 0 1.5px var(--accent-line); font: 760 13px/1 var(--font-display); font-style: normal; }
+
+.luca .lc-ph { padding: 18px 16px; border-radius: var(--r-xl); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .lc-ph-mark { width: 58%; margin: 6px auto 22px; color: var(--accent-text); }
+
+.luca .lc-ph-mark .lg-node, .luca .lc-ph-mark .lg-link { stroke-dasharray: 1; stroke-dashoffset: 1; }
+
+.luca .lc-ph-mark.is-drawn .lg-node { animation: lc-draw .5s calc(var(--i) * .22s) var(--ease-out) forwards, lc-nodePop .5s calc(var(--i) * .22s) var(--ease-spring) both; }
+
+.luca .lc-ph-mark.is-drawn .lg-link { animation: lc-draw .22s calc(var(--i) * .22s + .12s) var(--ease-out) forwards; }
+
+.luca .lc-ph ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+
+.luca .lc-ph-row { display: grid; grid-template-columns: 30px 1fr; gap: 12px; }
+
+.luca .lc-ph-n { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-3); font: 760 13px/1 var(--font-display); }
+
+.luca .lc-ph-b b { display: block; font: var(--title-weight) 16px/1.25 var(--font-display); }
+
+.luca .lc-ph-b em { display: block; font: 650 11.5px/1.2 var(--font-body); font-style: normal; color: var(--accent-text); margin-top: 3px; }
+
+.luca .lc-ph-b span { display: block; font-size: 13.5px; color: var(--text-2); margin-top: 4px; line-height: 1.4; }
+
+.luca .lc-wk { display: flex; flex-direction: column; gap: 8px; }
+
+.luca .lc-wk-r { display: grid; grid-template-columns: 84px 1fr; gap: 12px; padding: 14px 16px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .lc-wk-t { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--text-2); }
+
+.luca .lc-wk-t b { font: var(--num-weight) 19px/1.05 var(--font-display); color: var(--text); letter-spacing: -0.02em; }
+
+.luca .lc-wk-r > span:last-child { font-size: 13.5px; color: var(--text-2); line-height: 1.45; }
+
+.luca .lc-wk-r > span:last-child b { display: block; font-size: 15px; color: var(--text); font-weight: 650; margin-bottom: 2px; }
+
+.luca .lc-mech { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.luca .lc-mc { display: flex; flex-direction: column; gap: 4px; padding: 16px 14px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .lc-mc > b { font: var(--title-weight) 15.5px/1.2 var(--font-display); margin-top: 12px; }
+
+.luca .lc-mc > span:last-child { font-size: 12.5px; color: var(--text-2); line-height: 1.4; }
+
+.luca .lc-mc-v { min-height: 40px; display: flex; align-items: center; }
+
+.luca .lc-mc .lc-avs .lc-av { width: 30px; height: 30px; font-size: 10px; }
+
+.luca .lc-mc-coin { gap: 6px; font: var(--num-weight) 26px/1 var(--font-display); }
+
+.luca .lc-mc-coin .ic { width: 26px; height: 26px; color: var(--accent-text); }
+
+.luca .lc-mc-coin b { font: inherit; }
+
+.luca .lc-mc-grid { display: grid; grid-template-columns: repeat(7, 10px); gap: 3px; }
+
+.luca .lc-mc-grid i { width: 10px; height: 10px; border-radius: 3px; background: var(--surface-3); }
+
+.luca .lc-mc-grid i.is-on { background: var(--accent-line); }
+
+.luca .lc-mc-date { gap: 6px; font: 600 13px/1 var(--font-body); color: var(--text-2); align-items: baseline; }
+
+.luca .lc-mc-date b { font: var(--num-weight) 36px/1 var(--font-display); color: var(--text); letter-spacing: -0.03em; }
+
+.luca .lc-mentors { grid-auto-columns: 132px; }
+
+.luca .lc-m { display: flex; flex-direction: column; gap: 3px; }
+
+.luca .lc-m-ph { aspect-ratio: 1; border-radius: var(--r-lg); overflow: hidden; background: var(--surface-3); display: grid; place-items: center; margin-bottom: 8px; }
+
+.luca .lc-m-ph img { width: 100%; height: 100%; object-fit: cover; }
+
+.luca .lc-m-ph b { font: var(--display-weight) 34px/1 var(--font-display); color: var(--text-2); letter-spacing: -0.03em; }
+
+.luca .lc-m-n { font-size: 14px; font-weight: 650; }
+
+.luca .lc-m-a { font-size: 12px; color: var(--text-2); line-height: 1.35; }
+
+.luca .lc-eco { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.luca .lc-eco span { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); font-size: 13.5px; }
+
+.luca .lc-eco b { font-weight: 620; }
+
+.luca .lc-eco em { font: 650 12.5px/1 var(--font-mono); font-style: normal; color: var(--accent-text); }
+
+.luca .lc-vs { border-radius: var(--r-lg); overflow: hidden; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .lc-vs-h, .luca .lc-vs-r { display: grid; grid-template-columns: 1fr 1fr; }
+
+.luca .lc-vs-h span { padding: 12px 14px; font: 650 11px/1.2 var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+
+.luca .lc-vs-h span:last-child, .luca .lc-vs-r span:last-child { background: var(--surface-3); color: var(--text); }
+
+.luca .lc-vs-r span { padding: 12px 14px; font-size: 13.5px; line-height: 1.4; box-shadow: inset 0 1px 0 var(--line); }
+
+.luca .lc-vs-r span:first-child { color: var(--text-3); }
+
+.luca .lc-vs-r span:last-child { font-weight: 600; }
+
+.luca .lc-price { padding: 18px; border-radius: var(--r-xl); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .lc-price-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+
+.luca .lc-price-top b { font: var(--num-weight) 44px/1 var(--font-display); letter-spacing: -0.04em; }
+
+.luca .lc-price-top span { font-size: 14px; color: var(--text-2); }
+
+.luca .lc-bill { display: flex; flex-direction: column; margin-top: 14px; }
+
+.luca .lc-bill > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; box-shadow: inset 0 1px 0 var(--line); }
+
+.luca .lc-bill span { font-size: 14px; font-weight: 600; }
+
+.luca .lc-bill em { display: block; font-style: normal; font-weight: 500; font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
+
+.luca .lc-bill b { font: 720 16px/1 var(--font-display); white-space: nowrap; }
+
+.luca .lc-bill--card { margin-top: 0; padding: 4px 16px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .lc-bill--card > div:first-child { box-shadow: none; }
+
+.luca .lc-faq { border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); overflow: hidden; }
+
+.luca .lc-faq details + details { box-shadow: inset 0 1px 0 var(--line); }
+
+.luca .lc-faq summary { list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 15px 16px; font-size: 14.5px; font-weight: 620; cursor: pointer; }
+
+.luca .lc-faq summary::-webkit-details-marker { display: none; }
+
+.luca .lc-faq summary .ic { width: 16px; height: 16px; color: var(--text-3); transition: transform var(--m-3); flex: none; }
+
+.luca .lc-faq details[open] summary .ic { transform: rotate(45deg); }
+
+.luca .lc-faq p { padding: 0 16px 16px; font-size: 14px; color: var(--text-2); line-height: 1.5; margin: 0; }
+
+.luca .lc-final { display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: var(--r-xl); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .lc-final b { font: var(--display-weight) 24px/1.15 var(--font-display); letter-spacing: var(--display-tracking); margin-bottom: 6px; }
+
+.luca .lc-sc { display: flex; flex-direction: column; gap: 2px; }
+
+.luca .lc-sc b { font-size: 15px; }
+
+.luca .lc-sc span { font-size: 12px; color: var(--text-2); }
+
+.luca .lc-sticky .btn { padding: 0 28px; height: 46px; }
+
+/* trailer */
+
+.luca .page--trailer { background: #000; }
+
+.luca .tr { position: absolute; inset: 0; background: #000; color: #fff; overflow: hidden; }
+
+.luca .tr-f { position: absolute; inset: 0; opacity: 0; transition: opacity .7s var(--ease-out); }
+
+.luca .tr-f img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.12); }
+
+.luca .tr-f.is-on { opacity: 1; }
+
+.luca .tr-f.is-on img { animation: lc-kb 3.7s linear forwards; }
+
+@keyframes lc-kb { from { transform: scale(1.12) translateY(1%); } to { transform: scale(1.02) translateY(-1%); } }
+
+.luca .page--trailer.is-paused .tr-f.is-on img { animation-play-state: paused; }
+
+.luca .tr-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, .62) 0%, rgba(0, 0, 0, 0) 22%, rgba(0, 0, 0, 0) 42%, rgba(0, 0, 0, .86) 100%); }
+
+.luca .tr-top { position: absolute; top: 0; left: 0; right: 0; z-index: 3; padding: calc(var(--sat) + 4px) 12px 0; }
+
+.luca .tr-bars { display: flex; gap: 4px; }
+
+.luca .tr-bars i { flex: 1; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, .3); overflow: hidden; }
+
+.luca .tr-bars b { display: block; height: 100%; width: 0; background: #fff; }
+
+.luca .tr-head { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+
+.luca .tr-logo { display: flex; color: #fff; padding-left: 4px; }
+
+.luca .tr-logo .lu-logo { height: 20px; width: auto; }
+
+.luca .tr-lbl { flex: 1; font: 600 12px/1 var(--font-body); opacity: .8; }
+
+.luca .tr-x { color: #fff; background: rgba(255, 255, 255, .12); }
+
+.luca .tr-cap { position: absolute; left: 22px; right: 22px; bottom: calc(var(--sab) + 60px); z-index: 2; pointer-events: none; }
+
+.luca .tr-k { font: 650 12px/1 var(--font-body); letter-spacing: .12em; text-transform: uppercase; opacity: .85; }
+
+.luca .tr-t { font: var(--display-weight) 34px/1.06 var(--font-display); letter-spacing: var(--display-tracking); margin-top: 10px; text-wrap: balance; }
+
+.luca .tr-cap.is-in .tr-k { animation: lc-capIn .6s var(--ease-out) both; }
+
+.luca .tr-cap.is-in .tr-t { animation: lc-capIn .7s .08s var(--ease-out) both; }
+
+@keyframes lc-capIn { from { opacity: 0; transform: translateY(12px); } }
+
+.luca .tr-tap { position: absolute; top: 130px; bottom: 140px; z-index: 2; border: 0; background: none; cursor: pointer; padding: 0; }
+
+.luca .tr-tap--prev { left: 0; width: 28%; }
+
+.luca .tr-tap--mid { left: 28%; width: 44%; }
+
+.luca .tr-tap--next { right: 0; width: 28%; }
+
+.luca .tr-paused { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); z-index: 2; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, .45); pointer-events: none; }
+
+.luca .tr-paused .ic { width: 28px; height: 28px; }
+
+.luca .tr-end { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 20px calc(var(--sab) + 22px); background: linear-gradient(180deg, rgba(0, 0, 0, .25) 0%, rgba(0, 0, 0, .94) 58%); opacity: 0; transition: opacity .5s var(--ease-out); }
+
+.luca .tr-end.is-in { opacity: 1; }
+
+.luca .tr-end-mark { width: 104px; margin: 0 0 20px; color: var(--accent); }
+
+.luca[data-accent="mono"] .tr-end-mark { color: #fff; }
+
+.luca .tr-end-k { font: 650 12px/1 var(--font-body); letter-spacing: .12em; text-transform: uppercase; opacity: .8; }
+
+.luca .tr-end-t { font: var(--display-weight) 40px/1.04 var(--font-display); letter-spacing: var(--display-tracking); margin: 10px 0 22px; }
+
+.luca .tr-end-acts { display: flex; flex-direction: column; gap: 10px; }
+
+.luca[data-accent="mono"][data-theme="light"] .tr-end .btn:not(.btn-glass) { background: #fff; color: #0c0d0f; }
+
+.luca .tr-again { color: #fff; display: inline-flex; gap: 6px; align-items: center; }
+
+.luca .tr-again .ic { width: 16px; height: 16px; }
+
+/* sample review */
+
+.luca .rvw-tag { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--text-3); margin-bottom: 12px; }
+
+.luca .rvw .h1 { font-size: 30px; }
+
+.luca .rvw .muted { margin-top: 8px; font-size: 14.5px; line-height: 1.45; }
+
+.luca .rvw-doc { margin-top: 18px; padding: 16px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .rvw-doc-h { display: flex; gap: 10px; align-items: center; padding-bottom: 12px; box-shadow: inset 0 -1px 0 var(--line); }
+
+.luca .rvw-doc-h b { font-size: 14px; }
+
+.luca .rvw-lines { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; }
+
+.luca .rvw-lines li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; padding: 7px 8px; margin: 0 -8px; border-radius: 8px; font-size: 14.5px; line-height: 1.45; max-height: 90px; overflow: hidden; transition: background-color .3s, opacity .35s, max-height .5s var(--ease-out), padding .5s var(--ease-out); }
+
+.luca .rvw-n { font: 600 12px/1.9 var(--font-mono); color: var(--text-3); }
+
+.luca .rvw-lines li.is-on { background: var(--accent-soft); }
+
+.luca .rvw-lines li.is-cut { text-decoration: line-through; opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; transition-delay: 0s, .4s, .4s, .4s; }
+
+.luca .rvw-lines li.is-moved, .luca .rvw-lines li.is-new { background: var(--accent-soft); }
+
+.luca .rvw-lines li.is-swap { opacity: 0; }
+
+.luca .rvw-verdict { margin-top: 14px; padding: 18px; border-radius: var(--r-xl); background: var(--surface-2); box-shadow: inset 0 0 0 1.5px var(--accent-line); transition: background-color .5s var(--ease-out), color .5s var(--ease-out), box-shadow .5s; }
+
+.luca .rvw-vd { display: grid; grid-template-columns: 1fr 96px; align-items: end; }
+
+.luca .rvw-vk { grid-column: 1; font: 650 11px/1 var(--font-body); letter-spacing: .08em; text-transform: uppercase; opacity: .75; }
+
+.luca .rvw-vw { grid-column: 1; font: var(--display-weight) 60px/1 var(--font-display); letter-spacing: -0.045em; margin-top: 8px; color: var(--accent-text); }
+
+.luca .rvw-mark { grid-column: 2; grid-row: 1 / span 2; width: 96px; margin: 0; color: currentColor; }
+
+.luca .rvw-verdict[data-v="ship"] { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+
+.luca .rvw-verdict[data-v="ship"] .rvw-vw { color: inherit; }
+
+.luca .rvw-verdict[data-v="ship"] .lc-av { background: color-mix(in srgb, var(--accent-ink) 18%, transparent); color: var(--accent-ink); }
+
+.luca .rvw-by { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+
+.luca .rvw-by b { display: block; font-size: 14px; }
+
+.luca .rvw-by em { display: block; font-style: normal; font-size: 12px; opacity: .75; }
+
+.luca .rvw-notes { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+
+.luca .rvw-notes button { display: grid; grid-template-columns: 40px 1fr; gap: 8px; width: 100%; padding: 12px; border: 0; border-radius: var(--r-md); background: var(--surface-3); color: inherit; text-align: left; font: 500 14px/1.45 var(--font-body); cursor: pointer; }
+
+.luca .rvw-notes button .mono { color: var(--accent-text); font-size: 12.5px; padding-top: 2px; }
+
+.luca .rvw-notes button.is-on { box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+
+.luca .rvw-shipnote { padding: 12px 14px; border-radius: var(--r-md); background: color-mix(in srgb, var(--accent-ink) 14%, transparent); font-size: 14px; line-height: 1.45; }
+
+.luca .rvw-go { margin-top: 14px; }
+
+.luca .rvw-after { margin-top: 18px; }
+
+/* apply */
+
+.luca .ap-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
+
+.luca .ap-chips .chip { height: 34px; font-size: 13px; }
+
+.luca .ap-opt { font-style: normal; color: var(--text-3); font-weight: 500; margin-left: 4px; }
+
+.luca .ap-whys { display: flex; flex-direction: column; gap: 8px; }
+
+.luca .ap-why { padding: 15px 16px; border: 0; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); color: inherit; text-align: left; font: 600 15px/1.35 var(--font-body); cursor: pointer; transition: box-shadow var(--m-2), background-color var(--m-2); }
+
+.luca .ap-why.is-on { box-shadow: inset 0 0 0 2px var(--accent-line); background: var(--accent-soft); }
+
+.luca .ap-hours { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .ap-hours b { display: block; font-size: 14.5px; }
+
+.luca .ap-hours em { display: block; font-style: normal; font-size: 12.5px; color: var(--text-2); margin-top: 3px; line-height: 1.4; }
+
+.luca .page--apply .pref { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); }
+
+.luca .page--apply .pref.is-on { box-shadow: inset 0 0 0 2px var(--accent-line); }
+
+.luca .pay-top { text-align: center; padding: 4px 0 16px; }
+
+.luca .pay-amt { display: block; font: var(--num-weight) 54px/1 var(--font-display); letter-spacing: -0.04em; margin: 12px 0 6px; }
+
+.luca .pay-seg { margin-bottom: 14px; }
+
+.luca .pay-upi { display: flex; flex-direction: column; gap: 8px; }
+
+.luca .pay-done { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-radius: var(--r-md); background: var(--accent-soft); color: var(--accent-text); font: 600 13.5px/1.3 var(--font-body); }
+
+.luca .pay-done .ic { width: 18px; height: 18px; }
+
+/* status */
+
+.luca .lc-st-h { margin: 6px 0 16px; }
+
+.luca .trk { list-style: none; margin: 0; padding: 16px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--card-line); display: flex; flex-direction: column; }
+
+.luca .trk li { position: relative; display: grid; grid-template-columns: 24px 1fr; gap: 12px; padding-bottom: 18px; }
+
+.luca .trk li:last-child { padding-bottom: 0; }
+
+.luca .trk li:not(:last-child)::after { content: ""; position: absolute; left: 11px; top: 28px; bottom: 4px; width: 2px; border-radius: 2px; background: var(--line-strong); }
+
+.luca .trk li.trk-done:not(:last-child)::after { background: var(--accent-line); }
+
+.luca .trk-dot { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 2px var(--line-strong); }
+
+.luca .trk-dot .ic { width: 13px; height: 13px; }
+
+.luca .trk-done .trk-dot { background: var(--accent-line); color: var(--accent-ink); box-shadow: none; }
+
+.luca .trk-now .trk-dot { box-shadow: inset 0 0 0 2px var(--accent-line), 0 0 0 4px var(--accent-soft); }
+
+.luca .trk b { display: block; font-size: 14.5px; font-weight: 620; }
+
+.luca .trk em { display: block; font-style: normal; font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
+
+.luca .trk-todo b { color: var(--text-2); }
+
+.luca .lc-out.lc-prep li::before, .luca .lc-out--sm li::before { content: counter(o); }
+
+.luca .lc-wait { grid-auto-columns: 44%; }
+
+.luca .lc-wt { display: flex; flex-direction: column; gap: 8px; border: 0; padding: 0; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+
+.luca .lc-wt img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-md); }
+
+.luca .lc-wt b { display: block; font-size: 14px; }
+
+.luca .lc-wt em { display: block; font-style: normal; font-size: 12px; color: var(--text-2); margin-top: 2px; }
+
+/* ==========================================================================
+   Prototype panel
+   ========================================================================== */
+
+.luca .lc-avs--tk .lc-av { box-shadow: 0 0 0 2px var(--ticket); }
+
+.luca .cp .btn-secondary { background: var(--surface-3); }
+
+.luca .lc-mc .lc-avs .lc-av + .lc-av { margin-left: -5px; }
+
+.luca .ls-warn .btn-secondary { background: var(--surface-3); }
+
+/* design notes beside the phone on wide screens */
+
+/* Product tabs at the top of the panel: Creator Academy, Video Editing, Compare (shared by cohort.html and editing.html) */
+/* ==========================================================================
+   LUCA in the real app (not the prototype's phone frame)
+   The mockup positioned everything inside a 390px device. Here LUCA owns the
+   viewport: the document scrolls, the tab bar / sheets / toasts / moments are
+   fixed, and on wide screens the app is a centred column.
+   ========================================================================== */
+.luca {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --col: 480px;
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 var(--t-body)/1.45 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  isolation: isolate;
+}
+.luca h1, .luca h2, .luca h3, .luca p { margin: 0; }
+.luca a { color: inherit; }
+.luca ol, .luca ul { margin: 0; }
+.luca button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
+.luca img { display: block; max-width: 100%; }
+.luca .ic { width: 20px; height: 20px; flex: none; }
+
+.luca .lu-shell { position: relative; max-width: var(--col); margin: 0 auto; min-height: 100vh; min-height: 100dvh; background: var(--bg); }
+@media (min-width: 560px) {
+  .luca { background: radial-gradient(120% 60% at 50% 0%, var(--accent-soft), transparent 60%), var(--bg-tint); }
+  .luca .lu-shell { box-shadow: 0 0 0 1px var(--line), 0 30px 80px -40px rgba(0, 0, 0, .6); }
+}
+
+.luca .page { position: relative; inset: auto; overflow: visible; min-height: 100vh; min-height: 100dvh; background: var(--bg); will-change: auto; }
+.luca .page-scroll { position: static; overflow: visible; }
+.luca.has-tabbar .end-space, .luca .has-tabbar .end-space { height: calc(70px + var(--sab) + 24px); }
+
+/* fixed chrome, kept inside the centred column */
+.luca .tabbar { position: fixed; left: 50%; right: auto; bottom: 0; width: min(100%, var(--col)); transform: translateX(-50%); grid-template-columns: repeat(5, 1fr); padding-bottom: max(var(--sab), 8px); z-index: 60; }
+.luca .tabbar.is-hidden { transform: translate(-50%, 110%); }
+.luca .tb-item { text-decoration: none; }
+.luca .sticky-cta { position: fixed; left: 50%; right: auto; width: calc(min(100%, var(--col)) - 24px); transform: translate(-50%, 24px); bottom: calc(var(--sab) + 12px); z-index: 55; }
+.luca .sticky-cta.is-shown { transform: translate(-50%, 0); }
+.luca .navbar { top: 0; }
+
+.luca .sheet-wrap { position: fixed; inset: 0; z-index: 200; pointer-events: auto; }
+.luca .sheet-backdrop { position: absolute; inset: 0; background: var(--scrim); animation: lc-fadeIn .25s var(--ease-out) both; }
+.luca .sheet { position: absolute; left: 50%; right: auto; bottom: 0; width: min(100%, var(--col)); transform: translateX(-50%); max-height: 90vh; max-height: 90dvh; animation: lc-sheetIn .42s var(--ease-out) both; }
+.luca .sheet-wrap.is-out .sheet { animation: lc-sheetOut .28s var(--ease-in) both; }
+.luca .sheet-wrap.is-out .sheet-backdrop { animation: lc-fadeOut .28s var(--ease-in) both; }
+@keyframes lc-sheetIn { from { transform: translate(-50%, 100%); } to { transform: translate(-50%, 0); } }
+@keyframes lc-sheetOut { from { transform: translate(-50%, 0); } to { transform: translate(-50%, 100%); } }
+@keyframes lc-fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lc-fadeOut { to { opacity: 0; } }
+.luca .sheet-body { overscroll-behavior: contain; }
+
+.luca .toasts { position: fixed; top: calc(var(--sat) + 10px); left: 50%; right: auto; width: min(calc(100% - 20px), calc(var(--col) - 20px)); transform: translateX(-50%); z-index: 400; }
+.luca .toast { animation: lc-toastIn .35s var(--ease-spring) both; }
+.luca .toast.is-out { animation: lc-toastOut .25s var(--ease-in) both; }
+@keyframes lc-toastIn { from { opacity: 0; transform: translateY(-12px) scale(.96); } }
+@keyframes lc-toastOut { to { opacity: 0; transform: translateY(-8px); } }
+
+.luca .fx-layer { position: fixed; inset: 0; z-index: 300; pointer-events: none; }
+.luca .fx-layer > * { pointer-events: auto; }
+.luca .moment, .luca .reveal, .luca .welcome { position: fixed; inset: 0; }
+.luca .mo-in, .luca .rvl-in { max-width: calc(var(--col) - 44px); margin: 0 auto; }
+.luca .welcome .wl-graph { max-width: 300px; }
+
+/* full-screen pages: trailer and the recording player */
+.luca .tr { position: fixed; inset: 0; left: 50%; right: auto; width: min(100%, var(--col)); transform: translateX(-50%); z-index: 70; }
+.luca .pl2 { position: relative; inset: auto; min-height: 100vh; min-height: 100dvh; }
+.luca .pl2-body { overflow: visible; }
+.luca .pl2-v iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+/* entry stagger */
+.luca .page.is-entering .rv { animation: lc-rvIn var(--m-4) var(--ease-out) both; animation-delay: calc(var(--rv, 0) * 38ms * var(--motion-scale)); }
+@keyframes lc-rvIn { from { opacity: 0; transform: translateY(14px); } }
+
+/* things the prototype faked that the app does for real */
+.luca .lu-demo-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: calc(var(--sat) + 6px) 14px 6px; background: var(--surface-2); color: var(--text-2); font: 600 11.5px/1.2 var(--font-body); letter-spacing: .02em; }
+.luca .lu-demo-bar b { color: var(--accent-text); letter-spacing: .1em; text-transform: uppercase; font-size: 10.5px; }
+.luca .lu-demo-bar + .page .navbar, .luca .lu-demo-bar + .page .appbar { padding-top: 6px; }
+.luca .lu-demo-bar + .page .navbar { height: 58px; }
+.luca .lu-err { padding: 28px var(--gutter); }
+.luca .lu-load { display: grid; place-items: center; min-height: 60vh; color: var(--accent-text); }
+.luca .lu-load .lu-loader { width: 72px; }
+.luca .lu-yt { position: absolute; inset: 0; }
+.luca .lu-native { padding: 14px 16px; border-radius: var(--r-md); background: var(--surface-2); font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.luca .lu-native b { color: var(--text); }
+.luca .input-wrap select.input { appearance: none; }
+.luca .lu-link-row { display: flex; align-items: center; gap: 8px; }
+.luca .lu-desk-tabs { position: sticky; top: calc(var(--sat) + 52px); z-index: 15; padding: 8px var(--gutter); background: var(--bg); }
+.luca .lu-desk-card { padding: 14px; border-radius: var(--r-lg); background: var(--surface-2); display: flex; flex-direction: column; gap: 10px; }
+.luca .lu-desk-card + .lu-desk-card { margin-top: 10px; }
+.luca .lu-desk-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.luca .lu-desk-card textarea.input { min-height: 84px; }
+.luca .lu-desk-links a { display: block; font: 500 12.5px/1.4 var(--font-mono); color: var(--accent-text); word-break: break-all; }
+.luca .lu-q { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); }
+.luca .lu-q + .lu-q { margin-top: 6px; }
+.luca .lu-q > span { flex: 1; min-width: 0; font-size: 14px; }
+@media (prefers-reduced-motion: reduce) {
+  .luca { --motion-scale: .01; }
+  .luca *, .luca *::before, .luca *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

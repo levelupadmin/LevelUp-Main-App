@@ -35,11 +35,13 @@ import {
   Repeat,
   KeyRound,
   BookOpen as BookOpenIcon,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import { ADMIN_ROLES, canAccessRoute } from "@/lib/permissions";
+import { LUCA, flag } from "@/lib/flags";
 
 interface NavItem {
   label: string;
@@ -75,6 +77,8 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Events", icon: CalendarDays, path: "/admin/events" },
       { label: "Cohorts", icon: Users, path: "/admin/cohorts" },
       { label: "Cohort Submissions", icon: ClipboardList, path: "/admin/cohort-submissions" },
+      // LUCA live cohorts: only while VITE_LUCA is on (see LUCA-LAUNCH.md).
+      ...(flag(LUCA) ? [{ label: "LUCA cohorts", icon: Sparkles, path: "/admin/luca" }] : []),
     ],
   },
   {
