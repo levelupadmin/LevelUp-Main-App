@@ -74,6 +74,7 @@ function ProgramScope() {
         <h1 className="h1">{error ? "We couldn't load this cohort." : "This cohort isn't here."}</h1>
         <p className="muted mt-3">{error ? (error instanceof LucaError ? error.message : "Check your connection and try again.") : "The link may be old, or the cohort isn't open yet."}</p>
         {error ? <button className="btn btn-lg btn-block mt-5" type="button" onClick={() => refetch()}>Try again</button> : null}
+        <a className={`btn btn-lg btn-block ${error ? "btn-secondary mt-3" : "mt-5"}`} href="/home">Back to LevelUp</a>
       </div></div>
     );
   }
