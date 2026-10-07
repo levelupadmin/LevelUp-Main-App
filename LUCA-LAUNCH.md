@@ -95,6 +95,11 @@ Tables are `REVOKE`d from `anon`/`authenticated`. Admins can read them, and can 
    supabase functions deploy luca-link-check
    ```
    `luca-calendar` must be `--no-verify-jwt`: calendar apps can't send a JWT, and the private per-learner token in the URL is the credential (see `config.toml`).
+   **Or from the Supabase dashboard** (Edge Functions → Deploy a new function → Via editor), using the single-file copies in `ops/luca/edge-functions/`:
+   - `luca-calendar.ts`: name it `luca-calendar` and turn **Verify JWT OFF**.
+   - `luca-link-check.ts`: name it `luca-link-check` and leave **Verify JWT ON**. This copy has the shared CORS helper inlined so it deploys on its own.
+
+   Both use only the secrets Supabase already provides (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`). `SITE_URL` is optional.
 3. **Client flag for staff first.** On your own device, open the browser console and run `localStorage.setItem("VITE_LUCA","true")`, then reload. Open `/admin/luca` and `/luca/luca-demo`.
 4. **Try the demo cohort.** Open `/luca/luca-demo/demo` (staff only) and walk the days, from "First look" to "After Demo Day". Each tap moves the whole sample cohort.
 5. **Build the real cohort** in `/admin/luca`:
