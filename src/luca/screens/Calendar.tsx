@@ -103,7 +103,7 @@ export default function Calendar() {
   const special: [number, number] | undefined = sprintWeeks.length ? [Math.min(...sprintWeeks), Math.max(...sprintWeeks)] : undefined;
   const labels = (d.p.content.arc_labels as [number, string][] | undefined) ?? [];
   const phases = d.p.content.phases ?? [{ name: d.p.short_name || d.p.name, from: 0, to: d.lastWeek, out: "" }];
-  const teachWeeks = d.weeks.filter((w) => !w.is_demo_week).length;
+  const teachWeeks = d.weeks.filter((w) => w.n > 0 && !w.is_demo_week).length;
   const demoWeek = d.weeks.find((w) => w.is_demo_week);
   const demoSess = d.sessions.filter((s) => s.week_n === demoWeek?.n);
   // A break is listed after the week it starts in.

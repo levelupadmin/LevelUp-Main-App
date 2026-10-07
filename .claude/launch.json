@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "levelup-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 8080 }
+    { "name": "levelup-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 8080 },
+    { "name": "luca-preview", "runtimeExecutable": "npx", "runtimeArgs": ["vite", "--config", "ops/luca/preview/vite.config.ts"], "port": 5199 }
   ]
 }

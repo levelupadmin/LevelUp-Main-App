@@ -2808,7 +2808,7 @@
   isolation: isolate;
 }
 .luca h1, .luca h2, .luca h3, .luca p { margin: 0; }
-.luca a { color: inherit; }
+.luca a { color: inherit; text-decoration: none; }
 .luca ol, .luca ul { margin: 0; }
 .luca button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
 .luca img { display: block; max-width: 100%; }
@@ -2891,3 +2891,9 @@
   .luca { --motion-scale: .01; }
   .luca *, .luca *::before, .luca *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* LUCA owns its base styles, so it looks the same with or without the host
+   app's reset (Tailwind preflight strips list markers, browsers underline links). */
+.luca .lc-contract { list-style: decimal; }
+.luca input, .luca textarea, .luca select { font: inherit; color: inherit; }
+.luca .linkish { text-decoration: underline; }

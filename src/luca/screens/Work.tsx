@@ -22,7 +22,7 @@ export default function Work() {
   const fixA = states.find(([, s]) => s.v === "fix");
   const p = d.p;
   const resources = (d.r.resources ?? []);
-  const teachWeeks = d.weeks.filter((w) => !w.is_demo_week).length;
+  const teachWeeks = d.weeks.filter((w) => w.n > 0 && !w.is_demo_week).length;
 
   let loud: JSX.Element | null = null;
   if (fixA && "sub" in fixA[1]) {
