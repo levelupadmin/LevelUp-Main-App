@@ -30,6 +30,7 @@ import { useInViewRef } from "@/hooks/useInViewRef";
 import { isAndroid, isNative } from "@/lib/platform";
 import { hapticImpact, hapticSelection, tapTick } from "@/lib/haptics";
 import { track } from "@/lib/analytics";
+import { contentCategoryForTier } from "@shared/metaEvents";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 import { checkoutWebPath, type CheckoutPaymentType } from "@/lib/checkoutWebPath";
 
@@ -640,6 +641,22 @@ export default function CheckoutPage() {
             setPaying(false); paymentInFlightRef.current = false;
             return;
           }
+
+          // Purchase fires HERE, right after verify and before any redirect:
+          // a guest only reaches Thank-you after a phone OTP, and 3 in 35 never
+          // sign in, so a Thank-you-only Purchase never reached Meta for them.
+          // The eventID is purchase_<razorpay_payment_id>, the same id Thank-you
+          // sends, so Meta keeps one copy when both fire. Value is the amount
+          // the server priced into the Razorpay order (payment_orders.total_inr).
+          track({
+            name: "purchase",
+            transaction_id: response.razorpay_payment_id,
+            content_id: offering.id,
+            content_name: offering.title,
+            value: Number(data.amount) / 100,
+            currency: data.currency || "INR",
+            content_category: contentCategoryForTier(offering.product_tier),
+          });
 
           // Guest: the purchase now sits on the account that owns the phone
           // they paid with. One OTP on /login (phone prefilled) proves it and

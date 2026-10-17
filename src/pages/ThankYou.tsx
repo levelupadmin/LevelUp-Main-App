@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import { track } from "@/lib/analytics";
+import { contentCategoryForTier, purchaseEventId } from "@shared/metaEvents";
 import { isNative } from "@/lib/platform";
 import { hapticNotification } from "@/lib/haptics";
 import { useMotionSafe, useFinePointer, durations } from "@/lib/motion";
@@ -92,6 +93,7 @@ function isSafeRedirectUrl(url: string | null | undefined): boolean {
 /* ────────────────────────────────────────────────── */
 interface OrderOffering {
   title: string;
+  product_tier?: string | null;
   subtitle: string | null;
   thumbnail_url: string | null;
   meta_pixel_id: string | null;
@@ -148,9 +150,14 @@ function firePixels(order: PaymentOrder) {
   const currency = "INR";
   const offering = order.offerings;
 
-  // 1. Meta Pixel: sanitize pixelId to numeric only
+  // 1. Meta Pixel: sanitize pixelId to numeric only. `trackSingle` sends to
+  // THIS pixel only: a plain `track` would also hit the global pixel that
+  // analytics.ts already loaded, and that second Purchase had no eventID, so
+  // Meta could not merge it with the global one. The eventID matches the
+  // global Purchase (purchase_<razorpay_payment_id>).
   if (offering?.meta_pixel_id) {
     const pixelId = offering.meta_pixel_id.replace(/[^0-9]/g, "");
+    const eventId = purchaseEventId((order.razorpay_payment_id || order.id).replace(/[^a-zA-Z0-9_\-]/g, ""));
     if (pixelId.length > 0) {
       const script = document.createElement("script");
       script.innerHTML = `
@@ -160,7 +167,7 @@ function firePixels(order: PaymentOrder) {
         t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
         (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
         fbq('init', '${pixelId}');
-        fbq('track', 'Purchase', { value: ${revenue}, currency: '${currency}' });
+        fbq('trackSingle', '${pixelId}', 'Purchase', { value: ${revenue}, currency: '${currency}' }, { eventID: '${eventId}' });
       `;
       document.head.appendChild(script);
     }
@@ -416,7 +423,7 @@ export default function ThankYou() {
           // read by the render below; they must be selected here or the
           // receipt prints the current time, a broken /p/ share link, and
           // no benefit chips.
-          .select("id, offering_id, application_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, created_at, offerings(title, subtitle, thumbnail_url, slug, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds, thankyou_show_calendly, calendly_url, offering_courses(courses(total_lessons, duration_minutes)))")
+          .select("id, offering_id, application_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, created_at, offerings(title, subtitle, thumbnail_url, slug, product_tier, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds, thankyou_show_calendly, calendly_url, offering_courses(courses(total_lessons, duration_minutes)))")
           .eq("id", paymentOrderId)
           .eq("status", "captured")
           .single();
@@ -470,6 +477,7 @@ export default function ThankYou() {
       content_name: order.offerings?.title || "LevelUp masterclass",
       value: Number(order.total_inr),
       currency: "INR",
+      content_category: contentCategoryForTier(order.offerings?.product_tier),
     });
     // Conversion-funnel terminal event (P3-T7). Fire-and-forget alongside the
     // pixel purchase above; no PII beyond the order/value already on screen.

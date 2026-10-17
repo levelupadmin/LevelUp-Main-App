@@ -16,6 +16,7 @@
 // This module is browser-side only.
 
 import { supabase } from "@/integrations/supabase/client";
+import { purchaseEventId } from "@shared/metaEvents";
 
 declare global {
   interface Window {
@@ -315,7 +316,15 @@ export async function bootAnalytics(): Promise<AnalyticsSettings | null> {
 export type AnalyticsEvent =
   | { name: "view_content"; content_id: string; content_name: string; value?: number; currency?: string }
   | { name: "initiate_checkout"; content_id: string; content_name: string; value: number; currency: string }
-  | { name: "purchase"; transaction_id: string; content_id: string; content_name: string; value: number; currency: string }
+  | {
+      name: "purchase";
+      transaction_id: string;
+      content_id: string;
+      content_name: string;
+      value: number;
+      currency: string;
+      content_category?: string;
+    }
   | { name: "lead"; method?: string }
   | { name: "sign_up"; method?: string }
   // ── Phase-3 conversion-funnel events (PostHog sink) ──────────────────
@@ -351,11 +360,10 @@ function newEventId(): string {
 }
 
 // For purchase events specifically we use the transaction_id as the
-// eventID base so a refresh of /thank-you doesn't create a second
-// purchase signal - Meta will dedupe across the two fires.
-function purchaseEventId(transactionId: string): string {
-  return `purchase_${transactionId}`;
-}
+// eventID base (purchaseEventId in @shared/metaEvents, which a server-side
+// sender must also use) so the checkout's success handler, a refresh of
+// /thank-you and any server copy all carry one id and Meta keeps a single
+// Purchase.
 
 // Fan a conversion-funnel event out to the PostHog sink when configured,
 // else to whatever pixels are loaded as CUSTOM events - deliberately never a
@@ -410,6 +418,9 @@ export function track(event: AnalyticsEvent) {
         window.fbq?.("track", "Purchase", {
           content_ids: [event.content_id],
           content_name: event.content_name,
+          content_type: "product",
+          ...(event.content_category ? { content_category: event.content_category } : {}),
+          num_items: 1,
           value: event.value,
           currency: event.currency,
         }, { eventID });
