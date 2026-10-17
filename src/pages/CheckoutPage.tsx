@@ -13,7 +13,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
-import { buildVerifyBody, postPaymentNavState, postPaymentRoute } from "@/lib/checkoutVerify";
+import { buildVerifyBody, postPaymentNavState, postPaymentRoute, type RazorpaySuccess } from "@/lib/checkoutVerify";
+import {
+  cartKey,
+  loadOpenOrder,
+  paymentLocked,
+  payStepFor,
+  saveOpenOrder,
+  type OpenOrder,
+} from "@/lib/checkoutOpenOrder";
+import type { OrderPaymentStatus } from "@shared/orderPaymentStatus";
 import { Loader2, Tag, BookOpen, ArrowLeft, CheckCircle2, Lock, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Tables } from "@/integrations/supabase/types";
@@ -515,10 +524,259 @@ export default function CheckoutPage() {
     document.body.appendChild(script);
   }, []);
 
+  /* -- The last order a payment sheet was opened for --
+        Kept until it is paid and verified, so no state in which money may
+        have moved can become a second charge (lib/checkoutOpenOrder). The ref
+        serves the async Razorpay callbacks; the state lets the notice offer
+        "Check payment status". Restored per offering from sessionStorage, so
+        a reload does not bring back a live Pay button after Razorpay reported
+        a payment that was never confirmed here. -- */
+  const openOrderRef = useRef<OpenOrder | null>(null);
+  const [hasOpenOrder, setHasOpenOrder] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const rememberOpenOrder = (order: OpenOrder | null) => {
+    openOrderRef.current = order;
+    setHasOpenOrder(!!order);
+    if (offeringId) saveOpenOrder(offeringId, order);
+  };
+  useEffect(() => {
+    if (!offeringId) return;
+    const saved = loadOpenOrder(offeringId);
+    openOrderRef.current = saved;
+    setHasOpenOrder(!!saved);
+    if (saved?.paid) setPayIssue({ kind: "verify_pending" });
+  }, [offeringId]);
+
+  // Money moved or may have: Pay and the sticky bar stay off until a status
+  // check settles it.
+  const payLocked = paymentLocked(payIssue);
+
+  /** What an order is priced from. A different key needs a different order. */
+  const currentCartKey = () =>
+    cartKey({
+      user: user?.id ?? null,
+      paymentType,
+      applicationId,
+      total,
+      coupon: appliedCoupon?.id ?? null,
+      bumps: isStaged ? [] : Array.from(selectedBumps).sort(),
+      fields: customFieldValues,
+      name: user ? null : guestName.trim(),
+      email: user ? null : guestEmail.trim().toLowerCase(),
+      phone: user ? null : guestPhone.replace(/\D/g, "").slice(-10),
+    });
+
+  const releasePay = () => {
+    setPaying(false);
+    paymentInFlightRef.current = false;
+  };
+
+  const reviewMessage = (verifyData: { needs_review?: boolean } | null | undefined, message: string | null) =>
+    verifyData?.needs_review || /review/i.test(message ?? "")
+      ? "We're setting up your access by hand and will email you within a few hours. Please don't pay again."
+      : null;
+
+  /** Ask the server whether a payment landed on this order. Read-only. */
+  const fetchOrderStatus = async (
+    order: OpenOrder,
+  ): Promise<{ status: OrderPaymentStatus; razorpay_payment_id: string | null }> => {
+    const known: OrderPaymentStatus[] = ["captured", "needs_review", "paid", "pending", "none", "unknown"];
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-razorpay-payment", {
+        body: { payment_order_id: order.paymentOrderId, is_guest: order.isGuest, status_check: true },
+      });
+      const status = data?.status as OrderPaymentStatus | undefined;
+      if (error || !status || !known.includes(status)) return { status: "unknown", razorpay_payment_id: null };
+      return {
+        status,
+        razorpay_payment_id: typeof data?.razorpay_payment_id === "string" ? data.razorpay_payment_id : null,
+      };
+    } catch {
+      return { status: "unknown", razorpay_payment_id: null };
+    }
+  };
+
+  /** The notice for a status that does not finish the purchase. */
+  const issueForStatus = (status: OrderPaymentStatus, locked: boolean): PaymentIssue => {
+    switch (status) {
+      case "paid":
+        return { kind: "verify_pending" };
+      case "needs_review":
+        return { kind: "verify_pending", message: reviewMessage({ needs_review: true }, null) };
+      case "pending":
+        return { kind: "check_needed", reason: "pending", locked };
+      case "unknown":
+        return { kind: "check_needed", reason: "unknown", locked };
+      default:
+        return { kind: "no_payment_found" };
+    }
+  };
+
+  /** The order is paid and verified: count the sale once and move on. */
+  const finishPaid = (order: OpenOrder, razorpayPaymentId: string | null, offeringTitle?: string | null) => {
+    // Purchase fires HERE, right after verify and before any redirect: a guest
+    // only reaches Thank-you after a phone OTP, and 3 in 35 never sign in, so a
+    // Thank-you-only Purchase never reached Meta for them. The eventID is
+    // purchase_<razorpay_payment_id>, the same id Thank-you sends. Value is the
+    // amount the server priced into the Razorpay order (payment_orders.total_inr).
+    if (razorpayPaymentId && offering) {
+      track({
+        name: "purchase",
+        transaction_id: razorpayPaymentId,
+        content_id: offering.id,
+        content_name: offering.title,
+        value: order.amountPaise / 100,
+        currency: order.currency || "INR",
+        content_category: contentCategoryForTier(offering.product_tier),
+      });
+    }
+    rememberOpenOrder(null);
+    // Guest: the purchase now sits on the account that owns the phone they
+    // paid with. One OTP on /login (phone prefilled) proves it and lands them
+    // on Thank-you; payment_orders is not anonymously readable.
+    toast.success(
+      order.isGuest
+        ? "Payment received. Confirm your phone number with a one-time code to open your course."
+        : `Welcome to ${offeringTitle ?? order.offeringTitle ?? offering?.title ?? "your course"}!`,
+    );
+    navigate(postPaymentRoute(order.isGuest, order.paymentOrderId), {
+      state: order.isGuest ? postPaymentNavState(guestPhone) : undefined,
+    });
+  };
+
+  /** Open the Razorpay sheet for an order (a new one, or the last one again). */
+  const openSheet = async (order: OpenOrder) => {
+    if (!offering) return;
+    // Prefill: for guest checkout use what they just typed; for logged-in
+    // users pull from profile.
+    let prefillName = guestName;
+    let prefillEmail = guestEmail;
+    let prefillContact = guestPhone;
+    if (user) {
+      const { data: profile } = await supabase
+        .from("users")
+        .select("full_name, email, phone")
+        .eq("id", user.id)
+        .single();
+      prefillName = profile?.full_name ?? "";
+      prefillEmail = profile?.email ?? user.email ?? "";
+      prefillContact = profile?.phone ?? "";
+    }
+
+    const options = {
+      key: order.keyId,
+      amount: order.amountPaise,
+      currency: order.currency,
+      name: "LevelUp",
+      description: order.offeringTitle ?? offering.title,
+      order_id: order.razorpayOrderId,
+      prefill: {
+        name: prefillName,
+        email: prefillEmail,
+        contact: prefillContact,
+      },
+      theme: { color: RAZORPAY_THEME_COLOR, backdrop_color: "rgba(0,0,0,0.8)" },
+      handler: async (response: RazorpaySuccess) => {
+        // Razorpay has taken the money. Until verification confirms it, Pay
+        // stays locked, here and after a reload.
+        const paidOrder: OpenOrder = { ...order, paid: response, savedAt: Date.now() };
+        rememberOpenOrder(paidOrder);
+        // Verify payment. `is_guest` is REQUIRED for an anonymous buyer:
+        // without it the function demands a login token and 401s, and the
+        // buyer is told to "contact support" seconds after paying.
+        const { data: verifyData, error: verifyErr } =
+          await supabase.functions.invoke("verify-razorpay-payment", {
+            body: buildVerifyBody(response, order.paymentOrderId, order.isGuest),
+          });
+
+        if (verifyErr || !verifyData?.success) {
+          // The webhook captures and enrols on its own. Say so, keep Pay
+          // locked, and offer a status check that runs this verification again.
+          const info = await readFunctionError(verifyErr, verifyData);
+          setPayIssue({ kind: "verify_pending", message: reviewMessage(verifyData, info.message) });
+          releasePay();
+          return;
+        }
+        finishPaid(paidOrder, response.razorpay_payment_id, verifyData.offering_title);
+      },
+      modal: {
+        ondismiss: () => {
+          // A failure already set its own notice; keep that one. The order is
+          // kept: the next Pay checks it before anything new is charged.
+          setPayIssue((prev) => prev ?? { kind: "dismissed" });
+          releasePay();
+        },
+      },
+    };
+
+    if (typeof window.Razorpay !== "function") {
+      setPayIssue({ kind: "script_missing" });
+      releasePay();
+      return;
+    }
+
+    // Phase-3 conversion funnel: a real Razorpay order exists and the modal is
+    // about to open. Keyed on our internal payment_order_id so it joins the
+    // ThankYou purchase_completed event on the same id.
+    track({ name: "payment_initiated", orderId: order.paymentOrderId });
+    // AddPaymentInfo: the buyer tapped Pay and the payment sheet is opening.
+    // One per payment order (a reused order or a retry counts once).
+    track({
+      name: "add_payment_info",
+      content_id: offering.id,
+      content_name: offering.title,
+      value: order.amountPaise / 100,
+      currency: order.currency || "INR",
+      content_category: contentCategoryForTier(offering.product_tier),
+      event_id: addPaymentInfoEventId(order.paymentOrderId),
+    });
+
+    rememberOpenOrder(order);
+    const rzp = new window.Razorpay(options);
+    rzp.on("payment.failed", (response) => {
+      setPayIssue({ kind: "failed", detail: response?.error?.description ?? null });
+      releasePay();
+    });
+    rzp.open();
+  };
+
+  /* -- Check payment status --
+        Razorpay reported success on the last order: run the same verification
+        again. Otherwise ask whether any payment landed on it. -- */
+  const handleCheckStatus = async () => {
+    const order = openOrderRef.current;
+    if (!order || checkingStatus || paymentInFlightRef.current) return;
+    setCheckingStatus(true);
+    try {
+      if (order.paid) {
+        const { data: v, error: e } = await supabase.functions.invoke("verify-razorpay-payment", {
+          body: buildVerifyBody(order.paid, order.paymentOrderId, order.isGuest),
+        });
+        if (!e && v?.success) {
+          finishPaid(order, order.paid.razorpay_payment_id, v.offering_title);
+          return;
+        }
+        const info = await readFunctionError(e, v);
+        setPayIssue({ kind: "verify_pending", message: reviewMessage(v, info.message) });
+        toast("Still confirming your payment. We'll email you when your course is open.");
+        return;
+      }
+      const result = await fetchOrderStatus(order);
+      const step = payStepFor(result.status, order.cartKey === currentCartKey());
+      if (step === "done") {
+        finishPaid(order, result.razorpay_payment_id);
+        return;
+      }
+      setPayIssue(issueForStatus(result.status, step === "locked"));
+    } finally {
+      setCheckingStatus(false);
+    }
+  };
+
   /* -- Pay -- */
   const handlePay = async () => {
     if (!offering) return;
-    if (paymentInFlightRef.current) return;
+    if (paymentInFlightRef.current || payLocked) return;
     void hapticImpact("medium");
     setPayIssue(null);
 
@@ -548,6 +806,32 @@ export default function CheckoutPage() {
     setPaying(true);
 
     try {
+      // A sheet opened before was closed without a result. A UPI payment can
+      // still finish in the UPI app after that, so ask whether one landed
+      // before anything new is charged. The same cart reopens the same
+      // Razorpay order, which takes one successful payment only. Staged
+      // cohort payments keep their own order path unchanged.
+      const lastOrder = openOrderRef.current;
+      if (lastOrder && !isStaged) {
+        const result = await fetchOrderStatus(lastOrder);
+        const step = payStepFor(result.status, lastOrder.cartKey === currentCartKey());
+        if (step === "done") {
+          finishPaid(lastOrder, result.razorpay_payment_id);
+          return;
+        }
+        if (step === "locked") {
+          setPayIssue(issueForStatus(result.status, true));
+          releasePay();
+          return;
+        }
+        if (step === "reopen") {
+          await openSheet(lastOrder);
+          return;
+        }
+        // Nothing was paid on that order and the cart has changed.
+        rememberOpenOrder(null);
+      }
+
       // Free total for a signed-in user: no Razorpay leg exists for a
       // zero-rupee order (create-razorpay-order rejects <= 0), so enrol
       // through the dedicated authenticated free path and go straight to
@@ -569,7 +853,7 @@ export default function CheckoutPage() {
               ? { kind: "already_enrolled", guest: false }
               : { kind: "order_error", message: info.message ?? "Couldn't complete the enrolment. Please try again." },
           );
-          setPaying(false); paymentInFlightRef.current = false;
+          releasePay();
           return;
         }
         navigate(freeData.payment_order_id ? `/thank-you/${freeData.payment_order_id}` : "/my-courses");
@@ -580,6 +864,7 @@ export default function CheckoutPage() {
       // the _fbp/_fbc cookies read now). Staged cohort payments carry none:
       // that pipeline is left exactly as it was.
       const attribution = isStaged ? null : attributionForOrder(offeringId!);
+      const key = currentCartKey();
 
       // Anon: guest-create-order (creates the auth.users row on
       // payment verify, no OTP). Logged-in: create-razorpay-order
@@ -638,7 +923,7 @@ export default function CheckoutPage() {
               : info.message ?? "Couldn't create your order. Please try again.",
           });
         }
-        setPaying(false); paymentInFlightRef.current = false;
+        releasePay();
         return;
       }
 
@@ -650,128 +935,21 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Prefill: for guest checkout use what they just typed; for
-      // logged-in users pull from profile.
-      let prefillName = guestName;
-      let prefillEmail = guestEmail;
-      let prefillContact = guestPhone;
-      if (!isAnon && user) {
-        const { data: profile } = await supabase
-          .from("users")
-          .select("full_name, email, phone")
-          .eq("id", user.id)
-          .single();
-        prefillName = profile?.full_name ?? "";
-        prefillEmail = profile?.email ?? user.email ?? "";
-        prefillContact = profile?.phone ?? "";
-      }
-
-      // Phase-3 conversion funnel: a real Razorpay order exists and the modal is
-      // about to open. Keyed on our internal payment_order_id so it joins the
-      // ThankYou purchase_completed event on the same id.
-      track({ name: "payment_initiated", orderId: data.payment_order_id });
-      // AddPaymentInfo: the buyer tapped Pay and the payment sheet is opening.
-      // One per payment order (a reused order or a retry counts once).
-      track({
-        name: "add_payment_info",
-        content_id: offering.id,
-        content_name: offering.title,
-        value: Number(data.amount) / 100,
+      await openSheet({
+        paymentOrderId: data.payment_order_id,
+        razorpayOrderId: data.razorpay_order_id,
+        amountPaise: Number(data.amount),
         currency: data.currency || "INR",
-        content_category: contentCategoryForTier(offering.product_tier),
-        event_id: addPaymentInfoEventId(data.payment_order_id),
+        keyId: data.key_id,
+        offeringTitle: data.offering_title ?? null,
+        isGuest: isAnon,
+        cartKey: key,
+        paid: null,
+        savedAt: Date.now(),
       });
-
-      const options = {
-        key: data.key_id,
-        amount: data.amount,
-        currency: data.currency,
-        name: "LevelUp",
-        description: data.offering_title,
-        order_id: data.razorpay_order_id,
-        prefill: {
-          name: prefillName,
-          email: prefillEmail,
-          contact: prefillContact,
-        },
-        theme: { color: RAZORPAY_THEME_COLOR, backdrop_color: "rgba(0,0,0,0.8)" },
-        handler: async (response: {
-          razorpay_payment_id: string;
-          razorpay_order_id: string;
-          razorpay_signature: string;
-        }) => {
-          // Verify payment. `is_guest` is REQUIRED for an anonymous buyer:
-          // without it the function demands a login token and 401s, and the
-          // buyer is told to "contact support" seconds after paying.
-          const { data: verifyData, error: verifyErr } =
-            await supabase.functions.invoke("verify-razorpay-payment", {
-              body: buildVerifyBody(response, data.payment_order_id, isAnon),
-            });
-
-          if (verifyErr || !verifyData?.success) {
-            // Razorpay has already taken the money at this point; the webhook
-            // captures and enrols on its own. Say so, and keep the buyer from
-            // paying a second time.
-            const info = await readFunctionError(verifyErr, verifyData);
-            setPayIssue({
-              kind: "verify_pending",
-              message: verifyData?.needs_review || /review/i.test(info.message ?? "")
-                ? "We're setting up your access by hand and will email you within a few hours. Please don't pay again."
-                : null,
-            });
-            setPaying(false); paymentInFlightRef.current = false;
-            return;
-          }
-
-          // Purchase fires HERE, right after verify and before any redirect:
-          // a guest only reaches Thank-you after a phone OTP, and 3 in 35 never
-          // sign in, so a Thank-you-only Purchase never reached Meta for them.
-          // The eventID is purchase_<razorpay_payment_id>, the same id Thank-you
-          // sends, so Meta keeps one copy when both fire. Value is the amount
-          // the server priced into the Razorpay order (payment_orders.total_inr).
-          track({
-            name: "purchase",
-            transaction_id: response.razorpay_payment_id,
-            content_id: offering.id,
-            content_name: offering.title,
-            value: Number(data.amount) / 100,
-            currency: data.currency || "INR",
-            content_category: contentCategoryForTier(offering.product_tier),
-          });
-
-          // Guest: the purchase now sits on the account that owns the phone
-          // they paid with. One OTP on /login (phone prefilled) proves it and
-          // lands them on Thank-you; payment_orders is not anonymously readable.
-          toast.success(
-            isAnon
-              ? "Payment received. Confirm your phone number with a one-time code to open your course."
-              : `Welcome to ${verifyData.offering_title ?? offering.title}!`
-          );
-          navigate(postPaymentRoute(isAnon, data.payment_order_id), { state: isAnon ? postPaymentNavState(guestPhone) : undefined });
-        },
-        modal: {
-          ondismiss: () => {
-            // A failure already set its own notice; keep that one.
-            setPayIssue((prev) => prev ?? { kind: "dismissed" });
-            setPaying(false); paymentInFlightRef.current = false;
-          },
-        },
-      };
-
-      if (typeof window.Razorpay !== "function") {
-        setPayIssue({ kind: "script_missing" });
-        setPaying(false); paymentInFlightRef.current = false;
-        return;
-      }
-      const rzp = new window.Razorpay(options);
-      rzp.on("payment.failed", (response) => {
-        setPayIssue({ kind: "failed", detail: response?.error?.description ?? null });
-        setPaying(false); paymentInFlightRef.current = false;
-      });
-      rzp.open();
     } catch {
       setPayIssue({ kind: "order_error", message: "That didn't go through. Check your connection and tap Pay again." });
-      setPaying(false); paymentInFlightRef.current = false;
+      releasePay();
     }
   };
 
@@ -1344,7 +1522,7 @@ export default function CheckoutPage() {
             // money moment; suppress the Button's default tapTick so the pay tap
             // doesn't double-buzz.
             haptic={false}
-            disabled={paying || (isStaged && total <= 0)}
+            disabled={paying || payLocked || (isStaged && total <= 0)}
             // STEAL #2 processing arc: mirror `paying` to aria-busy so assistive
             // tech hears the in-flight state (the label crossfades to a quiet dot
             // visually). Purely additive to the existing disabled semantics.
@@ -1356,11 +1534,13 @@ export default function CheckoutPage() {
             <PayButtonContent
               status={paying ? "processing" : "idle"}
               label={
-                isStaged
-                  ? `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
-                  : total <= 0
-                    ? "Enrol free"
-                    : `Pay ₹${total.toLocaleString("en-IN")}`
+                payLocked
+                  ? "Confirming your payment"
+                  : isStaged
+                    ? `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
+                    : total <= 0
+                      ? "Enrol free"
+                      : `Pay ₹${total.toLocaleString("en-IN")}`
               }
             />
           </Button>
@@ -1368,6 +1548,8 @@ export default function CheckoutPage() {
           <PaymentNotice
             issue={payIssue}
             courseTitle={offering.title}
+            onCheckStatus={hasOpenOrder ? handleCheckStatus : undefined}
+            checking={checkingStatus}
             onOpenCourse={() => navigate("/learn?seg=courses")}
             onSignIn={() =>
               navigate(
@@ -1499,7 +1681,7 @@ export default function CheckoutPage() {
             savings={totalSavings}
             stagedLabel={isStaged ? stagedLabel : undefined}
             paying={paying}
-            disabled={isStaged && total <= 0}
+            disabled={payLocked || (isStaged && total <= 0)}
             onPay={handlePay}
             onMeasure={setStickyBarHeight}
           />

@@ -10,15 +10,33 @@ describe("PaymentNotice", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("tells a buyer who closed the sheet that nothing was charged", () => {
-    render(<PaymentNotice {...base} issue={{ kind: "dismissed" }} />);
-    expect(screen.getByText("Payment not completed")).toBeInTheDocument();
-    expect(screen.getByText(/Nothing was charged/)).toBeInTheDocument();
+  it("never tells a buyer who closed the sheet that nothing was charged", () => {
+    const onCheckStatus = vi.fn();
+    render(<PaymentNotice {...base} onCheckStatus={onCheckStatus} issue={{ kind: "dismissed" }} />);
+    expect(screen.getByText("Payment not finished")).toBeInTheDocument();
+    expect(screen.queryByText(/nothing was charged/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Check payment status" }));
+    expect(onCheckStatus).toHaveBeenCalledTimes(1);
   });
 
-  it("warns against paying twice while a payment is being confirmed", () => {
-    render(<PaymentNotice {...base} issue={{ kind: "verify_pending" }} />);
+  it("warns against paying twice while a payment is being confirmed, and offers a status check", () => {
+    const onCheckStatus = vi.fn();
+    render(<PaymentNotice {...base} onCheckStatus={onCheckStatus} issue={{ kind: "verify_pending" }} />);
     expect(screen.getByRole("alert")).toHaveTextContent(/don't pay again/i);
+    fireEvent.click(screen.getByRole("button", { name: "Check payment status" }));
+    expect(onCheckStatus).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("link", { name: /WhatsApp us/ })).toBeInTheDocument();
+  });
+
+  it("shows the status check as busy while it runs", () => {
+    render(<PaymentNotice {...base} onCheckStatus={vi.fn()} checking issue={{ kind: "check_needed", reason: "unknown", locked: true }} />);
+    expect(screen.getByRole("button", { name: /Checking/ })).toBeDisabled();
+    expect(screen.getByText("We couldn't check your last payment")).toBeInTheDocument();
+  });
+
+  it("offers no status check when there is no order to check", () => {
+    render(<PaymentNotice {...base} issue={{ kind: "dismissed" }} />);
+    expect(screen.queryByRole("button", { name: "Check payment status" })).toBeNull();
   });
 
   it("sends a guest who already owns the course to sign in", () => {

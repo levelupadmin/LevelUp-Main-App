@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, Info, MessageCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Info, Loader2, MessageCircle } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useMotionSafe } from "@/lib/motion";
@@ -9,7 +9,12 @@ import { cn } from "@/lib/utils";
  * What went wrong with the last Pay attempt, and the one next step for it.
  * Shown inline under the Pay button instead of a toast that vanishes: a buyer
  * who closed the payment sheet, had a card declined or hit a verification
- * hiccup needs to know whether money moved and what to tap next.
+ * hiccup needs to know what to tap next.
+ *
+ * The copy never says that no money moved: a UPI payment can finish in the
+ * UPI app after the sheet has closed, and the page cannot know that. Where
+ * money may have moved, the notice offers "Check payment status" and the
+ * checkout keeps Pay locked (see `paymentLocked` in lib/checkoutOpenOrder).
  */
 export type PaymentIssue =
   | { kind: "dismissed" }
@@ -19,13 +24,24 @@ export type PaymentIssue =
   | { kind: "already_enrolled"; guest: boolean }
   | { kind: "identity_mismatch"; message: string }
   | { kind: "verify_pending"; message?: string | null }
+  /** A status check could not clear the last order. `locked`: Pay is off meanwhile. */
+  | { kind: "check_needed"; reason: "pending" | "unknown"; locked: boolean }
+  | { kind: "no_payment_found" }
   | { kind: "script_missing" };
+
+/** Notices that offer "Check payment status" (when the checkout has an order to check). */
+function offersStatusCheck(issue: PaymentIssue): boolean {
+  return issue.kind === "verify_pending" || issue.kind === "check_needed" || issue.kind === "dismissed";
+}
 
 type Props = {
   issue: PaymentIssue | null;
   courseTitle: string;
   onOpenCourse: () => void;
   onSignIn: () => void;
+  /** Ask again whether the last order was paid. Omitted when there is no order to check. */
+  onCheckStatus?: () => void;
+  checking?: boolean;
 };
 
 function copyFor(issue: PaymentIssue): { tone: "info" | "error" | "ok"; title: string; body: string } {
@@ -33,8 +49,8 @@ function copyFor(issue: PaymentIssue): { tone: "info" | "error" | "ok"; title: s
     case "dismissed":
       return {
         tone: "info",
-        title: "Payment not completed",
-        body: "Nothing was charged. Tap Pay to try again; you can pick UPI, a card or netbanking.",
+        title: "Payment not finished",
+        body: "If you paid in your UPI or bank app, tap Check payment status first. If not, tap Pay to try again.",
       };
     case "failed":
       return {
@@ -70,7 +86,27 @@ function copyFor(issue: PaymentIssue): { tone: "info" | "error" | "ok"; title: s
         title: "Payment received. Confirming it now",
         body:
           issue.message ||
-          "Your course will be unlocked within a few minutes and we'll email you. Please don't pay again.",
+          "Your course unlocks within a few minutes and we'll email you. Please don't pay again.",
+      };
+    case "check_needed":
+      return issue.reason === "pending"
+        ? {
+            tone: "info",
+            title: "Your last payment is still open",
+            body: `If you're paying in your UPI or bank app, finish there, then tap Check payment status.${
+              issue.locked ? " Pay comes back once that payment finishes or lapses." : ""
+            }`,
+          }
+        : {
+            tone: "info",
+            title: "We couldn't check your last payment",
+            body: "If you paid in your UPI or bank app, please don't pay again. Tap Check payment status in a moment, or message us on WhatsApp.",
+          };
+    case "no_payment_found":
+      return {
+        tone: "info",
+        title: "No payment found",
+        body: "Your last attempt has no completed payment. Tap Pay to try again.",
       };
     case "script_missing":
       return {
@@ -81,14 +117,14 @@ function copyFor(issue: PaymentIssue): { tone: "info" | "error" | "ok"; title: s
   }
 }
 
-export default function PaymentNotice({ issue, courseTitle, onOpenCourse, onSignIn }: Props) {
+export default function PaymentNotice({ issue, courseTitle, onOpenCourse, onSignIn, onCheckStatus, checking = false }: Props) {
   const { springs } = useMotionSafe();
   return (
     <AnimatePresence initial={false} mode="wait">
       {issue && (
         <motion.div
           key={issue.kind}
-          role={issue.kind === "dismissed" ? "status" : "alert"}
+          role={issue.kind === "dismissed" || issue.kind === "no_payment_found" ? "status" : "alert"}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 6 }}
@@ -131,9 +167,23 @@ export default function PaymentNotice({ issue, courseTitle, onOpenCourse, onSign
                       Sign in instead
                     </Button>
                   )}
+                  {onCheckStatus && offersStatusCheck(issue) && (
+                    <Button
+                      size="sm"
+                      variant={issue.kind === "dismissed" ? "outline" : "champagne"}
+                      className="h-11"
+                      onClick={onCheckStatus}
+                      disabled={checking}
+                      aria-busy={checking}
+                    >
+                      {checking && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+                      {checking ? "Checking" : "Check payment status"}
+                    </Button>
+                  )}
                   <a
                     href={supportWhatsAppLink(
-                      issue.kind === "verify_pending" || issue.kind === "failed"
+                      issue.kind === "verify_pending" || issue.kind === "check_needed" ||
+                        issue.kind === "failed" || issue.kind === "dismissed"
                         ? `Hi! I paid (or tried to pay) for ${courseTitle} and need help with access.`
                         : `Hi! I need help buying ${courseTitle}.`,
                     )}

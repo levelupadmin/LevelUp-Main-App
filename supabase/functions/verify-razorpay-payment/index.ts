@@ -16,6 +16,7 @@ function jsonRes(body: unknown, status = 200) {
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 import { schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
 import { requestClientMeta } from "../_shared/attribution.ts";
+import { orderPaymentStatus } from "../_shared/orderPaymentStatus.ts";
 
 async function verifyHmac(
   orderId: string,
@@ -90,7 +91,11 @@ Deno.serve(async (req) => {
       razorpay_signature,
       payment_order_id,
       is_guest,
+      status_check,
     } = await req.json();
+    // status_check: the checkout's read-only "did a payment land on this
+    // order?" question (see the branch below). It needs only the order id.
+    const statusCheck = status_check === true;
 
     console.log("[verify] Request received:", {
       has_payment_id: !!razorpay_payment_id,
@@ -100,12 +105,12 @@ Deno.serve(async (req) => {
       is_guest
     });
 
-    if (
+    if (statusCheck ? !payment_order_id : (
       !razorpay_payment_id ||
       !razorpay_order_id ||
       !razorpay_signature ||
       !payment_order_id
-    )
+    ))
       return jsonRes({ error: "Missing required fields" }, 400);
 
     /* ── Auth: authenticated flow or guest flow ── */
@@ -161,8 +166,45 @@ Deno.serve(async (req) => {
     const { data: po, error: poErr } = await poQuery.single();
 
     if (poErr || !po) return jsonRes({ error: "Payment order not found" }, 404);
+
+    /* ── Status check (read-only) ──
+       Asked by the checkout before it starts a new payment after a closed
+       Razorpay sheet, and by its "Check payment status" button. It changes
+       nothing: it reads this row and, while the row is not captured, asks
+       Razorpay whether any payment on the order went through. A guest holds
+       only the order id the checkout was given, the same id the verify call
+       below accepts. */
+    if (statusCheck) {
+      return jsonRes(await orderPaymentStatus(po, { keyId, keySecret: secret }));
+    }
+
     if (po.status === "captured")
       return jsonRes({ success: true, already_captured: true });
+
+    /* ── An order parked for a person stays parked ──
+       Running verification again (the checkout's "Check payment status")
+       must not redo the buyer lookup or the coupon redemption that parked it.
+       If the course was granted anyway (the webhook enrols before it parks a
+       coupon conflict), say so. */
+    if (po.status === "needs_review") {
+      const { data: granted } = await admin
+        .from("enrolments")
+        .select("id")
+        .eq("payment_order_id", po.id)
+        .eq("status", "active")
+        .limit(1);
+      if (Array.isArray(granted) && granted.length > 0)
+        return jsonRes({ success: true, already_captured: true });
+      return jsonRes(
+        {
+          success: false,
+          needs_review: true,
+          error:
+            "Payment received. Our team is setting up your access by hand and will email you within a few hours.",
+        },
+        202,
+      );
+    }
 
     // Defense in depth: the order_id presented by the client must match the
     // razorpay_order_id we stored when we created the order. This prevents
