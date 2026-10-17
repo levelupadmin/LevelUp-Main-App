@@ -121,22 +121,6 @@ async function findIdentity(
   return row?.id ? { id: row.id, email: row.email ?? null, phone: row.phone ?? null } : null;
 }
 
-/**
- * The account that owns this phone, by the same `find_login_identity` lookup
- * the login and capture paths use, or null. Read-only: guest checkout's
- * identity gate uses it to find the phone's account. Throws when the lookup
- * itself fails.
- */
-export async function findAccountIdByPhone(
-  admin: BuyerAdmin,
-  rawPhone: string | null | undefined,
-): Promise<string | null> {
-  const phone = canonicalBuyerPhone(rawPhone);
-  if (!phone) return null;
-  const found = await findIdentity(admin, phone, null);
-  return found?.id ?? null;
-}
-
 async function emailUsedByOtherProfile(admin: BuyerAdmin, email: string, userId: string): Promise<boolean> {
   const { data } = await admin.from("users").select("id").eq("email", email).neq("id", userId).limit(1);
   return Array.isArray(data) && data.length > 0;

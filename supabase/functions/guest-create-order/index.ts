@@ -7,8 +7,8 @@ import {
   totalInr as computeTotalInr,
   toPaise,
 } from "../_shared/pricing.ts";
-import { isSyntheticEmail, normalizePhone } from "../_shared/phone.ts";
-import { findAccountIdByPhone, resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
+import { normalizePhone } from "../_shared/phone.ts";
+import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 import { requestClientMeta, sanitizeAttribution, utmColumns } from "../_shared/attribution.ts";
 
 function encodeBase64(str: string): string {
@@ -104,50 +104,24 @@ Deno.serve(async (req) => {
     if (!offering.is_public) return jsonRes({ error: "Offering is not available for public purchase" }, 400);
 
     /* ── SCENARIO VALIDATION (server-side security gate) ──
-       The phone's account comes from find_login_identity (auth.users, last 10
-       digits), the lookup every payment path uses. This used to compare
-       public.users.phone with the bare 10 digits, but that column holds
-       "91XXXXXXXXXX" or "+91XXXXXXXXXX" (checked 2026-10-18: 0 of 2,983
-       phones are bare), so the phone half of the gate matched no one.
-       Emails compare case-insensitively, and a phone-only account's
-       placeholder address counts as no email. A failed lookup never blocks
-       a sale. */
+       Email half only, as it has always worked: an account found by the
+       typed email whose phone differs is refused. There is no phone half.
+       This function needs no login, so an answer that changed with whether
+       a typed phone has an account would tell a stranger that it does (and,
+       with a guessed email, whose it is). It would protect nothing either:
+       capture credits the phone's account whatever email is typed
+       (_shared/buyerIdentity.ts). The old phone half compared
+       public.users.phone with the bare 10 digits, a form that column never
+       holds (0 of 2,983 on 2026-10-18), so it never fired; dropping it
+       changes no answer. */
     const { data: emailUser } = await admin
       .from("users")
       .select("id, phone")
       .eq("email", guest_email)
       .maybeSingle();
 
-    let phoneUser: { id: string; email: string | null } | null = null;
-    try {
-      const phoneOwnerId = await findAccountIdByPhone(admin, normalizedPhone);
-      if (phoneOwnerId) {
-        const { data: profile } = await admin
-          .from("users")
-          .select("email")
-          .eq("id", phoneOwnerId)
-          .maybeSingle();
-        phoneUser = { id: phoneOwnerId, email: (profile?.email as string | null | undefined) ?? null };
-      }
-    } catch (e) {
-      console.warn("[guest-create-order] phone account lookup failed; continuing", e);
-    }
-    const typedEmail = String(guest_email).trim().toLowerCase();
-    const phoneAccountEmailDiffers = (stored: string | null) => {
-      const e = (stored ?? "").trim().toLowerCase();
-      return !!e && !isSyntheticEmail(e) && e !== typedEmail;
-    };
-
-    if (emailUser && phoneUser && emailUser.id !== phoneUser.id) {
-      return jsonRes({ error: "Email and phone number are linked to different accounts. Please verify your identity.", code: "identity_mismatch" }, 403);
-    }
-
     if (emailUser && emailUser.phone && normalizePhone(emailUser.phone) !== normalizedPhone) {
-      return jsonRes({ error: "Phone number doesn't match the account on file. Please verify your identity.", code: "identity_mismatch" }, 403);
-    }
-
-    if (phoneUser && phoneAccountEmailDiffers(phoneUser.email)) {
-      return jsonRes({ error: "This phone number is linked to a different account. Please verify your identity.", code: "identity_mismatch" }, 403);
+      return jsonRes({ error: "Phone number doesn't match the account on file. Please verify your identity." }, 403);
     }
 
     /* Whether this phone's account already owns the course is NOT checked

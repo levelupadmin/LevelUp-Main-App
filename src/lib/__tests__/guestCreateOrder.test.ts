@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
- * guest-create-order runs for anyone who types a phone number (no login). It
- * must not answer differently depending on whether that phone's account owns
- * the course, and its identity gate must find the phone's account at all
- * (public.users.phone holds "91…"/"+91…", never the bare 10 digits it used to
- * compare against).
+ * guest-create-order runs for anyone who types a phone number (no login). Its
+ * answer must not depend on whether the typed phone has an account, or on
+ * whether that account owns the course: either would tell a stranger something
+ * about the person behind the number. The only identity check left is the
+ * email half it has always had (an account found by the typed email, with a
+ * different phone, is refused).
  */
 
 type Row = Record<string, unknown> | null;
@@ -22,6 +23,7 @@ const fake = vi.hoisted(() => {
     phoneOwner: null as null | { id: string; email: string | null },
     emailUser: null as Row,
     tablesRead: [] as string[],
+    rpcCalls: [] as string[],
   };
   (globalThis as unknown as { Deno: unknown }).Deno = {
     env: { get: (k: string) => env.get(k) },
@@ -81,6 +83,7 @@ const fake = vi.hoisted(() => {
       return builder(t);
     },
     rpc: (fn: string) => {
+      state.rpcCalls.push(fn);
       if (fn === "check_and_increment_rate_limit") return Promise.resolve({ data: true, error: null });
       if (fn === "find_login_identity")
         return Promise.resolve({
@@ -98,7 +101,7 @@ vi.mock("https://esm.sh/@supabase/supabase-js@2.98.0", () => ({ createClient: fa
 
 await import("../../../supabase/functions/guest-create-order/index.ts");
 
-const call = (email = "asha@example.com") =>
+const call = (email = "asha@example.com", phone = "+919876543210") =>
   fake.state.handler!(
     new Request("https://fn.local/guest-create-order", {
       method: "POST",
@@ -106,7 +109,7 @@ const call = (email = "asha@example.com") =>
         offering_id: "off_1",
         guest_name: "Asha Rao",
         guest_email: email,
-        guest_phone: "+919876543210",
+        guest_phone: phone,
       }),
     }),
   );
@@ -115,6 +118,7 @@ beforeEach(() => {
   fake.state.phoneOwner = null;
   fake.state.emailUser = null;
   fake.state.tablesRead = [];
+  fake.state.rpcCalls = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => new Response(JSON.stringify({ id: "order_new" }), { status: 200 })),
@@ -138,19 +142,37 @@ describe("guest-create-order", () => {
     expect(fake.state.tablesRead).not.toContain("enrolments");
   });
 
-  it("finds the phone's account through find_login_identity and stops a different real email", async () => {
+  it("answers a registered phone with a made-up email exactly like an unused phone", async () => {
+    const unused = await call("made.up@example.com", "+919000000001");
+    const unusedBody = await unused.json();
+
+    // This phone belongs to an account with a real, different email.
     fake.state.phoneOwner = { id: "owner_1", email: "someone.else@example.com" };
-    const res = await call();
-    expect(res.status).toBe(403);
-    expect((await res.json()).code).toBe("identity_mismatch");
+    const registered = await call("made.up@example.com", "+919876543210");
+    const registeredBody = await registered.json();
+
+    expect(registered.status).toBe(200);
+    expect(unused.status).toBe(200);
+    expect(Object.keys(registeredBody).sort()).toEqual(Object.keys(unusedBody).sort());
+    expect(registeredBody.error).toBeUndefined();
   });
 
-  it("compares emails case-insensitively and treats a placeholder address as no email", async () => {
-    fake.state.phoneOwner = { id: "owner_1", email: "Asha@Example.com" };
+  it("never looks up the typed phone's account", async () => {
+    fake.state.phoneOwner = { id: "owner_1", email: "someone.else@example.com" };
+    await call();
+    expect(fake.state.rpcCalls).not.toContain("find_login_identity");
+  });
+
+  it("keeps the email half: an account found by the typed email with another phone is refused", async () => {
+    fake.state.emailUser = { id: "acct_e", phone: "+919111111111" };
+    const res = await call();
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/doesn't match the account on file/);
+
+    // The same phone stored as +91… passes, and so does an account with no phone.
+    fake.state.emailUser = { id: "acct_e", phone: "+919876543210" };
     expect((await call()).status).toBe(200);
-    fake.state.phoneOwner = { id: "owner_1", email: "919876543210@phone.leveluplearning.in" };
-    expect((await call()).status).toBe(200);
-    fake.state.phoneOwner = { id: "owner_1", email: null };
+    fake.state.emailUser = { id: "acct_e", phone: null };
     expect((await call()).status).toBe(200);
   });
 });
