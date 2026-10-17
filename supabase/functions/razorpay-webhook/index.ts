@@ -17,7 +17,7 @@ function jsonRes(body: unknown, status = 200) {
 }
 
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
-import { postCaptureClaimed, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
+import { postCaptureRecoverable, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
 import { ensureCourseGranted } from "../_shared/captureGrant.ts";
 
 async function verifySignature(
@@ -114,9 +114,10 @@ Deno.serve(async (req) => {
       // course first, with the same idempotent insert. A database error
       // answers 500 so Razorpay delivers again; a course taken away on purpose
       // or an order with no buyer is left for a person (a retry cannot help).
-      // Then start post-capture if no one has claimed it (verify, or an
-      // earlier delivery, may have failed before it started); the claim keeps
-      // it to at most one run. Staged cohort payments take neither step.
+      // Then start post-capture if no one has claimed it and the capture is
+      // recent (verify, or an earlier delivery, may have failed before it
+      // started; an old order gets no late receipt); the claim keeps it to at
+      // most one run. Staged cohort payments take neither step.
       if (po.status === "captured" && !po.payment_type && !po.application_id) {
         const grant = await ensureCourseGranted(admin, po, {
           source: "razorpay-webhook",
@@ -128,7 +129,7 @@ Deno.serve(async (req) => {
           }
           return jsonRes({ received: true, status: po.status, course: grant.reason });
         }
-        if (!postCaptureClaimed(po.notes)) {
+        if (postCaptureRecoverable(po)) {
           schedulePostCapture(admin, po.id, { source: "razorpay-webhook" });
         }
       }

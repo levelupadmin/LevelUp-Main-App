@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { hmacSha256Hex } from "@shared/crypto";
+import { POST_CAPTURE_RECOVERY_MS, postCaptureRecoverable } from "@shared/postCapture";
 
 /**
  * An order already marked captured is not done until the buyer holds the
@@ -112,8 +113,8 @@ const fake = vi.hoisted(() => {
 
 vi.mock("https://esm.sh/@supabase/supabase-js@2.98.0", () => ({ createClient: fake.createClient }));
 vi.mock("../../../supabase/functions/_shared/postCaptureRuntime.ts", async () => {
-  const { postCaptureClaimed } = await import("../../../supabase/functions/_shared/postCapture.ts");
-  return { postCaptureClaimed, schedulePostCapture: fake.schedule };
+  const { postCaptureClaimed, postCaptureRecoverable } = await import("../../../supabase/functions/_shared/postCapture.ts");
+  return { postCaptureClaimed, postCaptureRecoverable, schedulePostCapture: fake.schedule };
 });
 
 await import("../../../supabase/functions/razorpay-webhook/index.ts");
@@ -132,6 +133,7 @@ const baseOrder = {
   application_id: null,
   bump_offering_ids: [],
   notes: {},
+  captured_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
 };
 
 async function deliverWebhook() {
@@ -201,6 +203,15 @@ describe("post-capture after an already-captured order", () => {
     fake.state.po = { ...baseOrder, notes: { post_capture: { claimed_at: "2026-10-18T00:00:00Z", source: "verify" } } };
     await deliverWebhook();
     await callVerify();
+    expect(fake.schedule).not.toHaveBeenCalled();
+  });
+
+  it("neither starts it for an order captured more than 48 hours ago, but both still answer", async () => {
+    fake.state.po = { ...baseOrder, captured_at: new Date(Date.now() - 49 * 60 * 60 * 1000).toISOString() };
+    expect((await deliverWebhook()).status).toBe(200);
+    expect(await (await callVerify()).json()).toEqual({ success: true, already_captured: true });
+    fake.state.po = { ...baseOrder, captured_at: null };
+    await deliverWebhook();
     expect(fake.schedule).not.toHaveBeenCalled();
   });
 
@@ -286,5 +297,20 @@ describe("a captured order whose course was never granted", () => {
     expect(await (await statusCheck()).json()).toEqual({ status: "captured", razorpay_payment_id: "pay_1" });
     expect(enrolmentInserts()).toHaveLength(0);
     expect(fake.schedule).not.toHaveBeenCalled();
+  });
+});
+
+describe("postCaptureRecoverable", () => {
+  const now = Date.parse("2026-10-18T12:00:00Z");
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+  it("is true only for an unclaimed order captured in the last 48 hours", () => {
+    expect(postCaptureRecoverable({ notes: {}, captured_at: ago(60 * 1000) }, now)).toBe(true);
+    expect(postCaptureRecoverable({ notes: {}, captured_at: ago(POST_CAPTURE_RECOVERY_MS) }, now)).toBe(true);
+    expect(postCaptureRecoverable({ notes: {}, captured_at: ago(POST_CAPTURE_RECOVERY_MS + 1) }, now)).toBe(false);
+    expect(postCaptureRecoverable({ notes: {}, captured_at: null }, now)).toBe(false);
+    expect(postCaptureRecoverable({ notes: {}, captured_at: "not a date" }, now)).toBe(false);
+    expect(
+      postCaptureRecoverable({ notes: { post_capture: { claimed_at: ago(1000) } }, captured_at: ago(60 * 1000) }, now),
+    ).toBe(false);
   });
 });

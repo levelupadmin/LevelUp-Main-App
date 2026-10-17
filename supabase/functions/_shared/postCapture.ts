@@ -255,6 +255,26 @@ export function postCaptureClaimed(notes: unknown): boolean {
   return !!asObject(notes).post_capture;
 }
 
+/** How long after capture an already-captured return may still start post-capture. */
+export const POST_CAPTURE_RECOVERY_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * May an already-captured return start this order's post-capture work? Only
+ * when no one has claimed it and the order was captured in the last 48 hours.
+ * Orders captured before this step shipped carry no claim, so without the age
+ * limit a stray verify call on an old order would send a receipt and a
+ * Purchase for a sale from months ago. 48 hours covers Razorpay's 24 hours of
+ * webhook retries and the checkout's 24-hour hold on its last order.
+ */
+export function postCaptureRecoverable(
+  po: { notes: unknown; captured_at?: string | null },
+  now: number = Date.now(),
+): boolean {
+  if (postCaptureClaimed(po.notes)) return false;
+  const at = po.captured_at ? Date.parse(po.captured_at) : NaN;
+  return Number.isFinite(at) && now - at <= POST_CAPTURE_RECOVERY_MS;
+}
+
 /**
  * Run the one-time post-capture work for an order. Safe to call from both
  * capture paths and more than once; never throws.

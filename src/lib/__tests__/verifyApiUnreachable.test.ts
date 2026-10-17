@@ -58,6 +58,7 @@ const fake = vi.hoisted(() => {
 vi.mock("https://esm.sh/@supabase/supabase-js@2.98.0", () => ({ createClient: fake.createClient }));
 vi.mock("../../../supabase/functions/_shared/postCaptureRuntime.ts", () => ({
   postCaptureClaimed: () => false,
+  postCaptureRecoverable: () => false,
   schedulePostCapture: vi.fn(),
 }));
 

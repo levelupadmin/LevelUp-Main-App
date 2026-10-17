@@ -14,7 +14,7 @@ function jsonRes(body: unknown, status = 200) {
 }
 
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
-import { postCaptureClaimed, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
+import { postCaptureRecoverable, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
 import { requestClientMeta } from "../_shared/attribution.ts";
 import { orderPaymentStatus } from "../_shared/orderPaymentStatus.ts";
 import { courseGranted, ensureCourseGranted } from "../_shared/captureGrant.ts";
@@ -213,9 +213,10 @@ Deno.serve(async (req) => {
         return jsonRes({ error: "Failed to create enrolment" }, 500);
       }
       // The call that captured this order may also have failed before its
-      // post-capture step started. Start it now if no one has claimed it;
-      // the claim keeps it to at most one run.
-      if (!postCaptureClaimed(po.notes)) {
+      // post-capture step started. Start it now if no one has claimed it and
+      // the capture is recent (an old order gets no late receipt); the claim
+      // keeps it to at most one run.
+      if (postCaptureRecoverable(po)) {
         schedulePostCapture(admin, payment_order_id, {
           source: "verify",
           requestMeta: requestClientMeta(req.headers),

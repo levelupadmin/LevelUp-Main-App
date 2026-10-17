@@ -85,8 +85,9 @@ goes to a person.
 
 Both capture paths call `schedulePostCapture` (`_shared/postCaptureRuntime.ts`)
 after their own work, and again from their already-captured early returns when
-`notes.post_capture` is still empty, so a 500 between capture and the claim does
-not lose it. The first caller claims the order by writing
+`notes.post_capture` is still empty and the order was captured in the last 48
+hours (`postCaptureRecoverable`), so a 500 between capture and the claim does not
+lose it and an old order never gets a late receipt. The first caller claims the order by writing
 `payment_orders.notes.post_capture`; the other skips. That makes the step at most
 once, not exactly once: a run that dies after its claim is not retried. Results
 (Meta send, receipt) are recorded under that key, so a missing result shows which

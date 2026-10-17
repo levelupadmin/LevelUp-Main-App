@@ -8,7 +8,7 @@
  */
 import { enqueueEmail, isEmailSuppressed, sanitizeVar } from "./email.ts";
 import { schedulePostCapture as schedule, type PostCaptureOptions } from "./postCapture.ts";
-export { postCaptureClaimed } from "./postCapture.ts";
+export { postCaptureClaimed, postCaptureRecoverable } from "./postCapture.ts";
 
 const emailDeps = { enqueueEmail, isEmailSuppressed, sanitizeVar };
 
