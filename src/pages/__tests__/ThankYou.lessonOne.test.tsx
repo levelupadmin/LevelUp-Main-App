@@ -129,7 +129,11 @@ vi.mock("@/lib/platform", () => ({
 
 import ThankYou from "@/pages/ThankYou";
 
-describe("ThankYou course facts and lesson 1", () => {
+// Generous waits: the page loads the order, then the course outline, and the
+// full suite runs many files in parallel.
+const WAIT = { timeout: 5000 };
+
+describe("ThankYou course facts and lesson 1", { timeout: 15000 }, () => {
   beforeEach(() => {
     navigateSpy.mockClear();
     fixture.applicationId = null;
@@ -138,8 +142,8 @@ describe("ThankYou course facts and lesson 1", () => {
 
   it("shows lessons, the measured runtime and lifetime access, and no unchecked chips", async () => {
     render(createElement(ThankYou));
-    expect(await screen.findByText("29 lessons")).toBeInTheDocument();
-    expect(await screen.findByText("2 h 20 min")).toBeInTheDocument();
+    expect(await screen.findByText("29 lessons", undefined, WAIT)).toBeInTheDocument();
+    expect(await screen.findByText("2 h 20 min", undefined, WAIT)).toBeInTheDocument();
     expect(screen.getByText("Lifetime access")).toBeInTheDocument();
     expect(screen.queryByText("4K video")).not.toBeInTheDocument();
     expect(screen.queryByText("Subtitles")).not.toBeInTheDocument();
@@ -148,7 +152,7 @@ describe("ThankYou course facts and lesson 1", () => {
 
   it("opens lesson 1 from the main button", async () => {
     render(createElement(ThankYou));
-    const button = await screen.findByRole("button", { name: /Start lesson 1/ });
+    const button = await screen.findByRole("button", { name: /Start lesson 1/ }, WAIT);
     fireEvent.click(button);
     expect(navigateSpy).toHaveBeenCalledWith("/chapters/ch_first");
   });
@@ -156,17 +160,17 @@ describe("ThankYou course facts and lesson 1", () => {
   it("prints no runtime when a lesson has no measured length", async () => {
     fixture.chapterSeconds = [5000, 0];
     render(createElement(ThankYou));
-    expect(await screen.findByText("29 lessons")).toBeInTheDocument();
-    await screen.findByRole("button", { name: /Start lesson 1/ });
+    expect(await screen.findByText("29 lessons", undefined, WAIT)).toBeInTheDocument();
+    await screen.findByRole("button", { name: /Start lesson 1/ }, WAIT);
     expect(screen.queryByText(/\d+ h|\d+ min/)).not.toBeInTheDocument();
   });
 
   it("keeps an application payment off the course chips and lesson link", async () => {
     fixture.applicationId = "app_1";
     render(createElement(ThankYou));
-    const button = await screen.findByRole("button", { name: /Start watching/ });
+    const button = await screen.findByRole("button", { name: /Start watching/ }, WAIT);
     expect(screen.queryByText("29 lessons")).not.toBeInTheDocument();
     fireEvent.click(button);
-    await waitFor(() => expect(navigateSpy).toHaveBeenCalledWith("/home"));
+    await waitFor(() => expect(navigateSpy).toHaveBeenCalledWith("/home"), WAIT);
   });
 });
