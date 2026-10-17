@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useCheckoutPricing } from "@/hooks/useCheckoutPricing";
 import { useCheckoutCoupon } from "@/hooks/useCheckoutCoupon";
@@ -480,10 +480,22 @@ export default function CheckoutPage() {
     void applyCoupon(urlCoupon);
   }, [offering, urlCoupon, paymentType, applyCoupon, setCouponCode]);
 
+  /* -- No MRP anchor on masterclasses --
+        The struck-through "was" price, "Total savings" and the sticky bar's
+        "Save" read offerings.mrp_inr, a price no masterclass buyer was ever
+        charged. The founder's 17 Oct 2026 decision removes those anchors, so
+        a masterclass checkout ignores mrp_inr. Display only: the charged
+        amount never used it. -- */
+  const isMasterclass = (offering?.product_tier ?? "").trim().toLowerCase() === "masterclass";
+  const pricingOffering = useMemo(
+    () => (offering && isMasterclass ? { ...offering, mrp_inr: null } : offering),
+    [offering, isMasterclass],
+  );
+
   /* -- Pricing (one shared home: @shared/pricing, used by the order edge
         functions too, so the preview can't drift from what's charged) -- */
   const { subtotal, discount, gstRate, gstAmount, total, totalSavings } = useCheckoutPricing({
-    offering,
+    offering: pricingOffering,
     bumps,
     selectedBumps,
     appliedCoupon,
@@ -824,6 +836,7 @@ export default function CheckoutPage() {
   }
 
   const hasMrp =
+    !isMasterclass &&
     (offering as any).mrp_inr &&
     Number((offering as any).mrp_inr) > Number(offering.price_inr);
   // The itemised receipt is shown only when it says more than the total does.
