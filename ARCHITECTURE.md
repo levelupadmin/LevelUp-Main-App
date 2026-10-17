@@ -72,7 +72,7 @@ Razorpay checkout modal → payment
 enrolment created  →  access granted
         │
         ▼
-post-capture step (_shared/postCapture.ts, once per order, single payments only):
+post-capture step (_shared/postCapture.ts, at most once per order, single payments only):
 server Meta Purchase (Conversions API) + receipt email with the invoice link
 ```
 
@@ -85,9 +85,12 @@ goes to a person.
 
 Both capture paths call `schedulePostCapture` (`_shared/postCaptureRuntime.ts`)
 after their own work, and again from their already-captured early returns when
-`notes.post_capture` is still empty, so a failure after capture cannot lose it.
-The first caller claims the order by writing `payment_orders.notes.post_capture`;
-the other skips. Results (Meta send, receipt) are recorded under that key. Ad
+`notes.post_capture` is still empty, so a 500 between capture and the claim does
+not lose it. The first caller claims the order by writing
+`payment_orders.notes.post_capture`; the other skips. That makes the step at most
+once, not exactly once: a run that dies after its claim is not retried. Results
+(Meta send, receipt) are recorded under that key, so a missing result shows which
+step did not finish. Ad
 attribution from the checkout link (`utm_*` columns, the rest in
 `notes.attribution`) is written by the two order functions at creation; see
 `_shared/attribution.ts`.

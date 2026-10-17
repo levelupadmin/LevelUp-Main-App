@@ -1536,7 +1536,9 @@ export default function CheckoutPage() {
               status={paying ? "processing" : "idle"}
               label={
                 payLocked
-                  ? "Confirming your payment"
+                  ? payIssue?.kind === "check_needed"
+                    ? "Waiting on your last payment"
+                    : "Confirming your payment"
                   : isStaged
                     ? `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
                     : total <= 0

@@ -5,8 +5,9 @@
  * verify-razorpay-payment (the buyer's browser) and razorpay-webhook (Razorpay's
  * servers). Whichever calls first claims the order by writing
  * `notes.post_capture` with a conditional UPDATE (only where that key is still
- * absent); Postgres lets exactly one caller win, so the work below runs once per
- * order, whatever the race between the two paths.
+ * absent); Postgres lets exactly one caller win, so the work below runs at most
+ * once per order, whatever the race between the two paths. A run that dies
+ * after its claim is not retried; the results it recorded show how far it got.
  *
  * The work, each step caught and recorded on its own:
  *   1. the server copy of the Meta Purchase (Conversions API);

@@ -595,7 +595,7 @@ Deno.serve(async (req) => {
     }
 
     // ── One-time post-capture work (server Meta Purchase, receipt) ───
-    // Runs once per order whichever capture path gets here first (see
+    // Runs at most once per order, whichever capture path gets here first (see
     // _shared/postCapture.ts); skipped for staged cohort payments. In the
     // background, so the buyer's redirect is not delayed.
     schedulePostCapture(admin, payment_order_id, {

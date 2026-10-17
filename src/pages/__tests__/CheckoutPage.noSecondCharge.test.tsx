@@ -101,7 +101,8 @@ async function fillGuestForm() {
   fireEvent.change(phone, { target: { value: "9876543210" } });
 }
 
-const payButtons = () => screen.getAllByRole("button", { name: /Pay ₹999|Confirming your payment/ });
+const payButtons = () =>
+  screen.getAllByRole("button", { name: /Pay ₹999|Confirming your payment|Waiting on your last payment/ });
 const calls = (name: string) => invokeSpy.mock.calls.filter(([n]) => n === name);
 
 beforeEach(() => {
@@ -238,6 +239,29 @@ describe("CheckoutPage: no second charge", () => {
     await waitFor(() => expect(navigateSpy).toHaveBeenCalled());
     expect(navigateSpy.mock.calls[0][0]).toBe(`/login?${new URLSearchParams({ next: "/thank-you/po_1" })}`);
     expect(trackSpy.mock.calls.filter(([e]) => e.name === "purchase")).toHaveLength(1);
+    expect(calls("guest-create-order")).toHaveLength(1);
+  });
+
+  it("an open payment on the last order with a changed cart locks Pay under a label that says so", async () => {
+    invokeImpl.fn = async (name, { body }) => {
+      if (name === "guest-create-order") return { data: order, error: null };
+      if (name === "verify-razorpay-payment" && body.status_check) return { data: { status: "pending" }, error: null };
+      return { data: { available: false }, error: null };
+    };
+    renderCheckout();
+    await fillGuestForm();
+    fireEvent.click(payButtons()[0]);
+    await waitFor(() => expect(sheets).toHaveLength(1));
+    act(() => sheets[0].modal.ondismiss());
+    await screen.findByText("Payment not finished");
+
+    // A different cart needs a different order, but the last one is still open.
+    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Asha R" } });
+    fireEvent.click(payButtons()[0]);
+    expect(await screen.findByText("Your last payment is still open")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Waiting on your last payment" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Confirming your payment" })).toBeNull();
+    expect(sheets).toHaveLength(1);
     expect(calls("guest-create-order")).toHaveLength(1);
   });
 
