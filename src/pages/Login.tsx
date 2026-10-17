@@ -446,14 +446,31 @@ const Login = () => {
   // The phone step, unchanged. Extracted to a const ONLY so it can be handed to
   // OtpTabs as the Phone tab's content; with the flag off it renders in the same
   // place, with the same markup, driving the same handlers.
+  // A guest who just paid lands here with next=/thank-you/<order> and the phone
+  // they paid with prefilled: say why a code is needed now, in the words the
+  // checkout used ("confirm it with a one-time code").
+  const afterPayment = redirectTarget.startsWith("/thank-you/") && !!prefilledPhone;
   const phoneStep = (
     <>
-      <h1 className="text-[28px] sm:text-[30px] font-semibold tracking-[-0.015em] leading-[1.1] mb-2">
-        What's your <span className="font-serif-italic text-cream">number</span>?
-      </h1>
-      <p className="text-sm text-muted-foreground mb-6">
-        We'll text a code. No password to remember.
-      </p>
+      {afterPayment ? (
+        <>
+          <h1 className="text-[28px] sm:text-[30px] font-semibold tracking-[-0.015em] leading-[1.1] mb-2">
+            Payment received. Confirm your <span className="font-serif-italic text-cream">number</span>.
+          </h1>
+          <p className="text-sm text-muted-foreground mb-6">
+            We'll text a one-time code to the number you paid with. Your course is tied to it.
+          </p>
+        </>
+      ) : (
+        <>
+          <h1 className="text-[28px] sm:text-[30px] font-semibold tracking-[-0.015em] leading-[1.1] mb-2">
+            What's your <span className="font-serif-italic text-cream">number</span>?
+          </h1>
+          <p className="text-sm text-muted-foreground mb-6">
+            We'll text a code. No password to remember.
+          </p>
+        </>
+      )}
 
       <form
         onSubmit={(e) => { e.preventDefault(); handleSendOtp(); }}

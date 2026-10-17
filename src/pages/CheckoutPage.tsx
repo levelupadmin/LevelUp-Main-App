@@ -604,7 +604,7 @@ export default function CheckoutPage() {
       // Free guest offering: edge function already enrolled the user
       // and granted access. Drop straight to ThankYou.
       if (isAnon && data?.success && !data?.razorpay_order_id) {
-        toast.success("You're enrolled! Sign in with your phone number to open it.");
+        toast.success("You're enrolled. Confirm your phone number with a one-time code to open your course.");
         navigate(postPaymentRoute(true, data.payment_order_id), { state: postPaymentNavState(guestPhone) });
         return;
       }
@@ -698,7 +698,7 @@ export default function CheckoutPage() {
           // lands them on Thank-you; payment_orders is not anonymously readable.
           toast.success(
             isAnon
-              ? "Payment received! Sign in with your phone number to open your course."
+              ? "Payment received. Confirm your phone number with a one-time code to open your course."
               : `Welcome to ${verifyData.offering_title ?? offering.title}!`
           );
           navigate(postPaymentRoute(isAnon, data.payment_order_id), { state: isAnon ? postPaymentNavState(guestPhone) : undefined });
@@ -979,10 +979,10 @@ export default function CheckoutPage() {
           )}
 
           {/* -- Guest fields (anon checkout) --
-              Friction-free: just name + email + phone, no OTP at
-              checkout. The edge function uses these to create the
-              auth.users row on payment verify. Signing in later
-              still needs a one-time code sent to this phone. */}
+              Just name + email + phone, no OTP before paying. The order is
+              tied to the phone; after payment the buyer confirms it with one
+              code on /login (phone prefilled), which opens the course. The
+              helper line says exactly that, so the code is not a surprise. */}
           {!user && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -1068,7 +1068,7 @@ export default function CheckoutPage() {
                 )}
               </div>
               <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                We'll create your account on this phone number. No password needed: sign in later with a one-time code sent to this phone to watch your masterclass.
+                Your course is tied to this phone number. After you pay, confirm it with a one-time code and you're in. No password.
               </p>
             </div>
           )}

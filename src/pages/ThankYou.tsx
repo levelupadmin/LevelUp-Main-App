@@ -919,7 +919,7 @@ export default function ThankYou() {
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground pl-6">
-                  Sign in with that number (OTP) on any device to open it.
+                  Sign in with that number and a one-time code on any device to open it.
                 </p>
               </div>
             )}

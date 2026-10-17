@@ -5,9 +5,10 @@ import { toast } from "@/lib/toast";
 
 /**
  * Guest-checkout fields (name / email / phone) + their validation, for the
- * anonymous purchase path. On payment success the guest-create-order +
- * verify-razorpay-payment edge functions mint a real auth.users row from these
- * details, so the buyer becomes a logged-in user without ever seeing an OTP.
+ * anonymous purchase path. No OTP before paying: on payment success the
+ * verify-razorpay-payment / razorpay-webhook functions attach the order to the
+ * account that owns the phone (creating it if needed), and the buyer confirms
+ * that phone with one code on /login, which opens the course.
  *
  * The form is also rendered (and prefilled) for logged-in users who have no
  * full_name/email/phone on file yet, so they don't have to retype.
