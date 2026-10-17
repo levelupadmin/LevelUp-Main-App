@@ -616,9 +616,10 @@ export default function CheckoutPage() {
   const finishPaid = (order: OpenOrder, razorpayPaymentId: string | null, offeringTitle?: string | null) => {
     // Purchase fires HERE, right after verify and before any redirect: a guest
     // only reaches Thank-you after a phone OTP, and 3 in 35 never sign in, so a
-    // Thank-you-only Purchase never reached Meta for them. The eventID is
-    // purchase_<razorpay_payment_id>, the same id Thank-you sends. Value is the
-    // amount the server priced into the Razorpay order (payment_orders.total_inr).
+    // Thank-you-only Purchase never reached Meta for them. track() sends it
+    // once per payment (lib/purchaseOnce), so Thank-you does not send it again;
+    // the eventID purchase_<razorpay_payment_id> matches the server (CAPI) copy.
+    // Value is the amount the server priced into the Razorpay order.
     if (razorpayPaymentId && offering) {
       track({
         name: "purchase",

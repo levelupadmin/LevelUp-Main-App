@@ -17,6 +17,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { purchaseEventId } from "@shared/metaEvents";
+import { claimPurchaseOnce } from "@/lib/purchaseOnce";
 
 declare global {
   interface Window {
@@ -406,9 +407,10 @@ function newEventId(): string {
 
 // For purchase events specifically we use the transaction_id as the
 // eventID base (purchaseEventId in @shared/metaEvents, which a server-side
-// sender must also use) so the checkout's success handler, a refresh of
-// /thank-you and any server copy all carry one id and Meta keeps a single
-// Purchase.
+// sender must also use), so the browser copy and the server copy carry one
+// id and Meta keeps a single Purchase. The browser copy itself goes out once
+// per payment (lib/purchaseOnce): the checkout's success handler and
+// /thank-you both call track("purchase"), and only the first one sends.
 
 // Fan a conversion-funnel event out to the PostHog sink when configured,
 // else to whatever pixels are loaded as CUSTOM events - deliberately never a
@@ -482,6 +484,11 @@ export function track(event: AnalyticsEvent) {
         });
         break;
       case "purchase":
+        // Once per payment across the checkout and Thank-you, for every sink
+        // below (X's tw-purchase has no id to dedupe on). Claimed only when a
+        // sink is loaded, so a send that could not happen yet is not used up.
+        if (!(window.fbq || window.gtag || window.twq)) break;
+        if (!claimPurchaseOnce(event.transaction_id)) break;
         window.fbq?.("track", "Purchase", {
           content_ids: [event.content_id],
           content_name: event.content_name,

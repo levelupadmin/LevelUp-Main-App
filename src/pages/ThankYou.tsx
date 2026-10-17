@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import { track } from "@/lib/analytics";
+import { claimPurchaseOnce } from "@/lib/purchaseOnce";
 import { contentCategoryForTier, purchaseEventId } from "@shared/metaEvents";
 import { isNative } from "@/lib/platform";
 import { hapticNotification } from "@/lib/haptics";
@@ -514,25 +515,31 @@ export default function ThankYou() {
   const destinationRef = useRef(defaultDestination);
   destinationRef.current = defaultDestination;
 
-  /* ── Fire pixels once ── */
+  /* ── Fire pixels once per payment ──
+        The checkout usually sent the global Purchase already, right after
+        verify; track() sends it once per payment (lib/purchaseOnce), so this
+        call only counts a sale the checkout did not (a guest's free order, a
+        payment confirmed later). It runs before firePixels so the global
+        fbq("track") cannot also reach the offering's own pixel. The offering's
+        pixels have their own once-per-payment claim, so a reload of this page
+        does not count the sale again. */
   useEffect(() => {
     if (!order || pixelsFired.current) return;
     pixelsFired.current = true;
-    // Per-offering pixel/tracking-script firing (the existing path).
-    firePixels(order);
+    const transactionId = order.razorpay_payment_id || order.id;
     // Global analytics fan-out for the platforms configured under
     // /admin/analytics-settings (Meta, GA4, Twitter, Clarity).
-    // Idempotent at the platform level; Meta Pixel + GA4 dedupe
-    // identical transaction_ids server-side.
     track({
       name: "purchase",
-      transaction_id: order.razorpay_payment_id || order.id,
+      transaction_id: transactionId,
       content_id: order.offering_id,
       content_name: order.offerings?.title || "LevelUp masterclass",
       value: Number(order.total_inr),
       currency: "INR",
       content_category: contentCategoryForTier(order.offerings?.product_tier),
     });
+    // Per-offering pixel/tracking-script firing (the existing path).
+    if (claimPurchaseOnce(transactionId, "offering_pixels")) firePixels(order);
     // Conversion-funnel terminal event (P3-T7). Fire-and-forget alongside the
     // pixel purchase above; no PII beyond the order/value already on screen.
     track({
