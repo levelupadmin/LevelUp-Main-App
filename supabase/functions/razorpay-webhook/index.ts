@@ -17,7 +17,7 @@ function jsonRes(body: unknown, status = 200) {
 }
 
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
-import { schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
+import { postCaptureClaimed, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
 
 async function verifySignature(
   body: string,
@@ -106,6 +106,13 @@ Deno.serve(async (req) => {
           .from("payment_orders")
           .update({ razorpay_payment_id: razorpayPaymentId })
           .eq("id", po.id);
+      }
+      // The call that captured this order may have failed before its
+      // post-capture step started (verify answered 500 after capture, or an
+      // earlier delivery did). Start it now if no one has claimed it; the
+      // claim keeps it to one run. Staged cohort payments never take it.
+      if (po.status === "captured" && !po.payment_type && !po.application_id && !postCaptureClaimed(po.notes)) {
+        schedulePostCapture(admin, po.id, { source: "razorpay-webhook" });
       }
       return jsonRes({ received: true, status: po.status });
     }

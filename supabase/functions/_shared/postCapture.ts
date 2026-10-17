@@ -238,6 +238,18 @@ async function sendReceipt(
 }
 
 /**
+ * Has any caller claimed this order's post-capture work yet? Read from the
+ * order's notes. The capture paths' already-captured early returns use it to
+ * schedule the work only when it never started: if the call that captured the
+ * order died (a 500 after capture, a killed isolate before the claim), the
+ * next delivery or verify still sends the server Purchase and the receipt.
+ * The claim in runPostCapture keeps that to one run.
+ */
+export function postCaptureClaimed(notes: unknown): boolean {
+  return !!asObject(notes).post_capture;
+}
+
+/**
  * Run the one-time post-capture work for an order. Safe to call from both
  * capture paths and more than once; never throws.
  */

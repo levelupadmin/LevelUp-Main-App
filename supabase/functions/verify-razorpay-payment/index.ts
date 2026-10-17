@@ -14,7 +14,7 @@ function jsonRes(body: unknown, status = 200) {
 }
 
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
-import { schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
+import { postCaptureClaimed, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
 import { requestClientMeta } from "../_shared/attribution.ts";
 import { orderPaymentStatus } from "../_shared/orderPaymentStatus.ts";
 
@@ -178,8 +178,19 @@ Deno.serve(async (req) => {
       return jsonRes(await orderPaymentStatus(po, { keyId, keySecret: secret }));
     }
 
-    if (po.status === "captured")
+    if (po.status === "captured") {
+      // The call that captured this order may have failed before its
+      // post-capture step started (a 500 after capture). Start it now if no
+      // one has claimed it; the claim keeps it to one run. Staged cohort
+      // payments never take this step.
+      if (!po.payment_type && !po.application_id && !postCaptureClaimed(po.notes)) {
+        schedulePostCapture(admin, payment_order_id, {
+          source: "verify",
+          requestMeta: requestClientMeta(req.headers),
+        });
+      }
       return jsonRes({ success: true, already_captured: true });
+    }
 
     /* ── An order parked for a person stays parked ──
        Running verification again (the checkout's "Check payment status")
