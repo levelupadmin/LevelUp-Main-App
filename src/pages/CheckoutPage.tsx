@@ -980,10 +980,10 @@ export default function CheckoutPage() {
           )}
 
           {/* -- Guest fields (anon checkout) --
-              Friction-free: just name + email + phone. No OTP. The
-              edge function uses these to create the auth.users row
-              on payment verify, so the buyer becomes a logged-in
-              user the next time they sign in with this phone. */}
+              Friction-free: just name + email + phone, no OTP at
+              checkout. The edge function uses these to create the
+              auth.users row on payment verify. Signing in later
+              still needs a one-time code sent to this phone. */}
           {!user && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -1069,7 +1069,7 @@ export default function CheckoutPage() {
                 )}
               </div>
               <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                We'll create your account on this phone number. No password, no OTP, just sign in with this phone later to access your masterclass.
+                We'll create your account on this phone number. No password needed: sign in later with a one-time code sent to this phone to watch your masterclass.
               </p>
             </div>
           )}
