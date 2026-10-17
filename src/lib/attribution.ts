@@ -51,15 +51,22 @@ export function readCookie(name: string): string | null {
   return null;
 }
 
+// The keys that name one ad click. They are kept or replaced as a set: a link
+// from a new click must not inherit the campaign or click id of an older one.
+const CLICK_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "fbclid", "gclid"];
+
 /**
- * Call once when the checkout mounts. Merges the URL's marketing parameters
- * over what this tab already holds (a new ad click replaces the old values),
- * and remembers this offering's landing event id. Returns the merged values.
+ * Call once when the checkout mounts. A link that carries any click key
+ * (utm_*, fbclid, gclid) replaces the click keys this tab held; a link without
+ * them (a reload, a /login round trip, an organic visit) keeps the last click.
+ * Other keys (mc_course, mc_var) are replaced one by one. Also remembers this
+ * offering's landing event id. Returns the merged values.
  */
 export function captureCheckoutAttribution(search: string, offeringId: string): Attribution {
   let stored: Record<string, unknown> = {};
   try {
-    stored = JSON.parse(readStore(STORE_KEY) || "{}") ?? {};
+    const parsed = JSON.parse(readStore(STORE_KEY) || "{}");
+    stored = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
     stored = {};
   }
@@ -68,6 +75,10 @@ export function captureCheckoutAttribution(search: string, offeringId: string): 
   for (const key of [...ATTRIBUTION_URL_KEYS, "mc_eid"]) {
     const v = params.get(key);
     if (v) fromUrl[key] = v;
+  }
+  if (CLICK_KEYS.some((k) => k in fromUrl)) {
+    stored = { ...stored };
+    for (const k of CLICK_KEYS) delete stored[k];
   }
   const merged = sanitizeAttribution({ ...stored, ...fromUrl });
   // The landing event id belongs to this offering's visit only.

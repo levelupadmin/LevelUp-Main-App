@@ -101,6 +101,25 @@ describe("checkout attribution capture", () => {
     expect(attributionForOrder(OFFERING).utm_source).toBe("meta");
   });
 
+  it("replaces the old click's values when a new click arrives", () => {
+    captureCheckoutAttribution("?utm_source=meta&utm_campaign=nelson&fbclid=IwAR9", OFFERING);
+    captureCheckoutAttribution("?utm_source=google&gclid=G1", OFFERING);
+    const a = attributionForOrder(OFFERING);
+    expect(a.utm_source).toBe("google");
+    expect(a.gclid).toBe("G1");
+    expect(a.utm_campaign).toBeUndefined();
+    expect(a.fbclid).toBeUndefined();
+  });
+
+  it("keeps the last click when a later link carries only the course", () => {
+    captureCheckoutAttribution("?utm_source=meta&fbclid=IwAR9", OFFERING);
+    captureCheckoutAttribution("?mc_course=nelson-dilipkumar", OFFERING);
+    const a = attributionForOrder(OFFERING);
+    expect(a.utm_source).toBe("meta");
+    expect(a.fbclid).toBe("IwAR9");
+    expect(a.mc_course).toBe("nelson-dilipkumar");
+  });
+
   it("does not reuse one course's landing event id for another", () => {
     captureCheckoutAttribution("?ic_eid=tap-nelson", OFFERING);
     captureCheckoutAttribution("", "other-offering");
