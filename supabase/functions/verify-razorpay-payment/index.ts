@@ -34,7 +34,7 @@ async function verifyViaApi(
   expectedAmountPaise: number | null,
   keyId: string,
   keySecret: string
-): Promise<{ verified: boolean; status?: string; error?: string }> {
+): Promise<{ verified: boolean; status?: string; error?: string; unreachable?: boolean }> {
   try {
     const res = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
       headers: {
@@ -44,7 +44,12 @@ async function verifyViaApi(
     if (!res.ok) {
       const errText = await res.text();
       console.error("[verify] Razorpay API check failed:", res.status, errText);
-      return { verified: false, error: `Razorpay API ${res.status}` };
+      // 5xx or 429: Razorpay could not answer, which says nothing about the payment.
+      return {
+        verified: false,
+        error: `Razorpay API ${res.status}`,
+        unreachable: res.status >= 500 || res.status === 429,
+      };
     }
     const payment = await res.json();
     console.log("[verify] Razorpay API payment:", {
@@ -77,7 +82,7 @@ async function verifyViaApi(
     };
   } catch (err: any) {
     console.error("[verify] Razorpay API error:", err.message);
-    return { verified: false, error: err.message };
+    return { verified: false, error: err.message, unreachable: true };
   }
 }
 
@@ -294,6 +299,16 @@ Deno.serve(async (req) => {
       );
       if (apiCheck.verified) {
         paymentVerified = true;
+      } else if (apiCheck.unreachable) {
+        // Razorpay signed this payment but its API could not be asked for the
+        // amount. Leave the order as it is rather than marking it failed: the
+        // webhook or a later verify settles it, and guest-create-order reuses
+        // an open order instead of making a new one that could be paid again.
+        console.error("[verify] HMAC ok but Razorpay API unreachable; order left open:", apiCheck.error);
+        return jsonRes(
+          { error: "We couldn't confirm your payment with Razorpay just now. Please don't pay again; check again in a minute." },
+          503,
+        );
       } else {
         console.error("[verify] HMAC ok but API amount check failed:", apiCheck.error);
       }
