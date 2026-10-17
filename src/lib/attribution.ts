@@ -78,6 +78,30 @@ export function captureCheckoutAttribution(search: string, offeringId: string): 
   return merged;
 }
 
+function newVisitId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  } catch {
+    /* falls through */
+  }
+  return `v_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * The event id for this checkout visit's InitiateCheckout: the landing page's
+ * id when the link carried one (the site fires its own copy on the tap with that
+ * id, so Meta keeps one), else an id minted on first use and kept for the tab,
+ * so a reload or a /login round trip does not count a second checkout.
+ */
+export function checkoutVisitEventId(offeringId: string): string {
+  const key = IC_KEY_PREFIX + offeringId;
+  const existing = readStore(key);
+  if (existing) return existing;
+  const id = newVisitId();
+  writeStore(key, id);
+  return id;
+}
+
 /**
  * The attribution object to send with guest-create-order / create-razorpay-order.
  * Cookies are read now, not at mount: the pixel may set _fbp/_fbc after load.

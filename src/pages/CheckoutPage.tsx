@@ -29,9 +29,9 @@ import { useMotionSafe } from "@/lib/motion";
 import { useInViewRef } from "@/hooks/useInViewRef";
 import { isAndroid, isNative } from "@/lib/platform";
 import { hapticImpact, hapticSelection, tapTick } from "@/lib/haptics";
-import { track } from "@/lib/analytics";
-import { contentCategoryForTier } from "@shared/metaEvents";
-import { attributionForOrder, captureCheckoutAttribution } from "@/lib/attribution";
+import { track, whenAnalyticsReady } from "@/lib/analytics";
+import { addPaymentInfoEventId, contentCategoryForTier } from "@shared/metaEvents";
+import { attributionForOrder, captureCheckoutAttribution, checkoutVisitEventId } from "@/lib/attribution";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 import { checkoutWebPath, type CheckoutPaymentType } from "@/lib/checkoutWebPath";
 
@@ -336,6 +336,30 @@ export default function CheckoutPage() {
     captureCheckoutAttribution(window.location.search, offeringId);
   }, [offeringId]);
 
+  /* -- InitiateCheckout: once per checkout visit --
+        Fired once per offering per mount (this load effect re-runs when the
+        session object changes, which used to fire it again). The event id is
+        the landing page's ic_eid when the link carried one, so the site's copy
+        of the tap and this one merge in Meta; otherwise an id kept for the tab,
+        so a reload or a /login round trip does not count a second checkout.
+        Waits for the pixel stubs, which load from a DB read at app start. -- */
+  const initiateCheckoutFiredFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!offering) return;
+    if (initiateCheckoutFiredFor.current === offering.id) return;
+    initiateCheckoutFiredFor.current = offering.id;
+    const event = {
+      name: "initiate_checkout" as const,
+      content_id: offering.id,
+      content_name: offering.title,
+      value: Number(offering.price_inr || 0),
+      currency: offering.currency || "INR",
+      content_category: contentCategoryForTier(offering.product_tier),
+      event_id: checkoutVisitEventId(offering.id),
+    };
+    void whenAnalyticsReady().then(() => track(event));
+  }, [offering]);
+
   /* -- Load offering data -- */
   useEffect(() => {
     // Wait for auth to settle; load works for both signed-in users
@@ -383,17 +407,6 @@ export default function CheckoutPage() {
       setOffering(offRes.data as Offering);
       setLinkedCourses(coursesRes.data ?? []);
       setCustomFields(fieldsRes.data ?? []);
-
-      // Fire initiate_checkout once the checkout surface has data
-      // to display. Subsequent re-renders don't re-fire because this
-      // sits inside the offering-load flow.
-      track({
-        name: "initiate_checkout",
-        content_id: (offRes.data as any).id,
-        content_name: (offRes.data as any).title,
-        value: Number((offRes.data as any).price_inr || 0),
-        currency: (offRes.data as any).currency || "INR",
-      });
 
       // Phase-3 conversion funnel: the checkout surface is now populated. Guest
       // flag reflects whether an anon buyer is on the guest path at load time.
@@ -627,6 +640,17 @@ export default function CheckoutPage() {
       // about to open. Keyed on our internal payment_order_id so it joins the
       // ThankYou purchase_completed event on the same id.
       track({ name: "payment_initiated", orderId: data.payment_order_id });
+      // AddPaymentInfo: the buyer tapped Pay and the payment sheet is opening.
+      // One per payment order (a reused order or a retry counts once).
+      track({
+        name: "add_payment_info",
+        content_id: offering.id,
+        content_name: offering.title,
+        value: Number(data.amount) / 100,
+        currency: data.currency || "INR",
+        content_category: contentCategoryForTier(offering.product_tier),
+        event_id: addPaymentInfoEventId(data.payment_order_id),
+      });
 
       const options = {
         key: data.key_id,

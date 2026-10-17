@@ -268,7 +268,33 @@ const devWarn = (...args: unknown[]) => {
   if (import.meta.env.DEV) console["warn"](...args);
 };
 
-export async function bootAnalytics(): Promise<AnalyticsSettings | null> {
+// The in-flight boot, so an event fired during page load can wait for the
+// pixel stubs instead of hitting an undefined window.fbq and vanishing.
+let bootPromise: Promise<AnalyticsSettings | null> | null = null;
+
+/**
+ * Resolves once the latest bootAnalytics() call has loaded the platform stubs,
+ * or after `timeoutMs`, whichever is first. Never rejects. Use it for events
+ * that fire on page load (InitiateCheckout), where the settings read may not
+ * have returned yet.
+ */
+export function whenAnalyticsReady(timeoutMs = 3000): Promise<void> {
+  if (!bootPromise) return Promise.resolve();
+  return Promise.race([
+    bootPromise.then(() => undefined, () => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+}
+
+// Every call still runs the full boot (AdmissionPublic relies on a second call
+// after it removes its pixel stubs); the latest run is what readiness waits on.
+export function bootAnalytics(): Promise<AnalyticsSettings | null> {
+  const run = bootAnalyticsRun();
+  bootPromise = run;
+  return run;
+}
+
+async function bootAnalyticsRun(): Promise<AnalyticsSettings | null> {
   // Skip on localhost so dev work doesn't pollute production funnels.
   if (
     typeof window !== "undefined" &&
@@ -315,7 +341,26 @@ export async function bootAnalytics(): Promise<AnalyticsSettings | null> {
 
 export type AnalyticsEvent =
   | { name: "view_content"; content_id: string; content_name: string; value?: number; currency?: string }
-  | { name: "initiate_checkout"; content_id: string; content_name: string; value: number; currency: string }
+  | {
+      name: "initiate_checkout";
+      content_id: string;
+      content_name: string;
+      value: number;
+      currency: string;
+      content_category?: string;
+      /** The landing page's id (ic_eid) when the link carried one, so Meta keeps one copy. */
+      event_id?: string;
+    }
+  | {
+      name: "add_payment_info";
+      content_id: string;
+      content_name: string;
+      value: number;
+      currency: string;
+      content_category?: string;
+      /** api_<payment_order_id>, so a retry on the same order counts once. */
+      event_id: string;
+    }
   | {
       name: "purchase";
       transaction_id: string;
@@ -383,7 +428,11 @@ export function track(event: AnalyticsEvent) {
   if (typeof window === "undefined") return;
   try {
     const eventID =
-      event.name === "purchase" ? purchaseEventId(event.transaction_id) : newEventId();
+      event.name === "purchase"
+        ? purchaseEventId(event.transaction_id)
+        : (event.name === "initiate_checkout" || event.name === "add_payment_info") && event.event_id
+          ? event.event_id
+          : newEventId();
     switch (event.name) {
       case "view_content":
         window.fbq?.("track", "ViewContent", {
@@ -404,6 +453,9 @@ export function track(event: AnalyticsEvent) {
         window.fbq?.("track", "InitiateCheckout", {
           content_ids: [event.content_id],
           content_name: event.content_name,
+          content_type: "product",
+          ...(event.content_category ? { content_category: event.content_category } : {}),
+          num_items: 1,
           value: event.value,
           currency: event.currency,
         }, { eventID });
@@ -413,6 +465,21 @@ export function track(event: AnalyticsEvent) {
           currency: event.currency,
         });
         window.twq?.("event", "tw-begin-checkout", { value: event.value });
+        break;
+      case "add_payment_info":
+        window.fbq?.("track", "AddPaymentInfo", {
+          content_ids: [event.content_id],
+          content_name: event.content_name,
+          content_type: "product",
+          ...(event.content_category ? { content_category: event.content_category } : {}),
+          value: event.value,
+          currency: event.currency,
+        }, { eventID });
+        window.gtag?.("event", "add_payment_info", {
+          items: [{ item_id: event.content_id, item_name: event.content_name }],
+          value: event.value,
+          currency: event.currency,
+        });
         break;
       case "purchase":
         window.fbq?.("track", "Purchase", {
