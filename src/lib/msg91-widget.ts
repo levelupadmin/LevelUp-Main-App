@@ -1,9 +1,7 @@
 /**
  * Thin promise-based wrapper around MSG91's OTP widget runtime.
  *
- * The widget script is loaded on demand by `loadMsg91Script()` (called from
- * initMsg91), not from index.html: it is ~1.4 MB and every app page, checkout
- * included, used to download it whether or not an OTP step was coming. It is an Angular
+ * The widget is loaded by a <script> tag in index.html. It is an Angular
  * custom-element framework: once initSendOTP({widgetId, tokenAuth, exposeMethods:true})
  * runs against a mounted <msg91-otp-provider> element, the framework
  * exposes three callbacks-style functions directly on `window`:
@@ -51,57 +49,13 @@ declare global {
   }
 }
 
-// verify.phone91.com is a documented MSG91 mirror: if the primary CDN is
-// blocked (ISP, ad-blocker, corporate proxy) the loader walks to the second.
-const OTP_SCRIPT_URLS = [
-  "https://verify.msg91.com/otp-provider.js",
-  "https://verify.phone91.com/otp-provider.js",
-];
-
-let scriptPromise: Promise<void> | null = null;
-
-/**
- * Load the OTP widget script once, on demand. Pages that are about to show an
- * OTP step call it (through initMsg91) when they mount or when the buyer taps
- * "Send code". Resolves when a script has loaded; rejects only when every URL
- * failed, and then forgets the attempt so a later call can retry.
- */
-export function loadMsg91Script(): Promise<void> {
-  if (typeof window === "undefined" || typeof document === "undefined") return Promise.resolve();
-  if (typeof window.initSendOTP === "function") return Promise.resolve();
-  if (scriptPromise) return scriptPromise;
-  scriptPromise = new Promise<void>((resolve, reject) => {
-    let i = 0;
-    const attempt = () => {
-      const s = document.createElement("script");
-      s.src = OTP_SCRIPT_URLS[i];
-      s.async = true;
-      s.setAttribute("data-msg91-otp", "1");
-      s.onload = () => resolve();
-      s.onerror = () => {
-        s.remove();
-        i++;
-        if (i < OTP_SCRIPT_URLS.length) {
-          attempt();
-        } else {
-          scriptPromise = null;
-          reject(new Error("MSG91 widget script not loaded - verify.msg91.com may be blocked"));
-        }
-      };
-      document.head.appendChild(s);
-    };
-    attempt();
-  });
-  return scriptPromise;
-}
-
 /**
  * Initialise the MSG91 widget. Idempotent - second+ calls are no-ops.
  *
- * Loads otp-provider.js (loadMsg91Script), which defines
- * window.initSendOTP, waits (up to 5s) for that function, then calls it
- * with the widget config from .env. After init the provider exposes
- * window.sendOtp / verifyOtp / retryOtp on the next tick.
+ * The <script src="verify.msg91.com/otp-provider.js"> tag in index.html
+ * defines window.initSendOTP. We wait (up to 5s) for it to land, then
+ * call it with the widget config from .env. After init the provider
+ * exposes window.sendOtp / verifyOtp / retryOtp on the next tick.
  *
  * widgetId + tokenAuth are MSG91-dashboard primitives: the widget binds
  * to a sender + DLT template + retry channel rules. Two apps sharing
@@ -124,7 +78,6 @@ export const initMsg91 = async (): Promise<void> => {
   if (!WIDGET_ID || !TOKEN_AUTH) {
     throw new Error("MSG91 widget env vars missing (VITE_MSG91_WIDGET_ID, VITE_MSG91_TOKEN_AUTH)");
   }
-  await loadMsg91Script();
   for (let i = 0; i < 50; i++) {
     if (typeof window.initSendOTP === "function") break;
     await new Promise((r) => setTimeout(r, 100));
