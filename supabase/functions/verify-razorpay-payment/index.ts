@@ -214,9 +214,11 @@ Deno.serve(async (req) => {
         return jsonRes({ error: "Failed to create enrolment" }, 500);
       }
       // The call that captured this order may also have failed before its
-      // post-capture step started. Start it now if no one has claimed it and
-      // the capture is recent (an old order gets no late receipt); the claim
-      // keeps it to at most one run.
+      // post-capture step started. Start it now if the order holds a real
+      // Razorpay payment for more than 0 (this return checks no payment
+      // proof, so a free order's id alone must not send a receipt), no one
+      // has claimed it, and the capture is recent (an old order gets no late
+      // receipt); the claim keeps it to at most one run.
       if (postCaptureRecoverable(po)) {
         schedulePostCapture(admin, payment_order_id, {
           source: "verify",

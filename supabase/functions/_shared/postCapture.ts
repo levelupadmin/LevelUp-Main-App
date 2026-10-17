@@ -17,6 +17,10 @@
  * Scope rules:
  *   - Staged cohort payments (payment_type / application_id set) are skipped
  *     entirely. That pipeline is do-not-touch and behaves as before.
+ *   - Only an order with a Razorpay payment id and a total above 0 qualifies.
+ *     A free order is written "captured" at creation with no payment, and
+ *     verify's already-captured return needs no payment proof, so without this
+ *     anyone holding a free order's id could have it queue a receipt.
  *   - Nothing here can fail the capture: every step is caught and logged, and
  *     the callers run this after their own work is done (in the background via
  *     EdgeRuntime.waitUntil where available).
@@ -29,6 +33,7 @@
  */
 import { buildPurchaseEvent, sendCapiEvents, type CapiOrder } from "./metaCapi.ts";
 import { sendPurchaseReceipt, type ReceiptEmailDeps } from "./receipt.ts";
+import { paidOrder } from "./captureGrant.ts";
 
 // The service-role client, kept loose so a test double fits.
 // deno-lint-ignore no-explicit-any
@@ -260,16 +265,25 @@ export const POST_CAPTURE_RECOVERY_MS = 48 * 60 * 60 * 1000;
 
 /**
  * May an already-captured return start this order's post-capture work? Only
- * when no one has claimed it and the order was captured in the last 48 hours.
+ * when money moved (a Razorpay payment id and a total above 0), no one has
+ * claimed it, and the order was captured in the last 48 hours.
+ * A free order fails the first test: verify's already-captured return takes
+ * no payment proof, so a free order's id alone must not queue a receipt.
  * Orders captured before this step shipped carry no claim, so without the age
  * limit a stray verify call on an old order would send a receipt and a
  * Purchase for a sale from months ago. 48 hours covers Razorpay's 24 hours of
  * webhook retries and the checkout's 24-hour hold on its last order.
  */
 export function postCaptureRecoverable(
-  po: { notes: unknown; captured_at?: string | null },
+  po: {
+    notes: unknown;
+    captured_at?: string | null;
+    razorpay_payment_id?: string | null;
+    total_inr?: number | string | null;
+  },
   now: number = Date.now(),
 ): boolean {
+  if (!paidOrder(po)) return false;
   if (postCaptureClaimed(po.notes)) return false;
   const at = po.captured_at ? Date.parse(po.captured_at) : NaN;
   return Number.isFinite(at) && now - at <= POST_CAPTURE_RECOVERY_MS;
@@ -294,6 +308,11 @@ export async function runPostCapture(admin: Admin, paymentOrderId: string, opts:
     if (order.status !== "captured") return;
     // Staged cohort payments: out of scope by design (do-not-touch pipeline).
     if (order.payment_type || order.application_id) return;
+    // No payment, nothing to report or receipt: a free order never qualifies.
+    if (!paidOrder(order)) {
+      console.log("[post-capture] no Razorpay payment or a zero total; nothing to do for", order.id);
+      return;
+    }
 
     const notes = asObject(order.notes);
     if (notes.post_capture) return;

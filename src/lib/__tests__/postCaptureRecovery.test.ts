@@ -296,6 +296,25 @@ describe("post-capture after an already-captured order", () => {
     expect(fake.schedule).not.toHaveBeenCalled();
   });
 
+  it("a free captured order schedules nothing, whatever proof a caller sends", async () => {
+    // guest-create-order writes a free order "captured" with no payment and
+    // returns its id; verify's captured return checks no payment proof.
+    fake.state.po = { ...baseOrder, total_inr: 0, razorpay_payment_id: null, razorpay_order_id: null };
+    const res = await callVerify({ razorpay_payment_id: "pay_junk", razorpay_order_id: "order_junk", razorpay_signature: "junk" });
+    expect(await res.json()).toEqual({ success: true, already_captured: true });
+    expect(fake.schedule).not.toHaveBeenCalled();
+    expect(enrolmentInserts()).toHaveLength(0);
+    expect(fake.state.poWrites).toHaveLength(0);
+  });
+
+  it("an order with a total but no payment id, or a payment id but a zero total, schedules nothing", async () => {
+    fake.state.po = { ...baseOrder, razorpay_payment_id: null };
+    await callVerify();
+    fake.state.po = { ...baseOrder, total_inr: "0.00" };
+    await callVerify();
+    expect(fake.schedule).not.toHaveBeenCalled();
+  });
+
   it("leaves staged cohort payments and parked orders alone", async () => {
     fake.state.enrolments = strangers();
     fake.state.po = { ...baseOrder, payment_type: "app_fee", application_id: "app_1" };
@@ -464,14 +483,25 @@ describe("a captured order whose course was never granted", () => {
 describe("postCaptureRecoverable", () => {
   const now = Date.parse("2026-10-18T12:00:00Z");
   const ago = (ms: number) => new Date(now - ms).toISOString();
+  const paid = { razorpay_payment_id: "pay_1", total_inr: "999.00" };
   it("is true only for an unclaimed order captured in the last 48 hours", () => {
-    expect(postCaptureRecoverable({ notes: {}, captured_at: ago(60 * 1000) }, now)).toBe(true);
-    expect(postCaptureRecoverable({ notes: {}, captured_at: ago(POST_CAPTURE_RECOVERY_MS) }, now)).toBe(true);
-    expect(postCaptureRecoverable({ notes: {}, captured_at: ago(POST_CAPTURE_RECOVERY_MS + 1) }, now)).toBe(false);
-    expect(postCaptureRecoverable({ notes: {}, captured_at: null }, now)).toBe(false);
-    expect(postCaptureRecoverable({ notes: {}, captured_at: "not a date" }, now)).toBe(false);
+    expect(postCaptureRecoverable({ ...paid, notes: {}, captured_at: ago(60 * 1000) }, now)).toBe(true);
+    expect(postCaptureRecoverable({ ...paid, notes: {}, captured_at: ago(POST_CAPTURE_RECOVERY_MS) }, now)).toBe(true);
+    expect(postCaptureRecoverable({ ...paid, notes: {}, captured_at: ago(POST_CAPTURE_RECOVERY_MS + 1) }, now)).toBe(false);
+    expect(postCaptureRecoverable({ ...paid, notes: {}, captured_at: null }, now)).toBe(false);
+    expect(postCaptureRecoverable({ ...paid, notes: {}, captured_at: "not a date" }, now)).toBe(false);
     expect(
-      postCaptureRecoverable({ notes: { post_capture: { claimed_at: ago(1000) } }, captured_at: ago(60 * 1000) }, now),
+      postCaptureRecoverable({ ...paid, notes: { post_capture: { claimed_at: ago(1000) } }, captured_at: ago(60 * 1000) }, now),
     ).toBe(false);
+  });
+
+  it("is false for an order with no Razorpay payment or a total of 0", () => {
+    const recent = { notes: {}, captured_at: ago(60 * 1000) };
+    expect(postCaptureRecoverable({ ...recent, razorpay_payment_id: null, total_inr: 0 }, now)).toBe(false);
+    expect(postCaptureRecoverable({ ...recent, razorpay_payment_id: null, total_inr: "999.00" }, now)).toBe(false);
+    expect(postCaptureRecoverable({ ...recent, razorpay_payment_id: "  ", total_inr: "999.00" }, now)).toBe(false);
+    expect(postCaptureRecoverable({ ...recent, razorpay_payment_id: "pay_1", total_inr: "0.00" }, now)).toBe(false);
+    expect(postCaptureRecoverable({ ...recent, razorpay_payment_id: "pay_1", total_inr: null }, now)).toBe(false);
+    expect(postCaptureRecoverable(recent, now)).toBe(false);
   });
 });

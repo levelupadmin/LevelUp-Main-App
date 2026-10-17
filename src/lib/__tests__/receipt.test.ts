@@ -245,4 +245,20 @@ describe("runPostCapture receipt step", () => {
     await runPostCapture(admin, "po_1", { source: "verify", email: d });
     expect(d.enqueueEmail).not.toHaveBeenCalled();
   });
+
+  it("sends nothing and claims nothing for a free captured order", async () => {
+    // A free guest order is captured at creation with no payment; anyone with
+    // its id can reach this through verify. No receipt to a typed address.
+    for (const row of [
+      { ...captured, total_inr: "0.00", razorpay_payment_id: null },
+      { ...captured, total_inr: 0, razorpay_payment_id: "pay_ABC" },
+      { ...captured, total_inr: "2499.00", razorpay_payment_id: null },
+    ]) {
+      const { admin, state } = fakeAdmin(row);
+      const d = deps();
+      await runPostCapture(admin, "po_1", { source: "verify", email: d });
+      expect(d.enqueueEmail).not.toHaveBeenCalled();
+      expect((state.row.notes as { post_capture?: unknown }).post_capture).toBeUndefined();
+    }
+  });
 });

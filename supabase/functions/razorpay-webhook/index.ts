@@ -135,7 +135,9 @@ Deno.serve(async (req) => {
           }
           return jsonRes({ received: true, status: po.status, course: grant.reason, recorded: "notes.grant_issue" });
         }
-        if (postCaptureRecoverable(po)) {
+        // This delivery is signed by Razorpay, so its payment id counts when
+        // the row has none yet (it was written just above).
+        if (postCaptureRecoverable({ ...po, razorpay_payment_id: po.razorpay_payment_id || razorpayPaymentId })) {
           schedulePostCapture(admin, po.id, { source: "razorpay-webhook" });
         }
       }

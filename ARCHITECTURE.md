@@ -92,7 +92,10 @@ Both capture paths call `schedulePostCapture` (`_shared/postCaptureRuntime.ts`)
 after their own work, and again from their already-captured early returns when
 `notes.post_capture` is still empty and the order was captured in the last 48 hours
 (`postCaptureRecoverable`), so a 500 between capture and the claim does not lose it
-and an old order never gets a late receipt. The first caller claims the order by
+and an old order never gets a late receipt. Both that check and `runPostCapture`
+also need a Razorpay payment id and a total above 0: a free order is written
+captured at creation with no payment, and verify's already-captured return checks
+no payment proof, so a free order's id alone must never queue a receipt. The first caller claims the order by
 writing `payment_orders.notes.post_capture`; the other skips. That makes the step at
 most once, not exactly once: a run that dies after its claim is not retried. Results
 (Meta send, receipt) are recorded under that key, so a missing result shows which
