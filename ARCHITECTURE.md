@@ -85,15 +85,14 @@ goes to a person.
 
 Both capture paths call `schedulePostCapture` (`_shared/postCaptureRuntime.ts`)
 after their own work, and again from their already-captured early returns when
-`notes.post_capture` is still empty and the order was captured in the last 48
-hours (`postCaptureRecoverable`), so a 500 between capture and the claim does not
-lose it and an old order never gets a late receipt. The first caller claims the order by writing
-`payment_orders.notes.post_capture`; the other skips. That makes the step at most
-once, not exactly once: a run that dies after its claim is not retried. Results
+`notes.post_capture` is still empty and the order was captured in the last 48 hours
+(`postCaptureRecoverable`), so a 500 between capture and the claim does not lose it
+and an old order never gets a late receipt. The first caller claims the order by
+writing `payment_orders.notes.post_capture`; the other skips. That makes the step at
+most once, not exactly once: a run that dies after its claim is not retried. Results
 (Meta send, receipt) are recorded under that key, so a missing result shows which
-step did not finish. Ad
-attribution from the checkout link (`utm_*` columns, the rest in
-`notes.attribution`) is written by the two order functions at creation; see
+step did not finish. Ad attribution from the checkout link (`utm_*` columns, the rest
+in `notes.attribution`) is written by the two order functions at creation; see
 `_shared/attribution.ts`.
 
 **No second charge.** The checkout keeps the last order it opened a Razorpay
@@ -105,7 +104,9 @@ again. After the sheet closes, the next Pay asks `verify-razorpay-payment` with
 `_shared/orderPaymentStatus.ts`) before anything new is charged; an unchanged
 cart reopens the same Razorpay order. A captured single payment reads as
 `captured` only when the buyer holds the course, and as `needs_review` until
-then, so the checkout never says "Welcome" for a course nobody granted. The browser Purchase goes out once per
+then, so the checkout never says "Welcome" for a course nobody granted. The guard
+lives in one tab: a new tab, a fresh in-app browser or a second device does not see
+it and can still start a second order. The browser Purchase goes out once per
 `razorpay_payment_id` across the checkout and Thank-you (`src/lib/purchaseOnce.ts`).
 
 **Pricing has ONE home: [`supabase/functions/_shared/pricing.ts`](supabase/functions/_shared/pricing.ts).**
