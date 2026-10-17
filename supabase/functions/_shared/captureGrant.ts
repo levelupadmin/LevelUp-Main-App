@@ -14,6 +14,11 @@
  * Staged cohort payments (payment_type / application_id set) never come here:
  * the callers leave that pipeline as it was.
  *
+ * A grant this file refuses (the course was taken away, the order has no
+ * buyer, a read or insert failed) is written on the order as
+ * notes.grant_issue = { reason, source, at }, so a person can find every paid
+ * order that holds no course. A later grant that works marks it resolved.
+ *
  * Free of URL imports so vitest can run it.
  */
 
@@ -30,16 +35,27 @@ export type CapturedOrder = {
   application_id?: string | null;
   bump_offering_ids?: string[] | null;
   razorpay_payment_id?: string | null;
+  /** The order's notes; read for an earlier notes.grant_issue. */
+  notes?: unknown;
 };
 
-type EnrolmentRow = { id: string; status: string | null };
+type EnrolmentRow = { id: string; status: string | null; payment_order_id: string | null };
+
+/** Did money move on this order: a Razorpay payment id and a total above 0? A free order has neither. */
+export function paidOrder(po: { razorpay_payment_id?: string | null; total_inr?: number | string | null }): boolean {
+  return typeof po.razorpay_payment_id === "string" && po.razorpay_payment_id.trim() !== "" && Number(po.total_inr) > 0;
+}
+
+function asObject(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v) ? { ...(v as Record<string, unknown>) } : {};
+}
 
 /**
  * Enrolments in this order's course that belong to this order or its buyer, in
  * any status. Throws when the read fails.
  */
 async function courseEnrolments(admin: Admin, po: CapturedOrder): Promise<EnrolmentRow[]> {
-  const base = admin.from("enrolments").select("id, status").eq("offering_id", po.offering_id);
+  const base = admin.from("enrolments").select("id, status, payment_order_id").eq("offering_id", po.offering_id);
   const { data, error } = await (po.user_id
     ? base.or(`payment_order_id.eq.${po.id},user_id.eq.${po.user_id}`)
     : base.eq("payment_order_id", po.id));
@@ -52,17 +68,85 @@ export async function courseGranted(admin: Admin, po: CapturedOrder): Promise<bo
   return (await courseEnrolments(admin, po)).some((r) => r.status === "active");
 }
 
+export type GrantReason = "read_failed" | "insert_failed" | "taken_away" | "no_user";
+
 export type GrantResult =
   | { ok: true; created: boolean }
   | {
       ok: false;
       /**
        *   read_failed / insert_failed  a database error; trying again can work
-       *   taken_away  the course was granted and later revoked or cancelled
+       *   taken_away  this order's course was granted and later revoked or cancelled
        *   no_user     the order has no buyer to grant it to
        */
-      reason: "read_failed" | "insert_failed" | "taken_away" | "no_user";
+      reason: GrantReason;
+      /** Is notes.grant_issue on the order now? False when that write failed too. */
+      recorded: boolean;
     };
+
+/**
+ * Read, change and write back the order's notes. post-capture claims the
+ * order by writing notes.post_capture with the same kind of whole-object
+ * write, so when the read found no claim, this write lands only while there
+ * still is none; a claim made in between makes it read again. `change`
+ * returns null when there is nothing to write. Returns false when the write
+ * did not land; throws on a database error.
+ */
+async function updateNotes(
+  admin: Admin,
+  orderId: string,
+  change: (notes: Record<string, unknown>) => Record<string, unknown> | null,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data, error } = await admin.from("payment_orders").select("notes").eq("id", orderId).maybeSingle();
+    if (error || !data) throw error ?? new Error("order not found");
+    const notes = asObject(data.notes);
+    const next = change({ ...notes });
+    if (!next) return true;
+    let write = admin.from("payment_orders").update({ notes: next }).eq("id", orderId);
+    if (!notes.post_capture) write = write.is("notes->>post_capture", null);
+    const { data: hit, error: writeErr } = await write.select("id");
+    if (writeErr) throw writeErr;
+    if (Array.isArray(hit) && hit.length > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Write a refused grant on the order as notes.grant_issue, where a person can
+ * find it. Once per reason: a Razorpay retry or another status check finds it
+ * there and writes nothing. Returns whether the marker is on the order.
+ */
+async function recordGrantIssue(admin: Admin, po: CapturedOrder, reason: GrantReason, source: string): Promise<boolean> {
+  try {
+    const done = await updateNotes(admin, po.id, (notes) => {
+      const prev = asObject(notes.grant_issue);
+      if (prev.reason === reason && !prev.resolved_at) return null;
+      return { ...notes, grant_issue: { reason, source, at: new Date().toISOString() } };
+    });
+    if (!done) throw new Error("the write did not land");
+    console.error(`[grant-issue] order ${po.id}: course not granted (${reason}); on notes.grant_issue`);
+    return true;
+  } catch (e) {
+    console.error(`[grant-issue] order ${po.id}: course not granted (${reason}), and notes.grant_issue could not be written`, e);
+    return false;
+  }
+}
+
+/** Mark an open notes.grant_issue resolved once the buyer holds the course. Best-effort. */
+async function resolveGrantIssue(admin: Admin, po: CapturedOrder, source: string): Promise<void> {
+  const known = asObject(asObject(po.notes).grant_issue);
+  if (!known.reason || known.resolved_at) return;
+  try {
+    await updateNotes(admin, po.id, (notes) => {
+      const issue = asObject(notes.grant_issue);
+      if (!issue.reason || issue.resolved_at) return null;
+      return { ...notes, grant_issue: { ...issue, resolved_at: new Date().toISOString(), resolved_by: source } };
+    });
+  } catch (e) {
+    console.warn(`[grant-issue] order ${po.id}: could not mark notes.grant_issue resolved`, e);
+  }
+}
 
 /**
  * Make sure the buyer of a captured single-payment order holds its course,
@@ -76,25 +160,41 @@ export async function ensureCourseGranted(
   opts: { source: string; razorpayPaymentId?: string | null },
 ): Promise<GrantResult> {
   const tag = `[${opts.source}] captured order ${po.id}:`;
+  const refuse = async (reason: GrantReason): Promise<GrantResult> => ({
+    ok: false,
+    reason,
+    recorded: await recordGrantIssue(admin, po, reason, opts.source),
+  });
+  const granted = async (created: boolean): Promise<GrantResult> => {
+    await resolveGrantIssue(admin, po, opts.source);
+    return { ok: true, created };
+  };
+
   let rows: EnrolmentRow[];
   try {
     rows = await courseEnrolments(admin, po);
   } catch (e) {
     console.error(tag, "enrolment read failed", e);
-    return { ok: false, reason: "read_failed" };
+    return refuse("read_failed");
   }
-  if (rows.some((r) => r.status === "active")) return { ok: true, created: false };
+  // The buyer holds the course, from this order or another one.
+  if (rows.some((r) => r.status === "active")) return granted(false);
 
-  // A row that is no longer active was taken away on purpose (an admin revoke,
-  // a refund). This path needs no fresh payment proof, so granting it again
-  // here would quietly undo that. A person decides.
-  if (rows.length > 0) {
-    console.error(tag, `course enrolment is ${rows[0].status}; not granting it again`);
-    return { ok: false, reason: "taken_away" };
+  // This order's own enrolment, no longer active, was taken away on purpose
+  // (an admin revoke, a refund). This path needs no fresh payment proof, so
+  // granting it again here would quietly undo that. A person decides.
+  // The buyer's rows from other orders do not block: a refund or an expiry
+  // ends that order, and buying again is allowed (enrolments_unique_active
+  // counts only active rows). That holds only for an order with a real
+  // payment; a free order proves nothing, so any row taken away blocks it.
+  const blocking = paidOrder(po) ? rows.filter((r) => r.payment_order_id === po.id) : rows;
+  if (blocking.length > 0) {
+    console.error(tag, `course enrolment is ${blocking[0].status}; not granting it again`);
+    return refuse("taken_away");
   }
   if (!po.user_id) {
     console.error(tag, "no buyer on the order; cannot grant the course");
-    return { ok: false, reason: "no_user" };
+    return refuse("no_user");
   }
 
   const { data: enrolment, error: enrolErr } = await admin
@@ -120,12 +220,12 @@ export async function ensureCourseGranted(
         .eq("offering_id", po.offering_id)
         .eq("status", "active")
         .maybeSingle();
-      if (existing?.id) return { ok: true, created: false };
+      if (existing?.id) return granted(false);
       console.error(tag, "enrolment unique violation but no active row on re-select");
     } else {
       console.error(tag, "enrolment insert failed", enrolErr);
     }
-    return { ok: false, reason: "insert_failed" };
+    return refuse("insert_failed");
   }
 
   console.log(tag, "granted the course that capture had not", { enrolment_id: enrolment.id });
@@ -157,5 +257,5 @@ export async function ensureCourseGranted(
   } catch (e) {
     console.error(tag, "audit log or bump enrolment failed", e);
   }
-  return { ok: true, created: true };
+  return granted(true);
 }

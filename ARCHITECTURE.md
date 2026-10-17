@@ -80,8 +80,13 @@ Captured is not the same as granted: verify writes `status = 'captured'` before 
 inserts the enrolment, and can answer 500 in between. So the already-captured early
 returns of both capture paths first grant the course if the buyer does not hold it
 (`_shared/captureGrant.ts`, the same idempotent insert), and answer success only
-after that. They never grant again a course that was revoked or cancelled; that order
-goes to a person.
+after that. They never grant again a course this order granted and later lost (a
+revoke, a refund). A cancelled or expired enrolment from the buyer's earlier order
+does not block a new paid order; for a free order it still does. A grant they refuse
+(course taken away, no buyer, a read or insert error) is written on the order as
+`notes.grant_issue = { reason, source, at }`, and marked `resolved_at` once a later
+grant works. The webhook acknowledges a refused grant only after that marker is on
+the order; otherwise it answers 500 and Razorpay delivers again.
 
 Both capture paths call `schedulePostCapture` (`_shared/postCaptureRuntime.ts`)
 after their own work, and again from their already-captured early returns when

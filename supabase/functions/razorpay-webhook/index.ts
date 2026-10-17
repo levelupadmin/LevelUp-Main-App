@@ -111,9 +111,12 @@ Deno.serve(async (req) => {
       }
       // Captured is not the same as granted: verify writes "captured" before
       // it inserts the enrolment, and can answer 500 in between. Grant the
-      // course first, with the same idempotent insert. A database error
-      // answers 500 so Razorpay delivers again; a course taken away on purpose
-      // or an order with no buyer is left for a person (a retry cannot help).
+      // course first, with the same idempotent insert. A grant it refuses is
+      // written on the order as notes.grant_issue (_shared/captureGrant.ts).
+      // A database error answers 500 so Razorpay delivers again. A course
+      // this order lost on purpose, or an order with no buyer, is left for a
+      // person (a retry cannot help): acknowledged only once the order
+      // carries the marker, and 500 otherwise so a later delivery writes it.
       // Then start post-capture if no one has claimed it and the capture is
       // recent (verify, or an earlier delivery, may have failed before it
       // started; an old order gets no late receipt); the claim keeps it to at
@@ -127,7 +130,10 @@ Deno.serve(async (req) => {
           if (grant.reason === "read_failed" || grant.reason === "insert_failed") {
             return jsonRes({ error: "Enrolment creation failed" }, 500);
           }
-          return jsonRes({ received: true, status: po.status, course: grant.reason });
+          if (!grant.recorded) {
+            return jsonRes({ error: "Course not granted and not recorded" }, 500);
+          }
+          return jsonRes({ received: true, status: po.status, course: grant.reason, recorded: "notes.grant_issue" });
         }
         if (postCaptureRecoverable(po)) {
           schedulePostCapture(admin, po.id, { source: "razorpay-webhook" });

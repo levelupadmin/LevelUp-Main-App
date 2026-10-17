@@ -34,26 +34,46 @@ const fake = vi.hoisted(() => {
       return {};
     },
   };
+  type Enrolment = { id: string; user_id: string | null; offering_id: string; payment_order_id: string | null; status: string };
   const state = {
     po: {} as Record<string, unknown>,
-    /** Enrolments in the order's course for the order or its buyer. */
-    enrolments: [] as Array<{ id: string; status: string }>,
+    /** Every enrolment row; reads apply their filters to it, as PostgREST would. */
+    enrolments: [] as Enrolment[],
     /** Error for the next main enrolment insert; a 23505 also adds the concurrent winner's row. */
     insertError: null as null | { code: string; message: string },
     readError: null as null | { code: string; message: string },
+    /** Error for writes to payment_orders (the notes.grant_issue marker). */
+    poWriteError: null as null | { code: string; message: string },
     inserts: [] as Array<{ table: string; row: Record<string, unknown> }>,
     enrolmentReads: [] as Array<Record<string, unknown>>,
+    poWrites: [] as Array<Record<string, unknown>>,
+    /** Runs once, just before the next payment_orders write lands (a concurrent writer). */
+    beforePoWrite: null as null | (() => void),
     events: [] as string[],
+  };
+
+  type Filter = (r: Record<string, unknown>) => boolean;
+  // "payment_order_id.eq.po_1,user_id.eq.user_1" → a row matches any one part.
+  const orFilter = (expr: string): Filter => {
+    const parts = expr.split(",").map((p) => {
+      const [col, op, ...rest] = p.split(".");
+      if (op !== "eq") throw new Error(`fake or() supports eq only: ${p}`);
+      return [col, rest.join(".")] as const;
+    });
+    return (r) => parts.some(([col, val]) => String(r[col]) === val);
   };
 
   function builder(table: string) {
     let mode: "select" | "insert" | "update" = "select";
     let row: Record<string, unknown> | null = null;
+    let patch: Record<string, unknown> | null = null;
     const filters: Record<string, unknown> = {};
+    const preds: Filter[] = [];
     const b: Record<string, unknown> = {};
     b.select = () => b;
-    b.update = () => {
+    b.update = (p: Record<string, unknown>) => {
       mode = "update";
+      patch = p;
       return b;
     };
     b.insert = (r: Record<string, unknown>) => {
@@ -63,23 +83,62 @@ const fake = vi.hoisted(() => {
       state.events.push(`insert:${table}`);
       return b;
     };
-    for (const m of ["eq", "neq", "is", "or", "limit", "order"]) {
-      b[m] = (col: string, val?: unknown) => {
-        filters[m === "or" ? "or" : col] = m === "or" ? col : val;
-        return b;
-      };
-    }
+    b.eq = (col: string, val: unknown) => {
+      filters[col] = val;
+      preds.push((r) => r[col] === val);
+      return b;
+    };
+    b.neq = (col: string, val: unknown) => {
+      filters[col] = val;
+      preds.push((r) => r[col] !== val);
+      return b;
+    };
+    b.is = (col: string, val: unknown) => {
+      filters[col] = val;
+      // "notes->>post_capture" reads one key of a jsonb column.
+      const [base, key] = col.split("->>");
+      preds.push((r) => ((key ? (r[base] as Record<string, unknown> | null)?.[key] : r[col]) ?? null) === val);
+      return b;
+    };
+    b.or = (expr: string) => {
+      filters.or = expr;
+      preds.push(orFilter(expr));
+      return b;
+    };
+    b.limit = () => b;
+    b.order = () => b;
+    const matching = () => state.enrolments.filter((r) => preds.every((p) => p(r as Record<string, unknown>)));
     const settle = (): { data: unknown; error: unknown } => {
-      if (table === "payment_orders") return { data: mode === "select" ? state.po : null, error: null };
+      if (table === "payment_orders") {
+        if (mode === "update") {
+          state.poWrites.push(patch!);
+          const concurrent = state.beforePoWrite;
+          state.beforePoWrite = null;
+          concurrent?.();
+          if (state.poWriteError) return { data: null, error: state.poWriteError };
+          if (!preds.every((p) => p(state.po))) return { data: [], error: null };
+          state.po = { ...state.po, ...patch! };
+          return { data: [{ id: state.po.id }], error: null };
+        }
+        return { data: mode === "select" ? state.po : null, error: null };
+      }
       if (table === "enrolments" && mode === "insert") {
         // Main course insert (has total_paid_inr) vs bump insert.
         if (row && "total_paid_inr" in row) {
           const err = state.insertError;
           if (err) {
-            if (err.code === "23505") state.enrolments.push({ id: "enr_winner", status: "active" });
+            if (err.code === "23505") {
+              state.enrolments.push({
+                id: "enr_winner",
+                user_id: row.user_id as string,
+                offering_id: row.offering_id as string,
+                payment_order_id: "po_concurrent",
+                status: "active",
+              });
+            }
             return { data: null, error: err };
           }
-          state.enrolments.push({ id: "enr_new", status: "active" });
+          state.enrolments.push({ ...(row as Omit<Enrolment, "id">), id: "enr_new" });
           return { data: { id: "enr_new" }, error: null };
         }
         return { data: null, error: null };
@@ -87,7 +146,7 @@ const fake = vi.hoisted(() => {
       if (table === "enrolments") {
         state.enrolmentReads.push({ ...filters });
         if (state.readError) return { data: null, error: state.readError };
-        return { data: state.enrolments, error: null };
+        return { data: matching(), error: null };
       }
       return { data: null, error: null };
     };
@@ -95,7 +154,7 @@ const fake = vi.hoisted(() => {
     b.maybeSingle = () => {
       const r = settle();
       if (table === "enrolments" && Array.isArray(r.data)) {
-        return Promise.resolve({ data: (r.data as Array<{ status: string }>).find((e) => e.status === "active") ?? null, error: r.error });
+        return Promise.resolve({ data: r.data[0] ?? null, error: r.error });
       }
       return Promise.resolve(r);
     };
@@ -170,15 +229,37 @@ const statusCheck = () =>
   );
 
 const enrolmentInserts = () => fake.state.inserts.filter((i) => i.table === "enrolments");
+const grantIssue = () => (fake.state.po.notes as { grant_issue?: Record<string, unknown> } | undefined)?.grant_issue;
+const notesWrites = () => fake.state.poWrites.filter((w) => "notes" in w);
+
+/** An enrolment row in the order's course, for its buyer, unless overridden. */
+const enrolment = (over: Record<string, unknown>) => ({
+  id: "enr_1",
+  user_id: "user_1",
+  offering_id: "off_1",
+  payment_order_id: "po_1",
+  status: "active",
+  ...over,
+}) as (typeof fake.state.enrolments)[number];
+
+// Rows that belong to someone else or to another course. A read that ignored
+// its filters would see them.
+const strangers = () => [
+  enrolment({ id: "enr_other_buyer", user_id: "user_2", payment_order_id: "po_9", status: "revoked" }),
+  enrolment({ id: "enr_other_course", offering_id: "off_2", payment_order_id: "po_8", status: "cancelled" }),
+];
 
 beforeEach(() => {
   fake.schedule.mockClear();
   fake.state.po = { ...baseOrder };
-  fake.state.enrolments = [{ id: "enr_1", status: "active" }];
+  fake.state.enrolments = [enrolment({}), ...strangers()];
   fake.state.insertError = null;
   fake.state.readError = null;
+  fake.state.poWriteError = null;
   fake.state.inserts = [];
   fake.state.enrolmentReads = [];
+  fake.state.poWrites = [];
+  fake.state.beforePoWrite = null;
   fake.state.events = [];
 });
 
@@ -216,7 +297,7 @@ describe("post-capture after an already-captured order", () => {
   });
 
   it("leaves staged cohort payments and parked orders alone", async () => {
-    fake.state.enrolments = [];
+    fake.state.enrolments = strangers();
     fake.state.po = { ...baseOrder, payment_type: "app_fee", application_id: "app_1" };
     await deliverWebhook();
     expect(await (await callVerify()).json()).toEqual({ success: true, already_captured: true });
@@ -230,7 +311,7 @@ describe("post-capture after an already-captured order", () => {
 
 describe("a captured order whose course was never granted", () => {
   beforeEach(() => {
-    fake.state.enrolments = [];
+    fake.state.enrolments = strangers();
   });
 
   it("verify grants the course before it answers success and starts post-capture", async () => {
@@ -279,21 +360,101 @@ describe("a captured order whose course was never granted", () => {
     expect(fake.schedule).not.toHaveBeenCalled();
   });
 
-  it("a course that was revoked is not granted again, and nothing reports success", async () => {
-    fake.state.enrolments = [{ id: "enr_1", status: "revoked" }];
+  it("a course this order granted and then lost is not granted again; the order says so", async () => {
+    fake.state.enrolments = [enrolment({ status: "revoked" }), ...strangers()];
     const res = await callVerify();
     expect(res.status).toBe(202);
     expect(await res.json()).toMatchObject({ success: false, needs_review: true });
+    expect(grantIssue()).toMatchObject({ reason: "taken_away", source: "verify" });
+    expect(typeof grantIssue()!.at).toBe("string");
     const wh = await deliverWebhook();
     expect(wh.status).toBe(200);
-    expect(await wh.json()).toMatchObject({ received: true, course: "taken_away" });
+    expect(await wh.json()).toMatchObject({ received: true, course: "taken_away", recorded: "notes.grant_issue" });
+    // Written once: the webhook found the marker and left it.
+    expect(notesWrites()).toHaveLength(1);
     expect(enrolmentInserts()).toHaveLength(0);
     expect(fake.schedule).not.toHaveBeenCalled();
   });
 
+  it("a buyer refunded on an earlier order who buys again gets the course", async () => {
+    fake.state.enrolments = [
+      enrolment({ id: "enr_old", payment_order_id: "po_0", status: "cancelled" }),
+      enrolment({ id: "enr_older", payment_order_id: "po_00", status: "expired" }),
+      ...strangers(),
+    ];
+    expect(await (await callVerify()).json()).toEqual({ success: true, already_captured: true });
+    expect(enrolmentInserts()[0].row).toMatchObject({ user_id: "user_1", offering_id: "off_1", payment_order_id: "po_1", status: "active" });
+    expect(fake.schedule).toHaveBeenCalledTimes(1);
+    expect(grantIssue()).toBeUndefined();
+    // The webhook now finds the active row and grants nothing more.
+    const wh = await deliverWebhook();
+    expect(await wh.json()).toEqual({ received: true, status: "captured" });
+    expect(enrolmentInserts()).toHaveLength(1);
+  });
+
+  it("the webhook grants it too when verify never came back", async () => {
+    fake.state.enrolments = [enrolment({ id: "enr_old", payment_order_id: "po_0", status: "cancelled" }), ...strangers()];
+    const wh = await deliverWebhook();
+    expect(await wh.json()).toEqual({ received: true, status: "captured" });
+    expect(enrolmentInserts()).toHaveLength(1);
+    expect(fake.state.events).toEqual(["insert:enrolments", "insert:enrolment_audit_log", "schedule"]);
+  });
+
+  it("a free order is not granted a course its buyer lost on another order", async () => {
+    // A free order carries no payment proof, so it cannot undo a revoke.
+    fake.state.po = { ...baseOrder, total_inr: 0, razorpay_payment_id: null };
+    fake.state.enrolments = [enrolment({ id: "enr_old", payment_order_id: "po_0", status: "revoked" }), ...strangers()];
+    const res = await callVerify({ razorpay_payment_id: "junk", razorpay_signature: "junk" });
+    expect(res.status).toBe(202);
+    expect(enrolmentInserts()).toHaveLength(0);
+    expect(grantIssue()).toMatchObject({ reason: "taken_away" });
+  });
+
+  it("an order with no buyer is written down for a person before the webhook acknowledges it", async () => {
+    fake.state.po = { ...baseOrder, user_id: null };
+    const wh = await deliverWebhook();
+    expect(wh.status).toBe(200);
+    expect(await wh.json()).toMatchObject({ course: "no_user", recorded: "notes.grant_issue" });
+    expect(grantIssue()).toMatchObject({ reason: "no_user", source: "razorpay-webhook" });
+    expect(fake.state.enrolmentReads[0]).toEqual({ offering_id: "off_1", payment_order_id: "po_1" });
+    expect(enrolmentInserts()).toHaveLength(0);
+  });
+
+  it("the webhook answers 500 when it cannot write the refusal down, so Razorpay delivers again", async () => {
+    fake.state.enrolments = [enrolment({ status: "revoked" }), ...strangers()];
+    fake.state.poWriteError = { code: "XX000", message: "write failed" };
+    expect((await deliverWebhook()).status).toBe(500);
+    fake.state.poWriteError = null;
+    const wh = await deliverWebhook();
+    expect(wh.status).toBe(200);
+    expect(grantIssue()).toMatchObject({ reason: "taken_away" });
+  });
+
+  it("the marker never wipes a post-capture claim written between its read and its write", async () => {
+    fake.state.enrolments = [enrolment({ status: "revoked" }), ...strangers()];
+    const claim = { claimed_at: "2026-10-18T00:00:00Z", source: "verify" };
+    fake.state.beforePoWrite = () => {
+      fake.state.po = { ...fake.state.po, notes: { ...(fake.state.po.notes as object), post_capture: claim } };
+    };
+    expect((await deliverWebhook()).status).toBe(200);
+    expect(notesWrites()).toHaveLength(2);
+    expect(fake.state.po.notes).toMatchObject({ post_capture: claim, grant_issue: { reason: "taken_away" } });
+  });
+
+  it("a failed grant is written down, and marked resolved once a retry grants the course", async () => {
+    fake.state.insertError = { code: "XX000", message: "boom" };
+    expect((await deliverWebhook()).status).toBe(500);
+    expect(grantIssue()).toMatchObject({ reason: "insert_failed", source: "razorpay-webhook" });
+    expect(grantIssue()!.resolved_at).toBeUndefined();
+    fake.state.insertError = null;
+    expect((await deliverWebhook()).status).toBe(200);
+    expect(grantIssue()).toMatchObject({ reason: "insert_failed", resolved_by: "razorpay-webhook" });
+    expect(typeof grantIssue()!.resolved_at).toBe("string");
+  });
+
   it("the status check reads it as needs_review, and as captured once the course is granted", async () => {
     expect(await (await statusCheck()).json()).toEqual({ status: "needs_review" });
-    fake.state.enrolments = [{ id: "enr_1", status: "active" }];
+    fake.state.enrolments = [enrolment({}), ...strangers()];
     expect(await (await statusCheck()).json()).toEqual({ status: "captured", razorpay_payment_id: "pay_1" });
     expect(enrolmentInserts()).toHaveLength(0);
     expect(fake.schedule).not.toHaveBeenCalled();

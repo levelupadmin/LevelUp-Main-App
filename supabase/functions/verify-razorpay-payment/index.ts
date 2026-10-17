@@ -197,7 +197,8 @@ Deno.serve(async (req) => {
       // Captured is not the same as granted: the call that captured this
       // order writes "captured" before it inserts the enrolment, and can fail
       // in between. Grant the course first, with the same idempotent insert,
-      // and answer success only once the buyer holds it.
+      // and answer success only once the buyer holds it. A grant it refuses
+      // is written on the order as notes.grant_issue for a person.
       const grant = await ensureCourseGranted(admin, po, { source: "verify" });
       if (!grant.ok) {
         if (grant.reason === "taken_away") {
