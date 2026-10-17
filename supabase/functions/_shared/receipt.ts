@@ -22,6 +22,11 @@
  *   - Variables the live template uses: student_name, offering_name, amount,
  *     payment_id, date, app_url, invoice_url. Also passed, for a template that
  *     adds them: sign_in_hint, refund_policy, course_url.
+ *   - Personal data: a guest's receipt goes to an email nobody has verified,
+ *     so no variable carries more than the buyer's name, the course, the
+ *     amount, the date and the payment id. No email, no phone digits. The
+ *     invoice link is a 7-day signed link to a copy without contact details
+ *     (postCapture.ts, generate-invoice-pdf `receipt_copy`).
  *
  * Pure: no runtime imports beyond other pure _shared modules. The email
  * helpers (_shared/email.ts imports a URL module) are passed in as deps, so
@@ -129,7 +134,6 @@ export function safeUrl(value: string | null | undefined, allowedOrigins: string
 
 export function receiptVariables(order: ReceiptOrder, ctx: ReceiptContext, recipientName: string): Record<string, string> {
   const appUrl = ctx.appUrl.replace(/\/+$/, "");
-  const last4 = (order.guest_phone ?? ctx.user?.phone ?? "").replace(/\D/g, "").slice(-4);
   const isGuest = !!order.guest_email;
   return {
     student_name: recipientName,
@@ -140,10 +144,9 @@ export function receiptVariables(order: ReceiptOrder, ctx: ReceiptContext, recip
     app_url: appUrl,
     invoice_url: safeUrl(ctx.invoiceUrl, ctx.allowedUrlOrigins) ?? `${appUrl}/profile`,
     course_url: `${appUrl}${ctx.coursePath && ctx.coursePath.startsWith("/") ? ctx.coursePath : "/learn?seg=courses"}`,
-    sign_in_hint:
-      isGuest && last4.length === 4
-        ? `Sign in with the phone number you paid with (ending ${last4}) and a one-time code.`
-        : "Sign in to the account you bought with.",
+    sign_in_hint: isGuest
+      ? "Sign in with the phone number you paid with and a one-time code."
+      : "Sign in to the account you bought with.",
     refund_policy: watchRuleApplies(ctx.productTier) ? masterclassRefundSentence(ctx.refundPolicyDays) : "",
   };
 }

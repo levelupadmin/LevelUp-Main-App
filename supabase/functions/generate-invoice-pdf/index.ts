@@ -11,6 +11,14 @@
 //   and pass any payment_order_id.
 // - Client callers use a regular Bearer JWT; they can ONLY generate the
 //   PDF for an order belonging to them.
+//
+// `receipt_copy: true` (server callers only) makes the copy the purchase
+// receipt email links to. That email can go to an address nobody has
+// verified (a guest types it at checkout), so this copy carries no contact
+// details: the buyer's name, the course, the amounts, the date and the
+// payment id only. It is stored at its own path (<order_id>-receipt.pdf), so
+// a later full download from the profile page never replaces what that link
+// serves.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -51,7 +59,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const { payment_order_id } = await req.json();
+    const { payment_order_id, receipt_copy } = await req.json();
     if (!payment_order_id || typeof payment_order_id !== "string") {
       return jsonRes({ error: "payment_order_id required" }, 400);
     }
@@ -86,6 +94,7 @@ Deno.serve(async (req) => {
       keyDiff |= bearer.charCodeAt(i) ^ serviceKey.charCodeAt(i);
     }
     const isServerCall = keyDiff === 0;
+    const receiptCopy = isServerCall && receipt_copy === true;
     if (!isServerCall) {
       const userClient = createClient(
         Deno.env.get("SUPABASE_URL")!,
@@ -210,7 +219,7 @@ Deno.serve(async (req) => {
       color: dark,
     });
     y -= 14;
-    if (buyerEmail) {
+    if (buyerEmail && !receiptCopy) {
       page.drawText(buyerEmail, {
         x: 40,
         y,
@@ -220,7 +229,7 @@ Deno.serve(async (req) => {
       });
       y -= 12;
     }
-    if (buyerPhone) {
+    if (buyerPhone && !receiptCopy) {
       page.drawText(buyerPhone, {
         x: 40,
         y,
@@ -355,7 +364,7 @@ Deno.serve(async (req) => {
     // creates the user record on verify), fall back to a "guest"
     // folder readable only via signed URL.
     const folder = po.user_id ?? "guest";
-    const objectPath = `${folder}/${po.id}.pdf`;
+    const objectPath = `${folder}/${po.id}${receiptCopy ? "-receipt" : ""}.pdf`;
     const { error: upErr } = await admin.storage
       .from("invoices")
       .upload(objectPath, new Uint8Array(pdfBytes), {

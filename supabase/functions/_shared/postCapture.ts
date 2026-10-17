@@ -161,10 +161,15 @@ async function sendServerPurchase(
 }
 
 /**
- * The invoice PDF's signed link (90 days), or null. generate-invoice-pdf makes
- * and stores the file; any failure leaves the receipt pointing at the profile
- * page, where the buyer can download it.
+ * The receipt's invoice link, or null. generate-invoice-pdf makes a receipt
+ * copy that carries no contact details (name, course, amounts, date and
+ * payment id only), because a guest's receipt goes to an email nobody has
+ * verified. The signed link lasts 7 days. Any failure leaves the receipt
+ * pointing at the profile page, where the buyer can download the full
+ * invoice after signing in.
  */
+export const RECEIPT_INVOICE_LINK_SECONDS = 60 * 60 * 24 * 7;
+
 async function invoiceLink(admin: Admin, orderId: string): Promise<string | null> {
   const url = env("SUPABASE_URL");
   const key = env("SUPABASE_SERVICE_ROLE_KEY");
@@ -175,7 +180,7 @@ async function invoiceLink(admin: Admin, orderId: string): Promise<string | null
     const res = await fetch(`${url.replace(/\/+$/, "")}/functions/v1/generate-invoice-pdf`, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ payment_order_id: orderId }),
+      body: JSON.stringify({ payment_order_id: orderId, receipt_copy: true }),
       signal: controller.signal,
     });
     const json = (await res.json().catch(() => ({}))) as { path?: unknown };
@@ -183,7 +188,7 @@ async function invoiceLink(admin: Admin, orderId: string): Promise<string | null
       console.warn("[post-capture] invoice PDF not made for", orderId, res.status);
       return null;
     }
-    const signed = await admin.storage.from("invoices").createSignedUrl(json.path, 60 * 60 * 24 * 90);
+    const signed = await admin.storage.from("invoices").createSignedUrl(json.path, RECEIPT_INVOICE_LINK_SECONDS);
     return typeof signed?.data?.signedUrl === "string" ? signed.data.signedUrl : null;
   } catch (e) {
     console.warn("[post-capture] invoice PDF failed for", orderId, e);

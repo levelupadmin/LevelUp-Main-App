@@ -79,7 +79,24 @@ describe("receipt rendering", () => {
     expect(out.html).toContain("₹2,499 · pay_ABC · 17 Oct 2026");
     expect(out.text).toBe("Hi Asha, ₹2,499 for Nelson Dilipkumar Teaches Filmmaking.");
     expect(vars.refund_policy).toBe("Full refund within 7 days of buying, if you have watched less than a quarter of the course.");
-    expect(vars.sign_in_hint).toContain("ending 3210");
+    expect(vars.sign_in_hint).toBe("Sign in with the phone number you paid with and a one-time code.");
+  });
+
+  it("carries no personal data beyond the name, course, amount, date and payment id", () => {
+    const vars = receiptVariables(
+      order,
+      {
+        offeringTitle: "Nelson",
+        productTier: "masterclass",
+        appUrl: APP,
+        allowedUrlOrigins: [APP],
+        user: { email: "owner@example.com", full_name: "Owner", phone: "919876543210" },
+      },
+      "Asha",
+    );
+    const all = Object.values(vars).join(" ");
+    expect(all).not.toMatch(/example\.com/i);
+    expect(all).not.toMatch(/3210|9876/);
   });
 
   it("falls back to the profile page for a missing or foreign invoice link", () => {
@@ -190,6 +207,36 @@ describe("runPostCapture receipt step", () => {
     const post = (state.row.notes as { post_capture: { receipt: { sent: boolean }; capi: { skipped?: string } } }).post_capture;
     expect(post.receipt.sent).toBe(true);
     expect(post.capi.skipped).toBe("no_token");
+  });
+
+  it("links a 7-day copy of the invoice without contact details", async () => {
+    const { admin } = fakeAdmin(captured);
+    const createSignedUrl = vi.fn(async () => ({ data: { signedUrl: `${STORAGE}/storage/v1/object/sign/invoices/u/po_1-receipt.pdf?token=t` } }));
+    const withStorage = { ...admin, storage: { from: () => ({ createSignedUrl }) } };
+    const env = new Map([
+      ["SUPABASE_URL", STORAGE],
+      ["SUPABASE_SERVICE_ROLE_KEY", "service-role"],
+    ]);
+    const g = globalThis as unknown as { Deno?: unknown };
+    const hadDeno = "Deno" in g;
+    const prevDeno = g.Deno;
+    g.Deno = { env: { get: (k: string) => env.get(k) } };
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ path: "u/po_1-receipt.pdf" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      const d = deps();
+      await runPostCapture(withStorage, "po_1", { source: "verify", email: d });
+      const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, { body: string }];
+      expect(url).toBe(`${STORAGE}/functions/v1/generate-invoice-pdf`);
+      expect(JSON.parse(init.body)).toEqual({ payment_order_id: "po_1", receipt_copy: true });
+      expect(createSignedUrl).toHaveBeenCalledWith("u/po_1-receipt.pdf", 7 * 24 * 60 * 60);
+      const [, opts] = d.enqueueEmail.mock.calls[0] as unknown as [unknown, Record<string, string>];
+      expect(opts.html).toContain("po_1-receipt.pdf?token=t");
+    } finally {
+      vi.unstubAllGlobals();
+      if (hadDeno) g.Deno = prevDeno;
+      else delete g.Deno;
+    }
   });
 
   it("sends nothing for a staged cohort payment", async () => {

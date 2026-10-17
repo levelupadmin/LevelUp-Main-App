@@ -532,7 +532,7 @@ export const FEATURES: Feature[] = [
       "supabase/functions/_shared/receipt.ts",
       "supabase/functions/_shared/postCapture.ts",
     ],
-    details: "The receipt email (template payment_receipt) is sent once per captured single-payment order from the post-capture step, whichever of verify-razorpay-payment and razorpay-webhook claims the order first. A guest order is mailed at the address typed at checkout; a signed-in order at the account email. The invoice link is a 90-day signed URL, or the profile page when the PDF could not be made. Result recorded in payment_orders.notes.post_capture.receipt. Before 17 Oct 2026 no receipt was ever sent (the old call left out user_id). Staged cohort payments keep the older path in verify.",
+    details: "The receipt email (template payment_receipt) is sent once per captured single-payment order from the post-capture step, whichever of verify-razorpay-payment and razorpay-webhook claims the order first. A guest order is mailed at the address typed at checkout; a signed-in order at the account email. The invoice link is a 7-day signed URL to a receipt copy of the PDF that carries no contact details (name, course, amounts, date and payment id only; generate-invoice-pdf receipt_copy), or the profile page when the PDF could not be made. The email itself carries no email address or phone digits, since a guest's address is unverified. Result recorded in payment_orders.notes.post_capture.receipt. Before 17 Oct 2026 no receipt was ever sent (the old call left out user_id). Staged cohort payments keep the older path in verify.",
   },
 
   /* ─────────── Platform ─────────── */
