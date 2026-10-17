@@ -324,7 +324,10 @@ Deno.serve(async (req) => {
           payment_order_id: po.id,
           status: "active",
           source: "checkout",
-          total_paid_inr: Number(po.total_inr),
+          // The row above selected only `id`, so po.total_inr was undefined:
+          // Number(undefined) is NaN, which JSON sends as null. The free
+          // path's total is the computed one.
+          total_paid_inr: totalInr,
         });
       }
 
