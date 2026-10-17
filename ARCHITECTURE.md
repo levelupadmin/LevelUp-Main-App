@@ -76,6 +76,13 @@ post-capture step (_shared/postCapture.ts, once per order, single payments only)
 server Meta Purchase (Conversions API) + receipt email with the invoice link
 ```
 
+Captured is not the same as granted: verify writes `status = 'captured'` before it
+inserts the enrolment, and can answer 500 in between. So the already-captured early
+returns of both capture paths first grant the course if the buyer does not hold it
+(`_shared/captureGrant.ts`, the same idempotent insert), and answer success only
+after that. They never grant again a course that was revoked or cancelled; that order
+goes to a person.
+
 Both capture paths call `schedulePostCapture` (`_shared/postCaptureRuntime.ts`)
 after their own work, and again from their already-captured early returns when
 `notes.post_capture` is still empty, so a failure after capture cannot lose it.
@@ -92,7 +99,9 @@ confirm it, Pay stays locked and "Check payment status" runs the same verify cal
 again. After the sheet closes, the next Pay asks `verify-razorpay-payment` with
 `status_check: true` (read-only: our row, then Razorpay's payments for the order,
 `_shared/orderPaymentStatus.ts`) before anything new is charged; an unchanged
-cart reopens the same Razorpay order. The browser Purchase goes out once per
+cart reopens the same Razorpay order. A captured single payment reads as
+`captured` only when the buyer holds the course, and as `needs_review` until
+then, so the checkout never says "Welcome" for a course nobody granted. The browser Purchase goes out once per
 `razorpay_payment_id` across the checkout and Thank-you (`src/lib/purchaseOnce.ts`).
 
 **Pricing has ONE home: [`supabase/functions/_shared/pricing.ts`](supabase/functions/_shared/pricing.ts).**

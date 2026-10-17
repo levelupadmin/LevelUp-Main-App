@@ -210,6 +210,37 @@ describe("CheckoutPage: no second charge", () => {
     expect(calls("guest-create-order")).toHaveLength(1);
   });
 
+  it("a captured order whose course is not granted yet never says Welcome; it finishes once the course is there", async () => {
+    // The server reads a captured order without an active enrolment as
+    // needs_review (verify-razorpay-payment status_check).
+    let status = "needs_review";
+    invokeImpl.fn = async (name, { body }) => {
+      if (name === "guest-create-order") return { data: order, error: null };
+      if (name === "verify-razorpay-payment" && body.status_check) return { data: { status, razorpay_payment_id: "pay_1" }, error: null };
+      return { data: { available: false }, error: null };
+    };
+    renderCheckout();
+    await fillGuestForm();
+    fireEvent.click(payButtons()[0]);
+    await waitFor(() => expect(sheets).toHaveLength(1));
+    act(() => sheets[0].modal.ondismiss());
+    await screen.findByText("Payment not finished");
+
+    fireEvent.click(payButtons()[0]);
+    expect(await screen.findByText(/setting up your access by hand/)).toBeInTheDocument();
+    for (const b of payButtons()) expect(b).toBeDisabled();
+    expect(navigateSpy).not.toHaveBeenCalled();
+    expect(trackSpy.mock.calls.some(([e]) => e.name === "purchase")).toBe(false);
+    expect(sheets).toHaveLength(1);
+
+    status = "captured";
+    fireEvent.click(screen.getByRole("button", { name: "Check payment status" }));
+    await waitFor(() => expect(navigateSpy).toHaveBeenCalled());
+    expect(navigateSpy.mock.calls[0][0]).toBe(`/login?${new URLSearchParams({ next: "/thank-you/po_1" })}`);
+    expect(trackSpy.mock.calls.filter(([e]) => e.name === "purchase")).toHaveLength(1);
+    expect(calls("guest-create-order")).toHaveLength(1);
+  });
+
   it("keeps Pay locked after a reload when Razorpay had reported the payment", async () => {
     window.sessionStorage.setItem(
       "lu_checkout_open_order:off_1",

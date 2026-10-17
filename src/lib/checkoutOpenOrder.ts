@@ -91,7 +91,9 @@ export function saveOpenOrder(offeringId: string, order: OpenOrder | null): void
  * What Pay may do, given the last order's status and whether the cart is the
  * one that order was priced from.
  *
- *   done      the last order is captured: finish as a successful payment
+ *   done      the last order is captured and the buyer holds the course (the
+ *             server reads a captured order without it as needs_review):
+ *             finish as a successful payment
  *   locked    money moved or may have: no new payment, offer a status check
  *   reopen    open the same Razorpay order again (it accepts one payment)
  *   new_order nothing was paid on the last order and the cart changed

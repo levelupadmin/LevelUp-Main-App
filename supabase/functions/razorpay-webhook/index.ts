@@ -18,6 +18,7 @@ function jsonRes(body: unknown, status = 200) {
 
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 import { postCaptureClaimed, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
+import { ensureCourseGranted } from "../_shared/captureGrant.ts";
 
 async function verifySignature(
   body: string,
@@ -97,9 +98,10 @@ Deno.serve(async (req) => {
       return jsonRes({ received: true, skipped: "no payment_order" });
     }
 
-    // Idempotency: terminal states exit fast. "captured" = fully processed;
-    // "needs_review" = parked for a human (wrong amount / coupon / user issue),
-    // so we must NOT auto-reprocess it on a Razorpay retry.
+    // Idempotency: terminal states exit fast. "captured" = capture recorded
+    // (the course is checked below); "needs_review" = parked for a human
+    // (wrong amount / coupon / user issue), so we must NOT auto-reprocess it
+    // on a Razorpay retry.
     if (po.status === "captured" || po.status === "needs_review") {
       if (!po.razorpay_payment_id) {
         await admin
@@ -107,12 +109,28 @@ Deno.serve(async (req) => {
           .update({ razorpay_payment_id: razorpayPaymentId })
           .eq("id", po.id);
       }
-      // The call that captured this order may have failed before its
-      // post-capture step started (verify answered 500 after capture, or an
-      // earlier delivery did). Start it now if no one has claimed it; the
-      // claim keeps it to one run. Staged cohort payments never take it.
-      if (po.status === "captured" && !po.payment_type && !po.application_id && !postCaptureClaimed(po.notes)) {
-        schedulePostCapture(admin, po.id, { source: "razorpay-webhook" });
+      // Captured is not the same as granted: verify writes "captured" before
+      // it inserts the enrolment, and can answer 500 in between. Grant the
+      // course first, with the same idempotent insert. A database error
+      // answers 500 so Razorpay delivers again; a course taken away on purpose
+      // or an order with no buyer is left for a person (a retry cannot help).
+      // Then start post-capture if no one has claimed it (verify, or an
+      // earlier delivery, may have failed before it started); the claim keeps
+      // it to at most one run. Staged cohort payments take neither step.
+      if (po.status === "captured" && !po.payment_type && !po.application_id) {
+        const grant = await ensureCourseGranted(admin, po, {
+          source: "razorpay-webhook",
+          razorpayPaymentId,
+        });
+        if (!grant.ok) {
+          if (grant.reason === "read_failed" || grant.reason === "insert_failed") {
+            return jsonRes({ error: "Enrolment creation failed" }, 500);
+          }
+          return jsonRes({ received: true, status: po.status, course: grant.reason });
+        }
+        if (!postCaptureClaimed(po.notes)) {
+          schedulePostCapture(admin, po.id, { source: "razorpay-webhook" });
+        }
       }
       return jsonRes({ received: true, status: po.status });
     }
