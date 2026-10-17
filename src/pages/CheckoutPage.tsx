@@ -235,11 +235,15 @@ export default function CheckoutPage() {
   const [selectedBumps, setSelectedBumps] = useState<Set<string>>(new Set());
   // Coupon entry + apply/remove. Validation runs through the validate-coupon
   // edge function (the coupons table is admin-read-only). See useCheckoutCoupon.
+  // Staged cohort payments take no coupon, so they never probe for one.
   const {
     couponCode, setCouponCode,
-    appliedCoupon, couponLoading,
+    appliedCoupon, couponLoading, couponAvailable,
     applyCoupon, removeCoupon,
-  } = useCheckoutCoupon(offeringId);
+  } = useCheckoutCoupon(offeringId, { probe: paymentType === "full" });
+  // A campaign link can carry ?coupon=CODE: it opens the promo box and is
+  // applied once the offering has loaded.
+  const urlCoupon = (searchParams.get("coupon") ?? "").trim().toUpperCase().slice(0, 40);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [fieldTouched, setFieldTouched] = useState<Record<string, boolean>>({});
   const [paying, setPaying] = useState(false);
@@ -461,6 +465,16 @@ export default function CheckoutPage() {
   const stagedLabel = paymentType === "app_fee" ? "Application Fee"
     : paymentType === "confirmation" ? "Confirmation Amount"
     : paymentType === "balance" ? "Balance Payment" : "";
+
+  /* -- ?coupon=CODE: apply once, after the offering loads (non-staged only). -- */
+  const urlCouponTried = useRef(false);
+  useEffect(() => {
+    if (!offering || !urlCoupon || urlCouponTried.current) return;
+    if (paymentType !== "full" && (offering as any).payment_mode === "staged") return;
+    urlCouponTried.current = true;
+    setCouponCode(urlCoupon);
+    void applyCoupon(urlCoupon);
+  }, [offering, urlCoupon, paymentType, applyCoupon, setCouponCode]);
 
   /* -- Pricing (one shared home: @shared/pricing, used by the order edge
         functions too, so the preview can't drift from what's charged) -- */
@@ -1059,8 +1073,10 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* -- Coupon -- */}
-          {!isStaged && (
+          {/* -- Coupon --
+              Only when a code can work: an active coupon applies to this
+              offering, the link carried ?coupon=, or one is applied. -- */}
+          {!isStaged && (couponAvailable || !!urlCoupon || !!appliedCoupon) && (
           <div className="space-y-2">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Promo code
@@ -1126,6 +1142,8 @@ export default function CheckoutPage() {
                       placeholder="Have a promo code?"
                       className="h-11 bg-surface-2 border-border w-full font-mono uppercase"
                       onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+                      aria-label="Promo code"
+                      autoCapitalize="characters"
                     />
                     {couponLoading && (
                       <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
@@ -1134,7 +1152,7 @@ export default function CheckoutPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={applyCoupon}
+                    onClick={() => applyCoupon()}
                     disabled={couponLoading || !couponCode.trim()}
                     className="shrink-0 h-11"
                   >
